@@ -1,17 +1,18 @@
 import { nanoid } from 'nanoid'
-import type { BlockState, Edge } from '../types'
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
  * Operation types supported by the undo/redo store.
  */
 export type OperationType =
-  | 'add-block'
-  | 'remove-block'
-  | 'add-edge'
-  | 'remove-edge'
-  | 'move-block'
-  | 'duplicate-block'
+  | 'batch-add-blocks'
+  | 'batch-remove-blocks'
+  | 'batch-add-edges'
+  | 'batch-remove-edges'
+  | 'batch-move-blocks'
   | 'update-parent'
+  | 'batch-update-parent'
 
 /**
  * Base operation interface.
@@ -25,63 +26,57 @@ export interface BaseOperation {
 }
 
 /**
- * Move block operation data.
+ * Batch move blocks operation data.
  */
-export interface MoveBlockOperation extends BaseOperation {
-  type: 'move-block'
+export interface BatchMoveBlocksOperation extends BaseOperation {
+  type: 'batch-move-blocks'
   data: {
-    blockId: string
-    before: { x: number; y: number; parentId?: string }
-    after: { x: number; y: number; parentId?: string }
+    moves: Array<{
+      blockId: string
+      before: { x: number; y: number; parentId?: string }
+      after: { x: number; y: number; parentId?: string }
+    }>
   }
 }
 
 /**
- * Add block operation data.
+ * Batch add blocks operation data.
  */
-export interface AddBlockOperation extends BaseOperation {
-  type: 'add-block'
-  data: { blockId: string }
-}
-
-/**
- * Remove block operation data.
- */
-export interface RemoveBlockOperation extends BaseOperation {
-  type: 'remove-block'
+export interface BatchAddBlocksOperation extends BaseOperation {
+  type: 'batch-add-blocks'
   data: {
-    blockId: string
-    blockSnapshot: BlockState | null
-    edgeSnapshots?: Edge[]
+    blockSnapshots: any[]
+    edgeSnapshots: any[]
+    subBlockValues: Record<string, Record<string, any>>
   }
 }
 
 /**
- * Add edge operation data.
+ * Batch remove blocks operation data.
  */
-export interface AddEdgeOperation extends BaseOperation {
-  type: 'add-edge'
-  data: { edgeId: string }
-}
-
-/**
- * Remove edge operation data.
- */
-export interface RemoveEdgeOperation extends BaseOperation {
-  type: 'remove-edge'
-  data: { edgeId: string; edgeSnapshot: Edge | null }
-}
-
-/**
- * Duplicate block operation data.
- */
-export interface DuplicateBlockOperation extends BaseOperation {
-  type: 'duplicate-block'
+export interface BatchRemoveBlocksOperation extends BaseOperation {
+  type: 'batch-remove-blocks'
   data: {
-    sourceBlockId: string
-    duplicatedBlockId: string
-    duplicatedBlockSnapshot: BlockState
+    blockSnapshots: any[]
+    edgeSnapshots: any[]
+    subBlockValues: Record<string, Record<string, any>>
   }
+}
+
+/**
+ * Batch add edges operation data.
+ */
+export interface BatchAddEdgesOperation extends BaseOperation {
+  type: 'batch-add-edges'
+  data: { edgeSnapshots: any[] }
+}
+
+/**
+ * Batch remove edges operation data.
+ */
+export interface BatchRemoveEdgesOperation extends BaseOperation {
+  type: 'batch-remove-edges'
+  data: { edgeSnapshots: any[] }
 }
 
 /**
@@ -98,14 +93,28 @@ export interface UpdateParentOperation extends BaseOperation {
   }
 }
 
+export interface BatchUpdateParentOperation extends BaseOperation {
+  type: 'batch-update-parent'
+  data: {
+    updates: Array<{
+      blockId: string
+      oldParentId?: string
+      newParentId?: string
+      oldPosition: { x: number; y: number }
+      newPosition: { x: number; y: number }
+      affectedEdges?: any[]
+    }>
+  }
+}
+
 export type Operation =
-  | AddBlockOperation
-  | RemoveBlockOperation
-  | AddEdgeOperation
-  | RemoveEdgeOperation
-  | MoveBlockOperation
-  | DuplicateBlockOperation
+  | BatchAddBlocksOperation
+  | BatchRemoveBlocksOperation
+  | BatchAddEdgesOperation
+  | BatchRemoveEdgesOperation
+  | BatchMoveBlocksOperation
   | UpdateParentOperation
+  | BatchUpdateParentOperation
 
 /**
  * Operation entry with forward and inverse operations.
@@ -125,110 +134,139 @@ interface OperationEntryOptions {
 }
 
 /**
- * Creates a mock add-block operation entry.
+ * Creates a mock batch-add-blocks operation entry.
  */
-export function createAddBlockEntry(
-  blockId: string,
-  options: OperationEntryOptions = {}
-): OperationEntry {
+export function createAddBlockEntry(blockId: string, options: OperationEntryOptions = {}): any {
   const { id = nanoid(8), workflowId = 'wf-1', userId = 'user-1', createdAt = Date.now() } = options
   const timestamp = Date.now()
+
+  const mockBlockSnapshot = {
+    id: blockId,
+    type: 'action',
+    name: `Block ${blockId}`,
+    position: { x: 0, y: 0 },
+  }
 
   return {
     id,
     createdAt,
     operation: {
       id: nanoid(8),
-      type: 'add-block',
+      type: 'batch-add-blocks',
       timestamp,
       workflowId,
       userId,
-      data: { blockId },
+      data: {
+        blockSnapshots: [mockBlockSnapshot],
+        edgeSnapshots: [],
+        subBlockValues: {},
+      },
     },
     inverse: {
       id: nanoid(8),
-      type: 'remove-block',
+      type: 'batch-remove-blocks',
       timestamp,
       workflowId,
       userId,
-      data: { blockId, blockSnapshot: null },
+      data: {
+        blockSnapshots: [mockBlockSnapshot],
+        edgeSnapshots: [],
+        subBlockValues: {},
+      },
     },
   }
 }
 
 /**
- * Creates a mock remove-block operation entry.
+ * Creates a mock batch-remove-blocks operation entry.
  */
 export function createRemoveBlockEntry(
   blockId: string,
-  blockSnapshot: BlockState | null = null,
+  blockSnapshot: any = null,
   options: OperationEntryOptions = {}
-): OperationEntry {
+): any {
   const { id = nanoid(8), workflowId = 'wf-1', userId = 'user-1', createdAt = Date.now() } = options
   const timestamp = Date.now()
+
+  const snapshotToUse = blockSnapshot || {
+    id: blockId,
+    type: 'action',
+    name: `Block ${blockId}`,
+    position: { x: 0, y: 0 },
+  }
 
   return {
     id,
     createdAt,
     operation: {
       id: nanoid(8),
-      type: 'remove-block',
+      type: 'batch-remove-blocks',
       timestamp,
       workflowId,
       userId,
-      data: { blockId, blockSnapshot },
+      data: {
+        blockSnapshots: [snapshotToUse],
+        edgeSnapshots: [],
+        subBlockValues: {},
+      },
     },
     inverse: {
       id: nanoid(8),
-      type: 'add-block',
+      type: 'batch-add-blocks',
       timestamp,
       workflowId,
       userId,
-      data: { blockId },
+      data: {
+        blockSnapshots: [snapshotToUse],
+        edgeSnapshots: [],
+        subBlockValues: {},
+      },
     },
   }
 }
 
 /**
- * Creates a mock add-edge operation entry.
+ * Creates a mock batch-add-edges operation entry for a single edge.
  */
 export function createAddEdgeEntry(
   edgeId: string,
+  edgeSnapshot: any = null,
   options: OperationEntryOptions = {}
-): OperationEntry {
+): any {
   const { id = nanoid(8), workflowId = 'wf-1', userId = 'user-1', createdAt = Date.now() } = options
   const timestamp = Date.now()
+
+  const snapshot = edgeSnapshot || { id: edgeId, source: 'block-1', target: 'block-2' }
 
   return {
     id,
     createdAt,
     operation: {
       id: nanoid(8),
-      type: 'add-edge',
+      type: 'batch-add-edges',
       timestamp,
       workflowId,
       userId,
-      data: { edgeId },
+      data: { edgeSnapshots: [snapshot] },
     },
     inverse: {
       id: nanoid(8),
-      type: 'remove-edge',
+      type: 'batch-remove-edges',
       timestamp,
       workflowId,
       userId,
-      data: { edgeId, edgeSnapshot: null },
+      data: { edgeSnapshots: [snapshot] },
     },
   }
 }
 
 /**
- * Creates a mock remove-edge operation entry.
+ * Creates a mock batch-remove-edges operation entry.
  */
-export function createRemoveEdgeEntry(
-  edgeId: string,
-  edgeSnapshot: Edge | null = null,
+export function createBatchRemoveEdgesEntry(
+  edgeSnapshots: any[],
   options: OperationEntryOptions = {}
-): OperationEntry {
+): any {
   const { id = nanoid(8), workflowId = 'wf-1', userId = 'user-1', createdAt = Date.now() } = options
   const timestamp = Date.now()
 
@@ -237,19 +275,19 @@ export function createRemoveEdgeEntry(
     createdAt,
     operation: {
       id: nanoid(8),
-      type: 'remove-edge',
+      type: 'batch-remove-edges',
       timestamp,
       workflowId,
       userId,
-      data: { edgeId, edgeSnapshot },
+      data: { edgeSnapshots },
     },
     inverse: {
       id: nanoid(8),
-      type: 'add-edge',
+      type: 'batch-add-edges',
       timestamp,
       workflowId,
       userId,
-      data: { edgeId },
+      data: { edgeSnapshots },
     },
   }
 }
@@ -260,12 +298,9 @@ interface MoveBlockOptions extends OperationEntryOptions {
 }
 
 /**
- * Creates a mock move-block operation entry.
+ * Creates a mock batch-move-blocks operation entry for a single block.
  */
-export function createMoveBlockEntry(
-  blockId: string,
-  options: MoveBlockOptions = {}
-): OperationEntry {
+export function createMoveBlockEntry(blockId: string, options: MoveBlockOptions = {}): any {
   const {
     id = nanoid(8),
     workflowId = 'wf-1',
@@ -281,53 +316,19 @@ export function createMoveBlockEntry(
     createdAt,
     operation: {
       id: nanoid(8),
-      type: 'move-block',
+      type: 'batch-move-blocks',
       timestamp,
       workflowId,
       userId,
-      data: { blockId, before, after },
+      data: { moves: [{ blockId, before, after }] },
     },
     inverse: {
       id: nanoid(8),
-      type: 'move-block',
+      type: 'batch-move-blocks',
       timestamp,
       workflowId,
       userId,
-      data: { blockId, before: after, after: before },
-    },
-  }
-}
-
-/**
- * Creates a mock duplicate-block operation entry.
- */
-export function createDuplicateBlockEntry(
-  sourceBlockId: string,
-  duplicatedBlockId: string,
-  duplicatedBlockSnapshot: BlockState,
-  options: OperationEntryOptions = {}
-): OperationEntry {
-  const { id = nanoid(8), workflowId = 'wf-1', userId = 'user-1', createdAt = Date.now() } = options
-  const timestamp = Date.now()
-
-  return {
-    id,
-    createdAt,
-    operation: {
-      id: nanoid(8),
-      type: 'duplicate-block',
-      timestamp,
-      workflowId,
-      userId,
-      data: { sourceBlockId, duplicatedBlockId, duplicatedBlockSnapshot },
-    },
-    inverse: {
-      id: nanoid(8),
-      type: 'remove-block',
-      timestamp,
-      workflowId,
-      userId,
-      data: { blockId: duplicatedBlockId, blockSnapshot: duplicatedBlockSnapshot },
+      data: { moves: [{ blockId, before: after, after: before }] },
     },
   }
 }
@@ -343,7 +344,7 @@ export function createUpdateParentEntry(
     oldPosition?: { x: number; y: number }
     newPosition?: { x: number; y: number }
   } = {}
-): OperationEntry {
+): any {
   const {
     id = nanoid(8),
     workflowId = 'wf-1',
@@ -379,6 +380,78 @@ export function createUpdateParentEntry(
         newParentId: oldParentId,
         oldPosition: newPosition,
         newPosition: oldPosition,
+      },
+    },
+  }
+}
+
+interface BatchUpdateParentOptions extends OperationEntryOptions {
+  updates?: Array<{
+    blockId: string
+    oldParentId?: string
+    newParentId?: string
+    oldPosition?: { x: number; y: number }
+    newPosition?: { x: number; y: number }
+    affectedEdges?: any[]
+  }>
+}
+
+/**
+ * Creates a mock batch-update-parent operation entry.
+ */
+export function createBatchUpdateParentEntry(options: BatchUpdateParentOptions = {}): any {
+  const {
+    id = nanoid(8),
+    workflowId = 'wf-1',
+    userId = 'user-1',
+    createdAt = Date.now(),
+    updates = [
+      {
+        blockId: 'block-1',
+        oldParentId: undefined,
+        newParentId: 'loop-1',
+        oldPosition: { x: 0, y: 0 },
+        newPosition: { x: 50, y: 50 },
+      },
+    ],
+  } = options
+  const timestamp = Date.now()
+
+  const processedUpdates = updates.map((u) => ({
+    blockId: u.blockId,
+    oldParentId: u.oldParentId,
+    newParentId: u.newParentId,
+    oldPosition: u.oldPosition || { x: 0, y: 0 },
+    newPosition: u.newPosition || { x: 50, y: 50 },
+    affectedEdges: u.affectedEdges,
+  }))
+
+  return {
+    id,
+    createdAt,
+    operation: {
+      id: nanoid(8),
+      type: 'batch-update-parent',
+      timestamp,
+      workflowId,
+      userId,
+      data: { updates: processedUpdates },
+    },
+    inverse: {
+      id: nanoid(8),
+      type: 'batch-update-parent',
+      timestamp,
+      workflowId,
+      userId,
+      data: {
+        updates: processedUpdates.map((u) => ({
+          blockId: u.blockId,
+          oldParentId: u.newParentId,
+          newParentId: u.oldParentId,
+          oldPosition: u.newPosition,
+          newPosition: u.oldPosition,
+          affectedEdges: u.affectedEdges,
+        })),
       },
     },
   }

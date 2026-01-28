@@ -82,3 +82,28 @@ export const gmailRemoveLabelTool: ToolConfig<GmailLabelParams, GmailToolRespons
     },
   },
 }
+
+export const gmailRemoveLabelV2Tool: ToolConfig<GmailLabelParams, GmailToolResponse> = {
+  id: 'gmail_remove_label_v2',
+  name: 'Gmail Remove Label',
+  description: 'Remove label(s) from a Gmail message',
+  version: '2.0.0',
+  oauth: gmailRemoveLabelTool.oauth,
+  params: gmailRemoveLabelTool.params,
+  request: gmailRemoveLabelTool.request,
+  transformResponse: async (response) => {
+    return await gmailRemoveLabelTool.transformResponse!(response)
+  },
+  outputs: {
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Updated email labels' },
+      },
+    },
+  },
+}

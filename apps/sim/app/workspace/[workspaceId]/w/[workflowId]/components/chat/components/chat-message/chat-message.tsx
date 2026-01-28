@@ -8,7 +8,6 @@ import {
   extractAllBase64Images,
   extractBase64Image,
   hasBase64Images,
-  isBase64,
   renderBs64Img,
 } from './constants'
 
@@ -206,16 +205,17 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {message.attachments && message.attachments.length > 0 && (
           <div className='mb-2 flex flex-wrap gap-[6px]'>
             {message.attachments.map((attachment) => {
-              const isImage = attachment.type.startsWith('image/')
               const hasValidDataUrl =
                 attachment.dataUrl?.trim() && attachment.dataUrl.startsWith('data:')
+              // Only treat as displayable image if we have both image type AND valid data URL
+              const canDisplayAsImage = attachment.type.startsWith('image/') && hasValidDataUrl
 
               return (
                 <div
                   key={attachment.id}
                   className={`group relative flex-shrink-0 overflow-hidden rounded-[6px] bg-[var(--surface-2)] ${
                     hasValidDataUrl ? 'cursor-pointer' : ''
-                  } ${isImage ? 'h-[40px] w-[40px]' : 'flex min-w-[80px] max-w-[120px] items-center justify-center px-[8px] py-[2px]'}`}
+                  } ${canDisplayAsImage ? 'h-[40px] w-[40px]' : 'flex min-w-[80px] max-w-[120px] items-center justify-center px-[8px] py-[2px]'}`}
                   onClick={(e) => {
                     if (hasValidDataUrl) {
                       e.preventDefault()
@@ -224,7 +224,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
                     }
                   }}
                 >
-                  {isImage && hasValidDataUrl ? (
+                  {canDisplayAsImage ? (
                     <img
                       src={attachment.dataUrl}
                       alt={attachment.name}
@@ -250,7 +250,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
         {formattedContent && !formattedContent.startsWith('Uploaded') && (
           <div className='rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[8px] py-[6px] transition-all duration-200'>
-            <div className='whitespace-pre-wrap break-words font-medium font-sans text-sm leading-[1.25rem]'>
+            <div className='whitespace-pre-wrap break-words font-medium font-sans text-[var(--text-primary)] text-sm leading-[1.25rem]'>
               <WordWrap text={formattedContent} />
             </div>
           </div>
@@ -264,42 +264,39 @@ export function ChatMessage({ message }: ChatMessageProps) {
       return null
     }
 
-    // If content is a pure base64 image, render it directly
-    if (typeof content === 'string' && isBase64(content)) {
-      const cleanedContent = content.replace(/\s+/g, '')
-      return renderBs64Img({ isBase64: true, imageData: cleanedContent })
-    }
+    try {
+      // If content is a string, check for mixed content (text + base64 images)
+      if (typeof content === 'string') {
+        const { textParts, base64Images } = extractBase64Image(content)
 
-    // If content is a string, check for mixed content (text + base64 images)
-    if (typeof content === 'string') {
-      const { textParts, base64Images } = extractBase64Image(content)
+        // If we found base64 images, render both text and images
+        if (base64Images.length > 0) {
+          return (
+            <>
+              {textParts.length > 0 && (
+                <ArenaCopilotMarkdownRenderer content={textParts.join('\n\n')} />
+              )}
+              {base64Images.map((imageData, index) => (
+                <div key={index}>{renderBs64Img({ isBase64: true, imageData })}</div>
+              ))}
+            </>
+          )
+        }
 
-      // If we found base64 images, render both text and images
-      if (base64Images.length > 0) {
-        return (
-          <>
-            {textParts.length > 0 && (
-              <ArenaCopilotMarkdownRenderer content={textParts.join('\n\n')} />
-            )}
-            {base64Images.map((imageData, index) => (
-              <div key={index}>{renderBs64Img({ isBase64: true, imageData })}</div>
-            ))}
-          </>
-        )
+        // If no base64 images, just render as markdown
+        // return <ArenaCopilotMarkdownRenderer content={content} />
       }
 
-      // If no base64 images, just render as markdown
-      if (formattedContent) {
-        return <ArenaCopilotMarkdownRenderer content={formattedContent} />
-      }
+      // For other content types, render as markdown
+      return <ArenaCopilotMarkdownRenderer content={content} />
+    } catch (error) {
+      console.error('Error rendering message content:', error)
+      return (
+        <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>
+          <p className='text-sm'>⚠️ Error displaying content. Please try refreshing the chat.</p>
+        </div>
+      )
     }
-
-    // For other content types, use formatted content
-    if (formattedContent) {
-      return <ArenaCopilotMarkdownRenderer content={formattedContent} />
-    }
-
-    return null
   }
 
   return (

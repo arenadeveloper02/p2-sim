@@ -2,10 +2,14 @@
 
 import { useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { Badge, Button } from '@/components/emcn'
-import { UserAvatar } from '@/components/user-avatar/user-avatar'
+import { Avatar, AvatarFallback, AvatarImage, Badge, Button } from '@/components/emcn'
+import { getUserColor } from '@/lib/workspaces/colors'
 import type { Invitation, Member, Organization } from '@/lib/workspaces/organization'
-import { useCancelInvitation, useOrganizationMembers } from '@/hooks/queries/organization'
+import {
+  useCancelInvitation,
+  useOrganizationMembers,
+  useResendInvitation,
+} from '@/hooks/queries/organization'
 
 const logger = createLogger('TeamMembers')
 
@@ -45,17 +49,18 @@ export function TeamMembers({
   isAdminOrOwner,
   onRemoveMember,
 }: TeamMembersProps) {
-  // Track which invitations are being cancelled for individual loading states
   const [cancellingInvitations, setCancellingInvitations] = useState<Set<string>>(new Set())
+  const [resendingInvitations, setResendingInvitations] = useState<Set<string>>(new Set())
+  const [resentInvitations, setResentInvitations] = useState<Set<string>>(new Set())
+  const [resendCooldowns, setResendCooldowns] = useState<Record<string, number>>({})
 
-  // Fetch member usage data using React Query
   const { data: memberUsageResponse, isLoading: isLoadingUsage } = useOrganizationMembers(
     organization?.id || ''
   )
 
   const cancelInvitationMutation = useCancelInvitation()
+  const resendInvitationMutation = useResendInvitation()
 
-  // Build usage data map from response
   const memberUsageData: Record<string, number> = {}
   if (memberUsageResponse?.data) {
     memberUsageResponse.data.forEach(
@@ -67,10 +72,8 @@ export function TeamMembers({
     )
   }
 
-  // Combine members and pending invitations into a single list
   const teamItems: TeamMemberItem[] = []
 
-  // Add existing members
   if (organization.members) {
     organization.members.forEach((member: Member) => {
       const userId = member.user?.id
@@ -94,7 +97,6 @@ export function TeamMembers({
     })
   }
 
-  // Add pending invitations
   const pendingInvitations = organization.invitations?.filter(
     (invitation) => invitation.status === 'pending'
   )
@@ -109,7 +111,7 @@ export function TeamMembers({
         email: invitation.email,
         avatarInitial: emailPrefix.charAt(0).toUpperCase(),
         avatarUrl: null,
-        userId: invitation.email, // Use email as fallback for color generation
+        userId: invitation.email,
         usage: '-',
         invitation,
       }
@@ -122,7 +124,6 @@ export function TeamMembers({
     return <div className='text-center text-[var(--text-muted)] text-sm'>No team members yet.</div>
   }
 
-  // Check if current user can leave (is a member but not owner)
   const currentUserMember = organization.members?.find((m) => m.user?.email === currentUserEmail)
   const canLeaveOrganization =
     currentUserMember && currentUserMember.role !== 'owner' && currentUserMember.user?.id
@@ -147,26 +148,77 @@ export function TeamMembers({
     }
   }
 
+  const handleResendInvitation = async (invitationId: string) => {
+    if (!organization?.id) return
+
+    const secondsLeft = resendCooldowns[invitationId]
+    if (secondsLeft && secondsLeft > 0) return
+
+    setResendingInvitations((prev) => new Set([...prev, invitationId]))
+    try {
+      await resendInvitationMutation.mutateAsync({
+        invitationId,
+        orgId: organization.id,
+      })
+
+      setResentInvitations((prev) => new Set([...prev, invitationId]))
+      setTimeout(() => {
+        setResentInvitations((prev) => {
+          const next = new Set(prev)
+          next.delete(invitationId)
+          return next
+        })
+      }, 4000)
+
+      // Start 60s cooldown
+      setResendCooldowns((prev) => ({ ...prev, [invitationId]: 60 }))
+      const interval = setInterval(() => {
+        setResendCooldowns((prev) => {
+          const current = prev[invitationId]
+          if (current === undefined) return prev
+          if (current <= 1) {
+            const next = { ...prev }
+            delete next[invitationId]
+            clearInterval(interval)
+            return next
+          }
+          return { ...prev, [invitationId]: current - 1 }
+        })
+      }, 1000)
+    } catch (error) {
+      logger.error('Failed to resend invitation', { error })
+    } finally {
+      setResendingInvitations((prev) => {
+        const next = new Set(prev)
+        next.delete(invitationId)
+        return next
+      })
+    }
+  }
+
   return (
     <div className='flex flex-col gap-[16px]'>
-      {/* Header - simple like account page */}
+      {/* Header */}
       <div>
         <h4 className='font-medium text-[14px] text-[var(--text-primary)]'>Team Members</h4>
       </div>
 
-      {/* Members list - clean like account page */}
-      <div className='flex flex-col gap-[16px]'>
+      {/* Members list */}
+      <div className='flex flex-col gap-[8px]'>
         {teamItems.map((item) => (
           <div key={item.id} className='flex items-center justify-between'>
             {/* Left section: Avatar + Name/Role + Action buttons */}
             <div className='flex flex-1 items-center gap-[12px]'>
               {/* Avatar */}
-              <UserAvatar
-                userId={item.userId || item.email}
-                userName={item.name}
-                avatarUrl={item.avatarUrl}
-                size={32}
-              />
+              <Avatar className='h-9 w-9'>
+                {item.avatarUrl && <AvatarImage src={item.avatarUrl} alt={item.name} />}
+                <AvatarFallback
+                  style={{ background: getUserColor(item.userId || item.email) }}
+                  className='border-0 text-white'
+                >
+                  {item.avatarInitial}
+                </AvatarFallback>
+              </Avatar>
 
               {/* Name and email */}
               <div className='min-w-0'>
@@ -183,32 +235,60 @@ export function TeamMembers({
                     </Badge>
                   )}
                   {item.type === 'invitation' && (
-                    <Badge variant='amber' size='sm'>
+                    <Badge variant='gray-secondary' size='sm'>
                       Pending
                     </Badge>
                   )}
                 </div>
-                <div className='truncate text-[12px] text-[var(--text-muted)]'>{item.email}</div>
+                <div className='truncate text-[13px] text-[var(--text-muted)]'>{item.email}</div>
               </div>
 
-              {/* Action buttons */}
-              {isAdminOrOwner && (
-                <>
-                  {/* Admin/Owner can remove other members */}
-                  {item.type === 'member' &&
-                    item.role !== 'owner' &&
-                    item.email !== currentUserEmail && (
-                      <Button
-                        variant='ghost'
-                        onClick={() => onRemoveMember(item.member)}
-                        className='h-8'
-                      >
-                        Remove
-                      </Button>
-                    )}
+              {/* Action buttons for members */}
+              {isAdminOrOwner &&
+                item.type === 'member' &&
+                item.role !== 'owner' &&
+                item.email !== currentUserEmail && (
+                  <Button
+                    variant='ghost'
+                    onClick={() => onRemoveMember(item.member)}
+                    className='h-8'
+                  >
+                    Remove
+                  </Button>
+                )}
+            </div>
 
-                  {/* Admin can cancel invitations */}
-                  {item.type === 'invitation' && (
+            {/* Right section */}
+            {isAdminOrOwner && (
+              <div className='ml-[16px] flex flex-col items-end'>
+                {item.type === 'member' ? (
+                  <>
+                    <div className='text-[12px] text-[var(--text-muted)]'>Usage</div>
+                    <div className='font-medium text-[12px] text-[var(--text-primary)] tabular-nums'>
+                      {isLoadingUsage ? (
+                        <span className='inline-block h-3 w-12 animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
+                      ) : (
+                        item.usage
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className='flex items-center gap-[4px]'>
+                    <Button
+                      variant='ghost'
+                      onClick={() => handleResendInvitation(item.invitation.id)}
+                      disabled={
+                        resendingInvitations.has(item.invitation.id) ||
+                        (resendCooldowns[item.invitation.id] ?? 0) > 0
+                      }
+                      className='h-8'
+                    >
+                      {resendingInvitations.has(item.invitation.id)
+                        ? 'Sending...'
+                        : resendCooldowns[item.invitation.id]
+                          ? `Resend (${resendCooldowns[item.invitation.id]}s)`
+                          : 'Resend'}
+                    </Button>
                     <Button
                       variant='ghost'
                       onClick={() => handleCancelInvitation(item.invitation.id)}
@@ -217,22 +297,8 @@ export function TeamMembers({
                     >
                       {cancellingInvitations.has(item.invitation.id) ? 'Cancelling...' : 'Cancel'}
                     </Button>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Right section: Usage column (right-aligned) */}
-            {isAdminOrOwner && (
-              <div className='ml-[16px] flex flex-col items-end'>
-                <div className='text-[12px] text-[var(--text-muted)]'>Usage</div>
-                <div className='font-medium text-[12px] text-[var(--text-primary)] tabular-nums'>
-                  {isLoadingUsage && item.type === 'member' ? (
-                    <span className='inline-block h-3 w-12 animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
-                  ) : (
-                    item.usage
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

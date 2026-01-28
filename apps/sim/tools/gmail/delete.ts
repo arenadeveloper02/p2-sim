@@ -75,3 +75,28 @@ export const gmailDeleteTool: ToolConfig<GmailMarkReadParams, GmailToolResponse>
     },
   },
 }
+
+export const gmailDeleteV2Tool: ToolConfig<GmailMarkReadParams, GmailToolResponse> = {
+  id: 'gmail_delete_v2',
+  name: 'Gmail Delete',
+  description: 'Delete a Gmail message (move to trash)',
+  version: '2.0.0',
+  oauth: gmailDeleteTool.oauth,
+  params: gmailDeleteTool.params,
+  request: gmailDeleteTool.request,
+  transformResponse: async (response) => {
+    return await gmailDeleteTool.transformResponse!(response)
+  },
+  outputs: {
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Updated email labels' },
+      },
+    },
+  },
+}

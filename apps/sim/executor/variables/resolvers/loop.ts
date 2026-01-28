@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { isReference, normalizeName, parseReferencePath, REFERENCE } from '@/executor/constants'
+import { InvalidFieldError } from '@/executor/utils/block-reference'
 import { extractBaseBlockId } from '@/executor/utils/subflow-utils'
 import {
   navigatePath,
@@ -28,6 +29,8 @@ export class LoopResolver implements Resolver {
     }
   }
 
+  private static KNOWN_PROPERTIES = ['iteration', 'index', 'item', 'currentItem', 'items']
+
   canResolve(reference: string): boolean {
     if (!isReference(reference)) {
       return false
@@ -47,8 +50,8 @@ export class LoopResolver implements Resolver {
 
   resolve(reference: string, context: ResolutionContext): any {
     const parts = parseReferencePath(reference)
-    if (parts.length < 2) {
-      logger.warn('Invalid loop reference - missing property', { reference })
+    if (parts.length === 0) {
+      logger.warn('Invalid loop reference', { reference })
       return undefined
     }
 
@@ -94,6 +97,27 @@ export class LoopResolver implements Resolver {
       return undefined
     }
 
+    const isForEach = loopId ? this.isForEachLoop(loopId) : loopScope.items !== undefined
+
+    if (parts.length === 1) {
+      const result: Record<string, any> = {
+        index: loopScope.iteration,
+      }
+      if (loopScope.item !== undefined) {
+        result.currentItem = loopScope.item
+      }
+      if (loopScope.items !== undefined) {
+        result.items = loopScope.items
+      }
+      return result
+    }
+
+    // property and pathParts are already destructured on line 58
+    if (!LoopResolver.KNOWN_PROPERTIES.includes(property)) {
+      const availableFields = isForEach ? ['index', 'currentItem', 'items'] : ['index']
+      throw new InvalidFieldError('loop', property, availableFields)
+    }
+
     let value: any
     switch (property) {
       case 'iteration':
@@ -128,7 +152,6 @@ export class LoopResolver implements Resolver {
         return undefined
     }
 
-    // If there are additional path parts, navigate deeper
     if (pathParts.length > 0) {
       return navigatePath(value, pathParts)
     }
@@ -146,5 +169,10 @@ export class LoopResolver implements Resolver {
     }
 
     return undefined
+  }
+
+  private isForEachLoop(loopId: string): boolean {
+    const loopConfig = this.workflow.loops?.[loopId]
+    return loopConfig?.loopType === 'forEach'
   }
 }

@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { ALL_TAG_SLOTS } from '@/lib/knowledge/constants'
 import { getDocumentTagDefinitions } from '@/lib/knowledge/tags/service'
@@ -359,6 +360,15 @@ export async function POST(request: NextRequest) {
       }
       if (hasQuery && (rerankConfig.enabled ?? true)) {
         results = await rerankSearchResults(validatedData.query!, results, rerankConfig)
+      }
+      try {
+        PlatformEvents.knowledgeBaseSearched({
+          knowledgeBaseId: accessibleKbIds[0],
+          resultsCount: results.length,
+          workspaceId: workspaceId || undefined,
+        })
+      } catch {
+        // Telemetry should not fail the operation
       }
 
       return NextResponse.json({
