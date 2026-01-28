@@ -27,6 +27,7 @@ export class ExecutionEngine {
   private allowResumeTriggers: boolean
   private cancelledFlag = false
   private errorFlag = false
+  private stoppedEarlyFlag = false
   private executionError: Error | null = null
   private skippedFlag = false // Track if workflow was skipped
   private lastCancellationCheck = 0
@@ -261,6 +262,16 @@ export class ExecutionEngine {
   }
 
   private initializeQueue(triggerBlockId?: string): void {
+    if (this.context.runFromBlockContext) {
+      const { startBlockId } = this.context.runFromBlockContext
+      logger.info('Initializing queue for run-from-block mode', {
+        startBlockId,
+        dirtySetSize: this.context.runFromBlockContext.dirtySet.size,
+      })
+      this.addToQueue(startBlockId)
+      return
+    }
+
     const pendingBlocks = this.context.metadata.pendingBlocks
     const remainingEdges = (this.context.metadata as any).remainingEdges
 
