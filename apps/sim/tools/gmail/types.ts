@@ -159,6 +159,10 @@ export interface ThreadedEmailMessage {
     context: string | null
     content: string | null
   }>
+  /**
+   * Array of replies to this message. Each reply can have its own nested replies array,
+   * creating a hierarchical tree structure.
+   */
   replies?: ThreadedEmailMessage[]
 }
 
