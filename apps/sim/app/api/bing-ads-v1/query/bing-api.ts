@@ -11,10 +11,12 @@ export interface BingAdsApiRequest {
   accountId: string
   reportType: string
   columns: string[]
+  datePreset?: string
   timeRange?: {
     start: string
     end: string
   }
+  aggregation?: string
   filters?: any[]
 }
 
@@ -39,49 +41,7 @@ export async function makeBingAdsRequest(request: BingAdsApiRequest): Promise<Bi
       columnsCount: request.columns.length 
     })
 
-    // Get Bing Ads API credentials
-    const clientId = process.env.BING_ADS_CLIENT_ID
-    const clientSecret = process.env.BING_ADS_CLIENT_SECRET
-    const refreshToken = process.env.BING_ADS_REFRESH_TOKEN
-    const developerToken = process.env.BING_ADS_DEVELOPER_TOKEN
-
-    if (!clientId || !clientSecret || !refreshToken || !developerToken) {
-      throw new Error('Bing Ads API credentials not configured')
-    }
-
-    // Build report request
-    const reportRequest = {
-      ReportType: request.reportType,
-      Format: 'Json',
-      Language: 'English',
-      ReportName: `Bing Ads Report - ${request.reportType}`,
-      ReturnOnlyCompleteData: false,
-      Columns: request.columns.map(col => ({ Name: col })),
-      Scope: {
-        AccountIds: [request.accountId],
-        Campaigns: null,
-        AdGroups: null
-      },
-      Time: request.timeRange ? {
-        CustomDateRangeStart: {
-          Day: parseInt(request.timeRange.start.split('-')[2]),
-          Month: parseInt(request.timeRange.start.split('-')[1]),
-          Year: parseInt(request.timeRange.start.split('-')[0])
-        },
-        CustomDateRangeEnd: {
-          Day: parseInt(request.timeRange.end.split('-')[2]),
-          Month: parseInt(request.timeRange.end.split('-')[1]),
-          Year: parseInt(request.timeRange.end.split('-')[0])
-        },
-        PredefinedTime: null
-      } : {
-        PredefinedTime: 'Last30Days',
-        CustomDateRangeStart: null,
-        CustomDateRangeEnd: null
-      }
-    }
-
-    // Make actual Bing Ads API call
+    // Credentials are checked in the old Bing Ads API, no need to check here
     logger.info('Making actual Bing Ads API call', {
       reportType: request.reportType,
       accountId: request.accountId
@@ -92,32 +52,72 @@ export async function makeBingAdsRequest(request: BingAdsApiRequest): Promise<Bi
     const { makeBingAdsRequest: realBingAdsRequest } = await import('../../bing-ads/query/bing-ads-api')
     
     // Convert v1 request to old format ParsedBingQuery
+    // Add required fields that the old API expects
+    const enhancedColumns = [...request.columns]
+    
+    // Ensure AccountName and AccountId are always included (old API requirement)
+    if (!enhancedColumns.includes('AccountName')) {
+      enhancedColumns.unshift('AccountName')
+    }
+    if (!enhancedColumns.includes('AccountId')) {
+      enhancedColumns.splice(1, 0, 'AccountId')
+    }
+    
+    // For CampaignPerformance, ensure CampaignName and CampaignId are included
+    if (request.reportType === 'CampaignPerformance') {
+      if (!enhancedColumns.includes('CampaignName')) {
+        enhancedColumns.push('CampaignName')
+      }
+      if (!enhancedColumns.includes('CampaignId')) {
+        enhancedColumns.push('CampaignId')
+      }
+    }
+    
+    // Use timeRange if provided, otherwise fallback to datePreset
     const parsedQuery: ParsedBingQuery = {
       reportType: request.reportType,
-      columns: request.columns,
-      timeRange: request.timeRange,
+      columns: enhancedColumns,
+      timeRange: request.timeRange, // Use custom dates if provided
       filters: request.filters,
-      datePreset: undefined,
-      aggregation: undefined,
+      datePreset: request.datePreset || 'Last30Days',
+      aggregation: request.aggregation || 'Summary',
       campaignFilter: undefined
     }
+    
+    logger.info('Converted to ParsedBingQuery', { 
+      parsedQuery,
+      hasTimeRange: !!parsedQuery.timeRange,
+      timeRangeStart: parsedQuery.timeRange?.start,
+      timeRangeEnd: parsedQuery.timeRange?.end,
+      datePreset: parsedQuery.datePreset
+    })
 
     const apiResult = await realBingAdsRequest(request.accountId, parsedQuery)
     
     logger.info('Bing Ads API call completed', {
       success: apiResult.success,
       hasData: !!apiResult.data,
-      rowsCount: apiResult.data?.length || 0
+      hasError: !!apiResult.error,
+      errorMessage: apiResult.error,
+      rowsCount: apiResult.data?.length || 0,
+      campaigns: apiResult.campaigns?.length || 0
     })
 
     return apiResult
 
   } catch (error) {
-    logger.error('Bing Ads API request failed', { error, request })
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorStack = error instanceof Error ? error.stack : undefined
+    logger.error('Bing Ads API request failed', { 
+      errorMessage,
+      errorStack,
+      errorType: error?.constructor?.name,
+      request 
+    })
     
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: errorMessage
     }
   }
 }

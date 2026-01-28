@@ -279,8 +279,47 @@ function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery):
   const columns = Array.from(new Set([...config.requiredColumns, ...requested]))
 
   const aggregation = parsedQuery.aggregation || 'Summary'
-  const predefinedTime = parsedQuery.datePreset || 'LastSevenDays'
   const reportName = `${reportType}_${new Date().toISOString()}`
+
+  // Build Time element - use CustomDateRange if timeRange provided, otherwise use PredefinedTime
+  let timeElement = ''
+  if (parsedQuery.timeRange && parsedQuery.timeRange.start && parsedQuery.timeRange.end) {
+    const startParts = parsedQuery.timeRange.start.split('-')
+    const endParts = parsedQuery.timeRange.end.split('-')
+    
+    logger.info('Building custom date range XML', {
+      start: parsedQuery.timeRange.start,
+      end: parsedQuery.timeRange.end,
+      startParts,
+      endParts,
+      startDay: parseInt(startParts[2]),
+      startMonth: parseInt(startParts[1]),
+      startYear: parseInt(startParts[0]),
+      endDay: parseInt(endParts[2]),
+      endMonth: parseInt(endParts[1]),
+      endYear: parseInt(endParts[0])
+    })
+    
+    timeElement = `<Time i:nil="false">
+    <CustomDateRangeStart>
+      <Day>${parseInt(startParts[2])}</Day>
+      <Month>${parseInt(startParts[1])}</Month>
+      <Year>${parseInt(startParts[0])}</Year>
+    </CustomDateRangeStart>
+    <CustomDateRangeEnd>
+      <Day>${parseInt(endParts[2])}</Day>
+      <Month>${parseInt(endParts[1])}</Month>
+      <Year>${parseInt(endParts[0])}</Year>
+    </CustomDateRangeEnd>
+    <ReportTimeZone i:nil="false">PacificTimeUSCanadaTijuana</ReportTimeZone>
+  </Time>`
+  } else {
+    const predefinedTime = parsedQuery.datePreset || 'LastSevenDays'
+    timeElement = `<Time i:nil="false">
+    <PredefinedTime i:nil="false">${escapeXml(predefinedTime)}</PredefinedTime>
+    <ReportTimeZone i:nil="false">PacificTimeUSCanadaTijuana</ReportTimeZone>
+  </Time>`
+  }
 
   return `<ReportRequest i:nil="false" i:type="${config.xmlType}" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
   <ExcludeColumnHeaders i:nil="false">false</ExcludeColumnHeaders>
@@ -299,10 +338,7 @@ function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery):
       <a1:long>${escapeXml(accountId)}</a1:long>
     </AccountIds>
   </Scope>
-  <Time i:nil="false">
-    <PredefinedTime i:nil="false">${escapeXml(predefinedTime)}</PredefinedTime>
-    <ReportTimeZone i:nil="false">PacificTimeUSCanadaTijuana</ReportTimeZone>
-  </Time>
+  ${timeElement}
 </ReportRequest>`
 }
 

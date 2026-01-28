@@ -19,8 +19,21 @@ export function processResults(apiResult: any, requestId: string): ProcessedResu
   try {
     logger.info(`[${requestId}] Processing Bing Ads results`, {
       hasData: !!apiResult.data,
-      hasRows: !!apiResult.rows
+      hasRows: !!apiResult.rows,
+      hasCampaigns: !!apiResult.campaigns
     })
+
+    // If API returned campaigns (old Bing Ads API format), use them
+    if (apiResult.campaigns && Array.isArray(apiResult.campaigns)) {
+      const processedRows = apiResult.campaigns.map((row: Record<string, any>) => formatRow(row))
+      
+      return {
+        rows: processedRows,
+        row_count: processedRows.length,
+        total_rows: processedRows.length,
+        totals: calculateTotals(processedRows)
+      }
+    }
 
     // If API returned rows directly, use them
     if (apiResult.rows && Array.isArray(apiResult.rows)) {
@@ -82,44 +95,28 @@ export function processResults(apiResult: any, requestId: string): ProcessedResu
  * @returns Formatted row data
  */
 function formatRow(row: Record<string, any>): any {
-  const formatted: any = {}
-
-  // Convert micros to dollars for spend/cost fields
-  for (const [key, value] of Object.entries(row)) {
-    if (key.toLowerCase().includes('spend') || key.toLowerCase().includes('cost')) {
-      formatted[key] = typeof value === 'number' ? value / MICROS_PER_DOLLAR : value
-    } else if (key.toLowerCase().includes('ctr')) {
-      // Convert CTR from decimal to percentage
-      formatted[key] = typeof value === 'number' ? value * 100 : value
-    } else {
-      formatted[key] = value
-    }
-  }
-
-  return formatted
+  // Bing Ads already returns data in correct format (dollars, percentages)
+  // No conversion needed - return data as-is
+  return row
 }
 
 /**
  * Calculates totals for numeric columns
+ * CTR, avg_cpc, and cost_per_conversion are calculated, not summed
  * 
  * @param rows - Array of formatted rows
- * @returns Totals object with summed values
+ * @returns Totals object with summed/calculated values
  */
 function calculateTotals(rows: Record<string, any>[]): Record<string, number> {
   if (!rows.length) return {}
 
   const totals: Record<string, number> = {}
-  const numericColumns = new Set<string>()
-
-  // Find numeric columns from first row
-  for (const [key, value] of Object.entries(rows[0])) {
-    if (typeof value === 'number') {
-      numericColumns.add(key)
-    }
-  }
-
-  // Sum each numeric column
-  for (const column of numericColumns) {
+  
+  // Columns that should be summed
+  const sumColumns = ['impressions', 'clicks', 'spend', 'conversions', 'cost']
+  
+  // Sum the appropriate columns
+  for (const column of sumColumns) {
     let sum = 0
     for (const row of rows) {
       if (typeof row[column] === 'number') {
@@ -127,6 +124,27 @@ function calculateTotals(rows: Record<string, any>[]): Record<string, number> {
       }
     }
     totals[column] = sum
+  }
+  
+  // Calculate derived metrics
+  const totalClicks = totals.clicks || 0
+  const totalImpressions = totals.impressions || 0
+  const totalSpend = totals.spend || 0
+  const totalConversions = totals.conversions || 0
+  
+  // CTR = (total clicks / total impressions) * 100
+  if (totalImpressions > 0) {
+    totals.ctr = (totalClicks / totalImpressions) * 100
+  }
+  
+  // Avg CPC = total spend / total clicks
+  if (totalClicks > 0) {
+    totals.avg_cpc = totalSpend / totalClicks
+  }
+  
+  // Cost per conversion = total spend / total conversions
+  if (totalConversions > 0) {
+    totals.cost_per_conversion = totalSpend / totalConversions
   }
 
   return totals

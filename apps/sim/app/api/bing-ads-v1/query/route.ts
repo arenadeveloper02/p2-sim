@@ -15,6 +15,93 @@ import type { BingAdsV1Request } from './types'
 const logger = createLogger('BingAdsV1API')
 
 /**
+ * Convert date preset to actual date string
+ */
+function getDateFromPreset(preset: string, type: 'start' | 'end'): string {
+  const today = new Date()
+  const formatDate = (d: Date) => d.toISOString().split('T')[0]
+
+  switch (preset) {
+    case 'Today':
+      return formatDate(today)
+
+    case 'Yesterday': {
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      return formatDate(yesterday)
+    }
+
+    case 'LastSevenDays': {
+      // Last 7 days excludes today, ends on yesterday
+      const yesterday = new Date(today)
+      yesterday.setDate(today.getDate() - 1)
+      if (type === 'end') return formatDate(yesterday)
+      const start = new Date(yesterday)
+      start.setDate(yesterday.getDate() - 6)
+      return formatDate(start)
+    }
+
+    case 'Last14Days': {
+      // Last 14 days excludes today, ends on yesterday
+      const yesterday = new Date(today)
+      yesterday.setDate(today.getDate() - 1)
+      if (type === 'end') return formatDate(yesterday)
+      const start = new Date(yesterday)
+      start.setDate(yesterday.getDate() - 13)
+      return formatDate(start)
+    }
+
+    case 'Last30Days': {
+      // Last 30 days excludes today, ends on yesterday
+      const yesterday = new Date(today)
+      yesterday.setDate(today.getDate() - 1)
+      if (type === 'end') return formatDate(yesterday)
+      const start = new Date(yesterday)
+      start.setDate(yesterday.getDate() - 29)
+      return formatDate(start)
+    }
+
+    case 'ThisWeek': {
+      const dayOfWeek = today.getDay()
+      const start = new Date(today)
+      start.setDate(today.getDate() - dayOfWeek)
+      if (type === 'start') return formatDate(start)
+      return formatDate(today)
+    }
+
+    case 'LastWeek': {
+      const dayOfWeek = today.getDay()
+      const lastWeekEnd = new Date(today)
+      lastWeekEnd.setDate(today.getDate() - dayOfWeek - 1)
+      const lastWeekStart = new Date(lastWeekEnd)
+      lastWeekStart.setDate(lastWeekEnd.getDate() - 6)
+      if (type === 'start') return formatDate(lastWeekStart)
+      return formatDate(lastWeekEnd)
+    }
+
+    case 'ThisMonth': {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      if (type === 'start') return formatDate(start)
+      return formatDate(today)
+    }
+
+    case 'LastMonth': {
+      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0)
+      if (type === 'start') return formatDate(lastMonth)
+      return formatDate(lastMonthEnd)
+    }
+
+    default:
+      // Default to last 30 days
+      if (type === 'end') return formatDate(today)
+      const start = new Date(today)
+      start.setDate(start.getDate() - 30)
+      return formatDate(start)
+  }
+}
+
+/**
  * POST /api/bing-ads-v1/query
  *
  * Handles Bing Ads V1 query requests
@@ -80,8 +167,10 @@ export async function POST(request: NextRequest) {
     // Generate Bing Ads query using AI
     const queryResult = await generateBingAdsQuery(query)
 
-    logger.info(`[${requestId}] Generated Bing Ads query`, {
-      bingQuery: queryResult.bing_query,
+    logger.info(`[${requestId}] Generated Bing Ads parameters`, {
+      reportType: queryResult.reportType,
+      columns: queryResult.columns,
+      timeRange: queryResult.timeRange,
       queryType: queryResult.query_type,
       tables: queryResult.tables_used,
       metrics: queryResult.metrics_used,
@@ -90,8 +179,15 @@ export async function POST(request: NextRequest) {
     // Execute the Bing Ads query against Bing Ads API
     logger.info(`[${requestId}] Executing Bing Ads query against account ${accountInfo.id}`)
     
-    // Parse the generated query to extract report parameters
-    const apiRequest = parseQueryToApiRequest(queryResult.bing_query, accountInfo.id)
+    // Convert the AI response to API request format
+    const apiRequest = {
+      accountId: accountInfo.id,
+      reportType: queryResult.reportType,
+      columns: queryResult.columns,
+      datePreset: queryResult.datePreset,
+      timeRange: queryResult.timeRange,
+      aggregation: queryResult.aggregation
+    }
     const apiResult = await makeBingAdsRequest(apiRequest)
 
     // Process results
@@ -110,6 +206,21 @@ export async function POST(request: NextRequest) {
       executionTime,
     })
 
+    // Handle date range - use timeRange if provided, otherwise calculate from datePreset
+    let datePreset, calculatedTimeRange
+    if (queryResult.timeRange && queryResult.timeRange.start && queryResult.timeRange.end) {
+      // Custom date range was used
+      datePreset = null
+      calculatedTimeRange = queryResult.timeRange
+    } else {
+      // Date preset was used
+      datePreset = queryResult.datePreset || 'Last30Days'
+      calculatedTimeRange = {
+        start: getDateFromPreset(datePreset, 'start'),
+        end: getDateFromPreset(datePreset, 'end')
+      }
+    }
+
     // Build response
     const response = {
       success: true,
@@ -118,7 +229,10 @@ export async function POST(request: NextRequest) {
         id: accountInfo.id,
         name: accountInfo.name,
       },
-      bing_query: queryResult.bing_query,
+      reportType: queryResult.reportType,
+      columns: queryResult.columns,
+      datePreset: datePreset,
+      timeRange: calculatedTimeRange,
       query_type: queryResult.query_type,
       tables_used: queryResult.tables_used,
       metrics_used: queryResult.metrics_used,
@@ -151,33 +265,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * Parses generated Bing Ads query into API request parameters
- * 
- * @param query - Generated Bing Ads query
- * @param accountId - Account ID
- * @returns API request parameters
- */
-function parseQueryToApiRequest(query: string, accountId: string) {
-  // Simple parsing - extract report type and columns
-  // TODO: Implement more sophisticated parsing
-  
-  const reportTypeMatch = query.match(/FROM (\w+)/)
-  const reportType = reportTypeMatch ? reportTypeMatch[1] : 'CampaignPerformance'
-  
-  const columnsMatch = query.match(/SELECT (.+?) FROM/)
-  const columns = columnsMatch ? columnsMatch[1].split(',').map((c: string) => c.trim()) : ['CampaignId', 'CampaignName', 'Spend']
-  
-  const timeRangeMatch = query.match(/TimeRange = \{'([^']+)', '([^']+)'\}/)
-  const timeRange = timeRangeMatch ? {
-    start: timeRangeMatch[1],
-    end: timeRangeMatch[2]
-  } : undefined
-
-  return {
-    accountId,
-    reportType,
-    columns,
-    timeRange
-  }
-}

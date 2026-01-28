@@ -8,7 +8,14 @@ export interface BingAdsV1Request {
 }
 
 export interface BingAdsQueryResponse {
-  bing_query: string
+  reportType: string
+  columns: string[]
+  datePreset?: string
+  timeRange?: {
+    start: string
+    end: string
+  }
+  aggregation?: string
   query_type?: string
   tables_used?: string[]
   metrics_used?: string[]

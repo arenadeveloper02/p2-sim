@@ -55,7 +55,7 @@ function addDefaultDateFilter(query: string): {
 }
 
 /**
- * Parses AI response and extracts Bing Ads query
+ * Parses AI response and extracts Bing Ads parameters
  *
  * @param aiResponse - Response from AI provider
  * @returns Parsed Bing Ads response
@@ -72,41 +72,50 @@ function parseAIResponse(aiResponse: any): BingAdsQueryResponse {
 
   // Try to extract JSON from response
   const jsonMatch = responseContent.match(/\{[\s\S]*\}/)
-  const parsed: BingAdsQueryResponse = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(responseContent)
+  const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(responseContent)
 
-  if (!parsed.bing_query) {
-    throw new Error('AI did not return a Bing Ads query')
+  // Check for valid Bing Ads parameters
+  if (!parsed.reportType || !parsed.columns) {
+    throw new Error('AI did not return valid Bing Ads parameters')
   }
 
   return parsed
 }
 
 /**
- * Validates and fixes Bing Ads query date filtering
+ * Validates and fixes Bing Ads parameters date filtering
  *
  * @param response - Parsed Bing Ads response
  * @returns Response with validated/fixed date filtering
  */
 function validateDateFiltering(response: BingAdsQueryResponse): BingAdsQueryResponse {
-  const hasDateFilter =
-    response.bing_query.includes('TimeRange') && response.bing_query.includes('BETWEEN')
+  const hasDatePreset = response.datePreset
+  const hasTimeRange = response.timeRange && response.timeRange.start && response.timeRange.end
 
-  if (!hasDateFilter) {
-    logger.warn('Query missing TimeRange date filter, adding default last 30 days ending yesterday', {
-      originalQuery: response.bing_query,
-    })
+  logger.info('Validating date filtering', {
+    hasDatePreset,
+    hasTimeRange,
+    datePreset: response.datePreset,
+    timeRange: response.timeRange
+  })
 
-    const { query, startDate, endDate } = addDefaultDateFilter(response.bing_query)
-
-    logger.info('Updated query with default TimeRange date filter (last 30 days ending yesterday)', {
-      updatedQuery: query,
-      startDate,
-      endDate,
+  if (!hasDatePreset && !hasTimeRange) {
+    logger.warn('Parameters missing date filter, adding default LastThirtyDays', {
+      originalResponse: response,
     })
 
     return {
       ...response,
-      bing_query: query,
+      datePreset: 'LastThirtyDays',
+      aggregation: response.aggregation || 'Summary',
+    }
+  }
+
+  // Ensure aggregation is set
+  if (!response.aggregation) {
+    return {
+      ...response,
+      aggregation: 'Summary',
     }
   }
 
@@ -160,8 +169,10 @@ export async function generateBingAdsQuery(userPrompt: string): Promise<BingAdsQ
     // Validate and fix date filtering if needed
     const validated = validateDateFiltering(parsed)
 
-    logger.info('Successfully generated Bing Ads query', {
-      query: validated.bing_query,
+    logger.info('Successfully generated Bing Ads parameters', {
+      reportType: validated.reportType,
+      columns: validated.columns,
+      timeRange: validated.timeRange,
       queryType: validated.query_type,
       tables: validated.tables_used,
     })
