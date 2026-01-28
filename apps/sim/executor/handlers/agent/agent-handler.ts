@@ -1264,6 +1264,14 @@ export class AgentBlockHandler implements BlockHandler {
 
     const validMessages = this.validateMessages(messages)
 
+    // Normalize maxTokens: treat empty string/null as "not set" so providers
+    // can apply their own defaults instead of sending max_tokens: '' or 0.
+    const rawMaxTokens = inputs.maxTokens as unknown
+    const normalizedMaxTokens =
+      rawMaxTokens === undefined || rawMaxTokens === null || rawMaxTokens === ''
+        ? undefined
+        : rawMaxTokens
+
     const { blockData, blockNameMapping } = collectBlockData(ctx)
 
     return {
@@ -1273,7 +1281,7 @@ export class AgentBlockHandler implements BlockHandler {
       context: validMessages ? undefined : stringifyJSON(messages),
       tools: formattedTools,
       temperature: inputs.temperature,
-      maxTokens: inputs.maxTokens,
+      maxTokens: normalizedMaxTokens,
       apiKey: inputs.apiKey,
       azureEndpoint: inputs.azureEndpoint,
       azureApiVersion: inputs.azureApiVersion,
@@ -1292,8 +1300,10 @@ export class AgentBlockHandler implements BlockHandler {
       workflowVariables: ctx.workflowVariables || {},
       blockData,
       blockNameMapping,
-      reasoningEffort: inputs.reasoningEffort,
-      verbosity: inputs.verbosity,
+      // Normalize advanced model controls so we never send empty strings
+      // Some providers (e.g. OpenAI GPT-5.x) 400 on reasoning_effort: ''
+      reasoningEffort: inputs.reasoningEffort || undefined,
+      verbosity: inputs.verbosity || undefined,
     }
   }
 
