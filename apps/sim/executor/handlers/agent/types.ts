@@ -12,8 +12,8 @@ export interface AgentInputs {
   memoryType?: 'none' | 'conversation'
   conversationId?: string // Required for conversation memory type
   // LLM parameters
-  temperature?: number
-  maxTokens?: number
+  temperature?: string
+  maxTokens?: string
   apiKey?: string
   azureEndpoint?: string
   azureApiVersion?: string
