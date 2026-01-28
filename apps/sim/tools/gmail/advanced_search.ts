@@ -11,89 +11,6 @@ import type { ToolConfig } from '@/tools/types'
 const logger = createLogger('GmailAdvancedSearchTool')
 
 /**
- * Extracts client domain from search query if email is present
- */
-function extractClientDomain(query: string): string | null {
-  // Match email pattern in query
-  const emailRegex = /[\w.-]+@([\w.-]+\.[\w.-]+)/gi
-  const matches = query.match(emailRegex)
-  if (matches && matches.length > 0) {
-    // Extract domain from first email found
-    const domainMatch = matches[0].match(/@([\w.-]+\.[\w.-]+)/i)
-    if (domainMatch?.[1]) {
-      return domainMatch[1]
-    }
-  }
-  return null
-}
-
-/**
- * Formats a JS Date into a Postgres-friendly timestamp string (no timezone suffix).
- */
-function formatPgTimestamp(date: Date): string {
-  // Convert to ISO, then drop timezone to fit `timestamp` (without time zone) columns
-  // Example: 2026-01-28T06:34:47.742Z -> 2026-01-28 06:34:47.742
-  return date.toISOString().replace('T', ' ').replace('Z', '')
-}
-
-/**
- * Generates OpenAI summary for email results
- */
-async function generateEmailSummary(results: ThreadedEmailMessage[]): Promise<string> {
-  try {
-    // Only run on server side
-    if (typeof window !== 'undefined') {
-      logger.warn('OpenAI summarization skipped on client side')
-      return ''
-    }
-
-    // Dynamic import to avoid client-side bundling
-    const OpenAI = (await import('openai')).default
-    const openaiApiKey = process.env.OPENAI_API_KEY
-    if (!openaiApiKey) {
-      logger.warn('OpenAI API key not configured, skipping summarization')
-      return ''
-    }
-
-    if (results.length === 0) {
-      return ''
-    }
-
-    // Combine all emails into a single prompt
-    const emailsText = results
-      .map(
-        (email, index) =>
-          `Email ${index + 1}:\nSubject: ${email.subject}\nFrom: ${email.from}\nTo: ${email.to}\nDate: ${email.date}\n\nContent:\n${email.content.substring(0, 1000)}\n\n---\n`
-      )
-      .join('\n')
-
-    const OpenAIClass = (await import('openai')).default
-    const openai = new OpenAIClass({ apiKey: openaiApiKey })
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an excellent Email Summariser. Provide a concise summary of the key points from these emails.',
-        },
-        {
-          role: 'user',
-          content: `Summarise these emails -\n\n${emailsText}`,
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 1000,
-    })
-
-    return completion.choices[0]?.message?.content || ''
-  } catch (error: any) {
-    logger.error('Error generating email summary:', error)
-    return ''
-  }
-}
-
-/**
  * Decodes base64url encoded string to UTF-8
  */
 function decodeBase64Url(data: string): string {
@@ -106,6 +23,15 @@ function decodeBase64Url(data: string): string {
     logger.warn('Failed to decode base64url data:', error)
     return ''
   }
+}
+
+/**
+ * Extracts Message-ID from header value (removes angle brackets if present)
+ */
+function extractMessageId(msgId: string | undefined): string | null {
+  if (!msgId) return null
+  // Message-ID format: <message-id@domain.com> or just message-id@domain.com
+  return msgId.replace(/^<|>$/g, '').trim()
 }
 
 /**
@@ -263,12 +189,16 @@ async function processMessage(
   accessToken: string,
   includeAttachments: boolean,
   execContext: ExecutionContext | undefined
-): Promise<Omit<ThreadedEmailMessage, 'replies'>> {
+): Promise<Omit<ThreadedEmailMessage, 'replies'> & { messageId?: string; inReplyTo?: string }> {
   const headers = message.payload?.headers || []
   const subject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || ''
   const from = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || ''
   const to = headers.find((h: any) => h.name.toLowerCase() === 'to')?.value || ''
   const date = headers.find((h: any) => h.name.toLowerCase() === 'date')?.value || ''
+
+  // Extract Message-ID and In-Reply-To for threading
+  const messageId = headers.find((h: any) => h.name.toLowerCase() === 'message-id')?.value || ''
+  const inReplyTo = headers.find((h: any) => h.name.toLowerCase() === 'in-reply-to')?.value || ''
 
   // Extract email content with fallback to HTML
   const content = extractMessageContent(message.payload)
@@ -345,12 +275,14 @@ async function processMessage(
     date,
     content: content || '',
     attachments: attachments.length > 0 ? attachments : undefined,
+    messageId,
+    inReplyTo,
   }
 }
 
 /**
- * Builds threaded message structure from flat array of messages
- * First message (index 0) is parent, rest are replies
+ * Builds hierarchical threaded message structure from flat array of messages
+ * Uses In-Reply-To headers to determine parent-child relationships
  */
 async function buildThreadedStructure(
   messages: any[],
@@ -362,33 +294,35 @@ async function buildThreadedStructure(
     return null
   }
 
-  // Process parent message (first message)
-  const parentMessage = messages[0]
-  const parentData = await processMessage(
-    parentMessage,
-    accessToken,
-    includeAttachments,
-    execContext
+  /**
+   * Gmail threads API returns a flat `messages[]` array for a thread.
+   * Per expected contract in this tool:
+   * - `messages[0]` is treated as the parent/root message
+   * - every other message is a direct reply under `parent.replies[]`
+   *
+   * This avoids over-nesting when headers like `In-Reply-To` / `References`
+   * are missing, inconsistent, or not aligned with the expected UI structure.
+   */
+  const processedMessages = await Promise.all(
+    messages.map((msg) => processMessage(msg, accessToken, includeAttachments, execContext))
   )
 
-  // Process reply messages if any
-  const replies: ThreadedEmailMessage[] = []
-  for (let i = 1; i < messages.length; i++) {
-    const replyData = await processMessage(
-      messages[i],
-      accessToken,
-      includeAttachments,
-      execContext
-    )
-    replies.push({
-      ...replyData,
+  const root = processedMessages[0]
+  const replies = processedMessages.slice(1)
+
+  const { messageId: _rootMessageId, inReplyTo: _rootInReplyTo, ...cleanRoot } = root
+
+  const cleanReplies: ThreadedEmailMessage[] = replies.map((reply) => {
+    const { messageId: _replyMessageId, inReplyTo: _replyInReplyTo, ...cleanReply } = reply
+    return {
+      ...cleanReply,
       replies: undefined,
-    })
-  }
+    }
+  })
 
   return {
-    ...parentData,
-    replies: replies.length > 0 ? replies : undefined,
+    ...cleanRoot,
+    replies: cleanReplies.length > 0 ? cleanReplies : undefined,
   }
 }
 
@@ -449,96 +383,6 @@ export const gmailAdvancedSearchTool: ToolConfig<
 
   directExecution: async (params: GmailAdvancedSearchParams) => {
     const { query, accessToken, maxResults = 5, includeAttachments = false, clientName } = params
-
-    // Extract client domain from query
-    const clientDomain = extractClientDomain(query)
-
-    // Create database record for tracking (server-side only)
-    let summaryRecordId: string | null = null
-    const runStartTime = new Date()
-    const runStartTimePg = formatPgTimestamp(runStartTime)
-    // Format date as YYYY-MM-DD for PostgreSQL DATE type
-    const runDate = runStartTime.toISOString().split('T')[0]
-
-    // Always create a tracking row for advanced search runs (even if clientName/domain are empty)
-    if (typeof window === 'undefined') {
-      try {
-        // Dynamic imports to avoid client-side bundling
-        const { db } = await import('@sim/db')
-        const { sql } = await import('drizzle-orm')
-        const { randomUUID } = await import('crypto')
-
-        summaryRecordId = randomUUID()
-
-        logger.info('Attempting to insert summary tracking record', {
-          summaryRecordId,
-          clientName,
-          clientDomain,
-          runDate,
-          runStartTime: runStartTime.toISOString(),
-        })
-
-        await db.execute(sql`
-          INSERT INTO gmail_client_summary (
-            id, run_date, status, run_start_time, client_name, client_domain
-          ) VALUES (
-            ${summaryRecordId},
-            ${runDate},
-            'RUNNING',
-            ${runStartTimePg},
-            ${clientName || null},
-            ${clientDomain || null}
-          )
-        `)
-
-        logger.info(`Successfully created summary tracking record: ${summaryRecordId}`)
-      } catch (error: any) {
-        // Try to pull useful Postgres error details (postgres-js / Drizzle sometimes wraps the real error)
-        const pgError = error?.cause || error
-        logger.error('Failed to create summary tracking record', {
-          message: error?.message,
-          name: error?.name,
-          stack: error?.stack,
-          pgMessage: pgError?.message,
-          pgCode: pgError?.code,
-          pgDetail: pgError?.detail,
-          pgHint: pgError?.hint,
-          pgSchema: pgError?.schema,
-          pgTable: pgError?.table,
-          pgColumn: pgError?.column,
-          pgConstraint: pgError?.constraint,
-          clientName,
-          clientDomain,
-        })
-
-        try {
-          const { db } = await import('@sim/db')
-          const { sql } = await import('drizzle-orm')
-
-          const probe = await db.execute(sql`
-            SELECT
-              current_database() as db,
-              current_schema() as schema,
-              to_regclass('public.gmail_client_summary') as public_table,
-              to_regclass('gmail_client_summary') as search_path_table
-          `)
-          logger.error('DB probe after gmail_client_summary insert failure', {
-            probe: (probe as any)?.rows ?? probe,
-          })
-        } catch (probeError: any) {
-          logger.error('DB probe failed after gmail_client_summary insert failure', {
-            message: probeError?.message,
-            name: probeError?.name,
-            stack: probeError?.stack,
-          })
-        }
-        // Continue execution even if database insert fails
-      }
-    } else {
-      logger.debug('Skipping database insert', {
-        isServerSide: typeof window === 'undefined',
-      })
-    }
 
     // Search for messages
     const searchParams = new URLSearchParams()
@@ -678,54 +522,6 @@ export const gmailAdvancedSearchTool: ToolConfig<
 
       logger.info(`Returning ${processedResults.length} email results`)
 
-      // Generate summary using OpenAI if we have results
-      let oneDaySummary = ''
-      if (processedResults.length > 0 && summaryRecordId) {
-        try {
-          oneDaySummary = await generateEmailSummary(processedResults)
-          logger.info('Generated email summary', { summaryLength: oneDaySummary.length })
-        } catch (error: any) {
-          logger.error('Failed to generate email summary:', error)
-        }
-      }
-
-      // Update database record with results (server-side only)
-      const runEndTime = new Date()
-      const runEndTimePg = formatPgTimestamp(runEndTime)
-      if (summaryRecordId && typeof window === 'undefined') {
-        try {
-          // Dynamic imports to avoid client-side bundling
-          const { db } = await import('@sim/db')
-          const { sql } = await import('drizzle-orm')
-
-          const status = processedResults.length > 0 ? 'COMPLETED' : 'FAILED'
-
-          logger.info('Updating summary tracking record', {
-            summaryRecordId,
-            status,
-            resultCount: processedResults.length,
-            summaryLength: oneDaySummary.length,
-          })
-
-          await db.execute(sql`
-            UPDATE gmail_client_summary
-            SET 
-              status = ${status},
-              run_end_time = ${runEndTimePg},
-              one_day_summary = ${oneDaySummary || null}
-            WHERE id = ${summaryRecordId}
-          `)
-
-          logger.info(`Successfully updated summary tracking record: ${summaryRecordId}`)
-        } catch (error: any) {
-          logger.error('Failed to update summary tracking record', {
-            error: error.message,
-            stack: error.stack,
-            summaryRecordId,
-          })
-        }
-      }
-
       return {
         success: true,
         output: {
@@ -734,38 +530,6 @@ export const gmailAdvancedSearchTool: ToolConfig<
       }
     } catch (error: any) {
       logger.error('Error processing advanced search results:', error)
-
-      // Update database record with FAILED status (server-side only)
-      const runEndTime = new Date()
-      const runEndTimePg = formatPgTimestamp(runEndTime)
-      if (summaryRecordId && typeof window === 'undefined') {
-        try {
-          // Dynamic imports to avoid client-side bundling
-          const { db } = await import('@sim/db')
-          const { sql } = await import('drizzle-orm')
-
-          logger.info('Updating summary tracking record to FAILED', {
-            summaryRecordId,
-            error: error.message,
-          })
-
-          await db.execute(sql`
-            UPDATE gmail_client_summary
-            SET 
-              status = 'FAILED',
-              run_end_time = ${runEndTimePg}
-            WHERE id = ${summaryRecordId}
-          `)
-
-          logger.info(`Successfully updated summary tracking record to FAILED: ${summaryRecordId}`)
-        } catch (dbError: any) {
-          logger.error('Failed to update summary tracking record on error', {
-            error: dbError.message,
-            stack: dbError.stack,
-            summaryRecordId,
-          })
-        }
-      }
 
       return {
         success: false,
