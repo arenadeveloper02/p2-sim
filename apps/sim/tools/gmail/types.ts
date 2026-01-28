@@ -40,6 +40,7 @@ export interface GmailAdvancedSearchParams extends BaseGmailParams {
   query: string
   maxResults?: number
   includeAttachments?: boolean
+  clientName?: string
 }
 
 // Move operation parameters
@@ -139,27 +140,31 @@ export interface GmailAttachment {
   size: number
 }
 
+// Email in thread (can be nested with replies)
+export interface ThreadedEmailMessage {
+  id: string
+  threadId: string
+  subject: string
+  from: string
+  to: string
+  date: string
+  content: string
+  attachments?: Array<{
+    id: string
+    name: string
+    size: number
+    type: string
+    url: string | null
+    key: string | null
+    context: string | null
+    content: string | null
+  }>
+  replies?: ThreadedEmailMessage[]
+}
+
 // Advanced Search Response
 export interface GmailAdvancedSearchResponse extends ToolResponse {
   output: {
-    results: Array<{
-      id: string
-      threadId: string
-      subject: string
-      from: string
-      to: string
-      date: string
-      content: string
-      attachments?: Array<{
-        id: string
-        name: string
-        size: number
-        type: string
-        url: string | null
-        key: string | null
-        context: string | null
-        content: string | null
-      }>
-    }>
+    results: ThreadedEmailMessage[]
   }
 }

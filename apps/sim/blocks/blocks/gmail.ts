@@ -257,6 +257,14 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       condition: { field: 'operation', value: 'advanced_search_gmail' },
       value: () => '5',
     },
+    {
+      id: 'clientName',
+      title: 'Client Name',
+      type: 'short-input',
+      placeholder: 'Enter client name for tracking',
+      condition: { field: 'operation', value: 'advanced_search_gmail' },
+      required: false,
+    },
     // Move Email Fields
     {
       id: 'moveMessageId',
@@ -429,6 +437,7 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
           advancedSearchQuery,
           advancedMaxResults,
           includeAttachments,
+          clientName,
           destinationLabel,
           manualDestinationLabel,
           sourceLabel,
@@ -465,6 +474,9 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
           }
           if (includeAttachments !== undefined) {
             rest.includeAttachments = includeAttachments
+          }
+          if (clientName) {
+            rest.clientName = clientName
           }
         }
 
@@ -545,6 +557,7 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       type: 'string',
       description: 'Maximum results for advanced search (default: 5)',
     },
+    clientName: { type: 'string', description: 'Client name for tracking and summarization' },
     // Move operation inputs
     moveMessageId: { type: 'string', description: 'Message ID to move' },
     destinationLabel: { type: 'string', description: 'Destination label ID' },
