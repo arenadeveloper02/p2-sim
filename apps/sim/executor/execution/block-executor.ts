@@ -240,6 +240,9 @@ export class BlockExecutor {
           }
         }
         blockLog.output = filterOutputForLog(block.metadata?.id || '', normalizedOutput, { block })
+        if (normalizedOutput.childTraceSpans && Array.isArray(normalizedOutput.childTraceSpans)) {
+          blockLog.childTraceSpans = normalizedOutput.childTraceSpans
+        }
       }
 
       this.state.setBlockOutput(node.id, normalizedOutput, duration)
@@ -333,6 +336,10 @@ export class BlockExecutor {
       blockLog.error = errorMessage
       blockLog.input = this.sanitizeInputsForLog(input)
       blockLog.output = filterOutputForLog(block.metadata?.id || '', errorOutput, { block })
+
+      if (errorOutput.childTraceSpans && Array.isArray(errorOutput.childTraceSpans)) {
+        blockLog.childTraceSpans = errorOutput.childTraceSpans
+      }
     }
 
     logger.error(
