@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { BookOpen, Check, ChevronUp, Pencil, RepeatIcon, Settings, SplitIcon } from 'lucide-react'
-import { Button, Tooltip } from '@/components/emcn'
+import { Button, Switch, Tooltip } from '@/components/emcn'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   ConnectionBlocks,
@@ -105,8 +105,11 @@ export function Editor() {
   })
 
   // Collaborative actions
-  const { collaborativeToggleBlockAdvancedMode, collaborativeUpdateBlockName } =
-    useCollaborativeWorkflow()
+  const {
+    collaborativeToggleBlockAdvancedMode,
+    collaborativeUpdateBlockName,
+    collaborativeSetSubblockValue,
+  } = useCollaborativeWorkflow()
 
   // Rename state
   const [isRenaming, setIsRenaming] = useState(false)
@@ -142,6 +145,8 @@ export function Editor() {
         // Keep rename mode open on error so user can correct the name
         return
       }
+      // Reset editedName to match the new name after successful rename
+      setEditedName(trimmedName)
     }
     setIsRenaming(false)
   }, [currentBlockId, isRenaming, editedName, currentBlock?.name, collaborativeUpdateBlockName])
@@ -161,6 +166,13 @@ export function Editor() {
     }
   }, [isRenaming])
 
+  // Sync editedName when currentBlock.name changes (e.g., from collaborative updates)
+  useEffect(() => {
+    if (!isRenaming && currentBlock?.name) {
+      setEditedName(currentBlock.name)
+    }
+  }, [currentBlock?.name, isRenaming])
+
   /**
    * Handles opening documentation link in a new secure tab.
    */
@@ -172,6 +184,14 @@ export function Editor() {
 
   // Check if block has advanced mode or trigger mode available
   const hasAdvancedMode = blockConfig?.subBlocks?.some((sb) => sb.mode === 'advanced')
+
+  // Check if current block is arena type
+  const isArenaBlock = currentBlock?.type === 'arena'
+
+  // Get current operation to check if advanced mode should be disabled
+  const currentOperation = blockSubBlockValues.operation
+  const isSaveSummaryOperation = currentOperation === 'arena_save_summary'
+  const shouldDisableAdvancedMode = isArenaBlock && isSaveSummaryOperation
 
   // Determine if connections are at minimum height (collapsed state)
   const isConnectionsAtMinHeight = connectionsHeight <= 35
@@ -225,7 +245,7 @@ export function Editor() {
         </div>
         <div className='flex shrink-0 items-center gap-[8px]'>
           {/* Rename button */}
-          {currentBlock && !isSubflow && (
+          {currentBlock && (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <Button
@@ -267,22 +287,64 @@ export function Editor() {
           )} */}
           {/* Mode toggles - Only show for regular blocks, not subflows */}
           {currentBlock && !isSubflow && hasAdvancedMode && (
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <Button
-                  variant='ghost'
-                  className='p-0'
-                  onClick={handleToggleAdvancedMode}
-                  disabled={!userPermissions.canEdit}
-                  aria-label='Toggle advanced mode'
-                >
-                  <Settings className='h-[14px] w-[14px]' />
-                </Button>
-              </Tooltip.Trigger>
-              <Tooltip.Content side='top'>
-                <p>Advanced mode</p>
-              </Tooltip.Content>
-            </Tooltip.Root>
+            <>
+              {isArenaBlock ? (
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <div className='flex items-center gap-[6px]'>
+                      <Switch
+                        checked={advancedMode}
+                        onCheckedChange={() => {
+                          if (
+                            currentBlockId &&
+                            userPermissions.canEdit &&
+                            !shouldDisableAdvancedMode
+                          ) {
+                            // If switching from advanced to basic mode, clear advanced-only field values
+                            if (advancedMode && blockConfig) {
+                              const advancedOnlySubBlocks = blockConfig.subBlocks?.filter(
+                                (sb) => sb.mode === 'advanced'
+                              )
+                              if (advancedOnlySubBlocks && advancedOnlySubBlocks.length > 0) {
+                                // Clear values for all advanced-only sub-blocks
+                                advancedOnlySubBlocks.forEach((subBlock) => {
+                                  collaborativeSetSubblockValue(currentBlockId, subBlock.id, '')
+                                })
+                              }
+                            }
+
+                            // Toggle the mode
+                            collaborativeToggleBlockAdvancedMode(currentBlockId)
+                          }
+                        }}
+                        disabled={!userPermissions.canEdit || shouldDisableAdvancedMode}
+                        aria-label='Toggle advanced mode'
+                      />
+                    </div>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content side='top'>
+                    <p>Advanced mode</p>
+                  </Tooltip.Content>
+                </Tooltip.Root>
+              ) : (
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Button
+                      variant='ghost'
+                      className='p-0'
+                      onClick={handleToggleAdvancedMode}
+                      disabled={!userPermissions.canEdit}
+                      aria-label='Toggle advanced mode'
+                    >
+                      <Settings className='h-[14px] w-[14px]' />
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content side='top'>
+                    <p>Advanced mode</p>
+                  </Tooltip.Content>
+                </Tooltip.Root>
+              )}
+            </>
           )}
           {currentBlock && !isSubflow && blockConfig?.docsLink && (
             <Tooltip.Root>

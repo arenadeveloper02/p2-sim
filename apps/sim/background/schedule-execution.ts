@@ -428,6 +428,7 @@ async function runWorkflowExecution({
       userId: actorUserId,
       workspaceId,
       variables: variables || {},
+      conversationId: undefined,
       deploymentVersionId,
     })
 

@@ -41,6 +41,93 @@ interface RequestParams {
 }
 
 /**
+ * Safely stringify a value to JSON, handling circular references and large objects
+ * @param value - The value to stringify
+ * @param context - Context for error messages (e.g., toolId)
+ * @returns Stringified JSON
+ * @throws Error if stringification fails
+ */
+export function safeStringify(value: any, context = 'unknown'): string {
+  if (typeof value === 'string') {
+    return value
+  }
+
+  // Use a WeakSet to track circular references
+  const seen = new WeakSet()
+
+  // Create the replacer function that will be used in JSON.stringify
+  const replacer = (key: string, val: any): any => {
+    // Handle undefined - JSON.stringify omits undefined, but we want to be explicit
+    if (val === undefined) {
+      return undefined
+    }
+
+    // Handle functions - replace with a placeholder
+    if (typeof val === 'function') {
+      return '[Function]'
+    }
+
+    // Handle Symbols - replace with a placeholder
+    if (typeof val === 'symbol') {
+      return '[Symbol]'
+    }
+
+    // Handle circular references
+    if (val !== null && typeof val === 'object') {
+      if (seen.has(val)) {
+        return '[Circular Reference]'
+      }
+      seen.add(val)
+    }
+
+    return val
+  }
+
+  try {
+    return JSON.stringify(value, replacer)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+
+    // Check if it's a circular reference error
+    if (
+      errorMessage.includes('circular') ||
+      errorMessage.includes('Converting circular structure')
+    ) {
+      logger.error(`Circular reference detected during JSON stringify in ${context}`, {
+        error: errorMessage,
+      })
+      throw new Error(
+        `Cannot stringify data: circular reference detected. This may occur when data structures reference themselves.`
+      )
+    }
+
+    // Check if it's a size-related error
+    if (errorMessage.includes('Invalid string length') || errorMessage.includes('too large')) {
+      logger.error(`Data too large to stringify in ${context}`, {
+        error: errorMessage,
+        valueType: typeof value,
+        isArray: Array.isArray(value),
+        arrayLength: Array.isArray(value) ? value.length : undefined,
+      })
+      throw new Error(
+        `Cannot stringify data: data is too large. Try reducing the size of the data being sent.`
+      )
+    }
+
+    // Generic error
+    logger.error(`Failed to stringify JSON in ${context}`, {
+      error: errorMessage,
+      valueType: typeof value,
+      isArray: Array.isArray(value),
+      arrayLength: Array.isArray(value) ? value.length : undefined,
+    })
+    throw new Error(
+      `Failed to convert data to JSON: ${errorMessage}. The data may contain invalid values or be too large.`
+    )
+  }
+}
+
+/**
  * Format request parameters based on tool configuration and provided params
  */
 export async function formatRequestParams(
@@ -91,10 +178,29 @@ export async function formatRequestParams(
       }
       // Otherwise JSON stringify it
       else {
-        body = JSON.stringify(bodyResult)
+        body = safeStringify(bodyResult, tool.id || 'unknown')
       }
     } else {
-      body = typeof bodyResult === 'string' ? bodyResult : JSON.stringify(bodyResult)
+      body =
+        typeof bodyResult === 'string'
+          ? bodyResult
+          : safeStringify(bodyResult, tool.id || 'unknown')
+    }
+
+    // Validate the JSON is parseable before returning
+    if (body && !isPreformattedContent) {
+      try {
+        JSON.parse(body)
+      } catch (parseError) {
+        logger.error(`Generated invalid JSON in formatRequestParams for ${tool.id || 'unknown'}`, {
+          error: parseError instanceof Error ? parseError.message : String(parseError),
+          bodyLength: body.length,
+          bodyPreview: body.substring(0, 200),
+        })
+        throw new Error(
+          `Failed to generate valid JSON for request body. This may be due to circular references or invalid data structures.`
+        )
+      }
     }
   }
 

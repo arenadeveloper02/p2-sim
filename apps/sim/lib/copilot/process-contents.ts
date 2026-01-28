@@ -493,6 +493,7 @@ async function processExecutionLogFromDb(
         totalDurationMs: workflowExecutionLogs.totalDurationMs,
         executionData: workflowExecutionLogs.executionData,
         cost: workflowExecutionLogs.cost,
+        conversationId: workflowExecutionLogs.conversationId,
         workflowName: workflow.name,
       })
       .from(workflowExecutionLogs)
