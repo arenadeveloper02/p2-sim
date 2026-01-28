@@ -92,7 +92,12 @@ export const xAIProvider: ProviderConfig = {
     }
 
     if (request.temperature !== undefined) basePayload.temperature = request.temperature
-    if (request.maxTokens !== undefined) basePayload.max_tokens = request.maxTokens
+    // xAI Grok models expect `max_completion_tokens`, not `max_tokens`,
+    // and the API requires a numeric value (not a string)
+    if (request.maxTokens !== undefined) {
+      const maxTokens = Number(request.maxTokens)
+      basePayload.max_completion_tokens = maxTokens
+    }
     let preparedTools: ReturnType<typeof prepareToolsWithUsageControl> | null = null
 
     if (tools?.length) {
