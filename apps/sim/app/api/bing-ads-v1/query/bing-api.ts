@@ -7,6 +7,145 @@ import type { ParsedBingQuery } from '../../bing-ads/query/types'
 
 const logger = createLogger('BingAdsV1API')
 
+// NEW function for search queries - uses SearchQuery field instead of CampaignName
+function buildSearchQueryMetrics(rows: Array<Record<string, any>>, parsedQuery: ParsedBingQuery): any {
+  const searchQueriesByName = new Map<string, any>()
+
+  for (const row of rows) {
+    // Use SearchQuery for search query reports
+    const name = String(row.SearchQuery || '').trim()
+    
+    if (!name) continue
+
+    const impressions = toNumber(row.Impressions)
+    const clicks = toNumber(row.Clicks)
+    const spend = toNumber(row.Spend)
+    const conversions = toNumber(row.Conversions)
+
+    const entityName = name
+    const existing = searchQueriesByName.get(entityName) || {
+      id: undefined, // Search queries don't have IDs in the same way
+      name: entityName,
+      impressions: 0,
+      clicks: 0,
+      spend: 0,
+      conversions: 0,
+    }
+
+    existing.impressions += impressions
+    existing.clicks += clicks
+    existing.spend += spend
+    existing.conversions += conversions
+
+    searchQueriesByName.set(entityName, existing)
+  }
+
+  const searchQueries = Array.from(searchQueriesByName.values()).map((c) => {
+    const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0
+    const avgCpc = c.clicks > 0 ? c.spend / c.clicks : 0
+    const costPerConversion = c.conversions > 0 ? c.spend / c.conversions : 0
+    return {
+      ...c,
+      ctr,
+      avg_cpc: avgCpc,
+      cost_per_conversion: costPerConversion,
+    }
+  })
+
+  // If no search queries found but we have rows, calculate totals directly from rows
+  let totals = { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
+  
+  if (searchQueries.length > 0) {
+    totals = searchQueries.reduce(
+      (acc, c) => {
+        acc.impressions += c.impressions
+        acc.clicks += c.clicks
+        acc.spend += c.spend
+        acc.conversions += c.conversions
+        return acc
+      },
+      { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
+    )
+  } else if (rows.length > 0) {
+    // Fallback: calculate totals directly from rows
+    for (const row of rows) {
+      totals.impressions += toNumber(row.Impressions)
+      totals.clicks += toNumber(row.Clicks)
+      totals.spend += toNumber(row.Spend)
+      totals.conversions += toNumber(row.Conversions)
+    }
+  }
+
+  const totalCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
+  const totalAvgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
+  const totalCostPerConversion = totals.conversions > 0 ? totals.spend / totals.conversions : 0
+
+  return {
+    campaigns: searchQueries, // Keep same structure for compatibility
+    account_totals: {
+      ...totals,
+      ctr: totalCtr,
+      avg_cpc: totalAvgCpc,
+      cost_per_conversion: totalCostPerConversion,
+    },
+    report_type: parsedQuery.reportType,
+    date_preset: parsedQuery.datePreset,
+    aggregation: parsedQuery.aggregation,
+    columns_requested: parsedQuery.columns,
+  }
+}
+
+// Helper function to calculate totals from raw CSV rows
+function calculateRawTotals(rows: Array<Record<string, any>>): any {
+  if (!rows.length) {
+    return {
+      impressions: 0,
+      clicks: 0,
+      spend: 0,
+      conversions: 0,
+      cost: 0,
+      ctr: 0,
+      avg_cpc: 0,
+      cost_per_conversion: 0
+    }
+  }
+
+  let impressions = 0
+  let clicks = 0
+  let spend = 0
+  let conversions = 0
+
+  for (const row of rows) {
+    impressions += toNumber(row.Impressions)
+    clicks += toNumber(row.Clicks)
+    spend += toNumber(row.Spend)
+    conversions += toNumber(row.Conversions)
+  }
+
+  const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0
+  const avgCpc = clicks > 0 ? spend / clicks : 0
+  const costPerConversion = conversions > 0 ? spend / conversions : 0
+
+  return {
+    impressions,
+    clicks,
+    spend,
+    conversions,
+    cost: 0,
+    ctr,
+    avg_cpc: avgCpc,
+    cost_per_conversion: costPerConversion
+  }
+}
+
+// Helper function to convert strings to numbers
+function toNumber(value: any): number {
+  if (value === null || value === undefined) return 0
+  const cleaned = String(value).replace(/[^0-9.-]+/g, '')
+  const parsed = Number.parseFloat(cleaned)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 export interface BingAdsApiRequest {
   accountId: string
   reportType: string
@@ -24,6 +163,16 @@ export interface BingAdsApiResponse {
   success: boolean
   data?: any
   rows?: any[]
+  campaigns?: any[]  // Add campaigns field to support search query results
+  account_totals?: any  // Add account_totals field
+  report_type?: string
+  date_preset?: string
+  timeRange?: {
+    start: string
+    end: string
+  }
+  aggregation?: string
+  columns_requested?: string[]
   error?: string
 }
 
@@ -102,6 +251,42 @@ export async function makeBingAdsRequest(request: BingAdsApiRequest): Promise<Bi
       rowsCount: apiResult.data?.length || 0,
       campaigns: apiResult.campaigns?.length || 0
     })
+
+    // If this is a SearchQueryPerformance report and we got raw data, return it directly
+    if (parsedQuery.reportType === 'SearchQueryPerformance' && apiResult.success && apiResult.data && Array.isArray(apiResult.data)) {
+      logger.info('Processing SearchQueryPerformance with raw CSV data')
+      
+      // Return raw CSV data with ALL columns
+      return {
+        success: true,
+        data: apiResult.data, // Return raw CSV rows with all columns
+        campaigns: apiResult.data,
+        account_totals: calculateRawTotals(apiResult.data),
+        report_type: parsedQuery.reportType,
+        date_preset: parsedQuery.datePreset,
+        timeRange: parsedQuery.timeRange,
+        aggregation: parsedQuery.aggregation,
+        columns_requested: parsedQuery.columns
+      }
+    }
+
+    // If this is a KeywordPerformance report and we got raw data, return it directly
+    if (parsedQuery.reportType === 'KeywordPerformance' && apiResult.success && apiResult.data && Array.isArray(apiResult.data)) {
+      logger.info('Processing KeywordPerformance with raw CSV data')
+      
+      // Return raw CSV data with ALL columns
+      return {
+        success: true,
+        data: apiResult.data, // Return raw CSV rows with all columns
+        campaigns: apiResult.data,
+        account_totals: calculateRawTotals(apiResult.data),
+        report_type: parsedQuery.reportType,
+        date_preset: parsedQuery.datePreset,
+        timeRange: parsedQuery.timeRange,
+        aggregation: parsedQuery.aggregation,
+        columns_requested: parsedQuery.columns
+      }
+    }
 
     return apiResult
 

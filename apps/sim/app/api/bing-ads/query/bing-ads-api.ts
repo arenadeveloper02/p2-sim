@@ -164,7 +164,35 @@ async function getCampaignPerformanceReport(params: {
       logger.info('Downloaded CSV content', { csvLength: csvText.length, csvPreview: csvText.substring(0, 500) })
       const rows = await parseCsvToRecords(csvText)
       logger.info('Parsed CSV rows', { rowCount: rows.length, firstRow: rows[0] })
-      return buildCampaignPerformanceMetrics(rows, parsedQuery)
+      
+      // Route to correct function based on report type
+      if (parsedQuery.reportType === 'SearchQueryPerformance') {
+        // For search queries, return raw CSV data to get all columns
+        return {
+          success: true,
+          data: rows, // Return raw CSV rows with all columns
+          campaigns: rows,
+          account_totals: calculateRawTotals(rows),
+          report_type: parsedQuery.reportType,
+          date_preset: parsedQuery.datePreset,
+          aggregation: parsedQuery.aggregation,
+          columns_requested: parsedQuery.columns
+        }
+      } else if (parsedQuery.reportType === 'KeywordPerformance') {
+        // For keywords, return raw CSV data to get all columns
+        return {
+          success: true,
+          data: rows, // Return raw CSV rows with all columns
+          campaigns: rows,
+          account_totals: calculateRawTotals(rows),
+          report_type: parsedQuery.reportType,
+          date_preset: parsedQuery.datePreset,
+          aggregation: parsedQuery.aggregation,
+          columns_requested: parsedQuery.columns
+        }
+      } else {
+        return buildCampaignPerformanceMetrics(rows, parsedQuery)
+      }
     }
 
     if (status && status.toLowerCase() === 'error') {
@@ -175,6 +203,49 @@ async function getCampaignPerformanceReport(params: {
   }
 
   throw new Error(`Report generation timed out after polling. reportRequestId=${reportRequestId}`)
+}
+
+// Helper function to calculate totals from raw CSV rows
+function calculateRawTotals(rows: Array<Record<string, any>>): any {
+  if (!rows.length) {
+    return {
+      impressions: 0,
+      clicks: 0,
+      spend: 0,
+      conversions: 0,
+      cost: 0,
+      ctr: 0,
+      avg_cpc: 0,
+      cost_per_conversion: 0
+    }
+  }
+
+  let impressions = 0
+  let clicks = 0
+  let spend = 0
+  let conversions = 0
+
+  for (const row of rows) {
+    impressions += toNumber(row.Impressions)
+    clicks += toNumber(row.Clicks)
+    spend += toNumber(row.Spend)
+    conversions += toNumber(row.Conversions)
+  }
+
+  const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0
+  const avgCpc = clicks > 0 ? spend / clicks : 0
+  const costPerConversion = conversions > 0 ? spend / conversions : 0
+
+  return {
+    impressions,
+    clicks,
+    spend,
+    conversions,
+    cost: 0,
+    ctr,
+    avg_cpc: avgCpc,
+    cost_per_conversion: costPerConversion
+  }
 }
 
 function buildSubmitSoapEnvelope(params: {
@@ -333,6 +404,7 @@ function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery):
   <Columns i:nil="false">${columns
     .map((c) => `<${config.columnElement}>${escapeXml(c)}</${config.columnElement}>`)
     .join('')}</Columns>
+  <Filter i:nil="true" />
   <Scope i:nil="false">
     <AccountIds i:nil="false" xmlns:a1="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
       <a1:long>${escapeXml(accountId)}</a1:long>
@@ -442,6 +514,94 @@ async function parseCsvToRecords(csvText: string): Promise<Array<Record<string, 
     throw new Error(
       `CSV parsing unavailable. Ensure the 'csv-parse' dependency is installed. ${(e as Error).message}`
     )
+  }
+}
+
+// NEW function for search queries - uses SearchQuery field instead of CampaignName
+function buildSearchQueryMetrics(rows: Array<Record<string, any>>, parsedQuery: ParsedBingQuery): any {
+  const searchQueriesByName = new Map<string, any>()
+
+  for (const row of rows) {
+    // Use SearchQuery for search query reports
+    const name = String(row.SearchQuery || '').trim()
+    
+    if (!name) continue
+
+    const impressions = toNumber(row.Impressions)
+    const clicks = toNumber(row.Clicks)
+    const spend = toNumber(row.Spend)
+    const conversions = toNumber(row.Conversions)
+
+    const entityName = name
+    const existing = searchQueriesByName.get(entityName) || {
+      id: undefined, // Search queries don't have IDs in the same way
+      name: entityName,
+      impressions: 0,
+      clicks: 0,
+      spend: 0,
+      conversions: 0,
+    }
+
+    existing.impressions += impressions
+    existing.clicks += clicks
+    existing.spend += spend
+    existing.conversions += conversions
+
+    searchQueriesByName.set(entityName, existing)
+  }
+
+  const searchQueries = Array.from(searchQueriesByName.values()).map((c) => {
+    const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0
+    const avgCpc = c.clicks > 0 ? c.spend / c.clicks : 0
+    const costPerConversion = c.conversions > 0 ? c.spend / c.conversions : 0
+    return {
+      ...c,
+      ctr,
+      avg_cpc: avgCpc,
+      cost_per_conversion: costPerConversion,
+    }
+  })
+
+  // If no search queries found but we have rows, calculate totals directly from rows
+  let totals = { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
+  
+  if (searchQueries.length > 0) {
+    totals = searchQueries.reduce(
+      (acc, c) => {
+        acc.impressions += c.impressions
+        acc.clicks += c.clicks
+        acc.spend += c.spend
+        acc.conversions += c.conversions
+        return acc
+      },
+      { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
+    )
+  } else if (rows.length > 0) {
+    // Fallback: calculate totals directly from rows
+    for (const row of rows) {
+      totals.impressions += toNumber(row.Impressions)
+      totals.clicks += toNumber(row.Clicks)
+      totals.spend += toNumber(row.Spend)
+      totals.conversions += toNumber(row.Conversions)
+    }
+  }
+
+  const totalCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
+  const totalAvgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
+  const totalCostPerConversion = totals.conversions > 0 ? totals.spend / totals.conversions : 0
+
+  return {
+    campaigns: searchQueries, // Keep same structure for compatibility
+    account_totals: {
+      ...totals,
+      ctr: totalCtr,
+      avg_cpc: totalAvgCpc,
+      cost_per_conversion: totalCostPerConversion,
+    },
+    report_type: parsedQuery.reportType,
+    date_preset: parsedQuery.datePreset,
+    aggregation: parsedQuery.aggregation,
+    columns_requested: parsedQuery.columns,
   }
 }
 
