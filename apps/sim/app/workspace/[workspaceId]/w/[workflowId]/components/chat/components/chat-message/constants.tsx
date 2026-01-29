@@ -226,10 +226,7 @@ export const renderBs64Img = ({
       throw new Error('No image data provided')
     }
 
-    if (
-      isBase64 &&
-      cleanImageData.length > BLOB_URL_BASE64_LENGTH_THRESHOLD
-    ) {
+    if (isBase64 && cleanImageData.length > BLOB_URL_BASE64_LENGTH_THRESHOLD) {
       return (
         <div className='my-2 w-full'>
           <Base64ImageWithBlobUrl cleanImageData={cleanImageData} />
