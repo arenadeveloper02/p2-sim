@@ -27,6 +27,7 @@ interface SelectorComboboxProps {
   allowSearch?: boolean
   /** When true, show a clear (X) button when a value is selected */
   clearable?: boolean
+  missingOptionLabel?: string
 }
 
 export function SelectorCombobox({
@@ -42,6 +43,7 @@ export function SelectorCombobox({
   onOptionChange,
   allowSearch = true,
   clearable = false,
+  missingOptionLabel,
 }: SelectorComboboxProps) {
   const [storeValueRaw, setStoreValue] = useSubBlockValue<string | null | undefined>(
     blockId,
@@ -65,7 +67,16 @@ export function SelectorCombobox({
     detailId: activeValue,
   })
   const optionMap = useSelectorOptionMap(options, detailOption ?? undefined)
-  const selectedLabel = activeValue ? (optionMap.get(activeValue)?.label ?? activeValue) : ''
+  const hasMissingOption =
+    Boolean(activeValue) &&
+    Boolean(missingOptionLabel) &&
+    !isLoading &&
+    !optionMap.get(activeValue!)
+  const selectedLabel = activeValue
+    ? hasMissingOption
+      ? missingOptionLabel
+      : (optionMap.get(activeValue)?.label ?? activeValue)
+    : ''
   const [inputValue, setInputValue] = useState(selectedLabel)
   const previousActiveValue = useRef<string | undefined>(activeValue)
 
