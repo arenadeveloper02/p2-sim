@@ -7,6 +7,9 @@ import OpenAI from 'openai'
 import { z } from 'zod'
 import { generateRequestId } from '@/lib/core/utils/request'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 const logger = createLogger('GmailClientSummaryAPI')
 
 const ThreadedEmailSchema: z.ZodType<any> = z.lazy(() =>
@@ -37,6 +40,7 @@ const ThreadedEmailSchema: z.ZodType<any> = z.lazy(() =>
 )
 
 const PayloadSchema = z.object({
+  clientId: z.string().optional(),
   clientName: z.string().optional(),
   clientDomain: z.string().optional(),
   oneDayEmails: z.array(ThreadedEmailSchema).optional(),
@@ -45,6 +49,116 @@ const PayloadSchema = z.object({
 
 function formatPgTimestamp(date: Date): string {
   return date.toISOString().replace('T', ' ').replace('Z', '')
+}
+
+/**
+ * GET - Retrieves gmail client summary data for a specific client ID.
+ */
+export async function GET(request: NextRequest) {
+  const requestId = generateRequestId()
+
+  try {
+    const url = new URL(request.url)
+    const clientId = url.searchParams.get('cid')
+
+    if (!clientId) {
+      return NextResponse.json(
+        { success: false, error: { message: 'cid parameter is required' } },
+        { status: 400 }
+      )
+    }
+
+    logger.info(`[${requestId}] Fetching latest gmail summaries for client`, { clientId })
+
+    // Get the most recent run_date for this client
+    const latestDateResult = await db.execute(sql`
+      SELECT run_date
+      FROM gmail_client_summary
+      WHERE client_id = ${clientId} OR client_name = ${clientId} OR client_domain = ${clientId}
+      ORDER BY run_date DESC
+      LIMIT 1
+    `)
+
+    // Debug logging to see result structure
+    logger.info(`[${requestId}] Latest date result:`, latestDateResult)
+
+    // Handle different result structures
+    const rows = Array.isArray(latestDateResult) ? latestDateResult : (latestDateResult as any).rows || []
+
+    if (rows.length === 0) {
+      return NextResponse.json(
+        {
+          success: true,
+          data: {
+            client_id: clientId,
+            message: 'No gmail summary data found for this client',
+            summaries: [],
+          },
+        },
+        { status: 200 }
+      )
+    }
+
+    const latestRunDate = rows[0].run_date
+
+    // Get all summaries for this client on the latest run_date
+    const summariesResult = await db.execute(sql`
+      SELECT
+        id,
+        client_id,
+        client_name,
+        client_domain,
+        one_day_summary,
+        seven_day_summary,
+        run_date,
+        status,
+        run_start_time,
+        run_end_time
+      FROM gmail_client_summary
+      WHERE (client_id = ${clientId} OR client_name = ${clientId} OR client_domain = ${clientId})
+        AND run_date = ${latestRunDate}
+      ORDER BY run_start_time DESC
+    `)
+
+    const summaries = Array.isArray(summariesResult) ? summariesResult : (summariesResult as any).rows || []
+
+    logger.info(`[${requestId}] Found gmail summaries for client`, {
+      clientId,
+      runDate: latestRunDate,
+      recordCount: summaries.length,
+    })
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          client_id: clientId,
+          run_date: latestRunDate,
+          total_records: summaries.length,
+          summaries: summaries,
+          summary: {
+            total_records: summaries.length,
+            has_one_day_summary: summaries.some((s: any) => s.one_day_summary),
+            has_seven_day_summary: summaries.some((s: any) => s.seven_day_summary),
+          },
+        },
+      },
+      { status: 200 }
+    )
+  } catch (error: any) {
+    logger.error(`[${requestId}] Error fetching gmail summaries`, {
+      error: error.message || String(error),
+      errorCode: error.code,
+    })
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: { message: error.message || 'Failed to fetch gmail summaries' },
+      },
+      { status: 500 }
+    )
+  }
 }
 
 /**
@@ -60,8 +174,9 @@ export async function POST(req: NextRequest) {
 
     const parseResult = PayloadSchema.safeParse(body)
 
-    const { clientName, clientDomain, oneDayEmails, oneWeekEmails } = parseResult.data || {}
+    const { clientId, clientName, clientDomain, oneDayEmails, oneWeekEmails } = parseResult.data || {}
 
+    logger.info(`[${requestId}] Client ID:`, clientId)
     logger.info(`[${requestId}] Client Name:`, clientName)
     logger.info(`[${requestId}] Client Domain:`, clientDomain)
     logger.info(`[${requestId}] One Day Emails:`, oneDayEmails)
@@ -79,12 +194,13 @@ export async function POST(req: NextRequest) {
 
     await db.execute(sql`
       INSERT INTO gmail_client_summary (
-        id, run_date, status, run_start_time, client_name, client_domain
+        id, run_date, status, run_start_time, client_id, client_name, client_domain
       ) VALUES (
         ${id},
         ${runDate},
         'RUNNING',
         ${formatPgTimestamp(runStart)},
+        ${clientId || null},
         ${clientName || null},
         ${clientDomain || null}
       )
