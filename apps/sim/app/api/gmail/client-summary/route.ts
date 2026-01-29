@@ -38,23 +38,13 @@ const ThreadedEmailSchema: z.ZodType<any> = z.lazy(() =>
 
 const PayloadSchema = z.object({
   clientName: z.string().optional(),
-  query: z.string().optional(),
-  results: z.array(ThreadedEmailSchema),
+  clientDomain: z.string().optional(),
+  oneDayEmails: z.array(ThreadedEmailSchema).optional(),
+  oneWeekEmails: z.array(ThreadedEmailSchema).optional(),
 })
 
 function formatPgTimestamp(date: Date): string {
   return date.toISOString().replace('T', ' ').replace('Z', '')
-}
-
-function extractClientDomain(query?: string): string | null {
-  if (!query) return null
-  const emailRegex = /[\w.-]+@([\w.-]+\.[\w.-]+)/gi
-  const matches = query.match(emailRegex)
-  if (matches && matches.length > 0) {
-    const domainMatch = matches[0].match(/@([\w.-]+\.[\w.-]+)/i)
-    return domainMatch?.[1] ?? null
-  }
-  return null
 }
 
 /**
@@ -69,35 +59,23 @@ export async function POST(req: NextRequest) {
     logger.info(`[${requestId}] Received request body keys:`, Object.keys(body))
 
     const parseResult = PayloadSchema.safeParse(body)
-    if (!parseResult.success) {
-      logger.error(`[${requestId}] Validation error:`, parseResult.error.format())
-      return NextResponse.json(
-        {
-          error: 'Validation failed',
-          details: parseResult.error.format(),
-          message:
-            'Request body must include: results (required), clientName (optional), query (optional)',
-        },
-        { status: 400 }
-      )
-    }
 
-    const { clientName, query, results } = parseResult.data
+    const { clientName, clientDomain, oneDayEmails, oneWeekEmails } = parseResult.data || {}
 
-    if (!results || results.length === 0) {
-      logger.error(`[${requestId}] Empty results array`)
-      return NextResponse.json({ error: 'Results array cannot be empty' }, { status: 400 })
-    }
+    logger.info(`[${requestId}] Client Name:`, clientName)
+    logger.info(`[${requestId}] Client Domain:`, clientDomain)
+    logger.info(`[${requestId}] One Day Emails:`, oneDayEmails)
+    logger.info(`[${requestId}] One Week Emails:`, oneWeekEmails)
 
     const openaiApiKey = process.env.OPENAI_API_KEY
     if (!openaiApiKey) {
       logger.error(`[${requestId}] OpenAI API key not configured`)
       return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
     }
+    const openai = new OpenAI({ apiKey: openaiApiKey })
 
     const id = randomUUID()
     const runDate = runStart.toISOString().split('T')[0]
-    const clientDomain = extractClientDomain(query)
 
     await db.execute(sql`
       INSERT INTO gmail_client_summary (
@@ -112,29 +90,52 @@ export async function POST(req: NextRequest) {
       )
     `)
 
-    const userPrompt = `Summarise this email thread (provided as JSON):\n\n${JSON.stringify(results, null, 2)}`
+    let oneDaySummary = null
+    let sevenDaysSummary = null
 
-    const openai = new OpenAI({ apiKey: openaiApiKey })
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an excellent Email Summariser. The email object has replies which are also email objects.',
-        },
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-      temperature: 0.2,
-      max_tokens: 1200,
-    })
+    if (oneDayEmails && oneDayEmails.length >= 0) {
+      const userPrompt = `Summarise this email thread (provided as JSON):\n\n${JSON.stringify(oneDayEmails, null, 2)}`
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are an excellent Email Summariser. The email object has replies which are also email objects.',
+          },
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 1200,
+      })
 
-    logger.info('User Prompt:', userPrompt)
+      oneDaySummary = completion.choices[0]?.message?.content || ''
+    }
 
-    const summary = completion.choices[0]?.message?.content || ''
+    if (oneWeekEmails && oneWeekEmails.length >= 0) {
+      const userPrompt = `Summarise this email thread (provided as JSON):\n\n${JSON.stringify(oneWeekEmails, null, 2)}`
+      const sevenDaysCompletion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are an excellent Email Summariser. The email object has replies which are also email objects.',
+          },
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 1200,
+      })
+      sevenDaysSummary = sevenDaysCompletion.choices[0]?.message?.content || ''
+    }
+
     const runEnd = new Date()
 
     await db.execute(sql`
@@ -142,14 +143,16 @@ export async function POST(req: NextRequest) {
       SET
         status = 'COMPLETED',
         run_end_time = ${formatPgTimestamp(runEnd)},
-        one_day_summary = ${summary || null}
+        one_day_summary = ${oneDaySummary || null},
+        seven_day_summary = ${sevenDaysSummary || null}
       WHERE id = ${id}
     `)
 
     return NextResponse.json({
       success: true,
       id,
-      summary,
+      oneDaySummary,
+      sevenDaysSummary,
     })
   } catch (error: any) {
     logger.error(`[${requestId}] Failed to summarize/store gmail client summary`, error)
