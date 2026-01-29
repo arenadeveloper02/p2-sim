@@ -790,34 +790,63 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             }
             baseParams.limit = parsedLimit
 
+            // Validate that only one date selection method is used
+            const hasQuickDate = dateRange && dateRange.trim() !== ''
+            const hasFromDate = fromDate && fromDate.trim() !== ''
+            const hasToDate = toDate && toDate.trim() !== ''
+
+            if (hasQuickDate && (hasFromDate || hasToDate)) {
+              throw new Error('Cannot select both quick date range and specific from/to dates. Please choose one method.')
+            }
+
             // Handle date range presets
-            if (dateRange) {
+            if (hasQuickDate) {
               const days = Number.parseInt(dateRange, 10)
               if (!Number.isNaN(days) && days > 0) {
                 const now = new Date()
-                const oldestDate = new Date(now)
-                oldestDate.setDate(now.getDate() - (days - 1))
-                const oldestTimestamp = Math.floor(oldestDate.getTime() / 1000).toString()
-                const latestTimestamp = Math.floor(now.getTime() / 1000).toString()
-                baseParams.oldest = oldestTimestamp
-                baseParams.latest = latestTimestamp
+
+                if (days === 1) {
+                  // For "Today": from start of today to end of today
+                  const startOfToday = new Date(now)
+                  startOfToday.setHours(0, 0, 0, 0)
+                  const endOfToday = new Date(now)
+                  endOfToday.setHours(23, 59, 59, 999)
+
+                  const oldestTimestamp = Math.floor(startOfToday.getTime() / 1000).toString()
+                  const latestTimestamp = Math.floor(endOfToday.getTime() / 1000).toString()
+                  baseParams.oldest = oldestTimestamp
+                  baseParams.latest = latestTimestamp
+                } else {
+                  // For "Last X days": from X days ago to end of today
+                  const oldestDate = new Date(now)
+                  oldestDate.setDate(now.getDate() - days)
+                  oldestDate.setHours(0, 0, 0, 0) // Start of that day
+
+                  const endOfToday = new Date(now)
+                  endOfToday.setHours(23, 59, 59, 999) // End of today
+
+                  const oldestTimestamp = Math.floor(oldestDate.getTime() / 1000).toString()
+                  const latestTimestamp = Math.floor(endOfToday.getTime() / 1000).toString()
+                  baseParams.oldest = oldestTimestamp
+                  baseParams.latest = latestTimestamp
+                }
               }
-            } else {
+            } else if (hasFromDate || hasToDate) {
               // Handle date conversion to timestamps
-              if (fromDate) {
-                const fromTimestamp = Math.floor(new Date(fromDate).getTime() / 1000).toString()
+              if (hasFromDate) {
+                const fromDateObj = new Date(fromDate)
+                // Set fromDate to start of that day to include all messages from the beginning of the day
+                fromDateObj.setHours(0, 0, 0, 0)
+                const fromTimestamp = Math.floor(fromDateObj.getTime() / 1000).toString()
                 baseParams.oldest = fromTimestamp
               } else if (oldest) {
                 baseParams.oldest = oldest
               }
 
-              if (toDate) {
+              if (hasToDate) {
                 const toDateObj = new Date(toDate)
-                // If fromDate and toDate are the same day, set toDate to end of that day
-                // to include all messages from the entire day
-                if (fromDate && fromDate === toDate) {
-                  toDateObj.setHours(23, 59, 59, 999)
-                }
+                // Always set toDate to end of that day to include all messages from the entire day
+                toDateObj.setHours(23, 59, 59, 999)
                 const toTimestamp = Math.floor(toDateObj.getTime() / 1000).toString()
                 baseParams.latest = toTimestamp
               }

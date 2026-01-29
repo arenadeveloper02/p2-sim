@@ -32,6 +32,8 @@ import {
   ResponseFormat,
   ScheduleInfo,
   ShortInput,
+  SlackDateRangeSelector,
+  SlackDateInput,
   SlackSelectorInput,
   SliderInput,
   Switch,
@@ -45,6 +47,7 @@ import {
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
 import { ArenaCommentInput } from './components/arena/arena-comment-input'
@@ -334,6 +337,9 @@ function SubBlockComponent({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const wandControlRef = useRef<WandControlHandlers | null>(null)
 
+  // Get block type to determine if this is a Slack block
+  const blockType = useWorkflowStore((state) => state.blocks?.[blockId]?.type)
+
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
     e.stopPropagation()
   }
@@ -476,6 +482,21 @@ function SubBlockComponent({
         )
 
       case 'dropdown':
+        // Use Slack-specific date range selector for Slack blocks with dateRange field
+        if (blockType === 'slack' && config.id === 'dateRange') {
+          return (
+            <div onMouseDown={handleMouseDown}>
+              <SlackDateRangeSelector
+                blockId={blockId}
+                subBlockId={config.id}
+                placeholder={config.placeholder}
+                isPreview={isPreview}
+                previewValue={previewValue}
+                disabled={isDisabled}
+              />
+            </div>
+          )
+        }
         return (
           <div onMouseDown={handleMouseDown}>
             <Dropdown
@@ -659,6 +680,19 @@ function SubBlockComponent({
         )
 
       case 'date-input':
+        // Use Slack-specific date input for Slack blocks with date fields
+        if (blockType === 'slack' && (config.id === 'fromDate' || config.id === 'toDate')) {
+          return (
+            <SlackDateInput
+              blockId={blockId}
+              subBlockId={config.id}
+              placeholder={config.placeholder}
+              isPreview={isPreview}
+              previewValue={previewValue as any}
+              disabled={isDisabled}
+            />
+          )
+        }
         return (
           <DateInput
             blockId={blockId}

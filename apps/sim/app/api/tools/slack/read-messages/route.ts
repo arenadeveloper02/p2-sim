@@ -234,18 +234,22 @@ const SlackReadMessagesSchema = z
     cursor: z.string().optional().nullable(),
     autoPaginate: z.boolean().optional().default(false),
     includeThreads: z.boolean().optional().default(false),
-    maxThreads: z.coerce
-      .number()
-      .min(1, 'maxThreads must be at least 1')
-      .max(50, 'maxThreads cannot exceed 50')
-      .optional()
-      .default(10),
-    maxRepliesPerThread: z.coerce
-      .number()
-      .min(1, 'maxRepliesPerThread must be at least 1')
-      .max(200, 'maxRepliesPerThread cannot exceed 200')
-      .optional()
-      .default(100),
+    maxThreads: z.preprocess(
+      (val) => {
+        if (val === '' || val === null || val === undefined) return 10
+        const num = Number(val)
+        return isNaN(num) || num < 1 ? 10 : Math.min(num, 50)
+      },
+      z.number().min(1, 'maxThreads must be at least 1').max(50, 'maxThreads cannot exceed 50')
+    ),
+    maxRepliesPerThread: z.preprocess(
+      (val) => {
+        if (val === '' || val === null || val === undefined) return 100
+        const num = Number(val)
+        return isNaN(num) || num < 1 ? 100 : Math.min(num, 200)
+      },
+      z.number().min(1, 'maxRepliesPerThread must be at least 1').max(200, 'maxRepliesPerThread cannot exceed 200')
+    ),
   })
   .refine((data) => data.channel || data.userId, {
     message: 'Either channel or userId is required',
