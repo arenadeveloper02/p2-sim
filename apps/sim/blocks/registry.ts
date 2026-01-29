@@ -26,6 +26,7 @@ import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
 import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
+import { BingAdsBlock } from '@/blocks/blocks/bing_ads'
 import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock, FileV2Block } from '@/blocks/blocks/file'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
@@ -191,6 +192,7 @@ export const registry: Record<string, BlockConfig> = {
   evaluator: EvaluatorBlock,
   exa: ExaBlock,
   facebook_ads: FacebookAdsBlock,
+  bing_ads: BingAdsBlock,
   file: FileBlock,
   figma: FigmaBlock,
   file_v2: FileV2Block,

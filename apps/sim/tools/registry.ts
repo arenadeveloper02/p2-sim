@@ -206,6 +206,7 @@ import {
   exaSearchTool,
 } from '@/tools/exa'
 import { facebookAdsQueryTool } from '@/tools/facebook_ads'
+import { bingAdsQueryTool } from '@/tools/bing_ads'
 import {
   figmaCreateTool,
   figmaDeleteCommentTool,
@@ -2407,6 +2408,7 @@ export const tools: Record<string, ToolConfig> = {
   google_ads_v1_query: googleAdsV1QueryTool,
   google_analytics_query: googleAnalyticsQueryTool,
   facebook_ads_query: facebookAdsQueryTool,
+  bing_ads_query: bingAdsQueryTool,
   google_sheets_read_v2: googleSheetsReadV2Tool,
   google_sheets_write_v2: googleSheetsWriteV2Tool,
   google_sheets_update_v2: googleSheetsUpdateV2Tool,

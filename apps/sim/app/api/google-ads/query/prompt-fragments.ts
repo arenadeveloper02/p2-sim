@@ -61,7 +61,7 @@ What I Added:
 - ad_group_ad (ad_group_ad.ad.id, ad_group_ad.ad.final_urls, ad_group_ad.ad_strength, ad_group_ad.status) + campaign.id + campaign.status + ad_group.name required
 - keyword_view (performance data) + campaign.id + campaign.status required
 - search_term_view (search query reports) + campaign.id + campaign.status required
-- campaign_search_term_view (Performance Max search term data) + campaign.id + campaign.status required - supports metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions
+- campaign_search_term_view (Performance Max search term data) + campaign.id + campaign.status required
 - campaign_asset (campaign_asset.asset, campaign_asset.status) + campaign.id + campaign.status required
 - asset (asset.name, asset.sitelink_asset.link_text, asset.final_urls, asset.type)
 - asset_group_asset (asset_group_asset.asset, asset_group_asset.asset_group, asset_group_asset.field_type, asset_group_asset.performance_label, asset_group_asset.status)
@@ -261,6 +261,10 @@ Note: Shows only search terms that have been added as keywords. segments.keyword
 SELECT campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, segments.keyword.info.text, search_term_view.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND search_term_view.status = 'NONE' ORDER BY metrics.cost_micros DESC
 Note: Shows search terms that have NOT been added as keywords - potential keyword opportunities. segments.keyword.info.text shows the keyword that triggered the search term.
 
+**Performance Max Search Terms:**
+SELECT campaign.id, campaign.name, campaign.status, campaign_search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign_search_term_view WHERE segments.date DURING LAST_30_DAYS AND campaign.status = 'ENABLED' AND campaign.advertising_channel_type = 'PERFORMANCE_MAX' ORDER BY metrics.cost_micros DESC
+Note: Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data
+
 **Gender Demographics:**
 SELECT gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros FROM gender_view WHERE segments.date DURING LAST_30_DAYS
 
@@ -341,7 +345,7 @@ Note: Shows ads currently under policy review from ENABLED campaigns.
 - Brand: campaign.name LIKE '%Brand%'
 - Non-Brand: campaign.name NOT LIKE '%Brand%'
 - PMax: campaign.advertising_channel_type = 'PERFORMANCE_MAX'
-   - For PMax search terms: Use campaign_search_term_view with campaign_search_term_view.search_term (not search_term_view)
+- For PMax search terms: Use campaign_search_term_view (not search_term_view)
 
 AdvertisingChannelTypeEnum.AdvertisingChannelType
 UNSPECIFIED → Not specified.
@@ -565,15 +569,13 @@ When analyzing sitelinks for issues, you MUST present data in TWO separate table
 
 const searchTermsFragment: FragmentBuilder = () =>
   `
-**SEARCH QUERY REPORTS (SQR):**
+**SEARCH QUERY REPORTS:**
 - Use search_term_view with campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term for regular Search campaigns.
-- For Performance Max search terms: Use campaign_search_term_view (not search_term_view). Filter with campaign.advertising_channel_type = 'PERFORMANCE_MAX'.
-- Include metrics: metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value.
+- Use campaign_search_term_view for Performance Max campaigns - search_term_view does not include Performance Max data.
+- Include metrics: metrics.clicks, metrics.cost_micros, metrics.conversions (add others when useful).
 - Filter by segments.date DURING or BETWEEN requested range and campaign.status = 'ENABLED'.
 - For Performance Max search terms: Add campaign.advertising_channel_type = 'PERFORMANCE_MAX' filter.
-- ORDER results by spend (cost_micros DESC) for comprehensive results.
-- **COST FILTERING**: For "SQR where cost > $X", convert X to micros: X * 1,000,000. Examples: $1 = 1,000,000, $0.50 = 500,000.
-- **CRITICAL**: Always use metrics.cost_micros > [amount_in_micros] for cost filtering, NOT metrics.cost_micros > [dollars].
+- ORDER results by spend or conversions (cost_micros or conversions) and respect any LIMIT requested by the user.
 `.trim()
 
 const demographicsFragment: FragmentBuilder = () =>
