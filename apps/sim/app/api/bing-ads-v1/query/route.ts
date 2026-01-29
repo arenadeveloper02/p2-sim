@@ -3,7 +3,7 @@
  * Simplified, AI-powered Bing Ads query endpoint - Following Google Ads v1 pattern
  */
 
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { BING_ADS_ACCOUNTS } from './constants'

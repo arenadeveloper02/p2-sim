@@ -2,7 +2,7 @@
  * Bing Ads query generation using AI - Following Google Ads v1 pattern
  */
 
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { executeProviderRequest } from '@/providers'
 import { resolveAIProvider } from './ai-provider'
 import { DEFAULT_DATE_RANGE_DAYS } from './constants'

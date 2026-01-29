@@ -7,6 +7,7 @@ export const GOOGLE_ADS_V1_ACCOUNTS: Record<string, { id: string; name: string }
   ami: { id: '7284380454', name: 'AMI' },
   au_eventgroove_products: { id: '3365918329', name: 'AU - Eventgroove Products' },
   ca_eventgroove_products: { id: '5197514377', name: 'CA - Eventgroove Products' },
+  us_eventgroove_products: { id: '4687328820', name: 'US - Eventgroove Products' },
   capitalcitynurses: { id: '8395621144', name: 'CapitalCityNurses.com' },
   careadvantage: { id: '9059182052', name: 'CareAdvantage' },
   chancey_reynolds: { id: '7098393346', name: 'Chancey & Reynolds' },
@@ -21,6 +22,7 @@ export const GOOGLE_ADS_V1_ACCOUNTS: Record<string, { id: string; name: string }
   great_hill_dental: { id: '6480839212', name: 'Great Hill Dental' },
   great_lakes: { id: '9925296449', name: 'Great Lakes' },
   heartland: { id: '4479015711', name: 'Heartland' },
+  garramone_ralph: { id: '1472407899', name: 'Garramone, Ralph' },
   holmdel_nj: { id: '3507263995', name: 'Holmdel-NJ' },
   howell_chase: { id: '1890712343', name: 'Howell Chase' },
   idi_fl: { id: '1890773395', name: 'IDI-FL' },
@@ -42,10 +44,11 @@ export const GOOGLE_ADS_V1_ACCOUNTS: Record<string, { id: string; name: string }
   southern_ct_dental: { id: '7842729643', name: 'Southern Connecticut Dental Group' },
   ud: { id: '8270553905', name: 'UD' },
   uk_eventgroove_products: { id: '7662673578', name: 'UK - Eventgroove Products' },
-  us_eventgroove_products: { id: '4687328820', name: 'US - Eventgroove Products' },
   wolf_river: { id: '6445143850', name: 'Wolf River' },
   youngshc: { id: '3240333229', name: 'Youngshc.com' },
-  ricoobene: { id: '2848955239', name: 'Ricoobene' },
+  riccobene: { id: '2848955239', name: 'Riccobene' },
+  bd_engine_brake: { id: '1369614', name: '1369614 B.C. LTD. (BD Engine Brake)' },
+  dj_precision_machine: { id: '6438492741', name: 'D&J Precision Machine LLC' },
 }
 
 export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {

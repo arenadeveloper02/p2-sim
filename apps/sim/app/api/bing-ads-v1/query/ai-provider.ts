@@ -2,7 +2,7 @@
  * AI provider resolution for Bing Ads V1
  */
 
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { AIProviderConfig } from './types'
 
 const logger = createLogger('BingAdsV1AIProvider')

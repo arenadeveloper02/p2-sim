@@ -2,7 +2,7 @@
  * Result processing for Bing Ads V1 API
  */
 
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { MICROS_PER_DOLLAR } from './constants'
 import type { ProcessedResults } from './types'
 

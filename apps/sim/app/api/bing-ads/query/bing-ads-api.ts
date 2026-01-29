@@ -1,4 +1,4 @@
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import { BING_ADS_DEFAULT_CUSTOMER_ID, BING_ADS_OAUTH_URL, POSITION2_CUSTOMER_ID } from './constants'
 import type { ParsedBingQuery } from './types'
 import JSZip from 'jszip'

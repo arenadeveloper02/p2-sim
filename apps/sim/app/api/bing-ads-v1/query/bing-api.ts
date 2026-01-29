@@ -2,7 +2,7 @@
  * Bing Ads API Request Handler - Adapted from current Bing Ads but simplified
  */
 
-import { createLogger } from '@/lib/logs/console/logger'
+import { createLogger } from '@sim/logger'
 import type { ParsedBingQuery } from '../../bing-ads/query/types'
 
 const logger = createLogger('BingAdsV1API')
