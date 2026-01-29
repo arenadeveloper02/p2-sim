@@ -83,7 +83,9 @@ export async function GET(request: NextRequest) {
     logger.info(`[${requestId}] Latest date result:`, latestDateResult)
 
     // Handle different result structures
-    const rows = Array.isArray(latestDateResult) ? latestDateResult : (latestDateResult as any).rows || []
+    const rows = Array.isArray(latestDateResult)
+      ? latestDateResult
+      : (latestDateResult as any).rows || []
 
     if (rows.length === 0) {
       return NextResponse.json(
@@ -120,7 +122,9 @@ export async function GET(request: NextRequest) {
       ORDER BY run_start_time DESC
     `)
 
-    const summaries = Array.isArray(summariesResult) ? summariesResult : (summariesResult as any).rows || []
+    const summaries = Array.isArray(summariesResult)
+      ? summariesResult
+      : (summariesResult as any).rows || []
 
     logger.info(`[${requestId}] Found gmail summaries for client`, {
       clientId,
@@ -174,7 +178,8 @@ export async function POST(req: NextRequest) {
 
     const parseResult = PayloadSchema.safeParse(body)
 
-    const { clientId, clientName, clientDomain, oneDayEmails, oneWeekEmails } = parseResult.data || {}
+    const { clientId, clientName, clientDomain, oneDayEmails, oneWeekEmails } =
+      parseResult.data || {}
 
     logger.info(`[${requestId}] Client ID:`, clientId)
     logger.info(`[${requestId}] Client Name:`, clientName)

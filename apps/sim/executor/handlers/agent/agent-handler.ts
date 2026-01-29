@@ -1662,7 +1662,6 @@ export class AgentBlockHandler implements BlockHandler {
         content: content.substring(0, 200) + (content.length > 200 ? '...' : ''),
         responseFormat: responseFormat,
         error: error instanceof Error ? error.message : String(error),
-        error: error instanceof Error ? error.message : String(error),
       })
 
       const standardResponse = this.processStandardResponse(result)
