@@ -122,10 +122,10 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       required: false,
     },
     {
-      id: 'folderSelector',
+      id: 'uploadFolderSelector',
       title: 'Select Parent Folder',
       type: 'file-selector',
-      canonicalParamId: 'folderId',
+      canonicalParamId: 'uploadFolderId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -138,10 +138,10 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       condition: { field: 'operation', value: ['create_file', 'upload'] },
     },
     {
-      id: 'manualFolderId',
+      id: 'uploadManualFolderId',
       title: 'Parent Folder ID',
       type: 'short-input',
-      canonicalParamId: 'folderId',
+      canonicalParamId: 'uploadFolderId',
       placeholder: 'Enter parent folder ID (leave empty for root folder)',
       mode: 'advanced',
       condition: { field: 'operation', value: ['create_file', 'upload'] },
@@ -194,10 +194,10 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       required: true,
     },
     {
-      id: 'folderSelector',
+      id: 'createFolderFolderSelector',
       title: 'Select Parent Folder',
       type: 'file-selector',
-      canonicalParamId: 'folderId',
+      canonicalParamId: 'createFolderFolderId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -209,22 +209,21 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'create_folder' },
     },
-    // Manual Folder ID input (advanced mode)
     {
-      id: 'manualFolderId',
+      id: 'createFolderManualFolderId',
       title: 'Parent Folder ID',
       type: 'short-input',
-      canonicalParamId: 'folderId',
+      canonicalParamId: 'createFolderFolderId',
       placeholder: 'Enter parent folder ID (leave empty for root folder)',
       mode: 'advanced',
       condition: { field: 'operation', value: 'create_folder' },
     },
     // List Fields - Folder Selector (basic mode)
     {
-      id: 'folderSelector',
+      id: 'listFolderSelector',
       title: 'Select Folder',
       type: 'file-selector',
-      canonicalParamId: 'folderId',
+      canonicalParamId: 'listFolderId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -236,12 +235,11 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'list' },
     },
-    // Manual Folder ID input (advanced mode)
     {
-      id: 'manualFolderId',
+      id: 'listManualFolderId',
       title: 'Folder ID',
       type: 'short-input',
-      canonicalParamId: 'folderId',
+      canonicalParamId: 'listFolderId',
       placeholder: 'Enter folder ID (leave empty for root folder)',
       mode: 'advanced',
       condition: { field: 'operation', value: 'list' },
@@ -415,7 +413,7 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       condition: { field: 'operation', value: 'copy' },
     },
     {
-      id: 'folderSelector',
+      id: 'copyDestinationFolderSelector',
       title: 'Destination Folder',
       type: 'file-selector',
       canonicalParamId: 'destinationFolderId',
@@ -431,7 +429,7 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       condition: { field: 'operation', value: 'copy' },
     },
     {
-      id: 'manualDestinationFolderId',
+      id: 'copyManualDestinationFolderId',
       title: 'Destination Folder ID',
       type: 'short-input',
       canonicalParamId: 'destinationFolderId',
@@ -799,9 +797,14 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
       params: (params) => {
         const {
           credential,
-          folderSelector,
-          manualFolderId,
-          manualDestinationFolderId,
+          listFolderSelector,
+          listManualFolderId,
+          createFolderFolderSelector,
+          createFolderManualFolderId,
+          uploadFolderSelector,
+          uploadManualFolderId,
+          copyDestinationFolderSelector,
+          copyManualDestinationFolderId,
           fileSelector,
           manualFileId,
           mimeType,
@@ -821,16 +824,24 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
           }
         }
 
-        // Use folderSelector if provided, otherwise use manualFolderId
-        const effectiveFolderId = (folderSelector || manualFolderId || '').trim()
+        const effectiveFolderId = (() => {
+          const raw =
+            operation === 'list'
+              ? listFolderSelector ?? listManualFolderId
+              : operation === 'create_folder'
+                ? createFolderFolderSelector ?? createFolderManualFolderId
+                : operation === 'create_file' || operation === 'upload'
+                  ? uploadFolderSelector ?? uploadManualFolderId
+                  : ''
+          return (raw ?? '').toString().trim()
+        })()
 
-        // Use fileSelector if provided, otherwise use manualFileId
         const effectiveFileId = (fileSelector || manualFileId || '').trim()
 
-        // Use folderSelector for destination or manualDestinationFolderId for copy operation
         const effectiveDestinationFolderId =
-          params.operation === 'copy'
-            ? (folderSelector || manualDestinationFolderId || '').trim()
+          operation === 'copy'
+            ? (copyDestinationFolderSelector ?? copyManualDestinationFolderId ?? '').toString().trim() ||
+              undefined
             : undefined
 
         // Convert starred dropdown to boolean
@@ -862,10 +873,15 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
     // File selection inputs
     fileSelector: { type: 'string', description: 'Selected file' },
     manualFileId: { type: 'string', description: 'Manual file identifier' },
-    // Folder selection inputs
-    folderSelector: { type: 'string', description: 'Selected folder' },
-    manualFolderId: { type: 'string', description: 'Manual folder identifier' },
-    manualDestinationFolderId: { type: 'string', description: 'Destination folder for copy' },
+    // Folder selection inputs (per-operation for correct basic/advanced swap)
+    listFolderSelector: { type: 'string', description: 'Selected folder for list' },
+    listManualFolderId: { type: 'string', description: 'Manual folder ID for list' },
+    createFolderFolderSelector: { type: 'string', description: 'Selected parent folder for create folder' },
+    createFolderManualFolderId: { type: 'string', description: 'Manual parent folder ID for create folder' },
+    uploadFolderSelector: { type: 'string', description: 'Selected parent folder for upload/create file' },
+    uploadManualFolderId: { type: 'string', description: 'Manual parent folder ID for upload/create file' },
+    copyDestinationFolderSelector: { type: 'string', description: 'Selected destination folder for copy' },
+    copyManualDestinationFolderId: { type: 'string', description: 'Manual destination folder ID for copy' },
     // Upload and Create inputs
     fileName: { type: 'string', description: 'File or folder name' },
     file: { type: 'json', description: 'File to upload (UserFile object)' },
