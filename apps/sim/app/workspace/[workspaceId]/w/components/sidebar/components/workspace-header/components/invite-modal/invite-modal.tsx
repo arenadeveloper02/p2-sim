@@ -51,9 +51,8 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
   >({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [showSent, setShowSent] = useState(false)
+  const cooldownIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [memberToRemove, setMemberToRemove] = useState<{ userId: string; email: string } | null>(
     null
   )
@@ -66,6 +65,7 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
   const [resendingInvitationIds, setResendingInvitationIds] = useState<Record<string, boolean>>({})
   const [resendCooldowns, setResendCooldowns] = useState<Record<string, number>>({})
   const [resentInvitationIds, setResentInvitationIds] = useState<Record<string, boolean>>({})
+  const [showSent, setShowSent] = useState(false)
   const params = useParams()
   const workspaceId = params.workspaceId as string
 
@@ -122,9 +122,16 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
   useEffect(() => {
     if (open) {
       setErrorMessage(null)
-      setSuccessMessage(null)
     }
   }, [open])
+
+  useEffect(() => {
+    const intervalsRef = cooldownIntervalsRef.current
+    return () => {
+      intervalsRef.forEach((interval) => clearInterval(interval))
+      intervalsRef.clear()
+    }
+  }, [])
 
   const addEmail = useCallback(
     (email: string) => {
@@ -257,11 +264,6 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
       }
 
       setExistingUserPermissionChanges({})
-
-      setSuccessMessage(
-        `Permission changes saved for ${updates.length} user${updates.length !== 1 ? 's' : ''}!`
-      )
-      setTimeout(() => setSuccessMessage(null), 3000)
     } catch (error) {
       logger.error('Error saving permission changes:', error)
       const errorMsg =
@@ -284,9 +286,6 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
     if (!userPerms.canAdmin || !hasPendingChanges) return
 
     setExistingUserPermissionChanges({})
-    setSuccessMessage('Changes restored to original permissions!')
-
-    setTimeout(() => setSuccessMessage(null), 3000)
   }, [userPerms.canAdmin, hasPendingChanges])
 
   const handleRemoveMemberClick = useCallback((userId: string, email: string) => {
@@ -339,9 +338,6 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
         delete updated[memberToRemove.userId]
         return updated
       })
-
-      setSuccessMessage(`${memberToRemove.email} has been removed from the workspace`)
-      setTimeout(() => setSuccessMessage(null), 3000)
     } catch (error) {
       logger.error('Error removing member:', error)
       const errorMsg =
@@ -389,9 +385,6 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
       setPendingInvitations((prev) =>
         prev.filter((inv) => inv.invitationId !== invitationToRemove.invitationId)
       )
-
-      setSuccessMessage(`Invitation for ${invitationToRemove.email} has been cancelled`)
-      setTimeout(() => setSuccessMessage(null), 3000)
     } catch (error) {
       logger.error('Error cancelling invitation:', error)
       const errorMsg =
@@ -433,9 +426,6 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
           throw new Error(data.error || 'Failed to resend invitation')
         }
 
-        setSuccessMessage(`Invitation resent to ${email}`)
-        setTimeout(() => setSuccessMessage(null), 3000)
-
         setResentInvitationIds((prev) => ({ ...prev, [invitationId]: true }))
         setTimeout(() => {
           setResentInvitationIds((prev) => {
@@ -456,6 +446,12 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
           return next
         })
         setResendCooldowns((prev) => ({ ...prev, [invitationId]: 60 }))
+
+        const existingInterval = cooldownIntervalsRef.current.get(invitationId)
+        if (existingInterval) {
+          clearInterval(existingInterval)
+        }
+
         const interval = setInterval(() => {
           setResendCooldowns((prev) => {
             const current = prev[invitationId]
@@ -464,11 +460,14 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
               const next = { ...prev }
               delete next[invitationId]
               clearInterval(interval)
+              cooldownIntervalsRef.current.delete(invitationId)
               return next
             }
             return { ...prev, [invitationId]: current - 1 }
           })
         }, 1000)
+
+        cooldownIntervalsRef.current.set(invitationId, interval)
       }
     },
     [workspaceId, userPerms.canAdmin, resendCooldowns]
@@ -479,7 +478,6 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
       e.preventDefault()
 
       setErrorMessage(null)
-      setSuccessMessage(null)
 
       if (validEmails.length === 0 || !workspaceId) {
         return
@@ -638,13 +636,17 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
     setExistingUserPermissionChanges({})
     setIsSubmitting(false)
     setIsSaving(false)
-    setShowSent(false)
     setErrorMessage(null)
-    setSuccessMessage(null)
     setMemberToRemove(null)
     setIsRemovingMember(false)
     setInvitationToRemove(null)
     setIsRemovingInvitation(false)
+    setResendCooldowns({})
+    setResentInvitationIds({})
+    setShowSent(false)
+
+    cooldownIntervalsRef.current.forEach((interval) => clearInterval(interval))
+    cooldownIntervalsRef.current.clear()
   }, [])
 
   return (
@@ -753,7 +755,6 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
                   variant='default'
                   disabled={isSaving || isSubmitting}
                   onClick={handleRestoreChanges}
-                  className='h-[32px] gap-[8px] px-[12px] font-medium'
                 >
                   Restore Changes
                 </Button>
@@ -762,7 +763,6 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
                   variant='tertiary'
                   disabled={isSaving || isSubmitting}
                   onClick={handleSaveChanges}
-                  className='h-[32px] gap-[8px] px-[12px] font-medium'
                 >
                   {isSaving ? 'Saving...' : 'Save Changes'}
                 </Button>
