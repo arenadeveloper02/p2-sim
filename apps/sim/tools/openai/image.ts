@@ -60,6 +60,7 @@ export const imageTool: ToolConfig = {
   request: {
     url: 'https://api.openai.com/v1/images/generations',
     method: 'POST',
+    timeout: 120000,
     headers: () => {
       const apiKey = getRotatingApiKey('openai')
       return {

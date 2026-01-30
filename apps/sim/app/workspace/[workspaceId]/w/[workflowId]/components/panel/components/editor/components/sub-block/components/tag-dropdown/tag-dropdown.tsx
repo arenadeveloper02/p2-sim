@@ -932,7 +932,7 @@ const TagDropdownBackButton: React.FC = () => {
         'flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] font-base',
         size === 'sm' ? 'h-[22px] text-[11px]' : 'h-[26px] text-[13px]',
         colorScheme === 'inverted'
-          ? 'text-[var(--text-primary)] text-white hover:bg-[var(--border-1)] dark:hover:bg-[#363636] dark:hover:text-white'
+          ? 'text-[var(--text-primary)] hover:bg-[var(--border-1)] dark:hover:bg-[#363636] dark:hover:text-white'
           : 'text-[var(--text-primary)] hover:bg-[var(--border-1)]'
       )}
       role='button'
@@ -987,6 +987,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const itemRefs = useRef<Map<number, HTMLElement>>(new Map())
+  const prevSelectedIndexRef = useRef(selectedIndex)
 
   const [nestedPath, setNestedPath] = useState<NestedTag[]>([])
   const baseFolderRef = useRef<{
@@ -1823,7 +1824,9 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 
   useEffect(() => {
     if (!visible || selectedIndex < 0) return
+    if (prevSelectedIndexRef.current === selectedIndex) return
 
+    prevSelectedIndexRef.current = selectedIndex
     const element = itemRefs.current.get(selectedIndex)
     if (element) {
       element.scrollIntoView({
@@ -2004,8 +2007,9 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         return true
       },
       registerFolder: (folderId, folderTitle, baseTag, group) => {
+        const isNewFolder = baseFolderRef.current?.id !== folderId
         baseFolderRef.current = { id: folderId, title: folderTitle, baseTag, group }
-        if (scrollAreaRef.current) {
+        if (isNewFolder && scrollAreaRef.current) {
           scrollAreaRef.current.scrollTop = 0
         }
       },

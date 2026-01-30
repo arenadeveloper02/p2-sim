@@ -18,6 +18,8 @@ export interface NanoBananaRequestBody {
   generationConfig?: {
     imageConfig?: {
       aspectRatio?: string
+      /** Output resolution for Nano Banana Pro: "1K" | "2K" | "4K" (uppercase K). */
+      imageSize?: string
     }
     responseModalities?: string[]
   }
@@ -107,6 +109,8 @@ export const resolveInlineImageData = async (
 export const buildNanoBananaRequestBody = async (params: {
   prompt: string
   aspectRatio?: string
+  /** For Nano Banana Pro (gemini-3-pro-image-preview): "1K" | "2K" | "4K". */
+  imageSize?: string
   inputImage?: unknown
   inputImageMimeType?: string
 }): Promise<NanoBananaRequestBody> => {
@@ -133,9 +137,10 @@ export const buildNanoBananaRequestBody = async (params: {
     },
   }
 
-  if (params.aspectRatio) {
+  if (params.aspectRatio || params.imageSize) {
     body.generationConfig!.imageConfig = {
-      aspectRatio: params.aspectRatio,
+      ...(params.aspectRatio && { aspectRatio: params.aspectRatio }),
+      ...(params.imageSize && { imageSize: params.imageSize }),
     }
   }
   return body
