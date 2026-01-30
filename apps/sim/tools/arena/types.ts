@@ -103,6 +103,21 @@ export type ArenaCommentsParams = {
 
 export interface ArenaCommentsResponse extends ToolResponse {}
 
+export type ArenaGetMeetingsParams = {
+  operation: string
+  'get-meetings-client'?: {
+    clientId: string
+    name: string
+  }
+  'get-meetings-client-id'?: string
+  'get-meetings-period': string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaGetMeetingsResponse extends ToolResponse {}
+
 export interface Task {
   errors: string | null
   errorMessage: string | null
