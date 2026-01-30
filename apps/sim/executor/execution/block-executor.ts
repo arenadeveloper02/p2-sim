@@ -103,7 +103,7 @@ export class BlockExecutor {
       this.callOnBlockStart(ctx, node, block)
     }
 
-    const startTime = Date.now()
+    const startTime = performance.now()
     let resolvedInputs: Record<string, any> = {}
 
     const nodeMetadata = this.buildNodeMetadata(node)
@@ -177,7 +177,7 @@ export class BlockExecutor {
         })) as NormalizedBlockOutput
       }
 
-      const duration = Date.now() - startTime
+      const duration = performance.now() - startTime
 
       if (blockLog) {
         blockLog.endedAt = new Date().toISOString()
@@ -257,7 +257,9 @@ export class BlockExecutor {
           block,
           this.sanitizeInputsForLog(resolvedInputs),
           displayOutput,
-          duration
+          duration,
+          blockLog!.startedAt,
+          blockLog!.endedAt
         )
       }
 
@@ -309,7 +311,7 @@ export class BlockExecutor {
     isSentinel: boolean,
     phase: 'input_resolution' | 'execution'
   ): NormalizedBlockOutput {
-    const duration = Date.now() - startTime
+    const duration = performance.now() - startTime
     const errorMessage = normalizeError(error)
     const hasResolvedInputs =
       resolvedInputs && typeof resolvedInputs === 'object' && Object.keys(resolvedInputs).length > 0
@@ -362,7 +364,9 @@ export class BlockExecutor {
         block,
         this.sanitizeInputsForLog(input),
         displayOutput,
-        duration
+        duration,
+        blockLog!.startedAt,
+        blockLog!.endedAt
       )
     }
 
@@ -548,7 +552,9 @@ export class BlockExecutor {
     block: SerializedBlock,
     input: Record<string, any>,
     output: NormalizedBlockOutput,
-    duration: number
+    duration: number,
+    startedAt: string,
+    endedAt: string
   ): void {
     const blockId = node.id
     const blockName = block.metadata?.name ?? blockId
@@ -565,6 +571,8 @@ export class BlockExecutor {
           input,
           output,
           executionTime: duration,
+          startedAt,
+          endedAt,
         },
         iterationContext
       )

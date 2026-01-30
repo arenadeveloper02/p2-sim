@@ -969,8 +969,8 @@ export function useWorkflowExecution() {
               const isContainerBlock = data.blockType === 'loop' || data.blockType === 'parallel'
               if (isContainerBlock) return
 
-              const startedAt = new Date(Date.now() - data.durationMs).toISOString()
-              const endedAt = new Date().toISOString()
+              const startedAt = data.startedAt
+              const endedAt = data.endedAt
 
               accumulatedBlockLogs.push({
                 blockId: data.blockId,
@@ -1018,8 +1018,8 @@ export function useWorkflowExecution() {
               // Track failed block execution in run path
               setBlockRunStatus(data.blockId, 'error')
 
-              const startedAt = new Date(Date.now() - data.durationMs).toISOString()
-              const endedAt = new Date().toISOString()
+              const startedAt = data.startedAt
+              const endedAt = data.endedAt
 
               // Accumulate block error log for the execution result
               accumulatedBlockLogs.push({
@@ -1608,8 +1608,8 @@ export function useWorkflowExecution() {
               const isContainerBlock = data.blockType === 'loop' || data.blockType === 'parallel'
               if (isContainerBlock) return
 
-              const startedAt = new Date(Date.now() - data.durationMs).toISOString()
-              const endedAt = new Date().toISOString()
+              const startedAt = data.startedAt
+              const endedAt = data.endedAt
 
               accumulatedBlockLogs.push({
                 blockId: data.blockId,
@@ -1647,8 +1647,8 @@ export function useWorkflowExecution() {
 
               setBlockRunStatus(data.blockId, 'error')
 
-              const startedAt = new Date(Date.now() - data.durationMs).toISOString()
-              const endedAt = new Date().toISOString()
+              const startedAt = data.startedAt
+              const endedAt = data.endedAt
 
               accumulatedBlockLogs.push({
                 blockId: data.blockId,
