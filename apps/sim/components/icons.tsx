@@ -5397,7 +5397,7 @@ export function SimilarwebIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   )
 }
-  
+
 export function CalComIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
