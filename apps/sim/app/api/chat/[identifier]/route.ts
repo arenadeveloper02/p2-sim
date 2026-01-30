@@ -7,18 +7,14 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
-import * as ChatFiles from '@/lib/uploads/contexts/chat'
+import { ChatFiles } from '@/lib/uploads'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import {
-  addCorsHeaders,
-  setChatAuthCookie,
-  validateAuthToken,
-  validateChatAuth,
-} from '@/app/api/chat/utils'
+import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatIdentifierAPI')
@@ -462,7 +458,7 @@ export async function POST(
         userId: deployment.userId,
         workspaceId,
         isDeployed: workflowRecord?.isDeployed ?? false,
-        variables: workflowRecord?.variables || {},
+        variables: (workflowRecord?.variables as Record<string, unknown>) ?? undefined,
       }
 
       const originalStream = await createStreamingResponse({

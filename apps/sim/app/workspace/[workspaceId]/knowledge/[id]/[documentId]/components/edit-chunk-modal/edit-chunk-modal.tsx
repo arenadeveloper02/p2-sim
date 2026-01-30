@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { AlertCircle, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import {
   Button,
   Label,
@@ -12,11 +11,14 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Switch,
   Textarea,
   Tooltip,
 } from '@/components/emcn'
+import type { ChunkData, DocumentData } from '@/lib/knowledge/types'
+import { getAccurateTokenCount, getTokenStrings } from '@/lib/tokenization/estimators'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import type { ChunkData, DocumentData } from '@/stores/knowledge/store'
+import { useUpdateChunk } from '@/hooks/queries/knowledge'
 
 const logger = createLogger('EditChunkModal')
 
@@ -26,13 +28,12 @@ interface EditChunkModalProps {
   knowledgeBaseId: string
   isOpen: boolean
   onClose: () => void
-  onChunkUpdate?: (updatedChunk: ChunkData) => void
-  // New props for navigation
   allChunks?: ChunkData[]
   currentPage?: number
   totalPages?: number
   onNavigateToChunk?: (chunk: ChunkData) => void
   onNavigateToPage?: (page: number, selectChunk: 'first' | 'last') => Promise<void>
+  maxChunkSize?: number
 }
 
 export function EditChunkModal({
@@ -41,22 +42,59 @@ export function EditChunkModal({
   knowledgeBaseId,
   isOpen,
   onClose,
-  onChunkUpdate,
   allChunks = [],
   currentPage = 1,
   totalPages = 1,
   onNavigateToChunk,
   onNavigateToPage,
+  maxChunkSize,
 }: EditChunkModalProps) {
   const userPermissions = useUserPermissionsContext()
+  const {
+    mutate: updateChunk,
+    isPending: isSaving,
+    error: mutationError,
+    reset: resetMutation,
+  } = useUpdateChunk()
   const [editedContent, setEditedContent] = useState(chunk?.content || '')
-  const [isSaving, setIsSaving] = useState(false)
   const [isNavigating, setIsNavigating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [showUnsavedChangesAlert, setShowUnsavedChangesAlert] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null)
+  const [tokenizerOn, setTokenizerOn] = useState(false)
+  const [hoveredTokenIndex, setHoveredTokenIndex] = useState<number | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const error = mutationError?.message ?? null
 
   const hasUnsavedChanges = editedContent !== (chunk?.content || '')
+
+  const tokenStrings = useMemo(() => {
+    if (!tokenizerOn || !editedContent) return []
+    return getTokenStrings(editedContent)
+  }, [editedContent, tokenizerOn])
+
+  const tokenCount = useMemo(() => {
+    if (!editedContent) return 0
+    if (tokenizerOn) return tokenStrings.length
+    return getAccurateTokenCount(editedContent)
+  }, [editedContent, tokenizerOn, tokenStrings])
+
+  const TOKEN_BG_COLORS = [
+    'rgba(239, 68, 68, 0.55)', // Red
+    'rgba(249, 115, 22, 0.55)', // Orange
+    'rgba(234, 179, 8, 0.55)', // Yellow
+    'rgba(132, 204, 22, 0.55)', // Lime
+    'rgba(34, 197, 94, 0.55)', // Green
+    'rgba(20, 184, 166, 0.55)', // Teal
+    'rgba(6, 182, 212, 0.55)', // Cyan
+    'rgba(59, 130, 246, 0.55)', // Blue
+    'rgba(139, 92, 246, 0.55)', // Violet
+    'rgba(217, 70, 239, 0.55)', // Fuchsia
+  ]
+
+  const getTokenBgColor = (index: number): string => {
+    return TOKEN_BG_COLORS[index % TOKEN_BG_COLORS.length]
+  }
 
   useEffect(() => {
     if (chunk?.content) {
@@ -69,42 +107,15 @@ export function EditChunkModal({
   const canNavigatePrev = currentChunkIndex > 0 || currentPage > 1
   const canNavigateNext = currentChunkIndex < allChunks.length - 1 || currentPage < totalPages
 
-  const handleSaveContent = async () => {
+  const handleSaveContent = () => {
     if (!chunk || !document) return
 
-    try {
-      setIsSaving(true)
-      setError(null)
-
-      const response = await fetch(
-        `/api/knowledge/${knowledgeBaseId}/documents/${document.id}/chunks/${chunk.id}`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            content: editedContent,
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        const result = await response.json()
-        throw new Error(result.error || 'Failed to update chunk')
-      }
-
-      const result = await response.json()
-
-      if (result.success && onChunkUpdate) {
-        onChunkUpdate(result.data)
-      }
-    } catch (err) {
-      logger.error('Error updating chunk:', err)
-      setError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setIsSaving(false)
-    }
+    updateChunk({
+      knowledgeBaseId,
+      documentId: document.id,
+      chunkId: chunk.id,
+      content: editedContent,
+    })
   }
 
   const navigateToChunk = async (direction: 'prev' | 'next') => {
@@ -125,13 +136,11 @@ export function EditChunkModal({
           const nextChunk = allChunks[currentChunkIndex + 1]
           onNavigateToChunk?.(nextChunk)
         } else if (currentPage < totalPages) {
-          // Load next page and navigate to first chunk
           await onNavigateToPage?.(currentPage + 1, 'first')
         }
       }
     } catch (err) {
       logger.error(`Error navigating ${direction}:`, err)
-      setError(`Failed to navigate to ${direction === 'prev' ? 'previous' : 'next'} chunk`)
     } finally {
       setIsNavigating(false)
     }
@@ -151,6 +160,7 @@ export function EditChunkModal({
       setPendingNavigation(null)
       setShowUnsavedChangesAlert(true)
     } else {
+      resetMutation()
       onClose()
     }
   }
@@ -161,6 +171,7 @@ export function EditChunkModal({
       void pendingNavigation()
       setPendingNavigation(null)
     } else {
+      resetMutation()
       onClose()
     }
   }
@@ -173,12 +184,9 @@ export function EditChunkModal({
     <>
       <Modal open={isOpen} onOpenChange={handleCloseAttempt}>
         <ModalContent size='lg'>
-          <div className='flex items-center justify-between px-[16px] py-[10px]'>
-            <DialogPrimitive.Title className='font-medium text-[16px] text-[var(--text-primary)]'>
-              Edit Chunk #{chunk.chunkIndex}
-            </DialogPrimitive.Title>
-
-            <div className='flex flex-shrink-0 items-center gap-[8px]'>
+          <ModalHeader>
+            <div className='flex items-center gap-[8px]'>
+              <span>Edit Chunk #{chunk.chunkIndex}</span>
               {/* Navigation Controls */}
               <div className='flex items-center gap-[6px]'>
                 <Tooltip.Root>
@@ -225,42 +233,67 @@ export function EditChunkModal({
                   </Tooltip.Content>
                 </Tooltip.Root>
               </div>
-
-              <Button
-                variant='ghost'
-                className='h-[16px] w-[16px] p-0'
-                onClick={handleCloseAttempt}
-              >
-                <X className='h-[16px] w-[16px]' />
-                <span className='sr-only'>Close</span>
-              </Button>
             </div>
-          </div>
+          </ModalHeader>
 
           <form>
-            <ModalBody className='!pb-[16px]'>
+            <ModalBody>
               <div className='flex flex-col gap-[8px]'>
-                {/* Error Display */}
-                {error && (
-                  <div className='flex items-center gap-2 rounded-md border border-[var(--text-error)]/50 bg-[var(--text-error)]/10 p-3'>
-                    <AlertCircle className='h-4 w-4 text-[var(--text-error)]' />
-                    <p className='text-[var(--text-error)] text-sm'>{error}</p>
-                  </div>
-                )}
+                {error && <p className='text-[12px] text-[var(--text-error)]'>{error}</p>}
 
                 {/* Content Input Section */}
                 <Label htmlFor='content'>Chunk</Label>
-                <Textarea
-                  id='content'
-                  value={editedContent}
-                  onChange={(e) => setEditedContent(e.target.value)}
-                  placeholder={
-                    userPermissions.canEdit ? 'Enter chunk content...' : 'Read-only view'
-                  }
-                  rows={20}
-                  disabled={isSaving || isNavigating || !userPermissions.canEdit}
-                  readOnly={!userPermissions.canEdit}
-                />
+                {tokenizerOn ? (
+                  /* Tokenizer view - matches Textarea styling exactly (transparent border for spacing) */
+                  <div
+                    className='h-[418px] overflow-y-auto whitespace-pre-wrap break-words rounded-[4px] border border-transparent bg-[var(--surface-5)] px-[8px] py-[8px] font-medium font-sans text-[var(--text-primary)] text-sm'
+                    style={{ minHeight: '418px' }}
+                  >
+                    {tokenStrings.map((token, index) => (
+                      <span
+                        key={index}
+                        style={{
+                          backgroundColor: getTokenBgColor(index),
+                        }}
+                        onMouseEnter={() => setHoveredTokenIndex(index)}
+                        onMouseLeave={() => setHoveredTokenIndex(null)}
+                      >
+                        {token}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  /* Edit view - regular textarea */
+                  <Textarea
+                    ref={textareaRef}
+                    id='content'
+                    value={editedContent}
+                    onChange={(e) => setEditedContent(e.target.value)}
+                    placeholder={
+                      userPermissions.canEdit ? 'Enter chunk content...' : 'Read-only view'
+                    }
+                    rows={20}
+                    disabled={isSaving || isNavigating || !userPermissions.canEdit}
+                    readOnly={!userPermissions.canEdit}
+                  />
+                )}
+              </div>
+
+              {/* Tokenizer Section */}
+              <div className='flex items-center justify-between pt-[12px]'>
+                <div className='flex items-center gap-[8px]'>
+                  <span className='text-[12px] text-[var(--text-secondary)]'>Tokenizer</span>
+                  <Switch checked={tokenizerOn} onCheckedChange={setTokenizerOn} />
+                  {tokenizerOn && hoveredTokenIndex !== null && (
+                    <span className='text-[12px] text-[var(--text-tertiary)]'>
+                      Token #{hoveredTokenIndex + 1}
+                    </span>
+                  )}
+                </div>
+                <span className='text-[12px] text-[var(--text-secondary)]'>
+                  {tokenCount.toLocaleString()}
+                  {maxChunkSize !== undefined && `/${maxChunkSize.toLocaleString()}`} tokens
+                </span>
               </div>
             </ModalBody>
 

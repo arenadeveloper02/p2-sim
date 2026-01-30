@@ -23,6 +23,12 @@ export const slackMessageReaderTool: ToolConfig<
       visibility: 'user-only',
       description: 'Authentication method: oauth or bot_token',
     },
+    destinationType: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Destination type: channel or dm',
+    },
     botToken: {
       type: 'string',
       required: false,
@@ -41,11 +47,11 @@ export const slackMessageReaderTool: ToolConfig<
       visibility: 'user-only',
       description: 'Slack channel to read messages from (e.g., #general)',
     },
-    userId: {
+    dmUserId: {
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'User ID for DM conversation (e.g., U1234567890)',
+      description: 'Target Slack user for DM conversation',
     },
     limit: {
       type: 'number',

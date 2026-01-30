@@ -75,3 +75,28 @@ export const gmailMarkReadTool: ToolConfig<GmailMarkReadParams, GmailToolRespons
     },
   },
 }
+
+export const gmailMarkReadV2Tool: ToolConfig<GmailMarkReadParams, GmailToolResponse> = {
+  id: 'gmail_mark_read_v2',
+  name: 'Gmail Mark as Read',
+  description: 'Mark a Gmail message as read',
+  version: '2.0.0',
+  oauth: gmailMarkReadTool.oauth,
+  params: gmailMarkReadTool.params,
+  request: gmailMarkReadTool.request,
+  transformResponse: async (response) => {
+    return await gmailMarkReadTool.transformResponse!(response)
+  },
+  outputs: {
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Updated email labels' },
+      },
+    },
+  },
+}

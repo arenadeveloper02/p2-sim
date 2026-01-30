@@ -40,6 +40,7 @@ export type GenerationType =
   | 'mongodb-update'
   | 'neo4j-cypher'
   | 'neo4j-parameters'
+  | 'timestamp'
 
 export type SubBlockType =
   | 'short-input' // Single line input
@@ -61,6 +62,7 @@ export type SubBlockType =
   | 'webhook-config' // Webhook configuration
   | 'schedule-info' // Schedule status display (next run, last ran, failure badge)
   | 'file-selector' // File selector for Google Drive, etc.
+  | 'sheet-selector' // Sheet/tab selector for Google Sheets, Microsoft Excel
   | 'project-selector' // Project selector for Jira, Discord, etc.
   | 'channel-selector' // Channel selector for Slack, Discord, etc.
   | 'user-selector' // User selector for Slack, Discord, etc.
@@ -75,6 +77,9 @@ export type SubBlockType =
   | 'mcp-dynamic-args' // MCP dynamic arguments based on tool schema
   | 'input-format' // Input structure format
   | 'response-format' // Response structure format
+  /**
+   * @deprecated Legacy trigger save subblock type.
+   */
   | 'trigger-save' // Trigger save button with validation
   | 'file-upload' // File uploader
   | 'input-mapping' // Map parent variables to child workflow input schema
@@ -91,6 +96,7 @@ export type SubBlockType =
   | 'arena-client-selector'
   | 'slack-client-selector'
   | 'slack-channel-selector'
+  | 'router-input' // Router route definitions with descriptions
 
 /**
  * Selector types that require display name hydration
@@ -101,6 +107,7 @@ export const SELECTOR_TYPES_HYDRATION_REQUIRED: SubBlockType[] = [
   'channel-selector',
   'user-selector',
   'file-selector',
+  'sheet-selector',
   'folder-selector',
   'project-selector',
   'knowledge-base-selector',
@@ -141,7 +148,13 @@ export interface OutputCondition {
   not?: boolean
   and?: {
     field: string
-    value: string | number | boolean | Array<string | number | boolean> | undefined
+    value:
+      | string
+      | number
+      | boolean
+      | Array<string | number | boolean | undefined | null>
+      | undefined
+      | null
     not?: boolean
   }
 }
@@ -230,6 +243,7 @@ export interface SubBlockConfig {
   hideFromPreview?: boolean // Hide this subblock from the workflow block preview
   requiresFeature?: string // Environment variable name that must be truthy for this subblock to be visible
   description?: string
+  tooltip?: string // Tooltip text displayed via info icon next to the title
   value?: (params: Record<string, any>) => string
   grouped?: boolean
   scrollable?: boolean
@@ -264,6 +278,8 @@ export interface SubBlockConfig {
   // OAuth specific properties - serviceId is the canonical identifier for OAuth services
   serviceId?: string
   requiredScopes?: string[]
+  // Whether this credential selector supports credential sets (for trigger blocks)
+  supportsCredentialSets?: boolean
   // File selector specific properties
   mimeType?: string
   // File upload specific properties
@@ -300,11 +316,19 @@ export interface SubBlockConfig {
   useWebhookUrl?: boolean
   // Trigger-save specific: The trigger ID for validation and saving
   triggerId?: string
-  // Dropdown specific: Function to fetch options dynamically (for multi-select or single-select)
+  // Dropdown/Combobox: Function to fetch options dynamically
+  // Works with both 'dropdown' (select-only) and 'combobox' (editable with expression support)
   fetchOptions?: (
     blockId: string,
     subBlockId: string
   ) => Promise<Array<{ label: string; id: string }>>
+  // Dropdown/Combobox: Function to fetch a single option's label by ID (for hydration)
+  // Called when component mounts with a stored value to display the correct label before options load
+  fetchOptionById?: (
+    blockId: string,
+    subBlockId: string,
+    optionId: string
+  ) => Promise<{ label: string; id: string } | null>
 }
 
 export interface BlockConfig<T extends ToolResponse = ToolResponse> {
@@ -320,6 +344,7 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
   subBlocks: SubBlockConfig[]
   triggerAllowed?: boolean
   authMode?: AuthMode
+  singleInstance?: boolean
   tools: {
     access: string[]
     config?: {

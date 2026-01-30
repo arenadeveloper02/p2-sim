@@ -75,3 +75,28 @@ export const gmailArchiveTool: ToolConfig<GmailMarkReadParams, GmailToolResponse
     },
   },
 }
+
+export const gmailArchiveV2Tool: ToolConfig<GmailMarkReadParams, GmailToolResponse> = {
+  id: 'gmail_archive_v2',
+  name: 'Gmail Archive',
+  description: 'Archive a Gmail message (remove from inbox)',
+  version: '2.0.0',
+  oauth: gmailArchiveTool.oauth,
+  params: gmailArchiveTool.params,
+  request: gmailArchiveTool.request,
+  transformResponse: async (response) => {
+    return await gmailArchiveTool.transformResponse!(response)
+  },
+  outputs: {
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Updated email labels' },
+      },
+    },
+  },
+}

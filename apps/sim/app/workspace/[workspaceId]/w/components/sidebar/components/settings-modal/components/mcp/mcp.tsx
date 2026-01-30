@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { Plus, Search } from 'lucide-react'
+import { ChevronDown, Plus, Search, X } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
   Badge,
@@ -13,33 +13,82 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Tooltip,
 } from '@/components/emcn'
 import { Input } from '@/components/ui'
-import { getIssueBadgeLabel, getMcpToolIssue, type McpToolIssue } from '@/lib/mcp/tool-validation'
-import { checkEnvVarTrigger } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/env-var-dropdown'
+import { cn } from '@/lib/core/utils/cn'
+import {
+  getIssueBadgeLabel,
+  getIssueBadgeVariant,
+  getMcpToolIssue,
+  type McpToolIssue,
+} from '@/lib/mcp/tool-validation'
+import type { McpTransport } from '@/lib/mcp/types'
+import {
+  checkEnvVarTrigger,
+  EnvVarDropdown,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/env-var-dropdown'
+import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
+import { useMcpServerTest } from '@/hooks/mcp/use-mcp-server-test'
 import {
   useCreateMcpServer,
   useDeleteMcpServer,
+  useForceRefreshMcpTools,
   useMcpServers,
   useMcpToolsQuery,
   useRefreshMcpServer,
   useStoredMcpTools,
 } from '@/hooks/queries/mcp'
-import { useMcpServerTest } from '@/hooks/use-mcp-server-test'
-import type { InputFieldType, McpServerFormData, McpServerTestResult } from './components'
-import {
-  FormattedInput,
-  FormField,
-  formatTransportLabel,
-  HeaderRow,
-  McpServerSkeleton,
-  ServerListItem,
-} from './components'
+import { useAvailableEnvVarKeys } from '@/hooks/use-available-env-vars'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { FormField, McpServerSkeleton } from './components'
+
+/**
+ * Represents a single header entry in the form.
+ * Using an array of objects allows duplicate keys during editing.
+ */
+interface HeaderEntry {
+  key: string
+  value: string
+}
+
+interface McpServerFormData {
+  name: string
+  transport: McpTransport
+  url?: string
+  timeout?: number
+  headers?: HeaderEntry[]
+}
+
+interface McpServerTestResult {
+  success: boolean
+  message?: string
+  error?: string
+  warnings?: string[]
+}
+
+type InputFieldType = 'url' | 'header-key' | 'header-value'
+
+interface EnvVarDropdownConfig {
+  searchTerm: string
+  cursorPosition: number
+  workspaceId: string
+  onSelect: (value: string) => void
+  onClose: () => void
+}
+
+interface McpToolSchema {
+  type: 'object'
+  properties?: Record<string, unknown>
+  required?: string[]
+}
 
 interface McpTool {
   name: string
   description?: string
   serverId: string
+  inputSchema?: McpToolSchema
 }
 
 interface McpServer {
@@ -63,6 +112,33 @@ const DEFAULT_FORM_DATA: McpServerFormData = {
 }
 
 /**
+ * Formats a transport type string for display.
+ */
+function formatTransportLabel(transport: string): string {
+  return transport
+    .split('-')
+    .map((word) =>
+      ['http', 'sse', 'stdio'].includes(word.toLowerCase())
+        ? word.toUpperCase()
+        : word.charAt(0).toUpperCase() + word.slice(1)
+    )
+    .join('-')
+}
+
+/**
+ * Formats a tools list for display in the server list.
+ */
+function formatToolsLabel(tools: McpTool[], connectionStatus?: string): string {
+  if (connectionStatus === 'error') {
+    return 'Unable to connect'
+  }
+  const count = tools.length
+  const plural = count !== 1 ? 's' : ''
+  const names = count > 0 ? `: ${tools.map((t) => t.name).join(', ')}` : ''
+  return `${count} tool${plural}${names}`
+}
+
+/**
  * Determines the label for the test connection button based on current state.
  */
 function getTestButtonLabel(
@@ -73,6 +149,204 @@ function getTestButtonLabel(
   if (testResult?.success) return 'Connection success'
   if (testResult && !testResult.success) return 'No connection: retry'
   return 'Test Connection'
+}
+
+interface FormattedInputProps {
+  ref?: React.RefObject<HTMLInputElement | null>
+  placeholder: string
+  value: string
+  scrollLeft: number
+  showEnvVars: boolean
+  envVarProps: EnvVarDropdownConfig
+  availableEnvVars?: Set<string>
+  className?: string
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onScroll: (scrollLeft: number) => void
+}
+
+function FormattedInput({
+  ref,
+  placeholder,
+  value,
+  scrollLeft,
+  showEnvVars,
+  envVarProps,
+  availableEnvVars,
+  className,
+  onChange,
+  onScroll,
+}: FormattedInputProps) {
+  const handleScroll = (e: React.UIEvent<HTMLInputElement>) => {
+    onScroll(e.currentTarget.scrollLeft)
+  }
+
+  return (
+    <div className={cn('relative', className)}>
+      <EmcnInput
+        ref={ref}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        onScroll={handleScroll}
+        onInput={handleScroll}
+        className='h-9 text-transparent caret-foreground placeholder:text-[var(--text-muted)]'
+      />
+      <div className='pointer-events-none absolute inset-0 flex items-center overflow-hidden px-[8px] py-[6px] font-medium font-sans text-sm'>
+        <div className='whitespace-nowrap' style={{ transform: `translateX(-${scrollLeft}px)` }}>
+          {formatDisplayText(value, { availableEnvVars })}
+        </div>
+      </div>
+      {showEnvVars && (
+        <EnvVarDropdown
+          visible={showEnvVars}
+          onSelect={envVarProps.onSelect}
+          searchTerm={envVarProps.searchTerm}
+          inputValue={value}
+          cursorPosition={envVarProps.cursorPosition}
+          workspaceId={envVarProps.workspaceId}
+          onClose={envVarProps.onClose}
+          className='w-full'
+          maxHeight='200px'
+          style={{ position: 'absolute', top: '100%', left: 0, zIndex: 99999 }}
+        />
+      )}
+    </div>
+  )
+}
+
+interface HeaderRowProps {
+  header: HeaderEntry
+  index: number
+  headerScrollLeft: Record<string, number>
+  showEnvVars: boolean
+  activeInputField: InputFieldType | null
+  activeHeaderIndex: number | null
+  envSearchTerm: string
+  cursorPosition: number
+  workspaceId: string
+  availableEnvVars?: Set<string>
+  onInputChange: (field: InputFieldType, value: string, index?: number) => void
+  onHeaderScroll: (key: string, scrollLeft: number) => void
+  onEnvVarSelect: (value: string) => void
+  onEnvVarClose: () => void
+  onRemove: () => void
+}
+
+function HeaderRow({
+  header,
+  index,
+  headerScrollLeft,
+  showEnvVars,
+  activeInputField,
+  activeHeaderIndex,
+  envSearchTerm,
+  cursorPosition,
+  workspaceId,
+  availableEnvVars,
+  onInputChange,
+  onHeaderScroll,
+  onEnvVarSelect,
+  onEnvVarClose,
+  onRemove,
+}: HeaderRowProps) {
+  const isKeyActive =
+    showEnvVars && activeInputField === 'header-key' && activeHeaderIndex === index
+  const isValueActive =
+    showEnvVars && activeInputField === 'header-value' && activeHeaderIndex === index
+
+  const envVarProps: EnvVarDropdownConfig = {
+    searchTerm: envSearchTerm,
+    cursorPosition,
+    workspaceId,
+    onSelect: onEnvVarSelect,
+    onClose: onEnvVarClose,
+  }
+
+  return (
+    <div className='relative flex items-center gap-[8px]'>
+      <FormattedInput
+        placeholder='Name'
+        value={header.key || ''}
+        scrollLeft={headerScrollLeft[`key-${index}`] || 0}
+        showEnvVars={isKeyActive}
+        envVarProps={envVarProps}
+        availableEnvVars={availableEnvVars}
+        className='flex-1'
+        onChange={(e) => onInputChange('header-key', e.target.value, index)}
+        onScroll={(scrollLeft) => onHeaderScroll(`key-${index}`, scrollLeft)}
+      />
+
+      <FormattedInput
+        placeholder='Value'
+        value={header.value || ''}
+        scrollLeft={headerScrollLeft[`value-${index}`] || 0}
+        showEnvVars={isValueActive}
+        envVarProps={envVarProps}
+        availableEnvVars={availableEnvVars}
+        className='flex-1'
+        onChange={(e) => onInputChange('header-value', e.target.value, index)}
+        onScroll={(scrollLeft) => onHeaderScroll(`value-${index}`, scrollLeft)}
+      />
+
+      <Button type='button' variant='ghost' onClick={onRemove} className='h-6 w-6 shrink-0 p-0'>
+        <X className='h-3 w-3' />
+      </Button>
+    </div>
+  )
+}
+
+interface ServerListItemProps {
+  server: McpServer
+  tools: McpTool[]
+  isDeleting: boolean
+  isLoadingTools?: boolean
+  isRefreshing?: boolean
+  onRemove: () => void
+  onViewDetails: () => void
+}
+
+function ServerListItem({
+  server,
+  tools,
+  isDeleting,
+  isLoadingTools = false,
+  isRefreshing = false,
+  onRemove,
+  onViewDetails,
+}: ServerListItemProps) {
+  const transportLabel = formatTransportLabel(server.transport || 'http')
+  const toolsLabel = formatToolsLabel(tools, server.connectionStatus)
+  const isError = server.connectionStatus === 'error'
+
+  return (
+    <div className='flex items-center justify-between gap-[12px]'>
+      <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
+        <div className='flex items-center gap-[6px]'>
+          <span className='max-w-[200px] truncate font-medium text-[14px]'>
+            {server.name || 'Unnamed Server'}
+          </span>
+          <span className='text-[13px] text-[var(--text-secondary)]'>({transportLabel})</span>
+        </div>
+        <p
+          className={`truncate text-[13px] ${isError ? 'text-red-500 dark:text-red-400' : 'text-[var(--text-muted)]'}`}
+        >
+          {isRefreshing
+            ? 'Refreshing...'
+            : isLoadingTools && tools.length === 0
+              ? 'Loading...'
+              : toolsLabel}
+        </p>
+      </div>
+      <div className='flex flex-shrink-0 items-center gap-[4px]'>
+        <Button variant='default' onClick={onViewDetails}>
+          Details
+        </Button>
+        <Button variant='ghost' onClick={onRemove} disabled={isDeleting}>
+          {isDeleting ? 'Deleting...' : 'Delete'}
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 interface MCPProps {
@@ -98,11 +372,13 @@ export function MCP({ initialServerId }: MCPProps) {
     isLoading: toolsLoading,
     isFetching: toolsFetching,
   } = useMcpToolsQuery(workspaceId)
-  const { data: storedTools = [] } = useStoredMcpTools(workspaceId)
+  const { data: storedTools = [], refetch: refetchStoredTools } = useStoredMcpTools(workspaceId)
+  const forceRefreshTools = useForceRefreshMcpTools()
   const createServerMutation = useCreateMcpServer()
   const deleteServerMutation = useDeleteMcpServer()
   const refreshServerMutation = useRefreshMcpServer()
   const { testResult, isTestingConnection, testConnection, clearTestResult } = useMcpServerTest()
+  const availableEnvVars = useAvailableEnvVarKeys(workspaceId)
 
   const urlInputRef = useRef<HTMLInputElement>(null)
 
@@ -118,8 +394,9 @@ export function MCP({ initialServerId }: MCPProps) {
 
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null)
   const [refreshingServers, setRefreshingServers] = useState<
-    Record<string, 'refreshing' | 'refreshed'>
+    Record<string, { status: 'refreshing' | 'refreshed'; workflowsUpdated?: number }>
   >({})
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
 
   const [showEnvVars, setShowEnvVars] = useState(false)
   const [envSearchTerm, setEnvSearchTerm] = useState('')
@@ -136,6 +413,14 @@ export function MCP({ initialServerId }: MCPProps) {
       setSelectedServerId(initialServerId)
     }
   }, [initialServerId, servers])
+
+  // Force refresh tools when entering server detail view to detect stale schemas
+  useEffect(() => {
+    if (selectedServerId) {
+      forceRefreshTools(workspaceId)
+      refetchStoredTools()
+    }
+  }, [selectedServerId, workspaceId, forceRefreshTools, refetchStoredTools])
 
   /**
    * Resets environment variable dropdown state.
@@ -400,25 +685,68 @@ export function MCP({ initialServerId }: MCPProps) {
    */
   const handleBackToList = useCallback(() => {
     setSelectedServerId(null)
+    setExpandedTools(new Set())
+  }, [])
+
+  /**
+   * Toggles the expanded state of a tool's parameters.
+   */
+  const toggleToolExpanded = useCallback((toolName: string) => {
+    setExpandedTools((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(toolName)) {
+        newSet.delete(toolName)
+      } else {
+        newSet.add(toolName)
+      }
+      return newSet
+    })
   }, [])
 
   /**
    * Refreshes a server's tools by re-discovering them from the MCP server.
+   * Also syncs updated tool schemas to all workflows using those tools.
+   * If the active workflow was updated, reloads its subblock values.
    */
   const handleRefreshServer = useCallback(
     async (serverId: string) => {
       try {
-        setRefreshingServers((prev) => ({ ...prev, [serverId]: 'refreshing' }))
-        await refreshServerMutation.mutateAsync({ workspaceId, serverId })
-        logger.info(`Refreshed MCP server: ${serverId}`)
-        setRefreshingServers((prev) => ({ ...prev, [serverId]: 'refreshed' }))
+        setRefreshingServers((prev) => ({ ...prev, [serverId]: { status: 'refreshing' } }))
+        const result = await refreshServerMutation.mutateAsync({ workspaceId, serverId })
+        logger.info(
+          `Refreshed MCP server: ${serverId}, workflows updated: ${result.workflowsUpdated}`
+        )
+
+        // If the active workflow was updated, reload its subblock values from DB
+        const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+        if (activeWorkflowId && result.updatedWorkflowIds?.includes(activeWorkflowId)) {
+          logger.info(`Active workflow ${activeWorkflowId} was updated, reloading subblock values`)
+          try {
+            const response = await fetch(`/api/workflows/${activeWorkflowId}`)
+            if (response.ok) {
+              const { data: workflowData } = await response.json()
+              if (workflowData?.state?.blocks) {
+                useSubBlockStore
+                  .getState()
+                  .initializeFromWorkflow(activeWorkflowId, workflowData.state.blocks)
+              }
+            }
+          } catch (reloadError) {
+            logger.warn('Failed to reload workflow subblock values:', reloadError)
+          }
+        }
+
+        setRefreshingServers((prev) => ({
+          ...prev,
+          [serverId]: { status: 'refreshed', workflowsUpdated: result.workflowsUpdated },
+        }))
         setTimeout(() => {
           setRefreshingServers((prev) => {
             const newState = { ...prev }
             delete newState[serverId]
             return newState
           })
-        }, 2000)
+        }, 3000)
       } catch (error) {
         logger.error('Failed to refresh MCP server:', error)
         setRefreshingServers((prev) => {
@@ -444,7 +772,7 @@ export function MCP({ initialServerId }: MCPProps) {
 
   const error = toolsError || serversError
   const hasServers = servers && servers.length > 0
-  const showEmptyState = !hasServers && !showAddForm
+  const shouldShowForm = showAddForm || !hasServers
   const showNoResults = searchTerm.trim() && filteredServers.length === 0 && servers.length > 0
 
   const isFormValid = formData.name.trim() && formData.url?.trim()
@@ -523,9 +851,7 @@ export function MCP({ initialServerId }: MCPProps) {
             {server.url && (
               <div className='flex flex-col gap-[8px]'>
                 <span className='font-medium text-[13px] text-[var(--text-primary)]'>URL</span>
-                <p className='break-all font-mono text-[13px] text-[var(--text-secondary)]'>
-                  {server.url}
-                </p>
+                <p className='break-all text-[14px] text-[var(--text-secondary)]'>{server.url}</p>
               </div>
             )}
 
@@ -548,31 +874,114 @@ export function MCP({ initialServerId }: MCPProps) {
                 <div className='flex flex-col gap-[8px]'>
                   {tools.map((tool) => {
                     const issues = getStoredToolIssues(server.id, tool.name)
+                    const affectedWorkflows = issues.map((i) => i.workflowName)
+                    const isExpanded = expandedTools.has(tool.name)
+                    const hasParams =
+                      tool.inputSchema?.properties &&
+                      Object.keys(tool.inputSchema.properties).length > 0
+                    const requiredParams = tool.inputSchema?.required || []
+
                     return (
                       <div
                         key={tool.name}
-                        className='rounded-[6px] border bg-[var(--surface-3)] px-[10px] py-[8px]'
+                        className='overflow-hidden rounded-[6px] border bg-[var(--surface-3)]'
                       >
-                        <div className='flex items-center justify-between'>
-                          <p className='font-medium text-[13px] text-[var(--text-primary)]'>
-                            {tool.name}
-                          </p>
-                          {issues.length > 0 && (
-                            <Badge
-                              variant='outline'
-                              style={{
-                                borderColor: 'var(--warning)',
-                                color: 'var(--warning)',
-                              }}
-                            >
-                              {getIssueBadgeLabel(issues[0].issue)}
-                            </Badge>
+                        <button
+                          type='button'
+                          onClick={() => hasParams && toggleToolExpanded(tool.name)}
+                          className={cn(
+                            'flex w-full items-start justify-between px-[10px] py-[8px] text-left',
+                            hasParams && 'cursor-pointer hover:bg-[var(--surface-4)]'
                           )}
-                        </div>
-                        {tool.description && (
-                          <p className='mt-[4px] text-[13px] text-[var(--text-tertiary)]'>
-                            {tool.description}
-                          </p>
+                          disabled={!hasParams}
+                        >
+                          <div className='flex-1'>
+                            <div className='flex items-center gap-[8px]'>
+                              <p className='font-medium text-[13px] text-[var(--text-primary)]'>
+                                {tool.name}
+                              </p>
+                              {issues.length > 0 && (
+                                <Tooltip.Root>
+                                  <Tooltip.Trigger asChild>
+                                    <div>
+                                      <Badge
+                                        variant={getIssueBadgeVariant(issues[0].issue)}
+                                        size='sm'
+                                        className='cursor-help'
+                                      >
+                                        {getIssueBadgeLabel(issues[0].issue)}
+                                      </Badge>
+                                    </div>
+                                  </Tooltip.Trigger>
+                                  <Tooltip.Content>
+                                    Update in: {affectedWorkflows.join(', ')}
+                                  </Tooltip.Content>
+                                </Tooltip.Root>
+                              )}
+                            </div>
+                            {tool.description && (
+                              <p className='mt-[4px] text-[13px] text-[var(--text-tertiary)]'>
+                                {tool.description}
+                              </p>
+                            )}
+                          </div>
+                          {hasParams && (
+                            <ChevronDown
+                              className={cn(
+                                'mt-[2px] h-[14px] w-[14px] flex-shrink-0 text-[var(--text-muted)] transition-transform duration-200',
+                                isExpanded && 'rotate-180'
+                              )}
+                            />
+                          )}
+                        </button>
+
+                        {isExpanded && hasParams && (
+                          <div className='border-[var(--border-1)] border-t bg-[var(--surface-2)] px-[10px] py-[8px]'>
+                            <p className='mb-[6px] font-medium text-[11px] text-[var(--text-muted)] uppercase tracking-wide'>
+                              Parameters
+                            </p>
+                            <div className='flex flex-col gap-[6px]'>
+                              {Object.entries(tool.inputSchema!.properties!).map(
+                                ([paramName, param]) => {
+                                  const isRequired = requiredParams.includes(paramName)
+                                  const paramType =
+                                    typeof param === 'object' && param !== null
+                                      ? (param as { type?: string }).type || 'any'
+                                      : 'any'
+                                  const paramDesc =
+                                    typeof param === 'object' && param !== null
+                                      ? (param as { description?: string }).description
+                                      : undefined
+
+                                  return (
+                                    <div
+                                      key={paramName}
+                                      className='rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-3)] px-[8px] py-[6px]'
+                                    >
+                                      <div className='flex items-center gap-[6px]'>
+                                        <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+                                          {paramName}
+                                        </span>
+                                        <Badge variant='outline' size='sm'>
+                                          {paramType}
+                                        </Badge>
+                                        {isRequired && (
+                                          <Badge variant='default' size='sm'>
+                                            required
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      {paramDesc && (
+                                        <p className='mt-[3px] text-[11px] text-[var(--text-tertiary)] leading-relaxed'>
+                                          {paramDesc}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )
+                                }
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
                     )
@@ -589,10 +998,12 @@ export function MCP({ initialServerId }: MCPProps) {
             variant='default'
             disabled={!!refreshingServers[server.id]}
           >
-            {refreshingServers[server.id] === 'refreshing'
+            {refreshingServers[server.id]?.status === 'refreshing'
               ? 'Refreshing...'
-              : refreshingServers[server.id] === 'refreshed'
-                ? 'Refreshed'
+              : refreshingServers[server.id]?.status === 'refreshed'
+                ? refreshingServers[server.id].workflowsUpdated
+                  ? `Synced (${refreshingServers[server.id].workflowsUpdated} workflow${refreshingServers[server.id].workflowsUpdated === 1 ? '' : 's'})`
+                  : 'Refreshed'
                 : 'Refresh Tools'}
           </Button>
           <Button onClick={handleBackToList} variant='tertiary'>
@@ -629,8 +1040,8 @@ export function MCP({ initialServerId }: MCPProps) {
           </Button>
         </div>
 
-        {showAddForm && !serversLoading && (
-          <div className='rounded-[8px] border bg-[var(--surface-3)] p-[10px]'>
+        {shouldShowForm && !serversLoading && (
+          <div className='rounded-[8px] border p-[10px]'>
             <div className='flex flex-col gap-[8px]'>
               <FormField label='Server Name'>
                 <EmcnInput
@@ -658,6 +1069,7 @@ export function MCP({ initialServerId }: MCPProps) {
                     onSelect: handleEnvVarSelect,
                     onClose: resetEnvVarState,
                   }}
+                  availableEnvVars={availableEnvVars}
                   onChange={(e) => handleInputChange('url', e.target.value)}
                   onScroll={(scrollLeft) => handleUrlScroll(scrollLeft)}
                 />
@@ -691,6 +1103,7 @@ export function MCP({ initialServerId }: MCPProps) {
                       envSearchTerm={envSearchTerm}
                       cursorPosition={cursorPosition}
                       workspaceId={workspaceId}
+                      availableEnvVars={availableEnvVars}
                       onInputChange={handleInputChange}
                       onHeaderScroll={handleHeaderScroll}
                       onEnvVarSelect={handleEnvVarSelect}
@@ -736,10 +1149,6 @@ export function MCP({ initialServerId }: MCPProps) {
               <McpServerSkeleton />
               <McpServerSkeleton />
             </div>
-          ) : showEmptyState ? (
-            <div className='flex h-full items-center justify-center text-[13px] text-[var(--text-muted)]'>
-              Click "Add" above to get started
-            </div>
           ) : (
             <div className='flex flex-col gap-[8px]'>
               {filteredServers.map((server) => {
@@ -754,7 +1163,7 @@ export function MCP({ initialServerId }: MCPProps) {
                     tools={tools}
                     isDeleting={deletingServers.has(server.id)}
                     isLoadingTools={isLoadingTools}
-                    isRefreshing={refreshingServers[server.id] === 'refreshing'}
+                    isRefreshing={refreshingServers[server.id]?.status === 'refreshing'}
                     onRemove={() => handleRemoveServer(server.id, server.name || 'this server')}
                     onViewDetails={() => handleViewDetails(server.id)}
                   />
@@ -771,7 +1180,7 @@ export function MCP({ initialServerId }: MCPProps) {
       </div>
 
       <Modal open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <ModalContent className='w-[400px]'>
+        <ModalContent size='sm'>
           <ModalHeader>Delete MCP Server</ModalHeader>
           <ModalBody>
             <p className='text-[12px] text-[var(--text-secondary)]'>

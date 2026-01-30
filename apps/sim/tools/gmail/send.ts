@@ -133,3 +133,28 @@ export const gmailSendTool: ToolConfig<GmailSendParams, GmailToolResponse> = {
     },
   },
 }
+
+export const gmailSendV2Tool: ToolConfig<GmailSendParams, GmailToolResponse> = {
+  id: 'gmail_send_v2',
+  name: 'Gmail Send',
+  description: 'Send emails using Gmail',
+  version: '2.0.0',
+  oauth: gmailSendTool.oauth,
+  params: gmailSendTool.params,
+  request: gmailSendTool.request,
+  transformResponse: async (response) => {
+    return await gmailSendTool.transformResponse!(response)
+  },
+  outputs: {
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Email labels' },
+      },
+    },
+  },
+}
