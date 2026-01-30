@@ -4,6 +4,7 @@ import {
   containsUserFileWithMetadata,
   hydrateUserFilesWithBase64,
 } from '@/lib/uploads/utils/user-file-base64.server'
+import { sanitizeInputFormat, sanitizeTools } from '@/lib/workflows/comparison/normalize'
 import {
   BlockType,
   buildResumeApiUrl,
@@ -11,8 +12,6 @@ import {
   DEFAULTS,
   EDGE,
   isSentinelBlockType,
-  isTriggerBehavior,
-  isWorkflowBlockType,
 } from '@/executor/constants'
 import type { DAGNode } from '@/executor/dag/builder'
 import { ChildWorkflowError } from '@/executor/errors/child-workflow-error'
@@ -30,10 +29,13 @@ import type {
 } from '@/executor/types'
 import { streamingResponseFormatProcessor } from '@/executor/utils'
 import { buildBlockExecutionError, normalizeError } from '@/executor/utils/errors'
+import { isJSONString } from '@/executor/utils/json'
+import { filterOutputForLog } from '@/executor/utils/output-filter'
 import { validateBlockType } from '@/executor/utils/permission-check'
 import type { VariableResolver } from '@/executor/variables/resolver'
 import type { SerializedBlock } from '@/serializer/types'
 import type { SubflowType } from '@/stores/workflows/workflow/types'
+import { SYSTEM_SUBBLOCK_IDS } from '@/triggers/constants'
 
 const logger = createLogger('BlockExecutor')
 
@@ -87,7 +89,7 @@ export class BlockExecutor {
       resolvedInputs = this.resolver.resolveInputs(ctx, node.id, block.config.params, block)
 
       if (blockLog) {
-        blockLog.input = resolvedInputs
+        blockLog.input = this.sanitizeInputsForLog(resolvedInputs)
       }
     } catch (error) {
       cleanupSelfReference?.()
@@ -149,14 +151,26 @@ export class BlockExecutor {
         blockLog.endedAt = new Date().toISOString()
         blockLog.durationMs = duration
         blockLog.success = true
-        blockLog.output = this.filterOutputForLog(block, normalizedOutput)
+        blockLog.output = filterOutputForLog(block.metadata?.id || '', normalizedOutput, { block })
+        if (normalizedOutput.childTraceSpans && Array.isArray(normalizedOutput.childTraceSpans)) {
+          blockLog.childTraceSpans = normalizedOutput.childTraceSpans
+        }
       }
 
       this.state.setBlockOutput(node.id, normalizedOutput, duration)
 
       if (!isSentinel) {
-        const displayOutput = this.filterOutputForDisplay(block, normalizedOutput)
-        this.callOnBlockComplete(ctx, node, block, resolvedInputs, displayOutput, duration)
+        const displayOutput = filterOutputForLog(block.metadata?.id || '', normalizedOutput, {
+          block,
+        })
+        this.callOnBlockComplete(
+          ctx,
+          node,
+          block,
+          this.sanitizeInputsForLog(resolvedInputs),
+          displayOutput,
+          duration
+        )
       }
 
       return normalizedOutput
@@ -223,6 +237,9 @@ export class BlockExecutor {
     if (ChildWorkflowError.isChildWorkflowError(error)) {
       errorOutput.childTraceSpans = error.childTraceSpans
       errorOutput.childWorkflowName = error.childWorkflowName
+      if (error.childWorkflowSnapshotId) {
+        errorOutput.childWorkflowSnapshotId = error.childWorkflowSnapshotId
+      }
     }
 
     this.state.setBlockOutput(node.id, errorOutput, duration)
@@ -232,8 +249,12 @@ export class BlockExecutor {
       blockLog.durationMs = duration
       blockLog.success = false
       blockLog.error = errorMessage
-      blockLog.input = input
-      blockLog.output = this.filterOutputForLog(block, errorOutput)
+      blockLog.input = this.sanitizeInputsForLog(input)
+      blockLog.output = filterOutputForLog(block.metadata?.id || '', errorOutput, { block })
+
+      if (errorOutput.childTraceSpans && Array.isArray(errorOutput.childTraceSpans)) {
+        blockLog.childTraceSpans = errorOutput.childTraceSpans
+      }
     }
 
     logger.error(
@@ -246,8 +267,15 @@ export class BlockExecutor {
     )
 
     if (!isSentinel) {
-      const displayOutput = this.filterOutputForDisplay(block, errorOutput)
-      this.callOnBlockComplete(ctx, node, block, input, displayOutput, duration)
+      const displayOutput = filterOutputForLog(block.metadata?.id || '', errorOutput, { block })
+      this.callOnBlockComplete(
+        ctx,
+        node,
+        block,
+        this.sanitizeInputsForLog(input),
+        displayOutput,
+        duration
+      )
     }
 
     const hasErrorPort = this.hasErrorPortEdge(node)
@@ -335,49 +363,46 @@ export class BlockExecutor {
     return { result: output }
   }
 
-  private filterOutputForLog(
-    block: SerializedBlock,
-    output: NormalizedBlockOutput
-  ): NormalizedBlockOutput {
-    const blockType = block.metadata?.id
+  /**
+   * Sanitizes inputs for log display.
+   * - Filters out system fields (UI-only, readonly, internal flags)
+   * - Removes UI state from inputFormat items (e.g., collapsed)
+   * - Parses JSON strings to objects for readability
+   * Returns a new object - does not mutate the original inputs.
+   */
+  private sanitizeInputsForLog(inputs: Record<string, any>): Record<string, any> {
+    const result: Record<string, any> = {}
 
-    if (blockType === BlockType.HUMAN_IN_THE_LOOP) {
-      const filtered: NormalizedBlockOutput = {}
-      for (const [key, value] of Object.entries(output)) {
-        if (key.startsWith('_')) continue
-        if (key === 'response') continue
-        filtered[key] = value
+    for (const [key, value] of Object.entries(inputs)) {
+      if (SYSTEM_SUBBLOCK_IDS.includes(key) || key === 'triggerMode') {
+        continue
       }
-      return filtered
-    }
 
-    if (isTriggerBehavior(block)) {
-      const filtered: NormalizedBlockOutput = {}
-      const internalKeys = ['webhook', 'workflowId']
-      for (const [key, value] of Object.entries(output)) {
-        if (internalKeys.includes(key)) continue
-        filtered[key] = value
+      if (key === 'inputFormat' && Array.isArray(value)) {
+        result[key] = sanitizeInputFormat(value)
+        continue
       }
-      return filtered
+
+      if (key === 'tools' && Array.isArray(value)) {
+        result[key] = sanitizeTools(value)
+        continue
+      }
+
+      // isJSONString is a quick heuristic (checks for { or [), not a validator.
+      // Invalid JSON is safely caught below - this just avoids JSON.parse on every string.
+      if (typeof value === 'string' && isJSONString(value)) {
+        try {
+          result[key] = JSON.parse(value.trim())
+        } catch {
+          // Not valid JSON, keep original string
+          result[key] = value
+        }
+      } else {
+        result[key] = value
+      }
     }
 
-    return output
-  }
-
-  private filterOutputForDisplay(
-    block: SerializedBlock,
-    output: NormalizedBlockOutput
-  ): NormalizedBlockOutput {
-    const filtered = this.filterOutputForLog(block, output)
-
-    if (isWorkflowBlockType(block.metadata?.id)) {
-      const { childTraceSpans: _, ...displayOutput } = filtered as {
-        childTraceSpans?: unknown
-      } & Record<string, unknown>
-      return displayOutput
-    }
-
-    return filtered
+    return result
   }
 
   private callOnBlockStart(ctx: ExecutionContext, node: DAGNode, block: SerializedBlock): void {
