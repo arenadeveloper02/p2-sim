@@ -9,6 +9,7 @@ import { ArenaBlock } from '@/blocks/blocks/arena'
 import { ArxivBlock } from '@/blocks/blocks/arxiv'
 import { AsanaBlock } from '@/blocks/blocks/asana'
 import { BrowserUseBlock } from '@/blocks/blocks/browser_use'
+import { CalComBlock } from '@/blocks/blocks/calcom'
 import { CalendlyBlock } from '@/blocks/blocks/calendly'
 import { ChatTriggerBlock } from '@/blocks/blocks/chat_trigger'
 import { CirclebackBlock } from '@/blocks/blocks/circleback'
@@ -172,6 +173,7 @@ export const registry: Record<string, BlockConfig> = {
   arxiv: ArxivBlock,
   asana: AsanaBlock,
   browser_use: BrowserUseBlock,
+  calcom: CalComBlock,
   calendly: CalendlyBlock,
   chat_trigger: ChatTriggerBlock,
   circleback: CirclebackBlock,

@@ -1,6 +1,7 @@
 import { getEnv } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
+import { PAGE_METADATA_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import { safeAssign } from '@/tools/safe-assign'
 import type { ToolConfig } from '@/tools/types'
 
@@ -89,10 +90,11 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
 
   outputs: {
     markdown: { type: 'string', description: 'Page content in markdown format' },
-    html: { type: 'string', description: 'Raw HTML content of the page' },
+    html: { type: 'string', description: 'Raw HTML content of the page', optional: true },
     metadata: {
       type: 'object',
       description: 'Page metadata including SEO and Open Graph information',
+      properties: PAGE_METADATA_OUTPUT_PROPERTIES,
     },
   },
 }
