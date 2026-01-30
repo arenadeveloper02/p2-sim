@@ -232,8 +232,8 @@ const SlackReadMessagesSchema = z
     fromDate: z.string().optional().nullable(),
     toDate: z.string().optional().nullable(),
     cursor: z.string().optional().nullable(),
-    autoPaginate: z.boolean().optional().default(false),
-    includeThreads: z.boolean().optional().default(false),
+    autoPaginate: z.boolean().optional().default(true),
+    includeThreads: z.boolean().optional().default(true),
     maxThreads: z.preprocess(
       (val) => {
         if (val === '' || val === null || val === undefined) return 10

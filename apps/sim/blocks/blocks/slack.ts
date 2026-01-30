@@ -298,7 +298,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       title: 'Auto-Paginate',
       type: 'switch',
       description: 'Automatically fetch all pages (max 10 pages, 1000 messages)',
-      defaultValue: false,
+      defaultValue: true,
       condition: {
         field: 'operation',
         value: 'read',
@@ -309,7 +309,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       title: 'Include Thread Replies',
       type: 'switch',
       description: 'Include replies for messages that are part of threads',
-      defaultValue: false,
+      defaultValue: true,
       condition: {
         field: 'operation',
         value: 'read',
