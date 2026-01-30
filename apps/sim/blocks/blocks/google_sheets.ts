@@ -310,7 +310,7 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
   authMode: AuthMode.OAuth,
   hideFromToolbar: false,
   longDescription:
-    'Integrate Google Sheets into the workflow with explicit sheet selection. Can read, write, append, update, clear data, create spreadsheets, get spreadsheet info, and copy sheets.',
+    'Integrate Google Sheets into the workflow with explicit sheet selection. Can read, write, append, update, clear, delete rows, create spreadsheets, get spreadsheet info, and copy sheets.',
   docsLink: 'https://docs.sim.ai/tools/google_sheets',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -327,6 +327,7 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
         { label: 'Update Data', id: 'update' },
         { label: 'Append Data', id: 'append' },
         { label: 'Clear Data', id: 'clear' },
+        { label: 'Delete Row(s)', id: 'delete' },
         { label: 'Get Spreadsheet Info', id: 'get_info' },
         { label: 'Create Spreadsheet', id: 'create' },
         { label: 'Batch Read', id: 'batch_get' },
@@ -388,7 +389,10 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
       required: true,
       dependsOn: { all: ['credential'], any: ['spreadsheetId', 'manualSpreadsheetId'] },
       mode: 'basic',
-      condition: { field: 'operation', value: ['read', 'write', 'update', 'append', 'clear'] },
+      condition: {
+        field: 'operation',
+        value: ['read', 'write', 'update', 'append', 'clear', 'delete'],
+      },
     },
     // Manual Sheet Name (advanced mode) - for operations that need sheet name
     {
@@ -400,15 +404,19 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
       required: true,
       dependsOn: ['credential'],
       mode: 'advanced',
-      condition: { field: 'operation', value: ['read', 'write', 'update', 'append', 'clear'] },
+      condition: {
+        field: 'operation',
+        value: ['read', 'write', 'update', 'append', 'clear', 'delete'],
+      },
     },
-    // Cell Range (optional for read/write/update/clear)
+    // Cell Range (optional for read/write/update/clear); row range for delete (e.g., Sheet1!5:5 or 5:7)
     {
       id: 'cellRange',
       title: 'Cell Range',
       type: 'short-input',
-      placeholder: 'Cell range (e.g., A1:D10). Defaults to A1 for write.',
-      condition: { field: 'operation', value: ['read', 'write', 'update', 'clear'] },
+      placeholder:
+        'Cell range (e.g., A1:D10) or row range for delete (e.g., Sheet1!5:5 or 5:7). Defaults to A1 for write.',
+      condition: { field: 'operation', value: ['read', 'write', 'update', 'clear', 'delete'] },
       wandConfig: {
         enabled: true,
         prompt: `Generate a valid cell range based on the user's description.
@@ -666,6 +674,15 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
         generationType: 'json-object',
       },
     },
+    // Delete-specific Fields
+    {
+      id: 'rowNumber',
+      title: 'Row Number',
+      type: 'short-input',
+      placeholder: 'Single row number to delete (e.g., 5). Alternative to range.',
+      condition: { field: 'operation', value: 'delete' },
+      required: false,
+    },
     // Copy Sheet Fields
     {
       id: 'sheetId',
@@ -691,6 +708,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
       'google_sheets_update_v2',
       'google_sheets_append_v2',
       'google_sheets_clear_v2',
+      'google_sheets_delete',
       'google_sheets_get_spreadsheet_v2',
       'google_sheets_create_spreadsheet_v2',
       'google_sheets_batch_get_v2',
@@ -711,6 +729,8 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
             return 'google_sheets_append_v2'
           case 'clear':
             return 'google_sheets_clear_v2'
+          case 'delete':
+            return 'google_sheets_delete'
           case 'get_info':
             return 'google_sheets_get_spreadsheet_v2'
           case 'create':
@@ -736,6 +756,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           sheetName,
           manualSheetName,
           cellRange,
+          rowNumber,
           title,
           sheetTitles,
           ranges,
@@ -816,6 +837,23 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           }
         }
 
+        // Handle delete operation
+        if (operation === 'delete') {
+          const effectiveSheetName = ((sheetName || manualSheetName || '') as string).trim()
+          const range = cellRange ? (cellRange as string).trim() : undefined
+          const rowNum =
+            rowNumber !== undefined && rowNumber !== null && rowNumber !== ''
+              ? Number(rowNumber)
+              : undefined
+          return {
+            spreadsheetId: effectiveSpreadsheetId,
+            sheetName: effectiveSheetName || undefined,
+            range,
+            rowNumber: rowNum,
+            credential,
+          }
+        }
+
         // Handle read/write/update/append/clear operations (require sheet name)
         const effectiveSheetName = ((sheetName || manualSheetName || '') as string).trim()
 
@@ -851,6 +889,10 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
     sheetTitles: { type: 'string', description: 'Comma-separated sheet names for new spreadsheet' },
     ranges: { type: 'string', description: 'JSON array of ranges for batch operations' },
     batchData: { type: 'string', description: 'JSON array of data for batch update' },
+    rowNumber: {
+      type: 'string',
+      description: 'Single row number to delete (for delete operation)',
+    },
     sheetId: { type: 'string', description: 'Numeric sheet ID for copy operation' },
     destinationSpreadsheetId: {
       type: 'string',
@@ -905,6 +947,12 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
       type: 'string',
       description: 'Range that was cleared',
       condition: { field: 'operation', value: 'clear' },
+    },
+    // Delete outputs
+    deletedRows: {
+      type: 'number',
+      description: 'Number of rows deleted',
+      condition: { field: 'operation', value: 'delete' },
     },
     // Get Info / Create / Batch outputs
     spreadsheetId: {
@@ -1016,6 +1064,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           'update',
           'append',
           'clear',
+          'delete',
           'batch_get',
           'batch_update',
           'batch_clear',

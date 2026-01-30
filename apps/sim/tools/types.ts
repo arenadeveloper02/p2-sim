@@ -94,6 +94,8 @@ export interface ToolConfig<P = any, R = any> {
     method: HttpMethod | ((params: P) => HttpMethod)
     headers: (params: P) => Record<string, string>
     body?: (params: P) => Record<string, any> | string | FormData | undefined
+    /** Timeout in ms for external HTTP requests (default 30000). Use higher values for slow APIs (e.g. image generation). */
+    timeout?: number
   }
 
   // Post-processing (optional) - allows additional processing after the initial request

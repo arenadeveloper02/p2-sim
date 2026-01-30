@@ -14,6 +14,7 @@ export const categories = [
   { value: 'seo', label: 'SEO' },
   { value: 'strategy', label: 'Strategy' },
   { value: 'waas', label: 'WAAS' },
+  { value: 'hr', label: 'HR' },
 ] as const
 
 /**
