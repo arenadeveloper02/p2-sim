@@ -58,13 +58,6 @@ export interface GoogleSheetsAppendResponse extends ToolResponse {
   }
 }
 
-export interface GoogleSheetsDeleteResponse extends ToolResponse {
-  output: {
-    deletedRows: number
-    metadata: GoogleSheetsMetadata
-  }
-}
-
 export interface GoogleSheetsToolParams {
   accessToken: string
   spreadsheetId: string
@@ -144,7 +137,6 @@ export type GoogleSheetsV2Response =
   | GoogleSheetsV2UpdateResponse
   | GoogleSheetsV2AppendResponse
   | GoogleSheetsV2ClearResponse
-  | GoogleSheetsDeleteResponse
   | GoogleSheetsV2GetSpreadsheetResponse
   | GoogleSheetsV2CreateSpreadsheetResponse
   | GoogleSheetsV2BatchGetResponse
