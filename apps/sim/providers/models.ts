@@ -35,10 +35,15 @@ export interface ModelCapabilities {
   toolUsageControl?: boolean
   computerUse?: boolean
   nativeStructuredOutputs?: boolean
+  /**
+   * Max output tokens configuration for Anthropic SDK's streaming timeout workaround.
+   * The Anthropic SDK throws an error for non-streaming requests that may take >10 minutes.
+   * This only applies to direct Anthropic API calls, not Bedrock (which uses AWS SDK).
+   */
   maxOutputTokens?: {
     /** Maximum tokens for streaming requests */
     max: number
-    /** Safe default for non-streaming requests (to avoid timeout issues) */
+    /** Safe default for non-streaming requests (to avoid Anthropic SDK timeout errors) */
     default: number
   }
   reasoningEffort?: {
@@ -1800,7 +1805,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
-          maxOutputTokens: { max: 64000, default: 8192 },
         },
         contextWindow: 200000,
       },
@@ -1814,7 +1818,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
-          maxOutputTokens: { max: 64000, default: 8192 },
         },
         contextWindow: 200000,
       },
@@ -1828,7 +1831,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
-          maxOutputTokens: { max: 64000, default: 8192 },
         },
         contextWindow: 200000,
       },
@@ -1842,7 +1844,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
-          maxOutputTokens: { max: 64000, default: 8192 },
         },
         contextWindow: 200000,
       },
