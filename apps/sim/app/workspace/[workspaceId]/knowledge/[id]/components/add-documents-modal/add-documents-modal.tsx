@@ -35,7 +35,6 @@ interface AddDocumentsModalProps {
     minSize: number
     overlap: number
   }
-  onUploadComplete?: () => void
 }
 
 export function AddDocumentsModal({
@@ -44,7 +43,6 @@ export function AddDocumentsModal({
   knowledgeBaseId,
   knowledgeBaseName,
   chunkingConfig,
-  onUploadComplete,
 }: AddDocumentsModalProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -57,11 +55,6 @@ export function AddDocumentsModal({
 
   const { isUploading, uploadProgress, uploadFiles, uploadError, clearError } = useKnowledgeUpload({
     workspaceId,
-    onUploadComplete: () => {
-      logger.info(`Successfully uploaded ${files.length} files`)
-      onUploadComplete?.()
-      handleClose()
-    },
   })
 
   useEffect(() => {
@@ -238,6 +231,8 @@ export function AddDocumentsModal({
         chunkOverlap: chunkingConfig?.overlap || 200,
         recipe: 'default',
       })
+      logger.info(`Successfully uploaded ${files.length} files`)
+      handleClose()
     } catch (error) {
       logger.error('Error uploading files:', error)
     }
@@ -245,14 +240,14 @@ export function AddDocumentsModal({
 
   return (
     <Modal open={open} onOpenChange={handleClose}>
-      <ModalContent>
+      <ModalContent size='md'>
         <ModalHeader>Add Documents</ModalHeader>
 
-        <ModalBody className='!pb-[16px]'>
+        <ModalBody>
           <div className='min-h-0 flex-1 overflow-y-auto'>
             <div className='space-y-[12px]'>
               {fileError && (
-                <p className='text-[11px] text-[var(--text-error)] leading-tight'>{fileError}</p>
+                <p className='text-[12px] text-[var(--text-error)] leading-tight'>{fileError}</p>
               )}
 
               <div className='flex flex-col gap-[8px]'>
@@ -266,8 +261,8 @@ export function AddDocumentsModal({
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   className={cn(
-                    '!bg-[var(--surface-1)] hover:!bg-[var(--surface-4)] w-full justify-center border border-[var(--c-575757)] border-dashed py-[10px]',
-                    isDragging && 'border-[var(--brand-primary-hex)]'
+                    '!bg-[var(--surface-1)] hover:!bg-[var(--surface-4)] w-full justify-center border border-[var(--border-1)] border-dashed py-[10px]',
+                    isDragging && 'border-[var(--surface-7)]'
                   )}
                 >
                   <input
@@ -360,7 +355,7 @@ export function AddDocumentsModal({
         <ModalFooter>
           <div className='flex w-full items-center justify-between gap-[12px]'>
             {uploadError ? (
-              <p className='min-w-0 flex-1 truncate text-[11px] text-[var(--text-error)] leading-tight'>
+              <p className='min-w-0 flex-1 truncate text-[12px] text-[var(--text-error)] leading-tight'>
                 {uploadError.message}
               </p>
             ) : (

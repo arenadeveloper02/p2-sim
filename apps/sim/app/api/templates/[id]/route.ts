@@ -10,6 +10,7 @@ import {
   extractRequiredCredentials,
   sanitizeCredentials,
 } from '@/lib/workflows/credentials/credential-extractor'
+import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('TemplateByIdAPI')
 
@@ -70,7 +71,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           .update(templates)
           .set({
             views: sql`${templates.views} + 1`,
-            updatedAt: new Date(),
           })
           .where(eq(templates.id, id))
 
@@ -190,12 +190,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           .where(eq(workflow.id, template.workflowId))
           .limit(1)
 
-        const currentState = {
+        const currentState: Partial<WorkflowState> = {
           blocks: normalizedData.blocks,
           edges: normalizedData.edges,
           loops: normalizedData.loops,
           parallels: normalizedData.parallels,
-          variables: workflowRecord?.variables || undefined,
+          variables: (workflowRecord?.variables as WorkflowState['variables']) ?? undefined,
           lastSaved: Date.now(),
         }
 

@@ -3,9 +3,7 @@
 import { Button } from '@/components/emcn'
 import { copilotPromptSentEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 
-/**
- * Props for the CopilotWelcome component
- */
+/** Props for the Welcome component */
 interface WelcomeProps {
   /** Callback when a suggested question is clicked */
   onQuestionClick?: (question: string) => void

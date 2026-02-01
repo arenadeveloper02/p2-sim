@@ -1,7 +1,9 @@
 import { createLogger } from '@sim/logger'
+import JSON5 from 'json5'
 import { v4 as uuidv4 } from 'uuid'
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
+import { normalizeName } from '@/executor/constants'
 import type {
   Variable,
   VariablesDimensions,
@@ -11,7 +13,6 @@ import type {
 } from '@/stores/variables/types'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
-import { normalizeName } from '@/stores/workflows/utils'
 
 const logger = createLogger('VariablesModalStore')
 
@@ -125,8 +126,7 @@ function validateVariable(variable: Variable): string | undefined {
           if (!valueToEvaluate.startsWith('{') || !valueToEvaluate.endsWith('}')) {
             return 'Not a valid object format'
           }
-          // eslint-disable-next-line no-new-func
-          const parsed = new Function(`return ${valueToEvaluate}`)()
+          const parsed = JSON5.parse(valueToEvaluate)
           if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
             return 'Not a valid object'
           }
@@ -138,12 +138,12 @@ function validateVariable(variable: Variable): string | undefined {
       }
       case 'array': {
         try {
-          const parsed = JSON.parse(String(variable.value))
+          const parsed = JSON5.parse(String(variable.value))
           if (!Array.isArray(parsed)) {
-            return 'Not a valid JSON array'
+            return 'Not a valid array'
           }
         } catch {
-          return 'Invalid JSON array syntax'
+          return 'Invalid array syntax'
         }
         return undefined
       }
@@ -379,37 +379,6 @@ export const useVariablesStore = create<VariablesStore>()(
             const { [id]: _deleted, ...rest } = state.variables
             return { variables: rest }
           })
-        },
-
-        duplicateVariable: (id, providedId) => {
-          const state = get()
-          const existing = state.variables[id]
-          if (!existing) return ''
-          const newId = providedId || uuidv4()
-
-          const workflowVariables = state.getVariablesByWorkflowId(existing.workflowId)
-          const baseName = `${existing.name} (copy)`
-          let uniqueName = baseName
-          let nameIndex = 1
-          while (workflowVariables.some((v) => v.name === uniqueName)) {
-            uniqueName = `${baseName} (${nameIndex})`
-            nameIndex++
-          }
-
-          set((state) => ({
-            variables: {
-              ...state.variables,
-              [newId]: {
-                id: newId,
-                workflowId: existing.workflowId,
-                name: uniqueName,
-                type: existing.type,
-                value: existing.value,
-              },
-            },
-          }))
-
-          return newId
         },
 
         getVariablesByWorkflowId: (workflowId) => {

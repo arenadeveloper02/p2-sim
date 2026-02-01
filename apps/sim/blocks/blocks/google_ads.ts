@@ -45,7 +45,10 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   us_eventgroove_products: { id: '4687328820', name: 'US - Eventgroove Products' },
   wolf_river: { id: '6445143850', name: 'Wolf River' },
   youngshc: { id: '3240333229', name: 'Youngshc.com' },
-  ricoobene: { id: '2848955239', name: 'Ricoobene' },
+  riccobene: { id: '2848955239', name: 'Riccobene' },
+  garramone_ralph: { id: '1472407899', name: 'Garramone, Ralph' },
+  bd_engine_brake: { id: '8577930930', name: '1369614 B.C. LTD. (BD Engine Brake)' },
+  dj_precision_machine: { id: '6438492741', name: 'D&J Precision Machine LLC' },
 }
 
 export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {

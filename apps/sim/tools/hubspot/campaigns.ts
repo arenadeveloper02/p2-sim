@@ -603,12 +603,29 @@ export const hubspotGetCampaignRevenueTool: ToolConfig<
       visibility: 'user-only',
       description: 'Campaign GUID or array of Campaign GUIDs',
     },
+    startDate: {
+      type: 'string',
+      required: true,
+      visibility: 'user-only',
+      description: 'Start date in YYYY-MM-DD format',
+    },
+    endDate: {
+      type: 'string',
+      required: true,
+      visibility: 'user-only',
+      description: 'End date in YYYY-MM-DD format',
+    },
   },
   request: {
-    url: ({ campaignGuid }) => {
+    url: ({ campaignGuid, startDate, endDate }) => {
       // Handle array case - use first campaign for URL (will be handled in transformResponse)
       const guid = Array.isArray(campaignGuid) ? campaignGuid[0] : campaignGuid
-      return `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/revenue`
+      const baseUrl = `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/revenue`
+      const queryParams = new URLSearchParams()
+      if (startDate) queryParams.append('startDate', startDate)
+      if (endDate) queryParams.append('endDate', endDate)
+      const queryString = queryParams.toString()
+      return queryString ? `${baseUrl}?${queryString}` : baseUrl
     },
     method: 'GET',
     headers: ({ accessToken }) => buildHeaders(accessToken),
@@ -623,7 +640,13 @@ export const hubspotGetCampaignRevenueTool: ToolConfig<
       const campaignGuids = params.campaignGuid
       const revenuePromises = campaignGuids.map(async (guid) => {
         try {
-          const url = `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/revenue`
+          const baseUrl = `https://api.hubapi.com/marketing/v3/campaigns/${encodeURIComponent(guid)}/reports/revenue`
+          const queryParams = new URLSearchParams()
+          if (params.startDate) queryParams.append('startDate', params.startDate)
+          if (params.endDate) queryParams.append('endDate', params.endDate)
+          const queryString = queryParams.toString()
+          const url = queryString ? `${baseUrl}?${queryString}` : baseUrl
+
           const campaignResponse = await fetch(url, {
             method: 'GET',
             headers: buildHeaders(params.accessToken),

@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import { PublicEnvScript } from 'next-runtime-env'
 import { BrandedLayout } from '@/components/branded-layout'
 import { generateThemeCSS } from '@/lib/branding/inject-theme'
 import { generateBrandedMetadata, generateStructuredData } from '@/lib/branding/metadata'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
 import '@/app/_styles/globals.css'
-
 import { OneDollarStats } from '@/components/analytics/onedollarstats'
+import { isReactGrabEnabled, isReactScanEnabled } from '@/lib/core/config/feature-flags'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
@@ -34,6 +35,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang='en' suppressHydrationWarning>
       <head>
+        {isReactScanEnabled && (
+          <Script
+            src='https://unpkg.com/react-scan/dist/auto.global.js'
+            crossOrigin='anonymous'
+            strategy='beforeInteractive'
+          />
+        )}
+        {isReactGrabEnabled && (
+          <Script
+            src='https://unpkg.com/react-grab/dist/index.global.js'
+            crossOrigin='anonymous'
+            strategy='beforeInteractive'
+          />
+        )}
+        {isReactGrabEnabled && (
+          <Script
+            src='https://unpkg.com/@react-grab/cursor/dist/client.global.js'
+            strategy='lazyOnload'
+          />
+        )}
         {/* Structured Data for SEO */}
         <script
           type='application/ld+json'
@@ -72,7 +93,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
 
-        {/* Workspace layout dimensions: set CSS vars before hydration to avoid layout jump */}
+        {/* 
+          Workspace layout dimensions: set CSS vars before hydration to avoid layout jump.
+          
+          IMPORTANT: These hardcoded values must stay in sync with stores/constants.ts
+          We cannot use imports here since this is a blocking script that runs before React.
+        */}
         <script
           id='workspace-layout-dimensions'
           dangerouslySetInnerHTML={{
@@ -115,7 +141,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     var panelWidth = panelState && panelState.panelWidth;
                     var maxPanelWidth = window.innerWidth * 0.4;
 
-                    if (panelWidth >= 260 && panelWidth <= maxPanelWidth) {
+                    if (panelWidth >= 290 && panelWidth <= maxPanelWidth) {
                       document.documentElement.style.setProperty('--panel-width', panelWidth + 'px');
                     } else if (panelWidth > maxPanelWidth) {
                       document.documentElement.style.setProperty('--panel-width', maxPanelWidth + 'px');

@@ -170,15 +170,38 @@ export type TimeRange =
   | 'Past 14 days'
   | 'Past 30 days'
   | 'All time'
+  | 'Custom range'
 
-export type LogLevel = 'error' | 'info' | 'running' | 'pending' | 'all' | (string & {})
-export type TriggerType = 'chat' | 'api' | 'webhook' | 'manual' | 'schedule' | 'all' | string
+export type LogLevel =
+  | 'error'
+  | 'info'
+  | 'running'
+  | 'pending'
+  | 'cancelled'
+  | 'all'
+  | (string & {})
+/** Core trigger types for workflow execution */
+export const CORE_TRIGGER_TYPES = [
+  'manual',
+  'api',
+  'schedule',
+  'chat',
+  'webhook',
+  'mcp',
+  'a2a',
+] as const
+
+export type CoreTriggerType = (typeof CORE_TRIGGER_TYPES)[number]
+
+export type TriggerType = CoreTriggerType | 'all' | (string & {})
 
 /** Filter state for logs and dashboard views */
 export interface FilterState {
   workspaceId: string
   viewMode: 'logs' | 'dashboard'
   timeRange: TimeRange
+  startDate?: string
+  endDate?: string
   level: LogLevel
   workflowIds: string[]
   folderIds: string[]
@@ -189,6 +212,8 @@ export interface FilterState {
   setWorkspaceId: (workspaceId: string) => void
   setViewMode: (viewMode: 'logs' | 'dashboard') => void
   setTimeRange: (timeRange: TimeRange) => void
+  setDateRange: (startDate: string | undefined, endDate: string | undefined) => void
+  clearDateRange: () => void
   setLevel: (level: LogLevel) => void
   setWorkflowIds: (workflowIds: string[]) => void
   toggleWorkflowId: (workflowId: string) => void
@@ -199,4 +224,5 @@ export interface FilterState {
   toggleTrigger: (trigger: TriggerType) => void
   initializeFromURL: () => void
   syncWithURL: () => void
+  resetFilters: () => void
 }

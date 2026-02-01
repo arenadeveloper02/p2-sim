@@ -3,6 +3,7 @@
   "pages": [
     "./introduction/index",
     "./getting-started/index",
+    "./quick-reference/index",
     "triggers",
     "blocks",
     "tools",
@@ -14,7 +15,9 @@
     "execution",
     "permissions",
     "sdks",
-    "self-hosting"
+    "self-hosting",
+    "./enterprise/index",
+    "./keyboard-shortcuts/index"
   ],
   "defaultOpen": false
 }

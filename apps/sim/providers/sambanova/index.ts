@@ -170,8 +170,12 @@ export const sambanovaProvider: ProviderConfig = {
     }
 
     // Optional params
-    if (request.temperature !== undefined) payload.temperature = request.temperature
-    if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+    if (request.temperature !== undefined) {
+      payload.temperature = request.temperature
+    }
+    if (request.maxTokens !== undefined) {
+      payload.max_tokens = Number(request.maxTokens)
+    }
 
     // Structured output - SambaNova doesn't support strict mode
     // Note: SambaNova API returns error "response_format of type 'json_schema' does not currently support 'strict' value to be True"

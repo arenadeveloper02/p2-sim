@@ -13,9 +13,10 @@ const logger = createLogger('GoogleNanoBananaApi')
  * Generate an image using Google's Gemini (Nano Banana) model.
  *
  * Request body (application/json):
- * - model: string (required) - Gemini image model (e.g., gemini-2.5-flash-image)
+ * - model: string (required) - Gemini image model (gemini-2.5-flash-image or gemini-3-pro-image-preview)
  * - prompt: string (required) - Text description for the image
  * - aspectRatio: string (optional) - e.g., 1:1, 16:9
+ * - imageSize: string (optional) - For Pro only: 1K, 2K, 4K
  * - inputImage: string | { path: string; type?: string } (optional) - base64 image or file reference
  * - inputImageMimeType: string (optional) - MIME type for the input image
  */
@@ -25,6 +26,7 @@ export async function POST(request: NextRequest) {
     const model = body.model as string
     const prompt = body.prompt as string
     const aspectRatio = body.aspectRatio as string | undefined
+    const imageSize = body.imageSize as string | undefined
     const inputImage = body.inputImage as unknown
     const inputImageMimeType = body.inputImageMimeType as string | undefined
 
@@ -43,6 +45,7 @@ export async function POST(request: NextRequest) {
     const requestBody = await buildNanoBananaRequestBody({
       prompt,
       aspectRatio,
+      imageSize,
       inputImage,
       inputImageMimeType,
     })
@@ -106,11 +109,12 @@ export async function GET() {
     description: 'Generate an image using Google Gemini (Nano Banana)',
     contentType: 'application/json',
     requiredFields: {
-      model: 'string - Gemini image model (e.g., gemini-2.5-flash-image)',
+      model: 'string - Gemini image model (gemini-2.5-flash-image or gemini-3-pro-image-preview)',
       prompt: 'string - Text description for the image',
     },
     optionalFields: {
       aspectRatio: 'string - Aspect ratio (1:1, 16:9, etc.)',
+      imageSize: 'string - For Pro only: 1K, 2K, 4K',
       inputImage: 'string | { path: string; type?: string } - Base64 image or file reference',
       inputImageMimeType: 'string - MIME type of the input image',
     },

@@ -23,6 +23,7 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
         // { label: 'GPT Image', id: 'gpt-image-1' },
         { label: 'Imagen 4.0', id: 'imagen-4.0-generate-001' },
         { label: 'Nano Banana', id: 'gemini-2.5-flash-image' },
+        { label: 'Nano Banana Pro', id: 'gemini-3-pro-image-preview' },
       ],
       value: () => 'dall-e-3',
     },
@@ -146,14 +147,32 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
         { label: '21:9', id: '21:9' },
       ],
       value: () => '1:1',
-      condition: { field: 'model', value: 'gemini-2.5-flash-image' },
+      condition: {
+        field: 'model',
+        value: ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'],
+      },
+    },
+    {
+      id: 'imageSize',
+      title: 'Resolution',
+      type: 'dropdown',
+      options: [
+        { label: '1K', id: '1K' },
+        { label: '2K', id: '2K' },
+        { label: '4K', id: '4K' },
+      ],
+      value: () => '1K',
+      condition: { field: 'model', value: 'gemini-3-pro-image-preview' },
     },
     {
       id: 'inputImage',
       title: 'Input Image to Edit',
       type: 'file-upload',
       acceptedTypes: 'image/*',
-      condition: { field: 'model', value: 'gemini-2.5-flash-image' },
+      condition: {
+        field: 'model',
+        value: ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'],
+      },
     },
   ],
   tools: {
@@ -187,13 +206,17 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
 
         // Handle Google Nano Banana models
         if (params.model?.startsWith('gemini-')) {
-          return {
+          const base = {
             model: params.model,
             prompt: params.prompt,
             aspectRatio: params.aspectRatio || '1:1',
             inputImage: params.inputImage,
             inputImageMimeType: params.inputImageMimeType,
           }
+          if (params.model === 'gemini-3-pro-image-preview') {
+            return { ...base, imageSize: params.imageSize || '1K' }
+          }
+          return base
         }
 
         // Handle OpenAI models
@@ -229,6 +252,7 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
     style: { type: 'string', description: 'Image style' },
     background: { type: 'string', description: 'Background type' },
     aspectRatio: { type: 'string', description: 'Image aspect ratio' },
+    imageSize: { type: 'string', description: 'Output resolution (1K/2K/4K) for Nano Banana Pro' },
     personGeneration: { type: 'string', description: 'Person generation setting' },
     inputImage: {
       type: 'string',

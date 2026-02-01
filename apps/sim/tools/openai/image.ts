@@ -60,6 +60,7 @@ export const imageTool: ToolConfig = {
   request: {
     url: 'https://api.openai.com/v1/images/generations',
     method: 'POST',
+    timeout: 120000,
     headers: () => {
       const apiKey = getRotatingApiKey('openai')
       return {
@@ -122,7 +123,7 @@ export const imageTool: ToolConfig = {
         try {
           logger.info('Fetching image from URL via proxy...')
           const baseUrl = getBaseUrl()
-          const proxyUrl = new URL('/api/proxy/image', baseUrl)
+          const proxyUrl = new URL('/api/tools/image', baseUrl)
           proxyUrl.searchParams.append('url', imageUrl)
 
           const headers: Record<string, string> = {
