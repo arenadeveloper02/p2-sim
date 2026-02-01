@@ -26,6 +26,7 @@ import { DuckDuckGoBlock } from '@/blocks/blocks/duckduckgo'
 import { DynamoDBBlock } from '@/blocks/blocks/dynamodb'
 import { ElasticsearchBlock } from '@/blocks/blocks/elasticsearch'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
+import { EnrichBlock } from '@/blocks/blocks/enrich'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
 import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
@@ -195,6 +196,7 @@ export const registry: Record<string, BlockConfig> = {
   dynamodb: DynamoDBBlock,
   elasticsearch: ElasticsearchBlock,
   elevenlabs: ElevenLabsBlock,
+  enrich: EnrichBlock,
   evaluator: EvaluatorBlock,
   exa: ExaBlock,
   facebook_ads: FacebookAdsBlock,
