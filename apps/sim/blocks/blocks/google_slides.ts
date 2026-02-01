@@ -9,7 +9,7 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
   description: 'Read, write, and create presentations',
   authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Google Slides into the workflow. Can read, write, create presentations, replace text, add slides, add images, get thumbnails, get page details, delete objects, duplicate objects, reorder slides, create tables, create shapes, and insert text.',
+    'Integrate Google Slides into the workflow. Can read, write, create presentations, duplicate presentations, replace text, add slides, add images, get thumbnails, get page details, delete objects, duplicate objects, reorder slides, create tables, create shapes, and insert text.',
   docsLink: 'https://docs.sim.ai/tools/google_slides',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -24,6 +24,7 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Read Presentation', id: 'read' },
         { label: 'Write to Presentation', id: 'write' },
         { label: 'Create Presentation', id: 'create' },
+        { label: 'Duplicate Presentation', id: 'duplicate_presentation' },
         { label: 'Replace All Text', id: 'replace_all_text' },
         { label: 'Add Slide', id: 'add_slide' },
         { label: 'Add Image', id: 'add_image' },
@@ -206,6 +207,84 @@ Create clear, concise content suitable for a title or introductory slide.
 Return ONLY the slide content - no explanations, no markdown formatting markers, no extra text.`,
         placeholder: 'Describe the initial slide content...',
       },
+    },
+
+    // ========== Duplicate Presentation Operation Fields ==========
+    // Source presentation selector (basic mode)
+    {
+      id: 'sourcePresentationSelector',
+      title: 'Select Presentation to Duplicate',
+      type: 'file-selector',
+      canonicalParamId: 'sourcePresentationId',
+      serviceId: 'google-drive',
+      requiredScopes: [],
+      mimeType: 'application/vnd.google-apps.presentation',
+      placeholder: 'Select a presentation to duplicate',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+      required: true,
+    },
+    // Manual source presentation ID input (advanced mode)
+    {
+      id: 'manualSourcePresentationId',
+      title: 'Source Presentation ID',
+      type: 'short-input',
+      canonicalParamId: 'sourcePresentationId',
+      placeholder: 'Enter source presentation ID',
+      dependsOn: ['credential'],
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+      required: true,
+    },
+    {
+      id: 'duplicateTitle',
+      title: 'New Presentation Title',
+      type: 'short-input',
+      placeholder: 'Enter title for the duplicated presentation',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+      required: true,
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate a professional presentation title based on the user's description.
+The title should be:
+- Clear and descriptive
+- Professional and engaging
+- Concise (typically 3-8 words)
+
+Examples:
+- "quarterly sales" -> Q4 2024 Sales Performance Review
+- "product launch" -> Introducing Our New Product Line
+- "team meeting" -> Weekly Team Sync - Updates & Goals
+
+Return ONLY the title - no explanations, no quotes, no extra text.`,
+        placeholder: 'Describe your presentation topic...',
+      },
+    },
+    // Folder selector for duplicate (basic mode)
+    {
+      id: 'duplicateFolderSelector',
+      title: 'Select Parent Folder',
+      type: 'file-selector',
+      canonicalParamId: 'folderId',
+      serviceId: 'google-drive',
+      requiredScopes: [],
+      mimeType: 'application/vnd.google-apps.folder',
+      placeholder: 'Select a parent folder',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+    },
+    // Manual folder ID input for duplicate (advanced mode)
+    {
+      id: 'duplicateFolderId',
+      title: 'Parent Folder ID',
+      type: 'short-input',
+      canonicalParamId: 'folderId',
+      placeholder: 'Enter parent folder ID (leave empty for root folder)',
+      dependsOn: ['credential'],
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
     },
 
     // ========== Replace All Text Operation Fields ==========
@@ -596,6 +675,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       'google_slides_read',
       'google_slides_write',
       'google_slides_create',
+      'google_slides_duplicate',
       'google_slides_replace_all_text',
       'google_slides_add_slide',
       'google_slides_add_image',
@@ -617,6 +697,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_write'
           case 'create':
             return 'google_slides_create'
+          case 'duplicate_presentation':
+            return 'google_slides_duplicate'
           case 'replace_all_text':
             return 'google_slides_replace_all_text'
           case 'add_slide':
@@ -655,11 +737,14 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           thumbnailPageId,
           imageWidth,
           imageHeight,
+          sourcePresentationId,
+          duplicateTitle,
           ...rest
         } = params
 
         const effectivePresentationId = (presentationId || manualPresentationId || '').trim()
         const effectiveFolderId = (folderSelector || folderId || '').trim()
+        const effectiveSourcePresentationId = (sourcePresentationId || '').trim()
 
         const result: Record<string, any> = {
           ...rest,
@@ -677,6 +762,13 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           if (createContent) {
             result.content = createContent
           }
+        }
+
+        if (params.operation === 'duplicate_presentation') {
+          result.sourcePresentationId = effectiveSourcePresentationId || undefined
+          result.title = duplicateTitle
+          // folderId is already set from the canonicalParamId mapping
+          result.folderId = effectiveFolderId || undefined
         }
 
         if (params.operation === 'add_slide' && params.insertionIndex) {
@@ -795,6 +887,15 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     folderSelector: { type: 'string', description: 'Selected folder' },
     folderId: { type: 'string', description: 'Folder identifier' },
     createContent: { type: 'string', description: 'Initial slide content' },
+    // Duplicate presentation operation
+    sourcePresentationSelector: { type: 'string', description: 'Selected source presentation' },
+    manualSourcePresentationId: {
+      type: 'string',
+      description: 'Manual source presentation identifier',
+    },
+    duplicateTitle: { type: 'string', description: 'Title for duplicated presentation' },
+    duplicateFolderSelector: { type: 'string', description: 'Selected folder for duplicate' },
+    duplicateFolderId: { type: 'string', description: 'Folder identifier for duplicate' },
     // Replace all text operation
     findText: { type: 'string', description: 'Text to find' },
     replaceText: { type: 'string', description: 'Text to replace with' },

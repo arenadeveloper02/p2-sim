@@ -5,6 +5,7 @@ import { createShapeTool } from '@/tools/google_slides/create_shape'
 import { createTableTool } from '@/tools/google_slides/create_table'
 import { deleteObjectTool } from '@/tools/google_slides/delete_object'
 import { duplicateObjectTool } from '@/tools/google_slides/duplicate_object'
+import { duplicateTool } from '@/tools/google_slides/duplicate'
 import { getPageTool } from '@/tools/google_slides/get_page'
 import { getThumbnailTool } from '@/tools/google_slides/get_thumbnail'
 import { insertTextTool } from '@/tools/google_slides/insert_text'
@@ -16,6 +17,7 @@ import { writeTool } from '@/tools/google_slides/write'
 export const googleSlidesReadTool = readTool
 export const googleSlidesWriteTool = writeTool
 export const googleSlidesCreateTool = createTool
+export const googleSlidesDuplicateTool = duplicateTool
 export const googleSlidesReplaceAllTextTool = replaceAllTextTool
 export const googleSlidesAddSlideTool = addSlideTool
 export const googleSlidesGetThumbnailTool = getThumbnailTool
