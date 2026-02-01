@@ -31,6 +31,33 @@ function replaceMentionsWithUsernames(text: string, userNames: Record<string, st
   })
 }
 
+/**
+ * Normalize Slack timestamps to seconds.
+ */
+function normalizeSlackTimestamp(
+  value: string | null | undefined,
+  requestId: string,
+  logger: ReturnType<typeof createLogger>
+): string | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return undefined
+  }
+
+  const numeric = Number(trimmed)
+  if (!Number.isFinite(numeric)) {
+    return trimmed
+  }
+
+  if (numeric > 1_000_000_000_000) {
+    const normalized = (numeric / 1000).toString()
+    logger.info(`[${requestId}] Normalized millisecond timestamp "${trimmed}" -> "${normalized}"`)
+    return normalized
+  }
+
+  return trimmed
+}
+
 // Helper function to fetch user information for multiple users
 async function fetchUserInfo(
   userIds: string[],
@@ -306,8 +333,8 @@ export async function POST(request: NextRequest) {
     url.searchParams.append('limit', String(limit))
 
     // Convert dates to timestamps if provided
-    let oldestTimestamp = validatedData.oldest
-    let latestTimestamp = validatedData.latest
+    let oldestTimestamp = normalizeSlackTimestamp(validatedData.oldest, requestId, logger)
+    let latestTimestamp = normalizeSlackTimestamp(validatedData.latest, requestId, logger)
 
     if (oldestTimestamp && !validatedData.fromDate) {
       logger.info(`[${requestId}] Received oldest timestamp: ${oldestTimestamp}`)

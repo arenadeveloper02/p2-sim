@@ -13,6 +13,7 @@ export const runtime = 'nodejs'
 type MeetingSummaryRequestBody = {
   client_id?: string
   client_name?: string
+  meeting_type?: string
   one_day_summary?: string
   seven_day_summary?: string
   fourteen_day_summary?: string
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
         id: meetingSummary.id,
         clientIdRef: meetingSummary.clientIdRef,
         clientName: meetingSummary.clientName,
+        meetingType: meetingSummary.meetingType,
         oneDaySummary: meetingSummary.oneDaySummary,
         sevenDaySummary: meetingSummary.sevenDaySummary,
         fourteenDaySummary: meetingSummary.fourteenDaySummary,
@@ -126,6 +128,7 @@ export async function POST(request: NextRequest) {
     const {
       client_id,
       client_name,
+      meeting_type,
       one_day_summary,
       seven_day_summary,
       fourteen_day_summary,
@@ -192,6 +195,7 @@ export async function POST(request: NextRequest) {
         .update(meetingSummary)
         .set({
           clientName: client_name || 'Unknown Client',
+          meetingType: meeting_type,
           oneDaySummary: one_day_summary ?? undefined,
           sevenDaySummary: seven_day_summary ?? undefined,
           fourteenDaySummary: fourteen_day_summary ?? undefined,
@@ -210,6 +214,7 @@ export async function POST(request: NextRequest) {
         id,
         clientIdRef: client_id,
         clientName: client_name || 'Unknown Client',
+        meetingType: meeting_type,
         oneDaySummary: one_day_summary ?? undefined,
         sevenDaySummary: seven_day_summary ?? undefined,
         fourteenDaySummary: fourteen_day_summary ?? undefined,
