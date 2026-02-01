@@ -118,6 +118,16 @@ export type ArenaGetMeetingsParams = {
 
 export interface ArenaGetMeetingsResponse extends ToolResponse {}
 
+export type ArenaProjectSummaryParams = {
+  operation: string
+  'project-summary-cid': string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaProjectSummaryResponse extends ToolResponse {}
+
 export interface Task {
   errors: string | null
   errorMessage: string | null
