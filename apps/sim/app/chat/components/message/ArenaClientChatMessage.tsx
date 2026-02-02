@@ -55,9 +55,11 @@ export const ArenaClientChatMessage = memo(
   }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
+    const [isLikeFeedbackOpen, setIsLikeFeedbackOpen] = useState(false)
     const [popoverSide, setPopoverSide] = useState<'top' | 'bottom'>('top')
     const [isFeedbackPending, setIsFeedbackPending] = useState(false)
     const dislikeButtonRef = useRef<HTMLButtonElement>(null)
+    const likeButtonRef = useRef<HTMLButtonElement>(null)
 
     const isJsonObject = useMemo(() => {
       return typeof message.content === 'object' && message.content !== null
@@ -70,7 +72,10 @@ export const ArenaClientChatMessage = memo(
     // Close this feedback box when another message opens theirs
     useEffect(() => {
       if (typeof window === 'undefined') return
-      const handleCloseFeedback = () => setIsFeedbackOpen(false)
+      const handleCloseFeedback = () => {
+        setIsFeedbackOpen(false)
+        setIsLikeFeedbackOpen(false)
+      }
       window.addEventListener('p2-close-feedback', handleCloseFeedback)
       return () => {
         window.removeEventListener('p2-close-feedback', handleCloseFeedback)
@@ -155,10 +160,10 @@ export const ArenaClientChatMessage = memo(
     const handleLike = async (currentExecutionId: string) => {
       if (!currentExecutionId) return
 
-      setIsFeedbackPending(true)
-      try {
-        // If already liked, unlike it (send null to backend)
-        if (message.liked === true) {
+      // If already liked, unlike it (send null to backend)
+      if (message.liked === true) {
+        setIsFeedbackPending(true)
+        try {
           await fetch(`/api/chat/feedback/${currentExecutionId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -177,21 +182,43 @@ export const ArenaClientChatMessage = memo(
               msg.executionId === currentExecutionId ? { ...msg, liked: null } : msg
             )
           )
-          return
+        } catch {
+          // toastError('Error', {
+          //   description: 'Something went wrong!',
+          // })
+        } finally {
+          setIsLikeFeedbackOpen(false)
+          setIsFeedbackPending(false)
         }
+        return
+      }
 
-        // Otherwise, like it
+      // Otherwise, open feedback popover for like feedback
+      try {
+        // Close any other open feedback boxes across messages
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('p2-close-feedback'))
+        }
+      } catch {}
+      setIsLikeFeedbackOpen(true)
+    }
+
+    const handleSubmitLikeFeedback = async (feedback: any, currentExecutionId: string) => {
+      if (!currentExecutionId) return
+
+      setIsFeedbackPending(true)
+      try {
         await fetch(`/api/chat/feedback/${currentExecutionId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            comment: '',
+            comment: feedback.comment?.trim() || '',
             inComplete: false,
             inAccurate: false,
             outOfDate: false,
             tooLong: false,
             tooShort: false,
-            liked: true,
+            liked: true, // This is a like feedback
           }),
         })
         setMessages?.((prev: any) =>
@@ -207,7 +234,7 @@ export const ArenaClientChatMessage = memo(
         //   description: 'Something went wrong!',
         // })
       } finally {
-        setIsFeedbackOpen(false)
+        setIsLikeFeedbackOpen(false)
         setIsFeedbackPending(false)
       }
     }
@@ -369,22 +396,48 @@ export const ArenaClientChatMessage = memo(
                           {(message?.liked === true || message?.liked === null) && (
                             <Tooltip.Provider>
                               <Tooltip.Root>
-                                <Tooltip.Trigger asChild>
-                                  <button
-                                    className='text-muted-foreground transition-colors hover:bg-muted'
-                                    onClick={() => {
-                                      handleLike(message?.executionId || '')
+                                <Popover
+                                  open={isLikeFeedbackOpen && message?.liked === null}
+                                  onOpenChange={setIsLikeFeedbackOpen}
+                                >
+                                  <PopoverTrigger asChild>
+                                    <Tooltip.Trigger asChild>
+                                      <button
+                                        ref={likeButtonRef}
+                                        className='text-muted-foreground transition-colors hover:bg-muted'
+                                        onClick={() => {
+                                          handleLike(message?.executionId || '')
+                                        }}
+                                      >
+                                        <ThumbsUp
+                                          stroke={'gray'}
+                                          fill={message?.liked === true ? 'gray' : 'white'}
+                                          className='h-4 w-4'
+                                          strokeWidth={2}
+                                        />
+                                      </button>
+                                    </Tooltip.Trigger>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    className='z-[9999] w-[400px]'
+                                    align='start'
+                                    side={popoverSide}
+                                    sideOffset={-15}
+                                    avoidCollisions={true}
+                                    collisionPadding={16}
+                                    style={{
+                                      padding: 0,
                                     }}
                                   >
-                                    <ThumbsUp
-                                      stroke={'gray'}
-                                      fill={message?.liked === true ? 'gray' : 'white'}
-                                      className='h-4 w-4'
-                                      strokeWidth={2}
+                                    <FeedbackBox
+                                      isOpen={true}
+                                      onClose={() => setIsLikeFeedbackOpen(false)}
+                                      onSubmit={handleSubmitLikeFeedback}
+                                      currentExecutionId={message?.executionId || ''}
+                                      isLikeFeedback={true}
                                     />
-                                  </button>
-                                </Tooltip.Trigger>
-
+                                  </PopoverContent>
+                                </Popover>
                                 <Tooltip.Content>
                                   {message?.liked === true ? 'Unlike' : 'Like'}
                                 </Tooltip.Content>
