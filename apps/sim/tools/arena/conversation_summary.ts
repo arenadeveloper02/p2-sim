@@ -49,9 +49,7 @@ export const conversationSummary: ToolConfig<
     },
   },
 
-  transformResponse: async (
-    response: Response
-  ): Promise<ArenaConversationSummaryResponse> => {
+  transformResponse: async (response: Response): Promise<ArenaConversationSummaryResponse> => {
     const data = await response.json()
     return {
       success: true,

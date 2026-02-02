@@ -2170,7 +2170,6 @@ export const usageLog = pgTable(
   })
 )
 
-
 export const slackSummary = pgTable(
   'slack_summary',
   {
@@ -2322,11 +2321,11 @@ export const credentialSet = pgTable(
   })
 )
 
-
-export const credentialSetMemberStatusEnum = pgEnum(
-  'credential_set_member_status',
-  ['active', 'pending', 'revoked']
-)
+export const credentialSetMemberStatusEnum = pgEnum('credential_set_member_status', [
+  'active',
+  'pending',
+  'revoked',
+])
 
 export const credentialSetMember = pgTable(
   'credential_set_member',
@@ -2338,9 +2337,7 @@ export const credentialSetMember = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    status: credentialSetMemberStatusEnum('status')
-      .notNull()
-      .default('pending'),
+    status: credentialSetMemberStatusEnum('status').notNull().default('pending'),
     joinedAt: timestamp('joined_at'),
     invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -2357,10 +2354,12 @@ export const credentialSetMember = pgTable(
   })
 )
 
-export const credentialSetInvitationStatusEnum = pgEnum(
-  'credential_set_invitation_status',
-  ['pending', 'accepted', 'expired', 'cancelled']
-)
+export const credentialSetInvitationStatusEnum = pgEnum('credential_set_invitation_status', [
+  'pending',
+  'accepted',
+  'expired',
+  'cancelled',
+])
 
 export const credentialSetInvitation = pgTable(
   'credential_set_invitation',
@@ -2374,9 +2373,7 @@ export const credentialSetInvitation = pgTable(
     invitedBy: text('invited_by')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    status: credentialSetInvitationStatusEnum('status')
-      .notNull()
-      .default('pending'),
+    status: credentialSetInvitationStatusEnum('status').notNull().default('pending'),
     expiresAt: timestamp('expires_at').notNull(),
     acceptedAt: timestamp('accepted_at'),
     acceptedByUserId: text('accepted_by_user_id').references(() => user.id, {
@@ -2405,9 +2402,7 @@ export const permissionGroup = pgTable(
     createdBy: text('created_by')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    autoAddNewMembers: boolean('auto_add_new_members')
-      .notNull()
-      .default(false),
+    autoAddNewMembers: boolean('auto_add_new_members').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -2418,9 +2413,7 @@ export const permissionGroup = pgTable(
       table.organizationId,
       table.name
     ),
-    autoAddNewMembersUnique: uniqueIndex(
-      'permission_group_org_auto_add_unique'
-    )
+    autoAddNewMembersUnique: uniqueIndex('permission_group_org_auto_add_unique')
       .on(table.organizationId)
       .where(sql`auto_add_new_members = true`),
   })
@@ -2440,11 +2433,7 @@ export const permissionGroupMember = pgTable(
     assignedAt: timestamp('assigned_at').notNull().defaultNow(),
   },
   (table) => ({
-    permissionGroupIdIdx: index(
-      'permission_group_member_group_id_idx'
-    ).on(table.permissionGroupId),
-    userIdUnique: uniqueIndex(
-      'permission_group_member_user_id_unique'
-    ).on(table.userId),
+    permissionGroupIdIdx: index('permission_group_member_group_id_idx').on(table.permissionGroupId),
+    userIdUnique: uniqueIndex('permission_group_member_user_id_unique').on(table.userId),
   })
 )

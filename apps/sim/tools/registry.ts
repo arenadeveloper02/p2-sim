@@ -440,8 +440,8 @@ import {
 } from '@/tools/gitlab'
 import {
   gmailAddLabelTool,
-  gmailAdvancedSearchTool,
   gmailAddLabelV2Tool,
+  gmailAdvancedSearchTool,
   gmailArchiveTool,
   gmailArchiveV2Tool,
   gmailDeleteTool,

@@ -25,7 +25,8 @@ export const projectSummary: ToolConfig<ArenaProjectSummaryParams, ArenaProjectS
   request: {
     url: (params: ArenaProjectSummaryParams) => {
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
-      if (!params['project-summary-cid']?.trim()) throw new Error('Missing required field: Client ID')
+      if (!params['project-summary-cid']?.trim())
+        throw new Error('Missing required field: Client ID')
 
       let url = `/api/tools/arena/project-summary`
       url += `?workflowId=${encodeURIComponent(params._context.workflowId)}`
@@ -42,9 +43,7 @@ export const projectSummary: ToolConfig<ArenaProjectSummaryParams, ArenaProjectS
     },
   },
 
-  transformResponse: async (
-    response: Response
-  ): Promise<ArenaProjectSummaryResponse> => {
+  transformResponse: async (response: Response): Promise<ArenaProjectSummaryResponse> => {
     const data = await response.json()
     return {
       success: true,

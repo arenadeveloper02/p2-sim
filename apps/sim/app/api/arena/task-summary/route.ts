@@ -1,7 +1,7 @@
-import { sql } from 'drizzle-orm'
 import { db } from '@sim/db'
 import { arenaTaskSummary } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 
@@ -114,7 +114,10 @@ export async function GET(request: NextRequest) {
     logger.error(`[${requestId}] Error fetching arena task summaries`, { error: errorMessage })
 
     return NextResponse.json(
-      { success: false, error: { message: errorMessage || 'Failed to fetch arena task summaries' } },
+      {
+        success: false,
+        error: { message: errorMessage || 'Failed to fetch arena task summaries' },
+      },
       { status: 500 }
     )
   }

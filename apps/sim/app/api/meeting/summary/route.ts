@@ -1,7 +1,7 @@
-import { sql } from 'drizzle-orm'
 import { db } from '@sim/db'
 import { meetingSummary } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 
@@ -88,7 +88,9 @@ export async function GET(request: NextRequest) {
         retryCount: meetingSummary.retryCount,
       })
       .from(meetingSummary)
-      .where(sql`${meetingSummary.clientIdRef} = ${clientId} AND ${meetingSummary.runDate} = ${latestRunDate}`)
+      .where(
+        sql`${meetingSummary.clientIdRef} = ${clientId} AND ${meetingSummary.runDate} = ${latestRunDate}`
+      )
       .orderBy(meetingSummary.createdDate)
 
     logger.info(`[${requestId}] Found meeting summaries for client`, {
@@ -187,7 +189,9 @@ export async function POST(request: NextRequest) {
     const existingRecord = await db
       .select()
       .from(meetingSummary)
-      .where(sql`${meetingSummary.clientIdRef} = ${client_id} AND ${meetingSummary.runDate} = ${runDateValue}`)
+      .where(
+        sql`${meetingSummary.clientIdRef} = ${client_id} AND ${meetingSummary.runDate} = ${runDateValue}`
+      )
       .limit(1)
 
     if (existingRecord.length > 0) {

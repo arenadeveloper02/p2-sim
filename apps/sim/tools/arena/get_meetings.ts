@@ -43,7 +43,7 @@ export const getMeetings: ToolConfig<ArenaGetMeetingsParams, ArenaGetMeetingsRes
 
       // Determine if advanced mode (has client-id field) or basic mode (has client object)
       const isAdvancedMode = !!params['get-meetings-client-id']
-      
+
       let clientId: string
       if (isAdvancedMode) {
         // Advanced mode: use direct client ID input

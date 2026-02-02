@@ -885,7 +885,9 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
             const hasToDate = toDate && toDate.trim() !== ''
 
             if (hasQuickDate && (hasFromDate || hasToDate)) {
-              throw new Error('Cannot select both quick date range and specific from/to dates. Please choose one method.')
+              throw new Error(
+                'Cannot select both quick date range and specific from/to dates. Please choose one method.'
+              )
             }
 
             // Handle date range presets
@@ -1246,14 +1248,6 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
     nextCursor: {
       type: 'string',
       description: 'Pagination cursor for next page of results',
-      condition: {
-        field: 'operation',
-        value: 'read',
-      },
-    },
-    hasMore: {
-      type: 'boolean',
-      description: 'Whether there are more messages available for pagination',
       condition: {
         field: 'operation',
         value: 'read',

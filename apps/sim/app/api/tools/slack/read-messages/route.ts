@@ -265,7 +265,7 @@ const SlackReadMessagesSchema = z
       (val) => {
         if (val === '' || val === null || val === undefined) return 10
         const num = Number(val)
-        return isNaN(num) || num < 1 ? 10 : Math.min(num, 50)
+        return Number.isNaN(num) || num < 1 ? 10 : Math.min(num, 50)
       },
       z.number().min(1, 'maxThreads must be at least 1').max(50, 'maxThreads cannot exceed 50')
     ),
@@ -273,9 +273,12 @@ const SlackReadMessagesSchema = z
       (val) => {
         if (val === '' || val === null || val === undefined) return 100
         const num = Number(val)
-        return isNaN(num) || num < 1 ? 100 : Math.min(num, 200)
+        return Number.isNaN(num) || num < 1 ? 100 : Math.min(num, 200)
       },
-      z.number().min(1, 'maxRepliesPerThread must be at least 1').max(200, 'maxRepliesPerThread cannot exceed 200')
+      z
+        .number()
+        .min(1, 'maxRepliesPerThread must be at least 1')
+        .max(200, 'maxRepliesPerThread cannot exceed 200')
     ),
   })
   .refine((data) => data.channel || data.userId, {
