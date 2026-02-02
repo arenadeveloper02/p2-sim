@@ -2,10 +2,7 @@
  * AI provider resolution for Bing Ads V1
  */
 
-import { createLogger } from '@sim/logger'
 import type { AIProviderConfig } from './types'
-
-const logger = createLogger('BingAdsV1AIProvider')
 
 /**
  * Resolves AI provider with Grok first, then GPT-4o fallback
@@ -20,7 +17,6 @@ const logger = createLogger('BingAdsV1AIProvider')
 export function resolveAIProvider(): AIProviderConfig {
   // Try Grok first
   if (process.env.XAI_API_KEY) {
-    logger.info('Using Grok for Bing Ads query generation')
     return {
       provider: 'xai' as const,
       model: 'grok-3-fast-latest',
@@ -30,7 +26,6 @@ export function resolveAIProvider(): AIProviderConfig {
 
   // Fallback to GPT-4o
   if (process.env.OPENAI_API_KEY) {
-    logger.info('Using GPT-4o for Bing Ads query generation (Grok not available)')
     return {
       provider: 'openai' as const,
       model: 'gpt-4o',

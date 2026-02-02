@@ -11,12 +11,9 @@ export const MICROS_PER_DOLLAR = 1000000
 /**
  * Current date reference for Bing Ads query generation
  * Dynamically calculated to always reflect the actual current date
+ * Format: YYYY-MM-DD for proper date calculations
  */
-export const CURRENT_DATE = new Date().toLocaleDateString('en-US', {
-  year: 'numeric',
-  month: 'long',
-  day: 'numeric',
-})
+export const CURRENT_DATE = new Date().toISOString().split('T')[0]
 
 /**
  * Default date range in days when no date is specified
