@@ -146,70 +146,101 @@ export function GoldenQueriesModal({
               </div>
             ) : (
               <div className='flex flex-col gap-2'>
-                {draftQueries.map((query, index) => (
-                  <div
-                    key={`${query}-${index}`}
-                    className='group flex items-start gap-2 rounded-[8px] bg-[var(--bg-subtle)] px-3 py-2 text-left text-[13px] text-[var(--text-primary)] transition hover:bg-[var(--bg-subtle)]'
-                    onDragOver={(event) => {
-                      if (draggingIndex === null) return
-                      event.preventDefault()
-                    }}
-                    onDrop={async (event) => {
-                      if (draggingIndex === null) return
-                      event.preventDefault()
-                      const fromIndex = draggingIndex
-                      setDraggingIndex(null)
-                      await handleReorder(fromIndex, index)
-                    }}
-                    onDragEnd={() => setDraggingIndex(null)}
-                  >
-                    <div className='pt-0.5 opacity-0 transition group-hover:opacity-100'>
-                      <button
-                        type='button'
-                        draggable={mode === null && !disabled && !isSaving}
-                        onDragStart={() => setDraggingIndex(index)}
-                        onDragEnd={() => setDraggingIndex(null)}
-                        className='cursor-grab rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40'
-                        aria-label='Drag to reorder'
-                        disabled={disabled || isSaving || mode !== null}
-                      >
-                        <GripVertical className='h-4 w-4' />
-                      </button>
-                    </div>
-                    <button
-                      type='button'
-                      onClick={() => onSelectQuery(query)}
-                      disabled={disabled || isSaving || mode !== null}
-                      className='flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60'
+                {draftQueries.map((query, index) => {
+                  const isEditing = mode === 'edit' && editingIndex === index
+                  return (
+                    <div
+                      key={`${query}-${index}`}
+                      className='group flex items-start gap-2 rounded-[8px] bg-[var(--bg-subtle)] px-3 py-2 text-left text-[13px] text-[var(--text-primary)] transition hover:bg-[var(--bg-subtle)]'
+                      onDragOver={(event) => {
+                        if (draggingIndex === null) return
+                        event.preventDefault()
+                      }}
+                      onDrop={async (event) => {
+                        if (draggingIndex === null) return
+                        event.preventDefault()
+                        const fromIndex = draggingIndex
+                        setDraggingIndex(null)
+                        await handleReorder(fromIndex, index)
+                      }}
+                      onDragEnd={() => setDraggingIndex(null)}
                     >
-                      {query}
-                    </button>
-                    <div className='flex items-center gap-1 opacity-0 transition group-hover:opacity-100'>
-                      <button
-                        type='button'
-                        onClick={() => handleEditClick(index)}
-                        disabled={disabled || isSaving}
-                        className='rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60'
-                        aria-label='Edit query'
-                      >
-                        <Pencil className='h-3.5 w-3.5' />
-                      </button>
-                      <button
-                        type='button'
-                        onClick={() => handleDelete(index)}
-                        disabled={disabled || isSaving}
-                        className='rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60'
-                        aria-label='Delete query'
-                      >
-                        <Trash2 className='h-3.5 w-3.5' />
-                      </button>
+                      <div className='pt-0.5 opacity-0 transition group-hover:opacity-100'>
+                        <button
+                          type='button'
+                          draggable={mode === null && !disabled && !isSaving}
+                          onDragStart={() => setDraggingIndex(index)}
+                          onDragEnd={() => setDraggingIndex(null)}
+                          className='cursor-grab rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40'
+                          aria-label='Drag to reorder'
+                          disabled={disabled || isSaving || mode !== null}
+                        >
+                          <GripVertical className='h-4 w-4' />
+                        </button>
+                      </div>
+                      {isEditing ? (
+                        <div className='flex flex-1 items-center gap-2'>
+                          <input
+                            value={draftValue}
+                            onChange={(event) => setDraftValue(event.target.value)}
+                            placeholder='Type your query'
+                            disabled={disabled || isSaving}
+                            className='h-[34px] flex-1 rounded-[6px] border border-[var(--border-200)] px-3 text-[13px] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary-hover-hex)] disabled:cursor-not-allowed disabled:opacity-60'
+                          />
+                          <Button
+                            variant='default'
+                            onClick={handleSave}
+                            disabled={disabled || isSaving}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            variant='ghost'
+                            onClick={handleCancel}
+                            disabled={disabled || isSaving}
+                          >
+                            <X className='h-4 w-4' />
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type='button'
+                            onClick={() => onSelectQuery(query)}
+                            disabled={disabled || isSaving || mode !== null}
+                            className='flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60'
+                          >
+                            {query}
+                          </button>
+                          <div className='flex items-center gap-1 opacity-0 transition group-hover:opacity-100'>
+                            <button
+                              type='button'
+                              onClick={() => handleEditClick(index)}
+                              disabled={disabled || isSaving}
+                              className='rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60'
+                              aria-label='Edit query'
+                            >
+                              <Pencil className='h-3.5 w-3.5' />
+                            </button>
+                            <button
+                              type='button'
+                              onClick={() => handleDelete(index)}
+                              disabled={disabled || isSaving}
+                              className='rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60'
+                              aria-label='Delete query'
+                            >
+                              <Trash2 className='h-3.5 w-3.5' />
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 
-            {mode !== null && (
+            {mode === 'add' && (
               <div className='rounded-[8px] border border-[var(--border-200)] bg-white p-3'>
                 <div className='flex items-center gap-2'>
                   <input
