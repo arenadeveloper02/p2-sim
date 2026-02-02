@@ -118,6 +118,39 @@ export type ArenaGetMeetingsParams = {
 
 export interface ArenaGetMeetingsResponse extends ToolResponse {}
 
+export type ArenaClientUpdatedTasksParams = {
+  operation: string
+  'client-updated-tasks-client'?: {
+    clientId: string
+    name: string
+  }
+  'client-updated-tasks-client-id'?: string
+  'client-updated-tasks-period': string
+  'client-updated-tasks-page-number'?: number | string
+  'client-updated-tasks-page-size'?: number | string
+  _context?: {
+    workflowId?: string
+  }
+}
+
+export interface ArenaClientUpdatedTasksResponse extends ToolResponse {}
+
+export interface ArenaClientUpdatedTasksApiResponse {
+  errors: string | null
+  errorMessage: string | null
+  pagination: {
+    totalRecords: number
+    totalPages: number
+    recordsPerPage: number
+    pageNumber: number
+    pageSize: number
+    startRange: number
+    endRange: number
+    noOfRecordsPerPage: number
+  }
+  tasks: Task[]
+}
+
 export type ArenaProjectSummaryParams = {
   operation: string
   'project-summary-cid': string
