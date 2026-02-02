@@ -33,6 +33,7 @@ import type {
   WorkflowExecutionSnapshot,
   WorkflowState,
 } from '@/lib/logs/types'
+import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 
 export interface ToolCall {
   name: string
@@ -550,7 +551,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     }
 
     try {
-      // Get the workflow record to get the userId
+      // Get the workflow record to get workspace and fallback userId
       const [workflowRecord] = await db
         .select()
         .from(workflow)
@@ -562,7 +563,12 @@ export class ExecutionLogger implements IExecutionLoggerService {
         return
       }
 
-      const userId = workflowRecord.userId
+      let billingUserId: string | null = null
+      if (workflowRecord.workspaceId) {
+        billingUserId = await getWorkspaceBilledAccountUserId(workflowRecord.workspaceId)
+      }
+
+      const userId = billingUserId || workflowRecord.userId
       const costToStore = costSummary.totalCost
 
       const existing = await db.select().from(userStats).where(eq(userStats.userId, userId))
