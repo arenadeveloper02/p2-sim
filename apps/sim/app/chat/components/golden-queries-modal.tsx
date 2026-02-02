@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { GripVertical, Pencil, Trash2, X } from 'lucide-react'
-import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@/components/emcn'
+import { Check, GripVertical, Loader2, Pencil, Trash2, X } from 'lucide-react'
+import {
+  Button,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Tooltip,
+} from '@/components/emcn'
 
 interface GoldenQueriesModalProps {
   open: boolean
@@ -30,6 +38,12 @@ export function GoldenQueriesModal({
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  const [savingAction, setSavingAction] = useState<
+    | { type: 'save' }
+    | { type: 'delete'; index: number }
+    | { type: 'reorder' }
+    | null
+  >(null)
 
   useEffect(() => {
     if (!open) return
@@ -39,6 +53,7 @@ export function GoldenQueriesModal({
     setEditingIndex(null)
     setErrorMessage(null)
     setIsSaving(false)
+    setSavingAction(null)
   }, [open, normalizedQueries])
 
   const isAddDisabled = disabled || isSaving || mode !== null
@@ -82,6 +97,7 @@ export function GoldenQueriesModal({
     }
 
     setIsSaving(true)
+    setSavingAction({ type: 'save' })
     setErrorMessage(null)
     try {
       await onSaveQueries(nextQueries)
@@ -91,12 +107,14 @@ export function GoldenQueriesModal({
       setErrorMessage('Failed to save query. Please try again.')
     } finally {
       setIsSaving(false)
+      setSavingAction(null)
     }
   }
 
   const handleDelete = async (index: number) => {
     const nextQueries = draftQueries.filter((_, queryIndex) => queryIndex !== index)
     setIsSaving(true)
+    setSavingAction({ type: 'delete', index })
     setErrorMessage(null)
     try {
       await onSaveQueries(nextQueries)
@@ -108,6 +126,7 @@ export function GoldenQueriesModal({
       setErrorMessage('Failed to delete query. Please try again.')
     } finally {
       setIsSaving(false)
+      setSavingAction(null)
     }
   }
 
@@ -120,6 +139,7 @@ export function GoldenQueriesModal({
     nextQueries.splice(toIndex, 0, moved)
 
     setIsSaving(true)
+    setSavingAction({ type: 'reorder' })
     setErrorMessage(null)
     try {
       await onSaveQueries(nextQueries)
@@ -128,6 +148,7 @@ export function GoldenQueriesModal({
       setErrorMessage('Failed to reorder queries. Please try again.')
     } finally {
       setIsSaving(false)
+      setSavingAction(null)
     }
   }
 
@@ -136,12 +157,18 @@ export function GoldenQueriesModal({
       <ModalContent size='lg'>
         <ModalHeader>Golden queries</ModalHeader>
         <ModalBody>
+          <Tooltip.Provider>
           <div className='flex flex-col gap-3'>
             {draftQueries.length === 0 ? (
               <div className='flex items-center gap-3 text-[12px] text-[var(--text-secondary)]'>
-                <Button variant='default' onClick={handleAddClick} disabled={isAddDisabled}>
-                  Add Query
-                </Button>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Button variant='default' onClick={handleAddClick} disabled={isAddDisabled}>
+                      Add Query
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>Add a new query</Tooltip.Content>
+                </Tooltip.Root>
                 <span>No queries added to this chat yet.</span>
               </div>
             ) : (
@@ -166,17 +193,26 @@ export function GoldenQueriesModal({
                       onDragEnd={() => setDraggingIndex(null)}
                     >
                       <div className='pt-0.5 opacity-0 transition group-hover:opacity-100'>
-                        <button
-                          type='button'
-                          draggable={mode === null && !disabled && !isSaving}
-                          onDragStart={() => setDraggingIndex(index)}
-                          onDragEnd={() => setDraggingIndex(null)}
-                          className='cursor-grab rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40'
-                          aria-label='Drag to reorder'
-                          disabled={disabled || isSaving || mode !== null}
-                        >
-                          <GripVertical className='h-4 w-4' />
-                        </button>
+                        <Tooltip.Root>
+                          <Tooltip.Trigger asChild>
+                            <button
+                              type='button'
+                              draggable={mode === null && !disabled && !isSaving}
+                              onDragStart={() => setDraggingIndex(index)}
+                              onDragEnd={() => setDraggingIndex(null)}
+                              className='cursor-grab rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40'
+                              aria-label='Drag to reorder'
+                              disabled={disabled || isSaving || mode !== null}
+                            >
+                              {savingAction?.type === 'reorder' ? (
+                                <Loader2 className='h-4 w-4 animate-spin' />
+                              ) : (
+                                <GripVertical className='h-4 w-4' />
+                              )}
+                            </button>
+                          </Tooltip.Trigger>
+                          <Tooltip.Content>Drag to reorder</Tooltip.Content>
+                        </Tooltip.Root>
                       </div>
                       {isEditing ? (
                         <div className='flex flex-1 items-center gap-2'>
@@ -187,20 +223,36 @@ export function GoldenQueriesModal({
                             disabled={disabled || isSaving}
                             className='h-[34px] flex-1 rounded-[6px] border border-[var(--border-200)] px-3 text-[13px] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary-hover-hex)] disabled:cursor-not-allowed disabled:opacity-60'
                           />
-                          <Button
-                            variant='default'
-                            onClick={handleSave}
-                            disabled={disabled || isSaving}
-                          >
-                            Save
-                          </Button>
-                          <Button
-                            variant='ghost'
-                            onClick={handleCancel}
-                            disabled={disabled || isSaving}
-                          >
-                            <X className='h-4 w-4' />
-                          </Button>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger asChild>
+                              <Button
+                                variant='ghost'
+                                onClick={handleSave}
+                                disabled={disabled || isSaving}
+                                aria-label='Save query'
+                              >
+                                {savingAction?.type === 'save' ? (
+                                  <Loader2 className='h-4 w-4 animate-spin' />
+                                ) : (
+                                  <Check className='h-4 w-4' />
+                                )}
+                              </Button>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content>Save query</Tooltip.Content>
+                          </Tooltip.Root>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger asChild>
+                              <Button
+                                variant='ghost'
+                                onClick={handleCancel}
+                                disabled={disabled || isSaving}
+                                aria-label='Cancel edit'
+                              >
+                                <X className='h-4 w-4' />
+                              </Button>
+                            </Tooltip.Trigger>
+                            <Tooltip.Content>Cancel edit</Tooltip.Content>
+                          </Tooltip.Root>
                         </div>
                       ) : (
                         <>
@@ -213,24 +265,39 @@ export function GoldenQueriesModal({
                             {query}
                           </button>
                           <div className='flex items-center gap-1 opacity-0 transition group-hover:opacity-100'>
-                            <button
-                              type='button'
-                              onClick={() => handleEditClick(index)}
-                              disabled={disabled || isSaving}
-                              className='rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60'
-                              aria-label='Edit query'
-                            >
-                              <Pencil className='h-3.5 w-3.5' />
-                            </button>
-                            <button
-                              type='button'
-                              onClick={() => handleDelete(index)}
-                              disabled={disabled || isSaving}
-                              className='rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60'
-                              aria-label='Delete query'
-                            >
-                              <Trash2 className='h-3.5 w-3.5' />
-                            </button>
+                            <Tooltip.Root>
+                              <Tooltip.Trigger asChild>
+                                <button
+                                  type='button'
+                                  onClick={() => handleEditClick(index)}
+                                  disabled={disabled || isSaving}
+                                  className='rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60'
+                                  aria-label='Edit query'
+                                >
+                                  <Pencil className='h-3.5 w-3.5' />
+                                </button>
+                              </Tooltip.Trigger>
+                              <Tooltip.Content>Edit query</Tooltip.Content>
+                            </Tooltip.Root>
+                            <Tooltip.Root>
+                              <Tooltip.Trigger asChild>
+                                <button
+                                  type='button'
+                                  onClick={() => handleDelete(index)}
+                                  disabled={disabled || isSaving}
+                                  className='rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-60'
+                                  aria-label='Delete query'
+                                >
+                                  {savingAction?.type === 'delete' &&
+                                  savingAction.index === index ? (
+                                    <Loader2 className='h-3.5 w-3.5 animate-spin' />
+                                  ) : (
+                                    <Trash2 className='h-3.5 w-3.5' />
+                                  )}
+                                </button>
+                              </Tooltip.Trigger>
+                              <Tooltip.Content>Delete query</Tooltip.Content>
+                            </Tooltip.Root>
                           </div>
                         </>
                       )}
@@ -250,12 +317,36 @@ export function GoldenQueriesModal({
                     disabled={disabled || isSaving}
                     className='h-[34px] flex-1 rounded-[6px] border border-[var(--border-200)] px-3 text-[13px] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary-hover-hex)] disabled:cursor-not-allowed disabled:opacity-60'
                   />
-                  <Button variant='default' onClick={handleSave} disabled={disabled || isSaving}>
-                    Save
-                  </Button>
-                  <Button variant='ghost' onClick={handleCancel} disabled={disabled || isSaving}>
-                    <X className='h-4 w-4' />
-                  </Button>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <Button
+                        variant='ghost'
+                        onClick={handleSave}
+                        disabled={disabled || isSaving}
+                        aria-label='Save query'
+                      >
+                        {savingAction?.type === 'save' ? (
+                          <Loader2 className='h-4 w-4 animate-spin' />
+                        ) : (
+                          <Check className='h-4 w-4' />
+                        )}
+                      </Button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content>Save query</Tooltip.Content>
+                  </Tooltip.Root>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <Button
+                        variant='ghost'
+                        onClick={handleCancel}
+                        disabled={disabled || isSaving}
+                        aria-label='Cancel add'
+                      >
+                        <X className='h-4 w-4' />
+                      </Button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content>Cancel add</Tooltip.Content>
+                  </Tooltip.Root>
                 </div>
                 {errorMessage && (
                   <div className='mt-2 text-[12px] text-[var(--text-error)]'>{errorMessage}</div>
@@ -265,12 +356,18 @@ export function GoldenQueriesModal({
 
             {draftQueries.length > 0 && (
               <div className='pt-1'>
-                <Button variant='default' onClick={handleAddClick} disabled={isAddDisabled}>
-                  Add Query
-                </Button>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Button variant='default' onClick={handleAddClick} disabled={isAddDisabled}>
+                      Add Query
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>Add a new query</Tooltip.Content>
+                </Tooltip.Root>
               </div>
             )}
           </div>
+          </Tooltip.Provider>
         </ModalBody>
         <ModalFooter>
           <Button variant='default' onClick={() => onOpenChange(false)}>
