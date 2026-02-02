@@ -2252,6 +2252,30 @@ export const overallClientSummary = pgTable(
   })
 )
 
+export const arenaTaskSummary = pgTable(
+  'arena_task_summary',
+  {
+    id: text('id').primaryKey(),
+    clientIdRef: text('client_id_ref').notNull(),
+    clientName: text('client_name').notNull(),
+    oneDaySummary: text('one_day_summary'),
+    sevenDaySummary: text('seven_day_summary'),
+    fourteenDaySummary: text('fourteen_day_summary'),
+    createdDate: timestamp('created_date').notNull().defaultNow(),
+    updatedDate: timestamp('updated_date').notNull().defaultNow(),
+    startTime: timestamp('start_time'),
+    endTime: timestamp('end_time'),
+    status: text('status').notNull(),
+    retryCount: integer('retry_count').notNull().default(0),
+    runDate: date('run_date').notNull(),
+  },
+  (table) => ({
+    clientIdRefIdx: index('arena_task_summary_client_id_ref_idx').on(table.clientIdRef),
+    statusIdx: index('arena_task_summary_status_idx').on(table.status),
+    runDateIdx: index('arena_task_summary_run_date_idx').on(table.runDate),
+  })
+)
+
 export const clientChannelMapping = pgTable(
   'client_channel_mapping',
   {
