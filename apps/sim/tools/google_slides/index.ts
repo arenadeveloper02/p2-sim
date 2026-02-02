@@ -11,6 +11,9 @@ import { getThumbnailTool } from '@/tools/google_slides/get_thumbnail'
 import { insertTextTool } from '@/tools/google_slides/insert_text'
 import { readTool } from '@/tools/google_slides/read'
 import { replaceAllTextTool } from '@/tools/google_slides/replace_all_text'
+import { replaceImageTool } from '@/tools/google_slides/replace_image'
+import { replaceListsTool } from '@/tools/google_slides/replace_lists'
+import { replaceTextTool } from '@/tools/google_slides/replace_text'
 import { updateSlidesPositionTool } from '@/tools/google_slides/update_slides_position'
 import { writeTool } from '@/tools/google_slides/write'
 
@@ -19,6 +22,9 @@ export const googleSlidesWriteTool = writeTool
 export const googleSlidesCreateTool = createTool
 export const googleSlidesDuplicateTool = duplicateTool
 export const googleSlidesReplaceAllTextTool = replaceAllTextTool
+export const googleSlidesReplaceTextTool = replaceTextTool
+export const googleSlidesReplaceListsTool = replaceListsTool
+export const googleSlidesReplaceImageTool = replaceImageTool
 export const googleSlidesAddSlideTool = addSlideTool
 export const googleSlidesGetThumbnailTool = getThumbnailTool
 export const googleSlidesAddImageTool = addImageTool
