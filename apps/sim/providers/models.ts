@@ -1721,13 +1721,17 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
+          maxOutputTokens: { max: 8192, default: 8192 },
         },
         contextWindow: 128000,
       },
       {
         id: 'DeepSeek-R1-Distill-Llama-70B',
         pricing: { input: 0.07, output: 0.14, updatedAt: '2025-01-15' },
-        capabilities: { temperature: { min: 0, max: 2 } },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          maxOutputTokens: { max: 8192, default: 8192 },
+        },
         contextWindow: 128000,
       },
       {
@@ -1748,6 +1752,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
+          maxOutputTokens: { max: 8192, default: 8192 },
         },
         contextWindow: 128000,
       },
