@@ -151,6 +151,16 @@ export interface ArenaClientUpdatedTasksApiResponse {
   tasks: Task[]
 }
 
+export type ArenaConversationSummaryParams = {
+  operation: string
+  'conversation-summary-task-id': string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaConversationSummaryResponse extends ToolResponse {}
+
 export type ArenaProjectSummaryParams = {
   operation: string
   'project-summary-cid': string

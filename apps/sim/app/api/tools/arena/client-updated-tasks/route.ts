@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const url = new URL(`http://localhost:8081/v1/tasks/client/updated`)
+    const url = new URL(`${arenaBackendBaseUrl}/sol/v1/tasks/client/updated`)
     url.searchParams.set('cid', cid)
     url.searchParams.set('period', period)
     url.searchParams.set('pageNumber', String(resolvedPageNumber))

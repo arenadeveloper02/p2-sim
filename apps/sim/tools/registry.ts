@@ -55,6 +55,7 @@ import {
 import {
   arenaAddComment,
   arenaClientUpdatedTasks,
+  arenaConversationSummary,
   arenaCreateTask,
   arenaGetMeetings,
   arenaProjectSummary,
@@ -1742,6 +1743,7 @@ export const tools: Record<string, ToolConfig> = {
   arena_get_meetings: arenaGetMeetings,
   arena_project_summary: arenaProjectSummary,
   arena_client_updated_tasks: arenaClientUpdatedTasks,
+  arena_conversation_summary: arenaConversationSummary,
   a2a_cancel_task: a2aCancelTaskTool,
   a2a_delete_push_notification: a2aDeletePushNotificationTool,
   a2a_get_agent_card: a2aGetAgentCardTool,
