@@ -5,7 +5,6 @@ import { batchUpdateV2Tool } from '@/tools/google_sheets/batch_update'
 import { clearV2Tool } from '@/tools/google_sheets/clear'
 import { copySheetV2Tool } from '@/tools/google_sheets/copy_sheet'
 import { createSpreadsheetV2Tool } from '@/tools/google_sheets/create_spreadsheet'
-import { deleteTool } from '@/tools/google_sheets/delete'
 import { getSpreadsheetV2Tool } from '@/tools/google_sheets/get_spreadsheet'
 import { readTool, readV2Tool } from '@/tools/google_sheets/read'
 import { updateTool, updateV2Tool } from '@/tools/google_sheets/update'
@@ -16,7 +15,6 @@ export const googleSheetsReadTool = readTool
 export const googleSheetsWriteTool = writeTool
 export const googleSheetsUpdateTool = updateTool
 export const googleSheetsAppendTool = appendTool
-export const googleSheetsDeleteTool = deleteTool
 
 // V2 exports
 export const googleSheetsReadV2Tool = readV2Tool
