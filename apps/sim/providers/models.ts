@@ -1731,6 +1731,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 128000,
       },
       {
+        id: 'DeepSeek-V3.2',
+        pricing: { input: 0.07, output: 0.14, updatedAt: '2025-01-15' },
+        capabilities: { temperature: { min: 0, max: 2 } },
+        contextWindow: 128000,
+      },
+      {
         id: 'Meta-Llama-3.3-70B-Instruct',
         pricing: {
           input: 0.65,
