@@ -338,11 +338,37 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
     },
     // Search Files Fields
     {
+      id: 'searchFolderSelector',
+      title: 'Search in Folder',
+      type: 'file-selector',
+      canonicalParamId: 'searchFolderId',
+      serviceId: 'google-drive',
+      requiredScopes: [
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/drive',
+      ],
+      mimeType: 'application/vnd.google-apps.folder',
+      placeholder: 'Optional: Limit search to this folder',
+      mode: 'basic',
+      dependsOn: ['credential'],
+      condition: { field: 'operation', value: 'search' },
+      clearable: true,
+    },
+    {
+      id: 'searchManualFolderId',
+      title: 'Folder ID',
+      type: 'short-input',
+      canonicalParamId: 'searchFolderId',
+      placeholder: 'Optional: Enter folder ID to limit search',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'search' },
+    },
+    {
       id: 'prompt',
       title: 'Search Prompt',
       type: 'long-input',
       placeholder:
-        'Enter a natural language search prompt (e.g., "find PDF invoices last month", "search slides Q4 strategy in folder Marketing")',
+        'Enter a natural language search prompt (e.g., "find PDF invoices last month", "search slides Q4 strategy")',
       condition: { field: 'operation', value: 'search' },
       required: true,
     },
@@ -817,9 +843,15 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
 
         // For search operation, return prompt and pageSize
         if (operation === 'search') {
+          const searchFolderId =
+            (rest.searchFolderId ?? rest.searchFolderSelector ?? rest.searchManualFolderId) as
+              | string
+              | undefined
+          const folderIdTrimmed = searchFolderId?.trim()
           return {
             credential,
             prompt: rest.prompt as string,
+            ...(folderIdTrimmed ? { folderId: folderIdTrimmed } : {}),
             pageSize: rest.pageSize ? Number.parseInt(rest.pageSize as string, 10) : undefined,
           }
         }
@@ -892,6 +924,9 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
     pageSize: { type: 'number', description: 'Results per page' },
     // Search operation inputs
     prompt: { type: 'string', description: 'Natural language search prompt' },
+    searchFolderId: { type: 'string', description: 'Folder ID to limit search to (canonical)' },
+    searchFolderSelector: { type: 'string', description: 'Selected folder to limit search to' },
+    searchManualFolderId: { type: 'string', description: 'Manual folder ID to limit search to' },
     // Copy operation inputs
     newName: { type: 'string', description: 'New name for copied file' },
     // Update operation inputs

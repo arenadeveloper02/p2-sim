@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { Combobox as EditableCombobox } from '@/components/emcn/components'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -10,6 +11,7 @@ import {
   useSelectorOptionMap,
   useSelectorOptions,
 } from '@/hooks/selectors/use-selector-query'
+import { cn } from '@/lib/core/utils/cn'
 
 interface SelectorComboboxProps {
   blockId: string
@@ -23,6 +25,8 @@ interface SelectorComboboxProps {
   readOnly?: boolean
   onOptionChange?: (value: string) => void
   allowSearch?: boolean
+  /** When true, show a clear (X) button when a value is selected */
+  clearable?: boolean
 }
 
 export function SelectorCombobox({
@@ -37,6 +41,7 @@ export function SelectorCombobox({
   readOnly,
   onOptionChange,
   allowSearch = true,
+  clearable = false,
 }: SelectorComboboxProps) {
   const [storeValueRaw, setStoreValue] = useSubBlockValue<string | null | undefined>(
     blockId,
@@ -97,8 +102,23 @@ export function SelectorCombobox({
     [setStoreValue, onOptionChange, readOnly, disabled]
   )
 
+  const handleClear = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (readOnly || disabled) return
+      setInputValue('')
+      setIsEditing(false)
+      setStoreValue('')
+      onOptionChange?.('')
+    },
+    [readOnly, disabled, setStoreValue, onOptionChange]
+  )
+
+  const showClearButton = clearable && Boolean(activeValue) && !readOnly && !disabled && !isPreview
+
   return (
-    <div className='w-full'>
+    <div className='relative w-full'>
       <SubBlockInputController
         blockId={blockId}
         subBlockId={subBlock.id}
@@ -108,38 +128,55 @@ export function SelectorCombobox({
         isPreview={isPreview}
       >
         {({ ref, onDrop, onDragOver }) => (
-          <EditableCombobox
-            options={comboboxOptions}
-            value={allowSearch ? inputValue : selectedLabel}
-            selectedValue={activeValue ?? ''}
-            onChange={(newValue) => {
-              const matched = optionMap.get(newValue)
-              if (matched) {
-                setInputValue(matched.label)
-                setIsEditing(false)
-                handleSelection(matched.id)
-                return
-              }
-              if (allowSearch) {
-                setInputValue(newValue)
-                setIsEditing(true)
-                setSearchTerm(newValue)
-              }
-            }}
-            placeholder={placeholder || subBlock.placeholder || 'Select an option'}
-            disabled={disabled || readOnly}
-            editable={allowSearch}
-            filterOptions={allowSearch}
-            inputRef={ref as React.RefObject<HTMLInputElement>}
-            inputProps={{
-              onDrop: onDrop as (e: React.DragEvent<HTMLInputElement>) => void,
-              onDragOver: onDragOver as (e: React.DragEvent<HTMLInputElement>) => void,
-            }}
-            isLoading={isLoading}
-            error={error instanceof Error ? error.message : null}
-          />
+          <div className={cn(showClearButton && 'pr-9')}>
+            <EditableCombobox
+              options={comboboxOptions}
+              value={allowSearch ? inputValue : selectedLabel}
+              selectedValue={activeValue ?? ''}
+              onChange={(newValue) => {
+                const matched = optionMap.get(newValue)
+                if (matched) {
+                  setInputValue(matched.label)
+                  setIsEditing(false)
+                  handleSelection(matched.id)
+                  return
+                }
+                if (allowSearch) {
+                  setInputValue(newValue)
+                  setIsEditing(true)
+                  setSearchTerm(newValue)
+                }
+              }}
+              placeholder={placeholder || subBlock.placeholder || 'Select an option'}
+              disabled={disabled || readOnly}
+              editable={allowSearch}
+              filterOptions={allowSearch}
+              inputRef={ref as React.RefObject<HTMLInputElement>}
+              inputProps={{
+                onDrop: onDrop as (e: React.DragEvent<HTMLInputElement>) => void,
+                onDragOver: onDragOver as (e: React.DragEvent<HTMLInputElement>) => void,
+              }}
+              isLoading={isLoading}
+              error={error instanceof Error ? error.message : null}
+            />
+          </div>
         )}
       </SubBlockInputController>
+      {showClearButton && (
+        <button
+          type='button'
+          onClick={handleClear}
+          aria-label='Clear selection'
+          className={cn(
+            'absolute top-1/2 right-2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md',
+            'text-[var(--text-muted)] transition-colors',
+            'hover:bg-[var(--border-1)] hover:text-[var(--text-primary)]',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-1'
+          )}
+        >
+          <X className='h-3.5 w-3.5 shrink-0' strokeWidth={2.25} />
+        </button>
+      )}
     </div>
   )
 }
