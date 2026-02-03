@@ -14,6 +14,7 @@ type MeetingSummaryRequestBody = {
   client_id?: string
   client_name?: string
   meeting_type?: string
+  type?: string
   one_day_summary?: string
   seven_day_summary?: string
   fourteen_day_summary?: string
@@ -76,6 +77,7 @@ export async function GET(request: NextRequest) {
         clientIdRef: meetingSummary.clientIdRef,
         clientName: meetingSummary.clientName,
         meetingType: meetingSummary.meetingType,
+        type: meetingSummary.type,
         oneDaySummary: meetingSummary.oneDaySummary,
         sevenDaySummary: meetingSummary.sevenDaySummary,
         fourteenDaySummary: meetingSummary.fourteenDaySummary,
@@ -131,6 +133,7 @@ export async function POST(request: NextRequest) {
       client_id,
       client_name,
       meeting_type,
+      type,
       one_day_summary,
       seven_day_summary,
       fourteen_day_summary,
@@ -177,6 +180,7 @@ export async function POST(request: NextRequest) {
     logger.info(`[${requestId}] Saving meeting summary`, {
       client_id,
       client_name,
+      type,
       hasOneDay: !!one_day_summary,
       hasSevenDay: !!seven_day_summary,
       hasFourteenDay: !!fourteen_day_summary,
@@ -200,6 +204,7 @@ export async function POST(request: NextRequest) {
         .set({
           clientName: client_name || 'Unknown Client',
           meetingType: meeting_type,
+          type: type ?? undefined,
           oneDaySummary: one_day_summary ?? undefined,
           sevenDaySummary: seven_day_summary ?? undefined,
           fourteenDaySummary: fourteen_day_summary ?? undefined,
@@ -219,6 +224,7 @@ export async function POST(request: NextRequest) {
         clientIdRef: client_id,
         clientName: client_name || 'Unknown Client',
         meetingType: meeting_type,
+        type: type ?? undefined,
         oneDaySummary: one_day_summary ?? undefined,
         sevenDaySummary: seven_day_summary ?? undefined,
         fourteenDaySummary: fourteen_day_summary ?? undefined,

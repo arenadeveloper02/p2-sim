@@ -2179,6 +2179,7 @@ export const slackSummary = pgTable(
     channelIdRef: text('channel_id_ref').notNull(),
     channelName: text('channel_name').notNull(),
     channelType: text('channel_type').notNull(),
+    type: text('type'),
     oneDaySummary: text('one_day_summary'),
     sevenDaySummary: text('seven_day_summary'),
     fourteenDaySummary: text('fourteen_day_summary'),
@@ -2202,6 +2203,28 @@ export const slackSummary = pgTable(
   })
 )
 
+export const gmailClientSummary = pgTable(
+  'gmail_client_summary',
+  {
+    id: text('id').primaryKey(),
+    runDate: date('run_date').notNull(),
+    status: text('status').notNull(),
+    runStartTime: timestamp('run_start_time'),
+    runEndTime: timestamp('run_end_time'),
+    clientId: text('client_id'),
+    clientName: text('client_name'),
+    clientDomain: text('client_domain'),
+    type: text('type'),
+    oneDaySummary: text('one_day_summary'),
+    sevenDaySummary: text('seven_day_summary'),
+  },
+  (table) => ({
+    clientIdIdx: index('gmail_client_summary_client_id_idx').on(table.clientId),
+    statusIdx: index('gmail_client_summary_status_idx').on(table.status),
+    runDateIdx: index('gmail_client_summary_run_date_idx').on(table.runDate),
+  })
+)
+
 export const meetingSummary = pgTable(
   'meeting_summary',
   {
@@ -2209,6 +2232,7 @@ export const meetingSummary = pgTable(
     clientIdRef: text('client_id_ref').notNull(),
     clientName: text('client_name').notNull(),
     meetingType: text('meeting_type'),
+    type: text('type'),
     oneDaySummary: text('one_day_summary'),
     sevenDaySummary: text('seven_day_summary'),
     fourteenDaySummary: text('fourteen_day_summary'),
@@ -2257,6 +2281,7 @@ export const arenaTaskSummary = pgTable(
     id: text('id').primaryKey(),
     clientIdRef: text('client_id_ref').notNull(),
     clientName: text('client_name').notNull(),
+    type: text('type'),
     oneDaySummary: text('one_day_summary'),
     sevenDaySummary: text('seven_day_summary'),
     fourteenDaySummary: text('fourteen_day_summary'),

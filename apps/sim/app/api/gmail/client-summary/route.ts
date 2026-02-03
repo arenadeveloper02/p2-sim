@@ -43,6 +43,7 @@ const PayloadSchema = z.object({
   clientId: z.string().optional(),
   clientName: z.string().optional(),
   clientDomain: z.string().optional(),
+  type: z.string().optional(),
   oneDayEmails: z.array(ThreadedEmailSchema).optional(),
   oneWeekEmails: z.array(ThreadedEmailSchema).optional(),
 })
@@ -110,6 +111,7 @@ export async function GET(request: NextRequest) {
         client_id,
         client_name,
         client_domain,
+        type,
         one_day_summary,
         seven_day_summary,
         run_date,
@@ -178,12 +180,13 @@ export async function POST(req: NextRequest) {
 
     const parseResult = PayloadSchema.safeParse(body)
 
-    const { clientId, clientName, clientDomain, oneDayEmails, oneWeekEmails } =
+    const { clientId, clientName, clientDomain, type, oneDayEmails, oneWeekEmails } =
       parseResult.data || {}
 
     logger.info(`[${requestId}] Client ID:`, clientId)
     logger.info(`[${requestId}] Client Name:`, clientName)
     logger.info(`[${requestId}] Client Domain:`, clientDomain)
+    logger.info(`[${requestId}] Summary Type:`, type)
     logger.info(`[${requestId}] One Day Emails:`, oneDayEmails)
     logger.info(`[${requestId}] One Week Emails:`, oneWeekEmails)
 
@@ -199,7 +202,7 @@ export async function POST(req: NextRequest) {
 
     await db.execute(sql`
       INSERT INTO gmail_client_summary (
-        id, run_date, status, run_start_time, client_id, client_name, client_domain
+        id, run_date, status, run_start_time, client_id, client_name, client_domain, type
       ) VALUES (
         ${id},
         ${runDate},
@@ -207,7 +210,8 @@ export async function POST(req: NextRequest) {
         ${formatPgTimestamp(runStart)},
         ${clientId || null},
         ${clientName || null},
-        ${clientDomain || null}
+        ${clientDomain || null},
+        ${type || null}
       )
     `)
 
@@ -264,6 +268,7 @@ export async function POST(req: NextRequest) {
       SET
         status = 'COMPLETED',
         run_end_time = ${formatPgTimestamp(runEnd)},
+        type = ${type || null},
         one_day_summary = ${oneDaySummary || null},
         seven_day_summary = ${sevenDaysSummary || null}
       WHERE id = ${id}

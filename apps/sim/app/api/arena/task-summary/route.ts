@@ -13,6 +13,7 @@ export const runtime = 'nodejs'
 type ArenaTaskSummaryRequestBody = {
   client_id?: string
   client_name?: string
+  type?: string
   one_day_summary?: string
   seven_day_summary?: string
   fourteen_day_summary?: string
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
         id: arenaTaskSummary.id,
         clientIdRef: arenaTaskSummary.clientIdRef,
         clientName: arenaTaskSummary.clientName,
+        type: arenaTaskSummary.type,
         oneDaySummary: arenaTaskSummary.oneDaySummary,
         sevenDaySummary: arenaTaskSummary.sevenDaySummary,
         fourteenDaySummary: arenaTaskSummary.fourteenDaySummary,
@@ -131,6 +133,7 @@ export async function POST(request: NextRequest) {
     const {
       client_id,
       client_name,
+      type,
       one_day_summary,
       seven_day_summary,
       fourteen_day_summary,
@@ -177,6 +180,7 @@ export async function POST(request: NextRequest) {
     logger.info(`[${requestId}] Saving arena task summary`, {
       client_id,
       client_name,
+      type,
       hasOneDay: !!one_day_summary,
       hasSevenDay: !!seven_day_summary,
       hasFourteenDay: !!fourteen_day_summary,
@@ -199,6 +203,7 @@ export async function POST(request: NextRequest) {
         .update(arenaTaskSummary)
         .set({
           clientName: client_name || 'Unknown Client',
+          type: type ?? undefined,
           oneDaySummary: one_day_summary ?? undefined,
           sevenDaySummary: seven_day_summary ?? undefined,
           fourteenDaySummary: fourteen_day_summary ?? undefined,
@@ -217,6 +222,7 @@ export async function POST(request: NextRequest) {
         id,
         clientIdRef: client_id,
         clientName: client_name || 'Unknown Client',
+        type: type ?? undefined,
         oneDaySummary: one_day_summary ?? undefined,
         sevenDaySummary: seven_day_summary ?? undefined,
         fourteenDaySummary: fourteen_day_summary ?? undefined,
