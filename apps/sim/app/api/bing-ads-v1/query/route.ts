@@ -52,10 +52,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
       const daysDiff = Math.ceil((today.getTime() - end.getTime()) / (1000 * 60 * 60 * 24))
       const rangeDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
       
-      // Map to closest preset
+      // Map to closest preset (only use Bing Ads supported presets)
       if (rangeDays === 1) return 'Yesterday'
       if (rangeDays === 0) return 'Today'
-      if (rangeDays <= 3) return 'Yesterday'
+      if (rangeDays === 3) return 'LastThreeDays'  // 🎯 Keep as is - will return empty if not supported
       if (rangeDays <= 7) return 'LastSevenDays'
       if (rangeDays <= 14) return 'Last14Days'
       return 'Last30Days'
