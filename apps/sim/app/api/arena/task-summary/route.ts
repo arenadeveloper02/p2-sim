@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url)
     const clientId = url.searchParams.get('cid')
+    const summaryType = url.searchParams.get('type')
 
     if (!clientId) {
       return NextResponse.json(
@@ -45,12 +46,24 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    logger.info(`[${requestId}] Fetching latest arena task summaries for client`, { clientId })
+    if (!summaryType) {
+      return NextResponse.json(
+        { success: false, error: { message: 'type parameter is required' } },
+        { status: 400 }
+      )
+    }
+
+    logger.info(`[${requestId}] Fetching latest arena task summaries for client`, {
+      clientId,
+      type: summaryType,
+    })
 
     const latestDateResult = await db
       .select({ runDate: arenaTaskSummary.runDate })
       .from(arenaTaskSummary)
-      .where(sql`${arenaTaskSummary.clientIdRef} = ${clientId}`)
+      .where(
+        sql`${arenaTaskSummary.clientIdRef} = ${clientId} AND ${arenaTaskSummary.type} = ${summaryType}`
+      )
       .orderBy(sql`${arenaTaskSummary.runDate} DESC`)
       .limit(1)
 
@@ -60,7 +73,7 @@ export async function GET(request: NextRequest) {
           success: true,
           data: {
             client_id: clientId,
-            message: 'No arena task summary data found for this client',
+            message: 'No arena task summary data found for this client and type',
             summaries: [],
           },
         },
@@ -89,7 +102,7 @@ export async function GET(request: NextRequest) {
       })
       .from(arenaTaskSummary)
       .where(
-        sql`${arenaTaskSummary.clientIdRef} = ${clientId} AND ${arenaTaskSummary.runDate} = ${latestRunDate}`
+        sql`${arenaTaskSummary.clientIdRef} = ${clientId} AND ${arenaTaskSummary.type} = ${summaryType} AND ${arenaTaskSummary.runDate} = ${latestRunDate}`
       )
       .orderBy(arenaTaskSummary.createdDate)
 

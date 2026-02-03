@@ -2257,6 +2257,7 @@ export const overallClientSummary = pgTable(
     id: text('id').primaryKey(),
     clientIdRef: text('client_id_ref').notNull(),
     clientName: text('client_name').notNull(),
+    type: text('type'),
     oneDaySummary: text('one_day_summary'),
     sevenDaySummary: text('seven_day_summary'),
     fourteenDaySummary: text('fourteen_day_summary'),

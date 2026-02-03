@@ -13,6 +13,7 @@ export const runtime = 'nodejs'
 type OverallClientSummaryRequestBody = {
   client_id?: string
   client_name?: string
+  type?: string
   one_day_summary?: string
   seven_day_summary?: string
   fourteen_day_summary?: string
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url)
     const clientId = url.searchParams.get('cid')
+    const summaryType = url.searchParams.get('type')
 
     if (!clientId) {
       return NextResponse.json(
@@ -33,12 +35,24 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    logger.info(`[${requestId}] Fetching latest overall client summaries`, { clientId })
+    if (!summaryType) {
+      return NextResponse.json(
+        { success: false, error: { message: 'type parameter is required' } },
+        { status: 400 }
+      )
+    }
+
+    logger.info(`[${requestId}] Fetching latest overall client summaries`, {
+      clientId,
+      type: summaryType,
+    })
 
     const latestDateResult = await db
       .select({ runDate: overallClientSummary.runDate })
       .from(overallClientSummary)
-      .where(sql`${overallClientSummary.clientIdRef} = ${clientId}`)
+      .where(
+        sql`${overallClientSummary.clientIdRef} = ${clientId} AND ${overallClientSummary.type} = ${summaryType}`
+      )
       .orderBy(sql`${overallClientSummary.runDate} DESC`)
       .limit(1)
 
@@ -48,7 +62,7 @@ export async function GET(request: NextRequest) {
           success: true,
           data: {
             client_id: clientId,
-            message: 'No overall client summary data found for this client',
+            message: 'No overall client summary data found for this client and type',
             summaries: [],
           },
         },
@@ -63,6 +77,7 @@ export async function GET(request: NextRequest) {
         id: overallClientSummary.id,
         clientIdRef: overallClientSummary.clientIdRef,
         clientName: overallClientSummary.clientName,
+        type: overallClientSummary.type,
         oneDaySummary: overallClientSummary.oneDaySummary,
         sevenDaySummary: overallClientSummary.sevenDaySummary,
         fourteenDaySummary: overallClientSummary.fourteenDaySummary,
@@ -76,7 +91,7 @@ export async function GET(request: NextRequest) {
       })
       .from(overallClientSummary)
       .where(
-        sql`${overallClientSummary.clientIdRef} = ${clientId} AND ${overallClientSummary.runDate} = ${latestRunDate}`
+        sql`${overallClientSummary.clientIdRef} = ${clientId} AND ${overallClientSummary.type} = ${summaryType} AND ${overallClientSummary.runDate} = ${latestRunDate}`
       )
       .orderBy(overallClientSummary.createdDate)
 
@@ -122,6 +137,7 @@ export async function POST(request: NextRequest) {
     const {
       client_id,
       client_name,
+      type,
       one_day_summary,
       seven_day_summary,
       fourteen_day_summary,
@@ -162,6 +178,7 @@ export async function POST(request: NextRequest) {
     logger.info(`[${requestId}] Saving overall client summary`, {
       client_id,
       client_name,
+      type,
       hasOneDay: !!one_day_summary,
       hasSevenDay: !!seven_day_summary,
       hasFourteenDay: !!fourteen_day_summary,
@@ -183,6 +200,7 @@ export async function POST(request: NextRequest) {
         .update(overallClientSummary)
         .set({
           clientName: client_name || 'Unknown Client',
+          type: type ?? undefined,
           oneDaySummary: one_day_summary ?? undefined,
           sevenDaySummary: seven_day_summary ?? undefined,
           fourteenDaySummary: fourteen_day_summary ?? undefined,
@@ -198,6 +216,7 @@ export async function POST(request: NextRequest) {
         id,
         clientIdRef: client_id,
         clientName: client_name || 'Unknown Client',
+        type: type ?? undefined,
         oneDaySummary: one_day_summary ?? undefined,
         sevenDaySummary: seven_day_summary ?? undefined,
         fourteenDaySummary: fourteen_day_summary ?? undefined,

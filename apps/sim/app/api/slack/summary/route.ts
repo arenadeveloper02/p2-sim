@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url)
     const clientId = url.searchParams.get('cid')
+    const summaryType = url.searchParams.get('type')
 
     if (!clientId) {
       return NextResponse.json(
@@ -23,7 +24,17 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    logger.info(`[${requestId}] Fetching latest summaries for client`, { clientId })
+    if (!summaryType) {
+      return NextResponse.json(
+        { success: false, error: { message: 'type parameter is required' } },
+        { status: 400 }
+      )
+    }
+
+    logger.info(`[${requestId}] Fetching latest summaries for client`, {
+      clientId,
+      type: summaryType,
+    })
 
     const { sql } = await import('drizzle-orm')
 
@@ -31,7 +42,9 @@ export async function GET(request: NextRequest) {
     const latestDateResult = await db
       .select({ runDate: slackSummary.runDate })
       .from(slackSummary)
-      .where(sql`${slackSummary.clientIdRef} = ${clientId}`)
+      .where(
+        sql`${slackSummary.clientIdRef} = ${clientId} AND ${slackSummary.type} = ${summaryType}`
+      )
       .orderBy(sql`${slackSummary.runDate} DESC`)
       .limit(1)
 
@@ -41,7 +54,7 @@ export async function GET(request: NextRequest) {
           success: true,
           data: {
             client_id: clientId,
-            message: 'No summary data found for this client',
+            message: 'No summary data found for this client and type',
             summaries: [],
           },
         },
@@ -71,7 +84,7 @@ export async function GET(request: NextRequest) {
       })
       .from(slackSummary)
       .where(
-        sql`${slackSummary.clientIdRef} = ${clientId} AND ${slackSummary.runDate} = ${latestRunDate}`
+        sql`${slackSummary.clientIdRef} = ${clientId} AND ${slackSummary.type} = ${summaryType} AND ${slackSummary.runDate} = ${latestRunDate}`
       )
       .orderBy(slackSummary.channelType, slackSummary.channelName)
 

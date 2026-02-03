@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url)
     const clientId = url.searchParams.get('cid')
+    const summaryType = url.searchParams.get('type')
 
     if (!clientId) {
       return NextResponse.json(
@@ -69,13 +70,24 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    logger.info(`[${requestId}] Fetching latest gmail summaries for client`, { clientId })
+    if (!summaryType) {
+      return NextResponse.json(
+        { success: false, error: { message: 'type parameter is required' } },
+        { status: 400 }
+      )
+    }
+
+    logger.info(`[${requestId}] Fetching latest gmail summaries for client`, {
+      clientId,
+      type: summaryType,
+    })
 
     // Get the most recent run_date for this client
     const latestDateResult = await db.execute(sql`
       SELECT run_date
       FROM gmail_client_summary
-      WHERE client_id = ${clientId} OR client_name = ${clientId} OR client_domain = ${clientId}
+      WHERE (client_id = ${clientId} OR client_name = ${clientId} OR client_domain = ${clientId})
+        AND type = ${summaryType}
       ORDER BY run_date DESC
       LIMIT 1
     `)
@@ -94,7 +106,7 @@ export async function GET(request: NextRequest) {
           success: true,
           data: {
             client_id: clientId,
-            message: 'No gmail summary data found for this client',
+            message: 'No gmail summary data found for this client and type',
             summaries: [],
           },
         },
@@ -120,6 +132,7 @@ export async function GET(request: NextRequest) {
         run_end_time
       FROM gmail_client_summary
       WHERE (client_id = ${clientId} OR client_name = ${clientId} OR client_domain = ${clientId})
+        AND type = ${summaryType}
         AND run_date = ${latestRunDate}
       ORDER BY run_start_time DESC
     `)
