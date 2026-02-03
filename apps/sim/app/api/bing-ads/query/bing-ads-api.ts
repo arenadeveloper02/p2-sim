@@ -382,13 +382,13 @@ function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery):
       <Month>${parseInt(endParts[1])}</Month>
       <Year>${parseInt(endParts[0])}</Year>
     </CustomDateRangeEnd>
-    <ReportTimeZone i:nil="false">PacificTimeUSCanadaTijuana</ReportTimeZone>
+    <ReportTimeZone i:nil="false">EasternTimeUSCanada</ReportTimeZone>
   </Time>`
   } else {
     const predefinedTime = parsedQuery.datePreset || 'LastSevenDays'
     timeElement = `<Time i:nil="false">
     <PredefinedTime i:nil="false">${escapeXml(predefinedTime)}</PredefinedTime>
-    <ReportTimeZone i:nil="false">PacificTimeUSCanadaTijuana</ReportTimeZone>
+    <ReportTimeZone i:nil="false">EasternTimeUSCanada</ReportTimeZone>
   </Time>`
   }
 

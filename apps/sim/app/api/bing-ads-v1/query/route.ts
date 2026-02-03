@@ -92,10 +92,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
     })
     
     console.log('=== ROUTE GOT API RESULT ===', {
-      hasData: !!apiResult?.data,
-      dataLength: apiResult?.data?.length || 0,
+      hasData: !!apiResult?.campaigns,
+      dataLength: apiResult?.campaigns?.length || 0,
       success: apiResult?.success,
-      error: apiResult?.error
+      error: apiResult?.error,
+      apiResultKeys: Object.keys(apiResult || {}),
+      fullApiResult: apiResult
     })
 
     // Process results

@@ -40,12 +40,12 @@ CURRENT_DATE: ${CURRENT_DATE}
 
 2. **Date Calculation Logic** (based on CURRENT_DATE: ${CURRENT_DATE}):
    - Parse CURRENT_DATE to extract: year, month, day
-   - **"last 3 days"**: Yesterday = CURRENT_DATE - 1 day, Start = Yesterday - 2 days
-   - **"last 4 days"**: Yesterday = CURRENT_DATE - 1 day, Start = Yesterday - 3 days  
-   - **"last 5 days"**: Yesterday = CURRENT_DATE - 1 day, Start = Yesterday - 4 days
-   - **"last 6 days"**: Yesterday = CURRENT_DATE - 1 day, Start = Yesterday - 5 days
-   - **"last 7 days"**: Yesterday = CURRENT_DATE - 1 day, Start = Yesterday - 6 days
-   - **"last N days"**: Yesterday = CURRENT_DATE - 1 day, Start = Yesterday - (N - 1) days
+   - **"last 3 days"**: Start = CURRENT_DATE - 3 days, End = CURRENT_DATE - 1 day
+   - **"last 4 days"**: Start = CURRENT_DATE - 4 days, End = CURRENT_DATE - 1 day  
+   - **"last 5 days"**: Start = CURRENT_DATE - 5 days, End = CURRENT_DATE - 1 day
+   - **"last 6 days"**: Start = CURRENT_DATE - 6 days, End = CURRENT_DATE - 1 day
+   - **"last 7 days"**: Start = CURRENT_DATE - 7 days, End = CURRENT_DATE - 1 day
+   - **"last N days"**: Start = CURRENT_DATE - N days, End = CURRENT_DATE - 1 day
    - **"this week"**: Monday of current week to yesterday
    - **"last month"**: First and last day of previous month
    - **"this month"**: First day of current month to yesterday

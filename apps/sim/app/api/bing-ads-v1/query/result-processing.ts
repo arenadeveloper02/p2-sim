@@ -113,7 +113,7 @@ function calculateTotals(rows: Record<string, any>[]): Record<string, number> {
   const totals: Record<string, number> = {}
   
   // Columns that should be summed
-  const sumColumns = ['impressions', 'clicks', 'spend', 'conversions', 'cost']
+  const sumColumns = ['impressions', 'clicks', 'spend', 'conversions']
   
   // Sum the appropriate columns
   for (const column of sumColumns) {
