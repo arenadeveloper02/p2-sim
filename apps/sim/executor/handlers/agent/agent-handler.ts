@@ -6,6 +6,12 @@ import { createMcpToolId } from '@/lib/mcp/utils'
 import { refreshTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
+import {
+  validateBlockType,
+  validateCustomToolsAllowed,
+  validateMcpToolsAllowed,
+  validateModelProvider,
+} from '@/ee/access-control/utils/permission-check'
 import { AGENT, BlockType, DEFAULTS, REFERENCE, stripCustomToolPrefix } from '@/executor/constants'
 import { memoryService } from '@/executor/handlers/agent/memory'
 import type {
@@ -23,12 +29,6 @@ import {
   type LatestConversation,
 } from '@/executor/utils/intent-analyzer'
 import { stringifyJSON } from '@/executor/utils/json'
-import {
-  validateBlockType,
-  validateCustomToolsAllowed,
-  validateMcpToolsAllowed,
-  validateModelProvider,
-} from '@/executor/utils/permission-check'
 import { executeProviderRequest } from '@/providers'
 import { getProviderFromModel, transformBlockTool } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'

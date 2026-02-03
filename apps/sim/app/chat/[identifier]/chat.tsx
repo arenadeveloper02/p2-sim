@@ -21,13 +21,13 @@ import {
   EmailAuth,
   GoldenQueriesModal,
   PasswordAuth,
-  SSOAuth,
   VoiceInterface,
 } from '@/app/chat/components'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import LeftNavThread from './leftNavThread'
+import SSOAuth from '@/ee/sso/components/sso-auth'
 
 const logger = createLogger('ChatClient')
 
