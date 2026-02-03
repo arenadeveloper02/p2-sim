@@ -191,7 +191,9 @@ export async function POST(request: NextRequest) {
       .select()
       .from(overallClientSummary)
       .where(
-        sql`${overallClientSummary.clientIdRef} = ${client_id} AND ${overallClientSummary.runDate} = ${runDateValue}`
+        sql`${overallClientSummary.clientIdRef} = ${client_id} 
+         AND ${overallClientSummary.runDate} = ${runDateValue}
+         AND ${overallClientSummary.type} = ${type ?? null}`
       )
       .limit(1)
 
@@ -209,7 +211,9 @@ export async function POST(request: NextRequest) {
           runDate: runDateValue,
         })
         .where(
-          sql`${overallClientSummary.clientIdRef} = ${client_id} AND ${overallClientSummary.runDate} = ${runDateValue}`
+          sql`${overallClientSummary.clientIdRef} = ${client_id} 
+           AND ${overallClientSummary.runDate} = ${runDateValue}
+           AND ${overallClientSummary.type} = ${type ?? null}`
         )
     } else {
       await db.insert(overallClientSummary).values({

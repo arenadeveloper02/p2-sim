@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
       .select()
       .from(meetingSummary)
       .where(
-        sql`${meetingSummary.clientIdRef} = ${client_id} AND ${meetingSummary.runDate} = ${runDateValue}`
+        sql`${meetingSummary.clientIdRef} = ${client_id} AND ${meetingSummary.runDate} = ${runDateValue} AND ${meetingSummary.type} = ${type ?? null}`
       )
       .limit(1)
 
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
           runDate: runDateValue,
         })
         .where(
-          sql`${meetingSummary.clientIdRef} = ${client_id} AND ${meetingSummary.runDate} = ${runDateValue}`
+          sql`${meetingSummary.clientIdRef} = ${client_id} AND ${meetingSummary.runDate} = ${runDateValue} AND ${meetingSummary.type} = ${type ?? null}`
         )
     } else {
       await db.insert(meetingSummary).values({

@@ -1,7 +1,6 @@
-import { db } from '@sim/db'
+import { db, sql } from '@sim/db'
 import { arenaTaskSummary } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 
@@ -207,7 +206,7 @@ export async function POST(request: NextRequest) {
       .select()
       .from(arenaTaskSummary)
       .where(
-        sql`${arenaTaskSummary.clientIdRef} = ${client_id} AND ${arenaTaskSummary.runDate} = ${runDateValue}`
+        sql`${arenaTaskSummary.clientIdRef} = ${client_id} AND ${arenaTaskSummary.runDate} = ${runDateValue} AND ${arenaTaskSummary.type} = ${type ?? null}`
       )
       .limit(1)
 
@@ -228,7 +227,7 @@ export async function POST(request: NextRequest) {
           runDate: runDateValue,
         })
         .where(
-          sql`${arenaTaskSummary.clientIdRef} = ${client_id} AND ${arenaTaskSummary.runDate} = ${runDateValue}`
+          sql`${arenaTaskSummary.clientIdRef} = ${client_id} AND ${arenaTaskSummary.runDate} = ${runDateValue} AND ${arenaTaskSummary.type} = ${type ?? null}`
         )
     } else {
       await db.insert(arenaTaskSummary).values({

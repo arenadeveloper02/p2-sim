@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
           .select()
           .from(slackSummary)
           .where(
-            sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate}`
+            sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate} AND ${slackSummary.type} = ${type ?? null}`
           )
           .limit(1)
 
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
               status: 'STARTED',
             })
             .where(
-              sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate}`
+              sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.runDate} = ${todayDate} AND ${slackSummary.type} = ${type ?? null}`
             )
 
           console.log('Record update successful for today')
@@ -320,7 +320,7 @@ export async function POST(request: NextRequest) {
         .select()
         .from(slackSummary)
         .where(
-          sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id}`
+          sql`${slackSummary.clientIdRef} = ${client_id} AND ${slackSummary.channelIdRef} = ${channel_id} AND ${slackSummary.type} = ${type ?? null}`
         )
         .limit(1)
 
