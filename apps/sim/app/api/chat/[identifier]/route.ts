@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { chat, deployedChat, workflow, workflowExecutionLogs, workflowQueries } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
@@ -59,21 +59,29 @@ const chatPostBodySchema = z.object({
 })
 
 const goldenQueriesSchema = z.object({
-  goldenQueries: z.array(z.string()),
+  goldenQueries: z.array(
+    z.object({
+      id: z.string().optional(),
+      query: z.string().min(1),
+    })
+  ),
+  deleteMode: z.enum(['hard', 'soft']).optional(),
 })
 
-const sanitizeGoldenQueries = (queries?: string[]) => {
+const sanitizeGoldenQueries = (queries?: Array<{ id?: string; query: string }>) => {
   if (!Array.isArray(queries)) return []
-  return queries.map((query) => query.trim()).filter((query) => query.length > 0)
+  return queries
+    .map((item) => ({ ...item, query: item.query.trim() }))
+    .filter((item) => item.query.length > 0)
 }
 
 async function fetchGoldenQueries(workflowId: string) {
   const rows = await db
-    .select({ query: workflowQueries.query })
+    .select({ id: workflowQueries.id, query: workflowQueries.query })
     .from(workflowQueries)
     .where(and(eq(workflowQueries.workflowId, workflowId), eq(workflowQueries.deleted, false)))
     .orderBy(asc(workflowQueries.priority), asc(workflowQueries.createdAt))
-  return rows.map((row) => row.query)
+  return rows
 }
 
 async function replaceWorkflowQueries({
@@ -83,25 +91,52 @@ async function replaceWorkflowQueries({
 }: {
   workflowId: string
   userId: string
-  queries: string[]
+  queries: Array<{ id?: string; query: string }>
 }) {
   await db.transaction(async (tx) => {
-    await tx
-      .update(workflowQueries)
-      .set({ deleted: true, updatedAt: new Date() })
-      .where(and(eq(workflowQueries.workflowId, workflowId), eq(workflowQueries.deleted, false)))
+    await tx.delete(workflowQueries).where(eq(workflowQueries.workflowId, workflowId))
 
     if (queries.length === 0) return
 
     await tx.insert(workflowQueries).values(
-      queries.map((query, index) => ({
-        id: randomUUID(),
+      queries.map((item, index) => ({
+        id: item.id ?? randomUUID(),
         userId,
         workflowId,
-        query,
+        query: item.query,
         priority: index,
       }))
     )
+  })
+}
+
+async function softDeleteWorkflowQueries({
+  workflowId,
+  keepQueries,
+}: {
+  workflowId: string
+  keepQueries: Array<{ id?: string; query: string }>
+}) {
+  const keepIds = keepQueries.map((item) => item.id).filter(Boolean) as string[]
+  const rows = await db
+    .select({ id: workflowQueries.id, query: workflowQueries.query })
+    .from(workflowQueries)
+    .where(and(eq(workflowQueries.workflowId, workflowId), eq(workflowQueries.deleted, false)))
+  const toDeleteIds = rows.filter((row) => !keepIds.includes(row.id)).map((row) => row.id)
+  if (toDeleteIds.length === 0) return
+  await db
+    .update(workflowQueries)
+    .set({ deleted: true, updatedAt: new Date() })
+    .where(inArray(workflowQueries.id, toDeleteIds))
+
+  await db.transaction(async (tx) => {
+    for (const [index, item] of keepQueries.entries()) {
+      if (!item.id) continue
+      await tx
+        .update(workflowQueries)
+        .set({ priority: index, updatedAt: new Date() })
+        .where(eq(workflowQueries.id, item.id))
+    }
   })
 }
 
@@ -780,12 +815,20 @@ export async function PATCH(
     }
 
     const sanitizedQueries = sanitizeGoldenQueries(parsedBody.goldenQueries)
+    const deleteMode = parsedBody.deleteMode ?? 'hard'
 
-    await replaceWorkflowQueries({
-      workflowId: deployment.workflowId,
-      userId: deployment.userId,
-      queries: sanitizedQueries,
-    })
+    if (deleteMode === 'soft') {
+      await softDeleteWorkflowQueries({
+        workflowId: deployment.workflowId,
+        keepQueries: sanitizedQueries,
+      })
+    } else {
+      await replaceWorkflowQueries({
+        workflowId: deployment.workflowId,
+        userId: deployment.userId,
+        queries: sanitizedQueries,
+      })
+    }
 
     await db
       .update(chat)

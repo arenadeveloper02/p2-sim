@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { chat, workflowQueries } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
@@ -60,10 +60,7 @@ async function replaceWorkflowQueries({
   queries: string[]
 }) {
   await db.transaction(async (tx) => {
-    await tx
-      .update(workflowQueries)
-      .set({ deleted: true, updatedAt: new Date() })
-      .where(and(eq(workflowQueries.workflowId, workflowId), eq(workflowQueries.deleted, false)))
+    await tx.delete(workflowQueries).where(eq(workflowQueries.workflowId, workflowId))
 
     if (queries.length === 0) return
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, GripVertical, Loader2, Pencil, Trash2, X } from 'lucide-react'
 import {
   Button,
@@ -10,12 +10,17 @@ import {
   Tooltip,
 } from '@/components/emcn'
 
+interface GoldenQueryItem {
+  id?: string
+  query: string
+}
+
 interface GoldenQueriesModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  queries: string[]
+  queries: GoldenQueryItem[]
   onSelectQuery: (query: string) => void
-  onSaveQueries: (queries: string[]) => Promise<void>
+  onSaveQueries: (queries: GoldenQueryItem[], mode: 'hard' | 'soft') => Promise<void>
   disabled?: boolean
 }
 
@@ -28,16 +33,23 @@ export function GoldenQueriesModal({
   disabled = false,
 }: GoldenQueriesModalProps) {
   const normalizedQueries = useMemo(
-    () => queries.map((query) => query.trim()).filter((query) => query.length > 0),
+    () =>
+      queries
+        .map((item) => ({ ...item, query: item.query.trim() }))
+        .filter((item) => item.query.length > 0),
     [queries]
   )
-  const [draftQueries, setDraftQueries] = useState<string[]>(normalizedQueries)
+  const [draftQueries, setDraftQueries] = useState<GoldenQueryItem[]>(normalizedQueries)
   const [mode, setMode] = useState<'add' | 'edit' | null>(null)
   const [draftValue, setDraftValue] = useState('')
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [dragHandleIndex, setDragHandleIndex] = useState<number | null>(null)
+  const dragSnapshotRef = useRef<GoldenQueryItem[] | null>(null)
+  const dragDroppedRef = useRef(false)
   const [savingAction, setSavingAction] = useState<
     | { type: 'save' }
     | { type: 'delete'; index: number }
@@ -54,6 +66,10 @@ export function GoldenQueriesModal({
     setErrorMessage(null)
     setIsSaving(false)
     setSavingAction(null)
+    setDragOverIndex(null)
+    setDragHandleIndex(null)
+    dragSnapshotRef.current = null
+    dragDroppedRef.current = false
   }, [open, normalizedQueries])
 
   const isAddDisabled = disabled || isSaving || mode !== null
@@ -68,7 +84,7 @@ export function GoldenQueriesModal({
   const handleEditClick = (index: number) => {
     setMode('edit')
     setEditingIndex(index)
-    setDraftValue(draftQueries[index] ?? '')
+    setDraftValue(draftQueries[index]?.query ?? '')
     setErrorMessage(null)
   }
 
@@ -88,11 +104,11 @@ export function GoldenQueriesModal({
 
     let nextQueries = draftQueries
     if (mode === 'add') {
-      nextQueries = [...draftQueries, trimmedValue]
+      nextQueries = [...draftQueries, { query: trimmedValue }]
     }
     if (mode === 'edit' && editingIndex !== null) {
-      nextQueries = draftQueries.map((query, index) =>
-        index === editingIndex ? trimmedValue : query
+      nextQueries = draftQueries.map((item, index) =>
+        index === editingIndex ? { ...item, query: trimmedValue } : item
       )
     }
 
@@ -100,7 +116,7 @@ export function GoldenQueriesModal({
     setSavingAction({ type: 'save' })
     setErrorMessage(null)
     try {
-      await onSaveQueries(nextQueries)
+      await onSaveQueries(nextQueries, 'hard')
       setDraftQueries(nextQueries)
       handleCancel()
     } catch {
@@ -117,7 +133,7 @@ export function GoldenQueriesModal({
     setSavingAction({ type: 'delete', index })
     setErrorMessage(null)
     try {
-      await onSaveQueries(nextQueries)
+      await onSaveQueries(nextQueries, 'soft')
       setDraftQueries(nextQueries)
       if (mode === 'edit' && editingIndex === index) {
         handleCancel()
@@ -130,25 +146,23 @@ export function GoldenQueriesModal({
     }
   }
 
-  const handleReorder = async (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return
-    if (toIndex < 0 || toIndex >= draftQueries.length) return
-
-    const nextQueries = [...draftQueries]
-    const [moved] = nextQueries.splice(fromIndex, 1)
-    nextQueries.splice(toIndex, 0, moved)
-
+  const handlePersistReorder = async (nextQueries: GoldenQueryItem[]) => {
     setIsSaving(true)
     setSavingAction({ type: 'reorder' })
     setErrorMessage(null)
     try {
-      await onSaveQueries(nextQueries)
+      await onSaveQueries(nextQueries, 'hard')
       setDraftQueries(nextQueries)
     } catch {
       setErrorMessage('Failed to reorder queries. Please try again.')
+      if (dragSnapshotRef.current) {
+        setDraftQueries(dragSnapshotRef.current)
+      }
     } finally {
       setIsSaving(false)
       setSavingAction(null)
+      dragSnapshotRef.current = null
+      dragDroppedRef.current = false
     }
   }
 
@@ -158,7 +172,7 @@ export function GoldenQueriesModal({
         <ModalHeader>Golden queries</ModalHeader>
         <ModalBody>
           <Tooltip.Provider>
-          <div className='flex flex-col gap-3'>
+            <div className='flex flex-col gap-3'>
             {draftQueries.length === 0 ? (
               <div className='flex items-center gap-3 text-[12px] text-[var(--text-secondary)]'>
                 <Tooltip.Root>
@@ -173,24 +187,64 @@ export function GoldenQueriesModal({
               </div>
             ) : (
               <div className='flex flex-col gap-2'>
-                {draftQueries.map((query, index) => {
+                {draftQueries.map((item, index) => {
                   const isEditing = mode === 'edit' && editingIndex === index
+                    const isDragging = draggingIndex === index
+                    const isDragOver = dragOverIndex === index && draggingIndex !== null
                   return (
                     <div
-                      key={`${query}-${index}`}
-                      className='group flex items-start gap-2 rounded-[8px] bg-[var(--bg-subtle)] px-3 py-2 text-left text-[13px] text-[var(--text-primary)] transition hover:bg-[var(--bg-subtle)]'
+                      key={item.id ?? `${item.query}-${index}`}
+                        className={`group flex items-center gap-2 rounded-[8px] px-3 py-2 text-left text-[13px] text-[var(--text-primary)] transition ${
+                          isDragging
+                            ? 'bg-[#E6EEF9] opacity-70 shadow-sm ring-1 ring-[var(--border-200)]'
+                            : isDragOver
+                              ? 'bg-[#E6EEF9] ring-2 ring-[var(--brand-primary-hover-hex)]'
+                              : 'bg-[#F3F8FE] hover:bg-[#E6EEF9]'
+                        }`}
+                        draggable={mode === null && !disabled && !isSaving}
+                      onDragStart={(event) => {
+                          if (dragHandleIndex !== index) {
+                            event.preventDefault()
+                            return
+                          }
+                        dragSnapshotRef.current = draftQueries
+                        dragDroppedRef.current = false
+                          setDraggingIndex(index)
+                          setDragOverIndex(index)
+                          event.dataTransfer.setData('text/plain', `${index}`)
+                          event.dataTransfer.setDragImage(event.currentTarget, 0, 0)
+                        }}
                       onDragOver={(event) => {
                         if (draggingIndex === null) return
                         event.preventDefault()
+                          if (dragOverIndex !== index) {
+                            setDragOverIndex(index)
+                          const nextQueries = [...draftQueries]
+                          const [moved] = nextQueries.splice(draggingIndex, 1)
+                          nextQueries.splice(index, 0, moved)
+                          setDraftQueries(nextQueries)
+                          setDraggingIndex(index)
+                          }
                       }}
                       onDrop={async (event) => {
                         if (draggingIndex === null) return
                         event.preventDefault()
-                        const fromIndex = draggingIndex
+                        dragDroppedRef.current = true
                         setDraggingIndex(null)
-                        await handleReorder(fromIndex, index)
+                          setDragOverIndex(null)
+                          setDragHandleIndex(null)
+                        await handlePersistReorder(draftQueries)
                       }}
-                      onDragEnd={() => setDraggingIndex(null)}
+                        onDragEnd={() => {
+                        if (!dragDroppedRef.current && dragSnapshotRef.current) {
+                          setDraftQueries(dragSnapshotRef.current)
+                        }
+                          setDraggingIndex(null)
+                          setDragOverIndex(null)
+                          setDragHandleIndex(null)
+                        dragSnapshotRef.current = null
+                        dragDroppedRef.current = false
+                        }}
                     >
                       <div className='pt-0.5 opacity-0 transition group-hover:opacity-100'>
                         <Tooltip.Root>
@@ -198,8 +252,11 @@ export function GoldenQueriesModal({
                             <button
                               type='button'
                               draggable={mode === null && !disabled && !isSaving}
-                              onDragStart={() => setDraggingIndex(index)}
-                              onDragEnd={() => setDraggingIndex(null)}
+                              onMouseDown={() => setDragHandleIndex(index)}
+                              onMouseUp={() => setDragHandleIndex(null)}
+                              onMouseLeave={() => setDragHandleIndex(null)}
+                              onTouchStart={() => setDragHandleIndex(index)}
+                              onTouchEnd={() => setDragHandleIndex(null)}
                               className='cursor-grab rounded p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40'
                               aria-label='Drag to reorder'
                               disabled={disabled || isSaving || mode !== null}
@@ -258,11 +315,11 @@ export function GoldenQueriesModal({
                         <>
                           <button
                             type='button'
-                            onClick={() => onSelectQuery(query)}
+                            onClick={() => onSelectQuery(item.query)}
                             disabled={disabled || isSaving || mode !== null}
                             className='flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60'
                           >
-                            {query}
+                            {item.query}
                           </button>
                           <div className='flex items-center gap-1 opacity-0 transition group-hover:opacity-100'>
                             <Tooltip.Root>
@@ -355,7 +412,7 @@ export function GoldenQueriesModal({
             )}
 
             {draftQueries.length > 0 && (
-              <div className='pt-1'>
+              <div className='flex justify-center pt-1'>
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
                     <Button variant='default' onClick={handleAddClick} disabled={isAddDisabled}>
@@ -366,7 +423,7 @@ export function GoldenQueriesModal({
                 </Tooltip.Root>
               </div>
             )}
-          </div>
+            </div>
           </Tooltip.Provider>
         </ModalBody>
         <ModalFooter>

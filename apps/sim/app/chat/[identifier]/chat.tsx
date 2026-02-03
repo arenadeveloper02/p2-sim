@@ -41,7 +41,7 @@ interface ChatConfig {
     imageUrl?: string
     welcomeMessage?: string
     headerText?: string
-    goldenQueries?: string[]
+    goldenQueries?: Array<{ id?: string; query: string }>
   }
   authType?: 'public' | 'password' | 'email' | 'sso'
   outputConfigs?: Array<{ blockId: string; path?: string }>
@@ -162,7 +162,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
   const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
-  const [goldenQueries, setGoldenQueries] = useState<string[]>([])
+  const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
   const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
@@ -176,7 +176,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }, [])
 
   useEffect(() => {
-    setGoldenQueries(chatConfig?.customizations?.goldenQueries ?? [])
+    const incoming = chatConfig?.customizations?.goldenQueries ?? []
+    const normalized = incoming.map((item: any) =>
+      typeof item === 'string' ? { query: item } : item
+    )
+    setGoldenQueries(normalized)
   }, [chatConfig?.customizations?.goldenQueries])
 
   const scrollToMessage = useCallback(
@@ -658,7 +662,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   )
 
   const handleSaveGoldenQueries = useCallback(
-    async (nextQueries: string[]) => {
+    async (nextQueries: Array<{ id?: string; query: string }>, mode: 'hard' | 'soft') => {
       if (!identifier) {
         throw new Error('No chat identifier available')
       }
@@ -672,7 +676,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
           },
-          body: JSON.stringify({ goldenQueries: nextQueries }),
+          body: JSON.stringify({ goldenQueries: nextQueries, deleteMode: mode }),
         })
 
         if (!response.ok) {

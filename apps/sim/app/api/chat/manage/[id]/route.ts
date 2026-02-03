@@ -64,10 +64,7 @@ async function replaceWorkflowQueries({
   queries: string[]
 }) {
   await db.transaction(async (tx) => {
-    await tx
-      .update(workflowQueries)
-      .set({ deleted: true, updatedAt: new Date() })
-      .where(and(eq(workflowQueries.workflowId, workflowId), eq(workflowQueries.deleted, false)))
+    await tx.delete(workflowQueries).where(eq(workflowQueries.workflowId, workflowId))
 
     if (queries.length === 0) return
 
