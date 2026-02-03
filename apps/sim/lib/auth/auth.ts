@@ -2501,6 +2501,26 @@ export const auth = betterAuth({
             'cloud_recording:read:list_user_recordings',
             'cloud_recording:read:list_recording_files',
             'cloud_recording:delete:recording_file',
+
+            //admin User & account management
+            'user:read:list_users:admin',
+            'user:write:user:admin',
+            'user:read:list_assistants:admin',
+            'user:read:list_schedulers:admin',
+            'user:read:email:admin',
+
+            //admin Meeting registrants, polls & participants (account-wide)
+            'meeting:read:list_registrants:admin',
+            'meeting:write:registrant:admin',
+            'meeting:read:registrant:admin',
+            'meeting:read:list_polls:admin',
+            'meeting:read:participant:admin',
+
+            //admin Cloud recording – advanced / account-level
+            'cloud_recording:write:recording_registrant:admin',
+            'cloud_recording:read:list_recording_registrants:admin',
+            'cloud_recording:read:recording:admin',
+            'cloud_recording:read:meeting_transcript:admin',
           ],
           responseType: 'code',
           accessType: 'offline',
