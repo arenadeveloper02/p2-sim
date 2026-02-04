@@ -843,10 +843,9 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
 
         // For search operation, return prompt and pageSize
         if (operation === 'search') {
-          const searchFolderId =
-            (rest.searchFolderId ?? rest.searchFolderSelector ?? rest.searchManualFolderId) as
-              | string
-              | undefined
+          const searchFolderId = (rest.searchFolderId ??
+            rest.searchFolderSelector ??
+            rest.searchManualFolderId) as string | undefined
           const folderIdTrimmed = searchFolderId?.trim()
           return {
             credential,
@@ -859,11 +858,11 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
         const effectiveFolderId = (() => {
           const raw =
             operation === 'list'
-              ? listFolderSelector ?? listManualFolderId
+              ? (listFolderSelector ?? listManualFolderId)
               : operation === 'create_folder'
-                ? createFolderFolderSelector ?? createFolderManualFolderId
+                ? (createFolderFolderSelector ?? createFolderManualFolderId)
                 : operation === 'create_file' || operation === 'upload'
-                  ? uploadFolderSelector ?? uploadManualFolderId
+                  ? (uploadFolderSelector ?? uploadManualFolderId)
                   : ''
           return (raw ?? '').toString().trim()
         })()
@@ -872,8 +871,9 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
 
         const effectiveDestinationFolderId =
           operation === 'copy'
-            ? (copyDestinationFolderSelector ?? copyManualDestinationFolderId ?? '').toString().trim() ||
-              undefined
+            ? (copyDestinationFolderSelector ?? copyManualDestinationFolderId ?? '')
+                .toString()
+                .trim() || undefined
             : undefined
 
         // Convert starred dropdown to boolean
@@ -908,12 +908,30 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
     // Folder selection inputs (per-operation for correct basic/advanced swap)
     listFolderSelector: { type: 'string', description: 'Selected folder for list' },
     listManualFolderId: { type: 'string', description: 'Manual folder ID for list' },
-    createFolderFolderSelector: { type: 'string', description: 'Selected parent folder for create folder' },
-    createFolderManualFolderId: { type: 'string', description: 'Manual parent folder ID for create folder' },
-    uploadFolderSelector: { type: 'string', description: 'Selected parent folder for upload/create file' },
-    uploadManualFolderId: { type: 'string', description: 'Manual parent folder ID for upload/create file' },
-    copyDestinationFolderSelector: { type: 'string', description: 'Selected destination folder for copy' },
-    copyManualDestinationFolderId: { type: 'string', description: 'Manual destination folder ID for copy' },
+    createFolderFolderSelector: {
+      type: 'string',
+      description: 'Selected parent folder for create folder',
+    },
+    createFolderManualFolderId: {
+      type: 'string',
+      description: 'Manual parent folder ID for create folder',
+    },
+    uploadFolderSelector: {
+      type: 'string',
+      description: 'Selected parent folder for upload/create file',
+    },
+    uploadManualFolderId: {
+      type: 'string',
+      description: 'Manual parent folder ID for upload/create file',
+    },
+    copyDestinationFolderSelector: {
+      type: 'string',
+      description: 'Selected destination folder for copy',
+    },
+    copyManualDestinationFolderId: {
+      type: 'string',
+      description: 'Manual destination folder ID for copy',
+    },
     // Upload and Create inputs
     fileName: { type: 'string', description: 'File or folder name' },
     file: { type: 'json', description: 'File to upload (UserFile object)' },
