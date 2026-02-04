@@ -2,6 +2,7 @@ import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { Combobox as EditableCombobox } from '@/components/emcn/components'
+import { cn } from '@/lib/core/utils/cn'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { SubBlockConfig } from '@/blocks/types'
@@ -11,7 +12,6 @@ import {
   useSelectorOptionMap,
   useSelectorOptions,
 } from '@/hooks/selectors/use-selector-query'
-import { cn } from '@/lib/core/utils/cn'
 
 interface SelectorComboboxProps {
   blockId: string
@@ -168,7 +168,7 @@ export function SelectorCombobox({
           onClick={handleClear}
           aria-label='Clear selection'
           className={cn(
-            'absolute top-1/2 right-2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md',
+            '-translate-y-1/2 absolute top-1/2 right-2 flex h-6 w-6 items-center justify-center rounded-md',
             'text-[var(--text-muted)] transition-colors',
             'hover:bg-[var(--border-1)] hover:text-[var(--text-primary)]',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-1'
