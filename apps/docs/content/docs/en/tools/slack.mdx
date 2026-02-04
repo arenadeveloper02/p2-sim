@@ -13,6 +13,16 @@ import { BlockInfoCard } from "@/components/ui/block-info-card"
 {/* MANUAL-CONTENT-START:intro */}
 [Slack](https://www.slack.com/) is a business communication platform that offers teams a unified place for messaging, tools, and files.
 
+<iframe
+  width="100%"
+  height="400"
+  src="https://www.youtube.com/embed/J5jz3UaWmE8"
+  title="Slack Integration with Sim"
+  frameBorder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowFullScreen
+></iframe>
+
 With Slack, you can:
 
 - **Automate agent notifications**: Send real-time updates from your Sim agents to any Slack channel
@@ -179,15 +189,9 @@ Read the latest messages from Slack channels. Retrieve conversation history with
 | `authMethod` | string | No | Authentication method: oauth or bot_token |
 | `destinationType` | string | No | Destination type: channel or dm |
 | `botToken` | string | No | Bot token for Custom Bot |
-<<<<<<< HEAD
-| `channel` | string | No | Slack channel to read messages from \(e.g., #general\) |
-| `userId` | string | No | User ID for DM conversation \(e.g., U1234567890\) |
-| `limit` | number | No | Number of messages to retrieve \(default: 10, max: 200\) |
-=======
 | `channel` | string | No | Slack channel ID to read messages from \(e.g., C1234567890\) |
 | `dmUserId` | string | No | Slack user ID for DM conversation \(e.g., U1234567890\) |
 | `limit` | number | No | Number of messages to retrieve \(default: 10, max: 15\) |
->>>>>>> 6cb3977dd (fix(visibility): updated visibility for non-sensitive tool params from user only to user or llm (#3095))
 | `oldest` | string | No | Start of time range \(timestamp\) |
 | `latest` | string | No | End of time range \(timestamp\) |
 
