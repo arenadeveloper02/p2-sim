@@ -33,6 +33,34 @@ import { getTool, getToolAsync } from '@/tools/utils'
 const logger = createLogger('AgentBlockHandler')
 
 /**
+ * Gets conversationId from the Start block output in the execution context.
+ * Returns undefined if not found.
+ */
+function getConversationIdFromStartBlock(ctx: ExecutionContext): string | undefined {
+  if (!ctx.workflow?.blocks) {
+    return undefined
+  }
+
+  // Find the Start block (can be start_trigger or starter)
+  const startBlock = ctx.workflow.blocks.find(
+    (b) => b.metadata?.id === BlockType.START_TRIGGER || b.metadata?.id === BlockType.STARTER
+  )
+
+  if (!startBlock) {
+    return undefined
+  }
+
+  // Get the Start block's output from blockStates
+  const startBlockState = ctx.blockStates.get(startBlock.id)
+  if (!startBlockState?.output) {
+    return undefined
+  }
+
+  const conversationId = startBlockState.output.conversationId
+  return typeof conversationId === 'string' ? conversationId : undefined
+}
+
+/**
  * Handler for Agent blocks that process LLM requests with optional tools.
  */
 export class AgentBlockHandler implements BlockHandler {
@@ -46,7 +74,20 @@ export class AgentBlockHandler implements BlockHandler {
     inputs: AgentInputs
   ): Promise<BlockOutput | StreamingExecution> {
     const filteredTools = await this.filterUnavailableMcpTools(ctx, inputs.tools || [])
-    const filteredInputs = { ...inputs, tools: filteredTools }
+
+    // Default memoryType to 'conversation' if not provided or is 'none'
+    const memoryType =
+      inputs.memoryType && inputs.memoryType !== 'none' ? inputs.memoryType : 'conversation'
+
+    // Automatically get conversationId from Start block if not provided
+    const conversationId = inputs.conversationId || getConversationIdFromStartBlock(ctx)
+
+    const filteredInputs = {
+      ...inputs,
+      tools: filteredTools,
+      memoryType: memoryType as 'conversation' | 'sliding_window' | 'sliding_window_tokens',
+      conversationId: conversationId,
+    }
 
     await this.validateToolPermissions(ctx, filteredInputs.tools || [])
 
@@ -63,7 +104,7 @@ export class AgentBlockHandler implements BlockHandler {
     logger.debug('Agent block execution started')
 
     // Get fact memories and add to system prompt if memory is enabled
-    if (inputs.memoryType && inputs.memoryType !== 'none') {
+    if (filteredInputs.memoryType) {
       // Extract user prompt for fact memory search
       let userPrompt: string | undefined
       if (inputs.userPrompt) {
@@ -108,7 +149,7 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
-    const messages = await this.buildMessages(ctx, inputs, block.id)
+    const messages = await this.buildMessages(ctx, filteredInputs, block.id)
 
     const providerRequest = this.buildProviderRequest({
       ctx,
@@ -124,7 +165,7 @@ export class AgentBlockHandler implements BlockHandler {
     const result = await this.executeProviderRequest(ctx, providerRequest, block, responseFormat)
 
     if (this.isStreamingExecution(result)) {
-      if (filteredInputs.memoryType && filteredInputs.memoryType !== 'none') {
+      if (filteredInputs.memoryType) {
         return this.wrapStreamForMemoryPersistence(
           ctx,
           filteredInputs,
@@ -135,7 +176,7 @@ export class AgentBlockHandler implements BlockHandler {
       return result
     }
 
-    if (filteredInputs.memoryType && filteredInputs.memoryType !== 'none') {
+    if (filteredInputs.memoryType) {
       await this.persistResponseToMemory(ctx, filteredInputs, result as BlockOutput, block.id)
     }
 
@@ -778,7 +819,7 @@ export class AgentBlockHandler implements BlockHandler {
     blockId: string
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
-    const memoryEnabled = inputs.memoryType && inputs.memoryType !== 'none'
+    const memoryEnabled = !!inputs.memoryType
 
     // 1. Extract and validate messages from messages-input subblock
     const inputMessages = this.extractValidMessages(inputs.messages)
@@ -787,7 +828,7 @@ export class AgentBlockHandler implements BlockHandler {
 
     // 1. Fetch memory history if configured (using semantic search)
     // 1. Fetch memory history if configured (using semantic search)
-    if (inputs.memoryType && inputs.memoryType !== 'none') {
+    if (memoryEnabled) {
       // Extract user prompt for search query
       let userPrompt: string | undefined
       if (inputs.userPrompt) {
