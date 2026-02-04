@@ -2261,6 +2261,7 @@ export const overallClientSummary = pgTable(
     oneDaySummary: text('one_day_summary'),
     sevenDaySummary: text('seven_day_summary'),
     fourteenDaySummary: text('fourteen_day_summary'),
+    dailySummaryChanges: text('daily_summary_changes'),
     createdDate: timestamp('created_date').notNull().defaultNow(),
     updatedDate: timestamp('updated_date').notNull().defaultNow(),
     startTime: timestamp('start_time'),

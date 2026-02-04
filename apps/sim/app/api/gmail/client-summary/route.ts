@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto'
-import { db } from '@sim/db'
+import { db, sql } from '@sim/db'
 import { createLogger } from '@sim/logger'
-import { sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { z } from 'zod'
@@ -114,7 +113,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const latestRunDate = rows[0].run_date
+    const latestRunDate = String(rows[0].run_date)
 
     // Get all summaries for this client on the latest run_date
     const summariesResult = await db.execute(sql`

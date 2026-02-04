@@ -17,6 +17,7 @@ type OverallClientSummaryRequestBody = {
   one_day_summary?: string
   seven_day_summary?: string
   fourteen_day_summary?: string
+  daily_summary_changes?: string
   status?: string
 }
 
@@ -81,6 +82,7 @@ export async function GET(request: NextRequest) {
         oneDaySummary: overallClientSummary.oneDaySummary,
         sevenDaySummary: overallClientSummary.sevenDaySummary,
         fourteenDaySummary: overallClientSummary.fourteenDaySummary,
+        dailySummaryChanges: overallClientSummary.dailySummaryChanges,
         runDate: overallClientSummary.runDate,
         status: overallClientSummary.status,
         createdDate: overallClientSummary.createdDate,
@@ -141,6 +143,7 @@ export async function POST(request: NextRequest) {
       one_day_summary,
       seven_day_summary,
       fourteen_day_summary,
+      daily_summary_changes,
       status,
     } = body
 
@@ -182,6 +185,7 @@ export async function POST(request: NextRequest) {
       hasOneDay: !!one_day_summary,
       hasSevenDay: !!seven_day_summary,
       hasFourteenDay: !!fourteen_day_summary,
+      hasDailySummaryChanges: !!daily_summary_changes,
       run_date: runDateValue,
     })
 
@@ -206,6 +210,7 @@ export async function POST(request: NextRequest) {
           oneDaySummary: one_day_summary ?? undefined,
           sevenDaySummary: seven_day_summary ?? undefined,
           fourteenDaySummary: fourteen_day_summary ?? undefined,
+          dailySummaryChanges: daily_summary_changes ?? undefined,
           updatedDate: now,
           status,
           runDate: runDateValue,
@@ -224,6 +229,7 @@ export async function POST(request: NextRequest) {
         oneDaySummary: one_day_summary ?? undefined,
         sevenDaySummary: seven_day_summary ?? undefined,
         fourteenDaySummary: fourteen_day_summary ?? undefined,
+        dailySummaryChanges: daily_summary_changes ?? undefined,
         createdDate: now,
         updatedDate: now,
         status,
