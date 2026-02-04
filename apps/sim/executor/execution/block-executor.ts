@@ -22,12 +22,13 @@ import {
   generatePauseContextId,
   mapNodeMetadataToPauseScopes,
 } from '@/executor/human-in-the-loop/utils.ts'
-import type {
-  BlockHandler,
-  BlockLog,
-  BlockState,
-  ExecutionContext,
-  NormalizedBlockOutput,
+import {
+  type BlockHandler,
+  type BlockLog,
+  type BlockState,
+  type ExecutionContext,
+  getNextExecutionOrder,
+  type NormalizedBlockOutput,
 } from '@/executor/types'
 import { streamingResponseFormatProcessor } from '@/executor/utils'
 import { buildBlockExecutionError, normalizeError } from '@/executor/utils/errors'
@@ -100,7 +101,7 @@ export class BlockExecutor {
     if (!isSentinel) {
       blockLog = this.createBlockLog(ctx, node.id, block, node)
       ctx.blockLogs.push(blockLog)
-      this.callOnBlockStart(ctx, node, block)
+      this.callOnBlockStart(ctx, node, block, blockLog.executionOrder)
     }
 
     const startTime = performance.now()
@@ -247,7 +248,7 @@ export class BlockExecutor {
 
       this.state.setBlockOutput(node.id, normalizedOutput, duration)
 
-      if (!isSentinel) {
+      if (!isSentinel && blockLog) {
         const displayOutput = filterOutputForLog(block.metadata?.id || '', normalizedOutput, {
           block,
         })
@@ -258,8 +259,9 @@ export class BlockExecutor {
           this.sanitizeInputsForLog(resolvedInputs),
           displayOutput,
           duration,
-          blockLog!.startedAt,
-          blockLog!.endedAt
+          blockLog.startedAt,
+          blockLog.executionOrder,
+          blockLog.endedAt
         )
       }
 
@@ -356,7 +358,7 @@ export class BlockExecutor {
       }
     )
 
-    if (!isSentinel) {
+    if (!isSentinel && blockLog) {
       const displayOutput = filterOutputForLog(block.metadata?.id || '', errorOutput, { block })
       this.callOnBlockComplete(
         ctx,
@@ -365,8 +367,9 @@ export class BlockExecutor {
         this.sanitizeInputsForLog(input),
         displayOutput,
         duration,
-        blockLog!.startedAt,
-        blockLog!.endedAt
+        blockLog.startedAt,
+        blockLog.executionOrder,
+        blockLog.endedAt
       )
     }
 
@@ -434,6 +437,7 @@ export class BlockExecutor {
       blockName,
       blockType: block.metadata?.id ?? DEFAULTS.BLOCK_TYPE,
       startedAt: new Date().toISOString(),
+      executionOrder: getNextExecutionOrder(ctx),
       endedAt: '',
       durationMs: 0,
       success: false,
@@ -534,7 +538,12 @@ export class BlockExecutor {
     return filtered
   }
 
-  private callOnBlockStart(ctx: ExecutionContext, node: DAGNode, block: SerializedBlock): void {
+  private callOnBlockStart(
+    ctx: ExecutionContext,
+    node: DAGNode,
+    block: SerializedBlock,
+    executionOrder: number
+  ): void {
     const blockId = node.id
     const blockName = block.metadata?.name ?? blockId
     const blockType = block.metadata?.id ?? DEFAULTS.BLOCK_TYPE
@@ -542,7 +551,13 @@ export class BlockExecutor {
     const iterationContext = this.getIterationContext(ctx, node)
 
     if (this.contextExtensions.onBlockStart) {
-      this.contextExtensions.onBlockStart(blockId, blockName, blockType, iterationContext)
+      this.contextExtensions.onBlockStart(
+        blockId,
+        blockName,
+        blockType,
+        executionOrder,
+        iterationContext
+      )
     }
   }
 
@@ -554,6 +569,7 @@ export class BlockExecutor {
     output: NormalizedBlockOutput,
     duration: number,
     startedAt: string,
+    executionOrder: number,
     endedAt: string
   ): void {
     const blockId = node.id
@@ -572,6 +588,7 @@ export class BlockExecutor {
           output,
           executionTime: duration,
           startedAt,
+          executionOrder,
           endedAt,
         },
         iterationContext
