@@ -5,6 +5,7 @@ import type { GoogleAdsResponse } from '@/tools/google_ads/types'
 // Google Ads accounts configuration
 export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
   ami: { id: '7284380454', name: 'AMI' },
+  bd_engine_brake: { id: '8577930930', name: '1369614 B.C. LTD. (BD Engine Brake)' },
   au_eventgroove_products: { id: '3365918329', name: 'AU - Eventgroove Products' },
   ca_eventgroove_products: { id: '5197514377', name: 'CA - Eventgroove Products' },
   capitalcitynurses: { id: '8395621144', name: 'CapitalCityNurses.com' },
@@ -13,6 +14,7 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   covalent_metrology: { id: '3548685960', name: 'Covalent Metrology' },
   cpic: { id: '1757492986', name: 'CPIC' },
   daniel_shapiro: { id: '7395576762', name: 'Daniel I. Shapiro, M.D., P.C.' },
+  dj_precision_machine: { id: '6438492741', name: 'D&J Precision Machine LLC' },
   dental_care_associates: { id: '2771541197', name: 'Dental Care Associates' },
   dynamic_dental: { id: '4734954125', name: 'Dynamic Dental' },
   epstein: { id: '1300586568', name: 'EPSTEIN' },
@@ -20,6 +22,7 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   gentle_dental: { id: '2497090182', name: 'Gentle Dental' },
   great_hill_dental: { id: '6480839212', name: 'Great Hill Dental' },
   great_lakes: { id: '9925296449', name: 'Great Lakes' },
+  garramone_ralph: { id: '1472407899', name: 'Garramone, Ralph' },
   heartland: { id: '4479015711', name: 'Heartland' },
   holmdel_nj: { id: '3507263995', name: 'Holmdel-NJ' },
   howell_chase: { id: '1890712343', name: 'Howell Chase' },
@@ -33,6 +36,7 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   odc_al: { id: '1749359003', name: 'ODC-AL' },
   oic_culpeper: { id: '8226685899', name: 'OIC-Culpeper' },
   perforated_paper: { id: '8909188371', name: 'Perforated Paper' },
+  riccobene: { id: '2848955239', name: 'Riccobene' },
   phoenix_rehab: { id: '4723354550', name: 'Phoenix Rehab (NEW - WM Invoices)' },
   plastic_surgery_center_hr: { id: '1105892184', name: 'Plastic Surgery Center of Hampton Roads' },
   service_air_eastern_shore: { id: '8139983849', name: 'Service Air Eastern Shore' },
@@ -45,8 +49,6 @@ export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> =
   us_eventgroove_products: { id: '4687328820', name: 'US - Eventgroove Products' },
   wolf_river: { id: '6445143850', name: 'Wolf River' },
   youngshc: { id: '3240333229', name: 'Youngshc.com' },
-  riccobene: { id: '2848955239', name: 'Riccobene' },
-  garramone_ralph: { id: '1472407899', name: 'Garramone, Ralph' },
 }
 
 export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {

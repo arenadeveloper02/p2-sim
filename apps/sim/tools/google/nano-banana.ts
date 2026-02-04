@@ -60,6 +60,7 @@ const nanoBananaTool: ToolConfig = {
   },
 
   request: {
+    timeout: 120000,
     url: (params) => {
       logger.info('Routing Nano Banana tool request through internal API')
       return '/api/google'
@@ -74,6 +75,7 @@ const nanoBananaTool: ToolConfig = {
       model: params.model,
       prompt: params.prompt,
       aspectRatio: params.aspectRatio,
+      imageSize: params.imageSize,
       inputImage: params.inputImage,
       inputImageMimeType: params.inputImageMimeType,
     }),
@@ -136,6 +138,7 @@ const nanoBananaTool: ToolConfig = {
             model: params?.model || 'gemini-2.5-flash-image',
             mimeType: mimeType,
             aspectRatio: params?.aspectRatio || '1:1',
+            imageSize: params?.imageSize ?? null,
             hasInputImage: !!(params?.inputImage && params?.inputImageMimeType),
             inputImageMimeType: params?.inputImageMimeType || null,
           },
@@ -162,6 +165,10 @@ const nanoBananaTool: ToolConfig = {
             model: { type: 'string', description: 'Model used for image generation' },
             mimeType: { type: 'string', description: 'Image MIME type' },
             aspectRatio: { type: 'string', description: 'Image aspect ratio' },
+            imageSize: {
+              type: 'string',
+              description: 'Output resolution (1K/2K/4K) when using Nano Banana Pro',
+            },
             hasInputImage: {
               type: 'boolean',
               description: 'Whether an input image was provided for editing',
