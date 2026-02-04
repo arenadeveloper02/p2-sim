@@ -1,5 +1,9 @@
 import { createLogger } from '@sim/logger'
+<<<<<<< HEAD
 import * as Papa from 'papaparse'
+=======
+import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
+>>>>>>> a627faabe (feat(timeouts): execution timeout limits (#3120))
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { AGENT, isCustomTool } from '@/executor/constants'
 import { getCustomTool } from '@/hooks/queries/custom-tools'
@@ -293,9 +297,7 @@ export async function formatRequestParams(
     }
   }
 
-  // Get timeout from params (if specified) and validate
-  // Must be a finite positive number, max 600000ms (10 minutes) as documented
-  const MAX_TIMEOUT_MS = 600000
+  const MAX_TIMEOUT_MS = getMaxExecutionTimeout()
   const rawTimeout = params.timeout
   const timeout = rawTimeout != null ? Number(rawTimeout) : undefined
   const validTimeout =

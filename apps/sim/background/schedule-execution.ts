@@ -4,7 +4,11 @@ import { task } from '@trigger.dev/sdk'
 import { Cron } from 'croner'
 import { eq } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
+<<<<<<< HEAD
 import { decryptSecret } from '@/lib/core/security/encryption'
+=======
+import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
+>>>>>>> a627faabe (feat(timeouts): execution timeout limits (#3120))
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
@@ -276,6 +280,7 @@ async function runWorkflowExecution({
   loggingSession,
   requestId,
   executionId,
+  asyncTimeout,
 }: {
   payload: ScheduleExecutionPayload
   workflowRecord: WorkflowRecord
@@ -283,6 +288,7 @@ async function runWorkflowExecution({
   loggingSession: LoggingSession
   requestId: string
   executionId: string
+  asyncTimeout?: number
 }): Promise<RunWorkflowResult> {
   try {
     logger.debug(`[${requestId}] Loading deployed workflow ${payload.workflowId}`)
@@ -339,15 +345,33 @@ async function runWorkflowExecution({
       []
     )
 
-    const executionResult = await executeWorkflowCore({
-      snapshot,
-      callbacks: {},
-      loggingSession,
-      includeFileBase64: true,
-      base64MaxBytes: undefined,
-    })
+    const timeoutController = createTimeoutAbortController(asyncTimeout)
 
-    if (executionResult.status === 'paused') {
+    let executionResult
+    try {
+      executionResult = await executeWorkflowCore({
+        snapshot,
+        callbacks: {},
+        loggingSession,
+        includeFileBase64: true,
+        base64MaxBytes: undefined,
+        abortSignal: timeoutController.signal,
+      })
+    } finally {
+      timeoutController.cleanup()
+    }
+
+    if (
+      executionResult.status === 'cancelled' &&
+      timeoutController.isTimedOut() &&
+      timeoutController.timeoutMs
+    ) {
+      const timeoutErrorMessage = getTimeoutErrorMessage(null, timeoutController.timeoutMs)
+      logger.info(`[${requestId}] Scheduled workflow execution timed out`, {
+        timeoutMs: timeoutController.timeoutMs,
+      })
+      await loggingSession.markAsFailed(timeoutErrorMessage)
+    } else if (executionResult.status === 'paused') {
       if (!executionResult.snapshotSeed) {
         logger.error(`[${requestId}] Missing snapshot seed for paused execution`, {
           executionId,
@@ -611,6 +635,7 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
         loggingSession,
         requestId,
         executionId,
+        asyncTimeout: preprocessResult.executionTimeout?.async,
       })
 
       if (executionResult.status === 'skip') {

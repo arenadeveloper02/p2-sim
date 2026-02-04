@@ -127,7 +127,11 @@ export class WorkflowBlockHandler implements BlockHandler {
           workspaceId: ctx.workspaceId,
           userId: ctx.userId,
           executionId: ctx.executionId,
+<<<<<<< HEAD
           metadata: ctx.metadata as ExecutionMetadata | undefined,
+=======
+          abortSignal: ctx.abortSignal,
+>>>>>>> a627faabe (feat(timeouts): execution timeout limits (#3120))
         },
       })
 

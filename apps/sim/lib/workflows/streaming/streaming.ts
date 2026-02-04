@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
 import {
   extractBlockIdFromOutputId,
   extractPathFromOutputId,
@@ -32,6 +33,7 @@ export interface StreamingConfig {
   workflowTriggerType?: 'api' | 'chat'
   includeFileBase64?: boolean
   base64MaxBytes?: number
+  timeoutMs?: number
 }
 
 export interface StreamingResponseOptions {
@@ -282,6 +284,7 @@ export async function createStreamingResponse(
   options: StreamingResponseOptions
 ): Promise<ReadableStream> {
   const { requestId, workflow, input, executingUserId, streamConfig, executionId } = options
+  const timeoutController = createTimeoutAbortController(streamConfig.timeoutMs)
 
   return new ReadableStream({
     async start(controller) {
@@ -400,6 +403,7 @@ export async function createStreamingResponse(
             skipLoggingComplete: true,
             includeFileBase64: streamConfig.includeFileBase64,
             base64MaxBytes: streamConfig.base64MaxBytes,
+            abortSignal: timeoutController.signal,
           },
           executionId
         )
@@ -438,8 +442,23 @@ export async function createStreamingResponse(
           processStreamingBlockLogs(result.logs, state.streamedContent)
         }
 
-        await completeLoggingSession(result)
+        if (
+          result.status === 'cancelled' &&
+          timeoutController.isTimedOut() &&
+          timeoutController.timeoutMs
+        ) {
+          const timeoutErrorMessage = getTimeoutErrorMessage(null, timeoutController.timeoutMs)
+          logger.info(`[${requestId}] Streaming execution timed out`, {
+            timeoutMs: timeoutController.timeoutMs,
+          })
+          if (result._streamingMetadata?.loggingSession) {
+            await result._streamingMetadata.loggingSession.markAsFailed(timeoutErrorMessage)
+          }
+          controller.enqueue(encodeSSE({ event: 'error', error: timeoutErrorMessage }))
+        } else {
+          await completeLoggingSession(result)
 
+<<<<<<< HEAD
         const minimalResult = await buildMinimalResult(
           result,
           streamConfig.selectedOutputs,
@@ -449,8 +468,20 @@ export async function createStreamingResponse(
           streamConfig.includeFileBase64 ?? true,
           streamConfig.base64MaxBytes
         )
+=======
+          const minimalResult = await buildMinimalResult(
+            result,
+            streamConfig.selectedOutputs,
+            state.streamedContent,
+            requestId,
+            streamConfig.includeFileBase64 ?? true,
+            streamConfig.base64MaxBytes
+          )
 
-        controller.enqueue(encodeSSE({ event: 'final', data: minimalResult }))
+          controller.enqueue(encodeSSE({ event: 'final', data: minimalResult }))
+        }
+>>>>>>> a627faabe (feat(timeouts): execution timeout limits (#3120))
+
         controller.enqueue(encodeSSE('[DONE]'))
 
         if (executionId) {
@@ -469,6 +500,20 @@ export async function createStreamingResponse(
         }
 
         controller.close()
+      } finally {
+        timeoutController.cleanup()
+      }
+    },
+    async cancel(reason) {
+      logger.info(`[${requestId}] Streaming response cancelled`, { reason })
+      timeoutController.abort()
+      timeoutController.cleanup()
+      if (executionId) {
+        try {
+          await cleanupExecutionBase64Cache(executionId)
+        } catch (error) {
+          logger.error(`[${requestId}] Failed to cleanup base64 cache`, { error })
+        }
       }
     },
   })
