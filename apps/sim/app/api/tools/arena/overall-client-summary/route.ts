@@ -154,26 +154,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!status) {
-      return NextResponse.json(
-        { success: false, error: { message: 'status is required' } },
-        { status: 400 }
-      )
-    }
-
-    if (!one_day_summary && !seven_day_summary && !fourteen_day_summary) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            message:
-              'At least one summary field is required (one_day_summary, seven_day_summary, or fourteen_day_summary)',
-          },
-        },
-        { status: 400 }
-      )
-    }
-
     const now = new Date()
     const todayDate = now.toISOString().split('T')[0]
     const runDateValue = todayDate
@@ -186,6 +166,7 @@ export async function POST(request: NextRequest) {
       hasSevenDay: !!seven_day_summary,
       hasFourteenDay: !!fourteen_day_summary,
       hasDailySummaryChanges: !!daily_summary_changes,
+      status: status || 'PENDING',
       run_date: runDateValue,
     })
 
@@ -212,7 +193,7 @@ export async function POST(request: NextRequest) {
           fourteenDaySummary: fourteen_day_summary ?? undefined,
           dailySummaryChanges: daily_summary_changes ?? undefined,
           updatedDate: now,
-          status,
+          status: status || 'PENDING',
           runDate: runDateValue,
         })
         .where(
@@ -232,7 +213,7 @@ export async function POST(request: NextRequest) {
         dailySummaryChanges: daily_summary_changes ?? undefined,
         createdDate: now,
         updatedDate: now,
-        status,
+        status: status || 'PENDING',
         retryCount: 0,
         runDate: runDateValue,
       })
