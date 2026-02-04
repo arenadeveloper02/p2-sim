@@ -13,6 +13,8 @@ function selectGmailToolId(params: Record<string, any>): string {
       return 'gmail_draft'
     case 'search_gmail':
       return 'gmail_search'
+    case 'advanced_search_gmail':
+      return 'gmail_advanced_search'
     case 'read_gmail':
       return 'gmail_read'
     case 'move_gmail':
@@ -680,6 +682,7 @@ export const GmailV2Block: BlockConfig<GmailToolResponse> = {
       'gmail_draft_v2',
       'gmail_read_v2',
       'gmail_search_v2',
+      'gmail_advanced_search_v2',
       'gmail_move_v2',
       'gmail_mark_read_v2',
       'gmail_mark_unread_v2',

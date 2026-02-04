@@ -549,3 +549,19 @@ export const gmailAdvancedSearchTool: ToolConfig<
     },
   },
 }
+
+export const gmailAdvancedSearchV2Tool: ToolConfig<
+  GmailAdvancedSearchParams,
+  GmailAdvancedSearchResponse
+> = {
+  id: 'gmail_advanced_search_v2',
+  name: 'Gmail Advanced Search',
+  description:
+    'Search emails in Gmail with full content and attachment parsing, returning threaded conversations',
+  version: '2.0.0',
+  oauth: gmailAdvancedSearchTool.oauth,
+  params: gmailAdvancedSearchTool.params,
+  request: gmailAdvancedSearchTool.request,
+  directExecution: gmailAdvancedSearchTool.directExecution,
+  outputs: gmailAdvancedSearchTool.outputs,
+}
