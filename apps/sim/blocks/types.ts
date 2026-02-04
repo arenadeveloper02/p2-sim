@@ -12,7 +12,8 @@ export type PrimitiveValueType =
   | 'boolean'
   | 'json'
   | 'array'
-  | 'files'
+  | 'file'
+  | 'file[]'
   | 'any'
 
 export type BlockCategory = 'blocks' | 'tools' | 'triggers'

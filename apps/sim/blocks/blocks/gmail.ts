@@ -1,7 +1,7 @@
 import { GmailIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
-import { createVersionedToolSelector } from '@/blocks/utils'
+import { createVersionedToolSelector, normalizeFileInput } from '@/blocks/utils'
 import type { GmailToolResponse } from '@/tools/gmail/types'
 import { getTrigger } from '@/triggers'
 
@@ -514,6 +514,8 @@ Return ONLY the search query - no explanations, no extra text.`,
           labelActionMessageId,
           labelManagement,
           manualLabelManagement,
+          attachmentFiles,
+          attachments,
           ...rest
         } = params
 
@@ -584,9 +586,13 @@ Return ONLY the search query - no explanations, no extra text.`,
           }
         }
 
+        // Normalize attachments for send/draft operations
+        const normalizedAttachments = normalizeFileInput(attachmentFiles || attachments)
+
         return {
           ...rest,
           credential,
+          ...(normalizedAttachments && { attachments: normalizedAttachments }),
         }
       },
     },
@@ -644,7 +650,7 @@ Return ONLY the search query - no explanations, no extra text.`,
     // Tool outputs
     content: { type: 'string', description: 'Response content' },
     metadata: { type: 'json', description: 'Email metadata' },
-    attachments: { type: 'json', description: 'Email attachments array' },
+    attachments: { type: 'file[]', description: 'Email attachments array' },
     results: {
       type: 'json',
       description: 'Advanced search results with full content and parsed attachments',
@@ -710,9 +716,9 @@ export const GmailV2Block: BlockConfig<GmailToolResponse> = {
     to: { type: 'string', description: 'To' },
     subject: { type: 'string', description: 'Subject' },
     date: { type: 'string', description: 'Date' },
-    content: { type: 'string', description: 'Email body text (best-effort)' },
-    metadata: { type: 'json', description: 'Metadata including search/read summary results' },
-    attachments: { type: 'json', description: 'Downloaded attachments (if enabled)' },
+    body: { type: 'string', description: 'Email body text (best-effort)' },
+    results: { type: 'json', description: 'Search/read summary results' },
+    attachments: { type: 'file[]', description: 'Downloaded attachments (if enabled)' },
 
     // Draft-specific outputs
     draftId: {

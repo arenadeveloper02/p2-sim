@@ -119,5 +119,6 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       type: 'number',
       description: 'Number of files uploaded (when files are attached)',
     },
+    files: { type: 'file[]', description: 'Files attached to the message' },
   },
 }
