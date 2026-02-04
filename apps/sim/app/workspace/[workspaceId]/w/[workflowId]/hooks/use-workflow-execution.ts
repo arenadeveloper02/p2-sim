@@ -1190,6 +1190,12 @@ export function useWorkflowExecution() {
                 })
               }
             },
+
+            onExecutionCancelled: () => {
+              if (activeWorkflowId) {
+                cancelRunningEntries(activeWorkflowId)
+              }
+            },
           },
         })
 
@@ -1743,6 +1749,10 @@ export function useWorkflowExecution() {
                 })
               }
             },
+
+            onExecutionCancelled: () => {
+              cancelRunningEntries(workflowId)
+            },
           },
         })
       } catch (error) {
@@ -1764,6 +1774,7 @@ export function useWorkflowExecution() {
       setEdgeRunStatus,
       addNotification,
       addConsole,
+      cancelRunningEntries,
       executionStream,
     ]
   )
