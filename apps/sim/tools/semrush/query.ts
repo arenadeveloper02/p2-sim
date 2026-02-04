@@ -1,10 +1,75 @@
 import { createLogger } from '@sim/logger'
-import { env } from '@/lib/core/config/env'
 import type { SemrushParams, SemrushResponse } from '@/tools/semrush/types'
 import type { ToolConfig } from '@/tools/types'
 import { parseCsvResponse } from '../utils'
 
 const logger = createLogger('SemrushTool')
+
+/**
+ * For domain reports, Semrush API expects the root domain without "www."
+ * (e.g. apple.com, not www.apple.com). Returns the domain with www stripped when appropriate.
+ */
+function toSemrushDomain(hostname: string): string {
+  const lower = hostname.toLowerCase()
+  if (lower.startsWith('www.')) {
+    return hostname.slice(4)
+  }
+  return hostname
+}
+
+/**
+ * Normalizes target for Semrush API. Domain-based reports require a root domain (e.g. "apple.com");
+ * if the user pastes a full URL we extract the hostname and strip "www." per Semrush docs.
+ * URL-based reports get a normalized URL.
+ * If the user pastes an email (e.g. "user@company.com"), the domain part is used for domain reports.
+ */
+function normalizeSemrushTarget(target: string, reportType: string): string {
+  const trimmed = target.trim()
+  if (!trimmed) return trimmed
+
+  const isDomainReport = !reportType.startsWith('url_')
+
+  if (isDomainReport) {
+    if (trimmed.includes('@') && !trimmed.includes('://')) {
+      const domainPart = trimmed.split('@').pop()?.trim()
+      if (domainPart) {
+        logger.info('Semrush: Using domain from email-like input', {
+          input: trimmed,
+          domain: domainPart,
+        })
+        return toSemrushDomain(domainPart)
+      }
+    }
+    try {
+      const withProtocol = trimmed.includes('://') ? trimmed : `https://${trimmed}`
+      const hostname = new URL(withProtocol).hostname
+      if (hostname) {
+        const domain = toSemrushDomain(hostname)
+        if (domain !== trimmed) {
+          logger.info('Semrush: Normalized domain from URL', {
+            input: trimmed,
+            domain,
+          })
+        }
+        return domain
+      }
+    } catch {
+      // Not a parseable URL; use as-is (e.g. plain domain like "example.com")
+    }
+    return toSemrushDomain(trimmed)
+  }
+
+  try {
+    const withProtocol = trimmed.includes('://') ? trimmed : `https://${trimmed}`
+    const normalized = new URL(withProtocol).href
+    if (normalized !== trimmed) {
+      logger.info('Semrush: Normalized URL', { input: trimmed, normalized })
+    }
+    return normalized
+  } catch {
+    return trimmed
+  }
+}
 
 export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
   id: 'semrush_query',
@@ -58,27 +123,33 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
   },
 
   request: {
-    url: (params: SemrushParams) => {
-      const baseUrl = 'https://api.semrush.com/'
+    url: (params: SemrushParams & { url?: string; domain?: string }) => {
       const queryParams = new URLSearchParams()
+      const reportType = params.reportType ?? 'domain_organic'
 
-      // Get API key: env.SEMRUSH_API_KEY first, then params.apiKey (user input)
-      // This matches the pattern used by agent blocks for API keys
-      const envApiKey = env.SEMRUSH_API_KEY || ''
+      const rawTarget =
+        params.target ?? (reportType.startsWith('url_') ? params.url : params.domain) ?? ''
+      const target = normalizeSemrushTarget(rawTarget, reportType)
 
-      // Required parameters
-      queryParams.append('type', params.reportType)
-      queryParams.append('key', envApiKey)
-
-      // Determine if target is URL or domain based on report type
-      if (params.reportType.startsWith('url_')) {
-        queryParams.append('url', params.target)
-      } else {
-        queryParams.append('domain', params.target)
+      if (!target) {
+        logger.error('Semrush: Missing or empty target (URL or domain)', {
+          reportType,
+          hasTarget: Boolean(params.target),
+          hasUrl: Boolean(params.url),
+          hasDomain: Boolean(params.domain),
+        })
+        throw new Error(
+          'Semrush requires a valid URL or domain. For "Get Domain Organic Keywords" use a domain (e.g. apple.com) or paste a full URL; for "Get Organic Keywords for URL" use a full page URL.'
+        )
       }
 
-      // Optional parameters
-      // Database/Region is required for most report types, default to 'us' if not provided
+      queryParams.append('type', reportType)
+      if (reportType.startsWith('url_')) {
+        queryParams.append('url', target)
+      } else {
+        queryParams.append('domain', target)
+      }
+
       const database = params.database || 'us'
       queryParams.append('database', database)
       if (params.displayLimit) {
@@ -86,29 +157,24 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       }
       if (params.exportColumns) {
         queryParams.append('export_columns', params.exportColumns)
-        logger.info('Semrush: Adding export_columns', { exportColumns: params.exportColumns })
-      } else {
-        logger.info('Semrush: No export_columns specified')
       }
-
-      // Parse additional parameters if provided
       if (params.additionalParams) {
         try {
-          const additional = new URLSearchParams(params.additionalParams)
-          additional.forEach((value, key) => {
-            queryParams.append(key, value)
-          })
+          queryParams.append('additionalParams', params.additionalParams)
         } catch (error) {
-          logger.warn('Failed to parse additional parameters', {
+          logger.warn('Failed to set additionalParams', {
             error,
             additionalParams: params.additionalParams,
           })
         }
       }
 
-      const finalUrl = `${baseUrl}?${queryParams.toString()}`
-      logger.info('Semrush: Final API URL', { url: finalUrl })
-      return finalUrl
+      const path = `/api/tools/semrush/query?${queryParams.toString()}`
+      logger.info('Semrush: Using internal proxy', {
+        reportType,
+        param: reportType.startsWith('url_') ? 'url' : 'domain',
+      })
+      return path
     },
     method: 'GET',
     headers: () => ({
@@ -162,6 +228,21 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       }
     }
 
+    const trimmedBody = csvText.trim()
+    if (
+      trimmedBody.length > 0 &&
+      trimmedBody.length < 200 &&
+      !trimmedBody.includes(';') &&
+      (trimmedBody.toLowerCase().startsWith('error') ||
+        trimmedBody.toLowerCase().includes('invalid') ||
+        /^[A-Za-z\s\-:]+$/.test(trimmedBody))
+    ) {
+      logger.error('Semrush API returned error message as body', { body: trimmedBody })
+      throw new Error(
+        `Semrush API error: ${trimmedBody}. For domain reports use a root domain (e.g. apple.com). For URL reports use a full page URL.`
+      )
+    }
+
     // Extract report type from URL or params
     const url = new URL(response.url)
     const reportType = url.searchParams.get('type') || params?.reportType || ''
@@ -198,17 +279,25 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
   },
 
   outputs: {
+    reportType: {
+      type: 'string',
+      description: 'Semrush report type that was requested (e.g. domain_organic, url_organic)',
+    },
     data: {
       type: 'json',
-      description: 'Parsed Semrush data as array of objects',
+      description: 'Parsed Semrush data as JSON array of objects (one object per row)',
     },
     columns: {
       type: 'json',
-      description: 'Column headers from the response',
+      description: 'Column headers from the CSV response',
     },
     totalRows: {
       type: 'number',
       description: 'Total number of data rows returned',
+    },
+    rawCsv: {
+      type: 'string',
+      description: 'Raw CSV response from the Semrush API (semicolon-delimited)',
     },
   },
 }

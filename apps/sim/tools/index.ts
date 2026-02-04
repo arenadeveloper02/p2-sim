@@ -684,6 +684,12 @@ async function executeToolRequest(
           headers: responseHeaders,
         })
       }
+
+      contentType = response.headers.get('content-type') || ''
+      hasTransformResponse = Boolean(tool.transformResponse)
+      prefersTextTransform =
+        hasTransformResponse &&
+        (toolId === 'semrush_query' || !contentType.toLowerCase().includes('application/json'))
     }
 
     // For non-OK responses, attempt JSON first; if parsing fails, fall back to text so APIs like Semrush
