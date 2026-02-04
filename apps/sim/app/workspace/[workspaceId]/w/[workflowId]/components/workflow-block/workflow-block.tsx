@@ -675,6 +675,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     currentWorkflow,
     activeWorkflowId,
     isEnabled,
+    isLocked,
     handleClick,
     hasRing,
     ringStyles,
@@ -1103,7 +1104,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
               {name}
             </span>
           </div>
-          <div className='relative z-10 flex flex-shrink-0 items-center gap-2'>
+          <div className='relative z-10 flex flex-shrink-0 items-center gap-1'>
             {isWorkflowSelector &&
               childWorkflowId &&
               typeof childIsDeployed === 'boolean' &&
@@ -1136,6 +1137,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                 </Tooltip.Root>
               )}
             {!isEnabled && <Badge variant='gray-secondary'>disabled</Badge>}
+            {isLocked && <Badge variant='gray-secondary'>locked</Badge>}
 
             {type === 'schedule' && shouldShowScheduleBadge && scheduleInfo?.isDisabled && (
               <Tooltip.Root>
