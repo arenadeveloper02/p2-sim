@@ -344,6 +344,8 @@ export interface GoogleDriveToolParams {
 export interface GoogleDriveSearchParams {
   accessToken: string
   prompt: string
+  /** Optional folder ID to scope search to (added to q as 'id' in parents) */
+  folderId?: string
   pageSize?: number
   pageToken?: string
 }
