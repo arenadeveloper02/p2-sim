@@ -1288,6 +1288,13 @@ export function useWorkflowExecution() {
           onBlockCompleteCallback: onBlockComplete,
         })
 
+        const clientWorkflowState = executionWorkflowState || {
+          blocks: filteredStates,
+          edges: workflowEdges,
+          loops: latestWorkflowState.loops,
+          parallels: latestWorkflowState.parallels,
+        }
+
         await executionStream.execute({
           workflowId: activeWorkflowId,
           input: finalWorkflowInput,
