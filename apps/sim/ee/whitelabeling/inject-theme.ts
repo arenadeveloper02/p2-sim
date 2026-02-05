@@ -1,6 +1,8 @@
-import { getBrandConfig } from './branding'
+import { defaultBrandConfig } from '@/lib/branding'
 
-// Helper to detect if background is dark
+/**
+ * Helper to detect if background is dark
+ */
 function isDarkBackground(hexColor: string): boolean {
   const hex = hexColor.replace('#', '')
   const r = Number.parseInt(hex.substr(0, 2), 16)
@@ -12,20 +14,20 @@ function isDarkBackground(hexColor: string): boolean {
 
 export function generateThemeCSS(): string {
   const cssVars: string[] = []
-  const brandConfig = getBrandConfig()
 
   // Use environment variables if set, otherwise fall back to branding.ts defaults
   const primaryColor =
-    process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR || brandConfig.theme?.primaryColor
+    process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR || defaultBrandConfig.theme?.primaryColor
   const primaryHoverColor =
-    process.env.NEXT_PUBLIC_BRAND_PRIMARY_HOVER_COLOR || brandConfig.theme?.primaryHoverColor
+    process.env.NEXT_PUBLIC_BRAND_PRIMARY_HOVER_COLOR || defaultBrandConfig.theme?.primaryHoverColor
   const secondaryColor =
-    process.env.NEXT_PUBLIC_BRAND_SECONDARY_COLOR || brandConfig.theme?.secondaryColor
-  const accentColor = process.env.NEXT_PUBLIC_BRAND_ACCENT_COLOR || brandConfig.theme?.accentColor
+    process.env.NEXT_PUBLIC_BRAND_SECONDARY_COLOR || defaultBrandConfig.theme?.secondaryColor
+  const accentColor =
+    process.env.NEXT_PUBLIC_BRAND_ACCENT_COLOR || defaultBrandConfig.theme?.accentColor
   const accentHoverColor =
-    process.env.NEXT_PUBLIC_BRAND_ACCENT_HOVER_COLOR || brandConfig.theme?.accentHoverColor
+    process.env.NEXT_PUBLIC_BRAND_ACCENT_HOVER_COLOR || defaultBrandConfig.theme?.accentHoverColor
   const backgroundColor =
-    process.env.NEXT_PUBLIC_BRAND_BACKGROUND_COLOR || brandConfig.theme?.backgroundColor
+    process.env.NEXT_PUBLIC_BRAND_BACKGROUND_COLOR || defaultBrandConfig.theme?.backgroundColor
 
   if (primaryColor) {
     cssVars.push(`--brand-primary-hex: ${primaryColor};`)
