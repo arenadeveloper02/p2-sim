@@ -1047,6 +1047,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }, [currentChatId])
 
   const handleNewChat = useCallback(() => {
+    setShowFeedbackView(false)
+    setFeedbackError(null)
     setShowScrollButton(false)
     const id = uuidv4()
     setCurrentChatId(id)

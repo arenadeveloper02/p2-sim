@@ -49,6 +49,7 @@ export function GoldenQueriesModal({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [dragHandleIndex, setDragHandleIndex] = useState<number | null>(null)
   const dragSnapshotRef = useRef<GoldenQueryItem[] | null>(null)
+  const addInputRef = useRef<HTMLInputElement | null>(null)
   const dragDroppedRef = useRef(false)
   const [savingAction, setSavingAction] = useState<
     | { type: 'save' }
@@ -71,6 +72,14 @@ export function GoldenQueriesModal({
     dragSnapshotRef.current = null
     dragDroppedRef.current = false
   }, [open, normalizedQueries])
+
+  useEffect(() => {
+    if (!open || mode !== 'add') return
+    const timer = window.setTimeout(() => {
+      addInputRef.current?.focus()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [open, mode])
 
   const isAddDisabled = disabled || isSaving || mode !== null
 
@@ -372,6 +381,7 @@ export function GoldenQueriesModal({
                     onChange={(event) => setDraftValue(event.target.value)}
                     placeholder='Type your query'
                     disabled={disabled || isSaving}
+                    ref={addInputRef}
                     className='h-[34px] flex-1 rounded-[6px] border border-[var(--border-200)] px-3 text-[13px] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary-hover-hex)] disabled:cursor-not-allowed disabled:opacity-60'
                   />
                   <Tooltip.Root>
