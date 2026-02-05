@@ -153,6 +153,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isHistoryLoading, setIsHistoryLoading] = useState<any>(true) // Start as true to prevent early modal
   const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
   const [hasCheckedHistory, setHasCheckedHistory] = useState<boolean>(false)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
@@ -344,7 +345,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setIsHistoryLoading(false)
       setHasCheckedHistory(true)
     }
-  }, [identifier, chatConfig, currentChatId])
+  }, [identifier, chatConfig, currentChatId, historyRefreshKey])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -1013,6 +1014,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const handleSelectThread = useCallback(
     (chatId: string) => {
       if (currentChatId === chatId) return
+      setShowFeedbackView(false)
+      setFeedbackError(null)
       setShowScrollButton(false)
       setCurrentChatId(chatId)
       // Clear messages except welcome
@@ -1031,6 +1034,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     },
     [currentChatId, chatConfig?.customizations?.headerText, chatConfig?.title, chatDepartment]
   )
+
+  const handleRefreshThread = useCallback(() => {
+    if (!currentChatId) return
+    setShowFeedbackView(false)
+    setFeedbackError(null)
+    setIsHistoryLoading(true)
+    setHasCheckedHistory(false)
+    setHistoryRefreshKey((prev) => prev + 1)
+  }, [currentChatId])
 
   const handleNewChat = useCallback(() => {
     setShowScrollButton(false)
@@ -1091,6 +1103,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       if (!response.ok) {
         const errorText = await response.text()
+        logger.warn('Feedback request failed', {
+          status: response.status,
+          body: errorText,
+        })
         throw new Error(`Failed to fetch feedback: ${response.status} ${errorText}`)
       }
 
@@ -1119,7 +1135,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setFeedbackData(feedbackItems)
     } catch (err: any) {
       logger.error('Error fetching feedback:', err)
-      setFeedbackError(err.message || 'Failed to load feedback')
+      setFeedbackError('Some thing went wrong while fetching feed back')
     } finally {
       setIsFeedbackLoading(false)
     }
@@ -1236,10 +1252,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         error={threadsError || null}
         currentChatId={currentChatId || ''}
         onSelectThread={handleSelectThread}
+        onRefreshThread={handleRefreshThread}
         onNewChat={handleNewChat}
         isStreaming={isStreamingResponse || isLoading}
         workflowId={identifier}
         showReRun={customFields.length > 0}
+        showFeedbackView={showFeedbackView}
         onReRun={handleRerun}
         onViewFeedback={handleViewFeedback}
         onViewGoldenQueries={handleViewGoldenQueries}

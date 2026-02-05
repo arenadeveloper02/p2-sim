@@ -100,7 +100,7 @@ export function FeedbackView({ feedbackData, isLoading, error, workflowTitle, on
   if (error) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
-        <div className='text-red-500 text-sm'>Error loading feedback: {error}</div>
+        <div className='text-red-500 text-sm'>{error}</div>
       </div>
     )
   }

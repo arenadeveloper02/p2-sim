@@ -18,10 +18,12 @@ interface LeftNavThreadProps {
   error?: string | null
   currentChatId: string
   onSelectThread?: (chatId: string) => void
+  onRefreshThread?: () => void
   onNewChat?: () => void
   isStreaming: boolean
   workflowId?: string
   showReRun?: boolean
+  showFeedbackView?: boolean
   onReRun?: () => void
   onViewFeedback?: () => void
   onViewGoldenQueries?: () => void
@@ -33,10 +35,12 @@ const LeftNavThread = ({
   error,
   currentChatId,
   onSelectThread,
+  onRefreshThread,
   onNewChat,
   isStreaming,
   workflowId,
   showReRun = false,
+  showFeedbackView = false,
   onReRun,
   onViewFeedback,
   onViewGoldenQueries,
@@ -121,7 +125,10 @@ const LeftNavThread = ({
                     'group flex h-[32px] cursor-pointer items-center gap-2 rounded bg-white px-1 py-1.5 font-normal text-sm hover:shadow-md'
                   }
                   onClick={() => {
-                    if (isActive) return
+                    if (isActive) {
+                      onRefreshThread?.()
+                      return
+                    }
                     onSelectThread?.(thread.chatId)
                   }}
                 >
@@ -167,7 +174,7 @@ const LeftNavThread = ({
           onClick={() => {
             onViewGoldenQueries?.()
           }}
-          disabled={isLoading || isStreaming}
+          disabled={isLoading || isStreaming || showFeedbackView}
         >
           <Sparkles className='h-4 w-4 text-[#6D717F] group-hover:text-[#1A73E8]' />
           Golden queries
