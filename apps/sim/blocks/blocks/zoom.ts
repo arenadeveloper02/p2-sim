@@ -27,6 +27,7 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
         { label: 'Delete Meeting', id: 'zoom_delete_meeting' },
         { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
         { label: 'List Recordings', id: 'zoom_list_recordings' },
+        { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
         { label: 'Get Meeting Recordings', id: 'zoom_get_meeting_recordings' },
         { label: 'Delete Recording', id: 'zoom_delete_recording' },
         { label: 'List Past Participants', id: 'zoom_list_past_participants' },
@@ -48,6 +49,8 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
         'meeting:read:invitation',
         'meeting:read:list_past_participants',
         'cloud_recording:read:list_user_recordings',
+        'recording:read:list_account_recordings',
+        'recording:read:admin',
         'cloud_recording:read:list_recording_files',
         'cloud_recording:delete:recording_file',
       ],
@@ -283,7 +286,12 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'Number of results (max 300)',
       condition: {
         field: 'operation',
-        value: ['zoom_list_meetings', 'zoom_list_recordings', 'zoom_list_past_participants'],
+        value: [
+          'zoom_list_meetings',
+          'zoom_list_recordings',
+          'zoom_list_account_recordings',
+          'zoom_list_past_participants',
+        ],
       },
     },
     {
@@ -293,7 +301,12 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'Token for next page',
       condition: {
         field: 'operation',
-        value: ['zoom_list_meetings', 'zoom_list_recordings', 'zoom_list_past_participants'],
+        value: [
+          'zoom_list_meetings',
+          'zoom_list_recordings',
+          'zoom_list_account_recordings',
+          'zoom_list_past_participants',
+        ],
       },
     },
     // Recording date range
@@ -304,7 +317,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'yyyy-mm-dd (within last 6 months)',
       condition: {
         field: 'operation',
-        value: ['zoom_list_recordings'],
+        value: ['zoom_list_recordings', 'zoom_list_account_recordings'],
       },
       wandConfig: {
         enabled: true,
@@ -329,7 +342,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       placeholder: 'yyyy-mm-dd',
       condition: {
         field: 'operation',
-        value: ['zoom_list_recordings'],
+        value: ['zoom_list_recordings', 'zoom_list_account_recordings'],
       },
       wandConfig: {
         enabled: true,
@@ -403,6 +416,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       'zoom_delete_meeting',
       'zoom_get_meeting_invitation',
       'zoom_list_recordings',
+      'zoom_list_account_recordings',
       'zoom_get_meeting_recordings',
       'zoom_delete_recording',
       'zoom_list_past_participants',
@@ -513,6 +527,15 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
             return {
               ...baseParams,
               userId: params.userId.trim(),
+              from: params.fromDate,
+              to: params.toDate,
+              pageSize: params.pageSize ? Number(params.pageSize) : undefined,
+              nextPageToken: params.nextPageToken,
+            }
+
+          case 'zoom_list_account_recordings':
+            return {
+              ...baseParams,
               from: params.fromDate,
               to: params.toDate,
               pageSize: params.pageSize ? Number(params.pageSize) : undefined,

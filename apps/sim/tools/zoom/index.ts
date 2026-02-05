@@ -8,6 +8,7 @@ export { zoomGetMeetingRecordingsTool } from './get_meeting_recordings'
 export { zoomListMeetingsTool } from './list_meetings'
 export { zoomListPastParticipantsTool } from './list_past_participants'
 export { zoomListRecordingsTool } from './list_recordings'
+export { zoomListAccountRecordingsTool } from './list_account_recordings'
 // Type exports
 export type {
   ZoomCreateMeetingParams,
@@ -28,6 +29,8 @@ export type {
   ZoomListPastParticipantsResponse,
   ZoomListRecordingsParams,
   ZoomListRecordingsResponse,
+  ZoomListAccountRecordingsParams,
+  ZoomListAccountRecordingsResponse,
   ZoomMeeting,
   ZoomMeetingSettings,
   ZoomMeetingType,
