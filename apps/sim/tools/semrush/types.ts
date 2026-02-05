@@ -2,7 +2,10 @@ import type { ToolResponse } from '@/tools/types'
 
 export interface SemrushParams {
   reportType: string
-  target: string // URL or domain
+  /** Set by block config; callers may send url or domain instead. */
+  target?: string
+  url?: string
+  domain?: string
   database?: string
   displayLimit?: number | string
   exportColumns?: string
@@ -13,9 +16,9 @@ export interface SemrushParams {
 export interface SemrushResponse extends ToolResponse {
   output: {
     reportType: string
-    data: Array<Record<string, string>> // Parsed CSV rows as objects
-    columns: string[] // Column headers
+    data: Array<Record<string, string>>
+    columns: string[]
     totalRows: number
-    rawCsv?: string // Optional: include raw CSV for debugging
+    rawCsv: string
   }
 }

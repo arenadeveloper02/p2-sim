@@ -188,6 +188,7 @@ export function FileSelectorInput({
       previewValue={previewValue ?? null}
       placeholder={subBlock.placeholder || 'Select resource'}
       allowSearch={selectorResolution.allowSearch}
+      clearable={subBlock.clearable ?? false}
       onOptionChange={(value) => {
         if (!isPreview) {
           collaborativeSetSubblockValue(blockId, subBlock.id, value)
