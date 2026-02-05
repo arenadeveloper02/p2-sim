@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { clientDetails, overallClientSummary } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 
