@@ -2490,38 +2490,28 @@ export const auth = betterAuth({
           tokenUrl: 'https://zoom.us/oauth/token',
           userInfoUrl: 'https://api.zoom.us/v2/users/me',
           scopes: [
-            'user:read:user',
-            'meeting:write:meeting',
-            'meeting:read:meeting',
-            'meeting:read:list_meetings',
-            'meeting:update:meeting',
-            'meeting:delete:meeting',
-            'meeting:read:invitation',
-            'meeting:read:list_past_participants',
-            'cloud_recording:read:list_user_recordings',
-            'cloud_recording:read:list_recording_files',
-            'cloud_recording:delete:recording_file',
-
-            //admin User & account management
+            'user:read:user:admin',
             'user:read:list_users:admin',
-            'user:write:user:admin',
             'user:read:list_assistants:admin',
             'user:read:list_schedulers:admin',
             'user:read:email:admin',
 
             //admin Meeting registrants, polls & participants (account-wide)
+            'meeting:read:list_meetings:admin',
+            'meeting:read:meeting:admin',
             'meeting:read:list_registrants:admin',
-            'meeting:write:registrant:admin',
             'meeting:read:registrant:admin',
             'meeting:read:list_polls:admin',
             'meeting:read:participant:admin',
 
             //admin Cloud recording – advanced / account-level
-            'cloud_recording:write:recording_registrant:admin',
             'cloud_recording:read:list_recording_registrants:admin',
+            'cloud_recording:read:list_recording_files:admin',
+            'cloud_recording:read:list_user_recordings:admin',
             'cloud_recording:read:recording:admin',
             'cloud_recording:read:meeting_transcript:admin',
             'cloud_recording:read:list_account_recordings:admin'
+
           ],
           responseType: 'code',
           accessType: 'offline',
@@ -2530,6 +2520,7 @@ export const auth = betterAuth({
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/zoom`,
           getUserInfo: async (tokens) => {
             try {
+              debugger;
               logger.info('Fetching Zoom user profile')
 
               const response = await fetch('https://api.zoom.us/v2/users/me', {
