@@ -1,7 +1,9 @@
-import React, { type HTMLAttributes, memo, type ReactNode, useMemo } from 'react'
+import React, { type HTMLAttributes, memo, type ReactNode, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
+import { cn } from '@/lib/core/utils/cn'
 
 export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -96,15 +98,109 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
         codeContent = childElement.props.children
       }
 
+      const [isCopied, setIsCopied] = useState(false)
+      const languageLabel = codeProps.className?.replace('language-', '') || 'code'
+      const extractText = (node: ReactNode): string => {
+        if (node === null || node === undefined) {
+          return ''
+        }
+        if (typeof node === 'string' || typeof node === 'number') {
+          return String(node)
+        }
+        if (Array.isArray(node)) {
+          return node.map(extractText).join('')
+        }
+        if (React.isValidElement<{ children?: ReactNode }>(node)) {
+          return extractText(node.props.children)
+        }
+        return ''
+      }
+      const rawCode = extractText(codeContent)
+      const normalizedCode = rawCode.replace(/\n$/, '')
+      const lines = normalizedCode.length > 0 ? normalizedCode.split('\n') : ['']
+
+      const handleCopy = async () => {
+        if (typeof navigator === 'undefined' || !navigator.clipboard) {
+          return
+        }
+        try {
+          await navigator.clipboard.writeText(rawCode)
+          setIsCopied(true)
+          setTimeout(() => setIsCopied(false), 1500)
+        } catch {
+          setIsCopied(false)
+        }
+      }
+
       return (
-        <div className='my-6 rounded-md bg-[var(--surface-2)] text-sm dark:bg-gray-900'>
-          <div className='flex items-center justify-between border-gray-700 border-b px-4 py-1.5 dark:border-gray-800'>
-            <span className='font-sans text-gray-400 text-xs'>
-              {codeProps.className?.replace('language-', '') || 'code'}
-            </span>
+        <div
+          className={cn(
+            'my-6',
+            'rounded-md',
+            'border',
+            'border-gray-200',
+            'bg-white',
+            'text-sm',
+            'dark:border-gray-800',
+            'dark:bg-gray-900'
+          )}
+        >
+          <div
+            className={cn(
+              'flex',
+              'items-center',
+              'justify-between',
+              'border-b',
+              'border-gray-200',
+              'px-4',
+              'py-1.5',
+              'dark:border-gray-800'
+            )}
+          >
+            <span className={cn('font-sans', 'text-gray-500', 'text-xs')}>{languageLabel}</span>
+            <button
+              type='button'
+              className={cn(
+                'inline-flex',
+                'items-center',
+                'gap-1',
+                'rounded',
+                'px-2',
+                'py-1',
+                'text-xs',
+                'text-gray-600',
+                'hover:bg-gray-100',
+                'dark:text-gray-300',
+                'dark:hover:bg-gray-800'
+              )}
+              onClick={handleCopy}
+            >
+              <Copy className={cn('h-3', 'w-3')} />
+              {isCopied ? 'Copied' : 'Copy'}
+            </button>
           </div>
-          <pre className='overflow-x-auto p-4 font-mono text-gray-200 dark:text-gray-100'>
-            {codeContent}
+          <pre className={cn('overflow-x-auto', 'p-4', 'font-mono', 'text-gray-900', 'dark:text-gray-100')}>
+            <code className={cn('block', 'space-y-1')}>
+              {lines.map((line, index) => (
+                <div
+                  key={`code-line-${index}`}
+                  className={cn('grid', 'grid-cols-[32px,1fr]', 'gap-x-4')}
+                >
+                  <span
+                    className={cn(
+                      'select-none',
+                      'text-right',
+                      'text-xs',
+                      'text-gray-400',
+                      'dark:text-gray-500'
+                    )}
+                  >
+                    {index + 1}
+                  </span>
+                  <span className={cn('whitespace-pre')}>{line || ' '}</span>
+                </div>
+              ))}
+            </code>
           </pre>
         </div>
       )
