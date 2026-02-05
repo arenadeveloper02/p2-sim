@@ -1,7 +1,8 @@
-import React, { type HTMLAttributes, memo, type ReactNode, useMemo } from 'react'
+import React, { type HTMLAttributes, memo, type ReactNode, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Tooltip } from '@/components/emcn'
+import { Check, Copy } from 'lucide-react'
+import { Code, Tooltip } from '@/components/emcn'
 
 export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -96,16 +97,87 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
         codeContent = childElement.props.children
       }
 
+      const [isCopied, setIsCopied] = useState(false)
+      const languageLabel = codeProps.className?.replace('language-', '') || 'code'
+      const extractText = (node: ReactNode): string => {
+        if (node === null || node === undefined) {
+          return ''
+        }
+        if (typeof node === 'string' || typeof node === 'number') {
+          return String(node)
+        }
+        if (Array.isArray(node)) {
+          return node.map(extractText).join('')
+        }
+        if (React.isValidElement<{ children?: ReactNode }>(node)) {
+          return extractText(node.props.children)
+        }
+        return ''
+      }
+      const rawCode = extractText(codeContent)
+      const codeText = rawCode.replace(/\n$/, '')
+
+      const normalizedLanguage = (languageLabel || '').toLowerCase()
+      const viewerLanguage:
+        | 'javascript'
+        | 'json'
+        | 'python'
+        | 'typescript'
+        | 'tsx'
+        | 'jsx'
+        | 'bash'
+        | 'yaml' = normalizedLanguage === 'json'
+        ? 'json'
+        : normalizedLanguage === 'python' || normalizedLanguage === 'py'
+          ? 'python'
+          : normalizedLanguage === 'typescript' || normalizedLanguage === 'ts'
+            ? 'typescript'
+            : normalizedLanguage === 'tsx'
+              ? 'tsx'
+              : normalizedLanguage === 'jsx'
+                ? 'jsx'
+                : normalizedLanguage === 'bash' ||
+                    normalizedLanguage === 'shell' ||
+                    normalizedLanguage === 'sh'
+                  ? 'bash'
+                  : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
+                    ? 'yaml'
+                    : 'javascript'
+
+      const handleCopy = async () => {
+        if (typeof navigator === 'undefined' || !navigator.clipboard) {
+          return
+        }
+        try {
+          await navigator.clipboard.writeText(rawCode)
+          setIsCopied(true)
+          setTimeout(() => setIsCopied(false), 1500)
+        } catch {
+          setIsCopied(false)
+        }
+      }
+
       return (
-        <div className='my-6 rounded-md bg-[var(--surface-2)] text-sm dark:bg-gray-900'>
-          <div className='flex items-center justify-between border-gray-700 border-b px-4 py-1.5 dark:border-gray-800'>
-            <span className='font-sans text-gray-400 text-xs'>
-              {codeProps.className?.replace('language-', '') || 'code'}
+        <div className='my-6 w-0 min-w-full overflow-hidden rounded-md border border-[var(--border-strong)] bg-[var(--surface-2)] text-sm dark:bg-[#1F1F1F]'>
+          <div className='flex items-center justify-between border-[var(--border-strong)] border-b px-4 py-1.5'>
+            <span className='font-sans text-[#A3A3A3] text-xs'>
+              {languageLabel === 'code' ? viewerLanguage : languageLabel}
             </span>
+            <button
+              type='button'
+              onClick={handleCopy}
+              className='text-[#A3A3A3] transition-colors hover:text-gray-300'
+              title='Copy'
+            >
+              {isCopied ? <Check className='h-3 w-3' strokeWidth={2} /> : <Copy className='h-3 w-3' strokeWidth={2} />}
+            </button>
           </div>
-          <pre className='overflow-x-auto p-4 font-mono text-gray-200 dark:text-gray-100'>
-            {codeContent}
-          </pre>
+          <Code.Viewer
+            code={codeText}
+            showGutter
+            language={viewerLanguage}
+            className='m-0 rounded-none border-0 bg-transparent'
+          />
         </div>
       )
     },

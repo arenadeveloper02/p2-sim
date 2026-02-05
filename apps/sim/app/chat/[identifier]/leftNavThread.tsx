@@ -1,5 +1,5 @@
 'use client'
-import { ArrowLeft, CirclePlus, MessageSquareText, RefreshCw } from 'lucide-react'
+import { ArrowLeft, CirclePlus, FileText, MessageSquareText, RefreshCw, Sparkles } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -18,11 +18,15 @@ interface LeftNavThreadProps {
   error?: string | null
   currentChatId: string
   onSelectThread?: (chatId: string) => void
+  onRefreshThread?: () => void
   onNewChat?: () => void
   isStreaming: boolean
   workflowId?: string
   showReRun?: boolean
+  showFeedbackView?: boolean
   onReRun?: () => void
+  onViewFeedback?: () => void
+  onViewGoldenQueries?: () => void
 }
 
 const LeftNavThread = ({
@@ -31,11 +35,15 @@ const LeftNavThread = ({
   error,
   currentChatId,
   onSelectThread,
+  onRefreshThread,
   onNewChat,
   isStreaming,
   workflowId,
   showReRun = false,
+  showFeedbackView = false,
   onReRun,
+  onViewFeedback,
+  onViewGoldenQueries,
 }: LeftNavThreadProps) => {
   const params = new URLSearchParams(window.location.search)
   const workspaceId = params.get('workspaceId')
@@ -117,7 +125,10 @@ const LeftNavThread = ({
                     'group flex h-[32px] cursor-pointer items-center gap-2 rounded bg-white px-1 py-1.5 font-normal text-sm hover:shadow-md'
                   }
                   onClick={() => {
-                    if (isActive) return
+                    if (isActive) {
+                      onRefreshThread?.()
+                      return
+                    }
                     onSelectThread?.(thread.chatId)
                   }}
                 >
@@ -152,6 +163,33 @@ const LeftNavThread = ({
             </div>
           )}
         </div>
+      </div>
+
+      
+      
+      <div className='flex flex-col gap-1'>
+        <Button
+          className='group h-[32px] w-full justify-start gap-2 rounded border-none bg-white font-normal text-[#41444C] text-sm hover:bg-white hover:font-semibold hover:text-[#2A2A2A] hover:shadow-md'
+          variant='outline'
+          onClick={() => {
+            onViewGoldenQueries?.()
+          }}
+          disabled={isLoading || isStreaming || showFeedbackView}
+        >
+          <Sparkles className='h-4 w-4 text-[#6D717F] group-hover:text-[#1A73E8]' />
+          Golden queries
+        </Button>
+        <Button
+          className='group h-[32px] w-full justify-start gap-2 rounded border-none bg-white font-normal text-[#41444C] text-sm hover:bg-white hover:font-semibold hover:text-[#2A2A2A] hover:shadow-md'
+          variant='outline'
+          onClick={() => {
+            onViewFeedback?.()
+          }}
+          disabled={isLoading || isStreaming}
+        >
+          <FileText className='h-4 w-4 text-[#6D717F] group-hover:text-[#1A73E8]' />
+          View Feedback
+        </Button>
       </div>
 
       <hr className='my-6 text-[#E2E3E5] ' />

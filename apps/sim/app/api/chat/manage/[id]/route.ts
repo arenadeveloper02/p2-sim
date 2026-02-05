@@ -1,7 +1,8 @@
+import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
-import { chat } from '@sim/db/schema'
+import { chat, workflowQueries } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -32,6 +33,7 @@ const chatUpdateSchema = z.object({
       primaryColor: z.string(),
       welcomeMessage: z.string(),
       imageUrl: z.string().optional(),
+      goldenQueries: z.array(z.string()).optional(),
     })
     .optional(),
   authType: z.enum(['public', 'password', 'email', 'sso']).optional(),
@@ -46,6 +48,37 @@ const chatUpdateSchema = z.object({
     )
     .optional(),
 })
+
+const sanitizeGoldenQueries = (queries?: string[]) => {
+  if (!Array.isArray(queries)) return []
+  return queries.map((query) => query.trim()).filter((query) => query.length > 0)
+}
+
+async function replaceWorkflowQueries({
+  workflowId,
+  userId,
+  queries,
+}: {
+  workflowId: string
+  userId: string
+  queries: string[]
+}) {
+  await db.transaction(async (tx) => {
+    await tx.delete(workflowQueries).where(eq(workflowQueries.workflowId, workflowId))
+
+    if (queries.length === 0) return
+
+    await tx.insert(workflowQueries).values(
+      queries.map((query, index) => ({
+        id: randomUUID(),
+        userId,
+        workflowId,
+        query,
+        priority: index,
+      }))
+    )
+  })
+}
 
 /**
  * GET endpoint to fetch a specific chat deployment by ID
@@ -68,6 +101,17 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     }
 
     const { password, ...safeData } = chatRecord
+    const goldenQueryRows = await db
+      .select({ query: workflowQueries.query })
+      .from(workflowQueries)
+      .where(
+        and(
+          eq(workflowQueries.workflowId, chatRecord.workflowId),
+          eq(workflowQueries.deleted, false)
+        )
+      )
+      .orderBy(asc(workflowQueries.priority), asc(workflowQueries.createdAt))
+    const goldenQueries = goldenQueryRows.map((row) => row.query)
 
     const baseDomain = getEmailDomain()
     const protocol = isDev ? 'http' : 'https'
@@ -75,6 +119,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
     const result = {
       ...safeData,
+      customizations: {
+        ...(safeData.customizations ?? {}),
+        goldenQueries,
+      },
       chatUrl,
       hasPassword: !!password,
     }
@@ -178,7 +226,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (description !== undefined) updateData.description = description
       if (remarks !== undefined) updateData.remarks = remarks
       if (department !== undefined) updateData.department = department
-      if (customizations) updateData.customizations = customizations
+      const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
+      if (customizations) {
+        const { goldenQueries: _goldenQueries, ...restCustomizations } = customizations
+        updateData.customizations = restCustomizations
+      }
 
       if (authType) {
         updateData.authType = authType
@@ -214,6 +266,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       })
 
       await db.update(chat).set(updateData).where(eq(chat.id, chatId))
+
+      if (customizations?.goldenQueries) {
+        await replaceWorkflowQueries({
+          workflowId: workflowId || existingChat[0].workflowId,
+          userId: session.user.id,
+          queries: goldenQueries,
+        })
+      }
 
       const updatedIdentifier = identifier || existingChat[0].identifier
 
