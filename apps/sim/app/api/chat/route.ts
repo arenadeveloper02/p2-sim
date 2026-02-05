@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { chat } from '@sim/db/schema'
+import { chat, workflowQueries } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
@@ -29,6 +29,7 @@ const chatSchema = z.object({
     primaryColor: z.string(),
     welcomeMessage: z.string(),
     imageUrl: z.string().optional(),
+    goldenQueries: z.array(z.string()).optional(),
   }),
   authType: z.enum(['public', 'password', 'email', 'sso']).default('public'),
   password: z.string().optional(),
@@ -43,6 +44,37 @@ const chatSchema = z.object({
     .optional()
     .default([]),
 })
+
+const sanitizeGoldenQueries = (queries?: string[]) => {
+  if (!Array.isArray(queries)) return []
+  return queries.map((query) => query.trim()).filter((query) => query.length > 0)
+}
+
+async function replaceWorkflowQueries({
+  workflowId,
+  userId,
+  queries,
+}: {
+  workflowId: string
+  userId: string
+  queries: string[]
+}) {
+  await db.transaction(async (tx) => {
+    await tx.delete(workflowQueries).where(eq(workflowQueries.workflowId, workflowId))
+
+    if (queries.length === 0) return
+
+    await tx.insert(workflowQueries).values(
+      queries.map((query, index) => ({
+        id: uuidv4(),
+        userId,
+        workflowId,
+        query,
+        priority: index,
+      }))
+    )
+  })
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -165,6 +197,7 @@ export async function POST(request: NextRequest) {
         primaryColor: customizations?.primaryColor || 'var(--brand-primary-hover-hex)',
         welcomeMessage: customizations?.welcomeMessage || 'Hi there! How can I help you today?',
       }
+      const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
 
       // Determine chat ID - use existing if updating, generate new if creating
       let chatId: string
@@ -235,6 +268,14 @@ export async function POST(request: NextRequest) {
           outputConfigs,
           createdAt: new Date(),
           updatedAt: new Date(),
+        })
+      }
+
+      if (goldenQueries.length > 0 || customizations?.goldenQueries) {
+        await replaceWorkflowQueries({
+          workflowId,
+          userId: session.user.id,
+          queries: goldenQueries,
         })
       }
 

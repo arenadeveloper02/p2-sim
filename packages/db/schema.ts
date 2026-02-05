@@ -852,6 +852,28 @@ export const chat = pgTable(
   }
 )
 
+export const workflowQueries = pgTable(
+  'workflow_queries',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    query: text('query').notNull(),
+    priority: integer('priority').notNull().default(0),
+    deleted: boolean('deleted').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workflowIdIdx: index('workflow_queries_workflow_id_idx').on(table.workflowId),
+    userIdIdx: index('workflow_queries_user_id_idx').on(table.userId),
+  })
+)
+
 export const form = pgTable(
   'form',
   {
