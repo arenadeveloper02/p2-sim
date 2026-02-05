@@ -19,6 +19,7 @@ import {
   type ChatMessage,
   ChatMessageContainer,
   EmailAuth,
+  GoldenQueriesModal,
   PasswordAuth,
   SSOAuth,
   VoiceInterface,
@@ -40,6 +41,7 @@ interface ChatConfig {
     imageUrl?: string
     welcomeMessage?: string
     headerText?: string
+    goldenQueries?: Array<{ id?: string; query: string }>
   }
   authType?: 'public' | 'password' | 'email' | 'sso'
   outputConfigs?: Array<{ blockId: string; path?: string }>
@@ -159,6 +161,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const hasShownModalRef = useRef<boolean>(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
+  const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
+  const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
+  const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -169,6 +174,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [])
+
+  useEffect(() => {
+    const incoming = chatConfig?.customizations?.goldenQueries ?? []
+    const normalized = incoming.map((item: any) =>
+      typeof item === 'string' ? { query: item } : item
+    )
+    setGoldenQueries(normalized)
+  }, [chatConfig?.customizations?.goldenQueries])
 
   const scrollToMessage = useCallback(
     (messageId: string, scrollToShowOnlyMessage = false) => {
@@ -640,6 +653,48 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }
 
+  const handleGoldenQuerySelect = useCallback(
+    (query: string) => {
+      setIsGoldenQueriesOpen(false)
+      void handleSendMessage(query)
+    },
+    [handleSendMessage]
+  )
+
+  const handleSaveGoldenQueries = useCallback(
+    async (nextQueries: Array<{ id?: string; query: string }>, mode: 'hard' | 'soft') => {
+      if (!identifier) {
+        throw new Error('No chat identifier available')
+      }
+
+      setIsGoldenQueriesSaving(true)
+
+      try {
+        const response = await fetch(`/api/chat/${identifier}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({ goldenQueries: nextQueries, deleteMode: mode }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || 'Failed to save golden queries')
+        }
+
+        setGoldenQueries(nextQueries)
+      } catch (error: any) {
+        logger.error('Error saving golden queries:', error)
+        throw error
+      } finally {
+        setIsGoldenQueriesSaving(false)
+      }
+    },
+    [identifier]
+  )
+
   useEffect(() => {
     return () => {
       stopAudio()
@@ -881,6 +936,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }, [updateUrlChatId, chatConfig?.inputFormat])
 
+  const handleViewGoldenQueries = useCallback(() => {
+    setIsGoldenQueriesOpen(true)
+  }, [])
+
   if (isAutoLoginInProgress) {
     return (
       <div className='fixed inset-0 z-[110] flex items-center justify-center bg-background'>
@@ -954,6 +1013,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         isStreaming={isStreamingResponse || isLoading}
         showReRun={customFields.length > 0}
         onReRun={handleRerun}
+        onViewGoldenQueries={handleViewGoldenQueries}
       />
 
       {/* Message Container component */}
@@ -992,6 +1052,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           initialValues={startBlockInputs}
         />
       )}
+
+      <GoldenQueriesModal
+        open={isGoldenQueriesOpen}
+        onOpenChange={setIsGoldenQueriesOpen}
+        queries={goldenQueries}
+        onSelectQuery={handleGoldenQuerySelect}
+        onSaveQueries={handleSaveGoldenQueries}
+        disabled={isStreamingResponse || isLoading || isGoldenQueriesSaving}
+      />
     </div>
   )
 }
