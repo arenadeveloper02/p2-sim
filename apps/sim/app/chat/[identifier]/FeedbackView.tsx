@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createLogger } from '@sim/logger'
 import { Tooltip } from '@/components/emcn'
@@ -89,7 +89,7 @@ const getFeedbackTags = (item: FeedbackItem) => {
   if (outOfDate) tags.push({ label: 'Out of Date', color: 'bg-yellow-100 text-yellow-800' })
   if (tooLong) tags.push({ label: 'Too Long', color: 'bg-purple-100 text-purple-800' })
   if (tooShort) tags.push({ label: 'Too Short', color: 'bg-blue-100 text-blue-800' })
-  if (liked === true) tags.push({ label: 'Liked', color: 'bg-green-100 text-green-800' })
+  // if (liked === true) tags.push({ label: 'Liked', color: 'bg-green-100 text-green-800' })
 
   return { tags, comment }
 }
@@ -125,7 +125,7 @@ export function FeedbackView({
   return (
     <div className='flex h-full w-full flex-col overflow-hidden'>
       {/* Header */}
-      <div className='flex items-center gap-4 border-b border-gray-200 bg-[#F3F8FE] px-6 py-4'>
+      <div className='bg-[#F3F8FE] border-b border-gray-200 flex gap-4 items-center px-6 py-4'>
         <Button variant='ghost' size='icon' className='h-8 w-8' onClick={onBack}>
           <ArrowLeft className='h-4 w-4' />
         </Button>
@@ -156,7 +156,7 @@ export function FeedbackView({
                   >
                     {/* Timestamp and Author */}
                     {timestamp && (
-                      <div className='flex items-center justify-between border-b border-gray-100 mb-4 pb-3'>
+                      <div className='border-b border-gray-100 flex items-center justify-between mb-4 pb-3'>
                         <div className='text-gray-600 text-sm'>{formatDate(timestamp)}</div>
                         {author && <div className='text-gray-600 text-sm'>Author: {author}</div>}
                       </div>
@@ -189,12 +189,34 @@ export function FeedbackView({
                     {/* Feedback */}
                     {(feedbackTags.length > 0 || comment) && (
                       <div>
-                        <div className='mb-2 font-semibold text-gray-700 text-sm'>Feedback</div>
+                        <div className='mb-2 flex items-center gap-2 font-semibold text-gray-700 text-sm'>
+                          <span>Feedback</span>
+                          {(() => {
+                            const liked = item.feedback?.liked ?? item.liked
+                            if (liked === true) {
+                              return (
+                                <span className='flex font-medium gap-1 items-center text-green-700 text-xs'>
+                                  <ThumbsUp className='h-3 w-3' />
+                                  Liked
+                                </span>
+                              )
+                            }
+                            if (liked === false) {
+                              return (
+                                <span className='flex font-medium gap-1 items-center text-red-700 text-xs'>
+                                  <ThumbsDown className='h-3 w-3' />
+                                  Disliked
+                                </span>
+                              )
+                            }
+                            return null
+                          })()}
+                        </div>
                         <div className='flex flex-wrap gap-2'>
                           {feedbackTags.map((tag, tagIndex) => (
                             <span
                               key={tagIndex}
-                              className={`rounded-full px-3 py-1 text-xs font-medium ${tag.color}`}
+                              className={`font-medium px-3 py-1 rounded-full text-xs ${tag.color}`}
                             >
                               {tag.label}
                             </span>
