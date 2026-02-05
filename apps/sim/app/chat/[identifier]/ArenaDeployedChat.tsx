@@ -35,8 +35,6 @@ import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowI
 import { ArenaChatHeader } from '../components/header/arenaHeader'
 import LeftNavThread from './leftNavThread'
 import { FeedbackView } from './FeedbackView'
-import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
-import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('ChatClient')
 
@@ -184,6 +182,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [feedbackData, setFeedbackData] = useState<any[]>([])
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
   const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const [feedbackPage, setFeedbackPage] = useState(1)
+  const [feedbackPageSize] = useState(10)
+  const [feedbackTotalPages, setFeedbackTotalPages] = useState(1)
+  const [feedbackTotalCount, setFeedbackTotalCount] = useState(0)
   const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
   const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
   const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
@@ -1070,76 +1072,78 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     })
   }, [updateUrlChatId, chatConfig?.inputFormat])
 
-  const handleViewFeedback = useCallback(async () => {
-    if (!identifier) {
-      logger.error('No workflow ID available for feedback')
-      return
-    }
-
-    setIsFeedbackLoading(true)
-    setFeedbackError(null)
-    setShowFeedbackView(true)
-
-    try {
-      const arenaToken = await getArenaToken()
-      if (!arenaToken) {
-        throw new Error('Failed to get Arena token')
+  const fetchFeedbackPage = useCallback(
+    async (page: number) => {
+      if (!identifier) {
+        logger.error('No workflow ID available for feedback')
+        return
       }
 
-      const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
-      if (!arenaBackendBaseUrl) {
-        throw new Error('Arena backend base URL not configured')
-      }
+      setIsFeedbackLoading(true)
+      setFeedbackError(null)
 
-      const url = `${arenaBackendBaseUrl}/sol/v1/agentic/feedback?pageSize=10&page=1&workflowId=${identifier}`
-      
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          authorisation: arenaToken,
-        },
-      })
+      try {
+        const url = `/api/chat/feedback/workflow/${identifier}?pageSize=${feedbackPageSize}&page=${page}`
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        logger.warn('Feedback request failed', {
-          status: response.status,
-          body: errorText,
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
         })
-        throw new Error(`Failed to fetch feedback: ${response.status} ${errorText}`)
-      }
 
-      const data = await response.json()
-      
-      // Transform the API response to match FeedbackView interface
-      // Handle different response formats: array, object with data/items/content property
-      let feedbackItems: any[] = []
-      
-      if (Array.isArray(data)) {
-        feedbackItems = data
-      } else if (data.data && Array.isArray(data.data)) {
-        feedbackItems = data.data
-      } else if (data.items && Array.isArray(data.items)) {
-        feedbackItems = data.items
-      } else if (data.content && Array.isArray(data.content)) {
-        feedbackItems = data.content
-      } else if (data.feedback && Array.isArray(data.feedback)) {
-        feedbackItems = data.feedback
-      } else if (typeof data === 'object' && Object.keys(data).length > 0) {
-        // If it's a single object, wrap it in an array
-        feedbackItems = [data]
+        if (!response.ok) {
+          const errorText = await response.text()
+          logger.warn('Feedback request failed', {
+            status: response.status,
+            body: errorText,
+          })
+          throw new Error(`Failed to fetch feedback: ${response.status} ${errorText}`)
+        }
+
+        const data = await response.json()
+
+        let feedbackItems: any[] = []
+
+        if (Array.isArray(data)) {
+          feedbackItems = data
+        } else if (data.feedback && Array.isArray(data.feedback)) {
+          feedbackItems = data.feedback
+        } else if (data.data && Array.isArray(data.data)) {
+          feedbackItems = data.data
+        } else if (data.items && Array.isArray(data.items)) {
+          feedbackItems = data.items
+        } else if (data.content && Array.isArray(data.content)) {
+          feedbackItems = data.content
+        } else if (typeof data === 'object' && Object.keys(data).length > 0) {
+          feedbackItems = [data]
+        }
+
+        const pagination = data?.pagination
+        const totalCount = pagination?.totalCount ?? feedbackItems.length
+        const totalPages =
+          pagination?.totalPages ?? Math.max(1, Math.ceil(totalCount / feedbackPageSize))
+
+        logger.info('Fetched feedback items:', { count: feedbackItems.length })
+        setFeedbackData(feedbackItems)
+        setFeedbackPage(page)
+        setFeedbackTotalCount(totalCount)
+        setFeedbackTotalPages(totalPages)
+      } catch (err: any) {
+        logger.error('Error fetching feedback:', err)
+        setFeedbackError('Some thing went wrong while fetching feed back')
+      } finally {
+        setIsFeedbackLoading(false)
       }
-      
-      logger.info('Fetched feedback items:', { count: feedbackItems.length })
-      setFeedbackData(feedbackItems)
-    } catch (err: any) {
-      logger.error('Error fetching feedback:', err)
-      setFeedbackError('Some thing went wrong while fetching feed back')
-    } finally {
-      setIsFeedbackLoading(false)
-    }
-  }, [identifier])
+    },
+    [identifier, feedbackPageSize]
+  )
+
+  const handleViewFeedback = useCallback(() => {
+    setShowFeedbackView(true)
+    setFeedbackPage(1)
+    fetchFeedbackPage(1)
+  }, [fetchFeedbackPage])
 
   const handleViewGoldenQueries = useCallback(() => {
     setIsGoldenQueriesOpen(true)
@@ -1270,6 +1274,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             isLoading={isFeedbackLoading}
             error={feedbackError}
             workflowTitle={chatConfig?.title}
+            page={feedbackPage}
+            pageSize={feedbackPageSize}
+            totalPages={feedbackTotalPages}
+            totalCount={feedbackTotalCount}
+            onPageChange={fetchFeedbackPage}
             onBack={handleBackFromFeedback}
           />
         </div>

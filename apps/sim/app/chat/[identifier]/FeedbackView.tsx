@@ -48,6 +48,11 @@ interface FeedbackViewProps {
   isLoading: boolean
   error: string | null
   workflowTitle?: string
+  page: number
+  pageSize: number
+  totalPages: number
+  totalCount: number
+  onPageChange: (page: number) => void
   onBack: () => void
 }
 
@@ -68,27 +73,39 @@ const formatDate = (dateString: string) => {
 
 const getFeedbackTags = (item: FeedbackItem) => {
   const tags: Array<{ label: string; color: string }> = []
-  
+
   // Check feedback object first, then top-level fields
   const inAccurate = item.feedback?.inAccurate ?? item.inAccurate
-  const inComplete = item.feedback?.inComplete ?? item.feedback?.incomplete ?? item.inComplete ?? item.incomplete
+  const inComplete =
+    item.feedback?.inComplete ?? item.feedback?.incomplete ?? item.inComplete ?? item.incomplete
   const outOfDate = item.feedback?.outOfDate ?? item.outOfDate
   const tooLong = item.feedback?.tooLong ?? item.tooLong
   const tooShort = item.feedback?.tooShort ?? item.tooShort
   const liked = item.feedback?.liked ?? item.liked
   const comment = item.feedback?.comment ?? item.comment
-  
+
   if (inAccurate) tags.push({ label: 'Inaccurate', color: 'bg-red-100 text-red-800' })
   if (inComplete) tags.push({ label: 'Incomplete', color: 'bg-orange-100 text-orange-800' })
   if (outOfDate) tags.push({ label: 'Out of Date', color: 'bg-yellow-100 text-yellow-800' })
   if (tooLong) tags.push({ label: 'Too Long', color: 'bg-purple-100 text-purple-800' })
   if (tooShort) tags.push({ label: 'Too Short', color: 'bg-blue-100 text-blue-800' })
   if (liked === true) tags.push({ label: 'Liked', color: 'bg-green-100 text-green-800' })
-  
+
   return { tags, comment }
 }
 
-export function FeedbackView({ feedbackData, isLoading, error, workflowTitle, onBack }: FeedbackViewProps) {
+export function FeedbackView({
+  feedbackData,
+  isLoading,
+  error,
+  workflowTitle,
+  page,
+  pageSize,
+  totalPages,
+  totalCount,
+  onPageChange,
+  onBack,
+}: FeedbackViewProps) {
   if (isLoading) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
@@ -108,18 +125,11 @@ export function FeedbackView({ feedbackData, isLoading, error, workflowTitle, on
   return (
     <div className='flex h-full w-full flex-col overflow-hidden'>
       {/* Header */}
-      < div className='flex items-center gap-4 border-b border-gray-200 bg-[#F3F8FE] px-6 py-4'>
-        <Button
-          variant='ghost'
-          size='icon'
-          className='h-8 w-8'
-          onClick={onBack}
-        >
+      <div className='flex items-center gap-4 border-b border-gray-200 bg-[#F3F8FE] px-6 py-4'>
+        <Button variant='ghost' size='icon' className='h-8 w-8' onClick={onBack}>
           <ArrowLeft className='h-4 w-4' />
         </Button>
-        <h1 className='text-base font-semibold text-gray-900'>
-          {'BACK'}
-        </h1>
+        <h1 className='font-semibold text-base text-gray-900'>{'BACK'}</h1>
       </div>
 
       {/* Content */}
@@ -132,85 +142,104 @@ export function FeedbackView({ feedbackData, isLoading, error, workflowTitle, on
               </div>
             ) : (
               feedbackData.map((item, index) => {
-              const { tags: feedbackTags, comment } = getFeedbackTags(item)
-              const itemId = item.executionId || item.id || `feedback-${index}`
-              const timestamp = item.timestamp || item.createdAt || item.updatedAt || ''
-              const author = item.author || item.userEmail || item.userId || 'Unknown'
-              const prompt = item.userPrompt || item.prompt || item.userQuery || ''
-              const response = item.response || item.agentResponse || ''
-              
-              return (
-                <div
-                  key={itemId}
-                  className='rounded-lg border border-gray-200 bg-white p-6 shadow-sm'
-                >
-                  {/* Timestamp and Author */}
-                  {timestamp && (
-                    <div className='mb-4 flex items-center justify-between border-b border-gray-100 pb-3'>
-                      <div className='text-gray-600 text-sm'>
-                        {formatDate(timestamp)}
-                      </div>
-                      {author && (
-                        <div className='text-gray-600 text-sm'>
-                          Author: {author}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                const { tags: feedbackTags, comment } = getFeedbackTags(item)
+                const itemId = item.executionId || item.id || `feedback-${index}`
+                const timestamp = item.timestamp || item.createdAt || item.updatedAt || ''
+                const author = item.author || item.userEmail || item.userId || 'Unknown'
+                const prompt = item.userPrompt || item.prompt || item.userQuery || ''
+                const response = item.response || item.agentResponse || ''
 
-                  {/* Prompt */}
-                  {prompt && (
-                    <div className='mb-4'>
-                      <div className='mb-2 font-semibold text-gray-700 text-sm'>Prompt</div>
-                      <div className='rounded-md bg-[#F3F8FE] px-4 py-3'>
-                        <div className='text-gray-900 text-sm'>
-                          <MarkdownRenderer content={prompt} />
-                        </div>
+                return (
+                  <div
+                    key={itemId}
+                    className='rounded-lg border border-gray-200 bg-white p-6 shadow-sm'
+                  >
+                    {/* Timestamp and Author */}
+                    {timestamp && (
+                      <div className='flex items-center justify-between border-b border-gray-100 mb-4 pb-3'>
+                        <div className='text-gray-600 text-sm'>{formatDate(timestamp)}</div>
+                        {author && <div className='text-gray-600 text-sm'>Author: {author}</div>}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Response */}
-                  {response && (
-                    <div className='mb-4'>
-                      <div className='mb-2 font-semibold text-gray-700 text-sm'>Response</div>
-                      <div className='rounded-md bg-[#F3F8FE] px-4 py-3'>
-                        <div className='text-gray-900 text-sm'>
-                          <MarkdownRenderer content={response} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Feedback */}
-                  {(feedbackTags.length > 0 || comment) && (
-                    <div>
-                      <div className='mb-2 font-semibold text-gray-700 text-sm'>Feedback</div>
-                      <div className='flex flex-wrap gap-2'>
-                        {feedbackTags.map((tag, tagIndex) => (
-                          <span
-                            key={tagIndex}
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${tag.color}`}
-                          >
-                            {tag.label}
-                          </span>
-                        ))}
-                        {comment && (
-                          <div className='mt-2 w-full rounded-md bg-[#F3F8FE] px-4 py-2'>
-                            <div className='text-gray-700 text-sm'>
-                              <MarkdownRenderer content={comment} />
-                            </div>
+                    {/* Prompt */}
+                    {prompt && (
+                      <div className='mb-4'>
+                        <div className='mb-2 font-semibold text-gray-700 text-sm'>Prompt</div>
+                        <div className='rounded-md bg-[#F3F8FE] px-4 py-3'>
+                          <div className='text-gray-900 text-sm'>
+                            <MarkdownRenderer content={prompt} />
                           </div>
-                        )}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })
+                    )}
+
+                    {/* Response */}
+                    {response && (
+                      <div className='mb-4'>
+                        <div className='mb-2 font-semibold text-gray-700 text-sm'>Response</div>
+                        <div className='rounded-md bg-[#F3F8FE] px-4 py-3'>
+                          <div className='text-gray-900 text-sm'>
+                            <MarkdownRenderer content={response} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Feedback */}
+                    {(feedbackTags.length > 0 || comment) && (
+                      <div>
+                        <div className='mb-2 font-semibold text-gray-700 text-sm'>Feedback</div>
+                        <div className='flex flex-wrap gap-2'>
+                          {feedbackTags.map((tag, tagIndex) => (
+                            <span
+                              key={tagIndex}
+                              className={`rounded-full px-3 py-1 text-xs font-medium ${tag.color}`}
+                            >
+                              {tag.label}
+                            </span>
+                          ))}
+                          {comment && (
+                            <div className='mt-2 w-full rounded-md bg-[#F3F8FE] px-4 py-2'>
+                              <div className='text-gray-700 text-sm'>
+                                <MarkdownRenderer content={comment} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })
             )}
           </div>
         </Tooltip.Provider>
+        {feedbackData.length > 0 && (
+          <div className='mx-auto mt-6 flex max-w-7xl items-center justify-between'>
+            <div className='text-gray-600 text-sm'>
+              Page {page} of {Math.max(totalPages, 1)} • {totalCount} items
+            </div>
+            <div className='flex items-center gap-2'>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => onPageChange(Math.max(page - 1, 1))}
+                disabled={isLoading || page <= 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => onPageChange(Math.min(page + 1, Math.max(totalPages, 1)))}
+                disabled={isLoading || page >= Math.max(totalPages, 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
