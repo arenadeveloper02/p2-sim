@@ -659,10 +659,12 @@ async function executeToolRequest(
         throw new Error(`Invalid tool URL: ${urlValidation.error}`)
       }
 
+      const requestTimeout = tool.request.timeout ?? 30000
       const secureResponse = await secureFetchWithPinnedIP(fullUrl, urlValidation.resolvedIP!, {
         method: requestParams.method,
         headers: headersRecord,
         body: requestParams.body ?? undefined,
+        timeout: requestTimeout,
       })
 
       const responseHeaders = new Headers(secureResponse.headers.toRecord())
@@ -682,6 +684,12 @@ async function executeToolRequest(
           headers: responseHeaders,
         })
       }
+
+      contentType = response.headers.get('content-type') || ''
+      hasTransformResponse = Boolean(tool.transformResponse)
+      prefersTextTransform =
+        hasTransformResponse &&
+        (toolId === 'semrush_query' || !contentType.toLowerCase().includes('application/json'))
     }
 
     // For non-OK responses, attempt JSON first; if parsing fails, fall back to text so APIs like Semrush

@@ -55,6 +55,14 @@ export class GenericBlockHandler implements BlockHandler {
           }
         }
       }
+
+      if (
+        blockType === 'google_drive' &&
+        finalInputs.operation === 'search' &&
+        (finalInputs.searchFolderId === '' || finalInputs.searchFolderId == null)
+      ) {
+        finalInputs.searchFolderId = undefined
+      }
     }
 
     try {

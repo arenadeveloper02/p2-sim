@@ -1,9 +1,23 @@
 // file: utils/isBase64.ts
 
+import { useEffect, useState } from 'react'
+
 /**
  * Common base64-encoded image headers
  */
 const COMMON_IMAGE_HEADERS = ['iVBORw0KGgo', '/9j/', 'R0lGODlh', 'UklGR'] as const
+
+/**
+ * Base64 length above which we use Blob URL instead of data URL to avoid
+ * browser limits (~2MB) and DOM issues with 2K/4K images.
+ */
+const BLOB_URL_BASE64_LENGTH_THRESHOLD = 500 * 1024 // 500KB chars ≈ 375KB binary
+
+/**
+ * Base64 length above which we do not attempt to decode (risk of freeze/OOM).
+ * ~8MB base64 ≈ 6MB binary; we show a message and suggest lower resolution.
+ */
+const MAX_BASE64_DISPLAY_LENGTH = 8 * 1024 * 1024 // 8MB chars
 
 /**
  * Maximum size for base64 image data (50KB)
@@ -100,6 +114,102 @@ export function isBase64(str: string | any): boolean {
   return true
 }
 
+function getMimeFromBase64(cleanBase64: string): string {
+  if (cleanBase64.startsWith('/9j/')) return 'image/jpeg'
+  if (cleanBase64.startsWith('R0lGODlh')) return 'image/gif'
+  if (cleanBase64.startsWith('UklGR')) return 'image/webp'
+  return 'image/png'
+}
+
+/**
+ * Renders large base64 images via Blob URL to avoid data URL length limits
+ * (browsers often fail with data URLs > ~2MB; 2K/4K images exceed this).
+ * Decoding is deferred so "Loading image…" shows and the UI stays responsive.
+ * Images over MAX_BASE64_DISPLAY_LENGTH (8MB base64) are not decoded to avoid freeze/OOM.
+ */
+function Base64ImageWithBlobUrl({ cleanImageData }: { cleanImageData: string }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (cleanImageData.length > MAX_BASE64_DISPLAY_LENGTH) {
+      const mb = (cleanImageData.length / (1024 * 1024)).toFixed(1)
+      setError(
+        `Image too large to display in browser (${mb} MB base64). please download the image to view it.`
+      )
+      return
+    }
+
+    let url: string | null = null
+    let cancelled = false
+
+    const decodeAndCreateUrl = () => {
+      try {
+        const binaryString = atob(cleanImageData)
+        if (cancelled) return
+        const bytes = new Uint8Array(binaryString.length)
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i)
+        }
+        if (cancelled) return
+        const mime = getMimeFromBase64(cleanImageData)
+        const blob = new Blob([bytes], { type: mime })
+        url = URL.createObjectURL(blob)
+        if (!cancelled) {
+          setObjectUrl(url)
+          setError(null)
+        } else if (url) {
+          URL.revokeObjectURL(url)
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Failed to decode image')
+        }
+      }
+    }
+
+    const timeoutId = setTimeout(decodeAndCreateUrl, 0)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timeoutId)
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [cleanImageData])
+
+  if (error) {
+    return (
+      <div className='my-2 w-full'>
+        <div className='rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200'>
+          <p className='text-sm'>⚠️ {error}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!objectUrl) {
+    return (
+      <div className='my-2 flex h-[200px] w-full items-center justify-center rounded-lg border bg-[var(--surface-5)]'>
+        <span className='text-muted-foreground text-sm'>Loading image…</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className='my-2 w-full'>
+      <img
+        src={objectUrl}
+        alt='Generated image'
+        className='h-auto max-w-full rounded-lg border'
+        style={{ maxHeight: '500px', objectFit: 'contain' }}
+        onError={(e) => {
+          console.error('Image failed to load (blob URL)', { error: e })
+        }}
+      />
+    </div>
+  )
+}
+
 export const renderBs64Img = ({
   isBase64,
   imageData,
@@ -110,19 +220,25 @@ export const renderBs64Img = ({
   imageUrl?: string
 }) => {
   try {
-    // Remove all whitespace (spaces, newlines, tabs) from base64 data
     const cleanImageData = typeof imageData === 'string' ? imageData.replace(/\s+/g, '') : ''
 
     if (!cleanImageData || cleanImageData.length === 0) {
       throw new Error('No image data provided')
     }
 
+    if (isBase64 && cleanImageData.length > BLOB_URL_BASE64_LENGTH_THRESHOLD) {
+      return (
+        <div className='my-2 w-full'>
+          <Base64ImageWithBlobUrl cleanImageData={cleanImageData} />
+        </div>
+      )
+    }
+
     const imageSrc =
-      isBase64 && cleanImageData && cleanImageData.length > 0
-        ? `data:image/png;base64,${cleanImageData}`
+      isBase64 && cleanImageData.length > 0
+        ? `data:image/${getMimeFromBase64(cleanImageData).replace('image/', '')};base64,${cleanImageData}`
         : imageUrl || ''
 
-    // Validate that we have a valid image source
     if (!imageSrc) {
       throw new Error('No valid image source provided')
     }
@@ -141,9 +257,6 @@ export const renderBs64Img = ({
               preview: imageSrc.substring(0, 100),
             })
           }}
-          onLoad={() => {
-            console.log('Image loaded successfully')
-          }}
         />
       </div>
     )
@@ -153,7 +266,6 @@ export const renderBs64Img = ({
       isBase64,
     })
 
-    // Return a fallback error message instead of crashing
     return (
       <div className='my-2 w-full'>
         <div className='rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>
@@ -211,6 +323,9 @@ export const downloadImage = async (isBase64?: boolean, imageData?: string, imag
  * @param content - Content string that may contain text and base64 images
  * @returns Object with textParts and base64Images arrays
  */
+/** Length above which we treat content as single base64 image without heavy regex (avoids O(n) on multi-MB strings). */
+const LARGE_PURE_BASE64_LENGTH = 100 * 1024 // 100KB
+
 export function extractBase64Image(content: string): {
   textParts: string[]
   base64Images: string[]
@@ -219,10 +334,17 @@ export function extractBase64Image(content: string): {
     return { textParts: [], base64Images: [] }
   }
 
+  const cleanedContent = content.replace(/\s+/g, '')
+  if (cleanedContent.length > LARGE_PURE_BASE64_LENGTH) {
+    const startsWithImageHeader = COMMON_IMAGE_HEADERS.some((h) => cleanedContent.startsWith(h))
+    if (startsWithImageHeader) {
+      return { textParts: [], base64Images: [cleanedContent] }
+    }
+  }
+
   const textParts: string[] = []
   const base64Images: string[] = []
 
-  // Split by common separators (newlines, double newlines)
   const parts = content.split(/\n\n+/)
 
   for (const part of parts) {

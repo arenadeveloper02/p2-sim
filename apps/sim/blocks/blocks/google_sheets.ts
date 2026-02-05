@@ -388,7 +388,10 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
       required: true,
       dependsOn: { all: ['credential'], any: ['spreadsheetId', 'manualSpreadsheetId'] },
       mode: 'basic',
-      condition: { field: 'operation', value: ['read', 'write', 'update', 'append', 'clear'] },
+      condition: {
+        field: 'operation',
+        value: ['read', 'write', 'update', 'append', 'clear'],
+      },
     },
     // Manual Sheet Name (advanced mode) - for operations that need sheet name
     {
@@ -400,7 +403,10 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
       required: true,
       dependsOn: ['credential'],
       mode: 'advanced',
-      condition: { field: 'operation', value: ['read', 'write', 'update', 'append', 'clear'] },
+      condition: {
+        field: 'operation',
+        value: ['read', 'write', 'update', 'append', 'clear'],
+      },
     },
     // Cell Range (optional for read/write/update/clear)
     {
