@@ -3,12 +3,8 @@
  * Fetches accounts from database instead of hardcoded constants
  */
 
-import { Pool } from 'pg'
-
-// Database connection pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-})
+import { db } from '@sim/db'
+import { sql } from 'drizzle-orm'
 
 export interface ChannelAccount {
   id: string
@@ -23,17 +19,20 @@ export interface ChannelAccount {
  */
 export async function getChannelAccounts(type: 'facebook' | 'bing' | 'google'): Promise<Record<string, ChannelAccount>> {
   try {
-    const result = await pool.query(
-      'SELECT account_id, account_name FROM channel_accounts WHERE account_type = $1 ORDER BY account_name',
-      [type]
-    )
+    // Use raw SQL query since channel_accounts table doesn't exist in schema yet
+    const result = await db.execute(sql`
+      SELECT account_id, account_name 
+      FROM channel_accounts 
+      WHERE account_type = ${type} 
+      ORDER BY account_name
+    `)
     
     // Convert to same format as constants (key: { id, name })
     const accounts: Record<string, ChannelAccount> = {}
     
-    for (const row of result.rows) {
+    for (const row of result as any[]) {
       // Create a friendly key from account_name (lowercase, replace spaces/special chars with underscore)
-      const key = row.account_name
+      const key = String(row.account_name)
         .toLowerCase()
         .replace(/[^a-zA-Z0-9\s]/g, '') // Remove special chars except spaces
         .replace(/\s+/g, '_') // Replace spaces with underscores
@@ -41,8 +40,8 @@ export async function getChannelAccounts(type: 'facebook' | 'bing' | 'google'): 
         .replace(/^_|_$/g, '') // Remove leading/trailing underscores
       
       accounts[key] = {
-        id: row.account_id,
-        name: row.account_name
+        id: String(row.account_id),
+        name: String(row.account_name)
       }
     }
     

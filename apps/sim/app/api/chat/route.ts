@@ -268,7 +268,7 @@ export async function POST(request: NextRequest) {
       try {
         const { PlatformEvents } = await import('@/lib/core/telemetry')
         PlatformEvents.chatDeployed({
-          chatId: id,
+          chatId: chatId,
           workflowId,
           authType,
           hasOutputConfigs: outputConfigs.length > 0,
