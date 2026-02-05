@@ -85,7 +85,7 @@ export class AgentBlockHandler implements BlockHandler {
     const filteredInputs = {
       ...inputs,
       tools: filteredTools,
-      memoryType: memoryType as 'conversation' | 'sliding_window' | 'sliding_window_tokens',
+      memoryType: memoryType as 'conversation',
       conversationId: conversationId,
     }
 
@@ -151,6 +151,9 @@ export class AgentBlockHandler implements BlockHandler {
 
     const messages = await this.buildMessages(ctx, filteredInputs, block.id)
 
+    // Extract last user message for memory persistence
+    const lastUserMessage = messages?.filter((m) => m.role === 'user').slice(-1)[0] || null
+
     const providerRequest = this.buildProviderRequest({
       ctx,
       providerId,
@@ -170,14 +173,21 @@ export class AgentBlockHandler implements BlockHandler {
           ctx,
           filteredInputs,
           result as StreamingExecution,
-          block.id
+          block.id,
+          lastUserMessage
         )
       }
       return result
     }
 
     if (filteredInputs.memoryType) {
-      await this.persistResponseToMemory(ctx, filteredInputs, result as BlockOutput, block.id)
+      await this.persistResponseToMemory(
+        ctx,
+        filteredInputs,
+        result as BlockOutput,
+        block.id,
+        lastUserMessage
+      )
     }
 
     return result
@@ -1136,7 +1146,7 @@ export class AgentBlockHandler implements BlockHandler {
         const userMessages = messages.filter((m) => m.role === 'user')
         const lastUserMessage = userMessages[userMessages.length - 1]
         if (lastUserMessage) {
-          await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId)
+          await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId, null)
         }
       }
     }
@@ -1147,7 +1157,7 @@ export class AgentBlockHandler implements BlockHandler {
       const userMessages = conversationMessages.filter((m) => m.role === 'user')
       const lastUserMessage = userMessages[userMessages.length - 1]
       if (lastUserMessage) {
-        await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId)
+        await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId, null)
       }
     }
 
@@ -1498,10 +1508,17 @@ export class AgentBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     inputs: AgentInputs,
     streamingExec: StreamingExecution,
-    blockId: string
+    blockId: string,
+    lastUserMessage: Message | null
   ): StreamingExecution {
     return {
-      stream: memoryService.wrapStreamForPersistence(streamingExec.stream, ctx, inputs, blockId),
+      stream: memoryService.wrapStreamForPersistence(
+        streamingExec.stream,
+        ctx,
+        inputs,
+        blockId,
+        lastUserMessage
+      ),
       execution: streamingExec.execution,
     }
   }
@@ -1510,7 +1527,8 @@ export class AgentBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     inputs: AgentInputs,
     result: BlockOutput,
-    blockId: string
+    blockId: string,
+    lastUserMessage: Message | null
   ): Promise<void> {
     const content = (result as any)?.content
     if (!content || typeof content !== 'string') {
@@ -1518,7 +1536,13 @@ export class AgentBlockHandler implements BlockHandler {
     }
 
     try {
-      await memoryService.appendToMemory(ctx, inputs, { role: 'assistant', content }, blockId)
+      await memoryService.appendToMemory(
+        ctx,
+        inputs,
+        { role: 'assistant', content },
+        blockId,
+        lastUserMessage
+      )
       logger.debug('Persisted assistant response to memory', {
         workflowId: ctx.workflowId,
         conversationId: inputs.conversationId,

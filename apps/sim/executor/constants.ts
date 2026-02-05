@@ -202,8 +202,6 @@ export function extractCredentialSetId(value: string): string {
 }
 
 export const MEMORY = {
-  DEFAULT_SLIDING_WINDOW_SIZE: 10,
-  DEFAULT_SLIDING_WINDOW_TOKENS: 4000,
   CONTEXT_WINDOW_UTILIZATION: 0.9,
   MAX_CONVERSATION_ID_LENGTH: 255,
   MAX_MESSAGE_CONTENT_BYTES: 512 * 1024, // Increased from 100KB to 512KB for complex agent responses

@@ -670,14 +670,14 @@ export class BlockExecutor {
     ) {
       try {
         const { memoryService } = await import('@/executor/handlers/agent/memory')
-        const { Message } = await import('@/executor/handlers/agent/types')
+        const { Message } = await import('@/executor/handlers/agent/types').default
 
         const assistantMessage: Message = {
           role: 'assistant',
           content: fullContent,
         }
 
-        await memoryService.persistMemoryMessage(ctx, resolvedInputs, assistantMessage, blockId)
+        await memoryService.appendToMemory(ctx, resolvedInputs, assistantMessage, blockId, null)
 
         logger.debug('Persisted assistant response to memory from stream consumption', {
           workflowId: ctx.workflowId,

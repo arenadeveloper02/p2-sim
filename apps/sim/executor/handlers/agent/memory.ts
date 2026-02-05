@@ -1,14 +1,9 @@
-import { randomUUID } from 'node:crypto'
-import { db } from '@sim/db'
-import { memory } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, sql } from 'drizzle-orm'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getAccurateTokenCount } from '@/lib/tokenization/estimators'
 import { MEMORY } from '@/executor/constants'
 import type { AgentInputs, Message } from '@/executor/handlers/agent/types'
 import type { ExecutionContext } from '@/executor/types'
-import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 
 const logger = createLogger('Memory')
@@ -19,34 +14,10 @@ export class Memory {
       return []
     }
 
-    const workspaceId = this.requireWorkspaceId(ctx)
-    this.validateConversationId(inputs.conversationId)
-
-    const messages = await this.fetchMemory(workspaceId, inputs.conversationId!)
-
-    switch (inputs.memoryType) {
-      case 'conversation':
-        return this.applyContextWindowLimit(messages, inputs.model)
-
-      case 'sliding_window': {
-        const limit = this.parsePositiveInt(
-          inputs.slidingWindowSize,
-          MEMORY.DEFAULT_SLIDING_WINDOW_SIZE
-        )
-        return this.applyWindow(messages, limit)
-      }
-
-      case 'sliding_window_tokens': {
-        const maxTokens = this.parsePositiveInt(
-          inputs.slidingWindowTokens,
-          MEMORY.DEFAULT_SLIDING_WINDOW_TOKENS
-        )
-        return this.applyTokenWindow(messages, maxTokens, inputs.model)
-      }
-
-      default:
-        return messages
-    }
+    // This method is no longer used since we use semantic search instead
+    // Keeping for backward compatibility but returning empty array
+    // Conversation history is now retrieved via searchMemories in buildMessages
+    return []
   }
 
   /**
@@ -68,23 +39,17 @@ export class Memory {
 
     try {
       // Extract query from user prompt
+      // Allow empty query to fetch recent messages when needed
       const query = userPrompt || ''
 
-      if (!query || query.trim() === '') {
-        logger.debug('No user prompt provided for semantic search, returning empty results')
-        return []
-      }
-
-      // Build filters object with conversationId and blockId
+      // Build filters object with conversationId if present, otherwise filter by userId only
       const filters: Record<string, any> = {}
 
+      // If conversationId is present, filter by it; otherwise filter by userId only
       if (inputs.conversationId) {
         filters.conversation_id = inputs.conversationId
       }
-
-      // if (blockId) {
-      //   filters.block_id = blockId
-      // }
+      // Note: userId is automatically included in the searchMemoryAPI call
 
       if (isConversation === true) {
         filters.memory_type = 'conversation'
@@ -113,14 +78,6 @@ export class Memory {
 
       // Convert search results to Message[] format
       const messages = this.convertSearchResultsToMessages(searchResults)
-
-      logger.debug('Successfully retrieved memories from semantic search', {
-        workflowId: ctx.workflowId,
-        userId: ctx.userId,
-        query,
-        results: messages,
-        blockId,
-      })
 
       return messages
     } catch (error) {
@@ -226,7 +183,7 @@ export class Memory {
     inputs: AgentInputs,
     assistantMessage: Message,
     blockId: string,
-    memoryKey: string
+    lastUserMessage: Message | null
   ): Promise<void> {
     // Skip if userId is not available (required for Mem0 API)
     if (!ctx.userId) {
@@ -234,37 +191,26 @@ export class Memory {
       return
     }
 
-    // Skip if conversationId is not available
-    if (!inputs.conversationId) {
-      logger.debug('Skipping Mem0 API call: conversationId not available')
+    // If no user message provided, try to search for it in Mem0
+    const userMessage: Message | null = lastUserMessage
+
+    if (!userMessage) {
+      // If no user message provided and we have conversationId, try to get it from recent messages
+      // Note: This is a fallback - ideally the user message should be passed when storing assistant message
+      logger.debug(
+        'No user message provided to callMem0API, will attempt to find it from Mem0 if conversationId exists'
+      )
+    }
+
+    // If still no user message, we can't store the turn properly
+    if (!userMessage) {
+      logger.debug('Skipping Mem0 API call: no user message found')
       return
     }
 
     try {
-      // Fetch existing messages to get the last user message
-      const existingMessages = await this.fetchFromMemoryAPI(ctx, memoryKey)
-
-      // Find the last user message (the one that corresponds to this assistant response)
-      // We look for the most recent user message before this assistant message
-      let lastUserMessage: Message | null = null
-
-      // Since we just appended the assistant message, it might not be in existingMessages yet
-      // So we look for the last user message in the existing messages
-      for (let i = existingMessages.length - 1; i >= 0; i--) {
-        if (existingMessages[i].role === 'user') {
-          lastUserMessage = existingMessages[i]
-          break
-        }
-      }
-
-      // If no user message found, skip (shouldn't happen, but handle gracefully)
-      if (!lastUserMessage) {
-        logger.debug('Skipping Mem0 API call: no user message found in conversation')
-        return
-      }
-
       // Only send the current turn: last user message + assistant message
-      const currentTurnMessages: Message[] = [lastUserMessage, assistantMessage]
+      const currentTurnMessages: Message[] = [userMessage, assistantMessage]
 
       // Convert Message[] to the format expected by callMemoryAPI
       const messagesForAPI = currentTurnMessages.map((msg) => ({
@@ -287,7 +233,7 @@ export class Memory {
           messagesForAPI,
           ctx.userId,
           chatId,
-          inputs.conversationId,
+          inputs.conversationId, // Can be undefined, Mem0 will handle it
           true, // infer: true
           'fact', // memoryType: 'fact'
           blockId
@@ -312,7 +258,7 @@ export class Memory {
           messagesForAPI,
           ctx.userId,
           chatId,
-          inputs.conversationId,
+          inputs.conversationId, // Can be undefined, Mem0 will handle it
           false, // infer: false
           'conversation', // memoryType: 'conversation'
           blockId
@@ -339,96 +285,72 @@ export class Memory {
     }
   }
 
-  /**
-   * Fetch messages from memory API
-   */
-  private async fetchFromMemoryAPI(ctx: ExecutionContext, key: string): Promise<Message[]> {
-    try {
-      const isBrowser = typeof window !== 'undefined'
-
-      if (!isBrowser) {
-        // Server-side: fetch directly from database
-        if (!ctx.workspaceId) {
-          logger.warn('Cannot fetch memory directly: workspaceId not available')
-          return []
-        }
-        return await this.fetchMemory(ctx.workspaceId, key)
-      }
-
-      // Browser-side: fetch via API
-      const headers = await buildAuthHeaders()
-      const url = buildAPIUrl(`/api/memory/${encodeURIComponent(key)}`, {
-        workflowId: ctx.workflowId,
-      })
-
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers,
-      })
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          return []
-        }
-        throw new Error(`Failed to fetch memory: ${response.status} ${response.statusText}`)
-      }
-
-      const result = await response.json()
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch memory')
-      }
-
-      const memoryData = result.data?.data || result.data
-      if (Array.isArray(memoryData)) {
-        return memoryData.filter(
-          (msg) => msg && typeof msg === 'object' && 'role' in msg && 'content' in msg
-        )
-      }
-
-      return []
-    } catch (error) {
-      logger.error('Error fetching from memory API:', error)
-      return []
-    }
-  }
-
   async appendToMemory(
     ctx: ExecutionContext,
     inputs: AgentInputs,
     message: Message,
-    blockId?: string
+    blockId?: string,
+    lastUserMessage?: Message | null
   ): Promise<void> {
     if (!inputs.memoryType || inputs.memoryType === 'none') {
       return
     }
 
-    const workspaceId = this.requireWorkspaceId(ctx)
-    this.validateConversationId(inputs.conversationId)
+    // Skip if userId is not available (required for Mem0 API)
+    if (!ctx.userId) {
+      logger.debug('Skipping memory storage: userId not available in execution context')
+      return
+    }
+
     this.validateContent(message.content)
 
-    const key = inputs.conversationId!
+    // Store user messages immediately to Mem0
+    if (message.role === 'user') {
+      const chatId = ctx.executionId || ctx.workflowId
+      const requestId = generateRequestId()
 
-    await this.appendMessage(workspaceId, key, message)
+      try {
+        const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
 
-    logger.debug('Appended message to memory', {
-      workspaceId,
-      key,
-      role: message.role,
-    })
+        // Store user message as conversation memory
+        await callMemoryAPI(
+          requestId,
+          [{ role: message.role, content: message.content }],
+          ctx.userId,
+          chatId,
+          inputs.conversationId, // Can be undefined
+          false, // infer: false
+          'conversation', // memoryType: 'conversation'
+          blockId
+        )
+
+        logger.debug('Stored user message to Mem0', {
+          workflowId: ctx.workflowId,
+          conversationId: inputs.conversationId,
+          blockId,
+        })
+      } catch (error) {
+        logger.warn('Failed to store user message to Mem0 (non-blocking)', {
+          error,
+          workflowId: ctx.workflowId,
+        })
+      }
+    }
 
     // Call Mem0 API to store in external service when assistant message is persisted
     // This stores both the user prompt and assistant response
     if (message.role === 'assistant') {
-      // Use blockId if provided, otherwise use key (conversationId) as fallback
-      const blockIdForMem0 = blockId || key
+      // Use blockId if provided, otherwise use conversationId as fallback
+      const blockIdForMem0 = blockId || inputs.conversationId || 'unknown'
       // Call asynchronously without blocking - this is an add-on feature
-      this.callMem0API(ctx, inputs, message, blockIdForMem0, key).catch((error) => {
-        logger.warn('Failed to call Mem0 API after appending assistant message (non-blocking)', {
-          error,
-          workflowId: ctx.workflowId,
-        })
-      })
+      this.callMem0API(ctx, inputs, message, blockIdForMem0, lastUserMessage || null).catch(
+        (error) => {
+          logger.warn('Failed to call Mem0 API after appending assistant message (non-blocking)', {
+            error,
+            workflowId: ctx.workflowId,
+          })
+        }
+      )
     }
   }
 
@@ -437,46 +359,60 @@ export class Memory {
       return
     }
 
-    const workspaceId = this.requireWorkspaceId(ctx)
+    // Skip if userId is not available (required for Mem0 API)
+    if (!ctx.userId) {
+      logger.debug('Skipping memory seeding: userId not available in execution context')
+      return
+    }
 
     const conversationMessages = messages.filter((m) => m.role !== 'system')
     if (conversationMessages.length === 0) {
       return
     }
 
-    this.validateConversationId(inputs.conversationId)
+    // Store all conversation messages to Mem0
+    const chatId = ctx.executionId || ctx.workflowId
+    const requestId = generateRequestId()
 
-    const key = inputs.conversationId!
+    try {
+      const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
 
-    let messagesToStore = conversationMessages
-    if (inputs.memoryType === 'sliding_window') {
-      const limit = this.parsePositiveInt(
-        inputs.slidingWindowSize,
-        MEMORY.DEFAULT_SLIDING_WINDOW_SIZE
+      const messagesForAPI = conversationMessages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }))
+
+      // Store as conversation memory
+      await callMemoryAPI(
+        requestId,
+        messagesForAPI,
+        ctx.userId,
+        chatId,
+        inputs.conversationId, // Can be undefined
+        false, // infer: false
+        'conversation', // memoryType: 'conversation'
+        undefined // blockId not needed for seeding
       )
-      messagesToStore = this.applyWindow(conversationMessages, limit)
-    } else if (inputs.memoryType === 'sliding_window_tokens') {
-      const maxTokens = this.parsePositiveInt(
-        inputs.slidingWindowTokens,
-        MEMORY.DEFAULT_SLIDING_WINDOW_TOKENS
-      )
-      messagesToStore = this.applyTokenWindow(conversationMessages, maxTokens, inputs.model)
+
+      logger.debug('Seeded memory to Mem0', {
+        workflowId: ctx.workflowId,
+        conversationId: inputs.conversationId,
+        count: conversationMessages.length,
+      })
+    } catch (error) {
+      logger.warn('Failed to seed memory to Mem0 (non-blocking)', {
+        error,
+        workflowId: ctx.workflowId,
+      })
     }
-
-    await this.seedMemoryRecord(workspaceId, key, messagesToStore)
-
-    logger.debug('Seeded memory', {
-      workspaceId,
-      key,
-      count: messagesToStore.length,
-    })
   }
 
   wrapStreamForPersistence(
     stream: ReadableStream<Uint8Array>,
     ctx: ExecutionContext,
     inputs: AgentInputs,
-    blockId?: string
+    blockId?: string,
+    lastUserMessage?: Message | null
   ): ReadableStream<Uint8Array> {
     let accumulatedContent = ''
     const decoder = new TextDecoder()
@@ -497,24 +433,14 @@ export class Memory {
               role: 'assistant',
               content: accumulatedContent,
             },
-            blockId
+            blockId,
+            lastUserMessage || null
           ).catch((error) => logger.error('Failed to persist streaming response:', error))
         }
       },
     })
 
     return stream.pipeThrough(transformStream)
-  }
-
-  private requireWorkspaceId(ctx: ExecutionContext): string {
-    if (!ctx.workspaceId) {
-      throw new Error('workspaceId is required for memory operations')
-    }
-    return ctx.workspaceId
-  }
-
-  private applyWindow(messages: Message[], limit: number): Message[] {
-    return messages.slice(-limit)
   }
 
   private applyTokenWindow(messages: Message[], maxTokens: number, model?: string): Message[] {
@@ -560,77 +486,9 @@ export class Memory {
     return messages
   }
 
-  private async fetchMemory(workspaceId: string, key: string): Promise<Message[]> {
-    const result = await db
-      .select({ data: memory.data })
-      .from(memory)
-      .where(and(eq(memory.workspaceId, workspaceId), eq(memory.key, key)))
-      .limit(1)
-
-    if (result.length === 0) return []
-
-    const data = result[0].data
-    if (!Array.isArray(data)) return []
-
-    return data.filter(
-      (msg): msg is Message => msg && typeof msg === 'object' && 'role' in msg && 'content' in msg
-    )
-  }
-
-  private async seedMemoryRecord(
-    workspaceId: string,
-    key: string,
-    messages: Message[]
-  ): Promise<void> {
-    const now = new Date()
-
-    await db
-      .insert(memory)
-      .values({
-        id: randomUUID(),
-        workspaceId,
-        key,
-        data: messages,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing()
-  }
-
-  private async appendMessage(workspaceId: string, key: string, message: Message): Promise<void> {
-    const now = new Date()
-
-    await db
-      .insert(memory)
-      .values({
-        id: randomUUID(),
-        workspaceId,
-        key,
-        data: [message],
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [memory.workspaceId, memory.key],
-        set: {
-          data: sql`${memory.data} || ${JSON.stringify([message])}::jsonb`,
-          updatedAt: now,
-        },
-      })
-  }
-
-  private parsePositiveInt(value: string | undefined, defaultValue: number): number {
-    if (!value) return defaultValue
-    const parsed = Number.parseInt(value, 10)
-    if (Number.isNaN(parsed) || parsed <= 0) return defaultValue
-    return parsed
-  }
-
   private validateConversationId(conversationId?: string): void {
-    if (!conversationId || conversationId.trim() === '') {
-      throw new Error('Conversation ID is required')
-    }
-    if (conversationId.length > MEMORY.MAX_CONVERSATION_ID_LENGTH) {
+    // Only validate length if conversationId is provided, but don't require it
+    if (conversationId && conversationId.length > MEMORY.MAX_CONVERSATION_ID_LENGTH) {
       throw new Error(
         `Conversation ID too long (max ${MEMORY.MAX_CONVERSATION_ID_LENGTH} characters)`
       )

@@ -638,22 +638,12 @@ Example 3 (Array Input):
     memoryType: {
       type: 'string',
       description:
-        'Type of memory to use: conversation (default), sliding_window, or sliding_window_tokens. Defaults to conversation if not provided.',
+        'Type of memory to use: conversation (default). Defaults to conversation if not provided.',
     },
     conversationId: {
       type: 'string',
       description:
         'Conversation ID to retrieve and store memories. Automatically retrieved from Start block output if not provided.',
-    },
-    slidingWindowSize: {
-      type: 'string',
-      description:
-        'Number of recent messages to include (when memoryType is sliding_window, e.g., "10")',
-    },
-    slidingWindowTokens: {
-      type: 'string',
-      description:
-        'Maximum number of tokens for token-based sliding window memory (when memoryType is sliding_window_tokens, e.g., "4000")',
     },
     model: { type: 'string', description: 'AI model to use' },
     apiKey: { type: 'string', description: 'Provider API key' },
