@@ -890,8 +890,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
         const {
           credential,
           presentationId,
-          manualPresentationId,
-          folderSelector,
           folderId,
           slideIndex,
           createContent,
@@ -1105,15 +1103,13 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
     credential: { type: 'string', description: 'Google Slides access token' },
-    presentationId: { type: 'string', description: 'Presentation identifier' },
-    manualPresentationId: { type: 'string', description: 'Manual presentation identifier' },
+    presentationId: { type: 'string', description: 'Presentation identifier (canonical param)' },
     // Write operation
     slideIndex: { type: 'number', description: 'Slide index to write to' },
     content: { type: 'string', description: 'Slide content' },
     // Create operation
     title: { type: 'string', description: 'Presentation title' },
-    folderSelector: { type: 'string', description: 'Selected folder' },
-    folderId: { type: 'string', description: 'Folder identifier' },
+    folderId: { type: 'string', description: 'Parent folder identifier (canonical param)' },
     createContent: { type: 'string', description: 'Initial slide content' },
     // Create from template operation
     createFromTemplatePresentationName: {
@@ -1160,8 +1156,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     placeholderIdMappings: { type: 'string', description: 'JSON array of placeholder ID mappings' },
     // Add image operation
     pageObjectId: { type: 'string', description: 'Slide object ID for image' },
-    imageFile: { type: 'json', description: 'Uploaded image (UserFile)' },
-    imageUrl: { type: 'string', description: 'Image URL or reference' },
     imageSource: { type: 'json', description: 'Image source (file or URL)' },
     imageWidth: { type: 'number', description: 'Image width in points' },
     imageHeight: { type: 'number', description: 'Image height in points' },
@@ -1285,11 +1279,12 @@ const googleSlidesV2SubBlocks = (GoogleSlidesBlock.subBlocks || []).flatMap((sub
 })
 
 const googleSlidesV2Inputs = GoogleSlidesBlock.inputs
-  ? Object.fromEntries(
-      Object.entries(GoogleSlidesBlock.inputs).filter(
-        ([key]) => key !== 'imageUrl' && key !== 'imageSource'
-      )
-    )
+  ? {
+      ...Object.fromEntries(
+        Object.entries(GoogleSlidesBlock.inputs).filter(([key]) => key !== 'imageSource')
+      ),
+      imageFile: { type: 'json', description: 'Image source (file or URL)' },
+    }
   : {}
 
 export const GoogleSlidesV2Block: BlockConfig<GoogleSlidesResponse> = {
@@ -1310,8 +1305,7 @@ export const GoogleSlidesV2Block: BlockConfig<GoogleSlidesResponse> = {
         }
 
         if (params.operation === 'add_image') {
-          const imageInput = params.imageFile || params.imageFileReference || params.imageSource
-          const fileObject = normalizeFileInput(imageInput, { single: true })
+          const fileObject = normalizeFileInput(params.imageFile, { single: true })
           if (!fileObject) {
             throw new Error('Image file is required.')
           }
@@ -1323,8 +1317,6 @@ export const GoogleSlidesV2Block: BlockConfig<GoogleSlidesResponse> = {
           return baseParams({
             ...params,
             imageUrl,
-            imageFileReference: undefined,
-            imageSource: undefined,
           })
         }
 
@@ -1332,8 +1324,5 @@ export const GoogleSlidesV2Block: BlockConfig<GoogleSlidesResponse> = {
       },
     },
   },
-  inputs: {
-    ...googleSlidesV2Inputs,
-    imageFileReference: { type: 'json', description: 'Image file reference' },
-  },
+  inputs: googleSlidesV2Inputs,
 }

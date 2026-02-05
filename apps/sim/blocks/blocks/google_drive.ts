@@ -195,10 +195,10 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       required: true,
     },
     {
-      id: 'createFolderFolderSelector',
+      id: 'createFolderParentSelector',
       title: 'Select Parent Folder',
       type: 'file-selector',
-      canonicalParamId: 'createFolderFolderId',
+      canonicalParamId: 'createFolderParentId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -211,10 +211,10 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       condition: { field: 'operation', value: 'create_folder' },
     },
     {
-      id: 'createFolderManualFolderId',
+      id: 'createFolderManualParentId',
       title: 'Parent Folder ID',
       type: 'short-input',
-      canonicalParamId: 'createFolderFolderId',
+      canonicalParamId: 'createFolderParentId',
       placeholder: 'Enter parent folder ID (leave empty for root folder)',
       mode: 'advanced',
       condition: { field: 'operation', value: 'create_folder' },
@@ -279,10 +279,10 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
     },
     // Download File Fields - File Selector (basic mode)
     {
-      id: 'fileSelector',
+      id: 'downloadFileSelector',
       title: 'Select File',
       type: 'file-selector',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'downloadFileId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -292,13 +292,14 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       mode: 'basic',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'download' },
+      required: true,
     },
     // Manual File ID input (advanced mode)
     {
-      id: 'manualFileId',
+      id: 'downloadManualFileId',
       title: 'File ID',
       type: 'short-input',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'downloadFileId',
       placeholder: 'Enter file ID',
       mode: 'advanced',
       condition: { field: 'operation', value: 'download' },
@@ -382,10 +383,10 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
     },
     // Get File Info Fields
     {
-      id: 'fileSelector',
+      id: 'getFileSelector',
       title: 'Select File',
       type: 'file-selector',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'getFileId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -395,12 +396,13 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       mode: 'basic',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'get_file' },
+      required: true,
     },
     {
-      id: 'manualFileId',
+      id: 'getManualFileId',
       title: 'File ID',
       type: 'short-input',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'getFileId',
       placeholder: 'Enter file ID',
       mode: 'advanced',
       condition: { field: 'operation', value: 'get_file' },
@@ -408,10 +410,10 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
     },
     // Copy File Fields
     {
-      id: 'fileSelector',
+      id: 'copyFileSelector',
       title: 'Select File to Copy',
       type: 'file-selector',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'copyFileId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -421,12 +423,13 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       mode: 'basic',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'copy' },
+      required: true,
     },
     {
-      id: 'manualFileId',
+      id: 'copyManualFileId',
       title: 'File ID',
       type: 'short-input',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'copyFileId',
       placeholder: 'Enter file ID to copy',
       mode: 'advanced',
       condition: { field: 'operation', value: 'copy' },
@@ -440,10 +443,10 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       condition: { field: 'operation', value: 'copy' },
     },
     {
-      id: 'copyDestinationFolderSelector',
+      id: 'copyDestFolderSelector',
       title: 'Destination Folder',
       type: 'file-selector',
-      canonicalParamId: 'destinationFolderId',
+      canonicalParamId: 'copyDestFolderId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -456,20 +459,20 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       condition: { field: 'operation', value: 'copy' },
     },
     {
-      id: 'copyManualDestinationFolderId',
+      id: 'copyManualDestFolderId',
       title: 'Destination Folder ID',
       type: 'short-input',
-      canonicalParamId: 'destinationFolderId',
+      canonicalParamId: 'copyDestFolderId',
       placeholder: 'Enter destination folder ID (optional)',
       mode: 'advanced',
       condition: { field: 'operation', value: 'copy' },
     },
     // Update File Fields
     {
-      id: 'fileSelector',
+      id: 'updateFileSelector',
       title: 'Select File to Update',
       type: 'file-selector',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'updateFileId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -479,12 +482,13 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       mode: 'basic',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'update' },
+      required: true,
     },
     {
-      id: 'manualFileId',
+      id: 'updateManualFileId',
       title: 'File ID',
       type: 'short-input',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'updateFileId',
       placeholder: 'Enter file ID to update',
       mode: 'advanced',
       condition: { field: 'operation', value: 'update' },
@@ -543,10 +547,10 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
     },
     // Trash File Fields
     {
-      id: 'fileSelector',
+      id: 'trashFileSelector',
       title: 'Select File to Trash',
       type: 'file-selector',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'trashFileId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -556,12 +560,13 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
       mode: 'basic',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'trash' },
+      required: true,
     },
     {
-      id: 'manualFileId',
+      id: 'trashManualFileId',
       title: 'File ID',
       type: 'short-input',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'trashFileId',
       placeholder: 'Enter file ID to trash',
       mode: 'advanced',
       condition: { field: 'operation', value: 'trash' },
@@ -569,10 +574,10 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
     },
     // Delete File Fields
     {
-      id: 'fileSelector',
+      id: 'deleteFileSelector',
       title: 'Select File to Delete',
       type: 'file-selector',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'deleteFileId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -582,12 +587,13 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
       mode: 'basic',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'delete' },
+      required: true,
     },
     {
-      id: 'manualFileId',
+      id: 'deleteManualFileId',
       title: 'File ID',
       type: 'short-input',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'deleteFileId',
       placeholder: 'Enter file ID to permanently delete',
       mode: 'advanced',
       condition: { field: 'operation', value: 'delete' },
@@ -595,10 +601,10 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
     },
     // Share File Fields
     {
-      id: 'fileSelector',
+      id: 'shareFileSelector',
       title: 'Select File to Share',
       type: 'file-selector',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'shareFileId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -608,12 +614,13 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
       mode: 'basic',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'share' },
+      required: true,
     },
     {
-      id: 'manualFileId',
+      id: 'shareManualFileId',
       title: 'File ID',
       type: 'short-input',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'shareFileId',
       placeholder: 'Enter file ID to share',
       mode: 'advanced',
       condition: { field: 'operation', value: 'share' },
@@ -708,10 +715,10 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
     },
     // Unshare (Remove Permission) Fields
     {
-      id: 'fileSelector',
+      id: 'unshareFileSelector',
       title: 'Select File',
       type: 'file-selector',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'unshareFileId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -721,12 +728,13 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
       mode: 'basic',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'unshare' },
+      required: true,
     },
     {
-      id: 'manualFileId',
+      id: 'unshareManualFileId',
       title: 'File ID',
       type: 'short-input',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'unshareFileId',
       placeholder: 'Enter file ID',
       mode: 'advanced',
       condition: { field: 'operation', value: 'unshare' },
@@ -742,10 +750,10 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
     },
     // List Permissions Fields
     {
-      id: 'fileSelector',
+      id: 'listPermissionsFileSelector',
       title: 'Select File',
       type: 'file-selector',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'listPermissionsFileId',
       serviceId: 'google-drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
@@ -755,12 +763,13 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
       mode: 'basic',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'list_permissions' },
+      required: true,
     },
     {
-      id: 'manualFileId',
+      id: 'listPermissionsManualFileId',
       title: 'File ID',
       type: 'short-input',
-      canonicalParamId: 'fileId',
+      canonicalParamId: 'listPermissionsFileId',
       placeholder: 'Enter file ID',
       mode: 'advanced',
       condition: { field: 'operation', value: 'list_permissions' },
@@ -834,8 +843,23 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
           copyManualDestinationFolderId,
           fileSelector,
           manualFileId,
+          // Folder canonical params (per-operation)
+          uploadFolderId,
+          createFolderParentId,
+          listFolderId,
+          copyDestFolderId,
+          // File canonical params (per-operation)
+          downloadFileId,
+          getFileId,
+          copyFileId,
+          updateFileId,
+          trashFileId,
+          deleteFileId,
+          shareFileId,
+          unshareFileId,
+          listPermissionsFileId,
+          // File upload
           file,
-          fileUpload,
           mimeType,
           operation,
           shareType,
@@ -870,7 +894,7 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
           return (raw ?? '').toString().trim()
         })()
         // Normalize file input - handles both basic (file-upload) and advanced (short-input) modes
-        const normalizedFile = normalizeFileInput(file ?? fileUpload, { single: true })
+        const normalizedFile = normalizeFileInput(file, { single: true })
 
         const effectiveFileId = (fileSelector || manualFileId || '').trim()
 
@@ -890,9 +914,9 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
 
         return {
           credential,
-          folderId: effectiveFolderId || undefined,
-          fileId: effectiveFileId || undefined,
-          destinationFolderId: effectiveDestinationFolderId || undefined,
+          folderId: effectiveFolderId,
+          fileId: effectiveFileId,
+          destinationFolderId: effectiveDestinationFolderId,
           file: normalizedFile,
           pageSize: rest.pageSize ? Number.parseInt(rest.pageSize as string, 10) : undefined,
           mimeType: mimeType,
