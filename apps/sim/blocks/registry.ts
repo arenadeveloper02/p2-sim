@@ -26,7 +26,7 @@ import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock } from '@/blocks/blocks/exa'
 import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
-import { BingAdsBlock } from '@/blocks/blocks/bing_ads'
+// import { BingAdsBlock } from '@/blocks/blocks/bing_ads' // TODO: Commented out - using dynamic approach
 import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock, FileV2Block } from '@/blocks/blocks/file'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
@@ -39,7 +39,7 @@ import { GmailBlock, GmailV2Block } from '@/blocks/blocks/gmail'
 import { GoogleSearchBlock } from '@/blocks/blocks/google'
 import { GoogleAdsBlock } from '@/blocks/blocks/google_ads'
 import { GoogleAdsV1Block } from '@/blocks/blocks/google_ads_v1'
-import { GoogleAnalyticsBlock } from '@/blocks/blocks/google_analytics'
+// import { GoogleAnalyticsBlock } from '@/blocks/blocks/google_analytics' // TODO: Commented out - not needed
 import { GoogleCalendarBlock, GoogleCalendarV2Block } from '@/blocks/blocks/google_calendar'
 import { GoogleDocsBlock } from '@/blocks/blocks/google_docs'
 import { GoogleDriveBlock } from '@/blocks/blocks/google_drive'
@@ -192,7 +192,7 @@ export const registry: Record<string, BlockConfig> = {
   evaluator: EvaluatorBlock,
   exa: ExaBlock,
   facebook_ads: FacebookAdsBlock,
-  bing_ads: BingAdsBlock,
+  // bing_ads: BingAdsBlock, // TODO: Commented out - using dynamic approach
   file: FileBlock,
   figma: FigmaBlock,
   file_v2: FileV2Block,
@@ -207,7 +207,7 @@ export const registry: Record<string, BlockConfig> = {
   google_ads: GoogleAdsBlock,
   gmail_v2: GmailV2Block,
   google_ads_v1: GoogleAdsV1Block,
-  google_analytics: GoogleAnalyticsBlock,
+  // google_analytics: GoogleAnalyticsBlock, // TODO: Commented out - not needed
   google_calendar: GoogleCalendarBlock,
   google_calendar_v2: GoogleCalendarV2Block,
   google_docs: GoogleDocsBlock,
