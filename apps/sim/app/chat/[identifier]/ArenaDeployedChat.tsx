@@ -1173,7 +1173,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     ) {
       return <UnauthorizedEmailError message={error} />
     }
-    return <ChatErrorState error={error} />
+    return <ChatErrorState error={error} starCount={starCount} />
   }
 
   // If authentication is required, use the extracted components
