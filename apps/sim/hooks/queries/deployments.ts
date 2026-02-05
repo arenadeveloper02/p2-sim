@@ -160,6 +160,7 @@ export interface ChatDetail {
     welcomeMessage?: string
     imageUrl?: string
     primaryColor?: string
+    goldenQueries?: string[]
   }
   isActive: boolean
   chatUrl: string

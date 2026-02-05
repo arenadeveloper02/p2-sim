@@ -31,6 +31,7 @@ export interface ChatFormData {
   password: string
   emails: string[]
   welcomeMessage: string
+  goldenQueries: string[]
   selectedOutputBlocks: string[]
 }
 
@@ -110,6 +111,7 @@ function buildChatPayload(
     customizations: {
       primaryColor: 'var(--brand-primary-hover-hex)',
       welcomeMessage: formData.welcomeMessage.trim(),
+      goldenQueries: formData.goldenQueries.map((query) => query.trim()).filter(Boolean),
       ...(imageUrl && { imageUrl }),
     },
     authType: formData.authType,
