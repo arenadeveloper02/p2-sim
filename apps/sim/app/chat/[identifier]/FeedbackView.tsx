@@ -187,50 +187,65 @@ export function FeedbackView({
                     )}
 
                     {/* Feedback */}
-                    {(feedbackTags.length > 0 || comment) && (
-                      <div>
-                        <div className='mb-2 flex items-center gap-2 font-semibold text-gray-700 text-sm'>
-                          <span>Feedback</span>
-                          {(() => {
-                            const liked = item.feedback?.liked ?? item.liked
-                            if (liked === true) {
-                              return (
-                                <span className='flex font-medium gap-1 items-center text-green-700 text-xs'>
-                                  <ThumbsUp className='h-3 w-3' />
-                                  Liked
-                                </span>
-                              )
-                            }
-                            if (liked === false) {
-                              return (
-                                <span className='flex font-medium gap-1 items-center text-red-700 text-xs'>
-                                  <ThumbsDown className='h-3 w-3' />
-                                  Disliked
-                                </span>
-                              )
-                            }
-                            return null
-                          })()}
-                        </div>
-                        <div className='flex flex-wrap gap-2'>
-                          {feedbackTags.map((tag, tagIndex) => (
-                            <span
-                              key={tagIndex}
-                              className={`font-medium px-3 py-1 rounded-full text-xs ${tag.color}`}
-                            >
-                              {tag.label}
-                            </span>
-                          ))}
-                          {comment && (
-                            <div className='mt-2 w-full rounded-md bg-[#F3F8FE] px-4 py-2'>
-                              <div className='text-gray-700 text-sm'>
-                                <MarkdownRenderer content={comment} />
-                              </div>
+                    {(() => {
+                      const liked = item.feedback?.liked ?? item.liked
+                      const hasFeedback = feedbackTags.length > 0 || comment || liked === true
+                      
+                      if (!hasFeedback) return null
+                      
+                      // If only liked feedback with no tags or comments, show just the header
+                      if (liked === true && feedbackTags.length === 0 && !comment) {
+                        return (
+                          <div>
+                            <div className='mb-2 flex items-center gap-2 font-semibold text-gray-700 text-sm'>
+                              <span>Feedback</span>
+                              <span className='flex font-medium gap-1 items-center text-green-700 text-xs'>
+                                <ThumbsUp className='h-3 w-3' />
+                                Liked
+                              </span>
                             </div>
-                          )}
+                          </div>
+                        )
+                      }
+                      
+                      // Show full feedback section with tags and/or comments
+                      return (
+                        <div>
+                          <div className='mb-2 flex items-center gap-2 font-semibold text-gray-700 text-sm'>
+                            <span>Feedback</span>
+                            {liked === true && (
+                              <span className='flex font-medium gap-1 items-center text-green-700 text-xs'>
+                                <ThumbsUp className='h-3 w-3' />
+                                Liked
+                              </span>
+                            )}
+                            {liked === false && (
+                              <span className='flex font-medium gap-1 items-center text-red-700 text-xs'>
+                                <ThumbsDown className='h-3 w-3' />
+                                Disliked
+                              </span>
+                            )}
+                          </div>
+                          <div className='flex flex-wrap gap-2'>
+                            {feedbackTags.map((tag, tagIndex) => (
+                              <span
+                                key={tagIndex}
+                                className={`font-medium px-3 py-1 rounded-full text-xs ${tag.color}`}
+                              >
+                                {tag.label}
+                              </span>
+                            ))}
+                            {comment && (
+                              <div className='mt-2 w-full rounded-md bg-[#F3F8FE] px-4 py-2'>
+                                <div className='text-gray-700 text-sm'>
+                                  <MarkdownRenderer content={comment} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )
+                    })()}
                   </div>
                 )
               })
