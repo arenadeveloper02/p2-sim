@@ -9,10 +9,13 @@ export { zoomListMeetingsTool } from './list_meetings'
 export { zoomListPastParticipantsTool } from './list_past_participants'
 export { zoomListRecordingsTool } from './list_recordings'
 export { zoomListAccountRecordingsTool } from './list_account_recordings'
+export { zoomDownloadTranscriptTool } from './download_transcript'
 // Type exports
 export type {
   ZoomCreateMeetingParams,
   ZoomCreateMeetingResponse,
+  ZoomDownloadTranscriptParams,
+  ZoomDownloadTranscriptResponse,
   ZoomDeleteMeetingParams,
   ZoomDeleteMeetingResponse,
   ZoomDeleteRecordingParams,

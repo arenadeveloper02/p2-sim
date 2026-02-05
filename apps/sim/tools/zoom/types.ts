@@ -309,6 +309,17 @@ export interface ZoomListPastParticipantsResponse extends ToolResponse {
   }
 }
 
+// Download Transcript tool types
+export interface ZoomDownloadTranscriptParams extends ZoomBaseParams {
+  downloadUrl: string
+}
+
+export interface ZoomDownloadTranscriptResponse extends ToolResponse {
+  output: {
+    content: string
+  }
+}
+
 // Combined response type for block
 export type ZoomResponse =
   | ZoomCreateMeetingResponse
@@ -322,3 +333,4 @@ export type ZoomResponse =
   | ZoomGetMeetingRecordingsResponse
   | ZoomDeleteRecordingResponse
   | ZoomListPastParticipantsResponse
+  | ZoomDownloadTranscriptResponse

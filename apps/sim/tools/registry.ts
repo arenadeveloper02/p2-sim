@@ -1720,6 +1720,7 @@ import {
   zoomListPastParticipantsTool,
   zoomListRecordingsTool,
   zoomListAccountRecordingsTool,
+  zoomDownloadTranscriptTool,
   zoomUpdateMeetingTool,
 } from '@/tools/zoom'
 
@@ -3248,6 +3249,7 @@ export const tools: Record<string, ToolConfig> = {
   zoom_get_meeting_invitation: zoomGetMeetingInvitationTool,
   zoom_list_recordings: zoomListRecordingsTool,
   zoom_list_account_recordings: zoomListAccountRecordingsTool,
+  zoom_download_transcript: zoomDownloadTranscriptTool,
   zoom_get_meeting_recordings: zoomGetMeetingRecordingsTool,
   zoom_delete_recording: zoomDeleteRecordingTool,
   zoom_list_past_participants: zoomListPastParticipantsTool,
