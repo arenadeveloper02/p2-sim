@@ -65,6 +65,7 @@ export const imagenTool: ToolConfig = {
   },
 
   request: {
+    timeout: 120000,
     url: (params) => {
       // Try the Generative Language API first
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${params.model}:predict`
