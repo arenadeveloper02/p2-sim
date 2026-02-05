@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
 import { executeInIsolatedVM } from '@/lib/execution/isolated-vm'
-import { buildLoopIndexCondition, DEFAULTS, EDGE } from '@/executor/constants'
+import { BlockType, buildLoopIndexCondition, DEFAULTS, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
 import type { LoopScope } from '@/executor/execution/state'
@@ -252,6 +252,19 @@ export class LoopOrchestrator {
     }
 
     scope.currentIterationOutputs.clear()
+
+    // Check if a Response block has executed inside this loop iteration
+    // Response blocks are terminal and should stop all further execution
+    if (this.hasResponseBlockExecuted(ctx, loopId)) {
+      logger.info('Response block executed inside loop - stopping execution', { loopId })
+      // Return a result that prevents continuation and exit
+      // This will stop the loop from continuing to next iteration or exiting to downstream nodes
+      return {
+        shouldContinue: false,
+        shouldExit: false,
+        selectedRoute: EDGE.LOOP_EXIT,
+      }
+    }
 
     // Verify all nodes inside the loop have completed before allowing continuation
     // This is critical for nested loops - the outer loop should wait for inner loops to complete all iterations
@@ -793,5 +806,56 @@ export class LoopOrchestrator {
     }
 
     return true
+  }
+
+  /**
+   * Checks if a Response block has executed inside the loop.
+   * Response blocks are terminal and should stop all further execution,
+   * including preventing loops from continuing or exiting to downstream nodes.
+   */
+  private hasResponseBlockExecuted(ctx: ExecutionContext, loopId: string): boolean {
+    const loopConfig = this.dag.loopConfigs.get(loopId) as LoopConfigWithNodes | undefined
+    if (!loopConfig) {
+      return false
+    }
+
+    const loopNodes = loopConfig.nodes || []
+    const sentinelEndId = buildSentinelEndId(loopId)
+
+    for (const nodeId of loopNodes) {
+      if (nodeId === sentinelEndId) continue
+
+      const node = this.dag.nodes.get(nodeId)
+      if (!node) continue
+
+      // Check if this node is a Response block
+      const blockType = node.block.metadata?.id
+      if (blockType === BlockType.RESPONSE) {
+        // Check if the Response block has executed
+        if (this.state.hasExecuted(nodeId)) {
+          const output = this.state.getBlockOutput(nodeId)
+          // Response blocks have 'status' and 'data' in their output
+          // Verify this is actually a Response block output
+          if (output && 'status' in output && 'data' in output) {
+            logger.info('Response block found in loop', {
+              loopId,
+              nodeId,
+              blockId: node.block.id,
+            })
+            return true
+          }
+        }
+      }
+
+      // Also check nested loops for Response blocks
+      if (this.dag.loopConfigs.has(nodeId)) {
+        const nestedLoopId = nodeId
+        if (this.hasResponseBlockExecuted(ctx, nestedLoopId)) {
+          return true
+        }
+      }
+    }
+
+    return false
   }
 }
