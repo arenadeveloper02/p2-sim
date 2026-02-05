@@ -1,5 +1,5 @@
 {
-  "extends": "../../packages/tsconfig/nextjs.json",
+  "extends": "@sim/tsconfig/nextjs.json",
   "compilerOptions": {
     "jsx": "react-jsx",
     "baseUrl": ".",
@@ -20,8 +20,6 @@
       "@/serializer/*": ["./serializer/*"],
       "@sim/db": ["../../packages/db"],
       "@sim/db/*": ["../../packages/db/*"],
-      "@sim/logger": ["../../packages/logger"],
-      "@sim/logger/*": ["../../packages/logger/*"],
       "@/executor": ["./executor"],
       "@/executor/*": ["./executor/*"]
     }
