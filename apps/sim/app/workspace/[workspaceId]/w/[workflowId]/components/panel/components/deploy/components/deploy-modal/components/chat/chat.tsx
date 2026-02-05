@@ -476,7 +476,7 @@ export function ChatDeploy({
               This message will be displayed when users first open the chat
             </p>
           </div>
-          <div>
+          {/* <div>
             <Label
               htmlFor='goldenQueries'
               className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
@@ -501,7 +501,7 @@ export function ChatDeploy({
             <p className='mt-[6.5px] text-[11px] text-[var(--text-secondary)]'>
               These queries appear in the deployed chat for one-click execution
             </p>
-          </div>
+          </div> */}
 
           <button
             type='button'
