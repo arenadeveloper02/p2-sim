@@ -1,9 +1,8 @@
 import React, { type HTMLAttributes, memo, type ReactNode, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Copy } from 'lucide-react'
-import { Tooltip } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
+import { Check, Copy } from 'lucide-react'
+import { Code, Tooltip } from '@/components/emcn'
 
 export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -116,8 +115,34 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
         return ''
       }
       const rawCode = extractText(codeContent)
-      const normalizedCode = rawCode.replace(/\n$/, '')
-      const lines = normalizedCode.length > 0 ? normalizedCode.split('\n') : ['']
+      const codeText = rawCode.replace(/\n$/, '')
+
+      const normalizedLanguage = (languageLabel || '').toLowerCase()
+      const viewerLanguage:
+        | 'javascript'
+        | 'json'
+        | 'python'
+        | 'typescript'
+        | 'tsx'
+        | 'jsx'
+        | 'bash'
+        | 'yaml' = normalizedLanguage === 'json'
+        ? 'json'
+        : normalizedLanguage === 'python' || normalizedLanguage === 'py'
+          ? 'python'
+          : normalizedLanguage === 'typescript' || normalizedLanguage === 'ts'
+            ? 'typescript'
+            : normalizedLanguage === 'tsx'
+              ? 'tsx'
+              : normalizedLanguage === 'jsx'
+                ? 'jsx'
+                : normalizedLanguage === 'bash' ||
+                    normalizedLanguage === 'shell' ||
+                    normalizedLanguage === 'sh'
+                  ? 'bash'
+                  : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
+                    ? 'yaml'
+                    : 'javascript'
 
       const handleCopy = async () => {
         if (typeof navigator === 'undefined' || !navigator.clipboard) {
@@ -133,75 +158,26 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
       }
 
       return (
-        <div
-          className={cn(
-            'my-6',
-            'rounded-md',
-            'border',
-            'border-gray-200',
-            'bg-white',
-            'text-sm',
-            'dark:border-gray-800',
-            'dark:bg-gray-900'
-          )}
-        >
-          <div
-            className={cn(
-              'flex',
-              'items-center',
-              'justify-between',
-              'border-b',
-              'border-gray-200',
-              'px-4',
-              'py-1.5',
-              'dark:border-gray-800'
-            )}
-          >
-            <span className={cn('font-sans', 'text-gray-500', 'text-xs')}>{languageLabel}</span>
+        <div className='my-6 w-0 min-w-full overflow-hidden rounded-md border border-[var(--border-strong)] bg-[var(--surface-2)] text-sm dark:bg-[#1F1F1F]'>
+          <div className='flex items-center justify-between border-[var(--border-strong)] border-b px-4 py-1.5'>
+            <span className='font-sans text-[#A3A3A3] text-xs'>
+              {languageLabel === 'code' ? viewerLanguage : languageLabel}
+            </span>
             <button
               type='button'
-              className={cn(
-                'inline-flex',
-                'items-center',
-                'gap-1',
-                'rounded',
-                'px-2',
-                'py-1',
-                'text-xs',
-                'text-gray-600',
-                'hover:bg-gray-100',
-                'dark:text-gray-300',
-                'dark:hover:bg-gray-800'
-              )}
               onClick={handleCopy}
+              className='text-[#A3A3A3] transition-colors hover:text-gray-300'
+              title='Copy'
             >
-              <Copy className={cn('h-3', 'w-3')} />
-              {isCopied ? 'Copied' : 'Copy'}
+              {isCopied ? <Check className='h-3 w-3' strokeWidth={2} /> : <Copy className='h-3 w-3' strokeWidth={2} />}
             </button>
           </div>
-          <pre className={cn('overflow-x-auto', 'p-4', 'font-mono', 'text-gray-900', 'dark:text-gray-100')}>
-            <code className={cn('block', 'space-y-1')}>
-              {lines.map((line, index) => (
-                <div
-                  key={`code-line-${index}`}
-                  className={cn('grid', 'grid-cols-[32px,1fr]', 'gap-x-4')}
-                >
-                  <span
-                    className={cn(
-                      'select-none',
-                      'text-right',
-                      'text-xs',
-                      'text-gray-400',
-                      'dark:text-gray-500'
-                    )}
-                  >
-                    {index + 1}
-                  </span>
-                  <span className={cn('whitespace-pre')}>{line || ' '}</span>
-                </div>
-              ))}
-            </code>
-          </pre>
+          <Code.Viewer
+            code={codeText}
+            showGutter
+            language={viewerLanguage}
+            className='m-0 rounded-none border-0 bg-transparent'
+          />
         </div>
       )
     },
