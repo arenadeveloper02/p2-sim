@@ -41,7 +41,8 @@ export const googleAnalyticsQueryTool: ToolConfig<GoogleAnalyticsQueryParams, an
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Natural language query for Google Analytics data (e.g., "show daily active users last 7 days", "top pages this month")',
+      description:
+        'Natural language query for Google Analytics data (e.g., "show daily active users last 7 days", "top pages this month")',
     },
     property: {
       type: 'string',
@@ -74,11 +75,11 @@ export const googleAnalyticsQueryTool: ToolConfig<GoogleAnalyticsQueryParams, an
       }
 
       const result = await response.json()
-      logger.info('Google Analytics query successful', { 
+      logger.info('Google Analytics query successful', {
         rowCount: result.data?.row_count || 0,
-        property: params?.property 
+        property: params?.property,
       })
-      
+
       return result
     } catch (error) {
       logger.error('Failed to process Google Analytics response', { error })

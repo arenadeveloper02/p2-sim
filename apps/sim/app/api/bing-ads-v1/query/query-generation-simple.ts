@@ -22,16 +22,17 @@ export async function generateBingAdsQuery(query: string): Promise<BingAdsQueryR
     const prompt = BING_ADS_SYSTEM_PROMPT
 
     // Determine API endpoint based on provider
-    const apiEndpoint = provider.provider === 'xai' 
-      ? 'https://api.x.ai/v1/chat/completions'
-      : 'https://api.openai.com/v1/chat/completions'
+    const apiEndpoint =
+      provider.provider === 'xai'
+        ? 'https://api.x.ai/v1/chat/completions'
+        : 'https://api.openai.com/v1/chat/completions'
 
     // Call AI API
     const response = await fetch(apiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${provider.apiKey}`,
+        Authorization: `Bearer ${provider.apiKey}`,
       },
       body: JSON.stringify({
         model: provider.model,
@@ -102,7 +103,7 @@ function parseAIResponse(content: string): BingAdsQueryResponse {
     const startDate = new Date(parsed.timeRange.start)
     const endDate = new Date(parsed.timeRange.end)
 
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
       throw new Error('Invalid date format in timeRange')
     }
 

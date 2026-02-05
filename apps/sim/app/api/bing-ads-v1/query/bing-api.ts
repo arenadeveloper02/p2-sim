@@ -26,27 +26,29 @@ interface BingAdsApiResponse {
 
 /**
  * Makes a request to Bing Ads API
- * 
+ *
  * @param request - Bing Ads API request parameters
  * @returns Promise resolving to Bing Ads API response
  */
 export async function makeBingAdsRequest(request: BingAdsApiRequest): Promise<BingAdsApiResponse> {
-  console.log('=== BING API V1 CALLED ===', { 
+  console.log('=== BING API V1 CALLED ===', {
     accountId: request.accountId,
     reportType: request.reportType,
     timeRange: request.timeRange,
-    datePreset: request.datePreset
+    datePreset: request.datePreset,
   })
-  
+
   try {
     // Use the same API logic as current Bing Ads
     // Import and use the real makeBingAdsRequest from current implementation
-    const { makeBingAdsRequest: realBingAdsRequest } = await import('../../bing-ads/query/bing-ads-api')
-    
+    const { makeBingAdsRequest: realBingAdsRequest } = await import(
+      '../../bing-ads/query/bing-ads-api'
+    )
+
     // Convert v1 request to old format ParsedBingQuery
     // Add required fields that the old API expects
     const enhancedColumns = [...request.columns]
-    
+
     // Ensure AccountName and AccountId are always included (old API requirement)
     if (!enhancedColumns.includes('AccountName')) {
       enhancedColumns.unshift('AccountName')
@@ -54,7 +56,7 @@ export async function makeBingAdsRequest(request: BingAdsApiRequest): Promise<Bi
     if (!enhancedColumns.includes('AccountId')) {
       enhancedColumns.splice(1, 0, 'AccountId')
     }
-    
+
     // For CampaignPerformance, ensure CampaignName and CampaignId are included
     if (request.reportType === 'CampaignPerformance') {
       if (!enhancedColumns.includes('CampaignName')) {
@@ -64,11 +66,11 @@ export async function makeBingAdsRequest(request: BingAdsApiRequest): Promise<Bi
         enhancedColumns.push('CampaignId')
       }
     }
-    
+
     // Debug: Log what we're receiving
     console.log('DEBUG: Bing API Request:', {
       originalTimeRange: request.timeRange,
-      originalDatePreset: request.datePreset
+      originalDatePreset: request.datePreset,
     })
 
     // Use timeRange for dynamic dates - NEVER use datePreset
@@ -79,7 +81,7 @@ export async function makeBingAdsRequest(request: BingAdsApiRequest): Promise<Bi
       filters: request.filters,
       datePreset: undefined, // NEVER use datePreset
       aggregation: request.aggregation || 'Summary',
-      campaignFilter: undefined
+      campaignFilter: undefined,
     }
 
     // Debug: Log what we're sending to old API
@@ -88,42 +90,46 @@ export async function makeBingAdsRequest(request: BingAdsApiRequest): Promise<Bi
       reportType: parsedQuery.reportType,
       timeRange: parsedQuery.timeRange,
       datePreset: parsedQuery.datePreset,
-      columns: parsedQuery.columns
+      columns: parsedQuery.columns,
     })
-    
+
     // Debug date parsing
     if (parsedQuery.timeRange) {
-      const startDay = parseInt(parsedQuery.timeRange.start.split('-')[2])
-      const startMonth = parseInt(parsedQuery.timeRange.start.split('-')[1])
-      const startYear = parseInt(parsedQuery.timeRange.start.split('-')[0])
-      const endDay = parseInt(parsedQuery.timeRange.end.split('-')[2])
-      const endMonth = parseInt(parsedQuery.timeRange.end.split('-')[1])
-      const endYear = parseInt(parsedQuery.timeRange.end.split('-')[0])
-      
+      const startDay = Number.parseInt(parsedQuery.timeRange.start.split('-')[2])
+      const startMonth = Number.parseInt(parsedQuery.timeRange.start.split('-')[1])
+      const startYear = Number.parseInt(parsedQuery.timeRange.start.split('-')[0])
+      const endDay = Number.parseInt(parsedQuery.timeRange.end.split('-')[2])
+      const endMonth = Number.parseInt(parsedQuery.timeRange.end.split('-')[1])
+      const endYear = Number.parseInt(parsedQuery.timeRange.end.split('-')[0])
+
       console.log('DEBUG: Date parsing:', {
         start: parsedQuery.timeRange.start,
         end: parsedQuery.timeRange.end,
-        startDay, startMonth, startYear,
-        endDay, endMonth, endYear
+        startDay,
+        startMonth,
+        startYear,
+        endDay,
+        endMonth,
+        endYear,
       })
     }
-    
+
     console.log('DEBUG: Calling old Bing Ads API with:', parsedQuery)
-    
+
     const apiResult = await realBingAdsRequest(request.accountId, parsedQuery)
-    
+
     console.log('DEBUG: Old API result:', {
       success: apiResult?.success,
       hasData: !!apiResult?.data,
       dataLength: apiResult?.data?.length || 0,
-      error: apiResult?.error
+      error: apiResult?.error,
     })
-    
+
     return apiResult
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred'
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
     }
   }
 }

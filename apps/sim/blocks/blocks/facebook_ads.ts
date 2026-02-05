@@ -29,14 +29,14 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
         try {
           const response = await fetch('/api/facebook-ads/accounts')
           const data = await response.json()
-          
+
           console.log('Facebook Ads API response:', data)
-          
+
           if (data.success && data.accounts) {
             const accounts = data.accounts as Record<string, { id: string; name: string }>
             const options = Object.entries(accounts).map(([key, account]) => ({
               id: key,
-              label: account.name
+              label: account.name,
             }))
             console.log('Facebook Ads options:', options)
             return options
@@ -52,12 +52,12 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
         try {
           const response = await fetch('/api/facebook-ads/accounts')
           const data = await response.json()
-          
+
           if (data.success && data.accounts[optionId]) {
             const account = data.accounts[optionId] as { id: string; name: string }
             return {
               id: optionId,
-              label: account.name
+              label: account.name,
             }
           }
           return null

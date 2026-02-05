@@ -2,7 +2,6 @@ import { GoogleIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
 
-
 export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
   type: 'google_ads_v1',
   name: 'Google Ads V1',
@@ -31,15 +30,15 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
         try {
           const response = await fetch('/api/google-ads/accounts')
           const data = await response.json()
-          
+
           console.log('Google Ads V1 API response:', data)
-          
-          if (data && data.success && data.accounts && typeof data.accounts === 'object') {
+
+          if (data?.success && data.accounts && typeof data.accounts === 'object') {
             const accounts = data.accounts as Record<string, { id: string; name: string }>
             const options = Object.entries(accounts).map(([key, account]) => ({
               id: key,
               label: account.name,
-              value: key
+              value: key,
             }))
             console.log('Google Ads V1 options:', options)
             return Array.isArray(options) ? options : []
@@ -55,13 +54,13 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
         try {
           const response = await fetch('/api/google-ads/accounts')
           const data = await response.json()
-          
+
           if (data.success && data.accounts[optionId]) {
             const account = data.accounts[optionId] as { id: string; name: string }
             return {
               id: optionId,
               label: account.name,
-              value: optionId
+              value: optionId,
             }
           }
           return null

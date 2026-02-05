@@ -10,7 +10,7 @@ export function resolveAIProvider(logger: Logger): AIProviderConfig {
     return {
       provider: 'xai',
       model: 'grok-3-latest',
-      apiKey: xaiApiKey
+      apiKey: xaiApiKey,
     }
   }
 
@@ -19,7 +19,7 @@ export function resolveAIProvider(logger: Logger): AIProviderConfig {
     return {
       provider: 'openai',
       model: 'gpt-4o',
-      apiKey: openaiApiKey
+      apiKey: openaiApiKey,
     }
   }
 

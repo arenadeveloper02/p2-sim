@@ -1,7 +1,11 @@
 import { createLogger } from '@sim/logger'
-import { BING_ADS_DEFAULT_CUSTOMER_ID, BING_ADS_OAUTH_URL, POSITION2_CUSTOMER_ID } from './constants'
-import type { ParsedBingQuery } from './types'
 import JSZip from 'jszip'
+import {
+  BING_ADS_DEFAULT_CUSTOMER_ID,
+  BING_ADS_OAUTH_URL,
+  POSITION2_CUSTOMER_ID,
+} from './constants'
+import type { ParsedBingQuery } from './types'
 
 const logger = createLogger('BingAdsAPIClient')
 
@@ -57,7 +61,9 @@ async function getAccessToken(): Promise<string> {
       status: tokenResponse.status,
       error: errorText,
     })
-    throw new Error(`Failed to refresh Bing Ads access token: ${tokenResponse.status} - ${errorText}`)
+    throw new Error(
+      `Failed to refresh Bing Ads access token: ${tokenResponse.status} - ${errorText}`
+    )
   }
 
   const tokenData = await tokenResponse.json()
@@ -75,8 +81,10 @@ async function getCampaignPerformanceReport(params: {
 }): Promise<any> {
   const { accessToken, developerToken, customerId, accountId, parsedQuery } = params
 
-  const submitUrl = 'https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc'
-  const pollUrl = 'https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc'
+  const submitUrl =
+    'https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc'
+  const pollUrl =
+    'https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc'
 
   // Log the request details for debugging
   logger.info('Submitting Bing Ads report request', {
@@ -106,7 +114,7 @@ async function getCampaignPerformanceReport(params: {
   })
 
   const submitText = await submitResponse.text()
-  
+
   // Log the response for debugging
   logger.info('SubmitGenerateReport response', {
     status: submitResponse.status,
@@ -120,7 +128,9 @@ async function getCampaignPerformanceReport(params: {
 
   const reportRequestId = extractFirstXmlTagValue(submitText, 'ReportRequestId')
   if (!reportRequestId) {
-    throw new Error(`SubmitGenerateReport succeeded but no ReportRequestId found. Response: ${submitText}`)
+    throw new Error(
+      `SubmitGenerateReport succeeded but no ReportRequestId found. Response: ${submitText}`
+    )
   }
 
   const maxPollAttempts = 12
@@ -143,8 +153,13 @@ async function getCampaignPerformanceReport(params: {
     })
 
     const pollText = await pollResponse.text()
-    logger.info('Poll raw response', { attempt, pollResponseStatus: pollResponse.status, pollTextLength: pollText.length, pollTextPreview: pollText.substring(0, 500) })
-    
+    logger.info('Poll raw response', {
+      attempt,
+      pollResponseStatus: pollResponse.status,
+      pollTextLength: pollText.length,
+      pollTextPreview: pollText.substring(0, 500),
+    })
+
     if (!pollResponse.ok) {
       throw new Error(`PollGenerateReport failed (${pollResponse.status}): ${pollText}`)
     }
@@ -152,19 +167,29 @@ async function getCampaignPerformanceReport(params: {
     const status = extractFirstXmlTagValue(pollText, 'Status')
     const reportDownloadUrl = extractFirstXmlTagValue(pollText, 'ReportDownloadUrl')
 
-    logger.info('Poll response parsed', { attempt, status, hasDownloadUrl: !!reportDownloadUrl, reportDownloadUrl: reportDownloadUrl?.substring(0, 150) })
+    logger.info('Poll response parsed', {
+      attempt,
+      status,
+      hasDownloadUrl: !!reportDownloadUrl,
+      reportDownloadUrl: reportDownloadUrl?.substring(0, 150),
+    })
 
     if (status && status.toLowerCase() === 'success') {
       if (!reportDownloadUrl) {
-        throw new Error(`Report status is Success but no ReportDownloadUrl found. Response: ${pollText}`)
+        throw new Error(
+          `Report status is Success but no ReportDownloadUrl found. Response: ${pollText}`
+        )
       }
 
       logger.info('Downloading report from URL', { url: reportDownloadUrl })
       const csvText = await downloadReportAsCsvText(reportDownloadUrl, accessToken)
-      logger.info('Downloaded CSV content', { csvLength: csvText.length, csvPreview: csvText.substring(0, 500) })
+      logger.info('Downloaded CSV content', {
+        csvLength: csvText.length,
+        csvPreview: csvText.substring(0, 500),
+      })
       const rows = await parseCsvToRecords(csvText)
       logger.info('Parsed CSV rows', { rowCount: rows.length, firstRow: rows[0] })
-      
+
       // Route to correct function based on report type
       if (parsedQuery.reportType === 'SearchQueryPerformance') {
         // For search queries, return raw CSV data to get all columns
@@ -176,9 +201,10 @@ async function getCampaignPerformanceReport(params: {
           report_type: parsedQuery.reportType,
           date_preset: parsedQuery.datePreset,
           aggregation: parsedQuery.aggregation,
-          columns_requested: parsedQuery.columns
+          columns_requested: parsedQuery.columns,
         }
-      } else if (parsedQuery.reportType === 'KeywordPerformance') {
+      }
+      if (parsedQuery.reportType === 'KeywordPerformance') {
         // For keywords, return raw CSV data to get all columns
         return {
           success: true,
@@ -188,11 +214,10 @@ async function getCampaignPerformanceReport(params: {
           report_type: parsedQuery.reportType,
           date_preset: parsedQuery.datePreset,
           aggregation: parsedQuery.aggregation,
-          columns_requested: parsedQuery.columns
+          columns_requested: parsedQuery.columns,
         }
-      } else {
-        return buildCampaignPerformanceMetrics(rows, parsedQuery)
       }
+      return buildCampaignPerformanceMetrics(rows, parsedQuery)
     }
 
     if (status && status.toLowerCase() === 'error') {
@@ -216,7 +241,7 @@ function calculateRawTotals(rows: Array<Record<string, any>>): any {
       cost: 0,
       ctr: 0,
       avg_cpc: 0,
-      cost_per_conversion: 0
+      cost_per_conversion: 0,
     }
   }
 
@@ -244,7 +269,7 @@ function calculateRawTotals(rows: Array<Record<string, any>>): any {
     cost: 0,
     ctr,
     avg_cpc: avgCpc,
-    cost_per_conversion: costPerConversion
+    cost_per_conversion: costPerConversion,
   }
 }
 
@@ -300,52 +325,105 @@ function buildPollSoapEnvelope(params: {
 
 function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery): string {
   const reportType = parsedQuery.reportType || 'CampaignPerformance'
-  
+
   // Map report type to XML type and column element name
-  const reportTypeMap: Record<string, { xmlType: string; columnElement: string; requiredColumns: string[] }> = {
-    'CampaignPerformance': {
+  const reportTypeMap: Record<
+    string,
+    { xmlType: string; columnElement: string; requiredColumns: string[] }
+  > = {
+    CampaignPerformance: {
       xmlType: 'CampaignPerformanceReportRequest',
       columnElement: 'CampaignPerformanceReportColumn',
-      requiredColumns: ['CampaignName', 'CampaignId', 'Impressions', 'Clicks', 'Spend', 'Conversions']
+      requiredColumns: [
+        'CampaignName',
+        'CampaignId',
+        'Impressions',
+        'Clicks',
+        'Spend',
+        'Conversions',
+      ],
     },
-    'AccountPerformance': {
+    AccountPerformance: {
       xmlType: 'AccountPerformanceReportRequest',
       columnElement: 'AccountPerformanceReportColumn',
-      requiredColumns: ['AccountName', 'AccountId', 'Impressions', 'Clicks', 'Spend', 'Conversions']
+      requiredColumns: [
+        'AccountName',
+        'AccountId',
+        'Impressions',
+        'Clicks',
+        'Spend',
+        'Conversions',
+      ],
     },
-    'AdGroupPerformance': {
+    AdGroupPerformance: {
       xmlType: 'AdGroupPerformanceReportRequest',
       columnElement: 'AdGroupPerformanceReportColumn',
-      requiredColumns: ['CampaignName', 'AdGroupName', 'AdGroupId', 'Impressions', 'Clicks', 'Spend', 'Conversions']
+      requiredColumns: [
+        'CampaignName',
+        'AdGroupName',
+        'AdGroupId',
+        'Impressions',
+        'Clicks',
+        'Spend',
+        'Conversions',
+      ],
     },
-    'KeywordPerformance': {
+    KeywordPerformance: {
       xmlType: 'KeywordPerformanceReportRequest',
       columnElement: 'KeywordPerformanceReportColumn',
-      requiredColumns: ['CampaignName', 'AdGroupName', 'Keyword', 'KeywordId', 'Impressions', 'Clicks', 'Spend']
+      requiredColumns: [
+        'CampaignName',
+        'AdGroupName',
+        'Keyword',
+        'KeywordId',
+        'Impressions',
+        'Clicks',
+        'Spend',
+      ],
     },
-    'SearchQueryPerformance': {
+    SearchQueryPerformance: {
       xmlType: 'SearchQueryPerformanceReportRequest',
       columnElement: 'SearchQueryPerformanceReportColumn',
-      requiredColumns: ['CampaignName', 'AdGroupName', 'SearchQuery', 'Impressions', 'Clicks', 'Spend']
+      requiredColumns: [
+        'CampaignName',
+        'AdGroupName',
+        'SearchQuery',
+        'Impressions',
+        'Clicks',
+        'Spend',
+      ],
     },
-    'GeographicPerformance': {
+    GeographicPerformance: {
       xmlType: 'GeographicPerformanceReportRequest',
       columnElement: 'GeographicPerformanceReportColumn',
-      requiredColumns: ['Country', 'Impressions', 'Clicks', 'Spend']
+      requiredColumns: ['Country', 'Impressions', 'Clicks', 'Spend'],
     },
-    'AdExtensionByAdReport': {
+    AdExtensionByAdReport: {
       xmlType: 'AdExtensionByAdReportRequest',
       columnElement: 'AdExtensionByAdReportColumn',
-      requiredColumns: ['CampaignName', 'AdGroupName', 'AdExtensionType', 'AdExtensionId', 'Impressions', 'Clicks']
+      requiredColumns: [
+        'CampaignName',
+        'AdGroupName',
+        'AdExtensionType',
+        'AdExtensionId',
+        'Impressions',
+        'Clicks',
+      ],
     },
-    'AdExtensionDetailReport': {
+    AdExtensionDetailReport: {
       xmlType: 'AdExtensionDetailReportRequest',
       columnElement: 'AdExtensionDetailReportColumn',
-      requiredColumns: ['CampaignName', 'AdExtensionType', 'AdExtensionId', 'Impressions', 'Clicks']
-    }
+      requiredColumns: [
+        'CampaignName',
+        'AdExtensionType',
+        'AdExtensionId',
+        'Impressions',
+        'Clicks',
+      ],
+    },
   }
-  
-  const config = reportTypeMap[reportType] || reportTypeMap['CampaignPerformance']
+
+  const config = reportTypeMap[reportType] || reportTypeMap.CampaignPerformance
   const requested = Array.isArray(parsedQuery.columns) ? parsedQuery.columns : []
   const columns = Array.from(new Set([...config.requiredColumns, ...requested]))
 
@@ -354,33 +432,33 @@ function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery):
 
   // Build Time element - use CustomDateRange if timeRange provided, otherwise use PredefinedTime
   let timeElement = ''
-  if (parsedQuery.timeRange && parsedQuery.timeRange.start && parsedQuery.timeRange.end) {
+  if (parsedQuery.timeRange?.start && parsedQuery.timeRange.end) {
     const startParts = parsedQuery.timeRange.start.split('-')
     const endParts = parsedQuery.timeRange.end.split('-')
-    
+
     logger.info('Building custom date range XML', {
       start: parsedQuery.timeRange.start,
       end: parsedQuery.timeRange.end,
       startParts,
       endParts,
-      startDay: parseInt(startParts[2]),
-      startMonth: parseInt(startParts[1]),
-      startYear: parseInt(startParts[0]),
-      endDay: parseInt(endParts[2]),
-      endMonth: parseInt(endParts[1]),
-      endYear: parseInt(endParts[0])
+      startDay: Number.parseInt(startParts[2]),
+      startMonth: Number.parseInt(startParts[1]),
+      startYear: Number.parseInt(startParts[0]),
+      endDay: Number.parseInt(endParts[2]),
+      endMonth: Number.parseInt(endParts[1]),
+      endYear: Number.parseInt(endParts[0]),
     })
-    
+
     timeElement = `<Time i:nil="false">
     <CustomDateRangeStart>
-      <Day>${parseInt(startParts[2])}</Day>
-      <Month>${parseInt(startParts[1])}</Month>
-      <Year>${parseInt(startParts[0])}</Year>
+      <Day>${Number.parseInt(startParts[2])}</Day>
+      <Month>${Number.parseInt(startParts[1])}</Month>
+      <Year>${Number.parseInt(startParts[0])}</Year>
     </CustomDateRangeStart>
     <CustomDateRangeEnd>
-      <Day>${parseInt(endParts[2])}</Day>
-      <Month>${parseInt(endParts[1])}</Month>
-      <Year>${parseInt(endParts[0])}</Year>
+      <Day>${Number.parseInt(endParts[2])}</Day>
+      <Month>${Number.parseInt(endParts[1])}</Month>
+      <Year>${Number.parseInt(endParts[0])}</Year>
     </CustomDateRangeEnd>
     <ReportTimeZone i:nil="false">EasternTimeUSCanada</ReportTimeZone>
   </Time>`
@@ -415,7 +493,10 @@ function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery):
 }
 
 // Keep backward compatibility
-function buildCampaignPerformanceReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery): string {
+function buildCampaignPerformanceReportRequestXml(
+  accountId: string,
+  parsedQuery: ParsedBingQuery
+): string {
   return buildReportRequestXml(accountId, parsedQuery)
 }
 
@@ -423,16 +504,23 @@ async function downloadReportAsCsvText(url: string, _accessToken?: string): Prom
   // The report download URL from Bing Ads is a pre-signed Azure blob URL with SAS token
   // Do NOT add Authorization header - Azure blob storage uses SAS tokens in the URL itself
   // Adding Bearer token causes 403 AuthenticationFailed error
-  
-  logger.info('Attempting report download', { urlLength: url.length, urlPreview: url.substring(0, 200) })
-  
+
+  logger.info('Attempting report download', {
+    urlLength: url.length,
+    urlPreview: url.substring(0, 200),
+  })
+
   const response = await fetch(url, {
     method: 'GET',
     redirect: 'follow',
   })
   if (!response.ok) {
     const body = await response.text().catch(() => '')
-    logger.error('Report download failed', { status: response.status, url, body: body.substring(0, 500) })
+    logger.error('Report download failed', {
+      status: response.status,
+      url,
+      body: body.substring(0, 500),
+    })
     throw new Error(`Failed to download report (${response.status}): ${body}`)
   }
 
@@ -441,7 +529,9 @@ async function downloadReportAsCsvText(url: string, _accessToken?: string): Prom
 
   if (buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
     const zip = await JSZip.loadAsync(buffer)
-    const csvFile = Object.values(zip.files).find((f) => !f.dir && f.name.toLowerCase().endsWith('.csv'))
+    const csvFile = Object.values(zip.files).find(
+      (f) => !f.dir && f.name.toLowerCase().endsWith('.csv')
+    )
     if (!csvFile) {
       throw new Error('Downloaded report is a zip but contains no CSV file')
     }
@@ -459,14 +549,14 @@ async function parseCsvToRecords(csvText: string): Promise<Array<Record<string, 
     // "Report Time: ..."
     // ... more metadata ...
     // "Rows: N"
-    // 
+    //
     // "Column1","Column2",...
     // "Value1","Value2",...
-    
+
     // Find the actual data section by looking for the header row after "Rows:" line
     const lines = csvText.split('\n')
     let dataStartIndex = 0
-    
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim()
       // Look for the "Rows:" line which indicates end of metadata
@@ -476,19 +566,19 @@ async function parseCsvToRecords(csvText: string): Promise<Array<Record<string, 
         break
       }
     }
-    
+
     // If we found metadata, extract only the data portion
     let dataCsv = csvText
     if (dataStartIndex > 0 && dataStartIndex < lines.length) {
       dataCsv = lines.slice(dataStartIndex).join('\n')
-      logger.info('Extracted data CSV from Bing Ads report', { 
-        originalLines: lines.length, 
-        dataStartIndex, 
+      logger.info('Extracted data CSV from Bing Ads report', {
+        originalLines: lines.length,
+        dataStartIndex,
         dataLines: lines.length - dataStartIndex,
-        dataCsvPreview: dataCsv.substring(0, 300)
+        dataCsvPreview: dataCsv.substring(0, 300),
       })
     }
-    
+
     const mod: any = await import('csv-parse/sync')
     const parseSync = mod.parse
     const rows = parseSync(dataCsv, {
@@ -498,7 +588,7 @@ async function parseCsvToRecords(csvText: string): Promise<Array<Record<string, 
       relax_column_count: true,
       relax_quotes: true,
     })
-    
+
     // Remove quotes from column names if they exist
     // Bing Ads CSV sometimes has quoted column names like "CampaignName"
     return rows.map((row: Record<string, any>) => {
@@ -518,13 +608,16 @@ async function parseCsvToRecords(csvText: string): Promise<Array<Record<string, 
 }
 
 // NEW function for search queries - uses SearchQuery field instead of CampaignName
-function buildSearchQueryMetrics(rows: Array<Record<string, any>>, parsedQuery: ParsedBingQuery): any {
+function buildSearchQueryMetrics(
+  rows: Array<Record<string, any>>,
+  parsedQuery: ParsedBingQuery
+): any {
   const searchQueriesByName = new Map<string, any>()
 
   for (const row of rows) {
     // Use SearchQuery for search query reports
     const name = String(row.SearchQuery || '').trim()
-    
+
     if (!name) continue
 
     const impressions = toNumber(row.Impressions)
@@ -564,7 +657,7 @@ function buildSearchQueryMetrics(rows: Array<Record<string, any>>, parsedQuery: 
 
   // If no search queries found but we have rows, calculate totals directly from rows
   let totals = { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
-  
+
   if (searchQueries.length > 0) {
     totals = searchQueries.reduce(
       (acc, c) => {
@@ -605,18 +698,21 @@ function buildSearchQueryMetrics(rows: Array<Record<string, any>>, parsedQuery: 
   }
 }
 
-function buildCampaignPerformanceMetrics(rows: Array<Record<string, any>>, parsedQuery: ParsedBingQuery): any {
+function buildCampaignPerformanceMetrics(
+  rows: Array<Record<string, any>>,
+  parsedQuery: ParsedBingQuery
+): any {
   const campaignsByName = new Map<string, any>()
-  
+
   // For AccountPerformance reports, there's no CampaignName - use AccountName instead
   const isAccountReport = parsedQuery.reportType === 'AccountPerformance'
 
   for (const row of rows) {
     // Use CampaignName for campaign reports, AccountName for account reports
-    const name = isAccountReport 
+    const name = isAccountReport
       ? String(row.AccountName || '').trim()
       : String(row.CampaignName || '').trim()
-    
+
     // For account reports, if no AccountName, still process the row using a default name
     if (!name && !isAccountReport) continue
 
@@ -627,7 +723,13 @@ function buildCampaignPerformanceMetrics(rows: Array<Record<string, any>>, parse
 
     const entityName = name || 'Account Total'
     const existing = campaignsByName.get(entityName) || {
-      id: isAccountReport ? (row.AccountId ? String(row.AccountId) : undefined) : (row.CampaignId ? String(row.CampaignId) : undefined),
+      id: isAccountReport
+        ? row.AccountId
+          ? String(row.AccountId)
+          : undefined
+        : row.CampaignId
+          ? String(row.CampaignId)
+          : undefined,
       name: entityName,
       impressions: 0,
       clicks: 0,
@@ -657,7 +759,7 @@ function buildCampaignPerformanceMetrics(rows: Array<Record<string, any>>, parse
 
   // If no campaigns found but we have rows, calculate totals directly from rows
   let totals = { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
-  
+
   if (campaigns.length > 0) {
     totals = campaigns.reduce(
       (acc, c) => {
@@ -752,7 +854,10 @@ export async function makeBingAdsRequest(
     const developerToken = process.env.BING_ADS_DEVELOPER_TOKEN
     // Use account-specific customerId if provided, otherwise fall back to env/defaults
     const customerId =
-      accountCustomerId || process.env.BING_ADS_CUSTOMER_ID || BING_ADS_DEFAULT_CUSTOMER_ID || POSITION2_CUSTOMER_ID
+      accountCustomerId ||
+      process.env.BING_ADS_CUSTOMER_ID ||
+      BING_ADS_DEFAULT_CUSTOMER_ID ||
+      POSITION2_CUSTOMER_ID
 
     if (!developerToken) {
       throw new Error(
@@ -828,14 +933,14 @@ function buildReportRequest(accountId: string, parsedQuery: ParsedBingQuery): an
       Time: timeRange
         ? {
             CustomDateRangeStart: {
-              Day: parseInt(timeRange.start.split('-')[2]),
-              Month: parseInt(timeRange.start.split('-')[1]),
-              Year: parseInt(timeRange.start.split('-')[0]),
+              Day: Number.parseInt(timeRange.start.split('-')[2]),
+              Month: Number.parseInt(timeRange.start.split('-')[1]),
+              Year: Number.parseInt(timeRange.start.split('-')[0]),
             },
             CustomDateRangeEnd: {
-              Day: parseInt(timeRange.end.split('-')[2]),
-              Month: parseInt(timeRange.end.split('-')[1]),
-              Year: parseInt(timeRange.end.split('-')[0]),
+              Day: Number.parseInt(timeRange.end.split('-')[2]),
+              Month: Number.parseInt(timeRange.end.split('-')[1]),
+              Year: Number.parseInt(timeRange.end.split('-')[0]),
             },
           }
         : {
@@ -859,7 +964,7 @@ function formatBingAdsResponse(data: any, parsedQuery: ParsedBingQuery): any {
       // Match if campaign name contains the filter or equals it
       return campaignName.includes(filterLower) || campaignName === filterLower
     })
-    
+
     logger.info('Applied campaign filter', {
       filter: parsedQuery.campaignFilter,
       matchedCount: campaigns.length,
@@ -899,10 +1004,10 @@ function getMockCampaignData(accountId: string, parsedQuery: ParsedBingQuery): a
         status: 'Active',
         impressions: 15000,
         clicks: 450,
-        spend: 225.50,
+        spend: 225.5,
         conversions: 12,
         ctr: 3.0,
-        avg_cpc: 0.50,
+        avg_cpc: 0.5,
         cost_per_conversion: 18.79,
       },
       {
@@ -911,17 +1016,17 @@ function getMockCampaignData(accountId: string, parsedQuery: ParsedBingQuery): a
         status: 'Active',
         impressions: 8500,
         clicks: 280,
-        spend: 168.00,
+        spend: 168.0,
         conversions: 8,
         ctr: 3.29,
-        avg_cpc: 0.60,
-        cost_per_conversion: 21.00,
+        avg_cpc: 0.6,
+        cost_per_conversion: 21.0,
       },
     ],
     account_totals: {
       impressions: 23500,
       clicks: 730,
-      spend: 393.50,
+      spend: 393.5,
       conversions: 20,
       ctr: 3.11,
       avg_cpc: 0.54,

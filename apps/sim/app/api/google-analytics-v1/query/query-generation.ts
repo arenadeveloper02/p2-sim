@@ -1,8 +1,8 @@
 import type { Logger } from '@sim/logger'
-import type { GA4QueryResponse, AIProviderConfig } from './types'
 import { resolveAIProvider } from './ai-provider'
-import { GA4_QUERY_GENERATION_PROMPT } from './prompt'
 import { DATE_PRESETS } from './constants'
+import { GA4_QUERY_GENERATION_PROMPT } from './prompt'
+import type { AIProviderConfig, GA4QueryResponse } from './types'
 
 export async function generateGA4Query(
   userQuery: string,
@@ -26,23 +26,26 @@ export async function generateGA4Query(
 
     // Add default date ranges if not provided
     if (!queryResponse.dateRanges || queryResponse.dateRanges.length === 0) {
-      queryResponse.dateRanges = [{
-        startDate: DATE_PRESETS.last_30_days,
-        endDate: DATE_PRESETS.today
-      }]
+      queryResponse.dateRanges = [
+        {
+          startDate: DATE_PRESETS.last_30_days,
+          endDate: DATE_PRESETS.today,
+        },
+      ]
     }
 
     logger.info('GA4 query generated successfully', {
       dimensions: queryResponse.dimensions,
       metrics: queryResponse.metrics,
-      dateRanges: queryResponse.dateRanges
+      dateRanges: queryResponse.dateRanges,
     })
 
     return queryResponse
-
   } catch (error) {
     logger.error('Failed to generate GA4 query', { error, userQuery })
-    throw new Error(`Query generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    throw new Error(
+      `Query generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    )
   }
 }
 
@@ -50,14 +53,14 @@ async function callXAI(config: AIProviderConfig, prompt: string, logger: Logger)
   const response = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${config.apiKey}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       model: config.model,
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1
-    })
+      temperature: 0.1,
+    }),
   })
 
   if (!response.ok) {
@@ -68,18 +71,22 @@ async function callXAI(config: AIProviderConfig, prompt: string, logger: Logger)
   return result.choices[0].message.content
 }
 
-async function callOpenAI(config: AIProviderConfig, prompt: string, logger: Logger): Promise<string> {
+async function callOpenAI(
+  config: AIProviderConfig,
+  prompt: string,
+  logger: Logger
+): Promise<string> {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${config.apiKey}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       model: config.model,
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1
-    })
+      temperature: 0.1,
+    }),
   })
 
   if (!response.ok) {

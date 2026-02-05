@@ -43,14 +43,14 @@ export const BingAdsBlock: BlockConfig<BingAdsQueryResponse> = {
         try {
           const response = await fetch('/api/bing-ads-v1/accounts')
           const data = await response.json()
-          
+
           console.log('Bing Ads API response:', data)
-          
-          if (data && data.success && data.accounts && typeof data.accounts === 'object') {
+
+          if (data?.success && data.accounts && typeof data.accounts === 'object') {
             const accounts = data.accounts as Record<string, { id: string; name: string }>
             const options = Object.entries(accounts).map(([key, account]) => ({
               id: key,
-              label: account.name
+              label: account.name,
             }))
             console.log('Bing Ads options:', options)
             return Array.isArray(options) ? options : []
@@ -66,13 +66,13 @@ export const BingAdsBlock: BlockConfig<BingAdsQueryResponse> = {
         try {
           const response = await fetch('/api/bing-ads-v1/accounts')
           const data = await response.json()
-          
+
           if (data.success && data.accounts[optionId]) {
             const account = data.accounts[optionId] as { id: string; name: string }
             return {
               id: optionId,
               label: account.name,
-              value: account.id
+              value: account.id,
             }
           }
           return null

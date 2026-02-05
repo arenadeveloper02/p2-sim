@@ -1,15 +1,15 @@
 import { sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { db, docsEmbeddings } from '@/lib/db'
-import { generateSearchEmbedding } from '@/lib/embeddings'
 
 export const runtime = 'nodejs'
 export const revalidate = 0
+export const dynamic = 'force-dynamic'
 
 /**
  * Hybrid search API endpoint
  * - English: Vector embeddings + keyword search
  * - Other languages: Keyword search only
+ * Uses dynamic imports so the route can be built without DATABASE_URL.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
     if (!query || query.trim().length === 0) {
       return NextResponse.json([])
     }
+
+    const { db, docsEmbeddings } = await import('@/lib/db')
+    const { generateSearchEmbedding } = await import('@/lib/embeddings')
 
     const candidateLimit = limit * 3
     const similarityThreshold = 0.6

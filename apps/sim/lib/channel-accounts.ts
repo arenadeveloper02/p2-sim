@@ -13,11 +13,13 @@ export interface ChannelAccount {
 
 /**
  * Fetches channel accounts from database by type
- * 
+ *
  * @param type - Account type ('facebook', 'bing', 'google')
  * @returns Promise<Record<string, ChannelAccount>> - Accounts in same format as constants
  */
-export async function getChannelAccounts(type: 'facebook' | 'bing' | 'google'): Promise<Record<string, ChannelAccount>> {
+export async function getChannelAccounts(
+  type: 'facebook' | 'bing' | 'google'
+): Promise<Record<string, ChannelAccount>> {
   try {
     // Use raw SQL query since channel_accounts table doesn't exist in schema yet
     const result = await db.execute(sql`
@@ -26,10 +28,10 @@ export async function getChannelAccounts(type: 'facebook' | 'bing' | 'google'): 
       WHERE account_type = ${type} 
       ORDER BY account_name
     `)
-    
+
     // Convert to same format as constants (key: { id, name })
     const accounts: Record<string, ChannelAccount> = {}
-    
+
     for (const row of result as any[]) {
       // Create a friendly key from account_name (lowercase, replace spaces/special chars with underscore)
       const key = String(row.account_name)
@@ -38,13 +40,13 @@ export async function getChannelAccounts(type: 'facebook' | 'bing' | 'google'): 
         .replace(/\s+/g, '_') // Replace spaces with underscores
         .replace(/_+/g, '_') // Replace multiple underscores with single
         .replace(/^_|_$/g, '') // Remove leading/trailing underscores
-      
+
       accounts[key] = {
         id: String(row.account_id),
-        name: String(row.account_name)
+        name: String(row.account_name),
       }
     }
-    
+
     return accounts
   } catch (error) {
     console.error(`Error fetching ${type} accounts from database:`, error)

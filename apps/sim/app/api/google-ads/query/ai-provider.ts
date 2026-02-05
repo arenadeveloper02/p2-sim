@@ -18,7 +18,7 @@ const PROVIDER_PRIORITY: Array<{
   label: string
   envKey: string
 }> = [
-   {
+  {
     provider: 'xai',
     model: 'grok-3-fast-latest',
     label: 'Grok',

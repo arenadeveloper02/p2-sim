@@ -21,20 +21,20 @@ export class GA4ApiClient {
 
   async runReport(propertyId: string, query: any): Promise<any> {
     const url = `${GA4_API_BASE_URL}/${propertyId}:runReport`
-    
+
     this.logger.info('Making GA4 API request', {
       propertyId,
       url,
-      query
+      query,
     })
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json'
+        Authorization: `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(query)
+      body: JSON.stringify(query),
     })
 
     if (!response.ok) {
@@ -42,14 +42,14 @@ export class GA4ApiClient {
       this.logger.error('GA4 API request failed', {
         status: response.status,
         statusText: response.statusText,
-        error: errorText
+        error: errorText,
       })
       throw new Error(`GA4 API error: ${response.status} ${response.statusText}`)
     }
 
     const result = await response.json()
     this.logger.info('GA4 API request successful', {
-      rowCount: result.rows?.length || 0
+      rowCount: result.rows?.length || 0,
     })
 
     return result
@@ -60,8 +60,8 @@ export class GA4ApiClient {
       const url = `${GA4_API_BASE_URL}/${propertyId}/metadata`
       const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${this.accessToken}`
-        }
+          Authorization: `Bearer ${this.accessToken}`,
+        },
       })
       return response.ok
     } catch (error) {

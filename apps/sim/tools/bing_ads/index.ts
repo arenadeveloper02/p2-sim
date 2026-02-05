@@ -1,2 +1,2 @@
-export { bingAdsQueryTool, BING_ADS_ACCOUNTS } from './query'
+export { BING_ADS_ACCOUNTS, bingAdsQueryTool } from './query'
 export type * from './types'

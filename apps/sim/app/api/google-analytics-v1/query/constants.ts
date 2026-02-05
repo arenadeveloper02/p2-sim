@@ -4,26 +4,26 @@ export const GA4_PROPERTIES: GA4Property[] = [
   {
     id: 'properties/123456789',
     name: 'Main Website',
-    displayName: 'Main Website - GA4'
+    displayName: 'Main Website - GA4',
   },
   {
     id: 'properties/987654321',
     name: 'Mobile App',
-    displayName: 'Mobile App - GA4'
-  }
+    displayName: 'Mobile App - GA4',
+  },
 ]
 
 export const GA4_API_BASE_URL = 'https://analyticsdata.googleapis.com/v1beta'
 
 export const DATE_PRESETS = {
-  'today': 'today',
-  'yesterday': 'yesterday',
-  'last_7_days': '7daysAgo',
-  'last_30_days': '30daysAgo',
-  'last_90_days': '90daysAgo',
-  'this_month': '28daysAgo',
-  'last_month': '60daysAgo',
-  'this_year': '365daysAgo'
+  today: 'today',
+  yesterday: 'yesterday',
+  last_7_days: '7daysAgo',
+  last_30_days: '30daysAgo',
+  last_90_days: '90daysAgo',
+  this_month: '28daysAgo',
+  last_month: '60daysAgo',
+  this_year: '365daysAgo',
 }
 
 export const COMMON_DIMENSIONS = [
@@ -41,7 +41,7 @@ export const COMMON_DIMENSIONS = [
   'landingPage',
   'exitPage',
   'eventName',
-  'eventType'
+  'eventType',
 ]
 
 export const COMMON_METRICS = [
@@ -59,5 +59,5 @@ export const COMMON_METRICS = [
   'eventValue',
   'adClicks',
   'adImpressions',
-  'adRevenue'
+  'adRevenue',
 ]

@@ -62,6 +62,7 @@ import {
   asanaSearchTasksTool,
   asanaUpdateTaskTool,
 } from '@/tools/asana'
+import { bingAdsQueryTool } from '@/tools/bing_ads'
 import { browserUseRunTaskTool } from '@/tools/browser_use'
 import {
   calendlyCancelEventTool,
@@ -206,7 +207,6 @@ import {
   exaSearchTool,
 } from '@/tools/exa'
 import { facebookAdsQueryTool } from '@/tools/facebook_ads'
-import { bingAdsQueryTool } from '@/tools/bing_ads'
 import {
   figmaCreateTool,
   figmaDeleteCommentTool,
