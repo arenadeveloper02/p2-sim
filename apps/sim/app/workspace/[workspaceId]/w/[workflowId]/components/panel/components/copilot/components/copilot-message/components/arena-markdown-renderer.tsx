@@ -281,23 +281,24 @@ export default function ArenaCopilotMarkdownRenderer({
           | 'tsx'
           | 'jsx'
           | 'bash'
-          | 'yaml' = normalizedLanguage === 'json'
-          ? 'json'
-          : normalizedLanguage === 'python' || normalizedLanguage === 'py'
-            ? 'python'
-            : normalizedLanguage === 'typescript' || normalizedLanguage === 'ts'
-              ? 'typescript'
-              : normalizedLanguage === 'tsx'
-                ? 'tsx'
-                : normalizedLanguage === 'jsx'
-                  ? 'jsx'
-                  : normalizedLanguage === 'bash' ||
-                      normalizedLanguage === 'shell' ||
-                      normalizedLanguage === 'sh'
-                    ? 'bash'
-                    : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
-                      ? 'yaml'
-                      : 'javascript'
+          | 'yaml' =
+          normalizedLanguage === 'json'
+            ? 'json'
+            : normalizedLanguage === 'python' || normalizedLanguage === 'py'
+              ? 'python'
+              : normalizedLanguage === 'typescript' || normalizedLanguage === 'ts'
+                ? 'typescript'
+                : normalizedLanguage === 'tsx'
+                  ? 'tsx'
+                  : normalizedLanguage === 'jsx'
+                    ? 'jsx'
+                    : normalizedLanguage === 'bash' ||
+                        normalizedLanguage === 'shell' ||
+                        normalizedLanguage === 'sh'
+                      ? 'bash'
+                      : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
+                        ? 'yaml'
+                        : 'javascript'
 
         return (
           <div className='my-6 w-0 min-w-full overflow-hidden rounded-md border border-[var(--border-strong)] bg-[var(--surface-2)] text-sm dark:bg-[#1F1F1F]'>

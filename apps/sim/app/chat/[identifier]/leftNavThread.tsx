@@ -1,5 +1,12 @@
 'use client'
-import { ArrowLeft, CirclePlus, FileText, MessageSquareText, RefreshCw, Sparkles } from 'lucide-react'
+import {
+  ArrowLeft,
+  CirclePlus,
+  FileText,
+  MessageSquareText,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -165,8 +172,6 @@ const LeftNavThread = ({
         </div>
       </div>
 
-      
-      
       <div className='flex flex-col gap-1'>
         <Button
           className='group h-[32px] w-full justify-start gap-2 rounded border-none bg-white font-normal text-[#41444C] text-sm hover:bg-white hover:font-semibold hover:text-[#2A2A2A] hover:shadow-md'

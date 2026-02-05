@@ -1,6 +1,12 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
-import { chat, deployedChat, workflow, workflowExecutionLogs, workflowQueries } from '@sim/db/schema'
+import {
+  chat,
+  deployedChat,
+  workflow,
+  workflowExecutionLogs,
+  workflowQueries,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -830,10 +836,7 @@ export async function PATCH(
       })
     }
 
-    await db
-      .update(chat)
-      .set({ updatedAt: new Date() })
-      .where(eq(chat.id, deployment.id))
+    await db.update(chat).set({ updatedAt: new Date() }).where(eq(chat.id, deployment.id))
 
     return addCorsHeaders(createSuccessResponse({ goldenQueries: sanitizedQueries }), request)
   } catch (error: any) {

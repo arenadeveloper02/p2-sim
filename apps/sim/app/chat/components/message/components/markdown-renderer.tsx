@@ -1,7 +1,7 @@
 import React, { type HTMLAttributes, memo, type ReactNode, useMemo, useState } from 'react'
+import { Check, Copy } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Check, Copy } from 'lucide-react'
 import { Code, Tooltip } from '@/components/emcn'
 
 export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
@@ -126,23 +126,24 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
         | 'tsx'
         | 'jsx'
         | 'bash'
-        | 'yaml' = normalizedLanguage === 'json'
-        ? 'json'
-        : normalizedLanguage === 'python' || normalizedLanguage === 'py'
-          ? 'python'
-          : normalizedLanguage === 'typescript' || normalizedLanguage === 'ts'
-            ? 'typescript'
-            : normalizedLanguage === 'tsx'
-              ? 'tsx'
-              : normalizedLanguage === 'jsx'
-                ? 'jsx'
-                : normalizedLanguage === 'bash' ||
-                    normalizedLanguage === 'shell' ||
-                    normalizedLanguage === 'sh'
-                  ? 'bash'
-                  : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
-                    ? 'yaml'
-                    : 'javascript'
+        | 'yaml' =
+        normalizedLanguage === 'json'
+          ? 'json'
+          : normalizedLanguage === 'python' || normalizedLanguage === 'py'
+            ? 'python'
+            : normalizedLanguage === 'typescript' || normalizedLanguage === 'ts'
+              ? 'typescript'
+              : normalizedLanguage === 'tsx'
+                ? 'tsx'
+                : normalizedLanguage === 'jsx'
+                  ? 'jsx'
+                  : normalizedLanguage === 'bash' ||
+                      normalizedLanguage === 'shell' ||
+                      normalizedLanguage === 'sh'
+                    ? 'bash'
+                    : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
+                      ? 'yaml'
+                      : 'javascript'
 
       const handleCopy = async () => {
         if (typeof navigator === 'undefined' || !navigator.clipboard) {
@@ -169,7 +170,11 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
               className='text-[#A3A3A3] transition-colors hover:text-gray-300'
               title='Copy'
             >
-              {isCopied ? <Check className='h-3 w-3' strokeWidth={2} /> : <Copy className='h-3 w-3' strokeWidth={2} />}
+              {isCopied ? (
+                <Check className='h-3 w-3' strokeWidth={2} />
+              ) : (
+                <Copy className='h-3 w-3' strokeWidth={2} />
+              )}
             </button>
           </div>
           <Code.Viewer

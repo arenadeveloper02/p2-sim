@@ -22,7 +22,13 @@ interface FeedbackData {
   comment?: string
 }
 
-export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId, isLikeFeedback = false }: FeedbackBoxProps) {
+export function FeedbackBox({
+  isOpen,
+  onClose,
+  onSubmit,
+  currentExecutionId,
+  isLikeFeedback = false,
+}: FeedbackBoxProps) {
   const [feedback, setFeedback] = useState<FeedbackData>({
     tooLong: false,
     outOfDate: false,
@@ -105,7 +111,9 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId, isL
                 <Checkbox
                   id='outOfDate'
                   checked={feedback.outOfDate}
-                  onCheckedChange={(checked) => handleCheckboxChange('outOfDate', checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    handleCheckboxChange('outOfDate', checked as boolean)
+                  }
                 />
                 <label htmlFor='outOfDate' className='font-normal text-sm'>
                   Out of Date
@@ -130,7 +138,9 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId, isL
                 <Checkbox
                   id='tooShort'
                   checked={feedback.tooShort}
-                  onCheckedChange={(checked) => handleCheckboxChange('tooShort', checked as boolean)}
+                  onCheckedChange={(checked) =>
+                    handleCheckboxChange('tooShort', checked as boolean)
+                  }
                 />
                 <label htmlFor='tooShort' className='font-normal text-sm'>
                   Too Short

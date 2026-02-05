@@ -1,9 +1,9 @@
 'use client'
 
-import { ArrowLeft, ThumbsDown, ThumbsUp } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { createLogger } from '@sim/logger'
+import { ArrowLeft, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
+import { Button } from '@/components/ui/button'
 import MarkdownRenderer from '@/app/chat/components/message/components/markdown-renderer'
 
 const logger = createLogger('FeedbackView')
@@ -125,7 +125,7 @@ export function FeedbackView({
   return (
     <div className='flex h-full w-full flex-col overflow-hidden'>
       {/* Header */}
-      <div className='bg-[#F3F8FE] border-b border-gray-200 flex gap-4 items-center px-6 py-4'>
+      <div className='flex items-center gap-4 border-gray-200 border-b bg-[#F3F8FE] px-6 py-4'>
         <Button variant='ghost' size='icon' className='h-8 w-8' onClick={onBack}>
           <ArrowLeft className='h-4 w-4' />
         </Button>
@@ -156,7 +156,7 @@ export function FeedbackView({
                   >
                     {/* Timestamp and Author */}
                     {timestamp && (
-                      <div className='border-b border-gray-100 flex items-center justify-between mb-4 pb-3'>
+                      <div className='mb-4 flex items-center justify-between border-gray-100 border-b pb-3'>
                         <div className='text-gray-600 text-sm'>{formatDate(timestamp)}</div>
                         {author && <div className='text-gray-600 text-sm'>Author: {author}</div>}
                       </div>
@@ -190,16 +190,16 @@ export function FeedbackView({
                     {(() => {
                       const liked = item.feedback?.liked ?? item.liked
                       const hasFeedback = feedbackTags.length > 0 || comment || liked === true
-                      
+
                       if (!hasFeedback) return null
-                      
+
                       // If only liked feedback with no tags or comments, show just the header
                       if (liked === true && feedbackTags.length === 0 && !comment) {
                         return (
                           <div>
                             <div className='mb-2 flex items-center gap-2 font-semibold text-gray-700 text-sm'>
                               <span>Feedback</span>
-                              <span className='flex font-medium gap-1 items-center text-green-700 text-xs'>
+                              <span className='flex items-center gap-1 font-medium text-green-700 text-xs'>
                                 <ThumbsUp className='h-3 w-3' />
                                 Liked
                               </span>
@@ -207,20 +207,20 @@ export function FeedbackView({
                           </div>
                         )
                       }
-                      
+
                       // Show full feedback section with tags and/or comments
                       return (
                         <div>
                           <div className='mb-2 flex items-center gap-2 font-semibold text-gray-700 text-sm'>
                             <span>Feedback</span>
                             {liked === true && (
-                              <span className='flex font-medium gap-1 items-center text-green-700 text-xs'>
+                              <span className='flex items-center gap-1 font-medium text-green-700 text-xs'>
                                 <ThumbsUp className='h-3 w-3' />
                                 Liked
                               </span>
                             )}
                             {liked === false && (
-                              <span className='flex font-medium gap-1 items-center text-red-700 text-xs'>
+                              <span className='flex items-center gap-1 font-medium text-red-700 text-xs'>
                                 <ThumbsDown className='h-3 w-3' />
                                 Disliked
                               </span>
@@ -230,7 +230,7 @@ export function FeedbackView({
                             {feedbackTags.map((tag, tagIndex) => (
                               <span
                                 key={tagIndex}
-                                className={`font-medium px-3 py-1 rounded-full text-xs ${tag.color}`}
+                                className={`rounded-full px-3 py-1 font-medium text-xs ${tag.color}`}
                               >
                                 {tag.label}
                               </span>

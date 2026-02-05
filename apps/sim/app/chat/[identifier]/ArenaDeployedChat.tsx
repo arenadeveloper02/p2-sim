@@ -33,8 +33,8 @@ import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constan
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { ArenaChatHeader } from '../components/header/arenaHeader'
-import LeftNavThread from './leftNavThread'
 import { FeedbackView } from './FeedbackView'
+import LeftNavThread from './leftNavThread'
 
 const logger = createLogger('ChatClient')
 
@@ -1250,7 +1250,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       )}
 
       {/* Header component */}
-      <ArenaChatHeader chatConfig={chatConfig} starCount={starCount} showFeedbackView={showFeedbackView} />
+      <ArenaChatHeader
+        chatConfig={chatConfig}
+        starCount={starCount}
+        showFeedbackView={showFeedbackView}
+      />
 
       <LeftNavThread
         threads={threads}
@@ -1268,7 +1272,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         onViewFeedback={handleViewFeedback}
         onViewGoldenQueries={handleViewGoldenQueries}
       />
-      
+
       {showFeedbackView ? (
         <div className='absolute inset-0 top-[86px] left-[320px]'>
           <FeedbackView

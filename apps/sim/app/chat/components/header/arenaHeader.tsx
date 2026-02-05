@@ -18,7 +18,11 @@ interface ChatHeaderProps {
   showFeedbackView?: boolean
 }
 
-export function ArenaChatHeader({ chatConfig, starCount, showFeedbackView = false }: ChatHeaderProps) {
+export function ArenaChatHeader({
+  chatConfig,
+  starCount,
+  showFeedbackView = false,
+}: ChatHeaderProps) {
   const brand = useBrandConfig()
   const primaryColor = chatConfig?.customizations?.primaryColor || 'var(--brand-primary-hex)'
   const customImage = chatConfig?.customizations?.imageUrl || chatConfig?.customizations?.logoUrl
