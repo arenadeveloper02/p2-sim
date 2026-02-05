@@ -392,11 +392,12 @@ export class ExecutionEngine {
       this.finalOutput = output
     }
 
-    // Check if this is a Response block
-    // Response blocks are terminal, but if they're inside a loop, we should allow the loop to continue
+    // Check if this is a terminal block (Response blocks or blocks with no outgoing edges)
+    // Terminal blocks outside loops should stop the workflow, but inside loops they should allow continuation
     const blockType = node.block.metadata?.id
     const isResponseBlock = blockType === BlockType.RESPONSE
     const isInsideLoop = !!node.metadata.loopId
+    const isTerminalBlock = isResponseBlock || node.outgoingEdges.size === 0
 
     if (isResponseBlock && !isInsideLoop) {
       // Response block outside of loops - stop entire workflow execution
@@ -429,9 +430,10 @@ export class ExecutionEngine {
 
     this.addMultipleToQueue(readyNodes)
 
-    // If this is a Response block inside a loop, ensure the loop's sentinel end gets triggered
-    // Response blocks are terminal - when they complete, the iteration is done and loop should continue
-    if (isResponseBlock && isInsideLoop) {
+    // If this is a terminal block inside a loop, ensure the loop's sentinel end gets triggered
+    // Terminal blocks (Response blocks or blocks with no outgoing edges) indicate iteration completion
+    // When they complete, the iteration is done and loop should continue
+    if (isTerminalBlock && isInsideLoop) {
       const loopId = node.metadata.loopId
       if (loopId) {
         const sentinelEndId = buildSentinelEndId(loopId)
@@ -451,20 +453,21 @@ export class ExecutionEngine {
           const sentinelEndInReadyNodes = readyNodes.includes(sentinelEndId)
 
           if (!sentinelEndInReadyNodes) {
-            // Response blocks are terminal - their completion means the iteration is complete
+            // Terminal blocks indicate iteration completion - their completion means the iteration is done
             // Force trigger the sentinel end to allow the loop to continue to the next iteration
             logger.info(
-              'Response block completed in loop - forcing sentinel end trigger (iteration complete)',
+              'Terminal block completed in loop - forcing sentinel end trigger (iteration complete)',
               {
                 loopId,
-                responseNodeId: nodeId,
+                terminalNodeId: nodeId,
+                blockType: blockType || 'unknown',
                 sentinelEndId,
                 hadEdgeToSentinelEnd: node.outgoingEdges.size > 0,
                 incomingEdgesCount: sentinelEndNode.incomingEdges.size,
                 incomingEdges: Array.from(sentinelEndNode.incomingEdges),
               }
             )
-            // Force trigger the sentinel end - Response block completion means iteration is done
+            // Force trigger the sentinel end - terminal block completion means iteration is done
             this.addToQueue(sentinelEndId)
           }
         }

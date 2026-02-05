@@ -781,30 +781,34 @@ export class LoopOrchestrator {
       }
     }
 
-    // Also check for Response blocks - they are terminal even if they don't have edges to sentinel end
-    // When a Response block executes inside a loop, that iteration is complete and loop should continue
+    // Also check for terminal blocks (blocks with no outgoing edges or only edge to sentinel end)
+    // Terminal blocks indicate that a path has completed, so the iteration is done
     for (const nodeId of loopNodes) {
       if (nodeId === sentinelEndId) continue
 
       const node = this.dag.nodes.get(nodeId)
       if (!node) continue
 
-      // Check if this is a Response block that has executed
-      if (node.block.metadata?.id === BlockType.RESPONSE && this.state.hasExecuted(nodeId)) {
-        const output = this.state.getBlockOutput(nodeId)
-        // Verify this is actually a Response block output
-        if (output && 'status' in output && 'data' in output) {
-          logger.info(
-            'Response block executed in loop - iteration complete, allowing loop to continue',
-            {
-              loopId,
-              nodeId,
-              blockId: node.block.id,
-            }
-          )
-          // Response block executed, so this iteration is complete
-          return true
-        }
+      // Check if this is a terminal block (no outgoing edges or only edge to sentinel end)
+      const hasNoOutgoingEdges = node.outgoingEdges.size === 0
+      const onlyEdgeToSentinelEnd =
+        node.outgoingEdges.size === 1 &&
+        Array.from(node.outgoingEdges.values()).some((edge) => edge.target === sentinelEndId)
+
+      if ((hasNoOutgoingEdges || onlyEdgeToSentinelEnd) && this.state.hasExecuted(nodeId)) {
+        logger.info(
+          'Terminal block executed in loop - iteration complete, allowing loop to continue',
+          {
+            loopId,
+            nodeId,
+            blockId: node.block.id,
+            blockType: node.block.metadata?.id || 'unknown',
+            hasNoOutgoingEdges,
+            onlyEdgeToSentinelEnd,
+          }
+        )
+        // Terminal block executed, so this iteration is complete
+        return true
       }
     }
 
