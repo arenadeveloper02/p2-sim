@@ -1140,7 +1140,7 @@ import {
   microsoftTeamsWriteChannelTool,
   microsoftTeamsWriteChatTool,
 } from '@/tools/microsoft_teams'
-import { mistralParserTool, mistralParserV2Tool } from '@/tools/mistral'
+import { mistralParserTool, mistralParserV2Tool, mistralParserV3Tool } from '@/tools/mistral'
 import {
   mongodbDeleteTool,
   mongodbExecuteTool,
@@ -2763,6 +2763,7 @@ export const tools: Record<string, ToolConfig> = {
   apollo_email_accounts: apolloEmailAccountsTool,
   mistral_parser: mistralParserTool,
   mistral_parser_v2: mistralParserV2Tool,
+  mistral_parser_v3: mistralParserV3Tool,
   reducto_parser: reductoParserTool,
   reducto_parser_v2: reductoParserV2Tool,
   textract_parser: textractParserTool,
