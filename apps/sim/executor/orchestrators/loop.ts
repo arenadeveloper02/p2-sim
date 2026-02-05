@@ -253,19 +253,6 @@ export class LoopOrchestrator {
 
     scope.currentIterationOutputs.clear()
 
-    // Check if a Response block has executed inside this loop iteration
-    // Response blocks are terminal and should stop all further execution
-    if (this.hasResponseBlockExecuted(ctx, loopId)) {
-      logger.info('Response block executed inside loop - stopping execution', { loopId })
-      // Return a result that prevents continuation and exit
-      // This will stop the loop from continuing to next iteration or exiting to downstream nodes
-      return {
-        shouldContinue: false,
-        shouldExit: false,
-        selectedRoute: EDGE.LOOP_EXIT,
-      }
-    }
-
     // Verify all nodes inside the loop have completed before allowing continuation
     // This is critical for nested loops - the outer loop should wait for inner loops to complete all iterations
     const allNodesCompleted = this.hasAllLoopNodesCompleted(ctx, loopId)
@@ -791,6 +778,33 @@ export class LoopOrchestrator {
       if (hasTerminalNodeExecuted) {
         // At least one terminal node has executed, meaning a path has completed
         return true
+      }
+    }
+
+    // Also check for Response blocks - they are terminal even if they don't have edges to sentinel end
+    // When a Response block executes inside a loop, that iteration is complete and loop should continue
+    for (const nodeId of loopNodes) {
+      if (nodeId === sentinelEndId) continue
+
+      const node = this.dag.nodes.get(nodeId)
+      if (!node) continue
+
+      // Check if this is a Response block that has executed
+      if (node.block.metadata?.id === BlockType.RESPONSE && this.state.hasExecuted(nodeId)) {
+        const output = this.state.getBlockOutput(nodeId)
+        // Verify this is actually a Response block output
+        if (output && 'status' in output && 'data' in output) {
+          logger.info(
+            'Response block executed in loop - iteration complete, allowing loop to continue',
+            {
+              loopId,
+              nodeId,
+              blockId: node.block.id,
+            }
+          )
+          // Response block executed, so this iteration is complete
+          return true
+        }
       }
     }
 

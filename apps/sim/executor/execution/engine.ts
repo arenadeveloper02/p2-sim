@@ -14,6 +14,7 @@ import type {
   ResumeStatus,
 } from '@/executor/types'
 import { attachExecutionResult, normalizeError } from '@/executor/utils/errors'
+import { buildSentinelEndId } from '@/executor/utils/subflow-utils'
 
 const logger = createLogger('ExecutionEngine')
 
@@ -391,6 +392,30 @@ export class ExecutionEngine {
       this.finalOutput = output
     }
 
+    // Check if this is a Response block
+    // Response blocks are terminal, but if they're inside a loop, we should allow the loop to continue
+    const blockType = node.block.metadata?.id
+    const isResponseBlock = blockType === BlockType.RESPONSE
+    const isInsideLoop = !!node.metadata.loopId
+
+    if (isResponseBlock && !isInsideLoop) {
+      // Response block outside of loops - stop entire workflow execution
+      // Verify this is actually a Response block output (has 'status' and 'data')
+      if (output && 'status' in output && 'data' in output) {
+        logger.info('Response block executed outside loop - stopping workflow execution', {
+          nodeId,
+          blockId: node.block.id,
+        })
+        // Clear the ready queue to prevent further nodes from executing
+        this.readyQueue = []
+        // Set final output to the Response block output
+        this.finalOutput = output
+        return
+      }
+    }
+
+    // For Response blocks inside loops, process outgoing edges normally
+    // Response blocks should have edges to sentinel end (they're terminal nodes)
     const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false, this.context)
 
     logger.info('Processing outgoing edges', {
@@ -398,9 +423,53 @@ export class ExecutionEngine {
       outgoingEdgesCount: node.outgoingEdges.size,
       readyNodesCount: readyNodes.length,
       readyNodes,
+      isResponseBlock,
+      isInsideLoop,
     })
 
     this.addMultipleToQueue(readyNodes)
+
+    // If this is a Response block inside a loop, ensure the loop's sentinel end gets triggered
+    // Response blocks are terminal - when they complete, the iteration is done and loop should continue
+    if (isResponseBlock && isInsideLoop) {
+      const loopId = node.metadata.loopId
+      if (loopId) {
+        const sentinelEndId = buildSentinelEndId(loopId)
+        const sentinelEndNode = this.dag.nodes.get(sentinelEndId)
+
+        if (sentinelEndNode) {
+          // Remove the incoming edge from the Response block to sentinel end (if it exists)
+          // This simulates the edge being processed by the edge manager
+          if (sentinelEndNode.incomingEdges.has(nodeId)) {
+            sentinelEndNode.incomingEdges.delete(nodeId)
+          }
+
+          // For Response blocks, we need to force-trigger the sentinel end
+          // Response blocks are terminal - when they complete, the iteration is done
+          // Even if the sentinel end has other incoming edges (from deactivated paths),
+          // we should trigger it because the Response block path has completed
+          const sentinelEndInReadyNodes = readyNodes.includes(sentinelEndId)
+
+          if (!sentinelEndInReadyNodes) {
+            // Response blocks are terminal - their completion means the iteration is complete
+            // Force trigger the sentinel end to allow the loop to continue to the next iteration
+            logger.info(
+              'Response block completed in loop - forcing sentinel end trigger (iteration complete)',
+              {
+                loopId,
+                responseNodeId: nodeId,
+                sentinelEndId,
+                hadEdgeToSentinelEnd: node.outgoingEdges.size > 0,
+                incomingEdgesCount: sentinelEndNode.incomingEdges.size,
+                incomingEdges: Array.from(sentinelEndNode.incomingEdges),
+              }
+            )
+            // Force trigger the sentinel end - Response block completion means iteration is done
+            this.addToQueue(sentinelEndId)
+          }
+        }
+      }
+    }
 
     if (this.context.pendingDynamicNodes && this.context.pendingDynamicNodes.length > 0) {
       const dynamicNodes = this.context.pendingDynamicNodes
