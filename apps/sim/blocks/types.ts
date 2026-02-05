@@ -295,6 +295,8 @@ export interface SubBlockConfig {
   multiSelect?: boolean
   // Combobox specific: Enable search input in dropdown
   searchable?: boolean
+  /** When true, show a clear (X) button when a value is selected (optional field) */
+  clearable?: boolean
   // Wand configuration for AI assistance
   wandConfig?: {
     enabled: boolean
