@@ -2262,6 +2262,7 @@ export const overallClientSummary = pgTable(
     sevenDaySummary: text('seven_day_summary'),
     fourteenDaySummary: text('fourteen_day_summary'),
     dailySummaryChanges: text('daily_summary_changes'),
+    weeklySentiment: text('weekly_sentiment'),
     createdDate: timestamp('created_date').notNull().defaultNow(),
     updatedDate: timestamp('updated_date').notNull().defaultNow(),
     startTime: timestamp('start_time'),
@@ -2315,6 +2316,23 @@ export const clientChannelMapping = pgTable(
   (table) => ({
     clientIdIdx: index('client_channel_mapping_client_id_idx').on(table.clientId),
     channelIdIdx: index('client_channel_mapping_channel_id_idx').on(table.channelId),
+  })
+)
+
+export const clientDetails = pgTable(
+  'client_details',
+  {
+    id: text('id').primaryKey(),
+    clientId: text('client_id').notNull(),
+    clientName: text('client_name'),
+    gmailDomain: text('gmail_domain'),
+    clientCustomerId: text('client_customer_id'),
+    clientManager: text('client_manager'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    clientIdIdx: index('client_details_client_id_idx').on(table.clientId),
   })
 )
 

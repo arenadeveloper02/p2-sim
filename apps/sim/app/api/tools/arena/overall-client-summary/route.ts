@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
-import { overallClientSummary } from '@sim/db/schema'
+import { clientDetails, overallClientSummary } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 
@@ -18,6 +18,7 @@ type OverallClientSummaryRequestBody = {
   seven_day_summary?: string
   fourteen_day_summary?: string
   daily_summary_changes?: string
+  weekly_sentiment?: string
   status?: string
 }
 
@@ -26,10 +27,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const url = new URL(request.url)
-    const clientId = url.searchParams.get('cid')
+    const cid = url.searchParams.get('cid')
     const summaryType = url.searchParams.get('type')
 
-    if (!clientId) {
+    if (!cid) {
       return NextResponse.json(
         { success: false, error: { message: 'cid parameter is required' } },
         { status: 400 }
@@ -44,15 +45,17 @@ export async function GET(request: NextRequest) {
     }
 
     logger.info(`[${requestId}] Fetching latest overall client summaries`, {
-      clientId,
+      cid,
       type: summaryType,
     })
 
+    // cid is used as client_id_ref in overall_client_summary table
+    // Get the latest run date for this client
     const latestDateResult = await db
       .select({ runDate: overallClientSummary.runDate })
       .from(overallClientSummary)
       .where(
-        sql`${overallClientSummary.clientIdRef} = ${clientId} AND ${overallClientSummary.type} = ${summaryType}`
+        sql`${overallClientSummary.clientIdRef} = ${cid} AND ${overallClientSummary.type} = ${summaryType}`
       )
       .orderBy(sql`${overallClientSummary.runDate} DESC`)
       .limit(1)
@@ -62,7 +65,7 @@ export async function GET(request: NextRequest) {
         {
           success: true,
           data: {
-            client_id: clientId,
+            client_id: cid,
             message: 'No overall client summary data found for this client and type',
             summaries: [],
           },
@@ -73,6 +76,19 @@ export async function GET(request: NextRequest) {
 
     const latestRunDate = latestDateResult[0].runDate
 
+    // Get clientManager from client_details using client_customer_id (cid is client_customer_id in client_details table)
+    let resolvedClientManager: string | null = null
+    const clientDetailsResult = await db
+      .select({ clientManager: clientDetails.clientManager })
+      .from(clientDetails)
+      .where(sql`${clientDetails.clientCustomerId} = ${cid}`)
+      .limit(1)
+
+    if (clientDetailsResult.length > 0) {
+      resolvedClientManager = clientDetailsResult[0].clientManager
+    }
+
+    // Get summaries using cid as client_id_ref
     const summaries = await db
       .select({
         id: overallClientSummary.id,
@@ -83,6 +99,7 @@ export async function GET(request: NextRequest) {
         sevenDaySummary: overallClientSummary.sevenDaySummary,
         fourteenDaySummary: overallClientSummary.fourteenDaySummary,
         dailySummaryChanges: overallClientSummary.dailySummaryChanges,
+        weeklySentiment: overallClientSummary.weeklySentiment,
         runDate: overallClientSummary.runDate,
         status: overallClientSummary.status,
         createdDate: overallClientSummary.createdDate,
@@ -93,24 +110,37 @@ export async function GET(request: NextRequest) {
       })
       .from(overallClientSummary)
       .where(
-        sql`${overallClientSummary.clientIdRef} = ${clientId} AND ${overallClientSummary.type} = ${summaryType} AND ${overallClientSummary.runDate} = ${latestRunDate}`
+        sql`${overallClientSummary.clientIdRef} = ${cid} AND ${overallClientSummary.type} = ${summaryType} AND ${overallClientSummary.runDate} = ${latestRunDate}`
       )
       .orderBy(overallClientSummary.createdDate)
 
+    // Add clientManager to each summary
+    const summariesWithManager = summaries.map((summary) => ({
+      ...summary,
+      clientManager: resolvedClientManager,
+    }))
+
+    logger.info(`[${requestId}] Query results sample`, {
+      summaryCount: summariesWithManager.length,
+      firstSummaryClientManager: summariesWithManager[0]?.clientManager,
+      cid,
+      resolvedClientManager,
+    })
+
     logger.info(`[${requestId}] Found overall client summaries`, {
-      clientId,
+      cid,
       runDate: latestRunDate,
-      recordCount: summaries.length,
+      recordCount: summariesWithManager.length,
     })
 
     return NextResponse.json(
       {
         success: true,
         data: {
-          client_id: clientId,
+          client_id: cid,
           run_date: latestRunDate,
-          total_records: summaries.length,
-          summaries,
+          total_records: summariesWithManager.length,
+          summaries: summariesWithManager,
         },
       },
       { status: 200 }
@@ -144,6 +174,7 @@ export async function POST(request: NextRequest) {
       seven_day_summary,
       fourteen_day_summary,
       daily_summary_changes,
+      weekly_sentiment,
       status,
     } = body
 
@@ -192,6 +223,7 @@ export async function POST(request: NextRequest) {
           sevenDaySummary: seven_day_summary ?? undefined,
           fourteenDaySummary: fourteen_day_summary ?? undefined,
           dailySummaryChanges: daily_summary_changes ?? undefined,
+          weeklySentiment: weekly_sentiment ?? undefined,
           updatedDate: now,
           status: status || 'PENDING',
           runDate: runDateValue,
@@ -211,6 +243,7 @@ export async function POST(request: NextRequest) {
         sevenDaySummary: seven_day_summary ?? undefined,
         fourteenDaySummary: fourteen_day_summary ?? undefined,
         dailySummaryChanges: daily_summary_changes ?? undefined,
+        weeklySentiment: weekly_sentiment ?? undefined,
         createdDate: now,
         updatedDate: now,
         status: status || 'PENDING',
