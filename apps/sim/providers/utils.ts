@@ -129,6 +129,7 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
     models: getProviderModelsFromDefinitions('sambanova'),
     modelPatterns: PROVIDER_DEFINITIONS.sambanova.modelPatterns,
   },
+  'azure-anthropic': buildProviderMetadata('azure-anthropic'),
   google: buildProviderMetadata('google'),
   vertex: buildProviderMetadata('vertex'),
   deepseek: buildProviderMetadata('deepseek'),
