@@ -94,6 +94,8 @@ export type ArenaCommentsParams = {
     | string
     | { sysId: string; id?: string; name: string; customDisplayValue?: string }
   'comment-task-number'?: string
+  'comment-to'?: string
+  'comment-cc'?: string
   'comment-text': string
   'comment-client-note'?: boolean
   _context: {
