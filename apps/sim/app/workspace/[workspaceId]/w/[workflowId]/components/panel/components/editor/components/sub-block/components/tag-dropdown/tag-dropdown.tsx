@@ -225,7 +225,7 @@ const getOutputTypeForPath = (
       const chatModeTypes: Record<string, string> = {
         input: 'string',
         conversationId: 'string',
-        files: 'files',
+        files: 'file[]',
       }
       return chatModeTypes[outputPath] || 'any'
     }
@@ -444,10 +444,12 @@ interface NestedTagRendererProps {
   nestedTag: NestedTag
   group: NestedBlockTagGroup
   flatTagList: Array<{ tag: string; group?: BlockTagGroup }>
+  /** Map from tag string to index for O(1) lookups */
+  flatTagIndexMap: Map<string, number>
   selectedIndex: number
   setSelectedIndex: (index: number) => void
   handleTagSelect: (tag: string, blockGroup?: BlockTagGroup) => void
-  itemRefs: React.RefObject<Map<number, HTMLElement>>
+  itemRefs: React.RefObject<Map<string, HTMLElement>>
   blocks: Record<string, BlockState>
   getMergedSubBlocks: (blockId: string) => Record<string, any>
 }
@@ -469,6 +471,7 @@ interface FolderContentsProps extends NestedTagRendererProps {
 const FolderContentsInner: React.FC<FolderContentsProps> = ({
   group,
   flatTagList,
+  flatTagIndexMap,
   selectedIndex,
   setSelectedIndex,
   handleTagSelect,
@@ -483,7 +486,7 @@ const FolderContentsInner: React.FC<FolderContentsProps> = ({
   const currentNestedTag = nestedPath.length > 0 ? nestedPath[nestedPath.length - 1] : nestedTag
 
   const parentTagIndex = currentNestedTag.parentTag
-    ? flatTagList.findIndex((item) => item.tag === currentNestedTag.parentTag)
+    ? (flatTagIndexMap.get(currentNestedTag.parentTag) ?? -1)
     : -1
 
   return (
@@ -493,7 +496,6 @@ const FolderContentsInner: React.FC<FolderContentsProps> = ({
         <PopoverItem
           active={parentTagIndex === selectedIndex && parentTagIndex >= 0}
           onMouseEnter={() => {
-            // Skip selection update during keyboard navigation to prevent scroll-triggered selection changes
             if (isKeyboardNav) return
             setKeyboardNav(false)
             if (parentTagIndex >= 0) setSelectedIndex(parentTagIndex)
@@ -504,8 +506,8 @@ const FolderContentsInner: React.FC<FolderContentsProps> = ({
             handleTagSelect(currentNestedTag.parentTag!, group)
           }}
           ref={(el) => {
-            if (el && parentTagIndex >= 0) {
-              itemRefs.current?.set(parentTagIndex, el)
+            if (el && currentNestedTag.parentTag) {
+              itemRefs.current?.set(currentNestedTag.parentTag, el)
             }
           }}
         >
@@ -515,7 +517,7 @@ const FolderContentsInner: React.FC<FolderContentsProps> = ({
 
       {/* Render leaf children as PopoverItems */}
       {currentNestedTag.children?.map((child) => {
-        const childGlobalIndex = flatTagList.findIndex((item) => item.tag === child.fullTag)
+        const childGlobalIndex = flatTagIndexMap.get(child.fullTag) ?? -1
 
         const tagParts = child.fullTag.split('.')
         const outputPath = tagParts.slice(1).join('.')
@@ -550,8 +552,8 @@ const FolderContentsInner: React.FC<FolderContentsProps> = ({
               handleTagSelect(child.fullTag, group)
             }}
             ref={(el) => {
-              if (el && childGlobalIndex >= 0) {
-                itemRefs.current?.set(childGlobalIndex, el)
+              if (el) {
+                itemRefs.current?.set(child.fullTag, el)
               }
             }}
           >
@@ -568,7 +570,7 @@ const FolderContentsInner: React.FC<FolderContentsProps> = ({
       {/* Render nested children as clickable folder items */}
       {currentNestedTag.nestedChildren?.map((nestedChild) => {
         const parentGlobalIndex = nestedChild.parentTag
-          ? flatTagList.findIndex((item) => item.tag === nestedChild.parentTag)
+          ? (flatTagIndexMap.get(nestedChild.parentTag) ?? -1)
           : -1
 
         return (
@@ -583,12 +585,11 @@ const FolderContentsInner: React.FC<FolderContentsProps> = ({
             onMouseDown={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              // Navigate into the subfolder on click
               onNavigateIn(nestedChild)
             }}
             ref={(el) => {
-              if (el && parentGlobalIndex >= 0) {
-                itemRefs.current?.set(parentGlobalIndex, el)
+              if (el && nestedChild.parentTag) {
+                itemRefs.current?.set(nestedChild.parentTag, el)
               }
             }}
           >
@@ -605,7 +606,7 @@ const FolderContentsInner: React.FC<FolderContentsProps> = ({
  * Wrapper component that uses shared nested navigation state from context.
  * Handles registration of the base folder and navigation callbacks.
  */
-const FolderContents: React.FC<NestedTagRendererProps> = (props) => {
+const FolderContents: React.FC<Omit<NestedTagRendererProps, never>> = (props) => {
   const nestedNav = useNestedNavigation()
   const { currentFolder } = usePopoverContext()
 
@@ -638,6 +639,7 @@ const NestedTagRenderer: React.FC<NestedTagRendererProps> = ({
   nestedTag,
   group,
   flatTagList,
+  flatTagIndexMap,
   selectedIndex,
   setSelectedIndex,
   handleTagSelect,
@@ -653,7 +655,7 @@ const NestedTagRenderer: React.FC<NestedTagRendererProps> = ({
     const folderId = `${group.blockId}-${nestedTag.key}`
 
     const parentGlobalIndex = nestedTag.parentTag
-      ? flatTagList.findIndex((item) => item.tag === nestedTag.parentTag)
+      ? (flatTagIndexMap.get(nestedTag.parentTag) ?? -1)
       : -1
 
     return (
@@ -675,8 +677,8 @@ const NestedTagRenderer: React.FC<NestedTagRendererProps> = ({
           }
         }}
         ref={(el) => {
-          if (el && parentGlobalIndex >= 0) {
-            itemRefs.current?.set(parentGlobalIndex, el)
+          if (el && nestedTag.parentTag) {
+            itemRefs.current?.set(nestedTag.parentTag, el)
           }
         }}
       >
@@ -684,6 +686,7 @@ const NestedTagRenderer: React.FC<NestedTagRendererProps> = ({
           nestedTag={nestedTag}
           group={group}
           flatTagList={flatTagList}
+          flatTagIndexMap={flatTagIndexMap}
           selectedIndex={selectedIndex}
           setSelectedIndex={setSelectedIndex}
           handleTagSelect={handleTagSelect}
@@ -695,10 +698,7 @@ const NestedTagRenderer: React.FC<NestedTagRendererProps> = ({
     )
   }
 
-  // Leaf tag - render as a simple PopoverItem
-  const globalIndex = nestedTag.fullTag
-    ? flatTagList.findIndex((item) => item.tag === nestedTag.fullTag)
-    : -1
+  const globalIndex = nestedTag.fullTag ? (flatTagIndexMap.get(nestedTag.fullTag) ?? -1) : -1
 
   let tagDescription = ''
 
@@ -751,8 +751,8 @@ const NestedTagRenderer: React.FC<NestedTagRendererProps> = ({
         }
       }}
       ref={(el) => {
-        if (el && globalIndex >= 0) {
-          itemRefs.current?.set(globalIndex, el)
+        if (el && nestedTag.fullTag) {
+          itemRefs.current?.set(nestedTag.fullTag, el)
         }
       }}
     >
@@ -767,7 +767,7 @@ const NestedTagRenderer: React.FC<NestedTagRendererProps> = ({
 }
 
 /**
- * Hook to get mouse enter handler that respects keyboard navigation mode.
+ * Hook to get mouse enter handler that respects keyboard navigation state.
  * Returns a handler that only updates selection if not in keyboard mode.
  */
 const useKeyboardAwareMouseEnter = (
@@ -794,7 +794,7 @@ const VariableTagItem: React.FC<{
   selectedIndex: number
   setSelectedIndex: (index: number) => void
   handleTagSelect: (tag: string) => void
-  itemRefs: React.RefObject<Map<number, HTMLElement>>
+  itemRefs: React.RefObject<Map<string, HTMLElement>>
   variableInfo: { type: string; id: string } | null
 }> = ({
   tag,
@@ -819,8 +819,8 @@ const VariableTagItem: React.FC<{
         handleTagSelect(tag)
       }}
       ref={(el) => {
-        if (el && globalIndex >= 0) {
-          itemRefs.current?.set(globalIndex, el)
+        if (el) {
+          itemRefs.current?.set(tag, el)
         }
       }}
     >
@@ -845,7 +845,7 @@ const BlockRootTagItem: React.FC<{
   selectedIndex: number
   setSelectedIndex: (index: number) => void
   handleTagSelect: (tag: string, group?: BlockTagGroup) => void
-  itemRefs: React.RefObject<Map<number, HTMLElement>>
+  itemRefs: React.RefObject<Map<string, HTMLElement>>
   group: BlockTagGroup
   tagIcon: string | React.ComponentType<{ className?: string }>
   blockColor: string
@@ -875,8 +875,8 @@ const BlockRootTagItem: React.FC<{
         handleTagSelect(rootTag, group)
       }}
       ref={(el) => {
-        if (el && rootTagGlobalIndex >= 0) {
-          itemRefs.current?.set(rootTagGlobalIndex, el)
+        if (el) {
+          itemRefs.current?.set(rootTag, el)
         }
       }}
     >
@@ -908,46 +908,47 @@ const PopoverContextCapture: React.FC<{
  * When in nested folders, goes back one level at a time.
  * At the root folder level, closes the folder.
  */
-const TagDropdownBackButton: React.FC = () => {
-  const { isInFolder, closeFolder, colorScheme, size } = usePopoverContext()
+const TagDropdownBackButton: React.FC<{ setSelectedIndex: (index: number) => void }> = ({
+  setSelectedIndex,
+}) => {
+  const { isInFolder, closeFolder, size, isKeyboardNav, setKeyboardNav } = usePopoverContext()
   const nestedNav = useNestedNavigation()
 
   if (!isInFolder) return null
 
   const handleBackClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    // Try to navigate back in nested path first
     if (nestedNav?.navigateBack()) {
-      // Successfully navigated back one level
       return
     }
-    // At root folder level, close the folder
     closeFolder()
   }
 
-  // Just render the back button - the parent tag is rendered as the first item in FolderContentsInner
+  const handleMouseEnter = () => {
+    if (isKeyboardNav) return
+    setKeyboardNav(false)
+    setSelectedIndex(-1)
+  }
+
   return (
-    <div
-      className={cn(
-        'flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] font-base',
-        size === 'sm' ? 'h-[22px] text-[11px]' : 'h-[26px] text-[13px]',
-        colorScheme === 'inverted'
-          ? 'text-white hover:bg-[#363636] hover:text-white dark:text-[var(--text-primary)] dark:hover:bg-[var(--surface-5)]'
-          : 'text-[var(--text-primary)] hover:bg-[var(--border-1)]'
-      )}
-      role='button'
-      onClick={handleBackClick}
+    <PopoverItem
+      onMouseDown={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        handleBackClick(e)
+      }}
+      onMouseEnter={handleMouseEnter}
     >
       <svg
-        className={size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5'}
+        className={cn('shrink-0', size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5')}
         fill='none'
         viewBox='0 0 24 24'
         stroke='currentColor'
       >
         <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M15 19l-7-7 7-7' />
       </svg>
-      <span>Back</span>
-    </div>
+      <span className='shrink-0'>Back</span>
+    </PopoverItem>
   )
 }
 
@@ -986,7 +987,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
   inputRef,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const itemRefs = useRef<Map<number, HTMLElement>>(new Map())
+  const itemRefs = useRef<Map<string, HTMLElement>>(new Map())
 
   const [nestedPath, setNestedPath] = useState<NestedTag[]>([])
   const baseFolderRef = useRef<{
@@ -997,6 +998,11 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
   } | null>(null)
   const handleTagSelectRef = useRef<((tag: string, group?: BlockTagGroup) => void) | null>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+
+  const inputValueRef = useRef(inputValue)
+  const cursorPositionRef = useRef(cursorPosition)
+  inputValueRef.current = inputValue
+  cursorPositionRef.current = cursorPosition
 
   const { blocks, edges, loops, parallels } = useWorkflowStore(
     useShallow((state) => ({
@@ -1562,16 +1568,11 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     blockTagGroups.sort((a, b) => a.distance - b.distance)
     finalBlockTagGroups.push(...blockTagGroups)
 
-    const contextualTags: string[] = []
-    if (loopBlockGroup) {
-      contextualTags.push(...loopBlockGroup.tags)
-    }
-    if (parallelBlockGroup) {
-      contextualTags.push(...parallelBlockGroup.tags)
-    }
+    const groupTags = finalBlockTagGroups.flatMap((group) => group.tags)
+    const tags = [...groupTags, ...variableTags]
 
     return {
-      tags: [...allBlockTags, ...variableTags, ...contextualTags],
+      tags,
       variableInfoMap,
       blockTagGroups: finalBlockTagGroups,
     }
@@ -1700,27 +1701,23 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     return list
   }, [variableTags, nestedBlockTagGroups])
 
-  useEffect(() => {
-    if (!visible || selectedIndex < 0) return
-
-    const element = itemRefs.current.get(selectedIndex)
-    if (element) {
-      element.scrollIntoView({
-        behavior: 'auto',
-        block: 'nearest',
-      })
-    }
-  }, [selectedIndex, visible])
+  const flatTagIndexMap = useMemo(() => {
+    const map = new Map<string, number>()
+    flatTagList.forEach((item, index) => {
+      map.set(item.tag, index)
+    })
+    return map
+  }, [flatTagList])
 
   const handleTagSelect = useCallback(
     (tag: string, blockGroup?: BlockTagGroup) => {
-      let liveCursor = cursorPosition
-      let liveValue = inputValue
+      let liveCursor = cursorPositionRef.current
+      let liveValue = inputValueRef.current
 
       if (typeof window !== 'undefined' && document?.activeElement) {
         const activeEl = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null
         if (activeEl && typeof activeEl.selectionStart === 'number') {
-          liveCursor = activeEl.selectionStart ?? cursorPosition
+          liveCursor = activeEl.selectionStart ?? cursorPositionRef.current
           if ('value' in activeEl && typeof activeEl.value === 'string') {
             liveValue = activeEl.value
           }
@@ -1749,7 +1746,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
           mergedSubBlocks
         )
 
-        if (fieldType === 'files' || fieldType === 'file[]' || fieldType === 'array') {
+        if (fieldType === 'file' || fieldType === 'file[]' || fieldType === 'array') {
           const blockName = parts[0]
           const remainingPath = parts.slice(2).join('.')
           processedTag = `${blockName}.${arrayFieldName}[0].${remainingPath}`
@@ -1805,7 +1802,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       onSelect(newValue)
       onClose?.()
     },
-    [inputValue, cursorPosition, workflowVariables, onSelect, onClose, getMergedSubBlocks]
+    [workflowVariables, onSelect, onClose, getMergedSubBlocks]
   )
 
   handleTagSelectRef.current = handleTagSelect
@@ -1877,9 +1874,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       },
       registerFolder: (folderId, folderTitle, baseTag, group) => {
         baseFolderRef.current = { id: folderId, title: folderTitle, baseTag, group }
-        if (scrollAreaRef.current) {
-          scrollAreaRef.current.scrollTop = 0
-        }
       },
     }),
     [nestedPath]
@@ -1892,13 +1886,9 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     }
   }, [visible])
 
-  useEffect(() => setSelectedIndex(0), [searchTerm])
-
   useEffect(() => {
-    if (selectedIndex >= flatTagList.length) {
-      setSelectedIndex(Math.max(0, flatTagList.length - 1))
-    }
-  }, [flatTagList.length, selectedIndex])
+    setSelectedIndex(0)
+  }, [flatTagList.length])
 
   useEffect(() => {
     if (visible) {
@@ -1956,6 +1946,11 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
           flatTagList={flatTagList}
           nestedBlockTagGroups={nestedBlockTagGroups}
           handleTagSelect={handleTagSelect}
+          onFolderEnter={() => {
+            if (scrollAreaRef.current) {
+              scrollAreaRef.current.scrollTop = 0
+            }
+          }}
         />
         <PopoverContent
           maxHeight={240}
@@ -1966,8 +1961,8 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
           onOpenAutoFocus={(e) => e.preventDefault()}
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
-          <TagDropdownBackButton />
           <PopoverScrollArea ref={scrollAreaRef}>
+            <TagDropdownBackButton setSelectedIndex={setSelectedIndex} />
             {flatTagList.length === 0 ? (
               <div className='px-[6px] py-[8px] text-[12px] text-[var(--white)]/60'>
                 No matching tags found
@@ -1984,7 +1979,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                     </PopoverSection>
                     {variableTags.map((tag: string) => {
                       const variableInfo = variableInfoMap?.[tag] || null
-                      const globalIndex = flatTagList.findIndex((item) => item.tag === tag)
+                      const globalIndex = flatTagIndexMap.get(tag) ?? -1
 
                       return (
                         <VariableTagItem
@@ -2027,7 +2022,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                   const rootTagFromTags = group.tags.find((tag) => tag === normalizedBlockName)
                   const rootTag = rootTagFromTags || normalizedBlockName
 
-                  const rootTagGlobalIndex = flatTagList.findIndex((item) => item.tag === rootTag)
+                  const rootTagGlobalIndex = flatTagIndexMap.get(rootTag) ?? -1
 
                   return (
                     <div key={group.blockId}>
@@ -2054,6 +2049,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
                             nestedTag={nestedTag}
                             group={group}
                             flatTagList={flatTagList}
+                            flatTagIndexMap={flatTagIndexMap}
                             selectedIndex={selectedIndex}
                             setSelectedIndex={setSelectedIndex}
                             handleTagSelect={handleTagSelect}

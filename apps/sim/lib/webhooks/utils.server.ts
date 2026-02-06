@@ -1,14 +1,17 @@
+import crypto from 'crypto'
 import { db, workflowDeploymentVersion } from '@sim/db'
 import { account, webhook } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { type NextRequest, NextResponse } from 'next/server'
+import { safeCompare } from '@/lib/core/security/encryption'
 import {
   type SecureFetchResponse,
   secureFetchWithPinnedIP,
   validateUrlWithDNS,
-} from '@/lib/core/security/input-validation'
+} from '@/lib/core/security/input-validation.server'
+import { sanitizeUrlForLog } from '@/lib/core/utils/logging'
 import type { DbOrTx } from '@/lib/db/types'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
 import {
@@ -112,7 +115,7 @@ async function fetchWithDNSPinning(
     const urlValidation = await validateUrlWithDNS(url, 'contentUrl')
     if (!urlValidation.isValid) {
       logger.warn(`[${requestId}] Invalid content URL: ${urlValidation.error}`, {
-        url: url.substring(0, 100),
+        url,
       })
       return null
     }
@@ -131,7 +134,7 @@ async function fetchWithDNSPinning(
   } catch (error) {
     logger.error(`[${requestId}] Error fetching URL with DNS pinning`, {
       error: error instanceof Error ? error.message : String(error),
-      url: url.substring(0, 100),
+      url: sanitizeUrlForLog(url),
     })
     return null
   }
@@ -517,16 +520,7 @@ export async function validateTwilioSignature(
       match: signatureBase64 === signature,
     })
 
-    if (signatureBase64.length !== signature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < signatureBase64.length; i++) {
-      result |= signatureBase64.charCodeAt(i) ^ signature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(signatureBase64, signature)
   } catch (error) {
     logger.error('Error validating Twilio signature:', error)
     return false
@@ -1046,21 +1040,11 @@ export function validateMicrosoftTeamsSignature(
 
     const providedSignature = signature.substring(5)
 
-    const crypto = require('crypto')
     const secretBytes = Buffer.from(hmacSecret, 'base64')
     const bodyBytes = Buffer.from(body, 'utf8')
     const computedHash = crypto.createHmac('sha256', secretBytes).update(bodyBytes).digest('base64')
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating Microsoft Teams signature:', error)
     return false
@@ -1090,19 +1074,9 @@ export function validateTypeformSignature(
 
     const providedSignature = signature.substring(7)
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('base64')
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating Typeform signature:', error)
     return false
@@ -1127,7 +1101,6 @@ export function validateLinearSignature(secret: string, signature: string, body:
       return false
     }
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
 
     logger.debug('Linear signature comparison', {
@@ -1138,16 +1111,7 @@ export function validateLinearSignature(secret: string, signature: string, body:
       match: computedHash === signature,
     })
 
-    if (computedHash.length !== signature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ signature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, signature)
   } catch (error) {
     logger.error('Error validating Linear signature:', error)
     return false
@@ -1176,7 +1140,6 @@ export function validateCirclebackSignature(
       return false
     }
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
 
     logger.debug('Circleback signature comparison', {
@@ -1187,16 +1150,7 @@ export function validateCirclebackSignature(
       match: computedHash === signature,
     })
 
-    if (computedHash.length !== signature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ signature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, signature)
   } catch (error) {
     logger.error('Error validating Circleback signature:', error)
     return false
@@ -1230,7 +1184,6 @@ export function validateJiraSignature(secret: string, signature: string, body: s
 
     const providedSignature = signature.substring(7)
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
 
     logger.debug('Jira signature comparison', {
@@ -1241,16 +1194,7 @@ export function validateJiraSignature(secret: string, signature: string, body: s
       match: computedHash === providedSignature,
     })
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating Jira signature:', error)
     return false
@@ -1288,7 +1232,6 @@ export function validateFirefliesSignature(
 
     const providedSignature = signature.substring(7)
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
 
     logger.debug('Fireflies signature comparison', {
@@ -1299,16 +1242,7 @@ export function validateFirefliesSignature(
       match: computedHash === providedSignature,
     })
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating Fireflies signature:', error)
     return false
@@ -1333,7 +1267,6 @@ export function validateGitHubSignature(secret: string, signature: string, body:
       return false
     }
 
-    const crypto = require('crypto')
     let algorithm: 'sha256' | 'sha1'
     let providedSignature: string
 
@@ -1361,16 +1294,7 @@ export function validateGitHubSignature(secret: string, signature: string, body:
       match: computedHash === providedSignature,
     })
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating GitHub signature:', error)
     return false
@@ -2536,4 +2460,49 @@ export function convertSquareBracketsToTwiML(twiml: string | undefined): string 
 
   // Replace [Tag] with <Tag> and [/Tag] with </Tag>
   return twiml.replace(/\[(\/?[^\]]+)\]/g, '<$1>')
+}
+
+/**
+ * Validates a Cal.com webhook request signature using HMAC SHA-256
+ * @param secret - Cal.com webhook secret (plain text)
+ * @param signature - X-Cal-Signature-256 header value (hex-encoded HMAC SHA-256 signature)
+ * @param body - Raw request body string
+ * @returns Whether the signature is valid
+ */
+export function validateCalcomSignature(secret: string, signature: string, body: string): boolean {
+  try {
+    if (!secret || !signature || !body) {
+      logger.warn('Cal.com signature validation missing required fields', {
+        hasSecret: !!secret,
+        hasSignature: !!signature,
+        hasBody: !!body,
+      })
+      return false
+    }
+
+    // Cal.com sends signature in format: sha256=<hex>
+    // We need to strip the prefix before comparing
+    let providedSignature: string
+    if (signature.startsWith('sha256=')) {
+      providedSignature = signature.substring(7)
+    } else {
+      // If no prefix, use as-is (for backwards compatibility)
+      providedSignature = signature
+    }
+
+    const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
+
+    logger.debug('Cal.com signature comparison', {
+      computedSignature: `${computedHash.substring(0, 10)}...`,
+      providedSignature: `${providedSignature.substring(0, 10)}...`,
+      computedLength: computedHash.length,
+      providedLength: providedSignature.length,
+      match: computedHash === providedSignature,
+    })
+
+    return safeCompare(computedHash, providedSignature)
+  } catch (error) {
+    logger.error('Error validating Cal.com signature:', error)
+    return false
+  }
 }

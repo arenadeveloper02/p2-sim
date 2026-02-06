@@ -1,4 +1,5 @@
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
+import { PAGE_METADATA_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import { safeAssign } from '@/tools/safe-assign'
 import type { ToolConfig } from '@/tools/types'
 
@@ -14,7 +15,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The URL to scrape content from',
+      description: 'The URL to scrape content from (e.g., "https://example.com/page")',
     },
     scrapeOptions: {
       type: 'json',
@@ -87,10 +88,11 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
 
   outputs: {
     markdown: { type: 'string', description: 'Page content in markdown format' },
-    html: { type: 'string', description: 'Raw HTML content of the page' },
+    html: { type: 'string', description: 'Raw HTML content of the page', optional: true },
     metadata: {
       type: 'object',
       description: 'Page metadata including SEO and Open Graph information',
+      properties: PAGE_METADATA_OUTPUT_PROPERTIES,
     },
   },
 }

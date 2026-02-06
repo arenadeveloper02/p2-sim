@@ -1,18 +1,19 @@
 import { db, webhook, workflow, workflowDeploymentVersion } from '@sim/db'
 import { credentialSet, subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { tasks } from '@trigger.dev/sdk'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { checkEnterprisePlan, checkTeamPlan } from '@/lib/billing/subscriptions/utils'
-import { isProd, isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
+import { getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
+import { isProd } from '@/lib/core/config/feature-flags'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { convertSquareBracketsToTwiML } from '@/lib/webhooks/utils'
 import {
   handleSlackChallenge,
   handleWhatsAppVerification,
+  validateCalcomSignature,
   validateCirclebackSignature,
   validateFirefliesSignature,
   validateGitHubSignature,
@@ -654,6 +655,31 @@ export async function verifyProviderAuth(
     }
   }
 
+  if (foundWebhook.provider === 'calcom') {
+    const secret = providerConfig.webhookSecret as string | undefined
+
+    if (secret) {
+      const signature = request.headers.get('X-Cal-Signature-256')
+
+      if (!signature) {
+        logger.warn(`[${requestId}] Cal.com webhook missing signature header`)
+        return new NextResponse('Unauthorized - Missing Cal.com signature', { status: 401 })
+      }
+
+      const isValidSignature = validateCalcomSignature(secret, signature, rawBody)
+
+      if (!isValidSignature) {
+        logger.warn(`[${requestId}] Cal.com signature verification failed`, {
+          signatureLength: signature.length,
+          secretLength: secret.length,
+        })
+        return new NextResponse('Unauthorized - Invalid Cal.com signature', { status: 401 })
+      }
+
+      logger.debug(`[${requestId}] Cal.com signature verified successfully`)
+    }
+  }
+
   if (foundWebhook.provider === 'jira') {
     const secret = providerConfig.secret as string | undefined
 
@@ -989,18 +1015,39 @@ export async function queueWebhookExecution(
       ...(credentialId ? { credentialId } : {}),
     }
 
-    if (isTriggerDevEnabled) {
-      const handle = await tasks.trigger('webhook-execution', payload)
-      logger.info(
-        `[${options.requestId}] Queued webhook execution task ${handle.id} for ${foundWebhook.provider} webhook`
-      )
-    } else {
-      void executeWebhookJob(payload).catch((error) => {
-        logger.error(`[${options.requestId}] Direct webhook execution failed`, error)
-      })
-      logger.info(
-        `[${options.requestId}] Queued direct webhook execution for ${foundWebhook.provider} webhook (Trigger.dev disabled)`
-      )
+    const jobQueue = await getJobQueue()
+    const jobId = await jobQueue.enqueue('webhook-execution', payload, {
+      metadata: { workflowId: foundWorkflow.id, userId: foundWorkflow.userId },
+    })
+    logger.info(
+      `[${options.requestId}] Queued webhook execution task ${jobId} for ${foundWebhook.provider} webhook`
+    )
+
+    if (shouldExecuteInline()) {
+      void (async () => {
+        try {
+          await jobQueue.startJob(jobId)
+          const output = await executeWebhookJob(payload)
+          await jobQueue.completeJob(jobId, output)
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          logger.error(`[${options.requestId}] Webhook execution failed`, {
+            jobId,
+            error: errorMessage,
+          })
+          try {
+            await jobQueue.markJobFailed(jobId, errorMessage)
+          } catch (markFailedError) {
+            logger.error(`[${options.requestId}] Failed to mark job as failed`, {
+              jobId,
+              error:
+                markFailedError instanceof Error
+                  ? markFailedError.message
+                  : String(markFailedError),
+            })
+          }
+        }
+      })()
     }
 
     if (foundWebhook.provider === 'microsoft-teams') {

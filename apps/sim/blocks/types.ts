@@ -9,7 +9,8 @@ export type PrimitiveValueType =
   | 'boolean'
   | 'json'
   | 'array'
-  | 'files'
+  | 'file'
+  | 'file[]'
   | 'any'
 
 export type BlockCategory = 'blocks' | 'tools' | 'triggers'
@@ -38,6 +39,7 @@ export type GenerationType =
   | 'neo4j-cypher'
   | 'neo4j-parameters'
   | 'timestamp'
+  | 'timezone'
 
 export type SubBlockType =
   | 'short-input' // Single line input

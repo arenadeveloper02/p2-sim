@@ -1,11 +1,16 @@
-import type { ToolConfig } from '@/tools/types'
 import type {
   KalshiAuthParams,
   KalshiFill,
   KalshiPaginationParams,
   KalshiPagingInfo,
-} from './types'
-import { buildKalshiAuthHeaders, buildKalshiUrl, handleKalshiError } from './types'
+} from '@/tools/kalshi/types'
+import {
+  buildKalshiAuthHeaders,
+  buildKalshiUrl,
+  handleKalshiError,
+  KALSHI_FILL_OUTPUT_PROPERTIES,
+} from '@/tools/kalshi/types'
+import type { ToolConfig } from '@/tools/types'
 
 export interface KalshiGetFillsParams extends KalshiAuthParams, KalshiPaginationParams {
   ticker?: string
@@ -45,37 +50,37 @@ export const kalshiGetFillsTool: ToolConfig<KalshiGetFillsParams, KalshiGetFills
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by market ticker',
+      description: 'Filter by market ticker (e.g., "KXBTC-24DEC31")',
     },
     orderId: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by order ID',
+      description: 'Filter by order ID (e.g., "abc123-def456-ghi789")',
     },
     minTs: {
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Minimum timestamp (Unix milliseconds)',
+      description: 'Minimum timestamp in Unix milliseconds (e.g., 1704067200000)',
     },
     maxTs: {
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Maximum timestamp (Unix milliseconds)',
+      description: 'Maximum timestamp in Unix milliseconds (e.g., 1704153600000)',
     },
     limit: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Number of results (1-1000, default: 100)',
+      description: 'Number of results to return (1-1000, default: 100)',
     },
     cursor: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Pagination cursor for next page',
+      description: 'Pagination cursor from previous response for fetching next page',
     },
   },
 
@@ -124,6 +129,10 @@ export const kalshiGetFillsTool: ToolConfig<KalshiGetFillsParams, KalshiGetFills
     fills: {
       type: 'array',
       description: 'Array of fill/trade objects',
+      items: {
+        type: 'object',
+        properties: KALSHI_FILL_OUTPUT_PROPERTIES,
+      },
     },
     paging: {
       type: 'object',
@@ -196,43 +205,43 @@ export const kalshiGetFillsV2Tool: ToolConfig<KalshiGetFillsV2Params, KalshiGetF
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by market ticker',
+      description: 'Filter by market ticker (e.g., "KXBTC-24DEC31")',
     },
     orderId: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by order ID',
+      description: 'Filter by order ID (e.g., "abc123-def456-ghi789")',
     },
     minTs: {
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Minimum timestamp (Unix milliseconds)',
+      description: 'Minimum timestamp in Unix milliseconds (e.g., 1704067200000)',
     },
     maxTs: {
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Maximum timestamp (Unix milliseconds)',
+      description: 'Maximum timestamp in Unix milliseconds (e.g., 1704153600000)',
     },
     subaccount: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Subaccount to get fills for',
+      description: 'Subaccount identifier to get fills for',
     },
     limit: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Number of results (1-200, default: 100)',
+      description: 'Number of results to return (1-200, default: 100)',
     },
     cursor: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Pagination cursor for next page',
+      description: 'Pagination cursor from previous response for fetching next page',
     },
   },
 
@@ -299,25 +308,9 @@ export const kalshiGetFillsV2Tool: ToolConfig<KalshiGetFillsV2Params, KalshiGetF
     fills: {
       type: 'array',
       description: 'Array of fill/trade objects with all API fields',
-      properties: {
-        fill_id: { type: 'string', description: 'Fill ID' },
-        trade_id: { type: 'string', description: 'Trade ID (same as fill_id)' },
-        order_id: { type: 'string', description: 'Order ID' },
-        client_order_id: { type: 'string', description: 'Client order ID' },
-        ticker: { type: 'string', description: 'Market ticker' },
-        market_ticker: { type: 'string', description: 'Market ticker (legacy)' },
-        side: { type: 'string', description: 'Side (yes/no)' },
-        action: { type: 'string', description: 'Action (buy/sell)' },
-        count: { type: 'number', description: 'Number of contracts' },
-        count_fp: { type: 'string', description: 'Count (fixed-point)' },
-        price: { type: 'number', description: 'Price (deprecated)' },
-        yes_price: { type: 'number', description: 'Yes price in cents' },
-        no_price: { type: 'number', description: 'No price in cents' },
-        yes_price_fixed: { type: 'string', description: 'Yes price in dollars' },
-        no_price_fixed: { type: 'string', description: 'No price in dollars' },
-        is_taker: { type: 'boolean', description: 'Whether fill was taker' },
-        created_time: { type: 'string', description: 'Fill creation time' },
-        ts: { type: 'number', description: 'Unix timestamp (milliseconds)' },
+      items: {
+        type: 'object',
+        properties: KALSHI_FILL_OUTPUT_PROPERTIES,
       },
     },
     cursor: {
