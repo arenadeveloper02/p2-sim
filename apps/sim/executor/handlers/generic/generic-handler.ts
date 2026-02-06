@@ -61,7 +61,7 @@ export class GenericBlockHandler implements BlockHandler {
         finalInputs.operation === 'search' &&
         (finalInputs.searchFolderId === '' || finalInputs.searchFolderId == null)
       ) {
-        delete finalInputs.searchFolderId
+        finalInputs.searchFolderId = undefined
       }
     }
 

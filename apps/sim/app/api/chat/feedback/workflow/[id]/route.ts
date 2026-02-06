@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { chat, chatPromptFeedback, user, workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, count, desc, eq, inArray } from 'drizzle-orm'
+import { count, desc, eq, inArray } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
@@ -119,13 +119,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    // Get total count of negative feedback records (liked = false) for pagination
+    // Get total count of feedback records for pagination
     const totalCountResult = await db
       .select({ count: count() })
       .from(chatPromptFeedback)
-      .where(
-        and(eq(chatPromptFeedback.workflowId, workflowId), eq(chatPromptFeedback.liked, false))
-      )
+      .where(eq(chatPromptFeedback.workflowId, workflowId))
 
     const totalCount = totalCountResult[0]?.count || 0
     const totalPages = Math.ceil(totalCount / pageSize)
@@ -144,15 +142,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         outOfDate: chatPromptFeedback.outOfDate,
         tooLong: chatPromptFeedback.tooLong,
         tooShort: chatPromptFeedback.tooShort,
+        liked: chatPromptFeedback.liked,
         executionId: chatPromptFeedback.executionId,
         workflowId: chatPromptFeedback.workflowId,
       })
       .from(chatPromptFeedback)
       .leftJoin(user, eq(user.id, chatPromptFeedback.userId))
       .leftJoin(workflow, eq(workflow.id, chatPromptFeedback.workflowId))
-      .where(
-        and(eq(chatPromptFeedback.workflowId, workflowId), eq(chatPromptFeedback.liked, false))
-      )
+      .where(eq(chatPromptFeedback.workflowId, workflowId))
       .orderBy(desc(chatPromptFeedback.createdAt))
       .limit(pageSize)
       .offset(offset)
@@ -206,6 +203,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         outOfDate: record.outOfDate || false,
         tooLong: record.tooLong || false,
         tooShort: record.tooShort || false,
+        liked: record.liked ?? null,
         userPrompt: userPrompt || null,
         executionId: record.executionId,
         workflowId: record.workflowId,

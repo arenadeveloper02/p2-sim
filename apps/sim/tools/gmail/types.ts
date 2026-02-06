@@ -35,6 +35,14 @@ export interface GmailSearchParams extends BaseGmailParams {
   maxResults?: number
 }
 
+// Advanced Search operation parameters
+export interface GmailAdvancedSearchParams extends BaseGmailParams {
+  query: string
+  maxResults?: number
+  includeAttachments?: boolean
+  clientName?: string
+}
+
 // Move operation parameters
 export interface GmailMoveParams extends BaseGmailParams {
   messageId: string
@@ -58,6 +66,7 @@ export type GmailToolParams =
   | GmailSendParams
   | GmailReadParams
   | GmailSearchParams
+  | GmailAdvancedSearchParams
   | GmailMoveParams
   | GmailMarkReadParams
   | GmailLabelParams
@@ -129,4 +138,37 @@ export interface GmailAttachment {
   data: Buffer
   mimeType: string
   size: number
+}
+
+// Email in thread (can be nested with replies)
+export interface ThreadedEmailMessage {
+  id: string
+  threadId: string
+  subject: string
+  from: string
+  to: string
+  date: string
+  content: string
+  attachments?: Array<{
+    id: string
+    name: string
+    size: number
+    type: string
+    url: string | null
+    key: string | null
+    context: string | null
+    content: string | null
+  }>
+  /**
+   * Array of replies to this message. Each reply can have its own nested replies array,
+   * creating a hierarchical tree structure.
+   */
+  replies?: ThreadedEmailMessage[]
+}
+
+// Advanced Search Response
+export interface GmailAdvancedSearchResponse extends ToolResponse {
+  output: {
+    results: ThreadedEmailMessage[]
+  }
 }
