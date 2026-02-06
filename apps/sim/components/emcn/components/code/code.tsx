@@ -15,6 +15,11 @@ import { List, type RowComponentProps, useDynamicRowHeight, useListRef } from 'r
 import 'prismjs/components/prism-javascript'
 import 'prismjs/components/prism-python'
 import 'prismjs/components/prism-json'
+import 'prismjs/components/prism-typescript'
+import 'prismjs/components/prism-jsx'
+import 'prismjs/components/prism-tsx'
+import 'prismjs/components/prism-bash'
+import 'prismjs/components/prism-yaml'
 import { cn } from '@/lib/core/utils/cn'
 import './code.css'
 
@@ -56,8 +61,6 @@ interface CodeContainerProps {
   className?: string
   /** Inline styles for the container */
   style?: React.CSSProperties
-  /** Whether editor is in streaming/AI generation state */
-  isStreaming?: boolean
   /** Drag and drop handler */
   onDragOver?: (e: React.DragEvent) => void
   /** Drop handler */
@@ -77,14 +80,7 @@ interface CodeContainerProps {
  * </Code.Container>
  * ```
  */
-function Container({
-  children,
-  className,
-  style,
-  isStreaming = false,
-  onDragOver,
-  onDrop,
-}: CodeContainerProps) {
+function Container({ children, className, style, onDragOver, onDrop }: CodeContainerProps) {
   return (
     <div
       className={cn(
@@ -94,8 +90,6 @@ function Container({
         'dark:bg-[#1F1F1F]',
         // Overflow handling for long content
         'overflow-x-auto overflow-y-auto',
-        // Streaming state
-        isStreaming && 'streaming-effect',
         className
       )}
       style={style}
@@ -358,7 +352,7 @@ interface CodeViewerProps {
   /** Whether to show line numbers gutter */
   showGutter?: boolean
   /** Language for syntax highlighting (default: 'json') */
-  language?: 'javascript' | 'json' | 'python'
+  language?: 'javascript' | 'json' | 'python' | 'typescript' | 'tsx' | 'jsx' | 'bash' | 'yaml'
   /** Additional CSS classes for the container */
   className?: string
   /** Left padding offset (useful for terminal alignment) */
@@ -456,7 +450,7 @@ function countSearchMatches(code: string, searchQuery: string): number {
 type ViewerInnerProps = {
   code: string
   showGutter: boolean
-  language: 'javascript' | 'json' | 'python'
+  language: 'javascript' | 'json' | 'python' | 'typescript' | 'tsx' | 'jsx' | 'bash' | 'yaml'
   className?: string
   paddingLeft: number
   gutterStyle?: React.CSSProperties

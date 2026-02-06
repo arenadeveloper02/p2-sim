@@ -577,6 +577,12 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
       description:
         'Natural language search prompt (e.g., "find PDF invoices last month", "search slides Q4 strategy in folder Marketing")',
     },
+    folderId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional folder ID to scope search to (only files in this folder).',
+    },
     pageSize: {
       type: 'number',
       required: false,
@@ -599,25 +605,39 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
   },
 
   directExecution: async (params: GoogleDriveSearchParams) => {
-    const { prompt, accessToken, pageSize, pageToken } = params
+    const { prompt, accessToken, folderId: paramFolderId, pageSize, pageToken } = params
 
-    // Extract folder name from prompt and resolve to ID
-    const folderName = extractFolderName(prompt)
     let folderId: string | null = null
 
-    if (folderName) {
-      folderId = await resolveFolderIdByName(accessToken, folderName, pageSize?.toString() || '5')
-      if (folderId) {
-        logger.info('Resolved folder by name', { folderName, folderId })
-      } else {
-        logger.warn('Could not resolve folder by name', { folderName })
+    if (paramFolderId?.trim()) {
+      folderId = paramFolderId.trim()
+      logger.info('Using folder from params', { folderId })
+    } else {
+      const folderName = extractFolderName(prompt)
+      if (folderName) {
+        folderId = await resolveFolderIdByName(accessToken, folderName, pageSize?.toString() || '5')
+        if (folderId) {
+          logger.info('Resolved folder by name', { folderName, folderId })
+        } else {
+          logger.warn('Could not resolve folder by name', { folderName })
+        }
       }
     }
 
-    // Build the query string using AI
-    const query = await buildDriveQueryWithAI(prompt, folderId)
+    let query = await buildDriveQueryWithAI(prompt, folderId)
 
-    logger.info('Built Drive query from prompt', { prompt, query, folderName, folderId })
+    if (folderId) {
+      const safeFolderId = folderId.replace(/'/g, "\\'")
+      const folderConstraint = `'${safeFolderId}' in parents`
+      if (!query.includes(' in parents')) {
+        query = `${query.trim()} and ${folderConstraint}`
+      } else {
+        query = query.replace(/'[^']*' in parents/g, folderConstraint)
+      }
+      logger.info('Enforced folder scope for search', { folderId })
+    }
+
+    logger.info('Built Drive query from prompt', { prompt, query, folderId })
 
     const url = new URL('https://www.googleapis.com/drive/v3/files')
     url.searchParams.append('q', query)

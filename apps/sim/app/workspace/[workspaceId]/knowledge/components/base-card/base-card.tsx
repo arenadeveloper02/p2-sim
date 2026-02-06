@@ -1,9 +1,16 @@
 'use client'
 
-import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useCallback, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { Badge, DocumentAttachment, Tooltip } from '@/components/emcn'
+import { formatAbsoluteDate, formatRelativeTime } from '@/lib/core/utils/formatting'
 import { clickKnowledgeBaseEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { BaseTagsModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
+import { DeleteKnowledgeBaseModal } from '../delete-knowledge-base-modal/delete-knowledge-base-modal'
+import { EditKnowledgeBaseModal } from '../edit-knowledge-base-modal/edit-knowledge-base-modal'
+import { KnowledgeBaseContextMenu } from '../knowledge-base-context-menu/knowledge-base-context-menu'
 
 interface BaseCardProps {
   id?: string
@@ -13,55 +20,8 @@ interface BaseCardProps {
   createdAt?: string
   updatedAt?: string
   searchQuery?: string
-}
-
-/**
- * Formats a date string to relative time (e.g., "2h ago", "3d ago")
- */
-function formatRelativeTime(dateString: string): string {
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
-
-  if (diffInSeconds < 60) {
-    return 'just now'
-  }
-  if (diffInSeconds < 3600) {
-    const minutes = Math.floor(diffInSeconds / 60)
-    return `${minutes}m ago`
-  }
-  if (diffInSeconds < 86400) {
-    const hours = Math.floor(diffInSeconds / 3600)
-    return `${hours}h ago`
-  }
-  if (diffInSeconds < 604800) {
-    const days = Math.floor(diffInSeconds / 86400)
-    return `${days}d ago`
-  }
-  if (diffInSeconds < 2592000) {
-    const weeks = Math.floor(diffInSeconds / 604800)
-    return `${weeks}w ago`
-  }
-  if (diffInSeconds < 31536000) {
-    const months = Math.floor(diffInSeconds / 2592000)
-    return `${months}mo ago`
-  }
-  const years = Math.floor(diffInSeconds / 31536000)
-  return `${years}y ago`
-}
-
-/**
- * Formats a date string to absolute format for tooltip display
- */
-function formatAbsoluteDate(dateString: string): string {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  onUpdate?: (id: string, name: string, description: string) => Promise<void>
+  onDelete?: (id: string) => Promise<void>
 }
 
 /**
@@ -69,26 +29,26 @@ function formatAbsoluteDate(dateString: string): string {
  */
 export function BaseCardSkeleton() {
   return (
-    <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-5)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-5)]'>
+    <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-3)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-4)] dark:bg-[var(--surface-4)] dark:hover:bg-[var(--surface-5)]'>
       <div className='flex items-center justify-between gap-[8px]'>
-        <div className='h-[17px] w-[120px] animate-pulse rounded-[4px] bg-[var(--surface-5)]' />
-        <div className='h-[22px] w-[90px] animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
+        <div className='h-[17px] w-[120px] animate-pulse rounded-[4px] bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
+        <div className='h-[22px] w-[90px] animate-pulse rounded-[4px] bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
       </div>
 
       <div className='flex flex-1 flex-col gap-[8px]'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-[6px]'>
-            <div className='h-[12px] w-[12px] animate-pulse rounded-[2px] bg-[var(--surface-5)]' />
-            <div className='h-[15px] w-[45px] animate-pulse rounded-[4px] bg-[var(--surface-5)]' />
+            <div className='h-[12px] w-[12px] animate-pulse rounded-[2px] bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
+            <div className='h-[15px] w-[45px] animate-pulse rounded-[4px] bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
           </div>
-          <div className='h-[15px] w-[120px] animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
+          <div className='h-[15px] w-[120px] animate-pulse rounded-[4px] bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
         </div>
 
         <div className='h-0 w-full border-[var(--divider)] border-t' />
 
         <div className='flex h-[36px] flex-col gap-[6px]'>
-          <div className='h-[15px] w-full animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
-          <div className='h-[15px] w-[75%] animate-pulse rounded-[4px] bg-[var(--surface-4)]' />
+          <div className='h-[15px] w-full animate-pulse rounded-[4px] bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
+          <div className='h-[15px] w-[75%] animate-pulse rounded-[4px] bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
         </div>
       </div>
     </div>
@@ -118,9 +78,26 @@ export function BaseCard({
   description,
   updatedAt,
   searchQuery,
+  onUpdate,
+  onDelete,
 }: BaseCardProps) {
   const params = useParams()
+  const router = useRouter()
   const workspaceId = params?.workspaceId as string
+  const userPermissions = useUserPermissionsContext()
+
+  const {
+    isOpen: isContextMenuOpen,
+    position: contextMenuPosition,
+    menuRef,
+    handleContextMenu,
+    closeMenu: closeContextMenu,
+  } = useContextMenu()
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [isTagsModalOpen, setIsTagsModalOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const searchParams = new URLSearchParams({
     kbName: title,
@@ -129,52 +106,161 @@ export function BaseCard({
 
   const shortId = id ? `kb-${id.slice(0, 8)}` : ''
 
-  return (
-    <Link
-      href={href}
-      prefetch={true}
-      className='h-full'
-      onClick={() => {
-        clickKnowledgeBaseEvent({
-          'Knowledge Base Name': title || '',
-          'Knowledge Base ID': id || '',
-          ...(searchQuery && { 'Search keyword': searchQuery || '' }),
-        })
-      }}
-    >
-      <div className='group flex h-full cursor-pointer flex-col gap-[12px] rounded-[4px] bg-[var(--surface-5)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-5)]'>
-        <div className='flex items-center justify-between gap-[8px]'>
-          <h3 className='min-w-0 flex-1 truncate font-medium text-[14px] text-[var(--text-primary)]'>
-            {title}
-          </h3>
-          {shortId && <Badge className='flex-shrink-0 rounded-[4px] text-[12px]'>{shortId}</Badge>}
-        </div>
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      clickKnowledgeBaseEvent({
+        'Knowledge Base Name': title || '',
+        'Knowledge Base ID': id || '',
+        ...(searchQuery && { 'Search keyword': searchQuery || '' }),
+      })
+      if (isContextMenuOpen) {
+        e.preventDefault()
+        return
+      }
+      router.push(href)
+    },
+    [isContextMenuOpen, router, href]
+  )
 
-        <div className='flex flex-1 flex-col gap-[8px]'>
-          <div className='flex items-center justify-between'>
-            <span className='flex items-center gap-[6px] text-[12px] text-[var(--text-tertiary)]'>
-              <DocumentAttachment className='h-[12px] w-[12px]' />
-              {docCount} {docCount === 1 ? 'doc' : 'docs'}
-            </span>
-            {updatedAt && (
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <span className='text-[12px] text-[var(--text-tertiary)]'>
-                    last updated: {formatRelativeTime(updatedAt)}
-                  </span>
-                </Tooltip.Trigger>
-                <Tooltip.Content>{formatAbsoluteDate(updatedAt)}</Tooltip.Content>
-              </Tooltip.Root>
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        router.push(href)
+      }
+    },
+    [router, href]
+  )
+
+  const handleOpenInNewTab = useCallback(() => {
+    window.open(href, '_blank')
+  }, [href])
+
+  const handleViewTags = useCallback(() => {
+    setIsTagsModalOpen(true)
+  }, [])
+
+  const handleEdit = useCallback(() => {
+    setIsEditModalOpen(true)
+  }, [])
+
+  const handleDelete = useCallback(() => {
+    setIsDeleteModalOpen(true)
+  }, [])
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!id || !onDelete) return
+    setIsDeleting(true)
+    try {
+      await onDelete(id)
+      setIsDeleteModalOpen(false)
+    } finally {
+      setIsDeleting(false)
+    }
+  }, [id, onDelete])
+
+  const handleSave = useCallback(
+    async (knowledgeBaseId: string, name: string, newDescription: string) => {
+      if (!onUpdate) return
+      await onUpdate(knowledgeBaseId, name, newDescription)
+    },
+    [onUpdate]
+  )
+
+  return (
+    <>
+      <div
+        role='button'
+        tabIndex={0}
+        className='h-full cursor-pointer'
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        onContextMenu={handleContextMenu}
+        data-kb-card
+      >
+        <div className='group flex h-full flex-col gap-[12px] rounded-[4px] bg-[var(--surface-3)] px-[8px] py-[6px] transition-colors hover:bg-[var(--surface-4)] dark:bg-[var(--surface-4)] dark:hover:bg-[var(--surface-5)]'>
+          <div className='flex items-center justify-between gap-[8px]'>
+            <h3 className='min-w-0 flex-1 truncate font-medium text-[14px] text-[var(--text-primary)]'>
+              {title}
+            </h3>
+            {shortId && (
+              <Badge className='flex-shrink-0 rounded-[4px] text-[12px]'>{shortId}</Badge>
             )}
           </div>
 
-          <div className='h-0 w-full border-[var(--divider)] border-t' />
+          <div className='flex flex-1 flex-col gap-[8px]'>
+            <div className='flex items-center justify-between'>
+              <span className='flex items-center gap-[6px] text-[12px] text-[var(--text-tertiary)]'>
+                <DocumentAttachment className='h-[12px] w-[12px]' />
+                {docCount} {docCount === 1 ? 'doc' : 'docs'}
+              </span>
+              {updatedAt && (
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <span className='text-[12px] text-[var(--text-tertiary)]'>
+                      last updated: {formatRelativeTime(updatedAt)}
+                    </span>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>{formatAbsoluteDate(updatedAt)}</Tooltip.Content>
+                </Tooltip.Root>
+              )}
+            </div>
 
-          <p className='line-clamp-2 h-[36px] text-[12px] text-[var(--text-tertiary)] leading-[18px]'>
-            {description}
-          </p>
+            <div className='h-0 w-full border-[var(--divider)] border-t' />
+
+            <p className='line-clamp-2 h-[36px] text-[12px] text-[var(--text-tertiary)] leading-[18px]'>
+              {description}
+            </p>
+          </div>
         </div>
       </div>
-    </Link>
+
+      <KnowledgeBaseContextMenu
+        isOpen={isContextMenuOpen}
+        position={contextMenuPosition}
+        menuRef={menuRef}
+        onClose={closeContextMenu}
+        onOpenInNewTab={handleOpenInNewTab}
+        onViewTags={handleViewTags}
+        onCopyId={id ? () => navigator.clipboard.writeText(id) : undefined}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        showOpenInNewTab={true}
+        showViewTags={!!id}
+        showEdit={!!onUpdate}
+        showDelete={!!onDelete}
+        disableEdit={!userPermissions.canEdit}
+        disableDelete={!userPermissions.canEdit}
+      />
+
+      {id && onUpdate && (
+        <EditKnowledgeBaseModal
+          open={isEditModalOpen}
+          onOpenChange={setIsEditModalOpen}
+          knowledgeBaseId={id}
+          initialName={title}
+          initialDescription={description === 'No description provided' ? '' : description}
+          onSave={handleSave}
+        />
+      )}
+
+      {id && onDelete && (
+        <DeleteKnowledgeBaseModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
+          onConfirm={handleConfirmDelete}
+          isDeleting={isDeleting}
+          knowledgeBaseName={title}
+        />
+      )}
+
+      {id && (
+        <BaseTagsModal
+          open={isTagsModalOpen}
+          onOpenChange={setIsTagsModalOpen}
+          knowledgeBaseId={id}
+        />
+      )}
+    </>
   )
 }

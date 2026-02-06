@@ -4,16 +4,18 @@ import { useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { ArrowDown, Loader2, Plus, Search, X } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { Button, Tooltip, Trash } from '@/components/emcn'
-import { Input, Skeleton } from '@/components/ui'
 import {
+  Button,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table'
+  Tooltip,
+  Trash,
+} from '@/components/emcn'
+import { Input, Skeleton } from '@/components/ui'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
@@ -72,9 +74,6 @@ const PLAN_NAMES = {
   pro: 'Pro',
   free: 'Free',
 } as const
-
-const GRADIENT_TEXT_STYLES =
-  'gradient-text bg-gradient-to-b from-gradient-primary via-gradient-secondary to-gradient-primary'
 
 export function Files() {
   const params = useParams()
@@ -487,12 +486,7 @@ export function Files() {
             <div className='mt-auto flex flex-col gap-[8px] pt-[10px]'>
               <div className='flex items-center justify-between'>
                 <div className='flex items-center gap-[6px]'>
-                  <span
-                    className={cn(
-                      'font-medium text-[12px]',
-                      planName === 'free' ? 'text-[var(--text-primary)]' : GRADIENT_TEXT_STYLES
-                    )}
-                  >
+                  <span className='font-medium text-[12px] text-[var(--text-primary)]'>
                     {displayPlanName}
                   </span>
                   <div className='h-[14px] w-[1.5px] bg-[var(--divider)]' />

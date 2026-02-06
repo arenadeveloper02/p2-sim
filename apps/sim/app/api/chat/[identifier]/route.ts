@@ -1,24 +1,26 @@
 import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
-import { chat, deployedChat, workflow, workflowExecutionLogs } from '@sim/db/schema'
+import {
+  chat,
+  deployedChat,
+  workflow,
+  workflowExecutionLogs,
+  workflowQueries,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
-import * as ChatFiles from '@/lib/uploads/contexts/chat'
+import { ChatFiles } from '@/lib/uploads'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import {
-  addCorsHeaders,
-  setChatAuthCookie,
-  validateAuthToken,
-  validateChatAuth,
-} from '@/app/api/chat/utils'
+import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatIdentifierAPI')
@@ -61,6 +63,88 @@ const chatPostBodySchema = z.object({
   // Additional Start Block inputs (custom fields from inputFormat)
   startBlockInputs: z.record(z.unknown()).optional(),
 })
+
+const goldenQueriesSchema = z.object({
+  goldenQueries: z.array(
+    z.object({
+      id: z.string().optional(),
+      query: z.string().min(1),
+    })
+  ),
+  deleteMode: z.enum(['hard', 'soft']).optional(),
+})
+
+const sanitizeGoldenQueries = (queries?: Array<{ id?: string; query: string }>) => {
+  if (!Array.isArray(queries)) return []
+  return queries
+    .map((item) => ({ ...item, query: item.query.trim() }))
+    .filter((item) => item.query.length > 0)
+}
+
+async function fetchGoldenQueries(workflowId: string) {
+  const rows = await db
+    .select({ id: workflowQueries.id, query: workflowQueries.query })
+    .from(workflowQueries)
+    .where(and(eq(workflowQueries.workflowId, workflowId), eq(workflowQueries.deleted, false)))
+    .orderBy(asc(workflowQueries.priority), asc(workflowQueries.createdAt))
+  return rows
+}
+
+async function replaceWorkflowQueries({
+  workflowId,
+  userId,
+  queries,
+}: {
+  workflowId: string
+  userId: string
+  queries: Array<{ id?: string; query: string }>
+}) {
+  await db.transaction(async (tx) => {
+    await tx.delete(workflowQueries).where(eq(workflowQueries.workflowId, workflowId))
+
+    if (queries.length === 0) return
+
+    await tx.insert(workflowQueries).values(
+      queries.map((item, index) => ({
+        id: item.id ?? randomUUID(),
+        userId,
+        workflowId,
+        query: item.query,
+        priority: index,
+      }))
+    )
+  })
+}
+
+async function softDeleteWorkflowQueries({
+  workflowId,
+  keepQueries,
+}: {
+  workflowId: string
+  keepQueries: Array<{ id?: string; query: string }>
+}) {
+  const keepIds = keepQueries.map((item) => item.id).filter(Boolean) as string[]
+  const rows = await db
+    .select({ id: workflowQueries.id, query: workflowQueries.query })
+    .from(workflowQueries)
+    .where(and(eq(workflowQueries.workflowId, workflowId), eq(workflowQueries.deleted, false)))
+  const toDeleteIds = rows.filter((row) => !keepIds.includes(row.id)).map((row) => row.id)
+  if (toDeleteIds.length === 0) return
+  await db
+    .update(workflowQueries)
+    .set({ deleted: true, updatedAt: new Date() })
+    .where(inArray(workflowQueries.id, toDeleteIds))
+
+  await db.transaction(async (tx) => {
+    for (const [index, item] of keepQueries.entries()) {
+      if (!item.id) continue
+      await tx
+        .update(workflowQueries)
+        .set({ priority: index, updatedAt: new Date() })
+        .where(eq(workflowQueries.id, item.id))
+    }
+  })
+}
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -462,7 +546,7 @@ export async function POST(
         userId: deployment.userId,
         workspaceId,
         isDeployed: workflowRecord?.isDeployed ?? false,
-        variables: workflowRecord?.variables || {},
+        variables: (workflowRecord?.variables as Record<string, unknown>) ?? undefined,
       }
 
       const originalStream = await createStreamingResponse({
@@ -670,6 +754,100 @@ export async function POST(
   }
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ identifier: string }> }
+) {
+  const { identifier } = await params
+  const requestId = generateRequestId()
+
+  try {
+    let parsedBody
+    try {
+      const rawBody = await request.json()
+      const validation = goldenQueriesSchema.safeParse(rawBody)
+      if (!validation.success) {
+        const errorMessage = validation.error.errors
+          .map((err) => `${err.path.join('.')}: ${err.message}`)
+          .join(', ')
+        return addCorsHeaders(
+          createErrorResponse(`Invalid request body: ${errorMessage}`, 400),
+          request
+        )
+      }
+      parsedBody = validation.data
+    } catch (_error) {
+      return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
+    }
+
+    const deploymentResult = await db
+      .select({
+        id: chat.id,
+        isActive: chat.isActive,
+        authType: chat.authType,
+        password: chat.password,
+        allowedEmails: chat.allowedEmails,
+        workflowId: chat.workflowId,
+        userId: chat.userId,
+      })
+      .from(chat)
+      .where(eq(chat.identifier, identifier))
+      .limit(1)
+
+    if (deploymentResult.length === 0) {
+      logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
+      return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+    }
+
+    const deployment = deploymentResult[0]
+    if (!deployment.isActive) {
+      logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
+      return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
+    }
+
+    const cookieName = `chat_auth_${deployment.id}`
+    const authCookie = request.cookies.get(cookieName)
+    if (
+      deployment.authType !== 'public' &&
+      (!authCookie || !validateAuthToken(authCookie.value, deployment.id, deployment.password))
+    ) {
+      const authResult = await validateChatAuth(requestId, deployment, request)
+      if (!authResult.authorized) {
+        return addCorsHeaders(
+          createErrorResponse(authResult.error || 'Authentication required', 401),
+          request
+        )
+      }
+    }
+
+    const sanitizedQueries = sanitizeGoldenQueries(parsedBody.goldenQueries)
+    const deleteMode = parsedBody.deleteMode ?? 'hard'
+
+    if (deleteMode === 'soft') {
+      await softDeleteWorkflowQueries({
+        workflowId: deployment.workflowId,
+        keepQueries: sanitizedQueries,
+      })
+    } else {
+      await replaceWorkflowQueries({
+        workflowId: deployment.workflowId,
+        userId: deployment.userId,
+        queries: sanitizedQueries,
+      })
+    }
+
+    await db.update(chat).set({ updatedAt: new Date() }).where(eq(chat.id, deployment.id))
+
+    return addCorsHeaders(createSuccessResponse({ goldenQueries: sanitizedQueries }), request)
+  } catch (error: any) {
+    logger.error(`[${requestId}] Error updating golden queries:`, error)
+    return addCorsHeaders(
+      createErrorResponse(error.message || 'Failed to update golden queries', 500),
+      request
+    )
+  }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ identifier: string }> }
@@ -743,6 +921,7 @@ export async function GET(
       logger.warn(`[${requestId}] Failed to extract inputFormat:`, error)
       // Continue without inputFormat - not critical for chat config
     }
+    const goldenQueries = await fetchGoldenQueries(deployment.workflowId)
 
     /**
      * Helper function to build chat config response with inputFormat always included
@@ -757,7 +936,10 @@ export async function GET(
         id: deployment.id,
         title: deployment.title,
         description: deployment.description,
-        customizations: deployment.customizations,
+        customizations: {
+          ...(deployment.customizations ?? {}),
+          goldenQueries,
+        },
         authType: deployment.authType,
         outputConfigs: deployment.outputConfigs,
         inputFormat, // Always included in successful responses

@@ -75,3 +75,28 @@ export const gmailUnarchiveTool: ToolConfig<GmailMarkReadParams, GmailToolRespon
     },
   },
 }
+
+export const gmailUnarchiveV2Tool: ToolConfig<GmailMarkReadParams, GmailToolResponse> = {
+  id: 'gmail_unarchive_v2',
+  name: 'Gmail Unarchive',
+  description: 'Unarchive a Gmail message (move back to inbox)',
+  version: '2.0.0',
+  oauth: gmailUnarchiveTool.oauth,
+  params: gmailUnarchiveTool.params,
+  request: gmailUnarchiveTool.request,
+  transformResponse: async (response) => {
+    return await gmailUnarchiveTool.transformResponse!(response)
+  },
+  outputs: {
+    content: { type: 'string', description: 'Success message' },
+    metadata: {
+      type: 'object',
+      description: 'Email metadata',
+      properties: {
+        id: { type: 'string', description: 'Gmail message ID' },
+        threadId: { type: 'string', description: 'Gmail thread ID' },
+        labelIds: { type: 'array', items: { type: 'string' }, description: 'Updated email labels' },
+      },
+    },
+  },
+}

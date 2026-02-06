@@ -81,7 +81,29 @@ export const openaiProvider: ProviderConfig = {
     }
 
     if (request.temperature !== undefined) payload.temperature = request.temperature
-    if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+
+    // Newer OpenAI models (GPT‑5.x, Omni/o‑series, GPT‑4.1 family)
+    // use max_completion_tokens instead of max_tokens
+    if (request.maxTokens !== undefined) {
+      const maxTokens = Number(request.maxTokens)
+      const modelId = String(request.model || '').toLowerCase()
+      const usesMaxCompletionTokens =
+        // GPT‑5 family
+        modelId.startsWith('gpt-5') ||
+        modelId === 'gpt-5' ||
+        modelId === 'gpt-5-mini' ||
+        modelId === 'gpt-5-nano' ||
+        // GPT‑4.1 family
+        modelId.startsWith('gpt-4.1') ||
+        // Omni / o‑series (o1, o3‑mini, o4‑mini, etc.)
+        modelId.startsWith('o')
+
+      if (usesMaxCompletionTokens) {
+        ;(payload as any).max_completion_tokens = maxTokens
+      } else {
+        payload.max_tokens = maxTokens
+      }
+    }
 
     if (request.reasoningEffort !== undefined) payload.reasoning_effort = request.reasoningEffort
     if (request.verbosity !== undefined) payload.verbosity = request.verbosity
@@ -300,7 +322,7 @@ export const openaiProvider: ProviderConfig = {
             }
 
             const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-            const result = await executeTool(toolName, executionParams, true)
+            const result = await executeTool(toolName, executionParams)
             const toolCallEndTime = Date.now()
 
             return {

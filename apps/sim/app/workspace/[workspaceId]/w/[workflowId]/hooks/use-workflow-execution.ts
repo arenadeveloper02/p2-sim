@@ -16,13 +16,14 @@ import {
 } from '@/lib/workflows/triggers/triggers'
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-current-workflow'
 import type { BlockLog, ExecutionResult, StreamingExecution } from '@/executor/types'
+import { hasExecutionResult } from '@/executor/utils/errors'
 import { coerceValue } from '@/executor/utils/start-block'
 import { subscriptionKeys } from '@/hooks/queries/subscription'
 import { useExecutionStream } from '@/hooks/use-execution-stream'
 import { WorkflowValidationError } from '@/serializer'
-import { useExecutionStore } from '@/stores/execution/store'
-import { useVariablesStore } from '@/stores/panel/variables/store'
-import { useEnvironmentStore } from '@/stores/settings/environment/store'
+import { useExecutionStore } from '@/stores/execution'
+import { useVariablesStore } from '@/stores/panel'
+import { useEnvironmentStore } from '@/stores/settings/environment'
 import { type ConsoleEntry, useTerminalConsoleStore } from '@/stores/terminal'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -74,17 +75,6 @@ function normalizeErrorMessage(error: unknown): string {
   }
 
   return WORKFLOW_EXECUTION_FAILURE_MESSAGE
-}
-
-function isExecutionResult(value: unknown): value is ExecutionResult {
-  if (!isRecord(value)) return false
-  return typeof value.success === 'boolean' && isRecord(value.output)
-}
-
-function extractExecutionResult(error: unknown): ExecutionResult | null {
-  if (!isRecord(error)) return null
-  const candidate = error.executionResult
-  return isExecutionResult(candidate) ? candidate : null
 }
 
 export function useWorkflowExecution() {
@@ -885,6 +875,7 @@ export function useWorkflowExecution() {
 
       const activeBlocksSet = new Set<string>()
       const streamedContent = new Map<string, string>()
+      const accumulatedBlockLogs: BlockLog[] = []
 
       // Execute the workflow
       try {
@@ -903,7 +894,12 @@ export function useWorkflowExecution() {
                 loops: executionWorkflowState.loops,
                 parallels: executionWorkflowState.parallels,
               }
-            : undefined,
+            : {
+                blocks: filteredStates,
+                edges: workflowEdges,
+                loops: latestWorkflowState.loops ?? {},
+                parallels: latestWorkflowState.parallels ?? {},
+              },
           callbacks: {
             onExecutionStarted: (data) => {
               logger.info('Server execution started:', data)
@@ -933,14 +929,30 @@ export function useWorkflowExecution() {
 
               // Edges already tracked in onBlockStarted, no need to track again
 
+              const startedAt = new Date(Date.now() - data.durationMs).toISOString()
+              const endedAt = new Date().toISOString()
+
+              // Accumulate block log for the execution result
+              accumulatedBlockLogs.push({
+                blockId: data.blockId,
+                blockName: data.blockName || 'Unknown Block',
+                blockType: data.blockType || 'unknown',
+                input: data.input || {},
+                output: data.output,
+                success: true,
+                durationMs: data.durationMs,
+                startedAt,
+                endedAt,
+              })
+
               // Add to console
               addConsole({
                 input: data.input || {},
                 output: data.output,
                 success: true,
                 durationMs: data.durationMs,
-                startedAt: new Date(Date.now() - data.durationMs).toISOString(),
-                endedAt: new Date().toISOString(),
+                startedAt,
+                endedAt,
                 workflowId: activeWorkflowId,
                 blockId: data.blockId,
                 executionId: executionId || uuidv4(),
@@ -967,6 +979,24 @@ export function useWorkflowExecution() {
 
               // Track failed block execution in run path
               setBlockRunStatus(data.blockId, 'error')
+
+              const startedAt = new Date(Date.now() - data.durationMs).toISOString()
+              const endedAt = new Date().toISOString()
+
+              // Accumulate block error log for the execution result
+              accumulatedBlockLogs.push({
+                blockId: data.blockId,
+                blockName: data.blockName || 'Unknown Block',
+                blockType: data.blockType || 'unknown',
+                input: data.input || {},
+                output: {},
+                success: false,
+                error: data.error,
+                durationMs: data.durationMs,
+                startedAt,
+                endedAt,
+              })
+
               // Add error to console
               addConsole({
                 input: data.input || {},
@@ -974,8 +1004,8 @@ export function useWorkflowExecution() {
                 success: false,
                 error: data.error,
                 durationMs: data.durationMs,
-                startedAt: new Date(Date.now() - data.durationMs).toISOString(),
-                endedAt: new Date().toISOString(),
+                startedAt,
+                endedAt,
                 workflowId: activeWorkflowId,
                 blockId: data.blockId,
                 executionId: executionId || uuidv4(),
@@ -1029,7 +1059,7 @@ export function useWorkflowExecution() {
                   startTime: data.startTime,
                   endTime: data.endTime,
                 },
-                logs: [],
+                logs: accumulatedBlockLogs,
               }
             },
 
@@ -1041,7 +1071,7 @@ export function useWorkflowExecution() {
                 metadata: {
                   duration: data.duration,
                 },
-                logs: [],
+                logs: accumulatedBlockLogs,
               }
 
               // Only add workflow-level error if no blocks have executed yet
@@ -1103,11 +1133,11 @@ export function useWorkflowExecution() {
 
   const handleExecutionError = (error: unknown, options?: { executionId?: string }) => {
     const normalizedMessage = normalizeErrorMessage(error)
-    const executionResultFromError = extractExecutionResult(error)
 
     let errorResult: ExecutionResult
 
-    if (executionResultFromError) {
+    if (hasExecutionResult(error)) {
+      const executionResultFromError = error.executionResult
       const logs = Array.isArray(executionResultFromError.logs) ? executionResultFromError.logs : []
 
       errorResult = {

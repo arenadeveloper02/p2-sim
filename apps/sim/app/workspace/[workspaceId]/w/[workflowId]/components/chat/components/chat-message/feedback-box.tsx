@@ -10,6 +10,7 @@ interface FeedbackBoxProps {
   onClose?: () => void
   onSubmit?: (feedback: FeedbackData, currentExecutionId: string) => void
   currentExecutionId?: string
+  isLikeFeedback?: boolean
 }
 
 interface FeedbackData {
@@ -21,7 +22,13 @@ interface FeedbackData {
   comment?: string
 }
 
-export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: FeedbackBoxProps) {
+export function FeedbackBox({
+  isOpen,
+  onClose,
+  onSubmit,
+  currentExecutionId,
+  isLikeFeedback = false,
+}: FeedbackBoxProps) {
   const [feedback, setFeedback] = useState<FeedbackData>({
     tooLong: false,
     outOfDate: false,
@@ -59,13 +66,14 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
     onClose?.()
   }
 
-  const hasAnyFeedback =
-    feedback.tooLong ||
-    feedback.outOfDate ||
-    feedback.incomplete ||
-    feedback.tooShort ||
-    feedback.inaccurate ||
-    feedback.comment?.trim()
+  const hasAnyFeedback = isLikeFeedback
+    ? feedback.comment?.trim() || true // For like feedback, allow submission even without comment
+    : feedback.tooLong ||
+      feedback.outOfDate ||
+      feedback.incomplete ||
+      feedback.tooShort ||
+      feedback.inaccurate ||
+      feedback.comment?.trim()
 
   if (!isOpen) return null
 
@@ -85,75 +93,83 @@ export function FeedbackBox({ isOpen, onClose, onSubmit, currentExecutionId }: F
         </Button>
       </CardHeader>
       <CardContent className='space-y-4 pb-4'>
-        {/* Feedback checkboxes */}
-        <div className='grid grid-cols-2 gap-4'>
-          <div className='space-y-3'>
-            <div className='flex items-center space-x-2'>
-              <Checkbox
-                id='tooLong'
-                checked={feedback.tooLong}
-                onCheckedChange={(checked) => handleCheckboxChange('tooLong', checked as boolean)}
-              />
-              <label htmlFor='tooLong' className='font-normal text-sm'>
-                Too Long
-              </label>
+        {/* Feedback checkboxes - only show for dislike feedback */}
+        {!isLikeFeedback && (
+          <div className='grid grid-cols-2 gap-4'>
+            <div className='space-y-3'>
+              <div className='flex items-center space-x-2'>
+                <Checkbox
+                  id='tooLong'
+                  checked={feedback.tooLong}
+                  onCheckedChange={(checked) => handleCheckboxChange('tooLong', checked as boolean)}
+                />
+                <label htmlFor='tooLong' className='font-normal text-sm'>
+                  Too Long
+                </label>
+              </div>
+              <div className='flex items-center space-x-2'>
+                <Checkbox
+                  id='outOfDate'
+                  checked={feedback.outOfDate}
+                  onCheckedChange={(checked) =>
+                    handleCheckboxChange('outOfDate', checked as boolean)
+                  }
+                />
+                <label htmlFor='outOfDate' className='font-normal text-sm'>
+                  Out of Date
+                </label>
+              </div>
+              <div className='flex items-center space-x-2'>
+                <Checkbox
+                  id='incomplete'
+                  checked={feedback.incomplete}
+                  onCheckedChange={(checked) =>
+                    handleCheckboxChange('incomplete', checked as boolean)
+                  }
+                />
+                <label htmlFor='incomplete' className='font-normal text-sm'>
+                  Incomplete
+                </label>
+              </div>
             </div>
-            <div className='flex items-center space-x-2'>
-              <Checkbox
-                id='outOfDate'
-                checked={feedback.outOfDate}
-                onCheckedChange={(checked) => handleCheckboxChange('outOfDate', checked as boolean)}
-              />
-              <label htmlFor='outOfDate' className='font-normal text-sm'>
-                Out of Date
-              </label>
-            </div>
-            <div className='flex items-center space-x-2'>
-              <Checkbox
-                id='incomplete'
-                checked={feedback.incomplete}
-                onCheckedChange={(checked) =>
-                  handleCheckboxChange('incomplete', checked as boolean)
-                }
-              />
-              <label htmlFor='incomplete' className='font-normal text-sm'>
-                Incomplete
-              </label>
+
+            <div className='space-y-3'>
+              <div className='flex items-center space-x-2'>
+                <Checkbox
+                  id='tooShort'
+                  checked={feedback.tooShort}
+                  onCheckedChange={(checked) =>
+                    handleCheckboxChange('tooShort', checked as boolean)
+                  }
+                />
+                <label htmlFor='tooShort' className='font-normal text-sm'>
+                  Too Short
+                </label>
+              </div>
+              <div className='flex items-center space-x-2'>
+                <Checkbox
+                  id='inaccurate'
+                  checked={feedback.inaccurate}
+                  onCheckedChange={(checked) =>
+                    handleCheckboxChange('inaccurate', checked as boolean)
+                  }
+                />
+                <label htmlFor='inaccurate' className='font-normal text-sm'>
+                  Inaccurate
+                </label>
+              </div>
             </div>
           </div>
+        )}
 
-          <div className='space-y-3'>
-            <div className='flex items-center space-x-2'>
-              <Checkbox
-                id='tooShort'
-                checked={feedback.tooShort}
-                onCheckedChange={(checked) => handleCheckboxChange('tooShort', checked as boolean)}
-              />
-              <label htmlFor='tooShort' className='font-normal text-sm'>
-                Too Short
-              </label>
-            </div>
-            <div className='flex items-center space-x-2'>
-              <Checkbox
-                id='inaccurate'
-                checked={feedback.inaccurate}
-                onCheckedChange={(checked) =>
-                  handleCheckboxChange('inaccurate', checked as boolean)
-                }
-              />
-              <label htmlFor='inaccurate' className='font-normal text-sm'>
-                Inaccurate
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* Other feedback textarea */}
+        {/* Feedback textarea */}
         <div className='space-y-2'>
-          <div className='font-normal text-gray-700 text-sm dark:text-gray-300'>Other feedback</div>
+          <div className='font-normal text-gray-700 text-sm dark:text-gray-300'>
+            {isLikeFeedback ? 'Feedback' : 'Other feedback'}
+          </div>
           <Textarea
             id='comment'
-            placeholder='Other feedback'
+            placeholder={isLikeFeedback ? 'Share your feedback...' : 'Other feedback'}
             value={feedback.comment}
             onChange={(e) => handleCommentChange(e.target.value)}
             className='min-h-[100px] resize-none'

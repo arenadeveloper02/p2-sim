@@ -15,9 +15,14 @@ interface ChatHeaderProps {
     }
   } | null
   starCount: string
+  showFeedbackView?: boolean
 }
 
-export function ArenaChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
+export function ArenaChatHeader({
+  chatConfig,
+  starCount,
+  showFeedbackView = false,
+}: ChatHeaderProps) {
   const brand = useBrandConfig()
   const primaryColor = chatConfig?.customizations?.primaryColor || 'var(--brand-primary-hex)'
   const customImage = chatConfig?.customizations?.imageUrl || chatConfig?.customizations?.logoUrl
@@ -35,7 +40,9 @@ export function ArenaChatHeader({ chatConfig, starCount }: ChatHeaderProps) {
       />
 
       <h2 className={`${inter.className} font-semibold text-[#2C2D33] text-[18px]`}>
-        {chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'}
+        {showFeedbackView
+          ? 'User Feedback'
+          : chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'}
       </h2>
       <div />
     </nav>

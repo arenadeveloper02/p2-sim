@@ -76,12 +76,14 @@ export const deepseekProvider: ProviderConfig = {
         : undefined
 
       const payload: any = {
-        model: 'deepseek-chat',
+        model: request.model || 'deepseek-chat',
         messages: allMessages,
       }
 
       if (request.temperature !== undefined) payload.temperature = request.temperature
-      if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+      if (request.maxTokens !== undefined) {
+        payload.max_tokens = Number(request.maxTokens)
+      }
 
       let preparedTools: ReturnType<typeof prepareToolsWithUsageControl> | null = null
 
@@ -256,7 +258,7 @@ export const deepseekProvider: ProviderConfig = {
               if (!tool) return null
 
               const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-              const result = await executeTool(toolName, executionParams, true)
+              const result = await executeTool(toolName, executionParams)
               const toolCallEndTime = Date.now()
 
               return {

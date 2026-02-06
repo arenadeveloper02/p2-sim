@@ -267,3 +267,21 @@ export const gmailReadTool: ToolConfig<GmailReadParams, GmailToolResponse> = {
     attachments: { type: 'file[]', description: 'Attachments of the email' },
   },
 }
+
+export const gmailReadV2Tool: ToolConfig<GmailReadParams, GmailToolResponse> = {
+  id: 'gmail_read_v2',
+  name: 'Gmail Read',
+  description: 'Read emails from Gmail',
+  version: '2.0.0',
+  oauth: gmailReadTool.oauth,
+  params: gmailReadTool.params,
+  request: gmailReadTool.request,
+  transformResponse: async (response: Response, params?: GmailReadParams) => {
+    return await gmailReadTool.transformResponse!(response, params)
+  },
+  outputs: {
+    content: { type: 'string', description: 'Text content of the email' },
+    metadata: { type: 'json', description: 'Metadata of the email' },
+    attachments: { type: 'file[]', description: 'Attachments of the email' },
+  },
+}
