@@ -5,6 +5,7 @@ import type { SQL } from 'drizzle-orm'
 import { and, desc, eq, isNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 
 const logger = createLogger('DeployedChatAgentsListAPI')
 
@@ -74,6 +75,9 @@ function toAgentListItem(row: AgentChatRow) {
     departmentName: toDepartmentLabel(row.department),
     created_at: row.createdAt.toISOString(),
     description: row.description,
+    "status": "published",
+    redirectUrl: getBaseUrl() + `/chat/${row.workflowId}?workspaceId=${row.workspaceId}`,
+    "showConversation": false,
     // allowedEmails: row.allowedEmails,
   }
 }
