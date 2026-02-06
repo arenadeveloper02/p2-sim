@@ -31,8 +31,7 @@ export const BingAdsBlock: BlockConfig<BingAdsQueryResponse> = {
       id: 'account',
       title: 'Bing Ads Account',
       type: 'dropdown',
-      options: [
-      ],
+      options: [],
       fetchOptions: async () => {
         try {
           const response = await fetch('/api/bing-ads-v1/accounts')

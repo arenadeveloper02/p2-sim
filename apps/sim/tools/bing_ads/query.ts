@@ -13,7 +13,6 @@ interface BingAdsAccount {
   name: string
 }
 
-
 export const bingAdsQueryTool: ToolConfig<BingAdsQueryParams, any> = {
   id: 'bing_ads_query',
   version: '1.0.0',
