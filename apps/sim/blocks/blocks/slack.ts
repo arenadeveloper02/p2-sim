@@ -36,6 +36,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Update Message', id: 'update' },
         { label: 'Delete Message', id: 'delete' },
         { label: 'Add Reaction', id: 'react' },
+        { label: 'Search All', id: 'search_all' },
       ],
       value: () => 'send',
     },
@@ -115,7 +116,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       condition: {
         field: 'operation',
-        value: ['list_channels', 'list_users', 'get_user'],
+        value: ['list_channels', 'list_users', 'get_user', 'search_all'],
         not: true,
         and: {
           field: 'destinationType',
@@ -133,7 +134,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       mode: 'advanced',
       condition: {
         field: 'operation',
-        value: ['list_channels', 'list_users', 'get_user'],
+        value: ['list_channels', 'list_users', 'get_user', 'search_all'],
         not: true,
         and: {
           field: 'destinationType',
@@ -241,10 +242,107 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'limit',
       title: 'Message Limit',
       type: 'short-input',
-      placeholder: '15',
+      placeholder: '50',
       condition: {
         field: 'operation',
         value: 'read',
+      },
+    },
+    {
+      id: 'fromDate',
+      title: 'From Date',
+      type: 'date-input',
+      placeholder: 'Select from date',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'toDate',
+      title: 'To Date',
+      type: 'date-input',
+      placeholder: 'Select to date',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'dateRange',
+      title: 'Quick Date Range',
+      type: 'dropdown',
+      placeholder: 'Select date range',
+      options: [
+        { label: 'Today', id: '1' },
+        { label: 'Last 7 days', id: '7' },
+        { label: 'Last 14 days', id: '14' },
+      ],
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'cursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous response',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'autoPaginate',
+      title: 'Auto-Paginate',
+      type: 'switch',
+      description: 'Automatically fetch all pages (max 10 pages, 1000 messages)',
+      defaultValue: true,
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'includeThreads',
+      title: 'Include Thread Replies',
+      type: 'switch',
+      description: 'Include replies for messages that are part of threads',
+      defaultValue: true,
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    {
+      id: 'maxThreads',
+      title: 'Max Threads',
+      type: 'short-input',
+      placeholder: '10',
+      description: 'Maximum number of threads to fetch replies for',
+      condition: {
+        field: 'operation',
+        value: 'read',
+        and: {
+          field: 'includeThreads',
+          value: true,
+        },
+      },
+    },
+    {
+      id: 'maxRepliesPerThread',
+      title: 'Max Replies Per Thread',
+      type: 'short-input',
+      placeholder: '100',
+      description: 'Maximum number of replies to fetch per thread',
+      condition: {
+        field: 'operation',
+        value: 'read',
+        and: {
+          field: 'includeThreads',
+          value: true,
+        },
       },
     },
     // List Channels specific fields
@@ -489,6 +587,103 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       },
       required: true,
     },
+    // Search All specific fields
+    {
+      id: 'clientId',
+      title: 'Client ID',
+      type: 'slack-client-selector',
+      placeholder: 'Select client',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+      required: false,
+    },
+    {
+      id: 'channelId',
+      title: 'Channel',
+      type: 'slack-channel-selector',
+      placeholder: 'Select channel',
+      dependsOn: ['clientId'],
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+      required: false,
+    },
+    {
+      id: 'query',
+      title: 'Search Query',
+      type: 'short-input',
+      placeholder: 'Search terms (channel filter applied automatically from selection)',
+      description:
+        'Enter your search terms. The selected channel will be automatically included as "in:channel_name".',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+      required: true,
+    },
+    {
+      id: 'searchCount',
+      title: 'Result Count',
+      type: 'short-input',
+      placeholder: '50',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    {
+      id: 'searchPage',
+      title: 'Page Number',
+      type: 'short-input',
+      placeholder: '1',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    {
+      id: 'sortBy',
+      title: 'Sort By',
+      type: 'dropdown',
+      options: [
+        { label: 'Timestamp', id: 'timestamp' },
+        { label: 'Score', id: 'score' },
+        { label: 'Relevance', id: 'relevance' },
+      ],
+      value: () => 'timestamp',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    {
+      id: 'sortDir',
+      title: 'Sort Direction',
+      type: 'dropdown',
+      options: [
+        { label: 'Descending', id: 'desc' },
+        { label: 'Ascending', id: 'asc' },
+      ],
+      value: () => 'desc',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    {
+      id: 'highlight',
+      title: 'Highlight Results',
+      type: 'switch',
+      description: 'Highlight search terms in results',
+      defaultValue: true,
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
     ...getTrigger('slack_webhook').subBlocks,
   ],
   tools: {
@@ -506,6 +701,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       'slack_update_message',
       'slack_delete_message',
       'slack_add_reaction',
+      'slack_search_all',
     ],
     config: {
       tool: (params) => {
@@ -536,6 +732,8 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
             return 'slack_delete_message'
           case 'react':
             return 'slack_add_reaction'
+          case 'search_all':
+            return 'slack_search_all'
           default:
             throw new Error(`Invalid Slack operation: ${params.operation}`)
         }
@@ -556,6 +754,14 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
           content,
           limit,
           oldest,
+          fromDate,
+          toDate,
+          dateRange,
+          cursor,
+          autoPaginate,
+          includeThreads,
+          maxThreads,
+          maxRepliesPerThread,
           attachmentFiles,
           files,
           threadTs,
@@ -570,14 +776,41 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
           includeDeleted,
           userLimit,
           userId,
+          clientId,
+          channelId,
+          query,
+          searchCount,
+          searchPage,
+          sortBy,
+          sortDir,
+          highlight,
           getMessageTimestamp,
           getThreadTimestamp,
           threadLimit,
           ...rest
         } = params
 
+        // Extract channel name for query building
+        const channelName =
+          typeof channelId === 'object' && channelId?.channel_name ? channelId.channel_name : ''
+
+        console.log('[Slack Block] Channel extraction:', {
+          channelId,
+          channelIdType: typeof channelId,
+          channelIdKeys: channelId && typeof channelId === 'object' ? Object.keys(channelId) : [],
+          hasChannelName: !!(channelId && typeof channelId === 'object' && channelId.channel_name),
+          channelName,
+          channelNameType: typeof channelName,
+        })
+
+        // Normalize IDs for other uses
+        const normalizedChannelId =
+          typeof channelId === 'object' && channelId?.channel_id ? channelId.channel_id : channelId
+
         const isDM = destinationType === 'dm'
-        const effectiveChannel = (channel || manualChannel || '').trim()
+        const channelFromObject =
+          typeof channelId === 'object' && channelId?.channel_id ? channelId.channel_id : ''
+        const effectiveChannel = (channel || manualChannel || channelFromObject || '').trim()
         const effectiveUserId = (dmUserId || manualDmUserId || '').trim()
 
         const noChannelOperations = ['list_channels', 'list_users', 'get_user']
@@ -641,13 +874,114 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
 
           case 'read': {
             const parsedLimit = limit ? Number.parseInt(limit, 10) : 10
-            if (Number.isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 15) {
-              throw new Error('Message limit must be between 1 and 15')
+            if (Number.isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 200) {
+              throw new Error('Message limit must be between 1 and 200')
             }
             baseParams.limit = parsedLimit
-            if (oldest) {
-              baseParams.oldest = oldest
+
+            // Validate that only one date selection method is used
+            const hasQuickDate = dateRange && dateRange.trim() !== ''
+            const hasFromDate = fromDate && fromDate.trim() !== ''
+            const hasToDate = toDate && toDate.trim() !== ''
+
+            if (hasQuickDate && (hasFromDate || hasToDate)) {
+              throw new Error(
+                'Cannot select both quick date range and specific from/to dates. Please choose one method.'
+              )
             }
+
+            // Handle date range presets
+            if (hasQuickDate) {
+              const days = Number.parseInt(dateRange, 10)
+              if (!Number.isNaN(days) && days > 0) {
+                const now = new Date()
+
+                if (days === 1) {
+                  // For "Today": from start of today to end of today
+                  const startOfToday = new Date(now)
+                  startOfToday.setHours(0, 0, 0, 0)
+                  const endOfToday = new Date(now)
+                  endOfToday.setHours(23, 59, 59, 999)
+
+                  const oldestTimestamp = Math.floor(startOfToday.getTime() / 1000).toString()
+                  const latestTimestamp = Math.floor(endOfToday.getTime() / 1000).toString()
+                  baseParams.oldest = oldestTimestamp
+                  baseParams.latest = latestTimestamp
+                } else {
+                  // For "Last X days": from X days ago to end of today
+                  const oldestDate = new Date(now)
+                  oldestDate.setDate(now.getDate() - days)
+                  oldestDate.setHours(0, 0, 0, 0) // Start of that day
+
+                  const endOfToday = new Date(now)
+                  endOfToday.setHours(23, 59, 59, 999) // End of today
+
+                  const oldestTimestamp = Math.floor(oldestDate.getTime() / 1000).toString()
+                  const latestTimestamp = Math.floor(endOfToday.getTime() / 1000).toString()
+                  baseParams.oldest = oldestTimestamp
+                  baseParams.latest = latestTimestamp
+                }
+              }
+            } else if (hasFromDate || hasToDate) {
+              // Handle date conversion to timestamps
+              if (hasFromDate) {
+                const fromDateObj = new Date(fromDate)
+                // Set fromDate to start of that day to include all messages from the beginning of the day
+                fromDateObj.setHours(0, 0, 0, 0)
+                const fromTimestamp = Math.floor(fromDateObj.getTime() / 1000).toString()
+                baseParams.oldest = fromTimestamp
+              } else if (oldest) {
+                baseParams.oldest = oldest
+              }
+
+              if (hasToDate) {
+                const toDateObj = new Date(toDate)
+                // Always set toDate to end of that day to include all messages from the entire day
+                toDateObj.setHours(23, 59, 59, 999)
+                const toTimestamp = Math.floor(toDateObj.getTime() / 1000).toString()
+                baseParams.latest = toTimestamp
+              }
+            }
+
+            console.log(`[Slack Block] cursor value: "${cursor}", type: ${typeof cursor}`)
+            if (cursor && cursor.trim() !== '') {
+              baseParams.cursor = cursor.trim()
+              console.log(`[Slack Block] Setting baseParams.cursor to: "${cursor.trim()}"`)
+            } else {
+              console.log(`[Slack Block] No cursor value, not setting baseParams.cursor`)
+            }
+
+            baseParams.autoPaginate = autoPaginate
+            baseParams.includeThreads = includeThreads
+
+            // Set maxThreads - default to 10 if includeThreads is true and maxThreads is not set
+            if (maxThreads) {
+              const parsedMaxThreads = Number.parseInt(maxThreads, 10)
+              if (
+                !Number.isNaN(parsedMaxThreads) &&
+                parsedMaxThreads > 0 &&
+                parsedMaxThreads <= 50
+              ) {
+                baseParams.maxThreads = parsedMaxThreads
+              }
+            } else if (includeThreads) {
+              // Default maxThreads to 10 when includeThreads is true but maxThreads is not specified
+              baseParams.maxThreads = 10
+            }
+            if (maxRepliesPerThread) {
+              const parsedMaxReplies = Number.parseInt(maxRepliesPerThread, 10)
+              if (
+                !Number.isNaN(parsedMaxReplies) &&
+                parsedMaxReplies > 0 &&
+                parsedMaxReplies <= 200
+              ) {
+                baseParams.maxRepliesPerThread = parsedMaxReplies
+              }
+            } else if (includeThreads) {
+              // Default maxRepliesPerThread to 100 when includeThreads is true but maxRepliesPerThread is not specified
+              baseParams.maxRepliesPerThread = 100
+            }
+
             break
           }
 
@@ -732,6 +1066,81 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
             baseParams.timestamp = reactionTimestamp
             baseParams.name = emojiName
             break
+
+          case 'search_all': {
+            console.log('[Slack Block] ENTERED search_all case:', {
+              operation: params.operation,
+              query,
+              channelId,
+              channelName,
+            })
+
+            if (!query || query.trim() === '') {
+              throw new Error('Search query is required for search all operation')
+            }
+
+            // Build query with channel filter if channel is selected
+            let finalQuery = query
+            console.log('[Slack Block] Before query building:', {
+              originalQuery: query,
+              channelName,
+              channelNameTruthy: !!channelName,
+              channelNameLength: channelName?.length || 0,
+            })
+
+            if (channelName) {
+              finalQuery = `in:${channelName} ${query}`
+              console.log('[Slack Block] Applied channel filter:', {
+                channelName,
+                finalQuery,
+              })
+            } else {
+              console.log('[Slack Block] No channel filter applied - channelName is empty')
+            }
+
+            console.log('[Slack Block] Final query result:', {
+              originalQuery: query,
+              finalQuery,
+              queryLength: finalQuery.length,
+            })
+
+            baseParams.query = finalQuery
+            console.log('[Slack Block] SET baseParams.query to:', baseParams.query)
+            if (searchCount) {
+              const parsedCount = Number.parseInt(searchCount, 10)
+              if (Number.isNaN(parsedCount) || parsedCount < 1 || parsedCount > 100) {
+                throw new Error('Search count must be between 1 and 100')
+              }
+              baseParams.count = parsedCount
+            } else {
+              baseParams.count = 50 // default
+            }
+            if (searchPage) {
+              const parsedPage = Number.parseInt(searchPage, 10)
+              if (Number.isNaN(parsedPage) || parsedPage < 1) {
+                throw new Error('Search page must be 1 or greater')
+              }
+              baseParams.page = parsedPage
+            } else {
+              baseParams.page = 1 // default
+            }
+
+            // Handle sort parameters
+            baseParams.sort = sortBy || 'timestamp'
+            baseParams.sort_dir = sortDir || 'desc'
+            baseParams.highlight = highlight !== 'false' // default to true
+            // For search_all, use user token instead of bot token
+            if (authMethod === 'bot_token') {
+              throw new Error('Search All operation requires OAuth authentication with user token')
+            }
+            // Use credential for OAuth, but we'll need to get user token from idToken
+            if (!credential) {
+              throw new Error('Slack account credential is required for Search All operation')
+            }
+            baseParams.credential = credential
+            baseParams.useUserToken = true // Flag to indicate user token should be used
+            break
+          }
         }
 
         return baseParams
@@ -753,6 +1162,20 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
     content: { type: 'string', description: 'Canvas content' },
     limit: { type: 'string', description: 'Message limit' },
     oldest: { type: 'string', description: 'Oldest timestamp' },
+    fromDate: { type: 'string', description: 'From date (YYYY-MM-DD)' },
+    toDate: { type: 'string', description: 'To date (YYYY-MM-DD)' },
+    dateRange: { type: 'string', description: 'Quick date range preset (1, 7, or 14 days)' },
+    cursor: { type: 'string', description: 'Pagination cursor from previous response' },
+    autoPaginate: { type: 'boolean', description: 'Auto-paginate when cursor is provided' },
+    includeThreads: {
+      type: 'boolean',
+      description: 'Include thread replies for messages that have threads',
+    },
+    maxThreads: { type: 'string', description: 'Maximum number of threads to fetch replies for' },
+    maxRepliesPerThread: {
+      type: 'string',
+      description: 'Maximum number of replies to fetch per thread',
+    },
     fileId: { type: 'string', description: 'File ID to download' },
     downloadFileName: { type: 'string', description: 'File name override for download' },
     // Update/Delete/React operation inputs
@@ -761,6 +1184,15 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
     deleteTimestamp: { type: 'string', description: 'Message timestamp for delete' },
     reactionTimestamp: { type: 'string', description: 'Message timestamp for reaction' },
     emojiName: { type: 'string', description: 'Emoji name for reaction' },
+    // Search All operation inputs
+    clientId: { type: 'string', description: 'Client/workspace ID for filtering search results' },
+    channelId: { type: 'string', description: 'Channel ID for filtering search results' },
+    query: { type: 'string', description: 'Search query string' },
+    searchCount: { type: 'string', description: 'Number of results to return (1-100)' },
+    searchPage: { type: 'string', description: 'Page number for pagination' },
+    sortBy: { type: 'string', description: 'Sort results by (timestamp, score, relevance)' },
+    sortDir: { type: 'string', description: 'Sort direction (asc, desc)' },
+    highlight: { type: 'boolean', description: 'Highlight search terms in results' },
     timestamp: { type: 'string', description: 'Message timestamp' },
     name: { type: 'string', description: 'Emoji name' },
     threadTs: { type: 'string', description: 'Thread timestamp' },
@@ -808,6 +1240,42 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'json',
       description:
         'Array of message objects with comprehensive properties: text, user, timestamp, reactions, threads, files, attachments, blocks, stars, pins, and edit history',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    nextCursor: {
+      type: 'string',
+      description: 'Pagination cursor for next page of results',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    totalPages: {
+      type: 'number',
+      description: 'Total number of pages fetched (when auto-pagination is enabled)',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    totalMessages: {
+      type: 'number',
+      description: 'Total number of messages collected (when auto-pagination is enabled)',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
+    },
+    paginationInfo: {
+      type: 'json',
+      description: 'Pagination metadata including continuation cursor if limits were reached',
+      condition: {
+        field: 'operation',
+        value: 'read',
+      },
     },
 
     // slack_get_thread outputs (get_thread operation)
@@ -883,6 +1351,31 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
     },
     team_id: { type: 'string', description: 'Slack workspace/team ID' },
     event_id: { type: 'string', description: 'Unique event identifier for the trigger' },
+    // Search All operation outputs
+    searchResults: {
+      type: 'json',
+      description: 'Search results containing messages and files matching the query',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    total: {
+      type: 'number',
+      description: 'Total number of results found',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
+    page: {
+      type: 'number',
+      description: 'Current page number',
+      condition: {
+        field: 'operation',
+        value: 'search_all',
+      },
+    },
   },
   // New: Trigger capabilities
   triggers: {

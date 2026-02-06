@@ -506,6 +506,8 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'channels:history',
           'groups:read',
           'groups:history',
+          'mpim:read',
+          'mpim:history',
           'chat:write',
           'chat:write.public',
           'im:write',
