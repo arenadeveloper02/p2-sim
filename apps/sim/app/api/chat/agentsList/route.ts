@@ -67,17 +67,16 @@ function toDepartmentLabel(departmentValue: string | null): string | null {
 function toAgentListItem(row: AgentChatRow) {
   return {
     id: row.chatId,
-    name: row.title,
-    authorEmail: row.authorEmail,
-    workflowId: row.workflowId,
-    workflowName: row.workflowName,
-    workspaceId: row.workspaceId,
-    departmentName: toDepartmentLabel(row.department),
+    title: row.title,
+    author_email: row.authorEmail,
+    workflow_id: row.workflowId,
+    workflow_name: row.workflowName,
+    workspace_id: row.workspaceId,
+    department: toDepartmentLabel(row.department),
     created_at: row.createdAt.toISOString(),
-    description: row.description,
+    workflow_description: row.description,
     "status": "published",
-    redirectUrl: getBaseUrl() + `/chat/${row.workflowId}?workspaceId=${row.workspaceId}`,
-    "showConversation": false,
+    redirect_url: getBaseUrl() + `/chat/${row.workflowId}?workspaceId=${row.workspaceId}`,
     // allowedEmails: row.allowedEmails,
   }
 }
