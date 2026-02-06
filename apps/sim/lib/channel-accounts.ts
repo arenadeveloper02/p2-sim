@@ -28,10 +28,9 @@ export async function getChannelAccounts(
       WHERE account_type = ${type} 
       ORDER BY account_name
     `)
-
+    
     // Convert to same format as constants (key: { id, name })
     const accounts: Record<string, ChannelAccount> = {}
-
     for (const row of result as any[]) {
       // Create a friendly key from account_name (lowercase, replace spaces/special chars with underscore)
       const key = String(row.account_name)
@@ -43,7 +42,7 @@ export async function getChannelAccounts(
 
       accounts[key] = {
         id: String(row.account_id),
-        name: String(row.account_name),
+name: String(row.account_name)
       }
     }
 
