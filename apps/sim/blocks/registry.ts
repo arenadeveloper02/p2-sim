@@ -1,6 +1,7 @@
 import { A2ABlock } from '@/blocks/blocks/a2a'
 import { AgentBlock } from '@/blocks/blocks/agent'
 import { AirtableBlock } from '@/blocks/blocks/airtable'
+import { AirweaveBlock } from '@/blocks/blocks/airweave'
 import { ApiBlock } from '@/blocks/blocks/api'
 import { ApiTriggerBlock } from '@/blocks/blocks/api_trigger'
 import { ApifyBlock } from '@/blocks/blocks/apify'
@@ -174,6 +175,7 @@ export const registry: Record<string, BlockConfig> = {
   agent: AgentBlock,
   arena: ArenaBlock,
   airtable: AirtableBlock,
+  airweave: AirweaveBlock,
   api: ApiBlock,
   api_trigger: ApiTriggerBlock,
   apify: ApifyBlock,
