@@ -35,6 +35,7 @@ import {
   ShortInput,
   SlackDateInput,
   SlackDateRangeSelector,
+  SkillInput,
   SlackSelectorInput,
   SliderInput,
   Switch,
@@ -743,6 +744,17 @@ function SubBlockComponent({
             previewValue={previewValue}
             disabled={allowExpandInPreview ? false : isDisabled}
             allowExpandInPreview={allowExpandInPreview}
+          />
+        )
+
+      case 'skill-input':
+        return (
+          <SkillInput
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue}
+            disabled={isDisabled}
           />
         )
 

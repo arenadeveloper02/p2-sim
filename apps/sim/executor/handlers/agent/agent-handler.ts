@@ -11,9 +11,15 @@ import {
   validateCustomToolsAllowed,
   validateMcpToolsAllowed,
   validateModelProvider,
+  validateSkillsAllowed,
 } from '@/ee/access-control/utils/permission-check'
 import { AGENT, BlockType, DEFAULTS, REFERENCE, stripCustomToolPrefix } from '@/executor/constants'
 import { memoryService } from '@/executor/handlers/agent/memory'
+import {
+  buildLoadSkillTool,
+  buildSkillsSystemPromptSection,
+  resolveSkillMetadata,
+} from '@/executor/handlers/agent/skills-resolver'
 import type {
   AgentInputs,
   Message,
@@ -128,6 +134,19 @@ export class AgentBlockHandler implements BlockHandler {
 
     const providerId = getProviderFromModel(model)
     const formattedTools = await this.formatTools(ctx, filteredInputs.tools || [])
+
+    // Resolve skill metadata for progressive disclosure
+    const skillInputs = filteredInputs.skills ?? []
+    let skillMetadata: Array<{ name: string; description: string }> = []
+    if (skillInputs.length > 0 && ctx.workspaceId) {
+      await validateSkillsAllowed(ctx.userId, ctx)
+      skillMetadata = await resolveSkillMetadata(skillInputs, ctx.workspaceId)
+      if (skillMetadata.length > 0) {
+        const skillNames = skillMetadata.map((s) => s.name)
+        formattedTools.push(buildLoadSkillTool(skillNames))
+      }
+    }
+
     const streamingConfig = this.getStreamingConfig(ctx, block)
 
     // Log initial systemPrompt and userPrompt
@@ -1078,7 +1097,8 @@ export class AgentBlockHandler implements BlockHandler {
     inputs: AgentInputs,
     blockId: string,
     preSearchedResults?: Message[],
-    lastConversation?: LatestConversation | null
+    lastConversation?: LatestConversation | null,
+    skillMetadata: Array<{ name: string; description: string }> = []
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
     const memoryEnabled = !!inputs.memoryType
@@ -1292,6 +1312,19 @@ export class AgentBlockHandler implements BlockHandler {
       userMessages: messages.filter((m) => m.role === 'user').length,
       assistantMessages: messages.filter((m) => m.role === 'assistant').length,
     })
+    // 8. Inject skill metadata into the system message (progressive disclosure)
+    if (skillMetadata.length > 0) {
+      const skillSection = buildSkillsSystemPromptSection(skillMetadata)
+      const systemIdx = messages.findIndex((m) => m.role === 'system')
+      if (systemIdx >= 0) {
+        messages[systemIdx] = {
+          ...messages[systemIdx],
+          content: messages[systemIdx].content + skillSection,
+        }
+      } else {
+        messages.unshift({ role: 'system', content: skillSection.trim() })
+      }
+    }
 
     return messages.length > 0 ? messages : undefined
   }
