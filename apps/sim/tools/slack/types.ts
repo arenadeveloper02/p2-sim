@@ -1,5 +1,39 @@
 import type { ToolResponse } from '@/tools/types'
 
+export interface SlackFile {
+  id: string
+  created: number
+  timestamp: number
+  name: string
+  title: string
+  mimetype: string
+  filetype: string
+  pretty_type: string
+  user: string
+  mode: string
+  editable: boolean
+  is_external: boolean
+  external_type: string
+  size: number
+  url_private?: string
+  url_private_download?: string
+  permalink?: string
+  permalink_public?: string
+  edit_link?: string
+  preview?: string
+  preview_highlight?: string
+  lines?: number
+  lines_more?: number
+  is_public?: boolean
+  public_url_shared?: boolean
+  display_as_bot?: boolean
+  username?: string
+  channel?: string
+  groups?: string[]
+  ims?: string[]
+  comments_count?: number
+}
+
 export interface SlackBaseParams {
   authMethod: 'oauth' | 'bot_token'
   accessToken: string
@@ -31,6 +65,11 @@ export interface SlackMessageReaderParams extends SlackBaseParams {
   limit?: number
   oldest?: string
   latest?: string
+  cursor?: string
+  autoPaginate?: boolean
+  includeThreads?: boolean
+  maxThreads?: number
+  maxRepliesPerThread?: number
 }
 
 export interface SlackDownloadParams extends SlackBaseParams {
@@ -84,6 +123,12 @@ export interface SlackGetThreadParams extends SlackBaseParams {
   channel: string
   threadTs: string
   limit?: number
+}
+
+export interface SlackSearchAllParams extends SlackBaseParams {
+  query: string
+  count?: number
+  page?: number
 }
 
 export interface SlackMessageResponse extends ToolResponse {
@@ -165,6 +210,9 @@ export interface SlackMessage {
   subscribed?: boolean
   last_read?: string
   unread_count?: number
+
+  // Thread replies (when includeThreads is enabled)
+  replies?: SlackMessage[]
 
   // Message subtype
   subtype?: string
@@ -336,6 +384,23 @@ export interface SlackGetThreadResponse extends ToolResponse {
   }
 }
 
+export interface SlackSearchAllResponse extends ToolResponse {
+  output: {
+    ok: boolean
+    query: string
+    messages: {
+      total: number
+      pagination?: any
+      paging?: any
+      matches: SlackMessage[]
+    }
+    files: {
+      total: number
+      matches: SlackFile[]
+    }
+  }
+}
+
 export type SlackResponse =
   | SlackCanvasResponse
   | SlackMessageReaderResponse
@@ -348,5 +413,6 @@ export type SlackResponse =
   | SlackListMembersResponse
   | SlackListUsersResponse
   | SlackGetUserResponse
+  | SlackSearchAllResponse
   | SlackGetMessageResponse
   | SlackGetThreadResponse
