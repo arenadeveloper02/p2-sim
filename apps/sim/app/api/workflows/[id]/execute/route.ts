@@ -326,6 +326,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       requestId
     )
 
+    // Client-side sessions and personal API keys bill/permission-check the
+    // authenticated user, not the workspace billed account.
+    const useAuthenticatedUserAsActor =
+      isClientSession || (auth.authType === 'api_key' && auth.apiKeyType === 'personal')
+
     const preprocessResult = await preprocessExecution({
       workflowId,
       userId,
@@ -335,6 +340,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       checkDeployment: !shouldUseDraftState,
       loggingSession,
       useDraftState: shouldUseDraftState,
+      useAuthenticatedUserAsActor,
     })
 
     if (!preprocessResult.success) {

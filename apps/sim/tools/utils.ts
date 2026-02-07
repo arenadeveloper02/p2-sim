@@ -485,7 +485,8 @@ export function getTool(toolId: string): ToolConfig | undefined {
 // Get a tool by its ID asynchronously (supports server-side)
 export async function getToolAsync(
   toolId: string,
-  workflowId?: string
+  workflowId?: string,
+  userId?: string
 ): Promise<ToolConfig | undefined> {
   // Check for built-in tools
   const builtInTool = tools[toolId]
@@ -493,7 +494,7 @@ export async function getToolAsync(
 
   // Check if it's a custom tool
   if (isCustomTool(toolId)) {
-    return fetchCustomToolFromAPI(toolId, workflowId)
+    return fetchCustomToolFromAPI(toolId, workflowId, userId)
   }
 
   return undefined
@@ -540,7 +541,8 @@ function createToolConfig(customTool: any, customToolId: string): ToolConfig {
 // Create a tool config from a custom tool definition by fetching from API
 async function fetchCustomToolFromAPI(
   customToolId: string,
-  workflowId?: string
+  workflowId?: string,
+  userId?: string
 ): Promise<ToolConfig | undefined> {
   const identifier = customToolId.replace('custom_', '')
 
@@ -548,9 +550,11 @@ async function fetchCustomToolFromAPI(
     const baseUrl = getBaseUrl()
     const url = new URL('/api/tools/custom', baseUrl)
 
-    // Add workflowId as a query parameter if available
     if (workflowId) {
       url.searchParams.append('workflowId', workflowId)
+    }
+    if (userId) {
+      url.searchParams.append('userId', userId)
     }
 
     // For server-side calls (during workflow execution), use internal JWT token

@@ -124,6 +124,7 @@ export interface PreprocessExecutionOptions {
   workspaceId?: string // If known, used for billing resolution
   loggingSession?: LoggingSession // If provided, will be used for error logging
   isResumeContext?: boolean // If true, allows fallback billing on resolution failure (for paused workflow resumes)
+  useAuthenticatedUserAsActor?: boolean // If true, use the authenticated userId as actorUserId (for client-side executions and personal API keys)
   /** @deprecated No longer used - background/async executions always use deployed state */
   useDraftState?: boolean
 }
@@ -173,6 +174,7 @@ export async function preprocessExecution(
     workspaceId: providedWorkspaceId,
     loggingSession: providedLoggingSession,
     isResumeContext = false,
+    useAuthenticatedUserAsActor = false,
   } = options
 
   logger.info(`[${requestId}] Starting execution preprocessing`, {
@@ -260,7 +262,14 @@ export async function preprocessExecution(
   let actorUserId: string | null = null
 
   try {
-    if (workspaceId) {
+    // For client-side executions and personal API keys, the authenticated
+    // user is the billing and permission actor — not the workspace owner.
+    if (useAuthenticatedUserAsActor && userId) {
+      actorUserId = userId
+      logger.info(`[${requestId}] Using authenticated user as actor: ${actorUserId}`)
+    }
+
+    if (!actorUserId && workspaceId) {
       actorUserId = await getWorkspaceBilledAccountUserId(workspaceId)
       if (actorUserId) {
         logger.info(`[${requestId}] Using workspace billed account: ${actorUserId}`)
