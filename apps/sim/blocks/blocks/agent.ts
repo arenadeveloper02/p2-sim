@@ -150,6 +150,7 @@ Return ONLY the JSON array.`,
       type: 'dropdown',
       placeholder: 'Select reasoning effort...',
       options: [
+        { label: 'auto', id: 'auto' },
         { label: 'low', id: 'low' },
         { label: 'medium', id: 'medium' },
         { label: 'high', id: 'high' },
@@ -159,9 +160,12 @@ Return ONLY the JSON array.`,
         const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
 
+        const autoOption = { label: 'auto', id: 'auto' }
+
         const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
         if (!activeWorkflowId) {
           return [
+            autoOption,
             { label: 'low', id: 'low' },
             { label: 'medium', id: 'medium' },
             { label: 'high', id: 'high' },
@@ -174,6 +178,7 @@ Return ONLY the JSON array.`,
 
         if (!modelValue) {
           return [
+            autoOption,
             { label: 'low', id: 'low' },
             { label: 'medium', id: 'medium' },
             { label: 'high', id: 'high' },
@@ -183,15 +188,16 @@ Return ONLY the JSON array.`,
         const validOptions = getReasoningEffortValuesForModel(modelValue)
         if (!validOptions) {
           return [
+            autoOption,
             { label: 'low', id: 'low' },
             { label: 'medium', id: 'medium' },
             { label: 'high', id: 'high' },
           ]
         }
 
-        return validOptions.map((opt) => ({ label: opt, id: opt }))
+        return [autoOption, ...validOptions.map((opt) => ({ label: opt, id: opt }))]
       },
-      value: () => 'medium',
+      mode: 'advanced',
       condition: {
         field: 'model',
         value: MODELS_WITH_REASONING_EFFORT,
@@ -203,6 +209,7 @@ Return ONLY the JSON array.`,
       type: 'dropdown',
       placeholder: 'Select verbosity...',
       options: [
+        { label: 'auto', id: 'auto' },
         { label: 'low', id: 'low' },
         { label: 'medium', id: 'medium' },
         { label: 'high', id: 'high' },
@@ -212,9 +219,12 @@ Return ONLY the JSON array.`,
         const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
 
+        const autoOption = { label: 'auto', id: 'auto' }
+
         const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
         if (!activeWorkflowId) {
           return [
+            autoOption,
             { label: 'low', id: 'low' },
             { label: 'medium', id: 'medium' },
             { label: 'high', id: 'high' },
@@ -227,6 +237,7 @@ Return ONLY the JSON array.`,
 
         if (!modelValue) {
           return [
+            autoOption,
             { label: 'low', id: 'low' },
             { label: 'medium', id: 'medium' },
             { label: 'high', id: 'high' },
@@ -236,15 +247,16 @@ Return ONLY the JSON array.`,
         const validOptions = getVerbosityValuesForModel(modelValue)
         if (!validOptions) {
           return [
+            autoOption,
             { label: 'low', id: 'low' },
             { label: 'medium', id: 'medium' },
             { label: 'high', id: 'high' },
           ]
         }
 
-        return validOptions.map((opt) => ({ label: opt, id: opt }))
+        return [autoOption, ...validOptions.map((opt) => ({ label: opt, id: opt }))]
       },
-      value: () => 'medium',
+      mode: 'advanced',
       condition: {
         field: 'model',
         value: MODELS_WITH_VERBOSITY,
@@ -256,6 +268,7 @@ Return ONLY the JSON array.`,
       type: 'dropdown',
       placeholder: 'Select thinking level...',
       options: [
+        { label: 'none', id: 'none' },
         { label: 'minimal', id: 'minimal' },
         { label: 'low', id: 'low' },
         { label: 'medium', id: 'medium' },
@@ -267,12 +280,11 @@ Return ONLY the JSON array.`,
         const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
 
+        const noneOption = { label: 'none', id: 'none' }
+
         const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
         if (!activeWorkflowId) {
-          return [
-            { label: 'low', id: 'low' },
-            { label: 'high', id: 'high' },
-          ]
+          return [noneOption, { label: 'low', id: 'low' }, { label: 'high', id: 'high' }]
         }
 
         const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
@@ -280,23 +292,17 @@ Return ONLY the JSON array.`,
         const modelValue = blockValues?.model as string
 
         if (!modelValue) {
-          return [
-            { label: 'low', id: 'low' },
-            { label: 'high', id: 'high' },
-          ]
+          return [noneOption, { label: 'low', id: 'low' }, { label: 'high', id: 'high' }]
         }
 
         const validOptions = getThinkingLevelsForModel(modelValue)
         if (!validOptions) {
-          return [
-            { label: 'low', id: 'low' },
-            { label: 'high', id: 'high' },
-          ]
+          return [noneOption, { label: 'low', id: 'low' }, { label: 'high', id: 'high' }]
         }
 
-        return validOptions.map((opt) => ({ label: opt, id: opt }))
+        return [noneOption, ...validOptions.map((opt) => ({ label: opt, id: opt }))]
       },
-      value: () => 'high',
+      mode: 'advanced',
       condition: {
         field: 'model',
         value: MODELS_WITH_THINKING,
@@ -388,6 +394,16 @@ Return ONLY the JSON array.`,
       },
     },
     {
+      id: 'apiKey',
+      title: 'API Key',
+      type: 'short-input',
+      placeholder: 'Enter your API key',
+      password: true,
+      connectionDroppable: false,
+      required: true,
+      condition: getApiKeyCondition(),
+    },
+    {
       id: 'tools',
       title: 'Tools',
       type: 'tool-input',
@@ -410,12 +426,60 @@ Return ONLY the JSON array.`,
       condition: getApiKeyCondition(),
     },
     {
+      id: 'memoryType',
+      title: 'Memory',
+      type: 'dropdown',
+      placeholder: 'Select memory...',
+      options: [
+        { label: 'None', id: 'none' },
+        { label: 'Conversation', id: 'conversation' },
+        { label: 'Sliding window (messages)', id: 'sliding_window' },
+        { label: 'Sliding window (tokens)', id: 'sliding_window_tokens' },
+      ],
+      defaultValue: 'none',
+    },
+    {
+      id: 'conversationId',
+      title: 'Conversation ID',
+      type: 'short-input',
+      placeholder: 'e.g., user-123, session-abc, customer-456',
+      required: {
+        field: 'memoryType',
+        value: ['conversation', 'sliding_window', 'sliding_window_tokens'],
+      },
+      condition: {
+        field: 'memoryType',
+        value: ['conversation', 'sliding_window', 'sliding_window_tokens'],
+      },
+    },
+    {
+      id: 'slidingWindowSize',
+      title: 'Sliding Window Size',
+      type: 'short-input',
+      placeholder: 'Enter number of messages (e.g., 10)...',
+      condition: {
+        field: 'memoryType',
+        value: ['sliding_window'],
+      },
+    },
+    {
+      id: 'slidingWindowTokens',
+      title: 'Max Tokens',
+      type: 'short-input',
+      placeholder: 'Enter max tokens (e.g., 4000)...',
+      condition: {
+        field: 'memoryType',
+        value: ['sliding_window_tokens'],
+      },
+    },
+    {
       id: 'temperature',
       title: 'Temperature',
       type: 'slider',
       min: 0,
       max: 1,
       defaultValue: 0.3,
+      mode: 'advanced',
       condition: () => ({
         field: 'model',
         value: (() => {
@@ -433,6 +497,7 @@ Return ONLY the JSON array.`,
       min: 0,
       max: 2,
       defaultValue: 0.3,
+      mode: 'advanced',
       condition: () => ({
         field: 'model',
         value: (() => {
@@ -448,6 +513,7 @@ Return ONLY the JSON array.`,
       title: 'Max Output Tokens',
       type: 'short-input',
       placeholder: 'Enter max tokens (e.g., 4096)...',
+      mode: 'advanced',
     },
     {
       id: 'responseFormat',
