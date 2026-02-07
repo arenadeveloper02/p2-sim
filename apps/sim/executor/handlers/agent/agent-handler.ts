@@ -729,6 +729,9 @@ export class AgentBlockHandler implements BlockHandler {
       if (ctx.workflowId) {
         params.workflowId = ctx.workflowId
       }
+      if (ctx.userId) {
+        params.userId = ctx.userId
+      }
 
       const url = buildAPIUrl('/api/tools/custom', params)
       const response = await fetch(url.toString(), {
@@ -839,7 +842,9 @@ export class AgentBlockHandler implements BlockHandler {
       usageControl: tool.usageControl || 'auto',
       executeFunction: async (callParams: Record<string, any>) => {
         const headers = await buildAuthHeaders()
-        const execUrl = buildAPIUrl('/api/mcp/tools/execute')
+        const execParams: Record<string, string> = {}
+        if (ctx.userId) execParams.userId = ctx.userId
+        const execUrl = buildAPIUrl('/api/mcp/tools/execute', execParams)
 
         const execResponse = await fetch(execUrl.toString(), {
           method: 'POST',
@@ -948,6 +953,7 @@ export class AgentBlockHandler implements BlockHandler {
       serverId,
       workspaceId: ctx.workspaceId,
       workflowId: ctx.workflowId,
+      ...(ctx.userId ? { userId: ctx.userId } : {}),
     })
 
     const maxAttempts = 2
@@ -1022,7 +1028,9 @@ export class AgentBlockHandler implements BlockHandler {
       usageControl: tool.usageControl || 'auto',
       executeFunction: async (callParams: Record<string, any>) => {
         const headers = await buildAuthHeaders()
-        const execUrl = buildAPIUrl('/api/mcp/tools/execute')
+        const discoverExecParams: Record<string, string> = {}
+        if (ctx.userId) discoverExecParams.userId = ctx.userId
+        const execUrl = buildAPIUrl('/api/mcp/tools/execute', discoverExecParams)
 
         const execResponse = await fetch(execUrl.toString(), {
           method: 'POST',
@@ -1554,6 +1562,7 @@ export class AgentBlockHandler implements BlockHandler {
         responseFormat: providerRequest.responseFormat,
         workflowId: providerRequest.workflowId,
         workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
         stream: providerRequest.stream,
         messages: 'messages' in providerRequest ? providerRequest.messages : undefined,
         environmentVariables: ctx.environmentVariables || {},
