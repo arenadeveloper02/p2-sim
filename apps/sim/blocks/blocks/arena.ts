@@ -34,6 +34,10 @@ export const ArenaBlock: BlockConfig = {
           label: 'Save Summary',
           id: 'arena_save_summary',
         },
+        {
+          label: 'Get Meetings',
+          id: 'arena_get_meetings',
+        },
       ],
       value: () => 'arena_create_task',
     },
@@ -452,6 +456,53 @@ export const ArenaBlock: BlockConfig = {
         value: ['arena_comments'],
       },
     },
+
+    //get meetings blocks - basic mode
+    {
+      id: 'get-meetings-client',
+      title: 'Client',
+      type: 'arena-client-selector',
+      required: true,
+      placeholder: 'Enter client name',
+      mode: 'basic',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_get_meetings'],
+      },
+    },
+    {
+      id: 'get-meetings-period',
+      title: 'Period',
+      type: 'combobox',
+      required: true,
+      placeholder: 'Select period',
+      dependsOn: ['operation'],
+      options: [
+        { label: '7 days', id: '7days' },
+        { label: 'Today', id: 'today' },
+        { label: '14 days', id: '14days' },
+      ],
+      value: () => '7days',
+      condition: {
+        field: 'operation',
+        value: ['arena_get_meetings'],
+      },
+    },
+    //get meetings blocks - advanced mode
+    {
+      id: 'get-meetings-client-id',
+      title: 'Client ID',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter client ID or use <function.result.client_id>',
+      mode: 'advanced',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_get_meetings'],
+      },
+    },
   ],
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
@@ -461,7 +512,7 @@ export const ArenaBlock: BlockConfig = {
     output: { type: 'json', description: 'Output from Arena' },
   },
   tools: {
-    access: ['arena_create_task', 'arena_save_summary', 'arena_comments'],
+    access: ['arena_create_task', 'arena_save_summary', 'arena_comments', 'arena_get_meetings'],
     config: {
       tool: (params) => {
         switch (params.operation) {
@@ -475,6 +526,8 @@ export const ArenaBlock: BlockConfig = {
             return 'arena_save_summary'
           case 'arena_comments':
             return 'arena_comments'
+          case 'arena_get_meetings':
+            return 'arena_get_meetings'
           default:
             throw new Error(`Invalid Arena operation: ${params.operation}`)
         }

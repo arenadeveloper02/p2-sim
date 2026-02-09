@@ -305,15 +305,40 @@ export async function executeTool(
         }
 
         const data = await response.json()
-        contextParams.accessToken = data.accessToken
-        if (data.idToken) {
-          contextParams.idToken = data.idToken
+
+        // Check if tool requires user token instead of bot token
+        const useUserToken = tool.oauth?.useUserToken
+        const hasIdToken = data.idToken && data.idToken.trim() !== ''
+
+        logger.info(`[${requestId}] Token selection debug for ${toolId}:`, {
+          hasToolOauth: !!tool.oauth,
+          useUserToken: useUserToken,
+          hasIdToken: hasIdToken,
+          idTokenLength: data.idToken ? data.idToken.length : 0,
+          idTokenPrefix: data.idToken ? `${data.idToken.substring(0, 10)}...` : 'none',
+          accessTokenPrefix: data.accessToken ? `${data.accessToken.substring(0, 10)}...` : 'none',
+        })
+
+        if (useUserToken && hasIdToken) {
+          // Use user token for tools that require it
+          contextParams.accessToken = data.idToken
+          contextParams.userToken = data.idToken
+          logger.info(
+            `[${requestId}] Using user token for ${toolId} (${data.idToken.substring(0, 10)}...)`
+          )
+        } else {
+          // Use bot token (default behavior)
+          contextParams.accessToken = data.accessToken
+          if (data.idToken) {
+            contextParams.idToken = data.idToken
+          }
+          const tokenType = useUserToken && !hasIdToken ? 'user (fallback to bot)' : 'bot'
+          logger.info(`[${requestId}] Using ${tokenType} token for ${toolId}`)
         }
+
         if (data.instanceUrl) {
           contextParams.instanceUrl = data.instanceUrl
         }
-
-        logger.info(`[${requestId}] Successfully got access token for ${toolId}`)
 
         // Preserve credential for downstream transforms while removing it from request payload
         // so we don't leak it to external services.
@@ -659,7 +684,7 @@ async function executeToolRequest(
         throw new Error(`Invalid tool URL: ${urlValidation.error}`)
       }
 
-      const requestTimeout = tool.request.timeout ?? 30000
+      const requestTimeout = tool.request.timeout ?? 300000 // 5 minutes default timeout
       const secureResponse = await secureFetchWithPinnedIP(fullUrl, urlValidation.resolvedIP!, {
         method: requestParams.method,
         headers: headersRecord,

@@ -15,6 +15,11 @@ import { List, type RowComponentProps, useDynamicRowHeight, useListRef } from 'r
 import 'prismjs/components/prism-javascript'
 import 'prismjs/components/prism-python'
 import 'prismjs/components/prism-json'
+import 'prismjs/components/prism-typescript'
+import 'prismjs/components/prism-jsx'
+import 'prismjs/components/prism-tsx'
+import 'prismjs/components/prism-bash'
+import 'prismjs/components/prism-yaml'
 import { cn } from '@/lib/core/utils/cn'
 import './code.css'
 
@@ -347,7 +352,7 @@ interface CodeViewerProps {
   /** Whether to show line numbers gutter */
   showGutter?: boolean
   /** Language for syntax highlighting (default: 'json') */
-  language?: 'javascript' | 'json' | 'python'
+  language?: 'javascript' | 'json' | 'python' | 'typescript' | 'tsx' | 'jsx' | 'bash' | 'yaml'
   /** Additional CSS classes for the container */
   className?: string
   /** Left padding offset (useful for terminal alignment) */
@@ -445,7 +450,7 @@ function countSearchMatches(code: string, searchQuery: string): number {
 type ViewerInnerProps = {
   code: string
   showGutter: boolean
-  language: 'javascript' | 'json' | 'python'
+  language: 'javascript' | 'json' | 'python' | 'typescript' | 'tsx' | 'jsx' | 'bash' | 'yaml'
   className?: string
   paddingLeft: number
   gutterStyle?: React.CSSProperties

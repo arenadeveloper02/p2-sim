@@ -105,6 +105,74 @@ export type ArenaCommentsParams = {
 
 export interface ArenaCommentsResponse extends ToolResponse {}
 
+export type ArenaGetMeetingsParams = {
+  operation: string
+  'get-meetings-client'?: {
+    clientId: string
+    name: string
+  }
+  'get-meetings-client-id'?: string
+  'get-meetings-period': string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaGetMeetingsResponse extends ToolResponse {}
+
+export type ArenaClientUpdatedTasksParams = {
+  operation: string
+  'client-updated-tasks-client'?: {
+    clientId: string
+    name: string
+  }
+  'client-updated-tasks-client-id'?: string
+  'client-updated-tasks-period': string
+  'client-updated-tasks-page-number'?: number | string
+  'client-updated-tasks-page-size'?: number | string
+  _context?: {
+    workflowId?: string
+  }
+}
+
+export interface ArenaClientUpdatedTasksResponse extends ToolResponse {}
+
+export interface ArenaClientUpdatedTasksApiResponse {
+  errors: string | null
+  errorMessage: string | null
+  pagination: {
+    totalRecords: number
+    totalPages: number
+    recordsPerPage: number
+    pageNumber: number
+    pageSize: number
+    startRange: number
+    endRange: number
+    noOfRecordsPerPage: number
+  }
+  tasks: Task[]
+}
+
+export type ArenaConversationSummaryParams = {
+  operation: string
+  'conversation-summary-task-id': string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaConversationSummaryResponse extends ToolResponse {}
+
+export type ArenaProjectSummaryParams = {
+  operation: string
+  'project-summary-cid': string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaProjectSummaryResponse extends ToolResponse {}
+
 export interface Task {
   errors: string | null
   errorMessage: string | null

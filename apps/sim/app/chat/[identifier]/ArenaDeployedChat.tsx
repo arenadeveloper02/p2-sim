@@ -23,6 +23,7 @@ import {
   type ChatMessage,
   ChatMessageContainer,
   EmailAuth,
+  GoldenQueriesModal,
   PasswordAuth,
   SSOAuth,
   UnauthorizedEmailError,
@@ -32,6 +33,7 @@ import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constan
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { ArenaChatHeader } from '../components/header/arenaHeader'
+import { FeedbackView } from './FeedbackView'
 import LeftNavThread from './leftNavThread'
 
 const logger = createLogger('ChatClient')
@@ -46,6 +48,7 @@ interface ChatConfig {
     imageUrl?: string
     welcomeMessage?: string
     headerText?: string
+    goldenQueries?: Array<{ id?: string; query: string }>
   }
   authType?: 'public' | 'password' | 'email' | 'sso'
   outputConfigs?: Array<{ blockId: string; path?: string }>
@@ -148,6 +151,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isHistoryLoading, setIsHistoryLoading] = useState<any>(true) // Start as true to prevent early modal
   const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
   const [hasCheckedHistory, setHasCheckedHistory] = useState<boolean>(false)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
@@ -173,11 +177,32 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   const [chatDepartment, setChatDepartment] = useState<string | null>('Default')
 
+  // Feedback view state
+  const [showFeedbackView, setShowFeedbackView] = useState(false)
+  const [feedbackData, setFeedbackData] = useState<any[]>([])
+  const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const [feedbackPage, setFeedbackPage] = useState(1)
+  const [feedbackPageSize] = useState(10)
+  const [feedbackTotalPages, setFeedbackTotalPages] = useState(1)
+  const [feedbackTotalCount, setFeedbackTotalCount] = useState(0)
+  const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
+  const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
+  const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
+
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [])
+
+  useEffect(() => {
+    const incoming = chatConfig?.customizations?.goldenQueries ?? []
+    const normalized = incoming.map((item: any) =>
+      typeof item === 'string' ? { query: item } : item
+    )
+    setGoldenQueries(normalized)
+  }, [chatConfig?.customizations?.goldenQueries])
 
   const scrollToMessage = useCallback(
     (messageId: string, scrollToShowOnlyMessage = false) => {
@@ -322,7 +347,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setIsHistoryLoading(false)
       setHasCheckedHistory(true)
     }
-  }, [identifier, chatConfig, currentChatId])
+  }, [identifier, chatConfig, currentChatId, historyRefreshKey])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -668,6 +693,48 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }
 
+  const handleGoldenQuerySelect = useCallback(
+    (query: string) => {
+      setIsGoldenQueriesOpen(false)
+      void handleSendMessage(query)
+    },
+    [handleSendMessage]
+  )
+
+  const handleSaveGoldenQueries = useCallback(
+    async (nextQueries: Array<{ id?: string; query: string }>, mode: 'hard' | 'soft') => {
+      if (!identifier) {
+        throw new Error('No chat identifier available')
+      }
+
+      setIsGoldenQueriesSaving(true)
+
+      try {
+        const response = await fetch(`/api/chat/${identifier}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({ goldenQueries: nextQueries, deleteMode: mode }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || 'Failed to save golden queries')
+        }
+
+        setGoldenQueries(nextQueries)
+      } catch (error: any) {
+        logger.error('Error saving golden queries:', error)
+        throw error
+      } finally {
+        setIsGoldenQueriesSaving(false)
+      }
+    },
+    [identifier]
+  )
+
   // Stop audio when component unmounts or when streaming is stopped
   useEffect(() => {
     return () => {
@@ -949,6 +1016,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const handleSelectThread = useCallback(
     (chatId: string) => {
       if (currentChatId === chatId) return
+      setShowFeedbackView(false)
+      setFeedbackError(null)
       setShowScrollButton(false)
       setCurrentChatId(chatId)
       // Clear messages except welcome
@@ -968,7 +1037,18 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [currentChatId, chatConfig?.customizations?.headerText, chatConfig?.title, chatDepartment]
   )
 
+  const handleRefreshThread = useCallback(() => {
+    if (!currentChatId) return
+    setShowFeedbackView(false)
+    setFeedbackError(null)
+    setIsHistoryLoading(true)
+    setHasCheckedHistory(false)
+    setHistoryRefreshKey((prev) => prev + 1)
+  }, [currentChatId])
+
   const handleNewChat = useCallback(() => {
+    setShowFeedbackView(false)
+    setFeedbackError(null)
     setShowScrollButton(false)
     const id = uuidv4()
     setCurrentChatId(id)
@@ -993,6 +1073,88 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       'Conversation(chat) ID': id,
     })
   }, [updateUrlChatId, chatConfig?.inputFormat])
+
+  const fetchFeedbackPage = useCallback(
+    async (page: number) => {
+      if (!identifier) {
+        logger.error('No workflow ID available for feedback')
+        return
+      }
+
+      setIsFeedbackLoading(true)
+      setFeedbackError(null)
+
+      try {
+        const url = `/api/chat/feedback/workflow/${identifier}?pageSize=${feedbackPageSize}&page=${page}`
+
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          logger.warn('Feedback request failed', {
+            status: response.status,
+            body: errorText,
+          })
+          throw new Error(`Failed to fetch feedback: ${response.status} ${errorText}`)
+        }
+
+        const data = await response.json()
+
+        let feedbackItems: any[] = []
+
+        if (Array.isArray(data)) {
+          feedbackItems = data
+        } else if (data.feedback && Array.isArray(data.feedback)) {
+          feedbackItems = data.feedback
+        } else if (data.data && Array.isArray(data.data)) {
+          feedbackItems = data.data
+        } else if (data.items && Array.isArray(data.items)) {
+          feedbackItems = data.items
+        } else if (data.content && Array.isArray(data.content)) {
+          feedbackItems = data.content
+        } else if (typeof data === 'object' && Object.keys(data).length > 0) {
+          feedbackItems = [data]
+        }
+
+        const pagination = data?.pagination
+        const totalCount = pagination?.totalCount ?? feedbackItems.length
+        const totalPages =
+          pagination?.totalPages ?? Math.max(1, Math.ceil(totalCount / feedbackPageSize))
+
+        logger.info('Fetched feedback items:', { count: feedbackItems.length })
+        setFeedbackData(feedbackItems)
+        setFeedbackPage(page)
+        setFeedbackTotalCount(totalCount)
+        setFeedbackTotalPages(totalPages)
+      } catch (err: any) {
+        logger.error('Error fetching feedback:', err)
+        setFeedbackError('Some thing went wrong while fetching feed back')
+      } finally {
+        setIsFeedbackLoading(false)
+      }
+    },
+    [identifier, feedbackPageSize]
+  )
+
+  const handleViewFeedback = useCallback(() => {
+    setShowFeedbackView(true)
+    setFeedbackPage(1)
+    fetchFeedbackPage(1)
+  }, [fetchFeedbackPage])
+
+  const handleViewGoldenQueries = useCallback(() => {
+    setIsGoldenQueriesOpen(true)
+  }, [])
+
+  const handleBackFromFeedback = useCallback(() => {
+    setShowFeedbackView(false)
+    setFeedbackError(null)
+  }, [])
 
   if (isAutoLoginInProgress) {
     return (
@@ -1088,7 +1250,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       )}
 
       {/* Header component */}
-      <ArenaChatHeader chatConfig={chatConfig} starCount={starCount} />
+      <ArenaChatHeader
+        chatConfig={chatConfig}
+        starCount={starCount}
+        showFeedbackView={showFeedbackView}
+      />
 
       <LeftNavThread
         threads={threads}
@@ -1096,49 +1262,73 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         error={threadsError || null}
         currentChatId={currentChatId || ''}
         onSelectThread={handleSelectThread}
+        onRefreshThread={handleRefreshThread}
         onNewChat={handleNewChat}
         isStreaming={isStreamingResponse || isLoading}
         workflowId={identifier}
         showReRun={customFields.length > 0}
+        showFeedbackView={showFeedbackView}
         onReRun={handleRerun}
-      />
-      {/* Message Container component */}
-      <ChatMessageContainer
-        messages={messages}
-        isLoading={isLoading}
-        showScrollButton={showScrollButton}
-        messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
-        messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-        scrollToBottom={scrollToBottom}
-        scrollToMessage={scrollToMessage}
-        chatConfig={chatConfig}
-        setMessages={setMessages}
+        onViewFeedback={handleViewFeedback}
+        onViewGoldenQueries={handleViewGoldenQueries}
       />
 
-      {/* Input area (free-standing at the bottom) */}
-      <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
-        <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-          <ChatInput
-            onSubmit={(
-              value: string,
-              isVoiceInput?: boolean,
-              files?: Array<{
-                id: string
-                name: string
-                size: number
-                type: string
-                file: File
-                dataUrl?: string
-              }>
-            ) => {
-              void handleSendMessage(value, isVoiceInput, files)
-            }}
-            isStreaming={isStreamingResponse}
-            onStopStreaming={() => stopStreaming(setMessages)}
-            onVoiceStart={handleVoiceStart}
+      {showFeedbackView ? (
+        <div className='absolute inset-0 top-[86px] left-[320px]'>
+          <FeedbackView
+            feedbackData={feedbackData}
+            isLoading={isFeedbackLoading}
+            error={feedbackError}
+            workflowTitle={chatConfig?.title}
+            page={feedbackPage}
+            pageSize={feedbackPageSize}
+            totalPages={feedbackTotalPages}
+            totalCount={feedbackTotalCount}
+            onPageChange={fetchFeedbackPage}
+            onBack={handleBackFromFeedback}
           />
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Message Container component */}
+          <ChatMessageContainer
+            messages={messages}
+            isLoading={isLoading}
+            showScrollButton={showScrollButton}
+            messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
+            messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
+            scrollToBottom={scrollToBottom}
+            scrollToMessage={scrollToMessage}
+            chatConfig={chatConfig}
+            setMessages={setMessages}
+          />
+
+          {/* Input area (free-standing at the bottom) */}
+          <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
+            <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
+              <ChatInput
+                onSubmit={(
+                  value: string,
+                  isVoiceInput?: boolean,
+                  files?: Array<{
+                    id: string
+                    name: string
+                    size: number
+                    type: string
+                    file: File
+                    dataUrl?: string
+                  }>
+                ) => {
+                  void handleSendMessage(value, isVoiceInput, files)
+                }}
+                isStreaming={isStreamingResponse}
+                onStopStreaming={() => stopStreaming(setMessages)}
+                onVoiceStart={handleVoiceStart}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Start Block Input Modal */}
       {customFields.length > 0 && (
@@ -1150,6 +1340,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           initialValues={startBlockInputs}
         />
       )}
+
+      <GoldenQueriesModal
+        open={isGoldenQueriesOpen}
+        onOpenChange={setIsGoldenQueriesOpen}
+        queries={goldenQueries}
+        onSelectQuery={handleGoldenQuerySelect}
+        onSaveQueries={handleSaveGoldenQueries}
+        disabled={isStreamingResponse || isLoading || isGoldenQueriesSaving}
+      />
     </div>
   )
 }
