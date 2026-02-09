@@ -411,7 +411,7 @@ export const ArenaBlock: BlockConfig = {
       title: 'To',
       type: 'short-input',
       required: false,
-      placeholder: 'e.g. <function.result.to_emails>',
+      placeholder: 'e.g. email@example.com or <function.result.to_emails>',
       mode: 'advanced',
       dependsOn: ['operation'],
       condition: {
@@ -424,7 +424,7 @@ export const ArenaBlock: BlockConfig = {
       title: 'CC',
       type: 'short-input',
       required: false,
-      placeholder: 'e.g. <function.result.cc_emails>',
+      placeholder: 'e.g. email@example.com or <function.result.cc_emails>',
       mode: 'advanced',
       dependsOn: ['operation'],
       condition: {
