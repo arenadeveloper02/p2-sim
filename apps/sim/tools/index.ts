@@ -684,7 +684,7 @@ async function executeToolRequest(
         throw new Error(`Invalid tool URL: ${urlValidation.error}`)
       }
 
-      const requestTimeout = tool.request.timeout ?? 30000
+      const requestTimeout = tool.request.timeout ?? 300000 // 5 minutes default timeout
       const secureResponse = await secureFetchWithPinnedIP(fullUrl, urlValidation.resolvedIP!, {
         method: requestParams.method,
         headers: headersRecord,
