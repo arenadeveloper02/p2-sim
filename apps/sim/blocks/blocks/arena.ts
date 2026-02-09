@@ -406,6 +406,32 @@ export const ArenaBlock: BlockConfig = {
         value: ['arena_comments'],
       },
     },
+    {
+      id: 'comment-to',
+      title: 'To',
+      type: 'short-input',
+      required: false,
+      placeholder: 'e.g. email@example.com or <function.result.to_emails>',
+      mode: 'advanced',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_comments'],
+      },
+    },
+    {
+      id: 'comment-cc',
+      title: 'CC',
+      type: 'short-input',
+      required: false,
+      placeholder: 'e.g. email@example.com or <function.result.cc_emails>',
+      mode: 'advanced',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_comments'],
+      },
+    },
     //comments blocks - both modes
     {
       id: 'comment-client-note',
