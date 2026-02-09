@@ -1,13 +1,34 @@
 import type { PresentationSchema } from './schema'
 
+/** Template ids supported by getTemplateMasterSchema (for dropdown) */
+export const TEMPLATE_OPTIONS = [
+  { value: 'position2_2026', label: 'Position2 2026' },
+] as const
+
+export type TemplateId = (typeof TEMPLATE_OPTIONS)[number]['value']
+
+/**
+ * Returns the master schema for the given template id.
+ * Template must match a known id (e.g. position2_2026); use TEMPLATE_OPTIONS for dropdown values.
+ *
+ * @param template - Template id from TEMPLATE_OPTIONS (e.g. 'position2_2026')
+ * @returns Full presentation schema for that template
+ */
+export function getTemplateMasterSchema(template: string): PresentationSchema {
+  if (template === 'position2_2026') {
+    return buildTemplateSchema()
+  }
+  throw new Error(`Unknown template: ${template}. Supported: ${TEMPLATE_OPTIONS.map((t) => t.value).join(', ')}`)
+}
+
 /**
  * Runs once when template changes
  * Output is stored in DB / JSON file
  */
-export function buildTemplateSchema(): PresentationSchema {
+function buildTemplateSchema(): PresentationSchema {
   return {
     schemaVersion: '1.0',
-    templateVersion: 'position2_v1',
+    templateVersion: 'position2_2026',
     id: "1wYE4gy_iHhLzmI1ra4F5U3wf_DI_fPWIzA_uRzPFwpU",
     slides: [
       {

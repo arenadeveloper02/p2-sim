@@ -39,6 +39,7 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Create Table', id: 'create_table' },
         { label: 'Create Shape', id: 'create_shape' },
         { label: 'Insert Text', id: 'insert_text' },
+        { label: 'Get Template Schema', id: 'get_template_schema' },
       ],
       value: () => 'read',
     },
@@ -767,6 +768,16 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       placeholder: 'Zero-based index (default: 0)',
       condition: { field: 'operation', value: 'insert_text' },
     },
+    // Get Template Schema operation
+    {
+      id: 'templateSchemaTemplate',
+      title: 'Template',
+      type: 'dropdown',
+      options: [{ label: 'Position2 2026', id: 'position2_2026' }],
+      canonicalParamId: 'template',
+      condition: { field: 'operation', value: 'get_template_schema' },
+      required: true,
+    },
   ],
   tools: {
     access: [
@@ -788,6 +799,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       'google_slides_create_table',
       'google_slides_create_shape',
       'google_slides_insert_text',
+      'google_slides_get_template_schema',
     ],
     config: {
       tool: (params) => {
@@ -828,6 +840,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_create_shape'
           case 'insert_text':
             return 'google_slides_insert_text'
+          case 'get_template_schema':
+            return 'google_slides_get_template_schema'
           default:
             throw new Error(`Invalid Google Slides operation: ${params.operation}`)
         }
@@ -851,6 +865,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           duplicateTitle,
           duplicateFolderSelector,
           duplicateFolderId,
+          template,
+          templateSchemaTemplate,
           ...rest
         } = params
 
@@ -891,8 +907,16 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
         if (params.operation === 'duplicate_presentation') {
           result.sourcePresentationId = effectiveSourcePresentationId || undefined
           result.title = duplicateTitle
-          // folderId is already set from the canonicalParamId mapping
           result.folderId = effectiveFolderId || undefined
+        }
+
+        if (params.operation === 'get_template_schema') {
+          const effectiveTemplate = (
+            (template as string) ||
+            (templateSchemaTemplate as string) ||
+            ''
+          ).trim()
+          result.template = effectiveTemplate || undefined
         }
 
         // Replace Text operation
@@ -1117,6 +1141,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     insertTextObjectId: { type: 'string', description: 'Object ID for text insertion' },
     insertTextContent: { type: 'string', description: 'Text to insert' },
     insertTextIndex: { type: 'number', description: 'Insertion index' },
+    // Get template schema operation
+    templateSchemaTemplate: { type: 'string', description: 'Template id (e.g. position2_2026)' },
   },
   outputs: {
     // Read operation
@@ -1161,5 +1187,10 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     // Insert text operation
     inserted: { type: 'boolean', description: 'Whether text was inserted' },
     text: { type: 'string', description: 'Text that was inserted' },
+    // Get template schema operation
+    schema: {
+      type: 'json',
+      description: 'Full presentation template schema (slides, blocks, shapeIds)',
+    },
   },
 }
