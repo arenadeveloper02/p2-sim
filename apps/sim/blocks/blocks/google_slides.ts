@@ -24,6 +24,7 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Read Presentation', id: 'read' },
         { label: 'Write to Presentation', id: 'write' },
         { label: 'Create Presentation', id: 'create' },
+        { label: 'Create Presentation from Template', id: 'create_from_template' },
         { label: 'Duplicate Presentation', id: 'duplicate_presentation' },
         { label: 'Replace All Text', id: 'replace_all_text' },
         { label: 'Replace Text', id: 'replace_text' },
@@ -217,6 +218,24 @@ Create clear, concise content suitable for a title or introductory slide.
 Return ONLY the slide content - no explanations, no markdown formatting markers, no extra text.`,
         placeholder: 'Describe the initial slide content...',
       },
+    },
+
+    // ========== Create from Template Operation Fields ==========
+    {
+      id: 'createFromTemplatePresentationName',
+      title: 'Presentation Name',
+      type: 'short-input',
+      placeholder: 'Enter title for the new presentation',
+      condition: { field: 'operation', value: 'create_from_template' },
+      required: true,
+    },
+    {
+      id: 'createFromTemplateSchemaJson',
+      title: 'Schema JSON',
+      type: 'long-input',
+      placeholder: 'Valid JSON with id, templateVersion, slides (templateSlideObjectId, blocks with shapeId and content)',
+      condition: { field: 'operation', value: 'create_from_template' },
+      required: true,
     },
 
     // ========== Duplicate Presentation Operation Fields ==========
@@ -800,6 +819,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       'google_slides_create_shape',
       'google_slides_insert_text',
       'google_slides_get_template_schema',
+      'google_slides_create_from_template',
     ],
     config: {
       tool: (params) => {
@@ -810,6 +830,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_write'
           case 'create':
             return 'google_slides_create'
+          case 'create_from_template':
+            return 'google_slides_create_from_template'
           case 'duplicate_presentation':
             return 'google_slides_duplicate'
           case 'replace_all_text':
@@ -867,6 +889,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           duplicateFolderId,
           template,
           templateSchemaTemplate,
+          createFromTemplatePresentationName,
+          createFromTemplateSchemaJson,
           ...rest
         } = params
 
@@ -902,6 +926,13 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           if (createContent) {
             result.content = createContent
           }
+        }
+
+        if (params.operation === 'create_from_template') {
+          result.presentationName =
+            (createFromTemplatePresentationName as string)?.trim() || undefined
+          result.schemaJson =
+            (createFromTemplateSchemaJson as string)?.trim() || undefined
         }
 
         if (params.operation === 'duplicate_presentation') {
@@ -1067,6 +1098,9 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     folderSelector: { type: 'string', description: 'Selected folder' },
     folderId: { type: 'string', description: 'Folder identifier' },
     createContent: { type: 'string', description: 'Initial slide content' },
+    // Create from template operation
+    createFromTemplatePresentationName: { type: 'string', description: 'Title for the new presentation' },
+    createFromTemplateSchemaJson: { type: 'string', description: 'Valid JSON schema with slides and block content' },
     // Duplicate presentation operation
     sourcePresentationSelector: { type: 'string', description: 'Selected source presentation' },
     presentationIdForDuplicate: {
@@ -1192,5 +1226,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       type: 'json',
       description: 'Full presentation template schema (slides, blocks, shapeIds)',
     },
+    // Create from template operation
+    slidesCreated: { type: 'number', description: 'Number of slides created' },
   },
 }
