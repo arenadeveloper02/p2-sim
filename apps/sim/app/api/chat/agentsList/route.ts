@@ -1,8 +1,15 @@
 import { db } from '@sim/db'
-import { chat, user, webhook, workflow, workflowSchedule } from '@sim/db/schema'
+import {
+  chat,
+  user,
+  webhook,
+  workflow,
+  workflowExecutionLogs,
+  workflowSchedule,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import type { SQL } from 'drizzle-orm'
-import { and, desc, eq, isNull, ne } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -136,6 +143,56 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
  * Creator is determined by workflow.userId, not chat.userId.
  */
 async function getMyAgentsList(emailId: string): Promise<NextResponse> {
+  /**
+   * Returns execution log rows for the given workflowIds and userId, ordered by started_at desc (most recent first).
+   * Deduplicated by workflowId so each workflow appears once (first occurrence = most recent); order preserved.
+   */
+  async function getRecentUsedAgentsFromLogs(
+    workflowIds: string[],
+    userId: string
+  ): Promise<{ workflowId: string; startedAt: Date }[]> {
+    if (workflowIds.length === 0) return []
+    const rows = await db
+      .select({
+        workflowId: workflowExecutionLogs.workflowId,
+        startedAt: workflowExecutionLogs.startedAt,
+      })
+      .from(workflowExecutionLogs)
+      .where(
+        and(
+          isNotNull(workflowExecutionLogs.chatId),
+          eq(workflowExecutionLogs.userId, userId),
+          inArray(workflowExecutionLogs.workflowId, workflowIds),
+        )
+      )
+      .orderBy(desc(workflowExecutionLogs.startedAt))
+
+    const seen = new Set<string>()
+    const deduped: { workflowId: string; startedAt: Date }[] = []
+    for (const row of rows) {
+      if (row.workflowId && !seen.has(row.workflowId)) {
+        seen.add(row.workflowId)
+        deduped.push(row)
+      }
+    }
+    return deduped
+  }
+
+  /**
+   * Sorts agent list so items match the order of workflow IDs (recently used first). Items whose workflow_id is not in the order list are placed last.
+   */
+  function sortAgentListByWorkflowOrder<T extends { workflow_id: string }>(
+    agentList: T[],
+    orderedWorkflowIds: string[]
+  ): T[] {
+    const orderMap = new Map(orderedWorkflowIds.map((id, i) => [id, i]))
+    return [...agentList].sort((a, b) => {
+      const aIdx = orderMap.get(a.workflow_id) ?? Number.MAX_SAFE_INTEGER
+      const bIdx = orderMap.get(b.workflow_id) ?? Number.MAX_SAFE_INTEGER
+      return aIdx - bIdx
+    })
+  }
+
   const userRecord = await db
     .select({ id: user.id, email: user.email })
     .from(user)
@@ -165,7 +222,16 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
    */
   const accessibleChats = getAgentsListAllowedEmail(chats, emailId)
 
-  const agentList = accessibleChats.map((row) => toAgentListItem(row))
+  let agentList = accessibleChats.map((row) => toAgentListItem(row))
+
+  const myAgentWorkflowIds = agentList.map((row) => row.workflow_id)
+  const recentUsedAgents = await getRecentUsedAgentsFromLogs(myAgentWorkflowIds, creatorUserId)
+
+  const orderedWorkflowIds = recentUsedAgents.map((r) => r.workflowId)
+  for (const wid of myAgentWorkflowIds) {
+    if (!orderedWorkflowIds.includes(wid)) orderedWorkflowIds.push(wid)
+  }
+  agentList = sortAgentListByWorkflowOrder(agentList, orderedWorkflowIds)
 
   logger.info(`agentsList (myagents): returning ${agentList.length} chats for ${emailId}`)
 
