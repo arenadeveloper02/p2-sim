@@ -355,7 +355,7 @@ async function replaceList(
   if (textEndIndex === 0) {
     textEndIndex = 1
   }
-  const listText = listItems.map((item) => `${item}\n`).join('')
+  const listText = listItems.join('\n')
   const res = await fetch(
     `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
     {

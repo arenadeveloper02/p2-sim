@@ -142,15 +142,15 @@ function buildTemplateSchema(): PresentationSchema {
       },
       {
         slideKey: 'TWO_COLUMN_IMAGE_TEXT',
-        order: 4, // adjust based on your presentation order
-        templateSlideObjectId: 'g1e4c9cb898e_0_416',
-        description: 'Two-column layout with images and bulleted text content',
+        order: 4,
+        templateSlideObjectId: 'g3bd983d1368_1_0', // correct – matches the slide's objectId
+        description: 'Two-column layout with images, headers, and bulleted text content',
         blocks: [
           {
             key: 'title',
             type: 'TEXT',
             role: 'TITLE',
-            shapeId: 'g1e4c9cb898e_0_417',
+            shapeId: 'g3bd983d1368_1_3', // correct – TITLE placeholder
             minChars: 15,
             maxChars: 60,
             description: 'Slide title describing the two-column content',
@@ -161,23 +161,33 @@ function buildTemplateSchema(): PresentationSchema {
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
             usage: ['contextual_photo', 'illustration'],
-            shapeId: 'g258f1f1ebd7_0_60',
+            shapeId: 'g3bd983d1368_1_5', // correct – left AdobeStock image
             description: 'Left column image',
+            content: '',
+          },
+          {
+            key: 'left_header',
+            type: 'TEXT',
+            role: 'SECTION_HEADER',
+            shapeId: 'g3bd983d1368_1_11', // correct – left bold 18pt header
+            minChars: 10,
+            maxChars: 40,
+            description: 'Left column header (bold, colored, 18pt)',
             content: '',
           },
           {
             key: 'left_content',
             type: 'TEXT',
             role: 'LIST',
-            shapeId: 'g258f1f1ebd7_0_48',
+            shapeId: 'g3bd983d1368_1_12', // correct – left bulleted list
             minItems: 2,
             maxItems: 4,
             itemConstraints: {
               minChars: 30,
               maxChars: 160,
-              description: 'Bulleted point with header and supporting detail',
+              description: 'Body text for each bulleted point'
             },
-            description: 'Left column bulleted list with bold headers and body text',
+            description: 'Left column bulleted list with body text only',
             content: [],
           },
           {
@@ -185,23 +195,33 @@ function buildTemplateSchema(): PresentationSchema {
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
             usage: ['contextual_photo', 'illustration'],
-            shapeId: 'g392319e7c15_4_345',
+            shapeId: 'g3bd983d1368_1_7', // correct – right AdobeStock image
             description: 'Right column image',
+            content: '',
+          },
+          {
+            key: 'right_header',
+            type: 'TEXT',
+            role: 'SECTION_HEADER',
+            shapeId: 'g3bd983d1368_1_13', // correct – right bold 18pt header
+            minChars: 10,
+            maxChars: 40,
+            description: 'Right column header (bold, colored, 18pt)',
             content: '',
           },
           {
             key: 'right_content',
             type: 'TEXT',
             role: 'LIST',
-            shapeId: 'g392319e7c15_4_343',
+            shapeId: 'g3bd983d1368_1_15', // ← FIXED: was wrong (1_14), now correct
             minItems: 2,
             maxItems: 4,
             itemConstraints: {
               minChars: 30,
               maxChars: 160,
-              description: 'Bulleted point with header and supporting detail',
+              description: 'Body text for each bulleted point'
             },
-            description: 'Right column bulleted list with bold headers and body text',
+            description: 'Right column bulleted list with body text only',
             content: [],
           },
         ],
