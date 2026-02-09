@@ -2,55 +2,6 @@ import { GoogleIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import type { GoogleAdsResponse } from '@/tools/google_ads/types'
 
-// Google Ads accounts configuration
-export const GOOGLE_ADS_ACCOUNTS: Record<string, { id: string; name: string }> = {
-  ami: { id: '7284380454', name: 'AMI' },
-  bd_engine_brake: { id: '8577930930', name: '1369614 B.C. LTD. (BD Engine Brake)' },
-  au_eventgroove_products: { id: '3365918329', name: 'AU - Eventgroove Products' },
-  ca_eventgroove_products: { id: '5197514377', name: 'CA - Eventgroove Products' },
-  capitalcitynurses: { id: '8395621144', name: 'CapitalCityNurses.com' },
-  careadvantage: { id: '9059182052', name: 'CareAdvantage' },
-  chancey_reynolds: { id: '7098393346', name: 'Chancey & Reynolds' },
-  covalent_metrology: { id: '3548685960', name: 'Covalent Metrology' },
-  cpic: { id: '1757492986', name: 'CPIC' },
-  daniel_shapiro: { id: '7395576762', name: 'Daniel I. Shapiro, M.D., P.C.' },
-  dj_precision_machine: { id: '6438492741', name: 'D&J Precision Machine LLC' },
-  dental_care_associates: { id: '2771541197', name: 'Dental Care Associates' },
-  dynamic_dental: { id: '4734954125', name: 'Dynamic Dental' },
-  epstein: { id: '1300586568', name: 'EPSTEIN' },
-  ft_jesse: { id: '4443836419', name: 'Ft. Jesse' },
-  gentle_dental: { id: '2497090182', name: 'Gentle Dental' },
-  great_hill_dental: { id: '6480839212', name: 'Great Hill Dental' },
-  great_lakes: { id: '9925296449', name: 'Great Lakes' },
-  garramone_ralph: { id: '1472407899', name: 'Garramone, Ralph' },
-  heartland: { id: '4479015711', name: 'Heartland' },
-  holmdel_nj: { id: '3507263995', name: 'Holmdel-NJ' },
-  howell_chase: { id: '1890712343', name: 'Howell Chase' },
-  idi_fl: { id: '1890773395', name: 'IDI-FL' },
-  inspire_aesthetics: { id: '1887900641', name: 'Inspire Aesthetics' },
-  marietta_plastic_surgery: { id: '6374556990', name: 'Marietta Plastic Surgery' },
-  monster_transmission: { id: '2680354698', name: 'Monster Transmission' },
-  mosca_plastic_surgery: { id: '8687457378', name: 'Mosca Plastic Surgery' },
-  nhi: { id: '2998186794', name: 'NHI' },
-  nova_hhc: { id: '9279793056', name: 'Nova HHC' },
-  odc_al: { id: '1749359003', name: 'ODC-AL' },
-  oic_culpeper: { id: '8226685899', name: 'OIC-Culpeper' },
-  perforated_paper: { id: '8909188371', name: 'Perforated Paper' },
-  riccobene: { id: '2848955239', name: 'Riccobene' },
-  phoenix_rehab: { id: '4723354550', name: 'Phoenix Rehab (NEW - WM Invoices)' },
-  plastic_surgery_center_hr: { id: '1105892184', name: 'Plastic Surgery Center of Hampton Roads' },
-  service_air_eastern_shore: { id: '8139983849', name: 'Service Air Eastern Shore' },
-  silverlininghealthcare: { id: '4042307092', name: 'Silverlininghealthcare.com' },
-  smi: { id: '9960845284', name: 'SMI' },
-  southern_coastal: { id: '2048733325', name: 'Southern Coastal' },
-  southern_ct_dental: { id: '7842729643', name: 'Southern Connecticut Dental Group' },
-  ud: { id: '8270553905', name: 'UD' },
-  uk_eventgroove_products: { id: '7662673578', name: 'UK - Eventgroove Products' },
-  us_eventgroove_products: { id: '4687328820', name: 'US - Eventgroove Products' },
-  wolf_river: { id: '6445143850', name: 'Wolf River' },
-  youngshc: { id: '3240333229', name: 'Youngshc.com' },
-}
-
 export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
   type: 'google_ads',
   name: 'Google Ads',
@@ -67,11 +18,50 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       id: 'accounts',
       title: 'Google Ads Account',
       type: 'dropdown',
-      options: Object.entries(GOOGLE_ADS_ACCOUNTS).map(([key, account]) => ({
-        label: account.name,
-        id: key,
-        value: key,
-      })),
+      options: [],
+      fetchOptions: async () => {
+        try {
+          const response = await fetch('/api/google-ads/accounts')
+          const data = await response.json()
+
+          console.log('Google Ads API response:', data)
+
+          if (data.success && data.accounts) {
+            const accounts = data.accounts as Record<string, { id: string; name: string }>
+            const options = Object.entries(accounts).map(([key, account]) => ({
+              id: key,
+              label: account.name,
+              value: key,
+            }))
+            console.log('Google Ads options:', options)
+            return options
+          }
+          console.log('Google Ads: No success or no accounts')
+          return []
+        } catch (error) {
+          console.error('Failed to fetch Google Ads accounts:', error)
+          return []
+        }
+      },
+      fetchOptionById: async (optionId: string) => {
+        try {
+          const response = await fetch('/api/google-ads/accounts')
+          const data = await response.json()
+
+          if (data.success && data.accounts[optionId]) {
+            const account = data.accounts[optionId] as { id: string; name: string }
+            return {
+              id: optionId,
+              label: account.name,
+              value: optionId,
+            }
+          }
+          return null
+        } catch (error) {
+          console.error('Failed to fetch Google Ads account:', error)
+          return null
+        }
+      },
       placeholder: 'Select account...',
       required: true,
       mode: 'basic',
