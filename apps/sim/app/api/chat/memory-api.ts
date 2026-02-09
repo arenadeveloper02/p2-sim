@@ -17,7 +17,10 @@ export async function callMemoryAPI(
   conversationId: string | undefined,
   infer: boolean,
   memoryType: 'fact' | 'conversation',
-  blockId?: string
+  blockId?: string,
+  isDeployed?: boolean,
+  workflowId?: string,
+  workspaceId?: string
 ): Promise<void> {
   try {
     const timestamp = new Date().toISOString()
@@ -28,6 +31,17 @@ export async function callMemoryAPI(
       memory_type: memoryType,
       conversation_id: memoryConversationId,
       timestamp: timestamp,
+      isDeployed: isDeployed ?? false,
+    }
+
+    // Add workflow_id to metadata if provided
+    if (workflowId) {
+      metadata.workflow_id = workflowId
+    }
+
+    // Add workspace_id to metadata if provided
+    if (workspaceId) {
+      metadata.workspace_id = workspaceId
     }
 
     // Add blockId to metadata if provided
@@ -89,7 +103,8 @@ export async function searchMemoryAPI(
   userId: string,
   filters?: Record<string, any>,
   runId?: string,
-  agentId?: string
+  agentId?: string,
+  isDeployed?: boolean
 ): Promise<any | null> {
   try {
     const payload: {
@@ -117,6 +132,14 @@ export async function searchMemoryAPI(
     // Add filters if provided
     if (filters && Object.keys(filters).length > 0) {
       payload.filters = filters
+    }
+
+    // Add isDeployed to filters if provided
+    if (isDeployed !== undefined) {
+      if (!payload.filters) {
+        payload.filters = {}
+      }
+      payload.filters.isDeployed = isDeployed
     }
 
     payload.limit = 5

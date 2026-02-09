@@ -31,6 +31,13 @@ export class Memory {
     userPrompt?: string,
     isConversation?: boolean
   ): Promise<Message[]> {
+    // Only call Mem0 API for chat trigger type
+    const triggerType = ctx.metadata?.triggerType
+    if (triggerType !== 'chat') {
+      logger.debug('Skipping memory search: triggerType is not "chat"', { triggerType })
+      return []
+    }
+
     // Skip if userId is not available (required for search API)
     if (!ctx.userId) {
       logger.warn('Cannot search memories without userId in execution context')
@@ -57,6 +64,8 @@ export class Memory {
         filters.memory_type = 'fact'
       }
 
+      const isDeployed = ctx.isDeployedContext ?? false
+
       const requestId = generateRequestId()
 
       // Dynamically import searchMemoryAPI to avoid circular dependencies
@@ -68,7 +77,10 @@ export class Memory {
         requestId,
         query,
         ctx.userId,
-        Object.keys(filters).length > 0 ? filters : undefined
+        Object.keys(filters).length > 0 ? filters : undefined,
+        undefined, // runId
+        undefined, // agentId
+        isDeployed
       )
 
       if (!searchResults) {
@@ -185,6 +197,13 @@ export class Memory {
     blockId: string,
     lastUserMessage: Message | null
   ): Promise<void> {
+    // Only call Mem0 API for chat trigger type
+    const triggerType = ctx.metadata?.triggerType
+    if (triggerType !== 'chat') {
+      logger.debug('Skipping Mem0 API call: triggerType is not "chat"', { triggerType })
+      return
+    }
+
     // Skip if userId is not available (required for Mem0 API)
     if (!ctx.userId) {
       logger.debug('Skipping Mem0 API call: userId not available in execution context')
@@ -222,6 +241,7 @@ export class Memory {
       const chatId = ctx.executionId || ctx.workflowId
 
       const requestId = generateRequestId()
+      const isDeployed = ctx.isDeployedContext ?? false
 
       // Dynamically import callMemoryAPI to avoid circular dependencies
       const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
@@ -236,7 +256,10 @@ export class Memory {
           inputs.conversationId, // Can be undefined, Mem0 will handle it
           true, // infer: true
           'fact', // memoryType: 'fact'
-          blockId
+          blockId,
+          isDeployed,
+          ctx.workflowId,
+          ctx.workspaceId
         )
         logger.debug('Successfully called Mem0 API for fact memory', {
           workflowId: ctx.workflowId,
@@ -261,7 +284,10 @@ export class Memory {
           inputs.conversationId, // Can be undefined, Mem0 will handle it
           false, // infer: false
           'conversation', // memoryType: 'conversation'
-          blockId
+          blockId,
+          isDeployed,
+          ctx.workflowId,
+          ctx.workspaceId
         )
         logger.debug('Successfully called Mem0 API for conversation memory', {
           workflowId: ctx.workflowId,
@@ -304,10 +330,18 @@ export class Memory {
 
     this.validateContent(message.content)
 
+    // Only call Mem0 API for chat trigger type
+    const triggerType = ctx.metadata?.triggerType
+    if (triggerType !== 'chat') {
+      logger.debug('Skipping memory storage: triggerType is not "chat"', { triggerType })
+      return
+    }
+
     // Store user messages immediately to Mem0
     if (message.role === 'user') {
       const chatId = ctx.executionId || ctx.workflowId
       const requestId = generateRequestId()
+      const isDeployed = ctx.isDeployedContext ?? false
 
       try {
         const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
@@ -321,7 +355,10 @@ export class Memory {
           inputs.conversationId, // Can be undefined
           false, // infer: false
           'conversation', // memoryType: 'conversation'
-          blockId
+          blockId,
+          isDeployed,
+          ctx.workflowId,
+          ctx.workspaceId
         )
 
         logger.debug('Stored user message to Mem0', {
@@ -359,6 +396,13 @@ export class Memory {
       return
     }
 
+    // Only call Mem0 API for chat trigger type
+    const triggerType = ctx.metadata?.triggerType
+    if (triggerType !== 'chat') {
+      logger.debug('Skipping memory seeding: triggerType is not "chat"', { triggerType })
+      return
+    }
+
     // Skip if userId is not available (required for Mem0 API)
     if (!ctx.userId) {
       logger.debug('Skipping memory seeding: userId not available in execution context')
@@ -373,6 +417,7 @@ export class Memory {
     // Store all conversation messages to Mem0
     const chatId = ctx.executionId || ctx.workflowId
     const requestId = generateRequestId()
+    const isDeployed = ctx.isDeployedContext ?? false
 
     try {
       const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
@@ -391,7 +436,10 @@ export class Memory {
         inputs.conversationId, // Can be undefined
         false, // infer: false
         'conversation', // memoryType: 'conversation'
-        undefined // blockId not needed for seeding
+        undefined, // blockId not needed for seeding
+        isDeployed,
+        ctx.workflowId,
+        ctx.workspaceId
       )
 
       logger.debug('Seeded memory to Mem0', {
