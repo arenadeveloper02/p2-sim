@@ -13,7 +13,7 @@ export interface BaseBlock {
   type: BlockType
   description: string // Used by LLM to generate content
   shapeId: string // TEMPLATE shapeId (never runtime slide ID)
-  content: string // Filled by LLM ("" initially)
+  content: string | string[] // Filled by LLM ("" initially)
 }
 
 /* ---------- Text Blocks ---------- */
@@ -31,6 +31,7 @@ export interface TextBlock extends BaseBlock {
 export interface ListBlock extends BaseBlock {
   type: 'TEXT'
   role: 'LIST'
+  content: string[],
 
   minItems: number
   maxItems: number
@@ -73,6 +74,6 @@ export interface SlideSchema {
 export interface PresentationSchema {
   schemaVersion: string // e.g. "1.0"
   templateVersion: string // e.g. "company-deck-v3"
-
+  id:string,
   slides: SlideSchema[]
 }

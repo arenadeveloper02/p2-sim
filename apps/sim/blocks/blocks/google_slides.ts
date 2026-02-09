@@ -232,7 +232,17 @@ Return ONLY the slide content - no explanations, no markdown formatting markers,
       dependsOn: ['credential'],
       mode: 'basic',
       condition: { field: 'operation', value: 'duplicate_presentation' },
-      required: true,
+    },
+    // Presentation ID text input (basic mode) – use this ID to duplicate
+    {
+      id: 'presentationIdForDuplicate',
+      title: 'Presentation ID',
+      type: 'short-input',
+      canonicalParamId: 'sourcePresentationId',
+      placeholder: 'Enter presentation ID to duplicate',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
     },
     // Manual source presentation ID input (advanced mode)
     {
@@ -835,13 +845,30 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           imageWidth,
           imageHeight,
           sourcePresentationId,
+          sourcePresentationSelector,
+          presentationIdForDuplicate,
+          manualSourcePresentationId,
           duplicateTitle,
+          duplicateFolderSelector,
+          duplicateFolderId,
           ...rest
         } = params
 
         const effectivePresentationId = (presentationId || manualPresentationId || '').trim()
-        const effectiveFolderId = (folderSelector || folderId || '').trim()
-        const effectiveSourcePresentationId = (sourcePresentationId || '').trim()
+        const effectiveFolderId = (
+          folderSelector ||
+          folderId ||
+          duplicateFolderSelector ||
+          duplicateFolderId ||
+          ''
+        ).trim()
+        const effectiveSourcePresentationId = (
+          sourcePresentationId ||
+          sourcePresentationSelector ||
+          presentationIdForDuplicate ||
+          manualSourcePresentationId ||
+          ''
+        ).trim()
 
         const result: Record<string, any> = {
           ...rest,
@@ -1018,6 +1045,10 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     createContent: { type: 'string', description: 'Initial slide content' },
     // Duplicate presentation operation
     sourcePresentationSelector: { type: 'string', description: 'Selected source presentation' },
+    presentationIdForDuplicate: {
+      type: 'string',
+      description: 'Presentation ID to duplicate (text input)',
+    },
     manualSourcePresentationId: {
       type: 'string',
       description: 'Manual source presentation identifier',
