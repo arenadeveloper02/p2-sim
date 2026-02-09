@@ -81,25 +81,17 @@ function toAgentListItem(row: AgentChatRow) {
   }
 }
 
-/**
- * Determines whether a chat is accessible by a given email based on `allowedEmails`.
- *
- * Access is granted when:
- * - The exact email is present (e.g. `user@company.com`)
- * - The user's domain pattern is present (e.g. `@company.com`)
- */
-function isMyAgentsChatAllowedByEmail(allowedEmails: unknown, emailId: string): boolean {
-  if (!allowedEmails) return false
-  const allowedEmailsList = Array.isArray(allowedEmails) ? allowedEmails : []
-  const emailDomain = emailId.includes('@') ? emailId.substring(emailId.indexOf('@')) : ''
 
-  for (const allowedEmail of allowedEmailsList) {
-    if (typeof allowedEmail === 'string') {
-      if (allowedEmail === emailId) return true
-      if (emailDomain && allowedEmail.startsWith('@') && emailDomain === allowedEmail) return true
+const getAgentsListAllowedEmail = (chats: AgentChatRow[], emailId: string) => {
+  return chats.filter((chatRecord) => {
+    if (chatRecord.allowedEmails) {
+      const allowedEmailsList = Array.isArray(chatRecord.allowedEmails)
+        ? chatRecord.allowedEmails
+        : []
+      return allowedEmailsList.includes(emailId)
     }
-  }
-  return false
+    return false
+  })
 }
 
 /**
@@ -172,9 +164,7 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
    * - Only return chats created by the current user
    * - And that are explicitly accessible via `allowedEmails` (exact email or domain pattern)
    */
-  const accessibleChats = chats.filter((chatRecord) =>
-    isMyAgentsChatAllowedByEmail(chatRecord.allowedEmails, emailId)
-  )
+  const accessibleChats = getAgentsListAllowedEmail(chats, emailId)
 
   const agentList = accessibleChats.map((row) => toAgentListItem(row))
 
@@ -213,15 +203,7 @@ async function getSharedWithMeAgentsList(emailId: string): Promise<NextResponse>
    * Core logic: "sharedwithme" returns chats that the user can access via `allowedEmails`,
    * but excludes chats created by the user (so it doesn't overlap with "myagents").
    */
-  const sharedChats = chats.filter((chatRecord) => {
-    if (chatRecord.allowedEmails) {
-      const allowedEmailsList = Array.isArray(chatRecord.allowedEmails)
-        ? chatRecord.allowedEmails
-        : []
-      return allowedEmailsList.includes(emailId)
-    }
-    return false
-  })
+  const sharedChats = getAgentsListAllowedEmail(chats, emailId)
 
   const agentList = sharedChats.map((row) => toAgentListItem(row))
 
