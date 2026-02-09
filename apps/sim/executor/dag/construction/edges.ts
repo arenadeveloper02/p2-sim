@@ -460,7 +460,12 @@ export class EdgeConstructor {
       }
 
       if (!hasIncomingFromLoop) {
-        startNodesSet.add(nodeId)
+        // Don't add nested loop container blocks as start nodes
+        // They are just containers; their execution is handled by their Sentinel Start
+        // which is triggered by specific edges (or not, if path is skipped)
+        if (!dag.loopConfigs.has(nodeId)) {
+          startNodesSet.add(nodeId)
+        }
       }
     }
 
@@ -479,7 +484,9 @@ export class EdgeConstructor {
       }
 
       if (!hasOutgoingToLoop) {
-        terminalNodesSet.add(nodeId)
+        if (!dag.loopConfigs.has(nodeId)) {
+          terminalNodesSet.add(nodeId)
+        }
       }
     }
 

@@ -139,6 +139,45 @@ export class EdgeManager {
     return targetNode ? this.isNodeReady(targetNode) : false
   }
 
+  public isNodeSkipped(nodeId: string): boolean {
+    const node = this.dag.nodes.get(nodeId)
+    if (!node) return false
+
+    // If node has already executed, it wasn't skipped
+    // (Note: caller should verify execution state first if relevant, but this is safe)
+
+    // If it has active incoming edges (count > 0, excluding deactivated), it's not skipped
+    // If incomingEdges is empty, it's either a start node or already ready/executed
+    if (node.incomingEdges.size === 0) return false
+
+    // Check if ALL remaining incoming edges are deactivated
+    // If even one is potential (not in deactivated set), the node is NOT skipped (yet)
+    // Note: incomingEdges contains sourceNodeIds
+    for (const sourceId of node.incomingEdges) {
+      const sourceNode = this.dag.nodes.get(sourceId)
+      if (!sourceNode) continue
+
+      let allEdgesFromSourceDeactivated = true
+      // We must check ALL edges from this source to this target
+      for (const [, edge] of sourceNode.outgoingEdges) {
+        if (edge.target === nodeId) {
+          const edgeKey = this.createEdgeKey(sourceId, nodeId, edge.sourceHandle)
+          if (!this.deactivatedEdges.has(edgeKey)) {
+            allEdgesFromSourceDeactivated = false
+            break
+          }
+        }
+      }
+
+      if (!allEdgesFromSourceDeactivated) {
+        return false // Found a potential incoming edge
+      }
+    }
+
+    // All incoming connections are deactivated
+    return true
+  }
+
   private isLoopEdge(handle?: string): boolean {
     return (
       handle === EDGE.LOOP_CONTINUE ||

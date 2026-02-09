@@ -51,6 +51,7 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
   },
 
   request: {
+    timeout: 600000, // 10 minutes for API block requests
     url: (params: RequestParams) => {
       // Process the URL once and cache the result
       return processUrl(params.url, params.pathParams, params.params)
