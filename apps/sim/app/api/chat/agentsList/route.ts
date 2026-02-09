@@ -75,12 +75,11 @@ function toAgentListItem(row: AgentChatRow) {
     department: toDepartmentLabel(row.department),
     created_at: row.createdAt.toISOString(),
     workflow_description: row.description,
-    "status": "published",
-    redirect_url: getBaseUrl() + `/chat/${row.workflowId}?workspaceId=${row.workspaceId}`,
+    status: 'published',
+    redirect_url: `${getBaseUrl()}/chat/${row.workflowId}?workspaceId=${row.workspaceId}`,
     // allowedEmails: row.allowedEmails,
   }
 }
-
 
 const getAgentsListAllowedEmail = (chats: AgentChatRow[], emailId: string) => {
   return chats.filter((chatRecord) => {
