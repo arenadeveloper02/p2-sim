@@ -57,7 +57,7 @@ export const slackMessageReaderTool: ToolConfig<
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Number of messages to retrieve (default: 10, max: 15)',
+      description: 'Number of messages to retrieve (default: 10, max: 200)',
     },
     oldest: {
       type: 'string',
@@ -71,6 +71,36 @@ export const slackMessageReaderTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'End of time range (timestamp)',
     },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Cursor for pagination from previous response',
+    },
+    autoPaginate: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Automatically fetch all pages (max 10 pages, 1000 messages)',
+    },
+    includeThreads: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Include thread replies for messages that have threads',
+    },
+    maxThreads: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Maximum number of threads to fetch replies for (default: 10)',
+    },
+    maxRepliesPerThread: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Maximum number of replies to fetch per thread (default: 100)',
+    },
   },
 
   request: {
@@ -79,17 +109,19 @@ export const slackMessageReaderTool: ToolConfig<
     headers: () => ({
       'Content-Type': 'application/json',
     }),
-    body: (params: SlackMessageReaderParams) => {
-      const isDM = params.destinationType === 'dm'
-      return {
-        accessToken: params.accessToken || params.botToken,
-        channel: isDM ? undefined : params.channel,
-        userId: isDM ? params.dmUserId : params.userId,
-        limit: params.limit,
-        oldest: params.oldest,
-        latest: params.latest,
-      }
-    },
+    body: (params: SlackMessageReaderParams) => ({
+      accessToken: params.accessToken || params.botToken,
+      channel: params.channel,
+      userId: params.userId,
+      limit: params.limit,
+      oldest: params.oldest,
+      latest: params.latest,
+      cursor: params.cursor,
+      autoPaginate: params.autoPaginate,
+      includeThreads: params.includeThreads,
+      maxThreads: params.maxThreads,
+      maxRepliesPerThread: params.maxRepliesPerThread,
+    }),
   },
 
   transformResponse: async (response: Response) => {
@@ -117,6 +149,10 @@ export const slackMessageReaderTool: ToolConfig<
           ts: { type: 'string', description: 'Message timestamp' },
           text: { type: 'string', description: 'Message text content' },
           user: { type: 'string', description: 'User ID who sent the message' },
+          user_name: {
+            type: 'string',
+            description: 'Username (handle) of the user who sent the message',
+          },
           bot_id: { type: 'string', description: 'Bot ID if sent by a bot' },
           username: { type: 'string', description: 'Display username' },
           channel: { type: 'string', description: 'Channel ID' },
@@ -131,6 +167,13 @@ export const slackMessageReaderTool: ToolConfig<
           subscribed: { type: 'boolean', description: 'Whether user is subscribed to thread' },
           last_read: { type: 'string', description: 'Last read timestamp' },
           unread_count: { type: 'number', description: 'Number of unread messages' },
+
+          // Thread replies
+          replies: {
+            type: 'array',
+            description: 'Thread replies for this message (when includeThreads is enabled)',
+            items: { type: 'object' }, // Recursive reference to message structure
+          },
 
           // Message subtype
           subtype: { type: 'string', description: 'Message subtype' },
@@ -147,6 +190,11 @@ export const slackMessageReaderTool: ToolConfig<
                 users: {
                   type: 'array',
                   description: 'Array of user IDs who reacted',
+                  items: { type: 'string' },
+                },
+                user_names: {
+                  type: 'array',
+                  description: 'Array of usernames who reacted',
                   items: { type: 'string' },
                 },
               },
@@ -193,6 +241,7 @@ export const slackMessageReaderTool: ToolConfig<
             description: 'Edit information if message was edited',
             properties: {
               user: { type: 'string', description: 'User ID who edited' },
+              user_name: { type: 'string', description: 'Username of the user who edited' },
               ts: { type: 'string', description: 'Edit timestamp' },
             },
           },
