@@ -191,8 +191,25 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     },
   },
   outputs: {
-    data: { type: 'json', description: 'Parsed Semrush data as array of objects' },
-    columns: { type: 'json', description: 'Column headers from the response' },
-    totalRows: { type: 'number', description: 'Total number of data rows returned' },
+    reportType: {
+      type: 'string',
+      description: 'Semrush report type (e.g. domain_organic, url_organic)',
+    },
+    data: {
+      type: 'json',
+      description: 'Parsed Semrush data as JSON array of objects (one per row)',
+    },
+    columns: {
+      type: 'json',
+      description: 'Column headers from the response',
+    },
+    totalRows: {
+      type: 'number',
+      description: 'Total number of data rows returned',
+    },
+    rawCsv: {
+      type: 'string',
+      description: 'Raw CSV response from Semrush API (semicolon-delimited)',
+    },
   },
 }

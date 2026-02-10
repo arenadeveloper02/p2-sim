@@ -852,6 +852,28 @@ export const chat = pgTable(
   }
 )
 
+export const workflowQueries = pgTable(
+  'workflow_queries',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    query: text('query').notNull(),
+    priority: integer('priority').notNull().default(0),
+    deleted: boolean('deleted').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workflowIdIdx: index('workflow_queries_workflow_id_idx').on(table.workflowId),
+    userIdIdx: index('workflow_queries_user_id_idx').on(table.userId),
+  })
+)
+
 export const form = pgTable(
   'form',
   {
@@ -2170,6 +2192,175 @@ export const usageLog = pgTable(
   })
 )
 
+export const slackSummary = pgTable(
+  'slack_summary',
+  {
+    id: text('id').primaryKey(),
+    clientIdRef: text('client_id_ref').notNull(),
+    clientName: text('client_name').notNull(),
+    channelIdRef: text('channel_id_ref').notNull(),
+    channelName: text('channel_name').notNull(),
+    channelType: text('channel_type').notNull(),
+    type: text('type'),
+    oneDaySummary: text('one_day_summary'),
+    sevenDaySummary: text('seven_day_summary'),
+    fourteenDaySummary: text('fourteen_day_summary'),
+    createdDate: timestamp('created_date').notNull().defaultNow(),
+    updatedDate: timestamp('updated_date').notNull().defaultNow(),
+    startTime: timestamp('start_time'),
+    endTime: timestamp('end_time'),
+    status: text('status').notNull(),
+    retryCount: integer('retry_count').notNull().default(0),
+    runDate: date('run_date').notNull(),
+  },
+  (table) => ({
+    clientIdRefIdx: index('slack_summary_client_id_ref_idx').on(table.clientIdRef),
+    channelIdRefIdx: index('slack_summary_channel_id_ref_idx').on(table.channelIdRef),
+    statusIdx: index('slack_summary_status_idx').on(table.status),
+    runDateIdx: index('slack_summary_run_date_idx').on(table.runDate),
+    clientChannelIdx: index('slack_summary_client_channel_idx').on(
+      table.clientIdRef,
+      table.channelIdRef
+    ),
+  })
+)
+
+export const gmailClientSummary = pgTable(
+  'gmail_client_summary',
+  {
+    id: text('id').primaryKey(),
+    runDate: date('run_date').notNull(),
+    status: text('status').notNull(),
+    runStartTime: timestamp('run_start_time'),
+    runEndTime: timestamp('run_end_time'),
+    clientId: text('client_id'),
+    clientName: text('client_name'),
+    clientDomain: text('client_domain'),
+    type: text('type'),
+    oneDaySummary: text('one_day_summary'),
+    sevenDaySummary: text('seven_day_summary'),
+  },
+  (table) => ({
+    clientIdIdx: index('gmail_client_summary_client_id_idx').on(table.clientId),
+    statusIdx: index('gmail_client_summary_status_idx').on(table.status),
+    runDateIdx: index('gmail_client_summary_run_date_idx').on(table.runDate),
+  })
+)
+
+export const meetingSummary = pgTable(
+  'meeting_summary',
+  {
+    id: text('id').primaryKey(),
+    clientIdRef: text('client_id_ref').notNull(),
+    clientName: text('client_name').notNull(),
+    meetingType: text('meeting_type'),
+    type: text('type'),
+    oneDaySummary: text('one_day_summary'),
+    sevenDaySummary: text('seven_day_summary'),
+    fourteenDaySummary: text('fourteen_day_summary'),
+    createdDate: timestamp('created_date').notNull().defaultNow(),
+    updatedDate: timestamp('updated_date').notNull().defaultNow(),
+    startTime: timestamp('start_time'),
+    endTime: timestamp('end_time'),
+    status: text('status').notNull(),
+    retryCount: integer('retry_count').notNull().default(0),
+    runDate: date('run_date').notNull(),
+  },
+  (table) => ({
+    clientIdRefIdx: index('meeting_summary_client_id_ref_idx').on(table.clientIdRef),
+    statusIdx: index('meeting_summary_status_idx').on(table.status),
+    runDateIdx: index('meeting_summary_run_date_idx').on(table.runDate),
+  })
+)
+
+export const overallClientSummary = pgTable(
+  'overall_client_summary',
+  {
+    id: text('id').primaryKey(),
+    clientIdRef: text('client_id_ref').notNull(),
+    clientName: text('client_name').notNull(),
+    type: text('type'),
+    oneDaySummary: text('one_day_summary'),
+    sevenDaySummary: text('seven_day_summary'),
+    fourteenDaySummary: text('fourteen_day_summary'),
+    dailySummaryChanges: text('daily_summary_changes'),
+    weeklySentiment: text('weekly_sentiment'),
+    createdDate: timestamp('created_date').notNull().defaultNow(),
+    updatedDate: timestamp('updated_date').notNull().defaultNow(),
+    startTime: timestamp('start_time'),
+    endTime: timestamp('end_time'),
+    status: text('status').notNull(),
+    retryCount: integer('retry_count').notNull().default(0),
+    runDate: date('run_date').notNull(),
+  },
+  (table) => ({
+    clientIdRefIdx: index('overall_client_summary_client_id_ref_idx').on(table.clientIdRef),
+    statusIdx: index('overall_client_summary_status_idx').on(table.status),
+    runDateIdx: index('overall_client_summary_run_date_idx').on(table.runDate),
+  })
+)
+
+export const arenaTaskSummary = pgTable(
+  'arena_task_summary',
+  {
+    id: text('id').primaryKey(),
+    clientIdRef: text('client_id_ref').notNull(),
+    clientName: text('client_name').notNull(),
+    type: text('type'),
+    oneDaySummary: text('one_day_summary'),
+    sevenDaySummary: text('seven_day_summary'),
+    fourteenDaySummary: text('fourteen_day_summary'),
+    createdDate: timestamp('created_date').notNull().defaultNow(),
+    updatedDate: timestamp('updated_date').notNull().defaultNow(),
+    startTime: timestamp('start_time'),
+    endTime: timestamp('end_time'),
+    status: text('status').notNull(),
+    retryCount: integer('retry_count').notNull().default(0),
+    runDate: date('run_date').notNull(),
+  },
+  (table) => ({
+    clientIdRefIdx: index('arena_task_summary_client_id_ref_idx').on(table.clientIdRef),
+    statusIdx: index('arena_task_summary_status_idx').on(table.status),
+    runDateIdx: index('arena_task_summary_run_date_idx').on(table.runDate),
+  })
+)
+
+export const clientChannelMapping = pgTable(
+  'client_channel_mapping',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: text('client_id').notNull(),
+    channelId: text('channel_id').notNull(),
+    channelName: text('channel_name').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    clientIdIdx: index('client_channel_mapping_client_id_idx').on(table.clientId),
+    channelIdIdx: index('client_channel_mapping_channel_id_idx').on(table.channelId),
+  })
+)
+
+export const clientDetails = pgTable(
+  'client_details',
+  {
+    id: text('id').primaryKey(),
+    clientId: text('client_id').notNull(),
+    clientName: text('client_name'),
+    gmailDomain: text('gmail_domain'),
+    clientCustomerId: text('client_customer_id'),
+    clientManager: text('client_manager'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    clientIdIdx: index('client_details_client_id_idx').on(table.clientId),
+  })
+)
+
+// -----------------------------
+// Credential Set
+// -----------------------------
 export const credentialSet = pgTable(
   'credential_set',
   {
@@ -2189,11 +2380,11 @@ export const credentialSet = pgTable(
   (table) => ({
     organizationIdIdx: index('credential_set_organization_id_idx').on(table.organizationId),
     createdByIdx: index('credential_set_created_by_idx').on(table.createdBy),
+    providerIdIdx: index('credential_set_provider_id_idx').on(table.providerId),
     orgNameUnique: uniqueIndex('credential_set_org_name_unique').on(
       table.organizationId,
       table.name
     ),
-    providerIdIdx: index('credential_set_provider_id_idx').on(table.providerId),
   })
 )
 
@@ -2222,11 +2413,11 @@ export const credentialSetMember = pgTable(
   (table) => ({
     credentialSetIdIdx: index('credential_set_member_set_id_idx').on(table.credentialSetId),
     userIdIdx: index('credential_set_member_user_id_idx').on(table.userId),
+    statusIdx: index('credential_set_member_status_idx').on(table.status),
     uniqueMembership: uniqueIndex('credential_set_member_unique').on(
       table.credentialSetId,
       table.userId
     ),
-    statusIdx: index('credential_set_member_status_idx').on(table.status),
   })
 )
 
@@ -2278,9 +2469,9 @@ export const permissionGroup = pgTable(
     createdBy: text('created_by')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    autoAddNewMembers: boolean('auto_add_new_members').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    autoAddNewMembers: boolean('auto_add_new_members').notNull().default(false),
   },
   (table) => ({
     organizationIdIdx: index('permission_group_organization_id_idx').on(table.organizationId),

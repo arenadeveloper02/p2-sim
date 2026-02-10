@@ -1620,12 +1620,20 @@ export class AgentBlockHandler implements BlockHandler {
 
     try {
       const extractedJson = JSON.parse(content.trim())
-      const schema = responseFormat.schema || responseFormat
+
+      // Get the schema from responseFormat
+      const schema = responseFormat?.schema || responseFormat
+      const isStrict = responseFormat?.strict !== false
 
       // Validate and filter the response according to the schema
-      const validatedJson = this.validateAndFilterStructuredResponse(extractedJson, schema)
+      const validatedJson = this.validateAndFilterStructuredResponse(
+        extractedJson,
+        schema,
+        isStrict
+      )
 
       return {
+        ...validatedJson,
         ...validatedJson,
         ...this.createResponseMetadata(result),
       }
@@ -1646,78 +1654,76 @@ export class AgentBlockHandler implements BlockHandler {
 
   /**
    * Validates and filters a structured response according to the schema.
-   * Enforces additionalProperties: false by filtering out any properties not in the schema.
-   * Ensures all required fields are present.
+   * When strict mode is enabled (additionalProperties: false), removes any properties
+   * that are not defined in the schema.
    */
-  private validateAndFilterStructuredResponse(parsedJson: any, schema: any): Record<string, any> {
-    if (!schema || typeof schema !== 'object') {
-      logger.warn('Invalid schema provided for structured response validation')
-      return parsedJson
+  private validateAndFilterStructuredResponse(data: any, schema: any, isStrict: boolean): any {
+    if (!schema || typeof schema !== 'object' || schema === null) {
+      return data
     }
 
-    // If parsedJson is not an object, return as-is (shouldn't happen for object schemas)
-    if (typeof parsedJson !== 'object' || parsedJson === null || Array.isArray(parsedJson)) {
-      logger.warn('Parsed JSON is not an object, cannot validate against object schema')
-      return parsedJson
-    }
+    // If schema has additionalProperties: false, we need to filter strictly
+    const additionalProperties = schema.additionalProperties
+    const shouldFilterStrictly = isStrict && additionalProperties === false
 
-    // If schema is not an object type, return as-is
-    if (schema.type !== 'object' || !schema.properties) {
-      return parsedJson
-    }
+    // If it's an object schema with properties
+    if (
+      schema.type === 'object' &&
+      schema.properties &&
+      typeof data === 'object' &&
+      data !== null &&
+      !Array.isArray(data)
+    ) {
+      const filtered: Record<string, any> = {}
+      const allowedProperties = new Set(Object.keys(schema.properties))
 
-    const filtered: Record<string, any> = {}
-    const allowedProperties = new Set(Object.keys(schema.properties))
-    const requiredFields = new Set(schema.required || [])
-    const additionalProperties = schema.additionalProperties !== false
-
-    // Filter properties based on schema
-    for (const [key, value] of Object.entries(parsedJson)) {
-      if (allowedProperties.has(key)) {
-        // Recursively validate nested objects if they have a schema
-        const propertySchema = schema.properties[key]
-        if (
-          propertySchema &&
-          typeof propertySchema === 'object' &&
-          propertySchema.type === 'object' &&
-          propertySchema.properties &&
-          typeof value === 'object' &&
-          value !== null &&
-          !Array.isArray(value)
-        ) {
-          filtered[key] = this.validateAndFilterStructuredResponse(value, propertySchema)
-        } else {
-          filtered[key] = value
-        }
-      } else if (!additionalProperties) {
-        // Log warning for additional properties when additionalProperties is false
-        logger.warn(
-          `Structured response contains additional property "${key}" not in schema. Property will be filtered out.`,
-          {
-            schemaProperties: Array.from(allowedProperties),
-            receivedProperty: key,
-            receivedValue: typeof value === 'string' ? value.substring(0, 100) : value,
+      // Only include properties that are defined in the schema
+      for (const [key, value] of Object.entries(data)) {
+        if (allowedProperties.has(key)) {
+          const propertySchema = schema.properties[key]
+          // Recursively validate nested objects
+          if (propertySchema && typeof propertySchema === 'object' && propertySchema !== null) {
+            filtered[key] = this.validateAndFilterStructuredResponse(
+              value,
+              propertySchema,
+              isStrict
+            )
+          } else {
+            filtered[key] = value
           }
-        )
-      } else {
-        // Include additional properties if allowed
-        filtered[key] = value
+        } else if (shouldFilterStrictly) {
+          // Log warning when filtering out properties in strict mode
+          logger.warn('Filtering out property not in schema', {
+            property: key,
+            value: typeof value === 'string' ? value.substring(0, 50) : value,
+          })
+        }
       }
+
+      // Validate required properties
+      if (schema.required && Array.isArray(schema.required)) {
+        for (const requiredProp of schema.required) {
+          if (!(requiredProp in filtered)) {
+            logger.warn('Missing required property in structured response', {
+              property: requiredProp,
+              availableProperties: Object.keys(filtered),
+            })
+          }
+        }
+      }
+
+      return filtered
     }
 
-    // Check for missing required fields
-    const missingRequired = Array.from(requiredFields).filter(
-      (field) => !(String(field) in filtered)
-    ) as string[]
-    if (missingRequired.length > 0) {
-      logger.warn(`Structured response is missing required fields: ${missingRequired.join(', ')}`, {
-        requiredFields: Array.from(requiredFields),
-        missingFields: missingRequired,
-        receivedFields: Object.keys(filtered),
-      })
+    // If it's an array schema
+    if (schema.type === 'array' && schema.items && Array.isArray(data)) {
+      return data.map((item) =>
+        this.validateAndFilterStructuredResponse(item, schema.items, isStrict)
+      )
     }
 
-    return filtered
+    // For other types or if filtering is not needed, return as-is
+    return data
   }
 
   private processStandardResponse(result: any): BlockOutput {

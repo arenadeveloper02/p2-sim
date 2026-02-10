@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
 import { executeInIsolatedVM } from '@/lib/execution/isolated-vm'
-import { buildLoopIndexCondition, DEFAULTS, EDGE } from '@/executor/constants'
+import { BlockType, buildLoopIndexCondition, DEFAULTS, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
 import type { LoopScope } from '@/executor/execution/state'
@@ -781,6 +781,37 @@ export class LoopOrchestrator {
       }
     }
 
+    // Also check for terminal blocks (blocks with no outgoing edges or only edge to sentinel end)
+    // Terminal blocks indicate that a path has completed, so the iteration is done
+    for (const nodeId of loopNodes) {
+      if (nodeId === sentinelEndId) continue
+
+      const node = this.dag.nodes.get(nodeId)
+      if (!node) continue
+
+      // Check if this is a terminal block (no outgoing edges or only edge to sentinel end)
+      const hasNoOutgoingEdges = node.outgoingEdges.size === 0
+      const onlyEdgeToSentinelEnd =
+        node.outgoingEdges.size === 1 &&
+        Array.from(node.outgoingEdges.values()).some((edge) => edge.target === sentinelEndId)
+
+      if ((hasNoOutgoingEdges || onlyEdgeToSentinelEnd) && this.state.hasExecuted(nodeId)) {
+        logger.info(
+          'Terminal block executed in loop - iteration complete, allowing loop to continue',
+          {
+            loopId,
+            nodeId,
+            blockId: node.block.id,
+            blockType: node.block.metadata?.id || 'unknown',
+            hasNoOutgoingEdges,
+            onlyEdgeToSentinelEnd,
+          }
+        )
+        // Terminal block executed, so this iteration is complete
+        return true
+      }
+    }
+
     // Fallback: If no terminal nodes found (or none executed), check all regular nodes
     // This handles simple loops without conditional routing
     for (const nodeId of loopNodes) {
@@ -793,5 +824,56 @@ export class LoopOrchestrator {
     }
 
     return true
+  }
+
+  /**
+   * Checks if a Response block has executed inside the loop.
+   * Response blocks are terminal and should stop all further execution,
+   * including preventing loops from continuing or exiting to downstream nodes.
+   */
+  private hasResponseBlockExecuted(ctx: ExecutionContext, loopId: string): boolean {
+    const loopConfig = this.dag.loopConfigs.get(loopId) as LoopConfigWithNodes | undefined
+    if (!loopConfig) {
+      return false
+    }
+
+    const loopNodes = loopConfig.nodes || []
+    const sentinelEndId = buildSentinelEndId(loopId)
+
+    for (const nodeId of loopNodes) {
+      if (nodeId === sentinelEndId) continue
+
+      const node = this.dag.nodes.get(nodeId)
+      if (!node) continue
+
+      // Check if this node is a Response block
+      const blockType = node.block.metadata?.id
+      if (blockType === BlockType.RESPONSE) {
+        // Check if the Response block has executed
+        if (this.state.hasExecuted(nodeId)) {
+          const output = this.state.getBlockOutput(nodeId)
+          // Response blocks have 'status' and 'data' in their output
+          // Verify this is actually a Response block output
+          if (output && 'status' in output && 'data' in output) {
+            logger.info('Response block found in loop', {
+              loopId,
+              nodeId,
+              blockId: node.block.id,
+            })
+            return true
+          }
+        }
+      }
+
+      // Also check nested loops for Response blocks
+      if (this.dag.loopConfigs.has(nodeId)) {
+        const nestedLoopId = nodeId
+        if (this.hasResponseBlockExecuted(ctx, nestedLoopId)) {
+          return true
+        }
+      }
+    }
+
+    return false
   }
 }
