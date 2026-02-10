@@ -71,6 +71,7 @@ export interface ExistingChat {
   customizations?: {
     welcomeMessage?: string
     imageUrl?: string
+    goldenQueries?: string[]
   }
   isActive: boolean
 }
@@ -94,6 +95,7 @@ const CATEGORIES = [
   { value: 'seo', label: 'SEO' },
   { value: 'strategy', label: 'Strategy' },
   { value: 'waas', label: 'WAAS' },
+  { value: 'hr', label: 'HR' },
 ] as const
 
 const initialFormData: ChatFormData = {
@@ -105,6 +107,7 @@ const initialFormData: ChatFormData = {
   password: '',
   emails: [],
   welcomeMessage: 'Hi there! How can I help you today?',
+  goldenQueries: [],
   selectedOutputBlocks: [],
 }
 
@@ -240,6 +243,7 @@ export function ChatDeploy({
         emails: uniqueEmails,
         welcomeMessage:
           existingChat.customizations?.welcomeMessage || 'Hi there! How can I help you today?',
+        goldenQueries: existingChat.customizations?.goldenQueries ?? [],
         selectedOutputBlocks: Array.isArray(existingChat.outputConfigs)
           ? existingChat.outputConfigs.map(
               (config: { blockId: string; path: string }) => `${config.blockId}_${config.path}`
@@ -472,6 +476,32 @@ export function ChatDeploy({
               This message will be displayed when users first open the chat
             </p>
           </div>
+          {/* <div>
+            <Label
+              htmlFor='goldenQueries'
+              className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+            >
+              Golden queries
+            </Label>
+            <Textarea
+              id='goldenQueries'
+              placeholder='Add one query per line'
+              value={formData.goldenQueries.join('\n')}
+              onChange={(e) => {
+                const parsedQueries = e.target.value
+                  .split('\n')
+                  .map((query) => query.trim())
+                  .filter((query) => query.length > 0)
+                updateField('goldenQueries', parsedQueries)
+              }}
+              rows={4}
+              disabled={chatSubmitting}
+              className='min-h-[96px] resize-none'
+            />
+            <p className='mt-[6.5px] text-[11px] text-[var(--text-secondary)]'>
+              These queries appear in the deployed chat for one-click execution
+            </p>
+          </div> */}
 
           <button
             type='button'

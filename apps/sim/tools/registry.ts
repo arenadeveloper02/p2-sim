@@ -52,7 +52,16 @@ import {
   apolloTaskCreateTool,
   apolloTaskSearchTool,
 } from '@/tools/apollo'
-import { arenaAddComment, arenaCreateTask, arenaSaveSummary, arenaSearchTask } from '@/tools/arena'
+import {
+  arenaAddComment,
+  arenaClientUpdatedTasks,
+  arenaConversationSummary,
+  arenaCreateTask,
+  arenaGetMeetings,
+  arenaProjectSummary,
+  arenaSaveSummary,
+  arenaSearchTask,
+} from '@/tools/arena'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
   asanaAddCommentTool,
@@ -432,6 +441,8 @@ import {
 import {
   gmailAddLabelTool,
   gmailAddLabelV2Tool,
+  gmailAdvancedSearchTool,
+  gmailAdvancedSearchV2Tool,
   gmailArchiveTool,
   gmailArchiveV2Tool,
   gmailDeleteTool,
@@ -1379,6 +1390,7 @@ import {
   slackListUsersTool,
   slackMessageReaderTool,
   slackMessageTool,
+  slackSearchAllTool,
   slackUpdateMessageTool,
 } from '@/tools/slack'
 import { smsSendTool } from '@/tools/sms'
@@ -1734,6 +1746,10 @@ export const tools: Record<string, ToolConfig> = {
   arena_search_task: arenaSearchTask,
   arena_save_summary: arenaSaveSummary,
   arena_comments: arenaAddComment,
+  arena_get_meetings: arenaGetMeetings,
+  arena_project_summary: arenaProjectSummary,
+  arena_client_updated_tasks: arenaClientUpdatedTasks,
+  arena_conversation_summary: arenaConversationSummary,
   a2a_cancel_task: a2aCancelTaskTool,
   a2a_delete_push_notification: a2aDeletePushNotificationTool,
   a2a_get_agent_card: a2aGetAgentCardTool,
@@ -1949,6 +1965,7 @@ export const tools: Record<string, ToolConfig> = {
   polymarket_get_holders: polymarketGetHoldersTool,
   slack_message: slackMessageTool,
   slack_message_reader: slackMessageReaderTool,
+  slack_search_all: slackSearchAllTool,
   slack_list_channels: slackListChannelsTool,
   slack_list_members: slackListMembersTool,
   slack_list_users: slackListUsersTool,
@@ -2043,6 +2060,8 @@ export const tools: Record<string, ToolConfig> = {
   gmail_read: gmailReadTool,
   gmail_read_v2: gmailReadV2Tool,
   gmail_search: gmailSearchTool,
+  gmail_advanced_search: gmailAdvancedSearchTool,
+  gmail_advanced_search_v2: gmailAdvancedSearchV2Tool,
   gmail_search_v2: gmailSearchV2Tool,
   gmail_draft: gmailDraftTool,
   gmail_draft_v2: gmailDraftV2Tool,

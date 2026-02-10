@@ -35,6 +35,7 @@ export interface OAuthConfig {
   required: boolean // Whether this tool requires OAuth authentication
   provider: OAuthService // The service that needs to be authorized
   requiredScopes?: string[] // Specific scopes this tool needs (for granular scope validation)
+  useUserToken?: boolean // Indicates if the tool requires a user token (xoxp-) instead of a bot token (xoxb-)
 }
 
 export interface ToolConfig<P = any, R = any> {
@@ -93,6 +94,8 @@ export interface ToolConfig<P = any, R = any> {
     method: HttpMethod | ((params: P) => HttpMethod)
     headers: (params: P) => Record<string, string>
     body?: (params: P) => Record<string, any> | string | FormData | undefined
+    /** Timeout in ms for external HTTP requests (default 30000). Use higher values for slow APIs (e.g. image generation). */
+    timeout?: number
   }
 
   // Post-processing (optional) - allows additional processing after the initial request

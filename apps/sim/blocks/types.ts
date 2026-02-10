@@ -57,6 +57,7 @@ export type SubBlockType =
   | 'condition-input' // Conditional logic
   | 'eval-input' // Evaluation input
   | 'time-input' // Time input
+  | 'date-input' // Date input
   | 'oauth-input' // OAuth credential selector
   | 'webhook-config' // Webhook configuration
   | 'schedule-info' // Schedule status display (next run, last ran, failure badge)
@@ -93,6 +94,8 @@ export type SubBlockType =
   | 'arena-task-selector'
   | 'arena-states-selector'
   | 'arena-client-selector'
+  | 'slack-client-selector'
+  | 'slack-channel-selector'
   | 'router-input' // Router route definitions with descriptions
 
 /**
@@ -292,6 +295,8 @@ export interface SubBlockConfig {
   multiSelect?: boolean
   // Combobox specific: Enable search input in dropdown
   searchable?: boolean
+  /** When true, show a clear (X) button when a value is selected (optional field) */
+  clearable?: boolean
   // Wand configuration for AI assistance
   wandConfig?: {
     enabled: boolean

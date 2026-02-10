@@ -121,6 +121,7 @@ export const sambanovaProvider: ProviderConfig = {
       'DeepSeek-R1-0528',
       'DeepSeek-V3-0324',
       'DeepSeek-V3.1',
+      'DeepSeek-V3.2',
       'Meta-Llama-3.1-70B-Instruct',
       'Meta-Llama-3.1-8B-Instruct',
       'Meta-Llama-3.1-405B-Instruct',
@@ -148,6 +149,7 @@ export const sambanovaProvider: ProviderConfig = {
       // Special normalization for common inputs
       if (lower === 'deepseek-r1-distill-llama-70b') return 'DeepSeek-R1-Distill-Llama-70B'
       if (lower === 'deepseek-v3.1' || lower === 'deepseek-v3-1') return 'DeepSeek-V3.1'
+      if (lower === 'deepseek-v3.2' || lower === 'deepseek-v3-2') return 'DeepSeek-V3.2'
       return req
     }
 
