@@ -1,4 +1,5 @@
 import type { Edge } from 'reactflow'
+import type { SerializableExecutionState } from '@/executor/execution/types'
 import type { BlockLog, NormalizedBlockOutput } from '@/executor/types'
 import type { DeploymentStatus } from '@/stores/workflows/registry/types'
 import type { Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
@@ -111,6 +112,7 @@ export interface WorkflowExecutionLog {
         tokens?: { input?: number; output?: number; total?: number }
       }
     >
+    executionState?: SerializableExecutionState
     finalOutput?: any
     errorDetails?: {
       blockId: string
@@ -360,18 +362,32 @@ export interface ExecutionLoggerService {
     executionId: string
     endedAt: string
     totalDurationMs: number
-
     costSummary: {
       totalCost: number
       totalInputCost: number
       totalOutputCost: number
       totalTokens: number
+      totalPromptTokens?: number
+      totalCompletionTokens?: number
+      baseExecutionCharge?: number
+      modelCost?: number
+      models?: Record<
+        string,
+        {
+          input: number
+          output: number
+          total: number
+          tokens: { input: number; output: number; total: number }
+        }
+      >
     }
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
     workflowInput?: any
+    finalChatOutput?: string
+    executionState?: SerializableExecutionState
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
   }): Promise<WorkflowExecutionLog>
 }

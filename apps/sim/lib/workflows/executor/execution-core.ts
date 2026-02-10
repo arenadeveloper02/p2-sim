@@ -616,6 +616,7 @@ export async function executeWorkflowCore(
       traceSpans: traceSpans || [],
       workflowInput: processedInput,
       finalChatOutput,
+      executionState: result.executionState,
     })
 
     await clearExecutionCancellation(executionId)

@@ -17,6 +17,7 @@ import type {
   TraceSpan,
   WorkflowState,
 } from '@/lib/logs/types'
+import type { SerializableExecutionState } from '@/executor/execution/types'
 
 const logger = createLogger('LoggingSession')
 
@@ -40,6 +41,7 @@ export interface SessionCompleteParams {
   traceSpans?: TraceSpan[]
   workflowInput?: any
   finalChatOutput?: string
+  executionState?: SerializableExecutionState
 }
 
 export interface SessionErrorCompleteParams {
@@ -315,8 +317,15 @@ export class LoggingSession {
       return
     }
 
-    const { endedAt, totalDurationMs, finalOutput, traceSpans, workflowInput, finalChatOutput } =
-      params
+    const {
+      endedAt,
+      totalDurationMs,
+      finalOutput,
+      traceSpans,
+      workflowInput,
+      executionState,
+      finalChatOutput,
+    } = params
 
     try {
       const costSummary = calculateCostSummary(traceSpans || [])
@@ -331,6 +340,7 @@ export class LoggingSession {
         finalOutput: finalOutput || {},
         traceSpans: traceSpans || [],
         workflowInput,
+        executionState,
         isResume: this.isResume,
         finalChatOutput,
       })

@@ -34,6 +34,7 @@ import type {
   WorkflowState,
 } from '@/lib/logs/types'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
+import type { SerializableExecutionState } from '@/executor/execution/types'
 
 export interface ToolCall {
   name: string
@@ -204,6 +205,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     traceSpans?: TraceSpan[]
     workflowInput?: any
     finalChatOutput?: string // Final chat output based on output_configs
+    executionState?: SerializableExecutionState
     isResume?: boolean
     level?: 'info' | 'error'
     status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
@@ -216,6 +218,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       finalOutput,
       traceSpans,
       workflowInput,
+      executionState,
       isResume,
       finalChatOutput,
       level: levelOverride,
@@ -326,6 +329,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
             total: executionCost.tokens.total,
           },
           models: executionCost.models,
+          ...(executionState ? { executionState } : {}),
         },
         // Ensure finalChatOutput is set - critical for UI display
         // For skipped workflows, this should contain the skip response content
