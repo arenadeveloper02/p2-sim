@@ -81,6 +81,7 @@ const nextConfig: NextConfig = {
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
   },
   serverExternalPackages: [
+    '@1password/sdk',
     'unpdf',
     'ffmpeg-static',
     'fluent-ffmpeg',
