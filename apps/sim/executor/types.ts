@@ -1,6 +1,7 @@
 import type { TraceSpan } from '@/lib/logs/types'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
 import type { BlockOutput } from '@/blocks/types'
+import type { RunFromBlockContext } from '@/executor/utils/run-from-block'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 
 export interface UserFile {
@@ -113,6 +114,17 @@ export interface BlockLog {
   loopId?: string
   parallelId?: string
   iterationIndex?: number
+  /**
+   * Monotonically increasing integer (1, 2, 3, ...) for accurate block ordering.
+   * Generated via getNextExecutionOrder() to ensure deterministic sorting.
+   */
+  executionOrder: number
+  /**
+   * Child workflow trace spans for nested workflow execution.
+   * Stored separately from output to keep output clean for display
+   * while preserving data for trace-spans processing.
+   */
+  childTraceSpans?: TraceSpan[]
 }
 
 export interface ExecutionMetadata {
@@ -220,7 +232,12 @@ export interface ExecutionContext {
   edges?: Array<{ source: string; target: string }>
 
   onStream?: (streamingExecution: StreamingExecution) => Promise<void>
-  onBlockStart?: (blockId: string, blockName: string, blockType: string) => Promise<void>
+  onBlockStart?: (
+    blockId: string,
+    blockName: string,
+    blockType: string,
+    executionOrder: number
+  ) => Promise<void>
   onBlockComplete?: (
     blockId: string,
     blockName: string,
@@ -250,6 +267,34 @@ export interface ExecutionContext {
    * will not have their base64 content fetched.
    */
   base64MaxBytes?: number
+
+  /**
+   * Context for "run from block" mode. When present, only blocks in dirtySet
+   * will be executed; others return cached outputs from the source snapshot.
+   */
+  runFromBlockContext?: RunFromBlockContext
+
+  /**
+   * Stop execution after this block completes. Used for "run until block" feature.
+   */
+  stopAfterBlockId?: string
+
+  /**
+   * Counter for generating monotonically increasing execution order values.
+   * Starts at 0 and increments for each block. Use getNextExecutionOrder() to access.
+   */
+  executionOrderCounter?: { value: number }
+}
+
+/**
+ * Gets the next execution order value for a block.
+ * Returns a simple incrementing integer (1, 2, 3, ...) for clear ordering.
+ */
+export function getNextExecutionOrder(ctx: ExecutionContext): number {
+  if (!ctx.executionOrderCounter) {
+    ctx.executionOrderCounter = { value: 0 }
+  }
+  return ++ctx.executionOrderCounter.value
 }
 
 export interface ExecutionResult {

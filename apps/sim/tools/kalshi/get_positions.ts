@@ -1,11 +1,17 @@
-import type { ToolConfig } from '@/tools/types'
 import type {
   KalshiAuthParams,
   KalshiPaginationParams,
   KalshiPagingInfo,
   KalshiPosition,
-} from './types'
-import { buildKalshiAuthHeaders, buildKalshiUrl, handleKalshiError } from './types'
+} from '@/tools/kalshi/types'
+import {
+  buildKalshiAuthHeaders,
+  buildKalshiUrl,
+  handleKalshiError,
+  KALSHI_EVENT_POSITION_OUTPUT_PROPERTIES,
+  KALSHI_POSITION_OUTPUT_PROPERTIES,
+} from '@/tools/kalshi/types'
+import type { ToolConfig } from '@/tools/types'
 
 export interface KalshiGetPositionsParams extends KalshiAuthParams, KalshiPaginationParams {
   ticker?: string
@@ -47,31 +53,33 @@ export const kalshiGetPositionsTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by market ticker',
+      description: 'Filter by market ticker (e.g., "KXBTC-24DEC31")',
     },
     eventTicker: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by event ticker (max 10 comma-separated)',
+      description:
+        'Filter by event ticker, max 10 comma-separated (e.g., "KXBTC-24DEC31,INX-25JAN03")',
     },
     settlementStatus: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by settlement status (all, unsettled, settled). Default: unsettled',
+      description:
+        'Filter by settlement status: "all", "unsettled", or "settled" (default: "unsettled")',
     },
     limit: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Number of results (1-1000, default: 100)',
+      description: 'Number of results to return (1-1000, default: 100)',
     },
     cursor: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Pagination cursor for next page',
+      description: 'Pagination cursor from previous response for fetching next page',
     },
   },
 
@@ -119,6 +127,10 @@ export const kalshiGetPositionsTool: ToolConfig<
     positions: {
       type: 'array',
       description: 'Array of position objects',
+      items: {
+        type: 'object',
+        properties: KALSHI_POSITION_OUTPUT_PROPERTIES,
+      },
     },
     paging: {
       type: 'object',
@@ -191,37 +203,38 @@ export const kalshiGetPositionsV2Tool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by market ticker',
+      description: 'Filter by market ticker (e.g., "KXBTC-24DEC31")',
     },
     eventTicker: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by event ticker (max 10 comma-separated)',
+      description:
+        'Filter by event ticker, max 10 comma-separated (e.g., "KXBTC-24DEC31,INX-25JAN03")',
     },
     countFilter: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by count (all, positive, negative). Default: all',
+      description: 'Filter by count: "all", "positive", or "negative" (default: "all")',
     },
     subaccount: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Subaccount to get positions for',
+      description: 'Subaccount identifier to get positions for',
     },
     limit: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Number of results (1-1000, default: 100)',
+      description: 'Number of results to return (1-1000, default: 100)',
     },
     cursor: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Pagination cursor for next page',
+      description: 'Pagination cursor from previous response for fetching next page',
     },
   },
 
@@ -289,27 +302,17 @@ export const kalshiGetPositionsV2Tool: ToolConfig<
     market_positions: {
       type: 'array',
       description: 'Array of market position objects',
-      properties: {
-        ticker: { type: 'string', description: 'Market ticker' },
-        event_ticker: { type: 'string', description: 'Event ticker' },
-        event_title: { type: 'string', description: 'Event title' },
-        market_title: { type: 'string', description: 'Market title' },
-        position: { type: 'number', description: 'Position size' },
-        market_exposure: { type: 'number', description: 'Market exposure' },
-        realized_pnl: { type: 'number', description: 'Realized P&L' },
-        total_traded: { type: 'number', description: 'Total traded' },
-        resting_orders_count: { type: 'number', description: 'Resting orders count' },
-        fees_paid: { type: 'number', description: 'Fees paid' },
+      items: {
+        type: 'object',
+        properties: KALSHI_POSITION_OUTPUT_PROPERTIES,
       },
     },
     event_positions: {
       type: 'array',
       description: 'Array of event position objects',
-      properties: {
-        event_ticker: { type: 'string', description: 'Event ticker' },
-        event_exposure: { type: 'number', description: 'Event exposure' },
-        realized_pnl: { type: 'number', description: 'Realized P&L' },
-        total_cost: { type: 'number', description: 'Total cost' },
+      items: {
+        type: 'object',
+        properties: KALSHI_EVENT_POSITION_OUTPUT_PROPERTIES,
       },
     },
     cursor: {

@@ -25,6 +25,7 @@ export { ResponseFormat } from './response/response-format'
 export { ScheduleInfo } from './schedule-info/schedule-info'
 export { SheetSelectorInput } from './sheet-selector/sheet-selector-input'
 export { ShortInput } from './short-input/short-input'
+export { SkillInput } from './skill-input/skill-input'
 export {
   SlackDateInput,
   SlackDateRangeSelector,

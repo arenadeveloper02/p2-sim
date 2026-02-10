@@ -1,4 +1,16 @@
+import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import type { LoopType, ParallelType } from '@/lib/workflows/types'
+
+/**
+ * Runtime-injected keys for trigger blocks that should be hidden from logs/display.
+ * These are added during execution but aren't part of the block's static output schema.
+ */
+export const TRIGGER_INTERNAL_KEYS = ['webhook', 'workflowId'] as const
+export type TriggerInternalKey = (typeof TRIGGER_INTERNAL_KEYS)[number]
+
+export function isTriggerInternalKey(key: string): key is TriggerInternalKey {
+  return TRIGGER_INTERNAL_KEYS.includes(key as TriggerInternalKey)
+}
 
 export enum BlockType {
   PARALLEL = 'parallel',
@@ -175,9 +187,13 @@ export const HTTP = {
 } as const
 
 export const AGENT = {
-  DEFAULT_MODEL: 'gpt-5',
-  DEFAULT_FUNCTION_TIMEOUT: 5000,
-  REQUEST_TIMEOUT: 120000,
+  DEFAULT_MODEL: 'claude-sonnet-4-5',
+  get DEFAULT_FUNCTION_TIMEOUT() {
+    return getMaxExecutionTimeout()
+  },
+  get REQUEST_TIMEOUT() {
+    return getMaxExecutionTimeout()
+  },
   CUSTOM_TOOL_PREFIX: 'custom_',
 } as const
 

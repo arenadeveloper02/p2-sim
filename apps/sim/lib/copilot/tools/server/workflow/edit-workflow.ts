@@ -15,8 +15,8 @@ import { buildCanonicalIndex, isCanonicalPair } from '@/lib/workflows/subblocks/
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { getAllBlocks, getBlock } from '@/blocks/registry'
 import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
+import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 import { EDGE, normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
-import { getUserPermissionConfig } from '@/executor/utils/permission-check'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
 
@@ -54,6 +54,7 @@ type SkippedItemType =
   | 'block_not_found'
   | 'invalid_block_type'
   | 'block_not_allowed'
+  | 'block_locked'
   | 'tool_not_allowed'
   | 'invalid_edge_target'
   | 'invalid_edge_source'
@@ -618,6 +619,7 @@ function createBlockFromParams(
     subBlocks: {},
     outputs: outputs,
     data: parentId ? { parentId, extent: 'parent' as const } : {},
+    locked: false,
   }
 
   // Add validated inputs as subBlocks
@@ -1520,6 +1522,24 @@ function applyOperationsToWorkflowState(
           break
         }
 
+        // Check if block is locked or inside a locked container
+        const deleteBlock = modifiedState.blocks[block_id]
+        const deleteParentId = deleteBlock.data?.parentId as string | undefined
+        const deleteParentLocked = deleteParentId
+          ? modifiedState.blocks[deleteParentId]?.locked
+          : false
+        if (deleteBlock.locked || deleteParentLocked) {
+          logSkippedItem(skippedItems, {
+            type: 'block_locked',
+            operationType: 'delete',
+            blockId: block_id,
+            reason: deleteParentLocked
+              ? `Block "${block_id}" is inside locked container "${deleteParentId}" and cannot be deleted`
+              : `Block "${block_id}" is locked and cannot be deleted`,
+          })
+          break
+        }
+
         // Find all child blocks to remove
         const blocksToRemove = new Set<string>([block_id])
         const findChildren = (parentId: string) => {
@@ -1554,6 +1574,21 @@ function applyOperationsToWorkflowState(
         }
 
         const block = modifiedState.blocks[block_id]
+
+        // Check if block is locked or inside a locked container
+        const editParentId = block.data?.parentId as string | undefined
+        const editParentLocked = editParentId ? modifiedState.blocks[editParentId]?.locked : false
+        if (block.locked || editParentLocked) {
+          logSkippedItem(skippedItems, {
+            type: 'block_locked',
+            operationType: 'edit',
+            blockId: block_id,
+            reason: editParentLocked
+              ? `Block "${block_id}" is inside locked container "${editParentId}" and cannot be edited`
+              : `Block "${block_id}" is locked and cannot be edited`,
+          })
+          break
+        }
 
         // Ensure block has essential properties
         if (!block.type) {
@@ -2115,6 +2150,19 @@ function applyOperationsToWorkflowState(
 
         // Handle nested nodes (for loops/parallels created from scratch)
         if (params.nestedNodes) {
+          // Defensive check: verify parent is not locked before adding children
+          // (Parent was just created with locked: false, but check for consistency)
+          const parentBlock = modifiedState.blocks[block_id]
+          if (parentBlock?.locked) {
+            logSkippedItem(skippedItems, {
+              type: 'block_locked',
+              operationType: 'add_nested_nodes',
+              blockId: block_id,
+              reason: `Container "${block_id}" is locked - cannot add nested nodes`,
+            })
+            break
+          }
+
           Object.entries(params.nestedNodes).forEach(([childId, childBlock]: [string, any]) => {
             // Validate childId is a valid string
             if (!isValidKey(childId)) {
@@ -2195,6 +2243,18 @@ function applyOperationsToWorkflowState(
           break
         }
 
+        // Check if subflow is locked
+        if (subflowBlock.locked) {
+          logSkippedItem(skippedItems, {
+            type: 'block_locked',
+            operationType: 'insert_into_subflow',
+            blockId: block_id,
+            reason: `Subflow "${subflowId}" is locked - cannot insert block "${block_id}"`,
+            details: { subflowId },
+          })
+          break
+        }
+
         if (subflowBlock.type !== 'loop' && subflowBlock.type !== 'parallel') {
           logger.error('Subflow block has invalid type', {
             subflowId,
@@ -2218,6 +2278,17 @@ function applyOperationsToWorkflowState(
           // Allow loops to be nested inside loops and parallels
           // Parallels can still be nested (removed restriction)
           // Note: Nested loops are now supported
+
+          // Check if existing block is locked
+          if (existingBlock.locked) {
+            logSkippedItem(skippedItems, {
+              type: 'block_locked',
+              operationType: 'insert_into_subflow',
+              blockId: block_id,
+              reason: `Block "${block_id}" is locked and cannot be moved into a subflow`,
+            })
+            break
+          }
 
           // Moving existing block into subflow - just update parent
           existingBlock.data = {
@@ -2364,6 +2435,30 @@ function applyOperationsToWorkflowState(
           break
         }
 
+        // Check if block is locked
+        if (block.locked) {
+          logSkippedItem(skippedItems, {
+            type: 'block_locked',
+            operationType: 'extract_from_subflow',
+            blockId: block_id,
+            reason: `Block "${block_id}" is locked and cannot be extracted from subflow`,
+          })
+          break
+        }
+
+        // Check if parent subflow is locked
+        const parentSubflow = modifiedState.blocks[subflowId]
+        if (parentSubflow?.locked) {
+          logSkippedItem(skippedItems, {
+            type: 'block_locked',
+            operationType: 'extract_from_subflow',
+            blockId: block_id,
+            reason: `Subflow "${subflowId}" is locked - cannot extract block "${block_id}"`,
+            details: { subflowId },
+          })
+          break
+        }
+
         // Verify it's actually a child of this subflow
         if (block.data?.parentId !== subflowId) {
           logger.warn('Block is not a child of specified subflow', {
@@ -2480,6 +2575,10 @@ async function validateWorkflowSelectorIds(
     for (const subBlockConfig of blockConfig.subBlocks) {
       if (!SELECTOR_TYPES.has(subBlockConfig.type)) continue
 
+      // Skip oauth-input - credentials are pre-validated before edit application
+      // This allows existing collaborator credentials to remain untouched
+      if (subBlockConfig.type === 'oauth-input') continue
+
       const subBlockValue = blockData.subBlocks?.[subBlockConfig.id]?.value
       if (!subBlockValue) continue
 
@@ -2543,6 +2642,295 @@ async function validateWorkflowSelectorIds(
   }
 
   return errors
+}
+
+/**
+ * Pre-validates credential and apiKey inputs in operations before they are applied.
+ * - Validates oauth-input (credential) IDs belong to the user
+ * - Filters out apiKey inputs for hosted models when isHosted is true
+ * - Also validates credentials and apiKeys in nestedNodes (blocks inside loop/parallel)
+ * Returns validation errors for any removed inputs.
+ */
+async function preValidateCredentialInputs(
+  operations: EditWorkflowOperation[],
+  context: { userId: string },
+  workflowState?: Record<string, unknown>
+): Promise<{ filteredOperations: EditWorkflowOperation[]; errors: ValidationError[] }> {
+  const { isHosted } = await import('@/lib/core/config/feature-flags')
+  const { getHostedModels } = await import('@/providers/utils')
+
+  const logger = createLogger('PreValidateCredentials')
+  const errors: ValidationError[] = []
+
+  // Collect credential and apiKey inputs that need validation/filtering
+  const credentialInputs: Array<{
+    operationIndex: number
+    blockId: string
+    blockType: string
+    fieldName: string
+    value: string
+    nestedBlockId?: string
+  }> = []
+
+  const hostedApiKeyInputs: Array<{
+    operationIndex: number
+    blockId: string
+    blockType: string
+    model: string
+    nestedBlockId?: string
+  }> = []
+
+  const hostedModelsLower = isHosted ? new Set(getHostedModels().map((m) => m.toLowerCase())) : null
+
+  /**
+   * Collect credential inputs from a block's inputs based on its block config
+   */
+  function collectCredentialInputs(
+    blockConfig: ReturnType<typeof getBlock>,
+    inputs: Record<string, unknown>,
+    opIndex: number,
+    blockId: string,
+    blockType: string,
+    nestedBlockId?: string
+  ) {
+    if (!blockConfig) return
+
+    for (const subBlockConfig of blockConfig.subBlocks) {
+      if (subBlockConfig.type !== 'oauth-input') continue
+
+      const inputValue = inputs[subBlockConfig.id]
+      if (!inputValue || typeof inputValue !== 'string' || inputValue.trim() === '') continue
+
+      credentialInputs.push({
+        operationIndex: opIndex,
+        blockId,
+        blockType,
+        fieldName: subBlockConfig.id,
+        value: inputValue,
+        nestedBlockId,
+      })
+    }
+  }
+
+  /**
+   * Check if apiKey should be filtered for a block with the given model
+   */
+  function collectHostedApiKeyInput(
+    inputs: Record<string, unknown>,
+    modelValue: string | undefined,
+    opIndex: number,
+    blockId: string,
+    blockType: string,
+    nestedBlockId?: string
+  ) {
+    if (!hostedModelsLower || !inputs.apiKey) return
+    if (!modelValue || typeof modelValue !== 'string') return
+
+    if (hostedModelsLower.has(modelValue.toLowerCase())) {
+      hostedApiKeyInputs.push({
+        operationIndex: opIndex,
+        blockId,
+        blockType,
+        model: modelValue,
+        nestedBlockId,
+      })
+    }
+  }
+
+  operations.forEach((op, opIndex) => {
+    // Process main block inputs
+    if (op.params?.inputs && op.params?.type) {
+      const blockConfig = getBlock(op.params.type)
+      if (blockConfig) {
+        // Collect credentials from main block
+        collectCredentialInputs(
+          blockConfig,
+          op.params.inputs as Record<string, unknown>,
+          opIndex,
+          op.block_id,
+          op.params.type
+        )
+
+        // Check for apiKey inputs on hosted models
+        let modelValue = (op.params.inputs as Record<string, unknown>).model as string | undefined
+
+        // For edit operations, if model is not being changed, check existing block's model
+        if (
+          !modelValue &&
+          op.operation_type === 'edit' &&
+          (op.params.inputs as Record<string, unknown>).apiKey &&
+          workflowState
+        ) {
+          const existingBlock = (workflowState.blocks as Record<string, unknown>)?.[op.block_id] as
+            | Record<string, unknown>
+            | undefined
+          const existingSubBlocks = existingBlock?.subBlocks as Record<string, unknown> | undefined
+          const existingModelSubBlock = existingSubBlocks?.model as
+            | Record<string, unknown>
+            | undefined
+          modelValue = existingModelSubBlock?.value as string | undefined
+        }
+
+        collectHostedApiKeyInput(
+          op.params.inputs as Record<string, unknown>,
+          modelValue,
+          opIndex,
+          op.block_id,
+          op.params.type
+        )
+      }
+    }
+
+    // Process nested nodes (blocks inside loop/parallel containers)
+    const nestedNodes = op.params?.nestedNodes as
+      | Record<string, Record<string, unknown>>
+      | undefined
+    if (nestedNodes) {
+      Object.entries(nestedNodes).forEach(([childId, childBlock]) => {
+        const childType = childBlock.type as string | undefined
+        const childInputs = childBlock.inputs as Record<string, unknown> | undefined
+        if (!childType || !childInputs) return
+
+        const childBlockConfig = getBlock(childType)
+        if (!childBlockConfig) return
+
+        // Collect credentials from nested block
+        collectCredentialInputs(
+          childBlockConfig,
+          childInputs,
+          opIndex,
+          op.block_id,
+          childType,
+          childId
+        )
+
+        // Check for apiKey inputs on hosted models in nested block
+        const modelValue = childInputs.model as string | undefined
+        collectHostedApiKeyInput(childInputs, modelValue, opIndex, op.block_id, childType, childId)
+      })
+    }
+  })
+
+  const hasCredentialsToValidate = credentialInputs.length > 0
+  const hasHostedApiKeysToFilter = hostedApiKeyInputs.length > 0
+
+  if (!hasCredentialsToValidate && !hasHostedApiKeysToFilter) {
+    return { filteredOperations: operations, errors }
+  }
+
+  // Deep clone operations so we can modify them
+  const filteredOperations = structuredClone(operations)
+
+  // Filter out apiKey inputs for hosted models and add validation errors
+  if (hasHostedApiKeysToFilter) {
+    logger.info('Filtering apiKey inputs for hosted models', { count: hostedApiKeyInputs.length })
+
+    for (const apiKeyInput of hostedApiKeyInputs) {
+      const op = filteredOperations[apiKeyInput.operationIndex]
+
+      // Handle nested block apiKey filtering
+      if (apiKeyInput.nestedBlockId) {
+        const nestedNodes = op.params?.nestedNodes as
+          | Record<string, Record<string, unknown>>
+          | undefined
+        const nestedBlock = nestedNodes?.[apiKeyInput.nestedBlockId]
+        const nestedInputs = nestedBlock?.inputs as Record<string, unknown> | undefined
+        if (nestedInputs?.apiKey) {
+          nestedInputs.apiKey = undefined
+          logger.debug('Filtered apiKey for hosted model in nested block', {
+            parentBlockId: apiKeyInput.blockId,
+            nestedBlockId: apiKeyInput.nestedBlockId,
+            model: apiKeyInput.model,
+          })
+
+          errors.push({
+            blockId: apiKeyInput.nestedBlockId,
+            blockType: apiKeyInput.blockType,
+            field: 'apiKey',
+            value: '[redacted]',
+            error: `Cannot set API key for hosted model "${apiKeyInput.model}" - API keys are managed by the platform when using hosted models`,
+          })
+        }
+      } else if (op.params?.inputs?.apiKey) {
+        // Handle main block apiKey filtering
+        op.params.inputs.apiKey = undefined
+        logger.debug('Filtered apiKey for hosted model', {
+          blockId: apiKeyInput.blockId,
+          model: apiKeyInput.model,
+        })
+
+        errors.push({
+          blockId: apiKeyInput.blockId,
+          blockType: apiKeyInput.blockType,
+          field: 'apiKey',
+          value: '[redacted]',
+          error: `Cannot set API key for hosted model "${apiKeyInput.model}" - API keys are managed by the platform when using hosted models`,
+        })
+      }
+    }
+  }
+
+  // Validate credential inputs
+  if (hasCredentialsToValidate) {
+    logger.info('Pre-validating credential inputs', {
+      credentialCount: credentialInputs.length,
+      userId: context.userId,
+    })
+
+    const allCredentialIds = credentialInputs.map((c) => c.value)
+    const validationResult = await validateSelectorIds('oauth-input', allCredentialIds, context)
+    const invalidSet = new Set(validationResult.invalid)
+
+    if (invalidSet.size > 0) {
+      for (const credInput of credentialInputs) {
+        if (!invalidSet.has(credInput.value)) continue
+
+        const op = filteredOperations[credInput.operationIndex]
+
+        // Handle nested block credential removal
+        if (credInput.nestedBlockId) {
+          const nestedNodes = op.params?.nestedNodes as
+            | Record<string, Record<string, unknown>>
+            | undefined
+          const nestedBlock = nestedNodes?.[credInput.nestedBlockId]
+          const nestedInputs = nestedBlock?.inputs as Record<string, unknown> | undefined
+          if (nestedInputs?.[credInput.fieldName]) {
+            delete nestedInputs[credInput.fieldName]
+            logger.info('Removed invalid credential from nested block', {
+              parentBlockId: credInput.blockId,
+              nestedBlockId: credInput.nestedBlockId,
+              field: credInput.fieldName,
+              invalidValue: credInput.value,
+            })
+          }
+        } else if (op.params?.inputs?.[credInput.fieldName]) {
+          // Handle main block credential removal
+          delete op.params.inputs[credInput.fieldName]
+          logger.info('Removed invalid credential from operation', {
+            blockId: credInput.blockId,
+            field: credInput.fieldName,
+            invalidValue: credInput.value,
+          })
+        }
+
+        const warningInfo = validationResult.warning ? `. ${validationResult.warning}` : ''
+        const errorBlockId = credInput.nestedBlockId ?? credInput.blockId
+        errors.push({
+          blockId: errorBlockId,
+          blockType: credInput.blockType,
+          field: credInput.fieldName,
+          value: credInput.value,
+          error: `Invalid credential ID "${credInput.value}" - credential does not exist or user doesn't have access${warningInfo}`,
+        })
+      }
+
+      logger.warn('Filtered out invalid credentials', {
+        invalidCount: invalidSet.size,
+      })
+    }
+  }
+
+  return { filteredOperations, errors }
 }
 
 async function getCurrentWorkflowStateFromDb(
@@ -2629,12 +3017,29 @@ export const editWorkflowServerTool: BaseServerTool<EditWorkflowParams, any> = {
     // Get permission config for the user
     const permissionConfig = context?.userId ? await getUserPermissionConfig(context.userId) : null
 
+    // Pre-validate credential and apiKey inputs before applying operations
+    // This filters out invalid credentials and apiKeys for hosted models
+    let operationsToApply = operations
+    const credentialErrors: ValidationError[] = []
+    if (context?.userId) {
+      const { filteredOperations, errors: credErrors } = await preValidateCredentialInputs(
+        operations,
+        { userId: context.userId },
+        workflowState
+      )
+      operationsToApply = filteredOperations
+      credentialErrors.push(...credErrors)
+    }
+
     // Apply operations directly to the workflow state
     const {
       state: modifiedWorkflowState,
       validationErrors,
       skippedItems,
-    } = applyOperationsToWorkflowState(workflowState, operations, permissionConfig)
+    } = applyOperationsToWorkflowState(workflowState, operationsToApply, permissionConfig)
+
+    // Add credential validation errors
+    validationErrors.push(...credentialErrors)
 
     // Get workspaceId for selector validation
     let workspaceId: string | undefined

@@ -144,11 +144,9 @@ export function DeployModal({
     refetch: refetchDeploymentInfo,
   } = useDeploymentInfo(workflowId, { enabled: open && isDeployed })
 
-  const {
-    data: versionsData,
-    isLoading: versionsLoading,
-    refetch: refetchVersions,
-  } = useDeploymentVersions(workflowId, { enabled: open })
+  const { data: versionsData, isLoading: versionsLoading } = useDeploymentVersions(workflowId, {
+    enabled: open,
+  })
 
   const {
     isLoading: isLoadingChat,
@@ -486,10 +484,6 @@ export function DeployModal({
     deleteTrigger?.click()
   }, [])
 
-  const handleFetchVersions = useCallback(async () => {
-    await refetchVersions()
-  }, [refetchVersions])
-
   const isSubmitting = deployMutation.isPending
   const isUndeploying = undeployMutation.isPending
 
@@ -553,7 +547,6 @@ export function DeployModal({
                   versionsLoading={versionsLoading}
                   onPromoteToLive={handlePromoteToLive}
                   onLoadDeploymentComplete={handleCloseModal}
-                  fetchVersions={handleFetchVersions}
                 />
               </ModalTabsContent>
 

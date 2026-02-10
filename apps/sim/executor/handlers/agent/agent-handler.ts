@@ -6,8 +6,20 @@ import { createMcpToolId } from '@/lib/mcp/utils'
 import { refreshTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
+import {
+  validateBlockType,
+  validateCustomToolsAllowed,
+  validateMcpToolsAllowed,
+  validateModelProvider,
+  validateSkillsAllowed,
+} from '@/ee/access-control/utils/permission-check'
 import { AGENT, BlockType, DEFAULTS, REFERENCE, stripCustomToolPrefix } from '@/executor/constants'
 import { memoryService } from '@/executor/handlers/agent/memory'
+import {
+  buildLoadSkillTool,
+  buildSkillsSystemPromptSection,
+  resolveSkillMetadata,
+} from '@/executor/handlers/agent/skills-resolver'
 import type {
   AgentInputs,
   Message,
@@ -18,12 +30,6 @@ import type { BlockHandler, ExecutionContext, StreamingExecution } from '@/execu
 import { collectBlockData } from '@/executor/utils/block-data'
 import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
 import { stringifyJSON } from '@/executor/utils/json'
-import {
-  validateBlockType,
-  validateCustomToolsAllowed,
-  validateMcpToolsAllowed,
-  validateModelProvider,
-} from '@/executor/utils/permission-check'
 import { executeProviderRequest } from '@/providers'
 import { getProviderFromModel, transformBlockTool } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
@@ -57,6 +63,19 @@ export class AgentBlockHandler implements BlockHandler {
 
     const providerId = getProviderFromModel(model)
     const formattedTools = await this.formatTools(ctx, filteredInputs.tools || [])
+
+    // Resolve skill metadata for progressive disclosure
+    const skillInputs = filteredInputs.skills ?? []
+    let skillMetadata: Array<{ name: string; description: string }> = []
+    if (skillInputs.length > 0 && ctx.workspaceId) {
+      await validateSkillsAllowed(ctx.userId, ctx)
+      skillMetadata = await resolveSkillMetadata(skillInputs, ctx.workspaceId)
+      if (skillMetadata.length > 0) {
+        const skillNames = skillMetadata.map((s) => s.name)
+        formattedTools.push(buildLoadSkillTool(skillNames))
+      }
+    }
+
     const streamingConfig = this.getStreamingConfig(ctx, block)
 
     // Log initial systemPrompt and userPrompt
@@ -358,6 +377,7 @@ export class AgentBlockHandler implements BlockHandler {
             _context: {
               workflowId: ctx.workflowId,
               workspaceId: ctx.workspaceId,
+              userId: ctx.userId,
               isDeployedContext: ctx.isDeployedContext,
             },
           },
@@ -408,6 +428,9 @@ export class AgentBlockHandler implements BlockHandler {
       }
       if (ctx.workflowId) {
         params.workflowId = ctx.workflowId
+      }
+      if (ctx.userId) {
+        params.userId = ctx.userId
       }
 
       const url = buildAPIUrl('/api/tools/custom', params)
@@ -519,7 +542,9 @@ export class AgentBlockHandler implements BlockHandler {
       usageControl: tool.usageControl || 'auto',
       executeFunction: async (callParams: Record<string, any>) => {
         const headers = await buildAuthHeaders()
-        const execUrl = buildAPIUrl('/api/mcp/tools/execute')
+        const execParams: Record<string, string> = {}
+        if (ctx.userId) execParams.userId = ctx.userId
+        const execUrl = buildAPIUrl('/api/mcp/tools/execute', execParams)
 
         const execResponse = await fetch(execUrl.toString(), {
           method: 'POST',
@@ -628,6 +653,7 @@ export class AgentBlockHandler implements BlockHandler {
       serverId,
       workspaceId: ctx.workspaceId,
       workflowId: ctx.workflowId,
+      ...(ctx.userId ? { userId: ctx.userId } : {}),
     })
 
     const maxAttempts = 2
@@ -702,7 +728,9 @@ export class AgentBlockHandler implements BlockHandler {
       usageControl: tool.usageControl || 'auto',
       executeFunction: async (callParams: Record<string, any>) => {
         const headers = await buildAuthHeaders()
-        const execUrl = buildAPIUrl('/api/mcp/tools/execute')
+        const discoverExecParams: Record<string, string> = {}
+        if (ctx.userId) discoverExecParams.userId = ctx.userId
+        const execUrl = buildAPIUrl('/api/mcp/tools/execute', discoverExecParams)
 
         const execResponse = await fetch(execUrl.toString(), {
           method: 'POST',
@@ -775,6 +803,7 @@ export class AgentBlockHandler implements BlockHandler {
   private async buildMessages(
     ctx: ExecutionContext,
     inputs: AgentInputs,
+    skillMetadata: Array<{ name: string; description: string }>,
     blockId: string
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
@@ -1139,6 +1168,20 @@ export class AgentBlockHandler implements BlockHandler {
       assistantMessages: messages.filter((m) => m.role === 'assistant').length,
     })
 
+    // 8. Inject skill metadata into the system message (progressive disclosure)
+    if (skillMetadata.length > 0) {
+      const skillSection = buildSkillsSystemPromptSection(skillMetadata)
+      const systemIdx = messages.findIndex((m) => m.role === 'system')
+      if (systemIdx >= 0) {
+        messages[systemIdx] = {
+          ...messages[systemIdx],
+          content: messages[systemIdx].content + skillSection,
+        }
+      } else {
+        messages.unshift({ role: 'system', content: skillSection.trim() })
+      }
+    }
+
     return messages.length > 0 ? messages : undefined
   }
 
@@ -1208,24 +1251,17 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
-    // Find first system message
     const firstSystemIndex = messages.findIndex((msg) => msg.role === 'system')
 
     if (firstSystemIndex === -1) {
-      // No system message exists - add at position 0
       messages.unshift({ role: 'system', content })
     } else if (firstSystemIndex === 0) {
-      // System message already at position 0 - replace it
-      // Explicit systemPrompt parameter takes precedence over memory/messages
       messages[0] = { role: 'system', content }
     } else {
-      // System message exists but not at position 0 - move it to position 0
-      // and update with new content
       messages.splice(firstSystemIndex, 1)
       messages.unshift({ role: 'system', content })
     }
 
-    // Remove any additional system messages (keep only the first one)
     for (let i = messages.length - 1; i >= 1; i--) {
       if (messages[i].role === 'system') {
         messages.splice(i, 1)
@@ -1280,8 +1316,14 @@ export class AgentBlockHandler implements BlockHandler {
       systemPrompt: validMessages ? undefined : inputs.systemPrompt,
       context: validMessages ? undefined : stringifyJSON(messages),
       tools: formattedTools,
-      temperature: inputs.temperature,
-      maxTokens: normalizedMaxTokens,
+      temperature:
+        inputs.temperature != null && inputs.temperature !== ''
+          ? Number(inputs.temperature)
+          : undefined,
+      maxTokens:
+        inputs.maxTokens != null && normalizedMaxTokens !== ''
+          ? Number(inputs.maxTokens)
+          : undefined,
       apiKey: inputs.apiKey,
       azureEndpoint: inputs.azureEndpoint,
       azureApiVersion: inputs.azureApiVersion,
@@ -1295,7 +1337,7 @@ export class AgentBlockHandler implements BlockHandler {
       workflowId: ctx.workflowId,
       workspaceId: ctx.workspaceId,
       stream: streaming,
-      messages,
+      messages: messages?.map(({ executionId, ...msg }) => msg),
       environmentVariables: ctx.environmentVariables || {},
       workflowVariables: ctx.workflowVariables || {},
       blockData,
@@ -1304,6 +1346,7 @@ export class AgentBlockHandler implements BlockHandler {
       // Some providers (e.g. OpenAI GPT-5.x) 400 on reasoning_effort: ''
       reasoningEffort: inputs.reasoningEffort || undefined,
       verbosity: inputs.verbosity || undefined,
+      thinkingLevel: inputs.thinkingLevel,
     }
   }
 
@@ -1363,6 +1406,7 @@ export class AgentBlockHandler implements BlockHandler {
         responseFormat: providerRequest.responseFormat,
         workflowId: providerRequest.workflowId,
         workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
         stream: providerRequest.stream,
         messages: 'messages' in providerRequest ? providerRequest.messages : undefined,
         environmentVariables: ctx.environmentVariables || {},
@@ -1372,6 +1416,7 @@ export class AgentBlockHandler implements BlockHandler {
         isDeployedContext: ctx.isDeployedContext,
         reasoningEffort: providerRequest.reasoningEffort,
         verbosity: providerRequest.verbosity,
+        thinkingLevel: providerRequest.thinkingLevel,
       })
 
       return this.processProviderResponse(response, block, responseFormat)
@@ -1389,8 +1434,6 @@ export class AgentBlockHandler implements BlockHandler {
 
     logger.info(`[${requestId}] Resolving Vertex AI credential: ${credentialId}`)
 
-    // Get the credential - we need to find the owner
-    // Since we're in a workflow context, we can query the credential directly
     const credential = await db.query.account.findFirst({
       where: eq(account.id, credentialId),
     })
@@ -1399,7 +1442,6 @@ export class AgentBlockHandler implements BlockHandler {
       throw new Error(`Vertex AI credential not found: ${credentialId}`)
     }
 
-    // Refresh the token if needed
     const { accessToken } = await refreshTokenIfNeeded(requestId, credential, credentialId)
 
     if (!accessToken) {

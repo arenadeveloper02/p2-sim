@@ -40,6 +40,7 @@ import { useCustomTools } from '@/hooks/queries/custom-tools'
 import { useMcpServers, useMcpToolsQuery } from '@/hooks/queries/mcp'
 import { useCredentialName } from '@/hooks/queries/oauth-credentials'
 import { useReactivateSchedule, useScheduleInfo } from '@/hooks/queries/schedules'
+import { useSkills } from '@/hooks/queries/skills'
 import { useDeployChildWorkflow } from '@/hooks/queries/workflows'
 import { useSelectorDisplayName } from '@/hooks/use-selector-display-name'
 import { useVariablesStore } from '@/stores/panel'
@@ -621,6 +622,48 @@ const SubBlockRow = memo(function SubBlockRow({
     return `${toolNames[0]}, ${toolNames[1]} +${toolNames.length - 2}`
   }, [subBlock?.type, rawValue, customTools, workspaceId])
 
+  /**
+   * Hydrates skill references to display names.
+   * Resolves skill IDs to their current names from the skills query.
+   */
+  const { data: workspaceSkills = [] } = useSkills(workspaceId || '')
+
+  const skillsDisplayValue = useMemo(() => {
+    if (subBlock?.type !== 'skill-input' || !Array.isArray(rawValue) || rawValue.length === 0) {
+      return null
+    }
+
+    interface StoredSkill {
+      skillId: string
+      name?: string
+    }
+
+    const skillNames = rawValue
+      .map((skill: StoredSkill) => {
+        if (!skill || typeof skill !== 'object') return null
+
+        // Priority 1: Resolve skill name from the skills query (fresh data)
+        if (skill.skillId) {
+          const foundSkill = workspaceSkills.find((s) => s.id === skill.skillId)
+          if (foundSkill?.name) return foundSkill.name
+        }
+
+        // Priority 2: Fall back to stored name (for deleted skills)
+        if (skill.name && typeof skill.name === 'string') return skill.name
+
+        // Priority 3: Use skillId as last resort
+        if (skill.skillId) return skill.skillId
+
+        return null
+      })
+      .filter((name): name is string => !!name)
+
+    if (skillNames.length === 0) return null
+    if (skillNames.length === 1) return skillNames[0]
+    if (skillNames.length === 2) return `${skillNames[0]}, ${skillNames[1]}`
+    return `${skillNames[0]}, ${skillNames[1]} +${skillNames.length - 2}`
+  }, [subBlock?.type, rawValue, workspaceSkills])
+
   const isPasswordField = subBlock?.password === true
   const maskedValue = isPasswordField && value && value !== '-' ? '•••' : null
 
@@ -630,6 +673,7 @@ const SubBlockRow = memo(function SubBlockRow({
     dropdownLabel ||
     variablesDisplayValue ||
     toolsDisplayValue ||
+    skillsDisplayValue ||
     knowledgeBaseDisplayName ||
     workflowSelectionName ||
     mcpServerDisplayName ||
@@ -675,6 +719,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     currentWorkflow,
     activeWorkflowId,
     isEnabled,
+    isLocked,
     handleClick,
     hasRing,
     ringStyles,
@@ -1103,7 +1148,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
               {name}
             </span>
           </div>
-          <div className='relative z-10 flex flex-shrink-0 items-center gap-2'>
+          <div className='relative z-10 flex flex-shrink-0 items-center gap-1'>
             {isWorkflowSelector &&
               childWorkflowId &&
               typeof childIsDeployed === 'boolean' &&
@@ -1136,6 +1181,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                 </Tooltip.Root>
               )}
             {!isEnabled && <Badge variant='gray-secondary'>disabled</Badge>}
+            {isLocked && <Badge variant='gray-secondary'>locked</Badge>}
 
             {type === 'schedule' && shouldShowScheduleBadge && scheduleInfo?.isDisabled && (
               <Tooltip.Root>

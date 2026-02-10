@@ -26,7 +26,7 @@ import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/
 interface Field {
   id: string
   name: string
-  type?: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'files'
+  type?: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'file[]'
   value?: string
   description?: string
   collapsed?: boolean
@@ -57,7 +57,7 @@ const TYPE_OPTIONS: ComboboxOption[] = [
   { label: 'Boolean', value: 'boolean' },
   { label: 'Object', value: 'object' },
   { label: 'Array', value: 'array' },
-  { label: 'Files', value: 'files' },
+  { label: 'Files', value: 'file[]' },
 ]
 
 /**
@@ -310,7 +310,11 @@ export function FieldFormat({
         <span className='block truncate font-medium text-[14px] text-[var(--text-tertiary)]'>
           {field.name || `${title} ${index + 1}`}
         </span>
-        {field.name && showType && <Badge size='sm'>{field.type}</Badge>}
+        {field.name && showType && (
+          <Badge variant='type' size='sm'>
+            {field.type}
+          </Badge>
+        )}
       </div>
       <div className='flex items-center gap-[8px] pl-[8px]' onClick={(e) => e.stopPropagation()}>
         <Button variant='ghost' onClick={addField} disabled={isReadOnly} className='h-auto p-0'>
@@ -444,7 +448,7 @@ export function FieldFormat({
       )
     }
 
-    if (field.type === 'files') {
+    if (field.type === 'file[]') {
       const lineCount = fieldValue.split('\n').length
       const gutterWidth = calculateGutterWidth(lineCount)
 

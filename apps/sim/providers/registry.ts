@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { anthropicProvider } from '@/providers/anthropic'
+import { azureAnthropicProvider } from '@/providers/azure-anthropic'
 import { azureOpenAIProvider } from '@/providers/azure-openai'
 import { bedrockProvider } from '@/providers/bedrock'
 import { cerebrasProvider } from '@/providers/cerebras'
@@ -21,6 +22,7 @@ const logger = createLogger('ProviderRegistry')
 const providerRegistry: Record<ProviderId, ProviderConfig> = {
   openai: openaiProvider,
   anthropic: anthropicProvider,
+  'azure-anthropic': azureAnthropicProvider,
   google: googleProvider,
   vertex: vertexProvider,
   deepseek: deepseekProvider,

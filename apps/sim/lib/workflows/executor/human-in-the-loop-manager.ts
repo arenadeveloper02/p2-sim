@@ -4,11 +4,13 @@ import { pausedExecutions, resumeQueue, workflowExecutionLogs } from '@sim/db/sc
 import { createLogger } from '@sim/logger'
 import { and, asc, desc, eq, inArray, lt, type SQL, sql } from 'drizzle-orm'
 import type { Edge } from 'reactflow'
+import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionResult, PausePoint, SerializedSnapshot } from '@/executor/types'
+import { filterOutputForLog } from '@/executor/utils/output-filter'
 import type { SerializedConnection } from '@/serializer/types'
 
 const logger = createLogger('HumanInTheLoopManager')
@@ -576,13 +578,11 @@ export class PauseResumeManager {
             log.blockId === contextId
         )
         if (blockLogIndex !== -1) {
-          // Filter output for logging (exclude internal fields and response)
-          const filteredOutput: Record<string, unknown> = {}
-          for (const [key, value] of Object.entries(mergedOutput)) {
-            if (key.startsWith('_')) continue
-            if (key === 'response') continue
-            filteredOutput[key] = value
-          }
+          // Filter output for logging using shared utility
+          // 'resume' is redundant with url/resumeEndpoint so we filter it out
+          const filteredOutput = filterOutputForLog('human_in_the_loop', mergedOutput, {
+            additionalHiddenKeys: ['resume'],
+          })
           stateCopy.blockLogs[blockLogIndex] = {
             ...stateCopy.blockLogs[blockLogIndex],
             blockId: stateBlockKey,
@@ -772,14 +772,39 @@ export class PauseResumeManager {
       actorUserId: metadata.userId,
     })
 
-    return await executeWorkflowCore({
-      snapshot: resumeSnapshot,
-      callbacks: {},
-      loggingSession,
-      skipLogCreation: true, // Reuse existing log entry
-      includeFileBase64: true, // Enable base64 hydration
-      base64MaxBytes: undefined, // Use default limit
-    })
+    const timeoutController = createTimeoutAbortController(
+      preprocessingResult.executionTimeout?.async
+    )
+
+    let result: ExecutionResult
+    try {
+      result = await executeWorkflowCore({
+        snapshot: resumeSnapshot,
+        callbacks: {},
+        loggingSession,
+        skipLogCreation: true, // Reuse existing log entry
+        includeFileBase64: true, // Enable base64 hydration
+        base64MaxBytes: undefined, // Use default limit
+        abortSignal: timeoutController.signal,
+      })
+    } finally {
+      timeoutController.cleanup()
+    }
+
+    if (
+      result.status === 'cancelled' &&
+      timeoutController.isTimedOut() &&
+      timeoutController.timeoutMs
+    ) {
+      const timeoutErrorMessage = getTimeoutErrorMessage(null, timeoutController.timeoutMs)
+      logger.info('Resume execution timed out', {
+        resumeExecutionId,
+        timeoutMs: timeoutController.timeoutMs,
+      })
+      await loggingSession.markAsFailed(timeoutErrorMessage)
+    }
+
+    return result
   }
 
   private static async markResumeCompleted(args: {

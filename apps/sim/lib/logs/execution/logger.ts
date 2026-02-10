@@ -33,6 +33,7 @@ import type {
   WorkflowExecutionSnapshot,
   WorkflowState,
 } from '@/lib/logs/types'
+import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 
 export interface ToolCall {
   name: string
@@ -277,10 +278,14 @@ export class ExecutionLogger implements IExecutionLoggerService {
       models: costSummary.models,
     }
 
-    const totalDuration =
+    const rawDurationMs =
       isResume && existingLog?.startedAt
         ? new Date(endedAt).getTime() - new Date(existingLog.startedAt).getTime()
         : totalDurationMs
+    const totalDuration =
+      typeof rawDurationMs === 'number' && Number.isFinite(rawDurationMs)
+        ? Math.max(0, Math.round(rawDurationMs))
+        : 0
 
     const [updatedLog] = await db
       .update(workflowExecutionLogs)
@@ -311,7 +316,10 @@ export class ExecutionLogger implements IExecutionLoggerService {
     }
 
     try {
-      const [wf] = await db.select().from(workflow).where(eq(workflow.id, updatedLog.workflowId))
+      // Skip workflow lookup if workflow was deleted
+      const wf = updatedLog.workflowId
+        ? (await db.select().from(workflow).where(eq(workflow.id, updatedLog.workflowId)))[0]
+        : undefined
       if (wf) {
         const [usr] = await db
           .select({ id: userTable.id, email: userTable.email, name: userTable.name })
@@ -479,7 +487,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
    * Maintains same logic as original execution logger for billing consistency
    */
   private async updateUserStats(
-    workflowId: string,
+    workflowId: string | null,
     costSummary: {
       totalCost: number
       totalInputCost: number
@@ -512,8 +520,13 @@ export class ExecutionLogger implements IExecutionLoggerService {
       return
     }
 
+    if (!workflowId) {
+      logger.debug('Workflow was deleted, skipping user stats update')
+      return
+    }
+
     try {
-      // Get the workflow record to get the userId
+      // Get the workflow record to get workspace and fallback userId
       const [workflowRecord] = await db
         .select()
         .from(workflow)
@@ -525,7 +538,12 @@ export class ExecutionLogger implements IExecutionLoggerService {
         return
       }
 
-      const userId = workflowRecord.userId
+      let billingUserId: string | null = null
+      if (workflowRecord.workspaceId) {
+        billingUserId = await getWorkspaceBilledAccountUserId(workflowRecord.workspaceId)
+      }
+
+      const userId = billingUserId || workflowRecord.userId
       const costToStore = costSummary.totalCost
 
       const existing = await db.select().from(userStats).where(eq(userStats.userId, userId))

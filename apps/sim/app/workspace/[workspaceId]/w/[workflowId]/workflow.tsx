@@ -47,6 +47,7 @@ import {
   useCurrentWorkflow,
   useNodeUtilities,
   useShiftSelectionLock,
+  useWorkflowExecution,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import {
   calculateContainerDimensions,
@@ -54,7 +55,10 @@ import {
   clearDragHighlights,
   computeClampedPositionUpdates,
   estimateBlockDimensions,
+  filterProtectedBlocks,
   getClampedPositionForNode,
+  isBlockProtected,
+  isEdgeProtected,
   isInEditableElement,
   resolveParentChildSelectionConflicts,
   validateTriggerPaste,
@@ -66,7 +70,6 @@ import { useWorkspaceEnvironment } from '@/hooks/queries/environment'
 import { useAutoConnect, useSnapToGridSize } from '@/hooks/queries/general-settings'
 import { useCanvasViewport } from '@/hooks/use-canvas-viewport'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
-import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useStreamCleanup } from '@/hooks/use-stream-cleanup'
 import { useCanvasModeStore } from '@/stores/canvas-mode'
 import { useChatStore } from '@/stores/chat/store'
@@ -100,33 +103,13 @@ const logger = createLogger('Workflow')
 const DEFAULT_PASTE_OFFSET = { x: 50, y: 50 }
 
 /**
- * Gets the center of the current viewport in flow coordinates
- */
-function getViewportCenter(
-  screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number }
-): { x: number; y: number } {
-  const flowContainer = document.querySelector('.react-flow')
-  if (!flowContainer) {
-    return screenToFlowPosition({
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
-    })
-  }
-  const rect = flowContainer.getBoundingClientRect()
-  return screenToFlowPosition({
-    x: rect.width / 2,
-    y: rect.height / 2,
-  })
-}
-
-/**
  * Calculates the offset to paste blocks at viewport center
  */
 function calculatePasteOffset(
   clipboard: {
     blocks: Record<string, { position: { x: number; y: number }; type: string; height?: number }>
   } | null,
-  screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number }
+  viewportCenter: { x: number; y: number }
 ): { x: number; y: number } {
   if (!clipboard) return DEFAULT_PASTE_OFFSET
 
@@ -154,8 +137,6 @@ function calculatePasteOffset(
     })
   )
   const clipboardCenter = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
-
-  const viewportCenter = getViewportCenter(screenToFlowPosition)
 
   return {
     x: viewportCenter.x - clipboardCenter.x,
@@ -266,7 +247,7 @@ const WorkflowContent = React.memo(() => {
   const router = useRouter()
   const reactFlowInstance = useReactFlow()
   const { screenToFlowPosition, getNodes, setNodes, getIntersectingNodes } = reactFlowInstance
-  const { fitViewToBounds } = useCanvasViewport(reactFlowInstance)
+  const { fitViewToBounds, getViewportCenter } = useCanvasViewport(reactFlowInstance)
   const { emitCursorUpdate } = useSocket()
 
   const workspaceId = params.workspaceId as string
@@ -325,6 +306,8 @@ const WorkflowContent = React.memo(() => {
 
   const showTrainingModal = useCopilotTrainingStore((state) => state.showModal)
 
+  const { handleRunFromBlock, handleRunUntilBlock } = useWorkflowExecution()
+
   const snapToGridSize = useSnapToGridSize()
   const snapToGrid = snapToGridSize > 0
 
@@ -338,8 +321,6 @@ const WorkflowContent = React.memo(() => {
   const isVariablesOpen = useVariablesStore((state) => state.isOpen)
   const isChatOpen = useChatStore((state) => state.isChatOpen)
 
-  // Permission config for invitation control
-  const { isInvitationsDisabled } = usePermissionConfig()
   const snapGrid: [number, number] = useMemo(
     () => [snapToGridSize, snapToGridSize],
     [snapToGridSize]
@@ -565,6 +546,7 @@ const WorkflowContent = React.memo(() => {
     collaborativeBatchRemoveBlocks,
     collaborativeBatchToggleBlockEnabled,
     collaborativeBatchToggleBlockHandles,
+    collaborativeBatchToggleLocked,
     undo,
     redo,
   } = useCollaborativeWorkflow()
@@ -758,13 +740,16 @@ const WorkflowContent = React.memo(() => {
     [collaborativeBatchAddBlocks, setSelectedEdges, setPendingSelection]
   )
 
-  const { activeBlockIds, pendingBlocks, isDebugging } = useExecutionStore(
-    useShallow((state) => ({
-      activeBlockIds: state.activeBlockIds,
-      pendingBlocks: state.pendingBlocks,
-      isDebugging: state.isDebugging,
-    }))
-  )
+  const { activeBlockIds, pendingBlocks, isDebugging, isExecuting, getLastExecutionSnapshot } =
+    useExecutionStore(
+      useShallow((state) => ({
+        activeBlockIds: state.activeBlockIds,
+        pendingBlocks: state.pendingBlocks,
+        isDebugging: state.isDebugging,
+        isExecuting: state.isExecuting,
+        getLastExecutionSnapshot: state.getLastExecutionSnapshot,
+      }))
+    )
 
   const [dragStartParentId, setDragStartParentId] = useState<string | null>(null)
 
@@ -901,11 +886,125 @@ const WorkflowContent = React.memo(() => {
    * Consolidates shared logic for context paste, duplicate, and keyboard paste.
    */
   const executePasteOperation = useCallback(
-    (operation: 'paste' | 'duplicate', pasteOffset: { x: number; y: number }) => {
-      const pasteData = preparePasteData(pasteOffset)
+    (
+      operation: 'paste' | 'duplicate',
+      pasteOffset: { x: number; y: number },
+      targetContainer?: {
+        loopId: string
+        loopPosition: { x: number; y: number }
+        dimensions: { width: number; height: number }
+      } | null,
+      pasteTargetPosition?: { x: number; y: number }
+    ) => {
+      // For context menu paste into a subflow, calculate offset to center blocks at click position
+      // Skip click-position centering if blocks came from inside a subflow (relative coordinates)
+      let effectiveOffset = pasteOffset
+      if (targetContainer && pasteTargetPosition && clipboard) {
+        const clipboardBlocks = Object.values(clipboard.blocks)
+        // Only use click-position centering for top-level blocks (absolute coordinates)
+        // Blocks with parentId have relative positions that can't be mixed with absolute click position
+        const hasNestedBlocks = clipboardBlocks.some((b) => b.data?.parentId)
+        if (clipboardBlocks.length > 0 && !hasNestedBlocks) {
+          const minX = Math.min(...clipboardBlocks.map((b) => b.position.x))
+          const maxX = Math.max(
+            ...clipboardBlocks.map((b) => b.position.x + BLOCK_DIMENSIONS.FIXED_WIDTH)
+          )
+          const minY = Math.min(...clipboardBlocks.map((b) => b.position.y))
+          const maxY = Math.max(
+            ...clipboardBlocks.map((b) => b.position.y + BLOCK_DIMENSIONS.MIN_HEIGHT)
+          )
+          const clipboardCenter = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
+          effectiveOffset = {
+            x: pasteTargetPosition.x - clipboardCenter.x,
+            y: pasteTargetPosition.y - clipboardCenter.y,
+          }
+        }
+      }
+
+      const pasteData = preparePasteData(effectiveOffset)
       if (!pasteData) return
 
-      const pastedBlocksArray = Object.values(pasteData.blocks)
+      let pastedBlocksArray = Object.values(pasteData.blocks)
+
+      // If pasting into a subflow, adjust blocks to be children of that subflow
+      if (targetContainer) {
+        // Check if any pasted block is a trigger - triggers cannot be in subflows
+        const hasTrigger = pastedBlocksArray.some((b) => TriggerUtils.isTriggerBlock(b))
+        if (hasTrigger) {
+          addNotification({
+            level: 'error',
+            message: 'Triggers cannot be placed inside loop or parallel subflows.',
+            workflowId: activeWorkflowId || undefined,
+          })
+          return
+        }
+
+        // Check if any pasted block is a subflow - subflows cannot be nested
+        const hasSubflow = pastedBlocksArray.some((b) => b.type === 'loop' || b.type === 'parallel')
+        if (hasSubflow) {
+          addNotification({
+            level: 'error',
+            message: 'Subflows cannot be nested inside other subflows.',
+            workflowId: activeWorkflowId || undefined,
+          })
+          return
+        }
+
+        // Adjust each block's position to be relative to the container and set parentId
+        pastedBlocksArray = pastedBlocksArray.map((block) => {
+          // For blocks already nested (have parentId), positions are already relative - use as-is
+          // For top-level blocks, convert absolute position to relative by subtracting container position
+          const wasNested = Boolean(block.data?.parentId)
+          const relativePosition = wasNested
+            ? { x: block.position.x, y: block.position.y }
+            : {
+                x: block.position.x - targetContainer.loopPosition.x,
+                y: block.position.y - targetContainer.loopPosition.y,
+              }
+
+          // Clamp position to keep block inside container (below header)
+          const clampedPosition = {
+            x: Math.max(
+              CONTAINER_DIMENSIONS.LEFT_PADDING,
+              Math.min(
+                relativePosition.x,
+                targetContainer.dimensions.width -
+                  BLOCK_DIMENSIONS.FIXED_WIDTH -
+                  CONTAINER_DIMENSIONS.RIGHT_PADDING
+              )
+            ),
+            y: Math.max(
+              CONTAINER_DIMENSIONS.HEADER_HEIGHT + CONTAINER_DIMENSIONS.TOP_PADDING,
+              Math.min(
+                relativePosition.y,
+                targetContainer.dimensions.height -
+                  BLOCK_DIMENSIONS.MIN_HEIGHT -
+                  CONTAINER_DIMENSIONS.BOTTOM_PADDING
+              )
+            ),
+          }
+
+          return {
+            ...block,
+            position: clampedPosition,
+            data: {
+              ...block.data,
+              parentId: targetContainer.loopId,
+              extent: 'parent',
+            },
+          }
+        })
+
+        // Update pasteData.blocks with the modified blocks
+        pasteData.blocks = pastedBlocksArray.reduce(
+          (acc, block) => {
+            acc[block.id] = block
+            return acc
+          },
+          {} as Record<string, (typeof pastedBlocksArray)[0]>
+        )
+      }
+
       const validation = validateTriggerPaste(pastedBlocksArray, blocks, operation)
       if (!validation.isValid) {
         addNotification({
@@ -926,21 +1025,46 @@ const WorkflowContent = React.memo(() => {
         pasteData.parallels,
         pasteData.subBlockValues
       )
+
+      // Resize container if we pasted into a subflow
+      if (targetContainer) {
+        resizeLoopNodesWrapper()
+      }
     },
     [
       preparePasteData,
       blocks,
+      clipboard,
       addNotification,
       activeWorkflowId,
       collaborativeBatchAddBlocks,
       setPendingSelection,
+      resizeLoopNodesWrapper,
     ]
   )
 
   const handleContextPaste = useCallback(() => {
     if (!hasClipboard()) return
-    executePasteOperation('paste', calculatePasteOffset(clipboard, screenToFlowPosition))
-  }, [hasClipboard, executePasteOperation, clipboard, screenToFlowPosition])
+
+    // Convert context menu position to flow coordinates and check if inside a subflow
+    const flowPosition = screenToFlowPosition(contextMenuPosition)
+    const targetContainer = isPointInLoopNode(flowPosition)
+
+    executePasteOperation(
+      'paste',
+      calculatePasteOffset(clipboard, getViewportCenter()),
+      targetContainer,
+      flowPosition // Pass the click position so blocks are centered at where user right-clicked
+    )
+  }, [
+    hasClipboard,
+    executePasteOperation,
+    clipboard,
+    getViewportCenter,
+    screenToFlowPosition,
+    contextMenuPosition,
+    isPointInLoopNode,
+  ])
 
   const handleContextDuplicate = useCallback(() => {
     copyBlocks(contextMenuBlocks.map((b) => b.id))
@@ -949,8 +1073,27 @@ const WorkflowContent = React.memo(() => {
 
   const handleContextDelete = useCallback(() => {
     const blockIds = contextMenuBlocks.map((b) => b.id)
-    collaborativeBatchRemoveBlocks(blockIds)
-  }, [contextMenuBlocks, collaborativeBatchRemoveBlocks])
+    const { deletableIds, protectedIds, allProtected } = filterProtectedBlocks(blockIds, blocks)
+
+    if (protectedIds.length > 0) {
+      if (allProtected) {
+        addNotification({
+          level: 'info',
+          message: 'Cannot delete locked blocks or blocks inside locked containers',
+          workflowId: activeWorkflowId || undefined,
+        })
+        return
+      }
+      addNotification({
+        level: 'info',
+        message: `Skipped ${protectedIds.length} protected block(s)`,
+        workflowId: activeWorkflowId || undefined,
+      })
+    }
+    if (deletableIds.length > 0) {
+      collaborativeBatchRemoveBlocks(deletableIds)
+    }
+  }, [contextMenuBlocks, collaborativeBatchRemoveBlocks, addNotification, activeWorkflowId, blocks])
 
   const handleContextToggleEnabled = useCallback(() => {
     const blockIds = contextMenuBlocks.map((block) => block.id)
@@ -961,6 +1104,11 @@ const WorkflowContent = React.memo(() => {
     const blockIds = contextMenuBlocks.map((block) => block.id)
     collaborativeBatchToggleBlockHandles(blockIds)
   }, [contextMenuBlocks, collaborativeBatchToggleBlockHandles])
+
+  const handleContextToggleLocked = useCallback(() => {
+    const blockIds = contextMenuBlocks.map((block) => block.id)
+    collaborativeBatchToggleLocked(blockIds)
+  }, [contextMenuBlocks, collaborativeBatchToggleLocked])
 
   const handleContextRemoveFromSubflow = useCallback(() => {
     const blocksToRemove = contextMenuBlocks.filter(
@@ -984,9 +1132,53 @@ const WorkflowContent = React.memo(() => {
   const handleContextRename = useCallback(() => {
     if (contextMenuBlocks.length === 1) {
       usePanelEditorStore.getState().setCurrentBlockId(contextMenuBlocks[0].id)
-      usePanelEditorStore.getState().setShouldFocusRename(true)
+      usePanelEditorStore.getState().triggerRename()
     }
   }, [contextMenuBlocks])
+
+  const handleContextRunFromBlock = useCallback(() => {
+    if (contextMenuBlocks.length !== 1) return
+    const blockId = contextMenuBlocks[0].id
+    handleRunFromBlock(blockId, workflowIdParam)
+  }, [contextMenuBlocks, workflowIdParam, handleRunFromBlock])
+
+  const handleContextRunUntilBlock = useCallback(() => {
+    if (contextMenuBlocks.length !== 1) return
+    const blockId = contextMenuBlocks[0].id
+    handleRunUntilBlock(blockId, workflowIdParam)
+  }, [contextMenuBlocks, workflowIdParam, handleRunUntilBlock])
+
+  const runFromBlockState = useMemo(() => {
+    if (contextMenuBlocks.length !== 1) {
+      return { canRun: false, reason: undefined }
+    }
+    const block = contextMenuBlocks[0]
+    const snapshot = getLastExecutionSnapshot(workflowIdParam)
+    const incomingEdges = edges.filter((edge) => edge.target === block.id)
+    const isTriggerBlock = incomingEdges.length === 0
+
+    // Check if each source block is either executed OR is a trigger block (triggers don't need prior execution)
+    const isSourceSatisfied = (sourceId: string) => {
+      if (snapshot?.executedBlocks.includes(sourceId)) return true
+      // Check if source is a trigger (has no incoming edges itself)
+      const sourceIncomingEdges = edges.filter((edge) => edge.target === sourceId)
+      return sourceIncomingEdges.length === 0
+    }
+
+    // Non-trigger blocks need a snapshot to exist (so upstream outputs are available)
+    const dependenciesSatisfied =
+      isTriggerBlock || (snapshot && incomingEdges.every((edge) => isSourceSatisfied(edge.source)))
+    const isNoteBlock = block.type === 'note'
+    const isInsideSubflow =
+      block.parentId && (block.parentType === 'loop' || block.parentType === 'parallel')
+
+    if (isInsideSubflow) return { canRun: false, reason: 'Cannot run from inside subflow' }
+    if (!dependenciesSatisfied) return { canRun: false, reason: 'Run previous blocks first' }
+    if (isNoteBlock) return { canRun: false, reason: undefined }
+    if (isExecuting) return { canRun: false, reason: undefined }
+
+    return { canRun: true, reason: undefined }
+  }, [contextMenuBlocks, edges, workflowIdParam, getLastExecutionSnapshot, isExecuting])
 
   const handleContextAddBlock = useCallback(() => {
     useSearchModalStore.getState().open()
@@ -1004,10 +1196,6 @@ const WorkflowContent = React.memo(() => {
   const handleContextToggleChat = useCallback(() => {
     const { isChatOpen, setIsChatOpen } = useChatStore.getState()
     setIsChatOpen(!isChatOpen)
-  }, [])
-
-  const handleContextInvite = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('open-invite-modal'))
   }, [])
 
   useEffect(() => {
@@ -1054,7 +1242,7 @@ const WorkflowContent = React.memo(() => {
       } else if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
         if (effectivePermissions.canEdit && hasClipboard()) {
           event.preventDefault()
-          executePasteOperation('paste', calculatePasteOffset(clipboard, screenToFlowPosition))
+          executePasteOperation('paste', calculatePasteOffset(clipboard, getViewportCenter()))
         }
       }
     }
@@ -1074,7 +1262,7 @@ const WorkflowContent = React.memo(() => {
     hasClipboard,
     effectivePermissions.canEdit,
     clipboard,
-    screenToFlowPosition,
+    getViewportCenter,
     executePasteOperation,
   ])
 
@@ -1507,7 +1695,7 @@ const WorkflowContent = React.memo(() => {
       if (!type) return
       if (type === 'connectionBlock') return
 
-      const basePosition = getViewportCenter(screenToFlowPosition)
+      const basePosition = getViewportCenter()
 
       if (type === 'loop' || type === 'parallel') {
         const id = crypto.randomUUID()
@@ -1576,7 +1764,7 @@ const WorkflowContent = React.memo(() => {
       )
     }
   }, [
-    screenToFlowPosition,
+    getViewportCenter,
     blocks,
     addBlock,
     effectivePermissions.canEdit,
@@ -1640,37 +1828,32 @@ const WorkflowContent = React.memo(() => {
       )
   }, [screenToFlowPosition, handleToolbarDrop])
 
-  /**
-   * Focus canvas on changed blocks when diff appears.
-   */
+  /** Tracks blocks to pan to after diff updates. */
   const pendingZoomBlockIdsRef = useRef<Set<string> | null>(null)
-  const prevDiffReadyRef = useRef(false)
+  const seenDiffBlocksRef = useRef<Set<string>>(new Set())
 
-  // Phase 1: When diff becomes ready, record which blocks we want to zoom to
-  // Phase 2 effect is located after displayNodes is defined (search for "Phase 2")
+  /** Queues newly changed blocks for viewport panning. */
   useEffect(() => {
-    if (isDiffReady && !prevDiffReadyRef.current && diffAnalysis) {
-      // Diff just became ready - record blocks to zoom to
-      const changedBlockIds = [
-        ...(diffAnalysis.new_blocks || []),
-        ...(diffAnalysis.edited_blocks || []),
-      ]
-
-      if (changedBlockIds.length > 0) {
-        pendingZoomBlockIdsRef.current = new Set(changedBlockIds)
-      } else {
-        // No specific blocks to focus on, fit all after a frame
-        pendingZoomBlockIdsRef.current = null
-        requestAnimationFrame(() => {
-          fitViewToBounds({ padding: 0.1, duration: 600 })
-        })
-      }
-    } else if (!isDiffReady && prevDiffReadyRef.current) {
-      // Diff was cleared (accepted/rejected) - cancel any pending zoom
+    if (!isDiffReady || !diffAnalysis) {
       pendingZoomBlockIdsRef.current = null
+      seenDiffBlocksRef.current.clear()
+      return
     }
-    prevDiffReadyRef.current = isDiffReady
-  }, [isDiffReady, diffAnalysis, fitViewToBounds])
+
+    const newBlocks = new Set<string>()
+    const allBlocks = [...(diffAnalysis.new_blocks || []), ...(diffAnalysis.edited_blocks || [])]
+
+    for (const id of allBlocks) {
+      if (!seenDiffBlocksRef.current.has(id)) {
+        newBlocks.add(id)
+      }
+      seenDiffBlocksRef.current.add(id)
+    }
+
+    if (newBlocks.size > 0) {
+      pendingZoomBlockIdsRef.current = newBlocks
+    }
+  }, [isDiffReady, diffAnalysis])
 
   /** Displays trigger warning notifications. */
   useEffect(() => {
@@ -1796,7 +1979,6 @@ const WorkflowContent = React.memo(() => {
   const loadingWorkflowRef = useRef<string | null>(null)
   const currentWorkflowExists = Boolean(workflows[workflowIdParam])
 
-  /** Initializes workflow when it exists in registry and needs hydration. */
   useEffect(() => {
     const currentId = workflowIdParam
     const currentWorkspaceHydration = hydration.workspaceId
@@ -1973,6 +2155,7 @@ const WorkflowContent = React.memo(() => {
           parentId: block.data?.parentId,
           extent: block.data?.extent || undefined,
           dragHandle: '.workflow-drag-handle',
+          draggable: !isBlockProtected(block.id, blocks),
           data: {
             ...block.data,
             name: block.name,
@@ -2008,6 +2191,7 @@ const WorkflowContent = React.memo(() => {
         position,
         parentId: block.data?.parentId,
         dragHandle,
+        draggable: !isBlockProtected(block.id, blocks),
         extent: (() => {
           // Clamp children to subflow body (exclude header)
           const parentId = block.data?.parentId as string | undefined
@@ -2078,18 +2262,12 @@ const WorkflowContent = React.memo(() => {
     })
   }, [derivedNodes, blocks, pendingSelection, clearPendingSelection])
 
-  // Phase 2: When displayNodes updates, check if pending zoom blocks are ready
-  // (Phase 1 is located earlier in the file where pendingZoomBlockIdsRef is defined)
+  /** Pans viewport to pending blocks once they have valid dimensions. */
   useEffect(() => {
     const pendingBlockIds = pendingZoomBlockIdsRef.current
-    if (!pendingBlockIds || pendingBlockIds.size === 0) {
-      return
-    }
+    if (!pendingBlockIds || pendingBlockIds.size === 0) return
 
-    // Find the nodes we're waiting for
     const pendingNodes = displayNodes.filter((node) => pendingBlockIds.has(node.id))
-
-    // Check if all expected nodes are present with valid dimensions
     const allNodesReady =
       pendingNodes.length === pendingBlockIds.size &&
       pendingNodes.every(
@@ -2101,16 +2279,20 @@ const WorkflowContent = React.memo(() => {
       )
 
     if (allNodesReady) {
-      logger.info('Diff ready - focusing on changed blocks', {
+      logger.info('Focusing on changed blocks', {
         changedBlockIds: Array.from(pendingBlockIds),
         foundNodes: pendingNodes.length,
       })
-      // Clear pending state before zooming to prevent re-triggers
       pendingZoomBlockIdsRef.current = null
-      // Use requestAnimationFrame to ensure React has finished rendering
+
+      const nodesWithAbsolutePositions = pendingNodes.map((node) => ({
+        ...node,
+        position: getNodeAbsolutePosition(node.id),
+      }))
+
       requestAnimationFrame(() => {
         fitViewToBounds({
-          nodes: pendingNodes,
+          nodes: nodesWithAbsolutePositions,
           duration: 600,
           padding: 0.1,
           minZoom: 0.5,
@@ -2118,7 +2300,7 @@ const WorkflowContent = React.memo(() => {
         })
       })
     }
-  }, [displayNodes, fitViewToBounds])
+  }, [displayNodes, fitViewToBounds, getNodeAbsolutePosition])
 
   /** Handles ActionBar remove-from-subflow events. */
   useEffect(() => {
@@ -2192,33 +2374,12 @@ const WorkflowContent = React.memo(() => {
       window.removeEventListener('remove-from-subflow', handleRemoveFromSubflow as EventListener)
   }, [blocks, edgesForDisplay, getNodeAbsolutePosition, collaborativeBatchUpdateParent])
 
-  /** Handles node changes - applies changes and resolves parent-child selection conflicts. */
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      selectedIdsRef.current = null
-      setDisplayNodes((nds) => {
-        const updated = applyNodeChanges(changes, nds)
-        const hasSelectionChange = changes.some((c) => c.type === 'select')
-        if (!hasSelectionChange) return updated
-        const resolved = resolveParentChildSelectionConflicts(updated, blocks)
-        selectedIdsRef.current = resolved.filter((node) => node.selected).map((node) => node.id)
-        return resolved
-      })
-      const selectedIds = selectedIdsRef.current as string[] | null
-      if (selectedIds !== null) {
-        syncPanelWithSelection(selectedIds)
-      }
-    },
-    [blocks]
-  )
-
   /**
-   * Updates container dimensions in displayNodes during drag.
-   * This allows live resizing of containers as their children are dragged.
+   * Updates container dimensions in displayNodes during drag or keyboard movement.
    */
-  const updateContainerDimensionsDuringDrag = useCallback(
-    (draggedNodeId: string, draggedNodePosition: { x: number; y: number }) => {
-      const parentId = blocks[draggedNodeId]?.data?.parentId
+  const updateContainerDimensionsDuringMove = useCallback(
+    (movedNodeId: string, movedNodePosition: { x: number; y: number }) => {
+      const parentId = blocks[movedNodeId]?.data?.parentId
       if (!parentId) return
 
       setDisplayNodes((currentNodes) => {
@@ -2226,7 +2387,7 @@ const WorkflowContent = React.memo(() => {
         if (childNodes.length === 0) return currentNodes
 
         const childPositions = childNodes.map((node) => {
-          const nodePosition = node.id === draggedNodeId ? draggedNodePosition : node.position
+          const nodePosition = node.id === movedNodeId ? movedNodePosition : node.position
           const { width, height } = getBlockDimensions(node.id)
           return { x: nodePosition.x, y: nodePosition.y, width, height }
         })
@@ -2255,6 +2416,55 @@ const WorkflowContent = React.memo(() => {
       })
     },
     [blocks, getBlockDimensions]
+  )
+
+  /** Handles node changes - applies changes and resolves parent-child selection conflicts. */
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      selectedIdsRef.current = null
+      setDisplayNodes((nds) => {
+        const updated = applyNodeChanges(changes, nds)
+        const hasSelectionChange = changes.some((c) => c.type === 'select')
+        if (!hasSelectionChange) return updated
+        const resolved = resolveParentChildSelectionConflicts(updated, blocks)
+        selectedIdsRef.current = resolved.filter((node) => node.selected).map((node) => node.id)
+        return resolved
+      })
+      const selectedIds = selectedIdsRef.current as string[] | null
+      if (selectedIds !== null) {
+        syncPanelWithSelection(selectedIds)
+      }
+
+      // Handle position changes (e.g., from keyboard arrow key movement)
+      // Update container dimensions when child nodes are moved and persist to backend
+      // Only persist if not in a drag operation (drag-end is handled by onNodeDragStop)
+      const isInDragOperation =
+        getDragStartPosition() !== null || multiNodeDragStartRef.current.size > 0
+      const keyboardPositionUpdates: Array<{ id: string; position: { x: number; y: number } }> = []
+      for (const change of changes) {
+        if (
+          change.type === 'position' &&
+          !change.dragging &&
+          'position' in change &&
+          change.position
+        ) {
+          updateContainerDimensionsDuringMove(change.id, change.position)
+          if (!isInDragOperation) {
+            keyboardPositionUpdates.push({ id: change.id, position: change.position })
+          }
+        }
+      }
+      // Persist keyboard movements to backend for collaboration sync
+      if (keyboardPositionUpdates.length > 0) {
+        collaborativeBatchUpdatePositions(keyboardPositionUpdates)
+      }
+    },
+    [
+      blocks,
+      updateContainerDimensionsDuringMove,
+      collaborativeBatchUpdatePositions,
+      getDragStartPosition,
+    ]
   )
 
   /**
@@ -2310,12 +2520,18 @@ const WorkflowContent = React.memo(() => {
       const edgeIdsToRemove = changes
         .filter((change: any) => change.type === 'remove')
         .map((change: any) => change.id)
+        .filter((edgeId: string) => {
+          // Prevent removing edges connected to protected blocks
+          const edge = edges.find((e) => e.id === edgeId)
+          if (!edge) return true
+          return !isEdgeProtected(edge, blocks)
+        })
 
       if (edgeIdsToRemove.length > 0) {
         collaborativeBatchRemoveEdges(edgeIdsToRemove)
       }
     },
-    [collaborativeBatchRemoveEdges]
+    [collaborativeBatchRemoveEdges, edges, blocks]
   )
 
   /**
@@ -2433,6 +2649,16 @@ const WorkflowContent = React.memo(() => {
 
         if (!sourceNode || !targetNode) return
 
+        // Prevent connections to/from protected blocks
+        if (isEdgeProtected(connection, blocks)) {
+          addNotification({
+            level: 'info',
+            message: 'Cannot connect to locked blocks or blocks inside locked containers',
+            workflowId: activeWorkflowId || undefined,
+          })
+          return
+        }
+
         // Get parent information (handle container start node case)
         const sourceParentId =
           blocks[sourceNode.id]?.data?.parentId ||
@@ -2520,7 +2746,7 @@ const WorkflowContent = React.memo(() => {
         connectionCompletedRef.current = true
       }
     },
-    [addEdge, getNodes, blocks]
+    [addEdge, getNodes, blocks, addNotification, activeWorkflowId]
   )
 
   /**
@@ -2582,7 +2808,7 @@ const WorkflowContent = React.memo(() => {
 
       // If the node is inside a container, update container dimensions during drag
       if (currentParentId) {
-        updateContainerDimensionsDuringDrag(node.id, node.position)
+        updateContainerDimensionsDuringMove(node.id, node.position)
       }
 
       // Check if this is a starter block - starter blocks should never be in containers
@@ -2606,6 +2832,9 @@ const WorkflowContent = React.memo(() => {
         .filter((n) => {
           // Only consider container nodes that aren't the dragged node
           if (n.type !== 'subflowNode' || n.id === node.id) return false
+
+          // Don't allow dropping into locked containers
+          if (blocks[n.id]?.locked) return false
 
           // Get the container's absolute position
           const containerAbsolutePos = getNodeAbsolutePosition(n.id)
@@ -2691,7 +2920,7 @@ const WorkflowContent = React.memo(() => {
       blocks,
       getNodeAbsolutePosition,
       getNodeDepth,
-      updateContainerDimensionsDuringDrag,
+      updateContainerDimensionsDuringMove,
       highlightContainerNode,
     ]
   )
@@ -2699,6 +2928,8 @@ const WorkflowContent = React.memo(() => {
   /** Captures initial parent ID and position when drag starts. */
   const onNodeDragStart = useCallback(
     (_event: React.MouseEvent, node: any) => {
+      // Note: Protected blocks are already non-draggable via the `draggable` node property
+
       // Store the original parent ID when starting to drag
       const currentParentId = blocks[node.id]?.data?.parentId || null
       setDragStartParentId(currentParentId)
@@ -2727,7 +2958,7 @@ const WorkflowContent = React.memo(() => {
         }
       })
     },
-    [blocks, setDragStartPosition, getNodes, potentialParentId, setPotentialParentId]
+    [blocks, setDragStartPosition, getNodes, setPotentialParentId]
   )
 
   /** Handles node drag stop to establish parent-child relationships. */
@@ -2807,6 +3038,18 @@ const WorkflowContent = React.memo(() => {
 
       // Don't process parent changes if the node hasn't actually changed parent or is being moved within same parent
       if (potentialParentId === dragStartParentId) return
+
+      // Prevent moving locked blocks out of locked containers
+      // Unlocked blocks (e.g., duplicates) can be moved out freely
+      if (dragStartParentId && blocks[dragStartParentId]?.locked && blocks[node.id]?.locked) {
+        addNotification({
+          level: 'info',
+          message: 'Cannot move locked blocks out of locked containers',
+          workflowId: activeWorkflowId || undefined,
+        })
+        setPotentialParentId(dragStartParentId) // Reset to original parent
+        return
+      }
 
       // Check if this is a starter block - starter blocks should never be in containers
       const isStarterBlock = node.data?.type === 'starter'
@@ -3228,6 +3471,16 @@ const WorkflowContent = React.memo(() => {
   /** Stable delete handler to avoid creating new function references per edge. */
   const handleEdgeDelete = useCallback(
     (edgeId: string) => {
+      // Prevent removing edges connected to protected blocks
+      const edge = edges.find((e) => e.id === edgeId)
+      if (edge && isEdgeProtected(edge, blocks)) {
+        addNotification({
+          level: 'info',
+          message: 'Cannot remove connections from locked blocks',
+          workflowId: activeWorkflowId || undefined,
+        })
+        return
+      }
       removeEdge(edgeId)
       // Remove this edge from selection (find by edge ID value)
       setSelectedEdges((prev) => {
@@ -3240,7 +3493,7 @@ const WorkflowContent = React.memo(() => {
         return next
       })
     },
-    [removeEdge]
+    [removeEdge, edges, blocks, addNotification, activeWorkflowId]
   )
 
   /** Transforms edges to include selection state and delete handlers. Memoized to prevent re-renders. */
@@ -3281,9 +3534,15 @@ const WorkflowContent = React.memo(() => {
 
       // Handle edge deletion first (edges take priority if selected)
       if (selectedEdges.size > 0) {
-        // Get all selected edge IDs and batch delete them
-        const edgeIds = Array.from(selectedEdges.values())
-        collaborativeBatchRemoveEdges(edgeIds)
+        // Get all selected edge IDs and filter out edges connected to protected blocks
+        const edgeIds = Array.from(selectedEdges.values()).filter((edgeId) => {
+          const edge = edges.find((e) => e.id === edgeId)
+          if (!edge) return true
+          return !isEdgeProtected(edge, blocks)
+        })
+        if (edgeIds.length > 0) {
+          collaborativeBatchRemoveEdges(edgeIds)
+        }
         setSelectedEdges(new Map())
         return
       }
@@ -3300,7 +3559,29 @@ const WorkflowContent = React.memo(() => {
 
       event.preventDefault()
       const selectedIds = selectedNodes.map((node) => node.id)
-      collaborativeBatchRemoveBlocks(selectedIds)
+      const { deletableIds, protectedIds, allProtected } = filterProtectedBlocks(
+        selectedIds,
+        blocks
+      )
+
+      if (protectedIds.length > 0) {
+        if (allProtected) {
+          addNotification({
+            level: 'info',
+            message: 'Cannot delete locked blocks or blocks inside locked containers',
+            workflowId: activeWorkflowId || undefined,
+          })
+          return
+        }
+        addNotification({
+          level: 'info',
+          message: `Skipped ${protectedIds.length} protected block(s)`,
+          workflowId: activeWorkflowId || undefined,
+        })
+      }
+      if (deletableIds.length > 0) {
+        collaborativeBatchRemoveBlocks(deletableIds)
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -3311,6 +3592,10 @@ const WorkflowContent = React.memo(() => {
     getNodes,
     collaborativeBatchRemoveBlocks,
     effectivePermissions.canEdit,
+    blocks,
+    edges,
+    addNotification,
+    activeWorkflowId,
   ])
 
   return (
@@ -3424,11 +3709,25 @@ const WorkflowContent = React.memo(() => {
               onRemoveFromSubflow={handleContextRemoveFromSubflow}
               onOpenEditor={handleContextOpenEditor}
               onRename={handleContextRename}
+              onRunFromBlock={handleContextRunFromBlock}
+              onRunUntilBlock={handleContextRunUntilBlock}
               hasClipboard={hasClipboard()}
               showRemoveFromSubflow={contextMenuBlocks.some(
                 (b) => b.parentId && (b.parentType === 'loop' || b.parentType === 'parallel')
               )}
-              disableEdit={!effectivePermissions.canEdit}
+              canRunFromBlock={runFromBlockState.canRun}
+              disableEdit={
+                !effectivePermissions.canEdit ||
+                contextMenuBlocks.some((b) => b.locked || b.isParentLocked)
+              }
+              userCanEdit={effectivePermissions.canEdit}
+              isExecuting={isExecuting}
+              isPositionalTrigger={
+                contextMenuBlocks.length === 1 &&
+                edges.filter((e) => e.target === contextMenuBlocks[0]?.id).length === 0
+              }
+              onToggleLocked={handleContextToggleLocked}
+              canAdmin={effectivePermissions.canAdmin}
             />
 
             <CanvasMenu
@@ -3451,6 +3750,7 @@ const WorkflowContent = React.memo(() => {
               disableEdit={!effectivePermissions.canEdit}
               canUndo={canUndo}
               canRedo={canRedo}
+              hasLockedBlocks={Object.values(blocks).some((b) => b.locked)}
             />
           </>
         )}

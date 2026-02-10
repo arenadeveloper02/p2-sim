@@ -1,6 +1,6 @@
-import { type JSX, type MouseEvent, memo, useRef, useState } from 'react'
+import { type JSX, type MouseEvent, memo, useCallback, useRef, useState } from 'react'
 import { isEqual } from 'lodash'
-import { AlertTriangle, ArrowLeftRight, ArrowUp } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, Check, Clipboard } from 'lucide-react'
 import { Button, Input, Label, Tooltip } from '@/components/emcn/components'
 import { cn } from '@/lib/core/utils/cn'
 import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
@@ -33,6 +33,7 @@ import {
   ScheduleInfo,
   SheetSelectorInput,
   ShortInput,
+  SkillInput,
   SlackDateInput,
   SlackDateRangeSelector,
   SlackSelectorInput,
@@ -48,6 +49,7 @@ import {
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
+import { useWebhookManagement } from '@/hooks/use-webhook-management'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
@@ -210,7 +212,12 @@ const renderLabel = (
     disabled?: boolean
     onToggle?: () => void
   },
-  canonicalToggleIsDisabled?: boolean
+  canonicalToggleIsDisabled?: boolean,
+  copyState?: {
+    showCopyButton: boolean
+    copied: boolean
+    onCopy: () => void
+  }
 ): JSX.Element | null => {
   if (config.type === 'switch') return null
   if (!config.title) return null
@@ -218,6 +225,7 @@ const renderLabel = (
   const required = isFieldRequired(config, subBlockValues)
   const showWand = wandState?.isWandEnabled && !wandState.isPreview && !wandState.disabled
   const showCanonicalToggle = !!canonicalToggle && !wandState?.isPreview
+  const showCopy = copyState?.showCopyButton && !wandState?.isPreview
   const canonicalToggleDisabledResolved = canonicalToggleIsDisabled ?? canonicalToggle?.disabled
 
   return (
@@ -241,7 +249,28 @@ const renderLabel = (
             </Tooltip.Root>
           )}
       </Label>
-      <div className='flex items-center gap-[6px]'>
+      <div className='flex min-w-0 flex-1 items-center justify-end gap-[6px]'>
+        {showCopy && (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <button
+                type='button'
+                onClick={copyState.onCopy}
+                className='-my-1 flex h-5 w-5 items-center justify-center'
+                aria-label='Copy value'
+              >
+                {copyState.copied ? (
+                  <Check className='h-3 w-3 text-green-500' />
+                ) : (
+                  <Clipboard className='h-3 w-3 text-muted-foreground' />
+                )}
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>
+              <p>{copyState.copied ? 'Copied!' : 'Copy'}</p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        )}
         {showWand && (
           <>
             {!wandState.isSearchActive ? (
@@ -253,14 +282,19 @@ const renderLabel = (
                 Generate
               </Button>
             ) : (
-              <div className='-my-1 flex items-center gap-[4px]'>
+              <div className='-my-1 flex min-w-[120px] max-w-[280px] flex-1 items-center gap-[4px]'>
                 <Input
                   ref={wandState.searchInputRef}
                   value={wandState.isStreaming ? 'Generating...' : wandState.searchQuery}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     wandState.onSearchChange(e.target.value)
                   }
-                  onBlur={wandState.onSearchBlur}
+                  onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
+                    // Only close if clicking outside the input container (not on the submit button)
+                    const relatedTarget = e.relatedTarget as HTMLElement | null
+                    if (relatedTarget?.closest('button')) return
+                    wandState.onSearchBlur()
+                  }}
                   onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                     if (
                       e.key === 'Enter' &&
@@ -274,7 +308,7 @@ const renderLabel = (
                   }}
                   disabled={wandState.isStreaming}
                   className={cn(
-                    'h-5 max-w-[200px] flex-1 text-[11px]',
+                    'h-5 min-w-[80px] flex-1 text-[11px]',
                     wandState.isStreaming && 'text-muted-foreground'
                   )}
                   placeholder='Generate with AI...'
@@ -400,11 +434,19 @@ function SubBlockComponent({
   const [isValidJson, setIsValidJson] = useState(true)
   const [isSearchActive, setIsSearchActive] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [copied, setCopied] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const wandControlRef = useRef<WandControlHandlers | null>(null)
 
   // Get block type to determine if this is a Slack block
   const blockType = useWorkflowStore((state) => state.blocks?.[blockId]?.type)
+  // Use webhook management hook when config has useWebhookUrl enabled
+  const webhookManagement = useWebhookManagement({
+    blockId,
+    triggerId: undefined,
+    isPreview,
+    useWebhookUrl: config.useWebhookUrl,
+  })
 
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
     e.stopPropagation()
@@ -415,6 +457,18 @@ function SubBlockComponent({
   }
 
   const isWandEnabled = config.wandConfig?.enabled ?? false
+
+  /**
+   * Handles copying the webhook URL to clipboard.
+   */
+  const handleCopy = useCallback(() => {
+    const textToCopy = webhookManagement?.webhookUrl
+    if (textToCopy) {
+      navigator.clipboard.writeText(textToCopy)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }, [webhookManagement?.webhookUrl])
 
   /**
    * Handles wand icon click to activate inline prompt mode.
@@ -500,7 +554,6 @@ function SubBlockComponent({
             placeholder={config.placeholder}
             password={config.password}
             readOnly={config.readOnly}
-            showCopyButton={config.showCopyButton}
             useWebhookUrl={config.useWebhookUrl}
             config={config}
             isPreview={isPreview}
@@ -694,6 +747,17 @@ function SubBlockComponent({
           />
         )
 
+      case 'skill-input':
+        return (
+          <SkillInput
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue}
+            disabled={isDisabled}
+          />
+        )
+
       case 'checkbox-list':
         return (
           <CheckboxList
@@ -817,6 +881,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -852,6 +917,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -863,6 +929,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -885,6 +952,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue as any}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -896,6 +964,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue as any}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -907,6 +976,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue as any}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -931,6 +1001,7 @@ function SubBlockComponent({
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -966,6 +1037,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -999,6 +1071,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue as any}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -1010,6 +1083,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={isPreview ? subBlockValues : undefined}
           />
         )
 
@@ -1178,7 +1252,12 @@ function SubBlockComponent({
           searchInputRef,
         },
         canonicalToggle,
-        Boolean(canonicalToggle?.disabled || disabled || isPreview)
+        Boolean(canonicalToggle?.disabled || disabled || isPreview),
+        {
+          showCopyButton: Boolean(config.showCopyButton && config.useWebhookUrl),
+          copied,
+          onCopy: handleCopy,
+        }
       )}
       {renderInput()}
     </div>

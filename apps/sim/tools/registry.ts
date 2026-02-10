@@ -24,6 +24,7 @@ import {
   airtableListRecordsTool,
   airtableUpdateRecordTool,
 } from '@/tools/airtable'
+import { airweaveSearchTool } from '@/tools/airweave'
 import { apifyRunActorAsyncTool, apifyRunActorSyncTool } from '@/tools/apify'
 import {
   apolloAccountBulkCreateTool,
@@ -73,6 +74,27 @@ import {
 } from '@/tools/asana'
 import { browserUseRunTaskTool } from '@/tools/browser_use'
 import {
+  calcomCancelBookingTool,
+  calcomConfirmBookingTool,
+  calcomCreateBookingTool,
+  calcomCreateEventTypeTool,
+  calcomCreateScheduleTool,
+  calcomDeclineBookingTool,
+  calcomDeleteEventTypeTool,
+  calcomDeleteScheduleTool,
+  calcomGetBookingTool,
+  calcomGetDefaultScheduleTool,
+  calcomGetEventTypeTool,
+  calcomGetScheduleTool,
+  calcomGetSlotsTool,
+  calcomListBookingsTool,
+  calcomListEventTypesTool,
+  calcomListSchedulesTool,
+  calcomRescheduleBookingTool,
+  calcomUpdateEventTypeTool,
+  calcomUpdateScheduleTool,
+} from '@/tools/calcom'
+import {
   calendlyCancelEventTool,
   calendlyCreateWebhookTool,
   calendlyDeleteWebhookTool,
@@ -86,17 +108,43 @@ import {
 } from '@/tools/calendly'
 import { clayPopulateTool } from '@/tools/clay'
 import {
+  clerkCreateOrganizationTool,
+  clerkCreateUserTool,
+  clerkDeleteUserTool,
+  clerkGetOrganizationTool,
+  clerkGetSessionTool,
+  clerkGetUserTool,
+  clerkListOrganizationsTool,
+  clerkListSessionsTool,
+  clerkListUsersTool,
+  clerkRevokeSessionTool,
+  clerkUpdateUserTool,
+} from '@/tools/clerk'
+import {
+  confluenceAddLabelTool,
+  confluenceCreateBlogPostTool,
   confluenceCreateCommentTool,
+  confluenceCreatePagePropertyTool,
   confluenceCreatePageTool,
   confluenceDeleteAttachmentTool,
   confluenceDeleteCommentTool,
   confluenceDeletePageTool,
+  confluenceGetBlogPostTool,
+  confluenceGetPageAncestorsTool,
+  confluenceGetPageChildrenTool,
+  confluenceGetPageVersionTool,
   confluenceGetSpaceTool,
   confluenceListAttachmentsTool,
+  confluenceListBlogPostsInSpaceTool,
+  confluenceListBlogPostsTool,
   confluenceListCommentsTool,
   confluenceListLabelsTool,
+  confluenceListPagePropertiesTool,
+  confluenceListPagesInSpaceTool,
+  confluenceListPageVersionsTool,
   confluenceListSpacesTool,
   confluenceRetrieveTool,
+  confluenceSearchInSpaceTool,
   confluenceSearchTool,
   confluenceUpdateCommentTool,
   confluenceUpdateTool,
@@ -181,6 +229,7 @@ import {
   dropboxSearchTool,
   dropboxUploadTool,
 } from '@/tools/dropbox'
+import { chainOfThoughtTool, predictTool, reactTool } from '@/tools/dspy'
 import { duckduckgoSearchTool } from '@/tools/duckduckgo'
 import {
   dynamodbDeleteTool,
@@ -208,6 +257,37 @@ import {
 } from '@/tools/elasticsearch'
 import { elevenLabsTtsTool } from '@/tools/elevenlabs'
 import {
+  enrichCheckCreditsTool,
+  enrichCompanyFundingTool,
+  enrichCompanyLookupTool,
+  enrichCompanyRevenueTool,
+  enrichDisposableEmailCheckTool,
+  enrichEmailToIpTool,
+  enrichEmailToPersonLiteTool,
+  enrichEmailToPhoneTool,
+  enrichEmailToProfileTool,
+  enrichFindEmailTool,
+  enrichGetPostDetailsTool,
+  enrichIpToCompanyTool,
+  enrichLinkedInProfileTool,
+  enrichLinkedInToPersonalEmailTool,
+  enrichLinkedInToWorkEmailTool,
+  enrichPhoneFinderTool,
+  enrichReverseHashLookupTool,
+  enrichSalesPointerPeopleTool,
+  enrichSearchCompanyActivitiesTool,
+  enrichSearchCompanyEmployeesTool,
+  enrichSearchCompanyTool,
+  enrichSearchLogoTool,
+  enrichSearchPeopleActivitiesTool,
+  enrichSearchPeopleTool,
+  enrichSearchPostCommentsTool,
+  enrichSearchPostReactionsTool,
+  enrichSearchPostsTool,
+  enrichSearchSimilarCompaniesTool,
+  enrichVerifyEmailTool,
+} from '@/tools/enrich'
+import {
   exaAnswerTool,
   exaFindSimilarLinksTool,
   exaGetContentsTool,
@@ -227,7 +307,7 @@ import {
   figmaPostCommentTool,
   figmaToHTMLAITool,
 } from '@/tools/figma'
-import { fileParserV2Tool, fileParseTool } from '@/tools/file'
+import { fileParserV2Tool, fileParserV3Tool, fileParseTool } from '@/tools/file'
 import {
   firecrawlAgentTool,
   firecrawlCrawlTool,
@@ -540,6 +620,21 @@ import {
   googleGroupsUpdateSettingsTool,
 } from '@/tools/google_groups'
 import {
+  googleMapsAirQualityTool,
+  googleMapsDirectionsTool,
+  googleMapsDistanceMatrixTool,
+  googleMapsElevationTool,
+  googleMapsGeocodeTool,
+  googleMapsGeolocateTool,
+  googleMapsPlaceDetailsTool,
+  googleMapsPlacesSearchTool,
+  googleMapsReverseGeocodeTool,
+  googleMapsSnapToRoadsTool,
+  googleMapsSpeedLimitsTool,
+  googleMapsTimezoneTool,
+  googleMapsValidateAddressTool,
+} from '@/tools/google_maps'
+import {
   googleSheetsAppendTool,
   googleSheetsAppendV2Tool,
   googleSheetsBatchClearV2Tool,
@@ -753,6 +848,7 @@ import {
 } from '@/tools/intercom'
 import { jinaReadUrlTool, jinaSearchTool } from '@/tools/jina'
 import {
+  jiraAddAttachmentTool,
   jiraAddCommentTool,
   jiraAddWatcherTool,
   jiraAddWorklogTool,
@@ -1051,7 +1147,7 @@ import {
   microsoftTeamsWriteChannelTool,
   microsoftTeamsWriteChatTool,
 } from '@/tools/microsoft_teams'
-import { mistralParserTool, mistralParserV2Tool } from '@/tools/mistral'
+import { mistralParserTool, mistralParserV2Tool, mistralParserV3Tool } from '@/tools/mistral'
 import {
   mongodbDeleteTool,
   mongodbExecuteTool,
@@ -1219,7 +1315,7 @@ import {
   posthogUpdateSurveyTool,
 } from '@/tools/posthog'
 import { createTool as presentationCreateTool } from '@/tools/presentation'
-import { pulseParserTool } from '@/tools/pulse'
+import { pulseParserTool, pulseParserV2Tool } from '@/tools/pulse'
 import { qdrantFetchTool, qdrantSearchTool, qdrantUpsertTool } from '@/tools/qdrant'
 import {
   rdsDeleteTool,
@@ -1244,7 +1340,7 @@ import {
   redditUnsaveTool,
   redditVoteTool,
 } from '@/tools/reddit'
-import { reductoParserTool } from '@/tools/reducto'
+import { reductoParserTool, reductoParserV2Tool } from '@/tools/reducto'
 import { mailSendTool } from '@/tools/resend'
 import {
   s3CopyObjectTool,
@@ -1371,6 +1467,13 @@ import {
   shopifyUpdateOrderTool,
   shopifyUpdateProductTool,
 } from '@/tools/shopify'
+import {
+  similarwebBounceRateTool,
+  similarwebPagesPerVisitTool,
+  similarwebTrafficVisitsTool,
+  similarwebVisitDurationTool,
+  similarwebWebsiteOverviewTool,
+} from '@/tools/similarweb'
 import {
   slackAddReactionTool,
   slackCanvasTool,
@@ -1541,10 +1644,15 @@ import {
 } from '@/tools/stripe'
 import {
   assemblyaiSttTool,
+  assemblyaiSttV2Tool,
   deepgramSttTool,
+  deepgramSttV2Tool,
   elevenLabsSttTool,
+  elevenLabsSttV2Tool,
   geminiSttTool,
+  geminiSttV2Tool,
   whisperSttTool,
+  whisperSttV2Tool,
 } from '@/tools/stt'
 import {
   supabaseCountTool,
@@ -1580,7 +1688,7 @@ import {
   telegramSendPhotoTool,
   telegramSendVideoTool,
 } from '@/tools/telegram'
-import { textractParserTool } from '@/tools/textract'
+import { textractParserTool, textractParserV2Tool } from '@/tools/textract'
 import { thinkingTool } from '@/tools/thinking'
 import { tinybirdEventsTool, tinybirdQueryTool } from '@/tools/tinybird'
 import {
@@ -1620,7 +1728,7 @@ import {
   runwayVideoTool,
   veoVideoTool,
 } from '@/tools/video'
-import { visionTool } from '@/tools/vision'
+import { visionTool, visionToolV2 } from '@/tools/vision'
 import {
   wealthboxReadContactTool,
   wealthboxReadNoteTool,
@@ -1680,6 +1788,8 @@ import {
   youtubeCommentsTool,
   youtubePlaylistItemsTool,
   youtubeSearchTool,
+  youtubeTrendingTool,
+  youtubeVideoCategoriesTool,
   youtubeVideoDetailsTool,
 } from '@/tools/youtube'
 import {
@@ -1752,6 +1862,7 @@ export const tools: Record<string, ToolConfig> = {
   a2a_resubscribe: a2aResubscribeTool,
   a2a_send_message: a2aSendMessageTool,
   a2a_set_push_notification: a2aSetPushNotificationTool,
+  airweave_search: airweaveSearchTool,
   arxiv_search: arxivSearchTool,
   arxiv_get_paper: arxivGetPaperTool,
   arxiv_get_author_papers: arxivGetAuthorPapersTool,
@@ -1769,8 +1880,10 @@ export const tools: Record<string, ToolConfig> = {
   llm_chat: llmChatTool,
   function_execute: functionExecuteTool,
   vision_tool: visionTool,
+  vision_tool_v2: visionToolV2,
   file_parser: fileParseTool,
   file_parser_v2: fileParserV2Tool,
+  file_parser_v3: fileParserV3Tool,
   firecrawl_scrape: firecrawlScrapeTool,
   firecrawl_search: firecrawlSearchTool,
   firecrawl_crawl: firecrawlCrawlTool,
@@ -1873,6 +1986,7 @@ export const tools: Record<string, ToolConfig> = {
   jira_update_comment: jiraUpdateCommentTool,
   jira_delete_comment: jiraDeleteCommentTool,
   jira_get_attachments: jiraGetAttachmentsTool,
+  jira_add_attachment: jiraAddAttachmentTool,
   jira_delete_attachment: jiraDeleteAttachmentTool,
   jira_add_worklog: jiraAddWorklogTool,
   jira_get_worklogs: jiraGetWorklogsTool,
@@ -1977,6 +2091,11 @@ export const tools: Record<string, ToolConfig> = {
   spyfu_request: spyfuRequestTool,
   github_latest_commit_v2: githubLatestCommitV2Tool,
   serper_search: serperSearchTool,
+  similarweb_website_overview: similarwebWebsiteOverviewTool,
+  similarweb_traffic_visits: similarwebTrafficVisitsTool,
+  similarweb_bounce_rate: similarwebBounceRateTool,
+  similarweb_pages_per_visit: similarwebPagesPerVisitTool,
+  similarweb_visit_duration: similarwebVisitDurationTool,
   servicenow_create_record: servicenowCreateRecordTool,
   servicenow_read_record: servicenowReadRecordTool,
   servicenow_update_record: servicenowUpdateRecordTool,
@@ -2017,6 +2136,25 @@ export const tools: Record<string, ToolConfig> = {
   calendly_list_webhooks: calendlyListWebhooksTool,
   calendly_create_webhook: calendlyCreateWebhookTool,
   calendly_delete_webhook: calendlyDeleteWebhookTool,
+  calcom_create_booking: calcomCreateBookingTool,
+  calcom_get_booking: calcomGetBookingTool,
+  calcom_list_bookings: calcomListBookingsTool,
+  calcom_cancel_booking: calcomCancelBookingTool,
+  calcom_reschedule_booking: calcomRescheduleBookingTool,
+  calcom_confirm_booking: calcomConfirmBookingTool,
+  calcom_decline_booking: calcomDeclineBookingTool,
+  calcom_create_event_type: calcomCreateEventTypeTool,
+  calcom_get_event_type: calcomGetEventTypeTool,
+  calcom_list_event_types: calcomListEventTypesTool,
+  calcom_update_event_type: calcomUpdateEventTypeTool,
+  calcom_delete_event_type: calcomDeleteEventTypeTool,
+  calcom_create_schedule: calcomCreateScheduleTool,
+  calcom_get_schedule: calcomGetScheduleTool,
+  calcom_list_schedules: calcomListSchedulesTool,
+  calcom_update_schedule: calcomUpdateScheduleTool,
+  calcom_delete_schedule: calcomDeleteScheduleTool,
+  calcom_get_default_schedule: calcomGetDefaultScheduleTool,
+  calcom_get_slots: calcomGetSlotsTool,
   typeform_responses: typeformResponsesTool,
   typeform_files: typeformFilesTool,
   typeform_insights: typeformInsightsTool,
@@ -2025,13 +2163,15 @@ export const tools: Record<string, ToolConfig> = {
   typeform_create_form: typeformCreateFormTool,
   typeform_update_form: typeformUpdateFormTool,
   typeform_delete_form: typeformDeleteFormTool,
-  youtube_search: youtubeSearchTool,
-  youtube_video_details: youtubeVideoDetailsTool,
   youtube_channel_info: youtubeChannelInfoTool,
-  youtube_playlist_items: youtubePlaylistItemsTool,
-  youtube_comments: youtubeCommentsTool,
-  youtube_channel_videos: youtubeChannelVideosTool,
   youtube_channel_playlists: youtubeChannelPlaylistsTool,
+  youtube_channel_videos: youtubeChannelVideosTool,
+  youtube_comments: youtubeCommentsTool,
+  youtube_playlist_items: youtubePlaylistItemsTool,
+  youtube_search: youtubeSearchTool,
+  youtube_trending: youtubeTrendingTool,
+  youtube_video_categories: youtubeVideoCategoriesTool,
+  youtube_video_details: youtubeVideoDetailsTool,
   notion_read: notionReadTool,
   notion_read_database: notionReadDatabaseTool,
   notion_write: notionWriteTool,
@@ -2133,6 +2273,9 @@ export const tools: Record<string, ToolConfig> = {
   dropbox_create_shared_link: dropboxCreateSharedLinkTool,
   dropbox_search: dropboxSearchTool,
   duckduckgo_search: duckduckgoSearchTool,
+  dspy_predict: predictTool,
+  dspy_chain_of_thought: chainOfThoughtTool,
+  dspy_react: reactTool,
   mongodb_query: mongodbQueryTool,
   mongodb_insert: mongodbInsertTool,
   mongodb_update: mongodbUpdateTool,
@@ -2365,6 +2508,35 @@ export const tools: Record<string, ToolConfig> = {
   elasticsearch_list_indices: elasticsearchListIndicesTool,
   elasticsearch_cluster_health: elasticsearchClusterHealthTool,
   elasticsearch_cluster_stats: elasticsearchClusterStatsTool,
+  enrich_check_credits: enrichCheckCreditsTool,
+  enrich_company_funding: enrichCompanyFundingTool,
+  enrich_company_lookup: enrichCompanyLookupTool,
+  enrich_company_revenue: enrichCompanyRevenueTool,
+  enrich_disposable_email_check: enrichDisposableEmailCheckTool,
+  enrich_email_to_ip: enrichEmailToIpTool,
+  enrich_email_to_person_lite: enrichEmailToPersonLiteTool,
+  enrich_email_to_phone: enrichEmailToPhoneTool,
+  enrich_email_to_profile: enrichEmailToProfileTool,
+  enrich_find_email: enrichFindEmailTool,
+  enrich_get_post_details: enrichGetPostDetailsTool,
+  enrich_ip_to_company: enrichIpToCompanyTool,
+  enrich_linkedin_profile: enrichLinkedInProfileTool,
+  enrich_linkedin_to_personal_email: enrichLinkedInToPersonalEmailTool,
+  enrich_linkedin_to_work_email: enrichLinkedInToWorkEmailTool,
+  enrich_phone_finder: enrichPhoneFinderTool,
+  enrich_reverse_hash_lookup: enrichReverseHashLookupTool,
+  enrich_sales_pointer_people: enrichSalesPointerPeopleTool,
+  enrich_search_company: enrichSearchCompanyTool,
+  enrich_search_company_activities: enrichSearchCompanyActivitiesTool,
+  enrich_search_company_employees: enrichSearchCompanyEmployeesTool,
+  enrich_search_logo: enrichSearchLogoTool,
+  enrich_search_people: enrichSearchPeopleTool,
+  enrich_search_people_activities: enrichSearchPeopleActivitiesTool,
+  enrich_search_post_comments: enrichSearchPostCommentsTool,
+  enrich_search_post_reactions: enrichSearchPostReactionsTool,
+  enrich_search_posts: enrichSearchPostsTool,
+  enrich_search_similar_companies: enrichSearchSimilarCompaniesTool,
+  enrich_verify_email: enrichVerifyEmailTool,
   exa_search: exaSearchTool,
   exa_get_contents: exaGetContentsTool,
   exa_find_similar_links: exaFindSimilarLinksTool,
@@ -2417,6 +2589,19 @@ export const tools: Record<string, ToolConfig> = {
   google_docs_read: googleDocsReadTool,
   google_docs_write: googleDocsWriteTool,
   google_docs_create: googleDocsCreateTool,
+  google_maps_air_quality: googleMapsAirQualityTool,
+  google_maps_directions: googleMapsDirectionsTool,
+  google_maps_distance_matrix: googleMapsDistanceMatrixTool,
+  google_maps_elevation: googleMapsElevationTool,
+  google_maps_geocode: googleMapsGeocodeTool,
+  google_maps_geolocate: googleMapsGeolocateTool,
+  google_maps_place_details: googleMapsPlaceDetailsTool,
+  google_maps_places_search: googleMapsPlacesSearchTool,
+  google_maps_reverse_geocode: googleMapsReverseGeocodeTool,
+  google_maps_snap_to_roads: googleMapsSnapToRoadsTool,
+  google_maps_speed_limits: googleMapsSpeedLimitsTool,
+  google_maps_timezone: googleMapsTimezoneTool,
+  google_maps_validate_address: googleMapsValidateAddressTool,
   google_sheets_read: googleSheetsReadTool,
   google_sheets_write: googleSheetsWriteTool,
   google_sheets_update: googleSheetsUpdateTool,
@@ -2452,6 +2637,7 @@ export const tools: Record<string, ToolConfig> = {
   perplexity_chat: perplexityChatTool,
   perplexity_search: perplexitySearchTool,
   pulse_parser: pulseParserTool,
+  pulse_parser_v2: pulseParserV2Tool,
   posthog_capture_event: posthogCaptureEventTool,
   posthog_batch_events: posthogBatchEventsTool,
   posthog_list_persons: posthogListPersonsTool,
@@ -2499,7 +2685,19 @@ export const tools: Record<string, ToolConfig> = {
   confluence_update: confluenceUpdateTool,
   confluence_create_page: confluenceCreatePageTool,
   confluence_delete_page: confluenceDeletePageTool,
+  confluence_list_pages_in_space: confluenceListPagesInSpaceTool,
+  confluence_get_page_children: confluenceGetPageChildrenTool,
+  confluence_get_page_ancestors: confluenceGetPageAncestorsTool,
+  confluence_list_page_versions: confluenceListPageVersionsTool,
+  confluence_get_page_version: confluenceGetPageVersionTool,
+  confluence_list_page_properties: confluenceListPagePropertiesTool,
+  confluence_create_page_property: confluenceCreatePagePropertyTool,
+  confluence_list_blogposts: confluenceListBlogPostsTool,
+  confluence_get_blogpost: confluenceGetBlogPostTool,
+  confluence_create_blogpost: confluenceCreateBlogPostTool,
+  confluence_list_blogposts_in_space: confluenceListBlogPostsInSpaceTool,
   confluence_search: confluenceSearchTool,
+  confluence_search_in_space: confluenceSearchInSpaceTool,
   confluence_create_comment: confluenceCreateCommentTool,
   confluence_list_comments: confluenceListCommentsTool,
   confluence_update_comment: confluenceUpdateCommentTool,
@@ -2508,6 +2706,7 @@ export const tools: Record<string, ToolConfig> = {
   confluence_upload_attachment: confluenceUploadAttachmentTool,
   confluence_delete_attachment: confluenceDeleteAttachmentTool,
   confluence_list_labels: confluenceListLabelsTool,
+  confluence_add_label: confluenceAddLabelTool,
   confluence_get_space: confluenceGetSpaceTool,
   confluence_list_spaces: confluenceListSpacesTool,
   cursor_list_agents: cursorListAgentsTool,
@@ -2575,8 +2774,11 @@ export const tools: Record<string, ToolConfig> = {
   apollo_email_accounts: apolloEmailAccountsTool,
   mistral_parser: mistralParserTool,
   mistral_parser_v2: mistralParserV2Tool,
+  mistral_parser_v3: mistralParserV3Tool,
   reducto_parser: reductoParserTool,
+  reducto_parser_v2: reductoParserV2Tool,
   textract_parser: textractParserTool,
+  textract_parser_v2: textractParserV2Tool,
   thinking_tool: thinkingTool,
   tinybird_events: tinybirdEventsTool,
   tinybird_query: tinybirdQueryTool,
@@ -2604,10 +2806,15 @@ export const tools: Record<string, ToolConfig> = {
   search_tool: searchTool,
   elevenlabs_tts: elevenLabsTtsTool,
   stt_whisper: whisperSttTool,
+  stt_whisper_v2: whisperSttV2Tool,
   stt_deepgram: deepgramSttTool,
+  stt_deepgram_v2: deepgramSttV2Tool,
   stt_elevenlabs: elevenLabsSttTool,
+  stt_elevenlabs_v2: elevenLabsSttV2Tool,
   stt_assemblyai: assemblyaiSttTool,
+  stt_assemblyai_v2: assemblyaiSttV2Tool,
   stt_gemini: geminiSttTool,
+  stt_gemini_v2: geminiSttV2Tool,
   tts_openai: openaiTtsTool,
   tts_deepgram: deepgramTtsTool,
   tts_elevenlabs: elevenLabsTtsUnifiedTool,
@@ -2633,6 +2840,17 @@ export const tools: Record<string, ToolConfig> = {
   telegram_send_video: telegramSendVideoTool,
   telegram_send_document: telegramSendDocumentTool,
   clay_populate: clayPopulateTool,
+  clerk_list_users: clerkListUsersTool,
+  clerk_get_user: clerkGetUserTool,
+  clerk_create_user: clerkCreateUserTool,
+  clerk_update_user: clerkUpdateUserTool,
+  clerk_delete_user: clerkDeleteUserTool,
+  clerk_list_organizations: clerkListOrganizationsTool,
+  clerk_get_organization: clerkGetOrganizationTool,
+  clerk_create_organization: clerkCreateOrganizationTool,
+  clerk_list_sessions: clerkListSessionsTool,
+  clerk_get_session: clerkGetSessionTool,
+  clerk_revoke_session: clerkRevokeSessionTool,
   discord_send_message: discordSendMessageTool,
   discord_get_messages: discordGetMessagesTool,
   discord_get_server: discordGetServerTool,

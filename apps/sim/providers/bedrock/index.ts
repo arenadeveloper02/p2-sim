@@ -20,11 +20,7 @@ import {
   generateToolUseId,
   getBedrockInferenceProfileId,
 } from '@/providers/bedrock/utils'
-import {
-  getMaxOutputTokensForModel,
-  getProviderDefaultModel,
-  getProviderModels,
-} from '@/providers/models'
+import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import type {
   ProviderConfig,
   ProviderRequest,
@@ -201,6 +197,9 @@ export const bedrockProvider: ProviderConfig = {
             } else if (tc.type === 'function' && tc.function?.name) {
               toolChoice = { tool: { name: tc.function.name } }
               logger.info(`Using Bedrock tool_choice format: force tool "${tc.function.name}"`)
+            } else if (tc.type === 'any') {
+              toolChoice = { any: {} }
+              logger.info('Using Bedrock tool_choice format: any tool')
             } else {
               toolChoice = { auto: {} }
             }
@@ -261,11 +260,11 @@ export const bedrockProvider: ProviderConfig = {
 
     const systemPromptWithSchema = systemContent
 
-    const inferenceConfig = {
+    const inferenceConfig: { temperature: number; maxTokens?: number } = {
       temperature: Number.parseFloat(String(request.temperature ?? 0.7)),
-      maxTokens:
-        Number.parseInt(String(request.maxTokens)) ||
-        getMaxOutputTokensForModel(request.model, request.stream ?? false),
+    }
+    if (request.maxTokens != null) {
+      inferenceConfig.maxTokens = Number.parseInt(String(request.maxTokens))
     }
 
     const shouldStreamToolCalls = request.streamToolCalls ?? false
@@ -417,6 +416,7 @@ export const bedrockProvider: ProviderConfig = {
         input: initialCost.input,
         output: initialCost.output,
         total: initialCost.total,
+        pricing: initialCost.pricing,
       }
 
       const toolCalls: any[] = []
@@ -864,6 +864,12 @@ export const bedrockProvider: ProviderConfig = {
         content,
         model: request.model,
         tokens,
+        cost: {
+          input: cost.input,
+          output: cost.output,
+          total: cost.total,
+          pricing: cost.pricing,
+        },
         toolCalls:
           toolCalls.length > 0
             ? toolCalls.map((tc) => ({

@@ -4,7 +4,9 @@ import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import { getExecutionTimeout } from '@/lib/core/execution-limits'
 import { RateLimiter } from '@/lib/core/rate-limiter/rate-limiter'
+import type { SubscriptionPlan } from '@/lib/core/rate-limiter/types'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 import type { CoreTriggerType } from '@/stores/logs/filters/types'
@@ -122,6 +124,7 @@ export interface PreprocessExecutionOptions {
   workspaceId?: string // If known, used for billing resolution
   loggingSession?: LoggingSession // If provided, will be used for error logging
   isResumeContext?: boolean // If true, allows fallback billing on resolution failure (for paused workflow resumes)
+  useAuthenticatedUserAsActor?: boolean // If true, use the authenticated userId as actorUserId (for client-side executions and personal API keys)
   /** @deprecated No longer used - background/async executions always use deployed state */
   useDraftState?: boolean
 }
@@ -133,16 +136,20 @@ export interface PreprocessExecutionResult {
   success: boolean
   error?: {
     message: string
-    statusCode: number // HTTP status code (401, 402, 403, 404, 429, 500)
-    logCreated: boolean // Whether error was logged to execution_logs
+    statusCode: number
+    logCreated: boolean
   }
-  actorUserId?: string // The user ID that will be billed
+  actorUserId?: string
   workflowRecord?: WorkflowRecord
   userSubscription?: SubscriptionInfo | null
   rateLimitInfo?: {
     allowed: boolean
     remaining: number
     resetAt: Date
+  }
+  executionTimeout?: {
+    sync: number
+    async: number
   }
 }
 
@@ -167,6 +174,7 @@ export async function preprocessExecution(
     workspaceId: providedWorkspaceId,
     loggingSession: providedLoggingSession,
     isResumeContext = false,
+    useAuthenticatedUserAsActor = false,
   } = options
 
   logger.info(`[${requestId}] Starting execution preprocessing`, {
@@ -254,7 +262,14 @@ export async function preprocessExecution(
   let actorUserId: string | null = null
 
   try {
-    if (workspaceId) {
+    // For client-side executions and personal API keys, the authenticated
+    // user is the billing and permission actor — not the workspace owner.
+    if (useAuthenticatedUserAsActor && userId) {
+      actorUserId = userId
+      logger.info(`[${requestId}] Using authenticated user as actor: ${actorUserId}`)
+    }
+
+    if (!actorUserId && workspaceId) {
       actorUserId = await getWorkspaceBilledAccountUserId(workspaceId)
       if (actorUserId) {
         logger.info(`[${requestId}] Using workspace billed account: ${actorUserId}`)
@@ -487,12 +502,17 @@ export async function preprocessExecution(
     triggerType,
   })
 
+  const plan = userSubscription?.plan as SubscriptionPlan | undefined
   return {
     success: true,
     actorUserId,
     workflowRecord,
     userSubscription,
     rateLimitInfo,
+    executionTimeout: {
+      sync: getExecutionTimeout(plan, 'sync'),
+      async: getExecutionTimeout(plan, 'async'),
+    },
   }
 }
 

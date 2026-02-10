@@ -33,7 +33,7 @@ import {
   SModalSidebarSection,
   SModalSidebarSectionTitle,
 } from '@/components/emcn'
-import { McpIcon } from '@/components/icons'
+import { AgentSkillsIcon, McpIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionStatus } from '@/lib/billing/client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
@@ -41,7 +41,6 @@ import { isHosted } from '@/lib/core/config/feature-flags'
 import { getUserRole } from '@/lib/workspaces/organization'
 import { settingsPageTabSwitchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
-  AccessControl,
   ApiKeys,
   BYOK,
   Copilot,
@@ -53,16 +52,19 @@ import {
   General,
   Integrations,
   MCP,
-  SSO,
+  Skills,
   Subscription,
   TeamManagement,
   WorkflowMcpServers,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-modal/components'
 import { TemplateProfile } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-modal/components/template-profile/template-profile'
+import { AccessControl } from '@/ee/access-control/components/access-control'
+import { SSO } from '@/ee/sso/components/sso-settings'
+import { ssoKeys, useSSOProviders } from '@/ee/sso/hooks/sso'
 import { generalSettingsKeys, useGeneralSettings } from '@/hooks/queries/general-settings'
 import { organizationKeys, useOrganizations } from '@/hooks/queries/organization'
-import { ssoKeys, useSSOProviders } from '@/hooks/queries/sso'
 import { subscriptionKeys, useSubscriptionData } from '@/hooks/queries/subscription'
+import { useSuperUserStatus } from '@/hooks/queries/user-profile'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsModalStore } from '@/stores/modals/settings/store'
 
@@ -92,6 +94,7 @@ type SettingsSection =
   | 'copilot'
   | 'mcp'
   | 'custom-tools'
+  | 'skills'
   | 'workflow-mcp-servers'
   | 'debug'
 
@@ -155,6 +158,7 @@ const allNavigationItems: NavigationItem[] = [
   },
   { id: 'integrations', label: 'Integrations', icon: Connections, section: 'tools' },
   { id: 'custom-tools', label: 'Custom Tools', icon: Wrench, section: 'tools' },
+  { id: 'skills', label: 'Skills', icon: AgentSkillsIcon, section: 'tools' },
   { id: 'mcp', label: 'MCP Tools', icon: McpIcon, section: 'tools' },
   { id: 'environment', label: 'Environment', icon: FolderCode, section: 'system' },
   { id: 'apikeys', label: 'API Keys', icon: Key, section: 'system' },
@@ -205,13 +209,13 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
   const { initialSection, mcpServerId, clearInitialState } = useSettingsModalStore()
   const [pendingMcpServerId, setPendingMcpServerId] = useState<string | null>(null)
-  const [isSuperUser, setIsSuperUser] = useState(false)
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const { data: organizationsData } = useOrganizations()
   const { data: generalSettings } = useGeneralSettings()
   const { data: subscriptionData } = useSubscriptionData({ enabled: isBillingEnabled })
   const { data: ssoProvidersData, isLoading: isLoadingSSO } = useSSOProviders()
+  const { data: superUserData } = useSuperUserStatus(session?.user?.id)
 
   const activeOrganization = organizationsData?.activeOrganization
   const { config: permissionConfig } = usePermissionConfig()
@@ -230,22 +234,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const hasEnterprisePlan = subscriptionStatus.isEnterprise
   const hasOrganization = !!activeOrganization?.id
 
-  // Fetch superuser status
-  useEffect(() => {
-    const fetchSuperUserStatus = async () => {
-      if (!userId) return
-      try {
-        const response = await fetch('/api/user/super-user')
-        if (response.ok) {
-          const data = await response.json()
-          setIsSuperUser(data.isSuperUser)
-        }
-      } catch {
-        setIsSuperUser(false)
-      }
-    }
-    fetchSuperUserStatus()
-  }, [userId])
+  const isSuperUser = superUserData?.isSuperUser ?? false
 
   // Memoize SSO provider ownership check
   const isSSOProviderOwner = useMemo(() => {
@@ -278,6 +267,9 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
         return false
       }
       if (item.id === 'custom-tools' && permissionConfig.disableCustomTools) {
+        return false
+      }
+      if (item.id === 'skills' && permissionConfig.disableSkills) {
         return false
       }
 
@@ -329,7 +321,13 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     generalSettings?.superUserModeEnabled,
   ])
 
-  // Memoized callbacks to prevent infinite loops in child components
+  const effectiveActiveSection = useMemo(() => {
+    if (!isBillingEnabled && (activeSection === 'subscription' || activeSection === 'team')) {
+      return 'general'
+    }
+    return activeSection
+  }, [activeSection])
+
   const registerEnvironmentBeforeLeaveHandler = useCallback(
     (handler: (onProceed: () => void) => void) => {
       environmentBeforeLeaveHandler.current = handler
@@ -346,18 +344,18 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
       settingsPageTabSwitchEvent({
         Tabs: sectionId?.charAt(0).toUpperCase() + sectionId?.slice(1) || '',
       })
-      if (sectionId === activeSection) return
-      if (activeSection === 'environment' && environmentBeforeLeaveHandler.current) {
+      if (sectionId === effectiveActiveSection) return
+
+      if (effectiveActiveSection === 'environment' && environmentBeforeLeaveHandler.current) {
         environmentBeforeLeaveHandler.current(() => setActiveSection(sectionId))
         return
       }
 
       setActiveSection(sectionId)
     },
-    [activeSection]
+    [effectiveActiveSection]
   )
 
-  // Apply initial section from store when modal opens
   useEffect(() => {
     if (open && initialSection) {
       setActiveSection(initialSection)
@@ -368,7 +366,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   }, [open, initialSection, mcpServerId, clearInitialState])
 
-  // Clear pending server ID when section changes away from MCP
   useEffect(() => {
     if (activeSection !== 'mcp') {
       setPendingMcpServerId(null)
@@ -394,14 +391,6 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
     }
   }, [onOpenChange])
 
-  // Redirect away from billing tabs if billing is disabled
-  useEffect(() => {
-    if (!isBillingEnabled && (activeSection === 'subscription' || activeSection === 'team')) {
-      setActiveSection('general')
-    }
-  }, [activeSection])
-
-  // Prefetch functions for React Query
   const prefetchGeneral = () => {
     queryClient.prefetchQuery({
       queryKey: generalSettingsKeys.settings(),
@@ -495,9 +484,17 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
   // Handle dialog close - delegate to environment component if it's active
   const handleDialogOpenChange = (newOpen: boolean) => {
-    if (!newOpen && activeSection === 'environment' && environmentBeforeLeaveHandler.current) {
+    if (
+      !newOpen &&
+      effectiveActiveSection === 'environment' &&
+      environmentBeforeLeaveHandler.current
+    ) {
       environmentBeforeLeaveHandler.current(() => onOpenChange(false))
-    } else if (!newOpen && activeSection === 'integrations' && integrationsCloseHandler.current) {
+    } else if (
+      !newOpen &&
+      effectiveActiveSection === 'integrations' &&
+      integrationsCloseHandler.current
+    ) {
       integrationsCloseHandler.current(newOpen)
     } else {
       onOpenChange(newOpen)
@@ -528,7 +525,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                 {sectionItems.map((item) => (
                   <SModalSidebarItem
                     key={item.id}
-                    active={activeSection === item.id}
+                    active={effectiveActiveSection === item.id}
                     icon={<item.icon />}
                     onMouseEnter={() => handlePrefetch(item.id)}
                     onClick={() => handleSectionChange(item.id)}
@@ -544,35 +541,37 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
         <SModalMain>
           <SModalMainHeader>
-            {navigationItems.find((item) => item.id === activeSection)?.label || activeSection}
+            {navigationItems.find((item) => item.id === effectiveActiveSection)?.label ||
+              effectiveActiveSection}
           </SModalMainHeader>
           <SModalMainBody>
-            {activeSection === 'general' && <General onOpenChange={onOpenChange} />}
-            {activeSection === 'environment' && (
+            {effectiveActiveSection === 'general' && <General onOpenChange={onOpenChange} />}
+            {effectiveActiveSection === 'environment' && (
               <EnvironmentVariables
                 registerBeforeLeaveHandler={registerEnvironmentBeforeLeaveHandler}
               />
             )}
-            {activeSection === 'template-profile' && <TemplateProfile />}
-            {activeSection === 'integrations' && (
+            {effectiveActiveSection === 'template-profile' && <TemplateProfile />}
+            {effectiveActiveSection === 'integrations' && (
               <Integrations
                 onOpenChange={onOpenChange}
                 registerCloseHandler={registerIntegrationsCloseHandler}
               />
             )}
-            {activeSection === 'credential-sets' && <CredentialSets />}
-            {activeSection === 'access-control' && <AccessControl />}
-            {activeSection === 'apikeys' && <ApiKeys onOpenChange={onOpenChange} />}
-            {activeSection === 'files' && <FileUploads />}
-            {isBillingEnabled && activeSection === 'subscription' && <Subscription />}
-            {isBillingEnabled && activeSection === 'team' && <TeamManagement />}
-            {activeSection === 'sso' && <SSO />}
-            {activeSection === 'byok' && <BYOK />}
-            {activeSection === 'copilot' && <Copilot />}
-            {activeSection === 'mcp' && <MCP initialServerId={pendingMcpServerId} />}
-            {activeSection === 'custom-tools' && <CustomTools />}
-            {activeSection === 'workflow-mcp-servers' && <WorkflowMcpServers />}
-            {activeSection === 'debug' && <Debug />}
+            {effectiveActiveSection === 'credential-sets' && <CredentialSets />}
+            {effectiveActiveSection === 'access-control' && <AccessControl />}
+            {effectiveActiveSection === 'apikeys' && <ApiKeys onOpenChange={onOpenChange} />}
+            {effectiveActiveSection === 'files' && <FileUploads />}
+            {isBillingEnabled && effectiveActiveSection === 'subscription' && <Subscription />}
+            {isBillingEnabled && effectiveActiveSection === 'team' && <TeamManagement />}
+            {effectiveActiveSection === 'sso' && <SSO />}
+            {effectiveActiveSection === 'byok' && <BYOK />}
+            {effectiveActiveSection === 'copilot' && <Copilot />}
+            {effectiveActiveSection === 'mcp' && <MCP initialServerId={pendingMcpServerId} />}
+            {effectiveActiveSection === 'custom-tools' && <CustomTools />}
+            {effectiveActiveSection === 'skills' && <Skills />}
+            {effectiveActiveSection === 'workflow-mcp-servers' && <WorkflowMcpServers />}
+            {effectiveActiveSection === 'debug' && <Debug />}
           </SModalMainBody>
         </SModalMain>
       </SModalContent>

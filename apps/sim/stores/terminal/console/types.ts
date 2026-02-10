@@ -10,6 +10,7 @@ export interface ConsoleEntry {
   blockType: string
   executionId?: string
   startedAt?: string
+  executionOrder: number
   endedAt?: string
   durationMs?: number
   success?: boolean
@@ -20,6 +21,8 @@ export interface ConsoleEntry {
   iterationCurrent?: number
   iterationTotal?: number
   iterationType?: SubflowType
+  isRunning?: boolean
+  isCanceled?: boolean
 }
 
 export interface ConsoleUpdate {
@@ -29,9 +32,15 @@ export interface ConsoleUpdate {
   error?: string | Error | null
   warning?: string
   success?: boolean
+  startedAt?: string
   endedAt?: string
   durationMs?: number
   input?: any
+  isRunning?: boolean
+  isCanceled?: boolean
+  iterationCurrent?: number
+  iterationTotal?: number
+  iterationType?: SubflowType
 }
 
 export interface ConsoleStore {
@@ -43,6 +52,7 @@ export interface ConsoleStore {
   getWorkflowEntries: (workflowId: string) => ConsoleEntry[]
   toggleConsole: () => void
   updateConsole: (blockId: string, update: string | ConsoleUpdate, executionId?: string) => void
+  cancelRunningEntries: (workflowId: string) => void
   _hasHydrated: boolean
   setHasHydrated: (hasHydrated: boolean) => void
 }

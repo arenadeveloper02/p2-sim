@@ -261,15 +261,15 @@ export class EdgeConstructor {
         target = sentinelStartId
       }
 
-      if (loopSentinelStartId) {
-        this.addEdge(dag, loopSentinelStartId, target, EDGE.LOOP_EXIT, targetHandle)
-      }
-
-      if (this.edgeCrossesLoopBoundary(originalSource, originalTarget, blocksInLoops, dag)) {
+      if (this.edgeCrossesLoopBoundary(source, target, blocksInLoops, dag)) {
         continue
       }
 
-      if (!this.isEdgeReachable(originalSource, originalTarget, reachableBlocks, dag)) {
+      if (loopSentinelStartId && !blocksInLoops.has(originalTarget)) {
+        this.addEdge(dag, loopSentinelStartId, target, EDGE.LOOP_EXIT, targetHandle)
+      }
+
+      if (!this.isEdgeReachable(source, target, reachableBlocks, dag)) {
         continue
       }
 

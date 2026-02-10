@@ -125,9 +125,39 @@ app:
     
     # Rate Limiting Configuration (per minute)
     RATE_LIMIT_WINDOW_MS: "60000"                         # Rate limit window duration (1 minute)
-    RATE_LIMIT_FREE_SYNC: "10"                            # Sync API executions per minute
-    RATE_LIMIT_FREE_ASYNC: "50"                           # Async API executions per minute
-    
+    RATE_LIMIT_FREE_SYNC: "50"                            # Sync API executions per minute
+    RATE_LIMIT_FREE_ASYNC: "200"                          # Async API executions per minute
+
+    # Execution Timeout Configuration (in seconds)
+    # Sync timeouts apply to synchronous API calls
+    EXECUTION_TIMEOUT_FREE: "300"                         # Free tier sync timeout (5 minutes)
+    EXECUTION_TIMEOUT_PRO: "3000"                         # Pro tier sync timeout (50 minutes)
+    EXECUTION_TIMEOUT_TEAM: "3000"                        # Team tier sync timeout (50 minutes)
+    EXECUTION_TIMEOUT_ENTERPRISE: "3000"                  # Enterprise tier sync timeout (50 minutes)
+    # Async timeouts apply to async/background job executions
+    EXECUTION_TIMEOUT_ASYNC_FREE: "5400"                  # Free tier async timeout (90 minutes)
+    EXECUTION_TIMEOUT_ASYNC_PRO: "5400"                   # Pro tier async timeout (90 minutes)
+    EXECUTION_TIMEOUT_ASYNC_TEAM: "5400"                  # Team tier async timeout (90 minutes)
+    EXECUTION_TIMEOUT_ASYNC_ENTERPRISE: "5400"            # Enterprise tier async timeout (90 minutes)
+
+    # Isolated-VM Worker Pool Configuration
+    IVM_POOL_SIZE: "4"                                    # Max worker processes in pool
+    IVM_MAX_CONCURRENT: "10000"                           # Max concurrent executions globally
+    IVM_MAX_PER_WORKER: "2500"                            # Max concurrent executions per worker
+    IVM_WORKER_IDLE_TIMEOUT_MS: "60000"                   # Worker idle cleanup timeout (ms)
+    IVM_QUEUE_TIMEOUT_MS: "300000"                        # Max queue wait before rejection (ms)
+    IVM_MAX_QUEUE_SIZE: "10000"                           # Max queued executions globally
+    IVM_MAX_ACTIVE_PER_OWNER: "200"                       # Max concurrent executions per user
+    IVM_MAX_QUEUED_PER_OWNER: "2000"                      # Max queued executions per user
+    IVM_MAX_OWNER_WEIGHT: "5"                             # Max scheduling weight per user
+    IVM_DISTRIBUTED_MAX_INFLIGHT_PER_OWNER: "2200"        # Max in-flight per user across instances (Redis)
+    IVM_DISTRIBUTED_LEASE_MIN_TTL_MS: "120000"            # Min distributed lease TTL (ms)
+    IVM_MAX_FETCH_RESPONSE_BYTES: "8388608"               # Max fetch response size (8MB)
+    IVM_MAX_FETCH_RESPONSE_CHARS: "4000000"               # Max fetch response chars
+    IVM_MAX_FETCH_URL_LENGTH: "8192"                      # Max fetch URL length
+    IVM_MAX_FETCH_OPTIONS_JSON_CHARS: "262144"            # Max fetch options payload (256KB)
+    IVM_MAX_STDOUT_CHARS: "200000"                        # Max stdout capture per execution
+
     # UI Branding & Whitelabeling Configuration
     NEXT_PUBLIC_BRAND_NAME: "Sim"                         # Custom brand name
     NEXT_PUBLIC_BRAND_LOGO_URL: ""                        # Custom logo URL (leave empty for default)
@@ -400,8 +430,10 @@ postgresql:
       algorithm: RSA  # RSA or ECDSA
       size: 4096  # Key size in bits
     # Issuer reference (REQUIRED if tls.enabled is true)
+    # By default, references the CA issuer created by certManager.caIssuer
+    # Make sure certManager.enabled is true, or provide your own issuer
     issuerRef:
-      name: selfsigned-cluster-issuer  # Name of your cert-manager Issuer/ClusterIssuer
+      name: sim-ca-issuer  # Name of your cert-manager Issuer/ClusterIssuer
       kind: ClusterIssuer  # ClusterIssuer or Issuer
       group: ""  # Optional: cert-manager.io (leave empty for default)
     # Additional DNS names (optional)
@@ -463,20 +495,26 @@ externalDatabase:
 ollama:
   # Enable/disable Ollama deployment
   enabled: false
-  
+
   # Image configuration
   image:
     repository: ollama/ollama
     tag: latest
     pullPolicy: Always
-  
+
   # Number of replicas
   replicaCount: 1
-  
+
   # GPU configuration
   gpu:
     enabled: false
     count: 1
+    # GPU sharing strategy: "mig" (Multi-Instance GPU) or "time-slicing"
+    # - mig: Hardware-level GPU partitioning (requires supported GPUs like A100)
+    # - time-slicing: Software-level GPU sharing (works with most NVIDIA GPUs)
+    strategy: "time-slicing"
+    # Number of time-slicing replicas (only used when strategy is "time-slicing")
+    timeSlicingReplicas: 5
   
   # Node selector for GPU workloads (adjust labels based on your cluster configuration)
   nodeSelector:
@@ -1186,3 +1224,52 @@ externalSecrets:
     externalDatabase:
       # Path to external database password in external store
       password: ""
+
+# cert-manager configuration
+# Prerequisites: Install cert-manager in your cluster first
+# See: https://cert-manager.io/docs/installation/
+#
+# This implements the recommended CA bootstrap pattern from cert-manager:
+# 1. Self-signed ClusterIssuer (bootstrap only - creates root CA)
+# 2. Root CA Certificate (self-signed, becomes the trust anchor)
+# 3. CA ClusterIssuer (signs application certificates using root CA)
+#
+# Reference: https://cert-manager.io/docs/configuration/selfsigned/
+certManager:
+  # Enable/disable cert-manager issuer resources
+  enabled: false
+
+  # Self-signed ClusterIssuer (used ONLY to bootstrap the root CA)
+  # Do not reference this issuer directly for application certificates
+  selfSignedIssuer:
+    name: "sim-selfsigned-bootstrap-issuer"
+
+  # Root CA Certificate configuration
+  # This certificate is signed by the self-signed issuer and used as the trust anchor
+  rootCA:
+    # Name of the Certificate resource
+    certificateName: "sim-root-ca"
+    # Namespace where the root CA certificate and secret will be created
+    # Must match cert-manager's cluster-resource-namespace (default: cert-manager)
+    namespace: "cert-manager"
+    # Common name for the root CA certificate
+    commonName: "sim-root-ca"
+    # Secret name where the root CA certificate and key will be stored
+    secretName: "sim-root-ca-secret"
+    # Certificate validity duration (default: 10 years)
+    duration: "87600h"
+    # Renew before expiry (default: 90 days)
+    renewBefore: "2160h"
+    # Private key configuration
+    privateKey:
+      algorithm: RSA
+      size: 4096
+    # Subject configuration
+    subject:
+      organizations: []
+      # If empty, defaults to the release name
+
+  # CA ClusterIssuer configuration
+  # This is the issuer that applications should reference for obtaining certificates
+  caIssuer:
+    name: "sim-ca-issuer"

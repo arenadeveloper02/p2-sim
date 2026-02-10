@@ -16,7 +16,12 @@ import {
   USER_FILE_PROPERTY_TYPES,
 } from '@/lib/workflows/types'
 import { getBlock } from '@/blocks'
-import type { BlockConfig, OutputCondition, OutputFieldDefinition } from '@/blocks/types'
+import {
+  type BlockConfig,
+  isHiddenFromDisplay,
+  type OutputCondition,
+  type OutputFieldDefinition,
+} from '@/blocks/types'
 import { getTool } from '@/tools/utils'
 import { getTrigger, isTriggerValid } from '@/triggers'
 
@@ -86,8 +91,8 @@ function evaluateOutputCondition(
 }
 
 /**
- * Filters outputs based on their conditions.
- * Returns a new OutputDefinition with only the outputs whose conditions are met.
+ * Filters outputs based on their conditions and hiddenFromDisplay flag.
+ * Returns a new OutputDefinition with only the outputs that should be shown.
  */
 function filterOutputsByCondition(
   outputs: OutputDefinition,
@@ -96,6 +101,8 @@ function filterOutputsByCondition(
   const filtered: OutputDefinition = {}
 
   for (const [key, value] of Object.entries(outputs)) {
+    if (isHiddenFromDisplay(value)) continue
+
     if (!value || typeof value !== 'object' || !('condition' in value)) {
       filtered[key] = value
       continue
@@ -105,7 +112,7 @@ function filterOutputsByCondition(
     const passes = !condition || evaluateOutputCondition(condition, subBlocks)
 
     if (passes) {
-      const { condition: _, ...rest } = value
+      const { condition: _, hiddenFromDisplay: __, ...rest } = value
       filtered[key] = rest
     }
   }
@@ -116,13 +123,13 @@ function filterOutputsByCondition(
 const CHAT_OUTPUTS: OutputDefinition = {
   input: { type: 'string', description: 'User message' },
   conversationId: { type: 'string', description: 'Conversation ID' },
-  files: { type: 'files', description: 'Uploaded files' },
+  files: { type: 'file[]', description: 'Uploaded files' },
 }
 
 const UNIFIED_START_OUTPUTS: OutputDefinition = {
   input: { type: 'string', description: 'Primary user input or message' },
   conversationId: { type: 'string', description: 'Conversation thread identifier' },
-  files: { type: 'files', description: 'User uploaded files' },
+  files: { type: 'file[]', description: 'User uploaded files' },
 }
 
 function applyInputFormatFields(
@@ -259,50 +266,26 @@ export function getBlockOutputs(
   }
 
   if (blockType === 'human_in_the_loop') {
-    const hitlOutputs: OutputDefinition = {
-      url: { type: 'string', description: 'Resume UI URL' },
-      resumeEndpoint: {
-        type: 'string',
-        description: 'Resume API endpoint URL for direct curl requests',
-      },
-    }
+    // Start with block config outputs (respects hiddenFromDisplay via filterOutputsByCondition)
+    const baseOutputs = filterOutputsByCondition(
+      { ...(blockConfig.outputs || {}) } as OutputDefinition,
+      subBlocks
+    )
 
+    // Add inputFormat fields (resume form fields)
     const normalizedInputFormat = normalizeInputFormatValue(subBlocks?.inputFormat?.value)
 
     for (const field of normalizedInputFormat) {
       const fieldName = field?.name?.trim()
       if (!fieldName) continue
 
-      hitlOutputs[fieldName] = {
+      baseOutputs[fieldName] = {
         type: (field?.type || 'any') as any,
-        description: `Field from resume form`,
+        description: field?.description || `Field from resume form`,
       }
     }
 
-    return hitlOutputs
-  }
-
-  if (blockType === 'approval') {
-    // Start with only url (apiUrl commented out - not accessible as output)
-    const pauseResumeOutputs: OutputDefinition = {
-      url: { type: 'string', description: 'Resume UI URL' },
-      // apiUrl: { type: 'string', description: 'Resume API URL' }, // Commented out - not accessible as output
-    }
-
-    const normalizedInputFormat = normalizeInputFormatValue(subBlocks?.inputFormat?.value)
-
-    // Add each input format field as a top-level output
-    for (const field of normalizedInputFormat) {
-      const fieldName = field?.name?.trim()
-      if (!fieldName) continue
-
-      pauseResumeOutputs[fieldName] = {
-        type: (field?.type || 'any') as any,
-        description: `Field from input format`,
-      }
-    }
-
-    return pauseResumeOutputs
+    return baseOutputs
   }
 
   if (startPath === StartBlockPath.LEGACY_STARTER) {
@@ -358,36 +341,15 @@ function expandFileTypeProperties(path: string): string[] {
   return USER_FILE_ACCESSIBLE_PROPERTIES.map((prop) => `${path}.${prop}`)
 }
 
-function collectOutputPaths(
-  obj: OutputDefinition,
-  blockType: string,
-  subBlocks: Record<string, SubBlockWithValue> | undefined,
-  prefix = ''
-): string[] {
-  const paths: string[] = []
+type FileOutputType = 'file' | 'file[]'
 
-  for (const [key, value] of Object.entries(obj)) {
-    const path = prefix ? `${prefix}.${key}` : key
-
-    if (shouldFilterReservedField(blockType, key, prefix, subBlocks)) {
-      continue
-    }
-
-    if (value && typeof value === 'object' && 'type' in value) {
-      const typedValue = value as { type: unknown }
-      if (typedValue.type === 'files' || typedValue.type === 'file[]') {
-        paths.push(...expandFileTypeProperties(path))
-      } else {
-        paths.push(path)
-      }
-    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-      paths.push(...collectOutputPaths(value as OutputDefinition, blockType, subBlocks, path))
-    } else {
-      paths.push(path)
-    }
+function isFileOutputDefinition(value: unknown): value is { type: FileOutputType } {
+  if (!value || typeof value !== 'object' || !('type' in value)) {
+    return false
   }
 
-  return paths
+  const { type } = value as { type?: unknown }
+  return type === 'file' || type === 'file[]'
 }
 
 export function getBlockOutputPaths(
@@ -396,7 +358,16 @@ export function getBlockOutputPaths(
   triggerMode?: boolean
 ): string[] {
   const outputs = getBlockOutputs(blockType, subBlocks, triggerMode)
-  return collectOutputPaths(outputs, blockType, subBlocks)
+  const paths = generateOutputPaths(outputs)
+
+  if (blockType === TRIGGER_TYPES.START) {
+    return paths.filter((path) => {
+      const key = path.split('.')[0]
+      return !shouldFilterReservedField(blockType, key, '', subBlocks)
+    })
+  }
+
+  return paths
 }
 
 function getFilePropertyType(outputs: OutputDefinition, pathParts: string[]): string | null {
@@ -413,13 +384,7 @@ function getFilePropertyType(outputs: OutputDefinition, pathParts: string[]): st
     current = (current as Record<string, unknown>)[part]
   }
 
-  if (
-    current &&
-    typeof current === 'object' &&
-    'type' in current &&
-    ((current as { type: unknown }).type === 'files' ||
-      (current as { type: unknown }).type === 'file[]')
-  ) {
+  if (isFileOutputDefinition(current)) {
     return USER_FILE_PROPERTY_TYPES[lastPart as keyof typeof USER_FILE_PROPERTY_TYPES]
   }
 
@@ -433,7 +398,45 @@ function traverseOutputPath(outputs: OutputDefinition, pathParts: string[]): unk
     if (!current || typeof current !== 'object') {
       return null
     }
-    current = (current as Record<string, unknown>)[part]
+
+    const currentObj = current as Record<string, unknown>
+
+    if (part in currentObj) {
+      current = currentObj[part]
+    } else if (
+      'type' in currentObj &&
+      currentObj.type === 'object' &&
+      'properties' in currentObj &&
+      currentObj.properties &&
+      typeof currentObj.properties === 'object'
+    ) {
+      const props = currentObj.properties as Record<string, unknown>
+      if (part in props) {
+        current = props[part]
+      } else {
+        return null
+      }
+    } else if (
+      'type' in currentObj &&
+      currentObj.type === 'array' &&
+      'items' in currentObj &&
+      currentObj.items &&
+      typeof currentObj.items === 'object'
+    ) {
+      const items = currentObj.items as Record<string, unknown>
+      if ('properties' in items && items.properties && typeof items.properties === 'object') {
+        const itemProps = items.properties as Record<string, unknown>
+        if (part in itemProps) {
+          current = itemProps[part]
+        } else {
+          return null
+        }
+      } else {
+        return null
+      }
+    } else {
+      return null
+    }
   }
 
   return current
@@ -487,7 +490,7 @@ function generateOutputPaths(outputs: Record<string, any>, prefix = ''): string[
       paths.push(currentPath)
     } else if (typeof value === 'object' && value !== null) {
       if ('type' in value && typeof value.type === 'string') {
-        if (value.type === 'files' || value.type === 'file[]') {
+        if (isFileOutputDefinition(value)) {
           paths.push(...expandFileTypeProperties(currentPath))
           continue
         }
@@ -548,7 +551,7 @@ function generateOutputPathsWithTypes(
       paths.push({ path: currentPath, type: value })
     } else if (typeof value === 'object' && value !== null) {
       if ('type' in value && typeof value.type === 'string') {
-        if (value.type === 'files' || value.type === 'file[]') {
+        if (isFileOutputDefinition(value)) {
           paths.push({ path: currentPath, type: value.type })
           for (const prop of USER_FILE_ACCESSIBLE_PROPERTIES) {
             paths.push({

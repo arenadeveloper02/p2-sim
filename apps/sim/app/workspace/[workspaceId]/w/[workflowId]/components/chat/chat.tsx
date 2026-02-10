@@ -1155,7 +1155,7 @@ export function Chat() {
 
       const newReservedFields: StartInputFormatField[] = missingStartReservedFields.map(
         (fieldName) => {
-          const defaultType = fieldName === 'files' ? 'files' : 'string'
+          const defaultType = fieldName === 'files' ? 'file[]' : 'string'
 
           return {
             id: crypto.randomUUID(),

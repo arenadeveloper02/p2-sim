@@ -1,6 +1,5 @@
 export { default as EmailAuth } from './auth/email/email-auth'
 export { default as PasswordAuth } from './auth/password/password-auth'
-export { default as SSOAuth } from './auth/sso/sso-auth'
 export { ChatErrorState } from './error-state/error-state'
 export { UnauthorizedEmailError } from './error-state/unauthorized-email-error'
 export { GoldenQueriesModal } from './golden-queries-modal'
