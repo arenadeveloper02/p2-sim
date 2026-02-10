@@ -2549,7 +2549,6 @@ export const auth = betterAuth({
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/zoom`,
           getUserInfo: async (tokens) => {
             try {
-              debugger;
               logger.info('Fetching Zoom user profile')
 
               const response = await fetch('https://api.zoom.us/v2/users/me', {
