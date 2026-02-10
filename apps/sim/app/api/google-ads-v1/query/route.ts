@@ -74,12 +74,9 @@ IMPORTANT RULES:
 - If no clear intent, use "campaign performance" as default
 - Month must be full name (January, February, etc.)
 - Year must be 4 digits (any year 1900-3000)
-- CRITICAL: If user mentions "2024 vs 2025" with one month specified, extract BOTH with the same month. Example: "October 2024 vs 2025" → ["October 2024", "October 2025"]
-- CRITICAL: Always extract the full month-year format, never just the year
 
 Examples:
 - "Compare October 2025 vs October 2024" → {"dateRanges": ["October 2025", "October 2024"], "intent": "campaign performance"}
-- "Compare October 2024 vs 2025 Performance" → {"dateRanges": ["October 2024", "October 2025"], "intent": "campaign performance"}
 - "Compare October 2025 vs October 2024, I want to see conversions" → {"dateRanges": ["October 2025", "October 2024"], "intent": "conversions"}
 - "Show December 2025 compared to December 2024, give me impressions" → {"dateRanges": ["December 2025", "December 2024"], "intent": "impressions"}
 - "November 2025 and November 2024 yoy for clicks" → {"dateRanges": ["November 2025", "November 2024"], "intent": "clicks"}
@@ -231,39 +228,21 @@ async function handleComparisonQuery(
     // Generate and execute two GAQL queries
     for (const dateRange of dateRanges.slice(0, 2)) {
       // Create natural language query for this date range
-      // Ensure proper date format and maintain comparison context for AI accuracy
-      let formattedDateRange = dateRange
-      if (!dateRange.includes(' ') && /^\d{4}$/.test(dateRange)) {
-        // If it's just a year, add a month for better AI accuracy
-        formattedDateRange = `January ${dateRange}`
-      }
-      // Add comparison context to ensure both queries are equally accurate
-      const naturalQuery = `show ${intent} for ${formattedDateRange} (comparison period)`
+      const naturalQuery = `show ${intent} for ${dateRange}`
       
       try {
         logger.info(`[${requestId}] Generating GAQL for: ${naturalQuery}`)
-        logger.info(`[${requestId}] Original date range: ${dateRange}, Formatted: ${formattedDateRange}`)
         
         // Generate GAQL query using existing system
         const queryResult = await generateGAQLQuery(naturalQuery)
         
         logger.info(`[${requestId}] Generated GAQL: ${queryResult.gaql_query}`)
-        logger.info(`[${requestId}] GAQL Query Type: ${queryResult.query_type}`)
-        logger.info(`[${requestId}] GAQL Tables Used: ${JSON.stringify(queryResult.tables_used)}`)
-        logger.info(`[${requestId}] GAQL Metrics Used: ${JSON.stringify(queryResult.metrics_used)}`)
         
         // Execute the GAQL query
         const apiResult = await makeGoogleAdsRequest(accountInfo.id, queryResult.gaql_query)
         
         // Process results
         const processedResults = processResults(apiResult, requestId, logger)
-        
-        logger.info(`[${requestId}] API Response for ${dateRange}:`, {
-          rowCount: processedResults.row_count,
-          totalRows: processedResults.total_rows,
-          totals: processedResults.totals,
-          sampleRows: processedResults.rows.slice(0, 2) // Show first 2 rows
-        })
         
         results.push({
           dateRange: dateRange,
