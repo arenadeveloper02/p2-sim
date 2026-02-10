@@ -56,41 +56,6 @@ export async function safeAccountInsert(
 }
 
 /**
- * Get the user ID based on either a session or a workflow ID
- */
-export async function getUserId(
-  requestId: string,
-  workflowId?: string
-): Promise<string | undefined> {
-  // If workflowId is provided, this is a server-side request
-  if (workflowId) {
-    // Get the workflow to verify the user ID
-    const workflows = await db
-      .select({ userId: workflow.userId })
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .limit(1)
-
-    if (!workflows.length) {
-      logger.warn(`[${requestId}] Workflow not found`)
-      return undefined
-    }
-
-    return workflows[0].userId
-  }
-  // This is a client-side request, use the session
-  const session = await getSession()
-
-  // Check if the user is authenticated
-  if (!session?.user?.id) {
-    logger.warn(`[${requestId}] Unauthenticated request rejected`)
-    return undefined
-  }
-
-  return session.user.id
-}
-
-/**
  * Get a credential by ID and verify it belongs to the user
  */
 export async function getCredential(requestId: string, credentialId: string, userId: string) {
