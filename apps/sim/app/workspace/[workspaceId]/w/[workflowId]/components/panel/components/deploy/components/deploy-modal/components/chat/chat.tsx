@@ -729,6 +729,8 @@ function AuthSelector({
   const [copySuccess, setCopySuccess] = useState(false)
   const [invalidEmails, setInvalidEmails] = useState<string[]>([])
   const [emailValidationErrors, setEmailValidationErrors] = useState<Map<string, string>>(new Map())
+  /** Tracks if we already prefilled session email once; prevents re-adding when user clears the list (create mode). */
+  const hasPrefilledSessionEmailRef = useRef(false)
 
   useEffect(() => {
     onInvalidEmailsChange?.(invalidEmails.length > 0)
@@ -975,24 +977,38 @@ function AuthSelector({
     })
   }
 
-  // Prefill session.email on mount
+  /** Reset prefill ref when in edit mode so create mode can prefill again on next open. */
   useEffect(() => {
-    if (session?.user?.email && !isExistingChat) {
-      const sessionEmail = session.user.email.toLowerCase().trim()
-      const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
-      const normalizedInvalidEmails = invalidEmails.map((e) => e.toLowerCase().trim())
-      const normalizedEmailItems = emailItems.map((item) => item.value.toLowerCase().trim())
-
-      if (
-        !normalizedEmails.includes(sessionEmail) &&
-        !normalizedInvalidEmails.includes(sessionEmail) &&
-        !normalizedEmailItems.includes(sessionEmail)
-      ) {
-        addEmail(sessionEmail).catch((error) => {
-          logger.error('Error prefilling session email', { error })
-        })
-      }
+    if (isExistingChat) {
+      hasPrefilledSessionEmailRef.current = false
     }
+  }, [isExistingChat])
+
+  /**
+   * Prefill session email once when in create mode and list is empty.
+   * Skip re-adding after user has cleared the list (use ref so we only prefill once per create session).
+   */
+  useEffect(() => {
+    if (!session?.user?.email || isExistingChat || hasPrefilledSessionEmailRef.current) return
+
+    const sessionEmail = session.user.email.toLowerCase().trim()
+    const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
+    const normalizedInvalidEmails = invalidEmails.map((e) => e.toLowerCase().trim())
+    const normalizedEmailItems = emailItems.map((item) => item.value.toLowerCase().trim())
+
+    const alreadyInList =
+      normalizedEmails.includes(sessionEmail) ||
+      normalizedInvalidEmails.includes(sessionEmail) ||
+      normalizedEmailItems.includes(sessionEmail)
+    if (alreadyInList) return
+
+    addEmail(sessionEmail)
+      .then(() => {
+        hasPrefilledSessionEmailRef.current = true
+      })
+      .catch((error) => {
+        logger.error('Error prefilling session email', { error })
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.email, isExistingChat, emails, emailItems])
 
