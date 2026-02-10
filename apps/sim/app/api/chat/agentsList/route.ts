@@ -162,7 +162,7 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
         and(
           isNotNull(workflowExecutionLogs.chatId),
           eq(workflowExecutionLogs.userId, userId),
-          inArray(workflowExecutionLogs.workflowId, workflowIds),
+          inArray(workflowExecutionLogs.workflowId, workflowIds)
         )
       )
       .orderBy(desc(workflowExecutionLogs.startedAt))
