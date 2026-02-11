@@ -38,6 +38,10 @@ export const ArenaBlock: BlockConfig = {
           label: 'Get Meetings',
           id: 'arena_get_meetings',
         },
+        {
+          label: 'Get Token',
+          id: 'arena_get_token',
+        },
       ],
       value: () => 'arena_create_task',
     },
@@ -512,7 +516,13 @@ export const ArenaBlock: BlockConfig = {
     output: { type: 'json', description: 'Output from Arena' },
   },
   tools: {
-    access: ['arena_create_task', 'arena_save_summary', 'arena_comments', 'arena_get_meetings'],
+    access: [
+      'arena_create_task',
+      'arena_save_summary',
+      'arena_comments',
+      'arena_get_meetings',
+      'arena_get_token',
+    ],
     config: {
       tool: (params) => {
         switch (params.operation) {
@@ -528,6 +538,8 @@ export const ArenaBlock: BlockConfig = {
             return 'arena_comments'
           case 'arena_get_meetings':
             return 'arena_get_meetings'
+          case 'arena_get_token':
+            return 'arena_get_token'
           default:
             throw new Error(`Invalid Arena operation: ${params.operation}`)
         }
