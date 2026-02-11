@@ -21,8 +21,11 @@ function isAllowedEmail(email: string): boolean {
  * Resolves the authorized user id: from session, or from query param when request uses internal token.
  * Caller must pass logged-in userId (and optionally email) as params; when using session, param userId must match session user.
  */
-async function resolveAuthorizedUserId(req: NextRequest): Promise<
-  { ok: true; userId: string } | { ok: false; status: number; body: { found: false; reason: string } }
+async function resolveAuthorizedUserId(
+  req: NextRequest
+): Promise<
+  | { ok: true; userId: string }
+  | { ok: false; status: number; body: { found: false; reason: string } }
 > {
   const { searchParams } = new URL(req.url)
   const paramUserId = searchParams.get('userId')?.trim()
@@ -84,10 +87,7 @@ export async function GET(req: NextRequest) {
       .limit(1)
 
     if (userRow.length === 0) {
-      return NextResponse.json(
-        { found: false, reason: 'User not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ found: false, reason: 'User not found' }, { status: 404 })
     }
 
     const email = userRow[0].email
@@ -120,9 +120,6 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     logger.error('Error fetching Arena token for user', err)
-    return NextResponse.json(
-      { found: false, reason: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ found: false, reason: 'Internal server error' }, { status: 500 })
   }
 }
