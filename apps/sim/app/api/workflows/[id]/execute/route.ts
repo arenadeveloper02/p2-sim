@@ -791,6 +791,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                   iterationCurrent: iterationContext.iterationCurrent,
                   iterationTotal: iterationContext.iterationTotal,
                   iterationType: iterationContext.iterationType,
+                  iterationContainerId: iterationContext.iterationContainerId,
                 }),
               },
             })
@@ -831,6 +832,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     iterationCurrent: iterationContext.iterationCurrent,
                     iterationTotal: iterationContext.iterationTotal,
                     iterationType: iterationContext.iterationType,
+                    iterationContainerId: iterationContext.iterationContainerId,
                   }),
                 },
               })
@@ -859,6 +861,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     iterationCurrent: iterationContext.iterationCurrent,
                     iterationTotal: iterationContext.iterationTotal,
                     iterationType: iterationContext.iterationType,
+                    iterationContainerId: iterationContext.iterationContainerId,
                   }),
                 },
               })
