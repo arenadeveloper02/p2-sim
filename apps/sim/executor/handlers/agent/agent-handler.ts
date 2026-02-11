@@ -1495,6 +1495,7 @@ export class AgentBlockHandler implements BlockHandler {
       reasoningEffort: inputs.reasoningEffort || undefined,
       verbosity: inputs.verbosity || undefined,
       thinkingLevel: inputs.thinkingLevel,
+      previousInteractionId: inputs.previousInteractionId,
     }
   }
 
@@ -1565,6 +1566,7 @@ export class AgentBlockHandler implements BlockHandler {
         reasoningEffort: providerRequest.reasoningEffort,
         verbosity: providerRequest.verbosity,
         thinkingLevel: providerRequest.thinkingLevel,
+        previousInteractionId: providerRequest.previousInteractionId,
       })
 
       return this.processProviderResponse(response, block, responseFormat)
@@ -1870,6 +1872,7 @@ export class AgentBlockHandler implements BlockHandler {
       content: result.content,
       model: result.model,
       ...this.createResponseMetadata(result),
+      ...(result.interactionId && { interactionId: result.interactionId }),
     }
   }
 

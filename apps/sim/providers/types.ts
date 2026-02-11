@@ -96,6 +96,8 @@ export interface ProviderResponse {
     total: number
     pricing: ModelPricing
   }
+  /** Interaction ID returned by the Interactions API (used for multi-turn deep research) */
+  interactionId?: string
 }
 
 export type ToolUsageControl = 'auto' | 'force' | 'none'
@@ -170,6 +172,8 @@ export interface ProviderRequest {
   verbosity?: string
   thinkingLevel?: string
   isDeployedContext?: boolean
+  /** Previous interaction ID for multi-turn Interactions API requests (deep research follow-ups) */
+  previousInteractionId?: string
 }
 
 export const providers: Record<string, ProviderConfig> = {}
