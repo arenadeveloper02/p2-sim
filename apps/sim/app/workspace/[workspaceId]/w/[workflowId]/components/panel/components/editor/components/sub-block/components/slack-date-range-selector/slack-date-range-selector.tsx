@@ -34,6 +34,7 @@ export function SlackDateRangeSelector({
     { label: 'today', value: '1' },
     { label: 'last 7 days', value: '7' },
     { label: 'last 14 days', value: '14' },
+    { label: 'last 30 days', value: '30' },
   ]
 
   const handleDateRangeChange = (selectedValue: string) => {
