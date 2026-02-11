@@ -233,7 +233,8 @@ Return ONLY the slide content - no explanations, no markdown formatting markers,
       id: 'createFromTemplateSchemaJson',
       title: 'Schema JSON',
       type: 'long-input',
-      placeholder: 'Valid JSON with id, templateVersion, slides (templateSlideObjectId, blocks with shapeId and content)',
+      placeholder:
+        'Valid JSON with id, templateVersion, slides (templateSlideObjectId, blocks with shapeId and content)',
       condition: { field: 'operation', value: 'create_from_template' },
       required: true,
     },
@@ -931,8 +932,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
         if (params.operation === 'create_from_template') {
           result.presentationName =
             (createFromTemplatePresentationName as string)?.trim() || undefined
-          result.schemaJson =
-            (createFromTemplateSchemaJson as string)?.trim() || undefined
+          result.schemaJson = (createFromTemplateSchemaJson as string)?.trim() || undefined
         }
 
         if (params.operation === 'duplicate_presentation') {
@@ -1099,8 +1099,14 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     folderId: { type: 'string', description: 'Folder identifier' },
     createContent: { type: 'string', description: 'Initial slide content' },
     // Create from template operation
-    createFromTemplatePresentationName: { type: 'string', description: 'Title for the new presentation' },
-    createFromTemplateSchemaJson: { type: 'string', description: 'Valid JSON schema with slides and block content' },
+    createFromTemplatePresentationName: {
+      type: 'string',
+      description: 'Title for the new presentation',
+    },
+    createFromTemplateSchemaJson: {
+      type: 'string',
+      description: 'Valid JSON schema with slides and block content',
+    },
     // Duplicate presentation operation
     sourcePresentationSelector: { type: 'string', description: 'Selected source presentation' },
     presentationIdForDuplicate: {
