@@ -74,7 +74,7 @@ const safeStorageAdapter: PersistStorage<ConsoleStore> = {
 /**
  * Updates a NormalizedBlockOutput with new content
  */
-const MAX_ENTRIES_PER_WORKFLOW = 1000
+const MAX_ENTRIES_PER_WORKFLOW = 5000
 
 const updateBlockOutput = (
   existingOutput: NormalizedBlockOutput | undefined,
