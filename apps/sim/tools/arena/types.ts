@@ -120,6 +120,20 @@ export type ArenaGetMeetingsParams = {
 
 export interface ArenaGetMeetingsResponse extends ToolResponse {}
 
+export type ArenaGetTokenParams = {
+  operation: string
+  _context?: {
+    workflowId?: string
+    workspaceId?: string
+    executionId?: string
+    isDeployedContext?: boolean
+    userId?: string
+    userEmail?: string
+  }
+}
+
+export interface ArenaGetTokenResponse extends ToolResponse {}
+
 export type ArenaClientUpdatedTasksParams = {
   operation: string
   'client-updated-tasks-client'?: {
