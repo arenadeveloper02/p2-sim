@@ -29,7 +29,6 @@ import {
   supportsToolUsageControl as supportsToolUsageControlFromDefinitions,
   updateOllamaModels as updateOllamaModelsInDefinitions,
 } from '@/providers/models'
-import { sambanovaProvider } from '@/providers/sambanova'
 import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useProvidersStore } from '@/stores/providers/store'
 import { mergeToolParameters } from '@/tools/params'
@@ -127,11 +126,7 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
       getProviderModelsFromDefinitions('anthropic').includes(model)
     ),
   },
-  sambanova: {
-    ...sambanovaProvider,
-    models: getProviderModelsFromDefinitions('sambanova'),
-    modelPatterns: PROVIDER_DEFINITIONS.sambanova.modelPatterns,
-  },
+  sambanova: buildProviderMetadata('sambanova'),
   google: buildProviderMetadata('google'),
   vertex: buildProviderMetadata('vertex'),
   'azure-openai': buildProviderMetadata('azure-openai'),

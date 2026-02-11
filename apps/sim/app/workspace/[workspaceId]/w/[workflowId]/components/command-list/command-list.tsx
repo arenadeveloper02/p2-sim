@@ -7,7 +7,7 @@ import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import { Button, Library } from '@/components/emcn'
 import { AgentIcon } from '@/components/icons'
-import { getBrandConfig } from '@/lib/branding/branding'
+import { defaultBrandConfig } from '@/lib/branding'
 import { cn } from '@/lib/core/utils/cn'
 import { usePreventZoom } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useSearchModalStore } from '@/stores/modals/search/store'
@@ -187,7 +187,7 @@ export function CommandList() {
         {/* Logo */}
         <div className='mb-[20px] flex justify-center'>
           <Image
-            src={getBrandConfig().logoUrl || ''}
+            src={defaultBrandConfig.logoUrl || ''}
             alt='Sim'
             width={99.56}
             height={48.56}
