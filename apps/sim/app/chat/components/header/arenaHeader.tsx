@@ -1,8 +1,8 @@
 'use client'
 
 import Image from 'next/image'
-import { useBrandConfig } from '@/lib/branding/branding'
 import { inter } from '@/app/_styles/fonts/inter/inter'
+import { useBrandConfig } from '@/ee/whitelabeling'
 
 interface ChatHeaderProps {
   chatConfig: {
