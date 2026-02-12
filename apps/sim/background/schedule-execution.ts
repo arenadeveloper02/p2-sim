@@ -747,6 +747,7 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
 
 export const scheduleExecution = task({
   id: 'schedule-execution',
+  machine: 'medium-1x',
   retry: {
     maxAttempts: 1,
   },
