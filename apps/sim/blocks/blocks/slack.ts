@@ -284,6 +284,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Today', id: '1' },
         { label: 'Last 7 days', id: '7' },
         { label: 'Last 14 days', id: '14' },
+        { label: 'Last 30 days', id: '30' },
       ],
       condition: {
         field: 'operation',
@@ -1130,7 +1131,10 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
     oldest: { type: 'string', description: 'Oldest timestamp' },
     fromDate: { type: 'string', description: 'From date (YYYY-MM-DD)' },
     toDate: { type: 'string', description: 'To date (YYYY-MM-DD)' },
-    dateRange: { type: 'string', description: 'Quick date range preset (1, 7, or 14 days)' },
+    dateRange: {
+      type: 'string',
+      description: 'Quick date range preset (1, 7, 14, or 30 days)',
+    },
     cursor: { type: 'string', description: 'Pagination cursor from previous response' },
     autoPaginate: { type: 'boolean', description: 'Auto-paginate when cursor is provided' },
     includeThreads: {

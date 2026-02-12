@@ -183,6 +183,12 @@ export class NodeExecutionOrchestrator {
           const shouldExecute = await this.loopOrchestrator.evaluateInitialCondition(ctx, loopId)
           if (!shouldExecute) {
             logger.info('Loop initial condition false, skipping loop body', { loopId })
+            const scope = this.loopOrchestrator.getLoopScope(ctx, loopId)
+            const loopType = scope?.loopType || 'unknown'
+            logger.info('Loop initial condition false, skipping loop body', {
+              loopId,
+              loopType,
+            })
             return {
               sentinelStart: true,
               shouldExit: true,

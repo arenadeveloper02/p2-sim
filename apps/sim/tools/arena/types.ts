@@ -94,6 +94,8 @@ export type ArenaCommentsParams = {
     | string
     | { sysId: string; id?: string; name: string; customDisplayValue?: string }
   'comment-task-number'?: string
+  'comment-to'?: string
+  'comment-cc'?: string
   'comment-text': string
   'comment-client-note'?: boolean
   _context: {
@@ -117,6 +119,20 @@ export type ArenaGetMeetingsParams = {
 }
 
 export interface ArenaGetMeetingsResponse extends ToolResponse {}
+
+export type ArenaGetTokenParams = {
+  operation: string
+  _context?: {
+    workflowId?: string
+    workspaceId?: string
+    executionId?: string
+    isDeployedContext?: boolean
+    userId?: string
+    userEmail?: string
+  }
+}
+
+export interface ArenaGetTokenResponse extends ToolResponse {}
 
 export type ArenaClientUpdatedTasksParams = {
   operation: string

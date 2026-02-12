@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
-import { BlockType } from '@/executor/constants'
+import { BlockType, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
 import { serializePauseSnapshot } from '@/executor/execution/snapshot-serializer'
@@ -441,6 +441,64 @@ export class ExecutionEngine {
         this.readyQueue = []
         // Set final output to the Response block output
         this.finalOutput = output
+        return
+      }
+    }
+
+    // When a loop sentinel start exits early (e.g., empty forEach collection),
+    // the loop body is skipped but we must still trigger the sentinel end so its
+    // LOOP_EXIT edge routes execution to the block after the loop.
+    if (
+      node.metadata.isSentinel &&
+      node.metadata.sentinelType === 'start' &&
+      node.metadata.loopId &&
+      output?.shouldExit === true &&
+      output?.selectedRoute === EDGE.LOOP_EXIT
+    ) {
+      const loopId = node.metadata.loopId
+      const sentinelEndId = buildSentinelEndId(loopId)
+      const sentinelEndNode = this.dag.nodes.get(sentinelEndId)
+
+      if (sentinelEndNode) {
+        logger.info('Loop sentinel start exiting early, triggering sentinel end directly', {
+          loopId,
+          sentinelStartId: nodeId,
+          sentinelEndId,
+        })
+
+        // Build the sentinel end output that will activate its LOOP_EXIT edge
+        const sentinelEndOutput: NormalizedBlockOutput = {
+          results: [],
+          shouldContinue: false,
+          shouldExit: true,
+          selectedRoute: EDGE.LOOP_EXIT,
+          totalIterations: 0,
+        }
+
+        // Set the sentinel end's output and mark it as executed
+        await this.nodeOrchestrator.handleNodeCompletion(
+          this.context,
+          sentinelEndId,
+          sentinelEndOutput
+        )
+
+        // Clear all incoming edges on sentinel end so it becomes ready
+        sentinelEndNode.incomingEdges.clear()
+
+        // Process sentinel end's outgoing edges to find blocks after the loop
+        const exitReadyNodes = this.edgeManager.processOutgoingEdges(
+          sentinelEndNode,
+          sentinelEndOutput,
+          false,
+          this.context
+        )
+
+        logger.info('Loop early exit: routing to blocks after loop', {
+          loopId,
+          readyNodes: exitReadyNodes,
+        })
+
+        this.addMultipleToQueue(exitReadyNodes)
         return
       }
     }
