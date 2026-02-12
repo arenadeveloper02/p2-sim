@@ -127,7 +127,7 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
-    const messages = await this.buildMessages(ctx, inputs, block.id)
+    const messages = await this.buildMessages(ctx, inputs, skillMetadata, block.id)
 
     const providerRequest = this.buildProviderRequest({
       ctx,

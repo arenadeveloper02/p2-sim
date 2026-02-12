@@ -74,8 +74,6 @@ interface OutputSelectProps {
  * @returns The OutputSelect component
  */
 export function OutputSelect({
-  workspaceName,
-  workspaceId,
   workflowId,
   selectedOutputs = [],
   onOutputSelect,

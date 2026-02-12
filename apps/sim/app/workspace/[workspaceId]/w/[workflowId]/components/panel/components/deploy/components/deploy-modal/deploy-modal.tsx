@@ -588,6 +588,7 @@ export function DeployModal({
                 <ChatDeploy
                   workflowId={workflowId || ''}
                   workflowWorkspaceId={workflowWorkspaceId || ''}
+                  workspaceName={workspaceName}
                   deploymentInfo={deploymentInfo}
                   existingChat={existingChat as ExistingChat | null}
                   isLoadingChat={isLoadingChat}

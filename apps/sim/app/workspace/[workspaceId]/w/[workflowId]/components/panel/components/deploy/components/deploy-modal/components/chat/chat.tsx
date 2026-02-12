@@ -42,6 +42,7 @@ const IDENTIFIER_PATTERN = /^[a-z0-9-]+$/
 interface ChatDeployProps {
   workflowId: string
   workflowWorkspaceId?: string
+  workspaceName?: string
   deploymentInfo: {
     apiKey: string
   } | null
@@ -114,6 +115,7 @@ const initialFormData: ChatFormData = {
 export function ChatDeploy({
   workflowId,
   workflowWorkspaceId,
+  workspaceName = '',
   deploymentInfo,
   existingChat,
   isLoadingChat,
@@ -432,6 +434,8 @@ export function ChatDeploy({
               Output
             </Label>
             <OutputSelect
+              workspaceId={workflowWorkspaceId ?? ''}
+              workspaceName={workspaceName}
               workflowId={workflowId}
               selectedOutputs={formData.selectedOutputBlocks}
               onOutputSelect={(values) => updateField('selectedOutputBlocks', values)}
@@ -1125,7 +1129,13 @@ function AuthSelector({
           </Label>
           <TagInput
             items={emailItems}
-            onAdd={(value) => addEmail(value)}
+            onAdd={(value) => {
+              if (!value.trim()) return false
+              const normalized = value.trim().toLowerCase()
+              if (emailItems.some((item) => item.value === normalized)) return false
+              void addEmail(value)
+              return true
+            }}
             onRemove={handleRemoveEmailItem}
             placeholder={
               emails.length > 0 || invalidEmails.length > 0
