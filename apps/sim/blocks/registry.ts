@@ -8,6 +8,7 @@ import { ApolloBlock } from '@/blocks/blocks/apollo'
 import { ArenaBlock } from '@/blocks/blocks/arena'
 import { ArxivBlock } from '@/blocks/blocks/arxiv'
 import { AsanaBlock } from '@/blocks/blocks/asana'
+import { BingAdsBlock } from '@/blocks/blocks/bing_ads'
 import { BrowserUseBlock } from '@/blocks/blocks/browser_use'
 import { CalendlyBlock } from '@/blocks/blocks/calendly'
 import { ChatTriggerBlock } from '@/blocks/blocks/chat_trigger'
@@ -170,6 +171,7 @@ export const registry: Record<string, BlockConfig> = {
   apollo: ApolloBlock,
   arxiv: ArxivBlock,
   asana: AsanaBlock,
+  bing_ads: BingAdsBlock,
   browser_use: BrowserUseBlock,
   calendly: CalendlyBlock,
   chat_trigger: ChatTriggerBlock,

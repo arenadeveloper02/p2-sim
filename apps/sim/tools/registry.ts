@@ -58,7 +58,6 @@ import {
   arenaConversationSummary,
   arenaCreateTask,
   arenaGetMeetings,
-  arenaGetToken,
   arenaProjectSummary,
   arenaSaveSummary,
   arenaSearchTask,
@@ -72,6 +71,7 @@ import {
   asanaSearchTasksTool,
   asanaUpdateTaskTool,
 } from '@/tools/asana'
+import { bingAdsQueryTool } from '@/tools/bing_ads'
 import { browserUseRunTaskTool } from '@/tools/browser_use'
 import {
   calendlyCancelEventTool,
@@ -1732,8 +1732,6 @@ import {
   zoomListMeetingsTool,
   zoomListPastParticipantsTool,
   zoomListRecordingsTool,
-  zoomListAccountRecordingsTool,
-  zoomDownloadTranscriptTool,
   zoomUpdateMeetingTool,
 } from '@/tools/zoom'
 
@@ -1744,7 +1742,6 @@ export const tools: Record<string, ToolConfig> = {
   arena_save_summary: arenaSaveSummary,
   arena_comments: arenaAddComment,
   arena_get_meetings: arenaGetMeetings,
-  arena_get_token: arenaGetToken,
   arena_project_summary: arenaProjectSummary,
   arena_client_updated_tasks: arenaClientUpdatedTasks,
   arena_conversation_summary: arenaConversationSummary,
@@ -2428,6 +2425,7 @@ export const tools: Record<string, ToolConfig> = {
   google_ads_query: googleAdsQueryTool,
   google_ads_v1_query: googleAdsV1QueryTool,
   facebook_ads_query: facebookAdsQueryTool,
+  bing_ads_query: bingAdsQueryTool,
   google_sheets_read_v2: googleSheetsReadV2Tool,
   google_sheets_write_v2: googleSheetsWriteV2Tool,
   google_sheets_update_v2: googleSheetsUpdateV2Tool,
@@ -3269,8 +3267,6 @@ export const tools: Record<string, ToolConfig> = {
   zoom_delete_meeting: zoomDeleteMeetingTool,
   zoom_get_meeting_invitation: zoomGetMeetingInvitationTool,
   zoom_list_recordings: zoomListRecordingsTool,
-  zoom_list_account_recordings: zoomListAccountRecordingsTool,
-  zoom_download_transcript: zoomDownloadTranscriptTool,
   zoom_get_meeting_recordings: zoomGetMeetingRecordingsTool,
   zoom_delete_recording: zoomDeleteRecordingTool,
   zoom_list_past_participants: zoomListPastParticipantsTool,
