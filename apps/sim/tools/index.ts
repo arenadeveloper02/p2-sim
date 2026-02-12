@@ -672,12 +672,6 @@ async function executeToolRequest(
         headers: headers,
         body: requestParams.body,
       })
-
-      contentType = response.headers.get('content-type') || ''
-      hasTransformResponse = Boolean(tool.transformResponse)
-      prefersTextTransform =
-        hasTransformResponse &&
-        (toolId === 'semrush_query' || !contentType.toLowerCase().includes('application/json'))
     } else {
       const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl')
       if (!urlValidation.isValid) {
@@ -716,6 +710,14 @@ async function executeToolRequest(
         hasTransformResponse &&
         (toolId === 'semrush_query' || !contentType.toLowerCase().includes('application/json'))
     }
+
+    contentType = response.headers.get('content-type') || ''
+    hasTransformResponse = Boolean(tool.transformResponse)
+    prefersTextTransform =
+      hasTransformResponse &&
+      (toolId === 'semrush_query' ||
+        toolId === 'zoom_download_transcript' ||
+        !contentType.toLowerCase().includes('application/json'))
 
     // For non-OK responses, attempt JSON first; if parsing fails, fall back to text so APIs like Semrush
     // (which respond with text/csv) can still surface a useful error
