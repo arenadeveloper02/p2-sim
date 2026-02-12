@@ -554,6 +554,7 @@ import {
 import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import { googleAdsQueryTool } from '@/tools/google_ads'
 import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
+import { googleBooksVolumeDetailsTool, googleBooksVolumeSearchTool } from '@/tools/google_books'
 import {
   googleCalendarCreateTool,
   googleCalendarCreateV2Tool,
@@ -2626,6 +2627,8 @@ export const tools: Record<string, ToolConfig> = {
   google_docs_read: googleDocsReadTool,
   google_docs_write: googleDocsWriteTool,
   google_docs_create: googleDocsCreateTool,
+  google_books_volume_search: googleBooksVolumeSearchTool,
+  google_books_volume_details: googleBooksVolumeDetailsTool,
   google_maps_air_quality: googleMapsAirQualityTool,
   google_maps_directions: googleMapsDirectionsTool,
   google_maps_distance_matrix: googleMapsDistanceMatrixTool,
