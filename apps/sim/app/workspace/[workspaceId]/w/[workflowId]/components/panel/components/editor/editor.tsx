@@ -660,7 +660,6 @@ export function Editor() {
                           isPreview={false}
                           subBlockValues={subBlockState}
                           disabled={!canEditBlock}
-                          fieldDiffStatus={undefined}
                           allowExpandInPreview={false}
                           canonicalToggle={
                             isCanonicalSwap && canonicalMode && canonicalId
@@ -727,7 +726,6 @@ export function Editor() {
                           isPreview={false}
                           subBlockValues={subBlockState}
                           disabled={!canEditBlock}
-                          fieldDiffStatus={undefined}
                           allowExpandInPreview={false}
                         />
                         {showDivider && (
