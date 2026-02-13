@@ -73,6 +73,7 @@ import {
   asanaUpdateTaskTool,
 } from '@/tools/asana'
 import { browserUseRunTaskTool } from '@/tools/browser_use'
+import { ourCopilotChatTool } from '@/tools/our_copilot'
 import {
   calendlyCancelEventTool,
   calendlyCreateWebhookTool,
@@ -2428,6 +2429,7 @@ export const tools: Record<string, ToolConfig> = {
   google_ads_query: googleAdsQueryTool,
   google_ads_v1_query: googleAdsV1QueryTool,
   facebook_ads_query: facebookAdsQueryTool,
+  our_copilot_chat: ourCopilotChatTool,
   google_sheets_read_v2: googleSheetsReadV2Tool,
   google_sheets_write_v2: googleSheetsWriteV2Tool,
   google_sheets_update_v2: googleSheetsUpdateV2Tool,

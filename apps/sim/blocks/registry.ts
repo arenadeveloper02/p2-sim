@@ -18,6 +18,7 @@ import { ConfluenceBlock, ConfluenceV2Block } from '@/blocks/blocks/confluence'
 import { CursorBlock, CursorV2Block } from '@/blocks/blocks/cursor'
 import { DatadogBlock } from '@/blocks/blocks/datadog'
 import { DiscordBlock } from '@/blocks/blocks/discord'
+import { OurCopilotBlock } from '@/blocks/blocks/our_copilot'
 import { DropboxBlock } from '@/blocks/blocks/dropbox'
 import { DuckDuckGoBlock } from '@/blocks/blocks/duckduckgo'
 import { DynamoDBBlock } from '@/blocks/blocks/dynamodb'
@@ -206,6 +207,7 @@ export const registry: Record<string, BlockConfig> = {
   google_ads_v1: GoogleAdsV1Block,
   google_calendar: GoogleCalendarBlock,
   google_calendar_v2: GoogleCalendarV2Block,
+  our_copilot: OurCopilotBlock,
   google_docs: GoogleDocsBlock,
   google_drive: GoogleDriveBlock,
   google_forms: GoogleFormsBlock,
