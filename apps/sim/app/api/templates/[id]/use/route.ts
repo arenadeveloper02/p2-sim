@@ -6,8 +6,11 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getBaseUrl } from '@/lib/core/utils/urls'
-import { regenerateWorkflowStateIds } from '@/lib/workflows/persistence/utils'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
+import {
+  type RegenerateStateInput,
+  regenerateWorkflowStateIds,
+} from '@/lib/workflows/persistence/utils'
 
 const logger = createLogger('TemplateUseAPI')
 
@@ -124,28 +127,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Step 3: Save the workflow state using the existing state endpoint (like imports do)
     // Ensure variables in state are remapped for the new workflow as well
-    // Convert lastSaved to number if it exists (template state might have it as string)
-    const workflowStateWithVariables = {
-      ...workflowState,
-      variables: remappedVariables,
-      lastSaved:
-        workflowState.lastSaved !== undefined
-          ? typeof workflowState.lastSaved === 'string'
-            ? Number.parseInt(workflowState.lastSaved, 10) || Date.now()
-            : typeof workflowState.lastSaved === 'number'
-              ? workflowState.lastSaved
-              : Date.now()
-          : Date.now(),
-    }
-    const stateResponse = await fetch(`${getBaseUrl()}/api/workflows/${newWorkflowId}/state`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        // Forward the session cookie for authentication
-        cookie: request.headers.get('cookie') || '',
-      },
-      body: JSON.stringify(workflowStateWithVariables),
-    })
+    const workflowStateWithVariables = { ...workflowState, variables: remappedVariables }
+    const stateResponse = await fetch(
+      `${getInternalApiBaseUrl()}/api/workflows/${newWorkflowId}/state`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          // Forward the session cookie for authentication
+          cookie: request.headers.get('cookie') || '',
+        },
+        body: JSON.stringify(workflowStateWithVariables),
+      }
+    )
 
     if (!stateResponse.ok) {
       const errorBody = await stateResponse.text()
