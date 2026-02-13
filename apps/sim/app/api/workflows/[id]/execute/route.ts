@@ -600,48 +600,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         const resultWithBase64 = { ...result, output: outputWithBase64 }
 
-<<<<<<< HEAD
-        // Cleanup base64 cache for this execution
-        await cleanupExecutionBase64Cache(executionId)
-
-        // Handle skipped workflows - always return the skip response content directly
-        // Ignore selectedOutputs - just return the content
-        if (
-          result.status === 'skipped' &&
-          resultWithBase64.output &&
-          typeof resultWithBase64.output === 'object'
-        ) {
-          const skipOutput = resultWithBase64.output as Record<string, any>
-          const skipContent = skipOutput.content
-
-          if (skipContent && typeof skipContent === 'string') {
-            // Always return the skip response content directly, ignoring selectedOutputs
-            const filteredResult = {
-              success: result.success,
-              output: skipContent, // Return the content directly as the output
-              error: result.error,
-              status: 'skipped',
-              metadata: result.metadata
-                ? {
-                    duration: result.metadata.duration,
-                    startTime: result.metadata.startTime,
-                    endTime: result.metadata.endTime,
-                  }
-                : undefined,
-            }
-
-            logger.debug(`[${requestId}] Returning skipped workflow response`, {
-              executionId,
-              hasContent: !!skipContent,
-              contentLength: skipContent.length,
-            })
-
-            return NextResponse.json(filteredResult)
-          }
-        }
-
-=======
->>>>>>> a627faabe (feat(timeouts): execution timeout limits (#3120))
         const hasResponseBlock = workflowHasResponseBlock(resultWithBase64)
         if (hasResponseBlock) {
           return createHttpResponseFromBlock(resultWithBase64)

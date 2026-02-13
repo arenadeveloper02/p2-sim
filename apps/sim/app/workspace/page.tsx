@@ -4,8 +4,8 @@ import { useEffect } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/auth/auth-client'
-import { fetchUserProfileSetPeopleMP } from '@/utilities/mixPanelTrigger'
 import { useReferralAttribution } from '@/hooks/use-referral-attribution'
+import { fetchUserProfileSetPeopleMP } from '@/utilities/mixPanelTrigger'
 
 interface WorkspaceSummary {
   id: string

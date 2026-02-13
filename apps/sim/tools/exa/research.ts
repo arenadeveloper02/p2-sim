@@ -1,10 +1,16 @@
 import { createLogger } from '@sim/logger'
+
 <<<<<<< HEAD
+
 import { env } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
+
 =======
+
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
+
 >>>>>>> a627faabe (feat(timeouts): execution timeout limits (#3120))
+
 import type { ExaResearchParams, ExaResearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 

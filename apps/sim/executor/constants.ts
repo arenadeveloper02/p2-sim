@@ -187,19 +187,13 @@ export const HTTP = {
 } as const
 
 export const AGENT = {
-<<<<<<< HEAD
   DEFAULT_MODEL: 'gpt-5',
-  DEFAULT_FUNCTION_TIMEOUT: 5000,
-  REQUEST_TIMEOUT: 120000,
-=======
-  DEFAULT_MODEL: 'claude-sonnet-4-5',
   get DEFAULT_FUNCTION_TIMEOUT() {
     return getMaxExecutionTimeout()
   },
   get REQUEST_TIMEOUT() {
     return getMaxExecutionTimeout()
   },
->>>>>>> a627faabe (feat(timeouts): execution timeout limits (#3120))
   CUSTOM_TOOL_PREFIX: 'custom_',
 } as const
 

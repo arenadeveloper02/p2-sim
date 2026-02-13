@@ -1,5 +1,4 @@
 import { createLogger } from '@sim/logger'
-import { redactApiKeys } from '@/lib/core/security/redaction'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import {
   containsUserFileWithMetadata,

@@ -18,7 +18,7 @@ import {
   providers,
   supportsTemperature,
 } from '@/providers/utils'
-import { useProvidersStore } from '@/stores/providers'
+import { useProvidersStore } from '@/stores/providers/store'
 import type { ToolResponse } from '@/tools/types'
 
 const logger = createLogger('AgentBlock')
