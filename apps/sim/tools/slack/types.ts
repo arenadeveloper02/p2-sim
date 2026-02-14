@@ -550,7 +550,7 @@ export interface SlackMessageParams extends SlackBaseParams {
   dmUserId?: string
   userId?: string
   text: string
-  thread_ts?: string
+  threadTs?: string
   files?: UserFile[]
 }
 

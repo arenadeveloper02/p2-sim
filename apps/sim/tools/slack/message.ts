@@ -57,7 +57,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       visibility: 'user-or-llm',
       description: 'Message text to send (supports Slack mrkdwn formatting)',
     },
-    thread_ts: {
+    threadTs: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
@@ -89,7 +89,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
         // Enable unfurling of links
         unfurl_links: true,
         unfurl_media: true,
-        thread_ts: params.thread_ts || undefined,
+        thread_ts: params.threadTs || undefined,
         files: params.files || null,
       }
     },
