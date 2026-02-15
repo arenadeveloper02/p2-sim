@@ -1011,7 +1011,7 @@ const VirtualizedViewerInner = memo(function VirtualizedViewerInner({
  * Non-virtualized code viewer implementation.
  * Renders all lines directly without windowing.
  */
-function ViewerInner({
+const ViewerInner = memo(function ViewerInner({
   code,
   showGutter,
   language,
@@ -1184,7 +1184,7 @@ function ViewerInner({
       </Content>
     </Container>
   )
-}
+})
 
 /**
  * Readonly code viewer with optional gutter and syntax highlighting.
