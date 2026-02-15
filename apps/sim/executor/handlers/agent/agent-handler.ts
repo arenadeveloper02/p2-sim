@@ -33,6 +33,11 @@ import { getTool, getToolAsync } from '@/tools/utils'
 const logger = createLogger('AgentBlockHandler')
 
 /**
+ * Fallback prompt used when the prompt_config table is unavailable or missing the entry.
+ */
+const FALLBACK_INTENT_ANALYZER_SYSTEM_PROMPT = ``
+
+/**
  * Gets conversationId from the Start block output in the execution context.
  * Returns undefined if not found.
  */
@@ -888,81 +893,30 @@ export class AgentBlockHandler implements BlockHandler {
             lastConversationData = true
             const lastLog = latestLogs[0]
             logger.debug('Not calling the search API for agent Block')
-            // Format history for the controller prompt
-            // historyText = `\nLast Conversation Data(this should be used for answernig FOLLOW-UP QUESTIONS) -
-            //     User: ${lastLog.initialInput}
-            //     Assistant: ${lastLog.finalChatOutput}`
 
-            const systemPrompt = `You are a controller that decides whether to RUN a workflow or SKIP it.
+            const { promptConfig } = await import('@sim/db/schema')
+            const { PROMPT_CONFIG_KEYS } = await import('@sim/db/constants')
 
-            Return ONLY ONE WORD:
-            RUN or SKIP (uppercase only).
+            let systemPrompt: string | null = null
+            try {
+              const promptRow = await db
+                .select({ prompt: promptConfig.prompt })
+                .from(promptConfig)
+                .where(eq(promptConfig.key, PROMPT_CONFIG_KEYS.INTENT_ANALYZER_SYSTEM_PROMPT))
+                .limit(1)
 
-            ────────────────────────────────────────
-            PRIMARY DECISION PRINCIPLE
+              if (promptRow.length > 0) {
+                systemPrompt = promptRow[0].prompt
+              }
+            } catch (promptFetchError) {
+              logger.warn('Failed to fetch prompt from prompt_config table, using fallback', {
+                error: promptFetchError,
+              })
+            }
 
-            DEFAULT TO RUN.
-
-            Return SKIP when the user intent is the SAME as the previous assistant response
-            and the user is asking for a transformation, reuse, or downstream application
-            of the same content — even if light creativity is involved.
-
-            The workflow should RUN ONLY when the user introduces a NEW INTENT.
-
-            ────────────────────────────────────────
-            WHAT COUNTS AS NEW INTENT → RUN
-
-            ALWAYS RETURN RUN IF THE USER:
-
-            - Introduces a new topic, domain, industry, or subject
-            - Requests new information, data, or facts not already present
-            - Asks a new question unrelated to the previous response
-            - Requests validation, critique, judgment, or correctness checking
-            - Changes the goal, audience, or use case
-            - Asks to review, improve, or fix logic, prompts, or workflows
-            - Starts a new conversation
-            - Mentions a clearly different business objective
-            - If there is ANY doubt → RUN
-
-            ────────────────────────────────────────
-            WHAT COUNTS AS SAME INTENT → SKIP
-
-            Return SKIP ONLY IF ALL CONDITIONS ARE TRUE:
-
-            1. A previous assistant response exists
-            AND
-            2. The user refers ONLY to that response or its content
-            AND
-            3. The request is a derivative transformation or reuse of the same content
-
-            This INCLUDES:
-
-            - Formatting or restructuring
-              (table, bullets, summary, shorter, longer)
-            - Clarification or explanation without adding new facts
-            - Creative adaptation using the same content
-              (e.g., social posts, ads, captions, emails, landing copy)
-            - Applying “best practices” to existing content
-            - Channel-specific versions
-              (e.g., “turn this into a LinkedIn post”, “make this an ad”)
-            - Simple acknowledgments
-
-            If NO new topic, NO new domain, and NO new objective is introduced → SKIP
-
-            ────────────────────────────────────────
-            FINAL DECISION RULE
-
-            - False RUN is acceptable
-            - False SKIP is NOT acceptable
-            - If you are not absolutely certain → RUN
-
-            ────────────────────────────────────────
-            OUTPUT FORMAT (MANDATORY):
-
-            Return ONLY:
-            RUN
-            or
-            SKIP`
+            if (!systemPrompt) {
+              systemPrompt = FALLBACK_INTENT_ANALYZER_SYSTEM_PROMPT
+            }
 
             const controllerUserPrompt = `If the current request can be fulfilled using ONLY the information already present
             in the conversation history, treat it as SAME INTENT.\n${historyContextForSkip}\n\nCurrent User Input: ${userPrompt}`
