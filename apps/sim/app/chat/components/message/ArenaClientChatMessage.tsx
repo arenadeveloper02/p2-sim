@@ -454,6 +454,25 @@ export const ArenaClientChatMessage = memo(
                 )} */}
               </div>
             </div>
+            {message.type === 'assistant' && message.isStreaming && (
+              <div className='mt-2 flex items-center gap-2 text-muted-foreground text-sm'>
+                <div className='flex gap-1' aria-hidden>
+                  <span
+                    className='h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 dark:bg-gray-400'
+                    style={{ animationDuration: '1s', animationDelay: '0ms' }}
+                  />
+                  <span
+                    className='h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 dark:bg-gray-400'
+                    style={{ animationDuration: '1s', animationDelay: '150ms' }}
+                  />
+                  <span
+                    className='h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 dark:bg-gray-400'
+                    style={{ animationDuration: '1s', animationDelay: '300ms' }}
+                  />
+                </div>
+                <span className='font-medium'>Fetching references...</span>
+              </div>
+            )}
             {showReferencesSection && (
               <div className='mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
                 <span className='text-gray-500 dark:text-gray-400'>References:</span>

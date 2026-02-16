@@ -8,6 +8,8 @@ import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClient
 interface ChatMessageContainerProps {
   messages: ChatMessage[]
   isLoading: boolean
+  /** When true, response is streaming (show "Fetching..." instead of "Thinking...") */
+  isStreaming?: boolean
   showScrollButton: boolean
   messagesContainerRef: RefObject<HTMLDivElement>
   messagesEndRef: RefObject<HTMLDivElement>
@@ -24,6 +26,7 @@ interface ChatMessageContainerProps {
 export const ChatMessageContainer = memo(function ChatMessageContainer({
   messages,
   isLoading,
+  isStreaming = false,
   showScrollButton,
   messagesContainerRef,
   messagesEndRef,
@@ -33,23 +36,10 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   setMessages,
   workspaceIdsForKbLinks,
 }: ChatMessageContainerProps) {
+  const loadingLabel = isStreaming ? 'Fetching' : 'Thinking'
+
   return (
     <div className='relative flex flex-1 flex-col overflow-hidden bg-white'>
-      <style jsx>{`
-        @keyframes growShrink {
-          0%,
-          100% {
-            transform: scale(0.9);
-          }
-          50% {
-            transform: scale(1.1);
-          }
-        }
-        .loading-dot {
-          animation: growShrink 1.5s infinite ease-in-out;
-        }
-      `}</style>
-
       {/* Scrollable Messages Area */}
       <div
         ref={messagesContainerRef}
@@ -76,16 +66,28 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
             ))
           )}
 
-          {/* Loading indicator (shows only when executing) */}
+          {/* Loading indicator with label and bouncing dots (when executing) */}
           {isLoading && (
             <div className='px-4 py-5'>
               <div className='mx-auto max-w-3xl'>
-                <div className='flex'>
-                  <div className='max-w-[80%]'>
-                    <div className='flex h-6 items-center'>
-                      <div className='loading-dot h-3 w-3 rounded-full bg-gray-800 dark:bg-gray-300' />
-                    </div>
+                <div className='flex items-center gap-2'>
+                  <div className='flex gap-1' aria-hidden>
+                    <span
+                      className='h-2 w-2 animate-bounce rounded-full bg-gray-600 [animation-delay:0ms] [animation-duration:1s] dark:bg-gray-400'
+                      style={{ animationDelay: '0ms' }}
+                    />
+                    <span
+                      className='h-2 w-2 animate-bounce rounded-full bg-gray-600 [animation-duration:1s] dark:bg-gray-400'
+                      style={{ animationDelay: '150ms' }}
+                    />
+                    <span
+                      className='h-2 w-2 animate-bounce rounded-full bg-gray-600 [animation-duration:1s] dark:bg-gray-400'
+                      style={{ animationDelay: '300ms' }}
+                    />
                   </div>
+                  <span className='font-medium text-muted-foreground text-sm'>
+                    {loadingLabel}...
+                  </span>
                 </div>
               </div>
             </div>
