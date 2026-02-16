@@ -73,7 +73,7 @@ export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
       title: 'Google Ads Account',
       type: 'short-input',
       canonicalParamId: 'accounts',
-      placeholder: 'Enter account key (e.g., ami, heartland)',
+      placeholder: 'Enter account key (e.g., ami, heartland) or numeric ID',
       required: true,
       mode: 'advanced',
     },

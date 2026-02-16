@@ -14,6 +14,29 @@ import type { AccountResult, GoogleAdsRequest } from './types'
 
 const logger = createLogger('GoogleAdsAPI')
 
+/**
+ * Resolves account input to account key (supports both keys and numeric IDs)
+ */
+function resolveAccountKey(accountInput: string): string {
+  // Try direct key match first (gentle_dental)
+  if (GOOGLE_ADS_ACCOUNTS[accountInput]) {
+    return accountInput
+  }
+  
+  // If not found, search by numeric ID
+  const foundAccount = Object.entries(GOOGLE_ADS_ACCOUNTS).find(
+    ([key, account]) => account.id === accountInput
+  )
+  
+  if (foundAccount) {
+    logger.info(`Resolved numeric ID ${accountInput} to account key ${foundAccount[0]}`)
+    return foundAccount[0]
+  }
+  
+  // Return original if not found (will show error in validation)
+  return accountInput
+}
+
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
   const startTime = Date.now()
@@ -33,21 +56,28 @@ export async function POST(request: NextRequest) {
 
     logger.info(`[${requestId}] Processing query`, { query, accounts })
 
+    // Resolve account key (supports both keys and numeric IDs)
+    const resolvedAccountKey = resolveAccountKey(accounts)
+    logger.info(`[${requestId}] Resolved account key`, { 
+      original: accounts, 
+      resolved: resolvedAccountKey 
+    })
+
     // Get account information first
     logger.info(`[${requestId}] Looking up account`, {
-      accounts,
+      accounts: resolvedAccountKey,
       availableAccounts: Object.keys(GOOGLE_ADS_ACCOUNTS),
     })
 
-    const accountInfo = GOOGLE_ADS_ACCOUNTS[accounts]
+    const accountInfo = GOOGLE_ADS_ACCOUNTS[resolvedAccountKey]
     if (!accountInfo) {
       logger.error(`[${requestId}] Invalid account key`, {
-        accounts,
+        accounts: resolvedAccountKey,
         availableAccounts: Object.keys(GOOGLE_ADS_ACCOUNTS),
       })
       return NextResponse.json(
         {
-          error: `Invalid account key: ${accounts}. Available accounts: ${Object.keys(GOOGLE_ADS_ACCOUNTS).join(', ')}`,
+          error: `Invalid account key: ${resolvedAccountKey}. Available accounts: ${Object.keys(GOOGLE_ADS_ACCOUNTS).join(', ')}`,
         },
         { status: 400 }
       )
