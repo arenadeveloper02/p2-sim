@@ -35,6 +35,22 @@ export interface KnowledgeResultChunk {
   chunkIndex: number
   metadata?: Record<string, unknown>
   similarity?: number
+  /** Chunk UUID for "View in Knowledge Base" link; only present when user has workspace access */
+  chunkId?: string
+  knowledgeBaseId?: string
+  workspaceId?: string | null
+}
+
+/**
+ * Minimal reference persisted in chat history (no chunk content).
+ * Used to show document name and open chunk link when loading from history.
+ */
+export interface KnowledgeRef {
+  documentId: string
+  documentName: string
+  chunkId: string
+  knowledgeBaseId: string
+  workspaceId: string | null
 }
 
 export interface ChatMessage {
@@ -47,8 +63,10 @@ export interface ChatMessage {
   attachments?: ChatAttachment[]
   executionId?: string
   files?: ChatFile[]
-  /** Knowledge base search results when workflow outputs "results"; used for clickable references and modal */
+  /** Knowledge base search results when workflow outputs "results"; used for clickable references and modal (live only, not in history) */
   knowledgeResults?: KnowledgeResultChunk[]
+  /** Persisted refs for history: document name + chunk link only; no chunks */
+  knowledgeRefs?: KnowledgeRef[]
 }
 
 function EnhancedMarkdownRenderer({ content }: { content: string }) {

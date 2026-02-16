@@ -284,3 +284,23 @@ export async function getManageableWorkspaces(userId: string): Promise<
 
   return combined
 }
+
+/**
+ * Get all workspace IDs the user has access to (owned or any permission: read, write, admin).
+ * Used to show "View in Knowledge Base" links in chat only when the user can access that workspace.
+ */
+export async function getWorkspaceIdsForUser(userId: string): Promise<string[]> {
+  const [owned, fromPermissions] = await Promise.all([
+    db.select({ id: workspace.id }).from(workspace).where(eq(workspace.ownerId, userId)),
+    db
+      .selectDistinct({ entityId: permissions.entityId })
+      .from(permissions)
+      .where(and(eq(permissions.userId, userId), eq(permissions.entityType, 'workspace'))),
+  ])
+  const ownedIds = new Set(owned.map((r) => r.id))
+  const fromPermIds = fromPermissions
+    .map((r) => r.entityId)
+    .filter((id): id is string => id !== null)
+  const combined = new Set([...ownedIds, ...fromPermIds])
+  return Array.from(combined)
+}

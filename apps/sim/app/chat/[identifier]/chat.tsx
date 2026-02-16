@@ -46,6 +46,8 @@ interface ChatConfig {
   authType?: 'public' | 'password' | 'email' | 'sso'
   outputConfigs?: Array<{ blockId: string; path?: string }>
   inputFormat?: InputFormatField[]
+  /** Workspace IDs the current user can access; when set, "View in Knowledge Base" links are shown for KB refs in that workspace */
+  userWorkspaceIds?: string[]
 }
 
 interface ThreadRecord {
@@ -279,6 +281,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                     isStreaming: false,
                     executionId: log?.executionId || '',
                     liked: log.liked,
+                    knowledgeRefs: Array.isArray(log.knowledgeRefs) ? log.knowledgeRefs : undefined,
                   })
                 }
                 return messages
@@ -1026,6 +1029,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         scrollToBottom={scrollToBottom}
         scrollToMessage={scrollToMessage}
         chatConfig={chatConfig}
+        workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
       />
 
       {/* Input area (free-standing at the bottom) */}

@@ -17,6 +17,8 @@ interface ChatMessageContainerProps {
     description?: string
   } | null
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>
+  /** When set, "View in Knowledge Base" links are shown for refs whose workspaceId is in this list (user has workspace access) */
+  workspaceIdsForKbLinks?: string[]
 }
 
 export const ChatMessageContainer = memo(function ChatMessageContainer({
@@ -29,6 +31,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   scrollToMessage,
   chatConfig,
   setMessages,
+  workspaceIdsForKbLinks,
 }: ChatMessageContainerProps) {
   return (
     <div className='relative flex flex-1 flex-col overflow-hidden bg-white'>
@@ -68,6 +71,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
                 key={message.id}
                 message={message}
                 setMessages={setMessages}
+                workspaceIdsForKbLinks={workspaceIdsForKbLinks}
               />
             ))
           )}

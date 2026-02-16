@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import { ExternalLink } from 'lucide-react'
 import { Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 import type { KnowledgeResultChunk } from '@/app/chat/components/message/message'
 
@@ -9,6 +10,8 @@ interface KnowledgeResultsModalProps {
   onClose: () => void
   documentName: string
   chunks: KnowledgeResultChunk[]
+  /** When set (user has workspace access), show "View in Knowledge Base" link */
+  viewInKbUrl?: string
 }
 
 /**
@@ -20,6 +23,7 @@ export function KnowledgeResultsModal({
   onClose,
   documentName,
   chunks,
+  viewInKbUrl,
 }: KnowledgeResultsModalProps) {
   const sortedChunks = useMemo(
     () => [...chunks].sort((a, b) => a.chunkIndex - b.chunkIndex),
@@ -30,7 +34,22 @@ export function KnowledgeResultsModal({
     <Modal open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <ModalContent className='max-h-[85vh] max-w-2xl'>
         <ModalHeader className='border-gray-200 border-b pb-3 dark:border-gray-700'>
-          <h2 className='font-semibold text-gray-900 text-lg dark:text-gray-100'>{documentName}</h2>
+          <div className='flex items-center justify-between gap-2'>
+            <h2 className='font-semibold text-gray-900 text-lg dark:text-gray-100'>
+              {documentName}
+            </h2>
+            {viewInKbUrl && (
+              <a
+                href={viewInKbUrl}
+                target='_blank'
+                rel='noopener noreferrer'
+                className='inline-flex shrink-0 items-center gap-1.5 rounded border border-gray-200 bg-white px-2.5 py-1.5 text-gray-700 text-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+              >
+                <ExternalLink className='h-3.5 w-3.5' strokeWidth={2} />
+                View in Knowledge Base
+              </a>
+            )}
+          </div>
         </ModalHeader>
         <ModalBody className='overflow-y-auto py-4'>
           <div className='space-y-4'>

@@ -210,6 +210,10 @@ export async function GET(
         }
       }
 
+      const knowledgeRefs = Array.isArray(executionData?.knowledgeRefs)
+        ? executionData.knowledgeRefs
+        : null
+
       return {
         id: log.id,
         executionId: log.executionId,
@@ -221,6 +225,7 @@ export async function GET(
         conversationId,
         userInput,
         modelOutput,
+        knowledgeRefs,
         liked: likedByExecutionId.has(log.executionId)
           ? likedByExecutionId.get(log.executionId)!
           : null,

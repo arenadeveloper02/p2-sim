@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 // import MarkdownRenderer from './components/markdown-renderer'
@@ -26,8 +26,11 @@ import {
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
-import type { KnowledgeResultChunk } from '@/app/chat/components/message/message'
-import { KnowledgeResultsModal } from './components/knowledge-results-modal'
+import type {
+  KnowledgeRef,
+  KnowledgeResultChunk,
+} from '@/app/chat/components/message/message'
+import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 
 export interface ChatMessage {
   id: string
@@ -39,6 +42,7 @@ export interface ChatMessage {
   executionId?: string
   liked?: boolean | null
   knowledgeResults?: KnowledgeResultChunk[]
+  knowledgeRefs?: KnowledgeRef[]
 }
 
 // function EnhancedMarkdownRenderer({ content }: { content: string }) {
@@ -53,9 +57,12 @@ export const ArenaClientChatMessage = memo(
   function ArenaClientChatMessage({
     message,
     setMessages,
+    workspaceIdsForKbLinks,
   }: {
     message: ChatMessage
     setMessages?: Dispatch<SetStateAction<ChatMessage[]>>
+    /** When set, show "View in Knowledge Base" link for refs whose workspaceId is in this list */
+    workspaceIdsForKbLinks?: string[]
   }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
@@ -164,26 +171,74 @@ export const ArenaClientChatMessage = memo(
     const [knowledgeModalDoc, setKnowledgeModalDoc] = useState<{
       documentName: string
       chunks: KnowledgeResultChunk[]
+      viewInKbUrl?: string
     } | null>(null)
 
+    /** Build KB chunk URL from KnowledgeRef (history). */
+    const getKbLinkUrlFromRef = useCallback((ref: KnowledgeRef): string => {
+      return `/workspace/${ref.workspaceId}/knowledge/${ref.knowledgeBaseId}/${ref.documentId}?chunk=${ref.chunkId}`
+    }, [])
+
+    /** Refs for rendering: from live (knowledgeResults) or history (knowledgeRefs). */
     const uniqueDocRefs = useMemo(() => {
-      const results = message.knowledgeResults ?? []
-      const seen = new Map<string, { documentName: string; chunks: KnowledgeResultChunk[] }>()
-      for (const r of results) {
-        const id = r.documentId
-        if (!seen.has(id)) {
-          seen.set(id, {
-            documentName: r.documentName || r.documentId,
-            chunks: results.filter((c) => c.documentId === id),
-          })
-        }
+      type RefItem = {
+        documentId: string
+        documentName: string
+        chunks?: KnowledgeResultChunk[]
+        linkUrl: string | null
+        workspaceId: string | null
+        fromHistory: boolean
       }
-      return Array.from(seen.values())
-    }, [message.knowledgeResults])
+      const results = message.knowledgeResults ?? []
+      const refsFromHistory = message.knowledgeRefs ?? []
+
+      if (results.length > 0) {
+        const seen = new Map<string, RefItem>()
+        for (const r of results) {
+          const id = r.documentId
+          if (!seen.has(id)) {
+            const chunks = results.filter((c) => c.documentId === id)
+            const first = chunks[0]
+            const workspaceId = first?.workspaceId ?? null
+            const linkUrl =
+              first?.chunkId && first?.knowledgeBaseId && first?.workspaceId
+                ? `/workspace/${first.workspaceId}/knowledge/${first.knowledgeBaseId}/${id}?chunk=${first.chunkId}`
+                : null
+            seen.set(id, {
+              documentId: id,
+              documentName: r.documentName || r.documentId,
+              chunks,
+              linkUrl,
+              workspaceId,
+              fromHistory: false,
+            })
+          }
+        }
+        return Array.from(seen.values())
+      }
+
+      if (refsFromHistory.length > 0) {
+        return refsFromHistory.map((r) => ({
+          documentId: r.documentId,
+          documentName: r.documentName || r.documentId,
+          chunks: undefined as KnowledgeResultChunk[] | undefined,
+          linkUrl: r.workspaceId ? getKbLinkUrlFromRef(r) : null,
+          workspaceId: r.workspaceId,
+          fromHistory: true,
+        }))
+      }
+
+      return []
+    }, [message.knowledgeResults, message.knowledgeRefs, getKbLinkUrlFromRef])
+
+    const canShowKbLink = (ref: { linkUrl: string | null; workspaceId: string | null }) => {
+      if (!ref.linkUrl || !workspaceIdsForKbLinks?.length) return false
+      return ref.workspaceId !== null && workspaceIdsForKbLinks.includes(ref.workspaceId)
+    }
 
     const openKnowledgeModal = useCallback(
-      (documentName: string, chunks: KnowledgeResultChunk[]) => {
-        setKnowledgeModalDoc({ documentName, chunks })
+      (documentName: string, chunks: KnowledgeResultChunk[], viewInKbUrl?: string) => {
+        setKnowledgeModalDoc({ documentName, chunks, viewInKbUrl })
       },
       []
     )
@@ -393,14 +448,50 @@ export const ArenaClientChatMessage = memo(
               <div className='mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
                 <span className='text-gray-500 dark:text-gray-400'>References:</span>
                 {uniqueDocRefs.map((ref) => (
-                  <button
-                    key={ref.chunks[0]?.documentId ?? ref.documentName}
-                    type='button'
-                    className='cursor-pointer rounded px-1.5 py-0.5 text-primary underline decoration-primary/50 underline-offset-2 transition-colors hover:bg-gray-100 hover:decoration-primary dark:hover:bg-gray-800'
-                    onClick={() => openKnowledgeModal(ref.documentName, ref.chunks)}
-                  >
-                    {ref.documentName}
-                  </button>
+                  <span key={ref.documentId} className='inline-flex items-center gap-1'>
+                    {ref.chunks && ref.chunks.length > 0 ? (
+                      <button
+                        type='button'
+                        className='cursor-pointer rounded px-1.5 py-0.5 text-primary underline decoration-primary/50 underline-offset-2 transition-colors hover:bg-gray-100 hover:decoration-primary dark:hover:bg-gray-800'
+                        onClick={() =>
+                          openKnowledgeModal(ref.documentName, ref.chunks!, ref.linkUrl ?? undefined)
+                        }
+                      >
+                        {ref.documentName}
+                      </button>
+                    ) : ref.linkUrl && canShowKbLink(ref) ? (
+                      <a
+                        href={ref.linkUrl}
+                        target='_blank'
+                        rel='noopener noreferrer'
+                        className='cursor-pointer rounded px-1.5 py-0.5 text-primary underline decoration-primary/50 underline-offset-2 transition-colors hover:bg-gray-100 hover:decoration-primary dark:hover:bg-gray-800'
+                      >
+                        {ref.documentName}
+                      </a>
+                    ) : (
+                      <span className='rounded px-1.5 py-0.5 text-gray-600 dark:text-gray-300'>
+                        {ref.documentName}
+                      </span>
+                    )}
+                    {ref.linkUrl && canShowKbLink(ref) && (
+                      <Tooltip.Provider>
+                        <Tooltip.Root>
+                          <Tooltip.Trigger asChild>
+                            <a
+                              href={ref.linkUrl}
+                              target='_blank'
+                              rel='noopener noreferrer'
+                              className='inline-flex cursor-pointer items-center rounded p-0.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-primary'
+                              aria-label='Open in Knowledge Base'
+                            >
+                              <ExternalLink className='h-3.5 w-3.5' strokeWidth={2} />
+                            </a>
+                          </Tooltip.Trigger>
+                          <Tooltip.Content side='top'>Open in Knowledge Base</Tooltip.Content>
+                        </Tooltip.Root>
+                      </Tooltip.Provider>
+                    )}
+                  </span>
                 ))}
               </div>
             )}
@@ -410,6 +501,7 @@ export const ArenaClientChatMessage = memo(
                 onClose={() => setKnowledgeModalDoc(null)}
                 documentName={knowledgeModalDoc.documentName}
                 chunks={knowledgeModalDoc.chunks}
+                viewInKbUrl={knowledgeModalDoc.viewInKbUrl}
               />
             )}
             {message.type === 'assistant' &&
@@ -587,7 +679,9 @@ export const ArenaClientChatMessage = memo(
       prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
       prevProps.message.executionId === nextProps.message.executionId &&
       prevProps.message.liked === nextProps.message.liked &&
-      prevProps.message.knowledgeResults?.length === nextProps.message.knowledgeResults?.length
+      prevProps.message.knowledgeResults?.length === nextProps.message.knowledgeResults?.length &&
+      prevProps.message.knowledgeRefs?.length === nextProps.message.knowledgeRefs?.length &&
+      prevProps.workspaceIdsForKbLinks?.length === nextProps.workspaceIdsForKbLinks?.length
     )
   }
 )
