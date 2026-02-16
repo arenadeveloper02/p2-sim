@@ -4,6 +4,7 @@ import {
   type Dispatch,
   memo,
   type SetStateAction,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -25,6 +26,8 @@ import {
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
+import type { KnowledgeResultChunk } from '@/app/chat/components/message/message'
+import { KnowledgeResultsModal } from './components/knowledge-results-modal'
 
 export interface ChatMessage {
   id: string
@@ -35,6 +38,7 @@ export interface ChatMessage {
   isStreaming?: boolean
   executionId?: string
   liked?: boolean | null
+  knowledgeResults?: KnowledgeResultChunk[]
 }
 
 // function EnhancedMarkdownRenderer({ content }: { content: string }) {
@@ -156,6 +160,33 @@ export const ArenaClientChatMessage = memo(
     }
 
     const containsBase64Images = hasBase64Images(cleanTextContent)
+
+    const [knowledgeModalDoc, setKnowledgeModalDoc] = useState<{
+      documentName: string
+      chunks: KnowledgeResultChunk[]
+    } | null>(null)
+
+    const uniqueDocRefs = useMemo(() => {
+      const results = message.knowledgeResults ?? []
+      const seen = new Map<string, { documentName: string; chunks: KnowledgeResultChunk[] }>()
+      for (const r of results) {
+        const id = r.documentId
+        if (!seen.has(id)) {
+          seen.set(id, {
+            documentName: r.documentName || r.documentId,
+            chunks: results.filter((c) => c.documentId === id),
+          })
+        }
+      }
+      return Array.from(seen.values())
+    }, [message.knowledgeResults])
+
+    const openKnowledgeModal = useCallback(
+      (documentName: string, chunks: KnowledgeResultChunk[]) => {
+        setKnowledgeModalDoc({ documentName, chunks })
+      },
+      []
+    )
 
     const handleLike = async (currentExecutionId: string) => {
       if (!currentExecutionId) return
@@ -358,6 +389,29 @@ export const ArenaClientChatMessage = memo(
                 )} */}
               </div>
             </div>
+            {uniqueDocRefs.length > 0 && (
+              <div className='mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
+                <span className='text-gray-500 dark:text-gray-400'>References:</span>
+                {uniqueDocRefs.map((ref) => (
+                  <button
+                    key={ref.chunks[0]?.documentId ?? ref.documentName}
+                    type='button'
+                    className='cursor-pointer rounded px-1.5 py-0.5 text-primary underline decoration-primary/50 underline-offset-2 transition-colors hover:bg-gray-100 hover:decoration-primary dark:hover:bg-gray-800'
+                    onClick={() => openKnowledgeModal(ref.documentName, ref.chunks)}
+                  >
+                    {ref.documentName}
+                  </button>
+                ))}
+              </div>
+            )}
+            {knowledgeModalDoc && (
+              <KnowledgeResultsModal
+                isOpen={!!knowledgeModalDoc}
+                onClose={() => setKnowledgeModalDoc(null)}
+                documentName={knowledgeModalDoc.documentName}
+                chunks={knowledgeModalDoc.chunks}
+              />
+            )}
             {message.type === 'assistant' &&
               !message.isStreaming &&
               !message.isInitialMessage &&
@@ -532,7 +586,8 @@ export const ArenaClientChatMessage = memo(
       prevProps.message.isStreaming === nextProps.message.isStreaming &&
       prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
       prevProps.message.executionId === nextProps.message.executionId &&
-      prevProps.message.liked === nextProps.message.liked
+      prevProps.message.liked === nextProps.message.liked &&
+      prevProps.message.knowledgeResults?.length === nextProps.message.knowledgeResults?.length
     )
   }
 )

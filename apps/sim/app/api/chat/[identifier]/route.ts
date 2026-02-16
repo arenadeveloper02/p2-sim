@@ -613,7 +613,85 @@ export async function POST(
                       output?: Record<string, Record<string, any>>
                     }
 
-                    // Format final output based on outputConfigs
+                    const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
+                      if (!path || path === 'content') {
+                        if (blockOutputs.content !== undefined) return blockOutputs.content
+                        if (blockOutputs.result !== undefined) return blockOutputs.result
+                        return blockOutputs
+                      }
+                      if (blockOutputs[path] !== undefined) {
+                        return blockOutputs[path]
+                      }
+                      if (path.includes('.')) {
+                        return path.split('.').reduce<any>((current, segment) => {
+                          if (current && typeof current === 'object' && segment in current) {
+                            return current[segment]
+                          }
+                          return undefined
+                        }, blockOutputs)
+                      }
+                      return undefined
+                    }
+
+                    /** Check if value is a knowledge base results array (documentId, documentName, content, chunkIndex) */
+                    const isKnowledgeResultsArray = (value: unknown): value is Array<Record<string, unknown>> =>
+                      Array.isArray(value) &&
+                      value.length > 0 &&
+                      value.every(
+                        (item) =>
+                          item &&
+                          typeof item === 'object' &&
+                          'documentId' in item &&
+                          'documentName' in item &&
+                          'content' in item &&
+                          'chunkIndex' in item
+                      )
+
+                    let knowledgeResultsPayload: Array<{
+                      documentId: string
+                      documentName: string
+                      content: string
+                      chunkIndex: number
+                      metadata?: Record<string, unknown>
+                      similarity?: number
+                    }> = []
+
+                    if (
+                      deployment.outputConfigs &&
+                      Array.isArray(deployment.outputConfigs) &&
+                      finalData.output
+                    ) {
+                      for (const config of deployment.outputConfigs) {
+                        if (config.path === 'results') {
+                          const blockOutputs = finalData.output[config.blockId]
+                          if (!blockOutputs) continue
+                          const value = getOutputValue(blockOutputs, config.path)
+                          if (isKnowledgeResultsArray(value)) {
+                            knowledgeResultsPayload = value.map((item) => ({
+                              documentId: String(item.documentId),
+                              documentName: String(item.documentName ?? item.documentId),
+                              content: String(item.content),
+                              chunkIndex: Number(item.chunkIndex),
+                              ...(item.metadata && typeof item.metadata === 'object' && {
+                                metadata: item.metadata as Record<string, unknown>,
+                              }),
+                              ...(typeof item.similarity === 'number' && { similarity: item.similarity }),
+                            }))
+                            break
+                          }
+                        }
+                      }
+                    }
+
+                    if (knowledgeResultsPayload.length > 0) {
+                      const knowledgeResultsEvent = JSON.stringify({
+                        event: 'knowledgeResults',
+                        data: knowledgeResultsPayload,
+                      })
+                      controller.enqueue(encoder.encode(`data: ${knowledgeResultsEvent}\n\n`))
+                    }
+
+                    // Format final output based on outputConfigs (exclude raw "results" for knowledge block)
                     let finalChatOutput = accumulatedContent.trim()
 
                     if (
@@ -638,32 +716,15 @@ export async function POST(
                         return String(value)
                       }
 
-                      const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
-                        if (!path || path === 'content') {
-                          if (blockOutputs.content !== undefined) return blockOutputs.content
-                          if (blockOutputs.result !== undefined) return blockOutputs.result
-                          return blockOutputs
-                        }
-                        if (blockOutputs[path] !== undefined) {
-                          return blockOutputs[path]
-                        }
-                        if (path.includes('.')) {
-                          return path.split('.').reduce<any>((current, segment) => {
-                            if (current && typeof current === 'object' && segment in current) {
-                              return current[segment]
-                            }
-                            return undefined
-                          }, blockOutputs)
-                        }
-                        return undefined
-                      }
-
                       const formattedOutputs: string[] = []
                       for (const config of deployment.outputConfigs) {
                         const blockOutputs = finalData.output[config.blockId]
                         if (!blockOutputs) continue
 
                         const value = getOutputValue(blockOutputs, config.path)
+                        if (config.path === 'results' && isKnowledgeResultsArray(value)) {
+                          continue
+                        }
                         const formatted = formatValue(value)
                         if (formatted) {
                           formattedOutputs.push(formatted)

@@ -27,6 +27,16 @@ export interface ChatFile {
   context?: string
 }
 
+/** Single chunk from knowledge base search (used when deployment outputs "Knowledge base results") */
+export interface KnowledgeResultChunk {
+  documentId: string
+  documentName: string
+  content: string
+  chunkIndex: number
+  metadata?: Record<string, unknown>
+  similarity?: number
+}
+
 export interface ChatMessage {
   id: string
   content: string | Record<string, unknown>
@@ -37,6 +47,8 @@ export interface ChatMessage {
   attachments?: ChatAttachment[]
   executionId?: string
   files?: ChatFile[]
+  /** Knowledge base search results when workflow outputs "results"; used for clickable references and modal */
+  knowledgeResults?: KnowledgeResultChunk[]
 }
 
 function EnhancedMarkdownRenderer({ content }: { content: string }) {

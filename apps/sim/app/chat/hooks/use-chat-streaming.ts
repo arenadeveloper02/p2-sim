@@ -139,6 +139,7 @@ export function useChatStreaming() {
     let accumulatedText = ''
     let lastAudioPosition = 0
     let buffer = '' // Buffer for incomplete JSON strings
+    let pendingKnowledgeResults: ChatMessage['knowledgeResults'] = undefined
 
     // Track which blocks have streamed content (like chat panel)
     const messageIdMap = new Map<string, string>()
@@ -241,6 +242,12 @@ export function useChatStreaming() {
               // Try to parse JSON - if it fails due to incomplete string, buffer it
               const json = JSON.parse(data)
               const { blockId, chunk: contentChunk, event: eventType } = json
+
+              if (eventType === 'knowledgeResults' && Array.isArray(json.data)) {
+                pendingKnowledgeResults = json.data as ChatMessage['knowledgeResults']
+                lineEndIndex = buffer.indexOf('\n\n')
+                continue
+              }
 
               if (eventType === 'error' || json.event === 'error') {
                 const errorMessage = json.error || CHAT_ERROR_MESSAGES.GENERIC_ERROR
@@ -395,11 +402,13 @@ export function useChatStreaming() {
                           executionId: finalData?.executionId || msg.executionId,
                           liked: null,
                           files: extractedFiles.length > 0 ? extractedFiles : undefined,
+                          knowledgeResults: pendingKnowledgeResults,
                         }
                       : msg
                   )
                 )
 
+                pendingKnowledgeResults = undefined
                 accumulatedTextRef.current = ''
                 lastStreamedPositionRef.current = 0
                 lastDisplayedPositionRef.current = 0
