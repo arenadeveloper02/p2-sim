@@ -58,6 +58,7 @@ import {
   arenaConversationSummary,
   arenaCreateTask,
   arenaGetMeetings,
+  arenaGetToken,
   arenaProjectSummary,
   arenaSaveSummary,
   arenaSearchTask,
@@ -1737,6 +1738,8 @@ import {
   zoomListMeetingsTool,
   zoomListPastParticipantsTool,
   zoomListRecordingsTool,
+  zoomListAccountRecordingsTool,
+  zoomDownloadTranscriptTool,
   zoomUpdateMeetingTool,
 } from '@/tools/zoom'
 
@@ -1747,6 +1750,7 @@ export const tools: Record<string, ToolConfig> = {
   arena_save_summary: arenaSaveSummary,
   arena_comments: arenaAddComment,
   arena_get_meetings: arenaGetMeetings,
+  arena_get_token: arenaGetToken,
   arena_project_summary: arenaProjectSummary,
   arena_client_updated_tasks: arenaClientUpdatedTasks,
   arena_conversation_summary: arenaConversationSummary,
@@ -3277,6 +3281,8 @@ export const tools: Record<string, ToolConfig> = {
   zoom_delete_meeting: zoomDeleteMeetingTool,
   zoom_get_meeting_invitation: zoomGetMeetingInvitationTool,
   zoom_list_recordings: zoomListRecordingsTool,
+  zoom_list_account_recordings: zoomListAccountRecordingsTool,
+  zoom_download_transcript: zoomDownloadTranscriptTool,
   zoom_get_meeting_recordings: zoomGetMeetingRecordingsTool,
   zoom_delete_recording: zoomDeleteRecordingTool,
   zoom_list_past_participants: zoomListPastParticipantsTool,

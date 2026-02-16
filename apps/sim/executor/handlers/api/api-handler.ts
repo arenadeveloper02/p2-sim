@@ -79,6 +79,7 @@ export class ApiBlockHandler implements BlockHandler {
             workspaceId: ctx.workspaceId,
             executionId: ctx.executionId,
             isDeployedContext: ctx.isDeployedContext,
+            userId: ctx.userId,
           },
         },
         false,

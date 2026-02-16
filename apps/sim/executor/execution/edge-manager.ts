@@ -240,7 +240,29 @@ export class EdgeManager {
       return handle === EDGE.PARALLEL_EXIT
     }
 
+    // CRITICAL: If sentinel start is exiting (shouldExit: true), deactivate all regular edges
+    // to nodes inside the loop body. This prevents loop body nodes from executing when
+    // the loop should be skipped (e.g., empty forEach collection).
     if (!handle) {
+      // Check if source is a sentinel start that's exiting
+      const isSentinelStartExiting =
+        sourceNode.metadata.isSentinel &&
+        sourceNode.metadata.sentinelType === 'start' &&
+        output?.shouldExit === true &&
+        output?.selectedRoute === EDGE.LOOP_EXIT
+
+      if (isSentinelStartExiting) {
+        // Check if target node is inside the loop (has the same loopId)
+        const targetNode = this.dag.nodes.get(edge.target)
+        const sourceLoopId = sourceNode.metadata.loopId
+        const targetLoopId = targetNode?.metadata.loopId
+
+        // If target is inside the loop, deactivate this edge
+        if (sourceLoopId && targetLoopId === sourceLoopId) {
+          return false
+        }
+      }
+
       return true
     }
 
