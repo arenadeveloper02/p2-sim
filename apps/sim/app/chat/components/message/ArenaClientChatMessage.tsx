@@ -236,6 +236,16 @@ export const ArenaClientChatMessage = memo(
       return ref.workspaceId !== null && workspaceIdsForKbLinks.includes(ref.workspaceId)
     }
 
+    /** Only refs the user can open (has workspace access). Chat-only users see no references. */
+    const visibleDocRefs = useMemo(() => {
+      if (!workspaceIdsForKbLinks?.length) return []
+      return uniqueDocRefs.filter((ref) => canShowKbLink(ref))
+    }, [uniqueDocRefs, workspaceIdsForKbLinks])
+
+    /** Hide during streaming; show only when done and user has access to at least one ref (streaming + history). */
+    const showReferencesSection =
+      !message.isStreaming && visibleDocRefs.length > 0
+
     const openKnowledgeModal = useCallback(
       (documentName: string, chunks: KnowledgeResultChunk[], viewInKbUrl?: string) => {
         setKnowledgeModalDoc({ documentName, chunks, viewInKbUrl })
@@ -444,10 +454,10 @@ export const ArenaClientChatMessage = memo(
                 )} */}
               </div>
             </div>
-            {uniqueDocRefs.length > 0 && (
+            {showReferencesSection && (
               <div className='mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
                 <span className='text-gray-500 dark:text-gray-400'>References:</span>
-                {uniqueDocRefs.map((ref) => (
+                {visibleDocRefs.map((ref) => (
                   <span key={ref.documentId} className='inline-flex items-center gap-1'>
                     {ref.chunks && ref.chunks.length > 0 ? (
                       <button
@@ -459,7 +469,7 @@ export const ArenaClientChatMessage = memo(
                       >
                         {ref.documentName}
                       </button>
-                    ) : ref.linkUrl && canShowKbLink(ref) ? (
+                    ) : ref.linkUrl ? (
                       <a
                         href={ref.linkUrl}
                         target='_blank'
@@ -468,12 +478,8 @@ export const ArenaClientChatMessage = memo(
                       >
                         {ref.documentName}
                       </a>
-                    ) : (
-                      <span className='rounded px-1.5 py-0.5 text-gray-600 dark:text-gray-300'>
-                        {ref.documentName}
-                      </span>
-                    )}
-                    {ref.linkUrl && canShowKbLink(ref) && (
+                    ) : null}
+                    {ref.linkUrl && (
                       <Tooltip.Provider>
                         <Tooltip.Root>
                           <Tooltip.Trigger asChild>

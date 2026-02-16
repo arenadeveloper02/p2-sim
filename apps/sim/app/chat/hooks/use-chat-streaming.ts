@@ -330,12 +330,29 @@ export function useChatStreaming() {
                   return undefined
                 }
 
+                const isKnowledgeResultsArray = (value: unknown): value is Array<Record<string, unknown>> =>
+                  Array.isArray(value) &&
+                  value.length > 0 &&
+                  value.every(
+                    (item) =>
+                      item &&
+                      typeof item === 'object' &&
+                      'documentId' in item &&
+                      'documentName' in item &&
+                      'content' in item &&
+                      'chunkIndex' in item
+                  )
+
                 if (outputConfigs?.length && finalData.output) {
                   for (const config of outputConfigs) {
                     const blockOutputs = finalData.output[config.blockId]
                     if (!blockOutputs) continue
 
                     const value = getOutputValue(blockOutputs, config.path)
+
+                    if (config.path === 'results' && isKnowledgeResultsArray(value)) {
+                      continue
+                    }
 
                     if (isUserFileWithMetadata(value)) {
                       extractedFiles.push({
@@ -384,6 +401,7 @@ export function useChatStreaming() {
                     }
                   } else if (finalData.success && finalData.output) {
                     const fallbackOutput = Object.values(finalData.output)
+                      .filter((block) => !isKnowledgeResultsArray(block?.results))
                       .map((block) => formatValue(block)?.trim())
                       .filter(Boolean)[0]
                     if (fallbackOutput) {
