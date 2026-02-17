@@ -61,7 +61,7 @@ export function KnowledgeResultsModal({
                 <div className='mb-1.5 font-medium text-gray-500 text-xs dark:text-gray-400'>
                   Chunk {chunk.chunkIndex + 1}
                 </div>
-                <div className='whitespace-pre-wrap break-words text-gray-800 text-sm dark:text-gray-200'>
+                <div className='whitespace-pre-wrap break-words font-medium text-gray-800 text-sm leading-relaxed dark:text-gray-200'>
                   {chunk.content}
                 </div>
                 {chunk.metadata &&
