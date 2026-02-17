@@ -426,9 +426,45 @@ export async function executeWorkflowCore(
     // Build trace spans for logging from the full execution result
     const { traceSpans, totalDuration } = buildTraceSpans(result)
 
-    // Update workflow run counts
-    if (result.success && result.status !== 'paused') {
+    // Detect skipped workflow (intent analyzer decided to skip)
+    const isSkippedExecution =
+      result.success &&
+      result.output &&
+      typeof result.output === 'object' &&
+      'skippedWorkflow' in result.output &&
+      result.output.skippedWorkflow === true
+
+    if (isSkippedExecution) {
+      result.status = 'skipped'
+    }
+
+    // Update workflow run counts (skip for paused and skipped executions)
+    if (result.success && result.status !== 'paused' && result.status !== 'skipped') {
       await updateWorkflowRunCounts(workflowId)
+    }
+
+    if (result.status === 'skipped') {
+      const skipContent =
+        result.output && typeof result.output === 'object' && 'content' in result.output
+          ? (result.output.content as string)
+          : undefined
+
+      await loggingSession.safeCompleteAsSkipped({
+        endedAt: new Date().toISOString(),
+        totalDurationMs: totalDuration || 0,
+        finalOutput: result.output || {},
+        traceSpans: traceSpans || [],
+        workflowInput: processedInput,
+        finalChatOutput: skipContent,
+      })
+
+      await clearExecutionCancellation(executionId)
+
+      logger.info(`[${requestId}] Workflow execution skipped by intent analyzer`, {
+        duration: result.metadata?.duration,
+      })
+
+      return result
     }
 
     if (result.status === 'cancelled') {
@@ -470,7 +506,18 @@ export async function executeWorkflowCore(
       if (typeof output === 'string') {
         finalChatOutput = output
       } else if (output !== undefined && output !== null) {
-        finalChatOutput = JSON.stringify(output)
+        // Extract content field if it exists (e.g., from provider response objects)
+        // This ensures we only store the text content, not the entire metadata object
+        if (
+          typeof output === 'object' &&
+          'content' in output &&
+          typeof output.content === 'string'
+        ) {
+          finalChatOutput = output.content
+        } else {
+          // Fallback to JSON.stringify for other object types
+          finalChatOutput = JSON.stringify(output)
+        }
       }
     }
 

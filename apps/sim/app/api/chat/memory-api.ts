@@ -139,12 +139,17 @@ export async function searchMemoryAPI(
       if (!payload.filters) {
         payload.filters = {}
       }
-      payload.filters.isDeployed = isDeployed
+      if (isDeployed === true) {
+        payload.filters.isDeployed = 'true'
+      } else {
+        payload.filters.isDeployed = 'false'
+      }
     }
 
-    payload.limit = 5
+    payload.limit = 20
 
     logger.debug(`[${requestId}] Calling memory search API`)
+    logger.debug('Payload:', payload)
 
     const response = await fetch(`${MEMORY_API_BASE_URL}/search`, {
       method: 'POST',

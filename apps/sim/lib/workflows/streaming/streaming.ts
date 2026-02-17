@@ -156,13 +156,29 @@ async function completeLoggingSession(result: ExecutionResult): Promise<void> {
 
   const { traceSpans, totalDuration } = buildTraceSpans(result)
 
-  await result._streamingMetadata.loggingSession.safeComplete({
-    endedAt: new Date().toISOString(),
-    totalDurationMs: totalDuration || 0,
-    finalOutput: result.output || {},
-    traceSpans: (traceSpans || []) as any,
-    workflowInput: result._streamingMetadata.processedInput,
-  })
+  if (result.status === 'skipped') {
+    const skipContent =
+      result.output && typeof result.output === 'object' && 'content' in result.output
+        ? (result.output.content as string)
+        : undefined
+
+    await result._streamingMetadata.loggingSession.safeCompleteAsSkipped({
+      endedAt: new Date().toISOString(),
+      totalDurationMs: totalDuration || 0,
+      finalOutput: result.output || {},
+      traceSpans: (traceSpans || []) as any,
+      workflowInput: result._streamingMetadata.processedInput,
+      finalChatOutput: skipContent,
+    })
+  } else {
+    await result._streamingMetadata.loggingSession.safeComplete({
+      endedAt: new Date().toISOString(),
+      totalDurationMs: totalDuration || 0,
+      finalOutput: result.output || {},
+      traceSpans: (traceSpans || []) as any,
+      workflowInput: result._streamingMetadata.processedInput,
+    })
+  }
 
   result._streamingMetadata = undefined
 }

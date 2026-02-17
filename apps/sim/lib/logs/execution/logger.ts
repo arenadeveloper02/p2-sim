@@ -205,7 +205,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     finalChatOutput?: string // Final chat output based on output_configs
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,

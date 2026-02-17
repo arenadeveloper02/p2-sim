@@ -66,6 +66,15 @@ export interface SessionPausedParams {
   workflowInput?: any
 }
 
+export interface SessionSkippedParams {
+  endedAt?: string
+  totalDurationMs?: number
+  finalOutput?: any
+  traceSpans?: TraceSpan[]
+  workflowInput?: any
+  finalChatOutput?: string
+}
+
 interface AccumulatedCost {
   total: number
   input: number
@@ -665,6 +674,76 @@ export class LoggingSession {
     }
   }
 
+  async completeAsSkipped(params: SessionSkippedParams = {}): Promise<void> {
+    if (this.completed) {
+      return
+    }
+
+    try {
+      const { endedAt, totalDurationMs, finalOutput, traceSpans, workflowInput, finalChatOutput } =
+        params
+
+      const endTime = endedAt ? new Date(endedAt) : new Date()
+      const durationMs = typeof totalDurationMs === 'number' ? totalDurationMs : 0
+
+      const zeroCostSummary = {
+        totalCost: 0,
+        totalInputCost: 0,
+        totalOutputCost: 0,
+        totalTokens: 0,
+        totalPromptTokens: 0,
+        totalCompletionTokens: 0,
+        baseExecutionCharge: 0,
+        modelCost: 0,
+        models: {},
+      }
+
+      await executionLogger.completeWorkflowExecution({
+        executionId: this.executionId,
+        endedAt: endTime.toISOString(),
+        totalDurationMs: Math.max(1, durationMs),
+        costSummary: zeroCostSummary,
+        finalOutput: finalOutput || { skipped: true },
+        traceSpans: traceSpans || [],
+        workflowInput,
+        finalChatOutput,
+        status: 'skipped',
+      })
+
+      this.completed = true
+
+      try {
+        const { PlatformEvents } = await import('@/lib/core/telemetry')
+        PlatformEvents.workflowExecuted({
+          workflowId: this.workflowId,
+          durationMs: Math.max(1, durationMs),
+          status: 'skipped',
+          trigger: this.triggerType,
+          blocksExecuted: 0,
+          hasErrors: false,
+          totalCost: 0,
+        })
+      } catch (_e) {
+        // Silently fail
+      }
+
+      if (this.requestId) {
+        logger.debug(
+          `[${this.requestId}] Completed skipped logging for execution ${this.executionId}`
+        )
+      }
+    } catch (skipError) {
+      logger.error(`Failed to complete skipped logging for execution ${this.executionId}:`, {
+        requestId: this.requestId,
+        workflowId: this.workflowId,
+        executionId: this.executionId,
+        error: skipError instanceof Error ? skipError.message : String(skipError),
+        stack: skipError instanceof Error ? skipError.stack : undefined,
+      })
+      throw skipError
+    }
+  }
+
   async safeStart(params: SessionStartParams): Promise<boolean> {
     try {
       await this.start(params)
@@ -815,6 +894,26 @@ export class LoggingSession {
     }
   }
 
+  async safeCompleteAsSkipped(params?: SessionSkippedParams): Promise<void> {
+    try {
+      await this.completeAsSkipped(params)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(
+        `[${this.requestId || 'unknown'}] CompleteAsSkipped failed for execution ${this.executionId}, attempting fallback`,
+        { error: errorMsg }
+      )
+      await this.completeWithCostOnlyLog({
+        traceSpans: params?.traceSpans,
+        endedAt: params?.endedAt,
+        totalDurationMs: params?.totalDurationMs,
+        errorMessage: 'Execution skipped by intent analyzer',
+        isError: false,
+        status: 'skipped',
+      })
+    }
+  }
+
   async markAsFailed(errorMessage?: string): Promise<void> {
     await LoggingSession.markExecutionAsFailed(this.executionId, errorMessage, this.requestId)
   }
@@ -852,7 +951,7 @@ export class LoggingSession {
     totalDurationMs?: number
     errorMessage: string
     isError: boolean
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
   }): Promise<void> {
     if (this.completed) {
       return

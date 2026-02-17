@@ -386,6 +386,16 @@ export class ExecutionEngine {
       return
     }
 
+    if (output.skippedWorkflow === true) {
+      logger.info('Block returned skippedWorkflow — stopping further execution', {
+        nodeId,
+        blockId: node.block.id,
+      })
+      this.readyQueue = []
+      this.finalOutput = output
+      return
+    }
+
     await this.nodeOrchestrator.handleNodeCompletion(this.context, nodeId, output)
 
     if (isFinalOutput) {
