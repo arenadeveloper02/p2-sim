@@ -75,6 +75,7 @@ IMPORTANT RULES:
 - Year must be 4 digits (any year 1900-3000)
 - CRITICAL: If user mentions "2024 vs 2025" with one month specified, extract BOTH with the same month. Example: "October 2024 vs 2025" → ["October 2024", "October 2025"]
 - CRITICAL: Always extract the full month-year format, never just the year
+- IMPORTANT: Convert M/D/YYYY format to Month YYYY format. Example: "1/1/2025 to 1/31/2025" → ["January 2025"]
 
 Examples:
 - "Compare October 2025 vs October 2024" → {"dateRanges": ["October 2025", "October 2024"], "intent": "campaign performance"}
@@ -83,6 +84,7 @@ Examples:
 - "Show December 2025 compared to December 2024, give me impressions" → {"dateRanges": ["December 2025", "December 2024"], "intent": "impressions"}
 - "November 2025 and November 2024 yoy for clicks" → {"dateRanges": ["November 2025", "November 2024"], "intent": "clicks"}
 - "Compare 2019 vs 2018 conversions" → {"dateRanges": ["2019", "2018"], "intent": "conversions"}
+- "Show me the performance from 1/1/2025 to 1/31/2025 and then 1/1/2026 to 1/31/2026" → {"dateRanges": ["January 2025", "January 2026"], "intent": "campaign performance"}
 - "Compare last month vs same month last year" → null (no explicit dates)
 `
 
@@ -166,10 +168,25 @@ Examples:
                             'July', 'August', 'September', 'October', 'November', 'December']
         if (!validMonths.includes(month)) return false
         
-        // Verify the date actually exists in the original query
-        if (!query.toLowerCase().includes(month.toLowerCase()) || !query.includes(year)) {
-          logger.warn(`AI hallucinated date: ${date} not found in original query: ${query}`)
+        // For M/D/YYYY format, check if the year exists in query (month name won't be in original)
+        // For Month YYYY format, check both month and year
+        const hasMonthInQuery = query.toLowerCase().includes(month.toLowerCase())
+        const hasYearInQuery = query.includes(year)
+        
+        if (!hasYearInQuery) {
+          logger.warn(`AI hallucinated year: ${year} not found in original query: ${query}`)
           return false
+        }
+        
+        // If month is not in query, it's likely M/D/YYYY format conversion (which is valid)
+        if (!hasMonthInQuery) {
+          // Check if query has M/D/YYYY pattern for this month/year
+          const monthNumber = new Date(`${month} 1, 2000`).getMonth() + 1
+          const monthPattern = new RegExp(`${monthNumber}/\\d+/${year}`)
+          if (!monthPattern.test(query)) {
+            logger.warn(`AI hallucinated date: ${date} not found in original query: ${query}`)
+            return false
+          }
         }
       } else {
         // For year-only dates, verify the year exists in query
