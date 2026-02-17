@@ -44,6 +44,31 @@ interface SlideLike {
   blocks: BlockLike[]
 }
 
+// --- NEW: Exponential Backoff Wrapper ---
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  maxRetries = 4
+): Promise<Response> {
+  let delay = 1000
+  for (let i = 0; i < maxRetries; i++) {
+    const res = await fetch(url, options)
+    // Retry on Rate Limit (429) or Server Errors (5xx)
+    if (res.status === 429 || res.status >= 500) {
+      const jitter = Math.random() * 500
+      logger.warn(`API error (${res.status}). Retrying in ${Math.round(delay + jitter)}ms...`, {
+        url,
+      })
+      await new Promise((resolve) => setTimeout(resolve, delay + jitter))
+      delay *= 2 // Exponential backoff
+      continue
+    }
+    return res
+  }
+  // Final attempt
+  return fetch(url, options)
+}
+
 function parseSchema(schemaJson: string): PresentationSchema {
   let parsed: unknown
   try {
@@ -79,6 +104,26 @@ function validateTemplateId(schema: PresentationSchema): void {
   }
 }
 
+// --- NEW: Helper to find text boundaries for lists ---
+function buildTextEndIndexMap(presentationData: any): Record<string, number> {
+  const map: Record<string, number> = {}
+  const slides = presentationData.slides || []
+  for (const slide of slides) {
+    for (const el of slide.pageElements || []) {
+      if (el.shape?.text?.textElements) {
+        let maxIndex = 1
+        for (const te of el.shape.text.textElements) {
+          if (te.endIndex != null && te.endIndex > maxIndex) {
+            maxIndex = te.endIndex
+          }
+        }
+        map[el.objectId] = maxIndex
+      }
+    }
+  }
+  return map
+}
+
 async function duplicatePresentation(
   accessToken: string,
   sourcePresentationId: string,
@@ -87,7 +132,8 @@ async function duplicatePresentation(
   const url = new URL(`https://www.googleapis.com/drive/v3/files/${sourcePresentationId}/copy`)
   url.searchParams.set('supportsAllDrives', 'true')
   url.searchParams.set('fields', 'id,name,mimeType,webViewLink,parents,createdTime,modifiedTime')
-  const res = await fetch(url.toString(), {
+
+  const res = await fetchWithRetry(url.toString(), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -117,9 +163,12 @@ async function getPresentationSlides(
   accessToken: string,
   presentationId: string
 ): Promise<{ objectId: string }[]> {
-  const res = await fetch(`https://slides.googleapis.com/v1/presentations/${presentationId}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
+  const res = await fetchWithRetry(
+    `https://slides.googleapis.com/v1/presentations/${presentationId}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  )
   const data = await res.json()
   if (!res.ok) {
     logger.error('Get presentation slides failed', {
@@ -129,47 +178,9 @@ async function getPresentationSlides(
     })
     throw new Error(data.error?.message || 'Failed to read presentation')
   }
-  const slides = (data.slides || []).map((s: { objectId: string }) => ({
+  return (data.slides || []).map((s: { objectId: string }) => ({
     objectId: s.objectId,
   }))
-  return slides
-}
-
-async function deleteSlides(
-  accessToken: string,
-  presentationId: string,
-  slideObjectIds: string[]
-): Promise<void> {
-  if (slideObjectIds.length === 0) return
-  const res = await fetch(
-    `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        requests: slideObjectIds.map((objectId) => ({
-          deleteObject: { objectId },
-        })),
-      }),
-    }
-  )
-  const data = await res.json()
-  if (!res.ok) {
-    logger.error('Delete slides failed', {
-      presentationId,
-      slideCount: slideObjectIds.length,
-      status: res.status,
-      error: data.error?.message,
-    })
-    throw new Error(data.error?.message || 'Failed to delete slides')
-  }
-  logger.info('Original slides deleted', {
-    presentationId,
-    deletedCount: slideObjectIds.length,
-  })
 }
 
 async function duplicateSlide(
@@ -178,7 +189,7 @@ async function duplicateSlide(
   slideObjectId: string,
   objectIds: Record<string, string>
 ): Promise<string> {
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
     {
       method: 'POST',
@@ -208,19 +219,23 @@ async function duplicateSlide(
     })
     throw new Error(data.error?.message || 'Failed to duplicate slide')
   }
+
   const newSlideId = data.replies?.[0]?.duplicateObject?.objectId
   if (!newSlideId) {
     logger.error('Duplicate slide response missing object ID', { presentationId, slideObjectId })
     throw new Error('Duplicate slide did not return object ID')
   }
+
   logger.info('Slide duplicated', {
     presentationId,
     sourceSlideId: slideObjectId,
     newSlideId,
     shapeMappings: Object.keys(objectIds).length,
   })
+
+  // Reorder slide to the end
   const totalSlides = (await getPresentationSlides(accessToken, presentationId)).length
-  const reorderRes = await fetch(
+  const reorderRes = await fetchWithRetry(
     `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
     {
       method: 'POST',
@@ -245,150 +260,6 @@ async function duplicateSlide(
     logger.warn('Failed to reorder duplicated slide to end', { error: errData })
   }
   return newSlideId
-}
-
-async function replaceText(
-  accessToken: string,
-  presentationId: string,
-  objectId: string,
-  text: string
-): Promise<void> {
-  const res = await fetch(
-    `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        requests: [
-          { deleteText: { objectId, textRange: { type: 'ALL' } } },
-          { insertText: { objectId, insertionIndex: 0, text } },
-        ],
-      }),
-    }
-  )
-  const data = await res.json()
-  if (!res.ok) {
-    logger.error('Replace text failed', {
-      presentationId,
-      objectId,
-      status: res.status,
-      error: data.error?.message,
-    })
-    throw new Error(data.error?.message || 'Failed to replace text')
-  }
-}
-
-async function replaceImage(
-  accessToken: string,
-  presentationId: string,
-  objectId: string,
-  imageUrl: string
-): Promise<void> {
-  const res = await fetch(
-    `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        requests: [
-          {
-            replaceImage: {
-              imageObjectId: objectId,
-              url: imageUrl,
-            },
-          },
-        ],
-      }),
-    }
-  )
-  const data = await res.json()
-  if (!res.ok) {
-    logger.error('Replace image failed', {
-      presentationId,
-      objectId,
-      status: res.status,
-      error: data.error?.message,
-    })
-    throw new Error(data.error?.message || 'Failed to replace image')
-  }
-}
-
-async function replaceList(
-  accessToken: string,
-  presentationId: string,
-  objectId: string,
-  listItems: string[]
-): Promise<void> {
-  const getRes = await fetch(`https://slides.googleapis.com/v1/presentations/${presentationId}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  const presData = await getRes.json()
-  if (!getRes.ok) {
-    logger.error('Read presentation for list failed', {
-      presentationId,
-      objectId,
-      status: getRes.status,
-      error: presData.error?.message,
-    })
-    throw new Error(presData.error?.message || 'Failed to read presentation for list')
-  }
-  const slides = presData.slides || []
-  let textEndIndex = 0
-  for (const slide of slides) {
-    for (const el of slide.pageElements || []) {
-      if (el.objectId === objectId && el.shape?.text?.textElements) {
-        for (const te of el.shape.text.textElements) {
-          if (te.endIndex != null && te.endIndex > textEndIndex) {
-            textEndIndex = te.endIndex
-          }
-        }
-        break
-      }
-    }
-  }
-  if (textEndIndex === 0) {
-    textEndIndex = 1
-  }
-  const listText = listItems.join('\n')
-  const res = await fetch(
-    `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        requests: [
-          {
-            deleteText: {
-              objectId,
-              textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: textEndIndex - 1 },
-            },
-          },
-          {
-            insertText: { objectId, insertionIndex: 0, text: listText },
-          },
-        ],
-      }),
-    }
-  )
-  const data = await res.json()
-  if (!res.ok) {
-    logger.error('Replace list failed', {
-      presentationId,
-      objectId,
-      status: res.status,
-      error: data.error?.message,
-    })
-    throw new Error(data.error?.message || 'Failed to replace list')
-  }
 }
 
 export const createFromTemplateTool: ToolConfig<
@@ -453,25 +324,30 @@ export const createFromTemplateTool: ToolConfig<
 
     const schema = parseSchema(params.schemaJson)
     validateTemplateId(schema)
+
     logger.info('Schema validated', {
       templateId: schema.id,
       templateVersion: schema.templateVersion,
       slideCount: schema.slides.length,
     })
 
+    // 1. Duplicate Presentation
     const presentationId = await duplicatePresentation(accessToken, schema.id, presentationName)
 
+    // Keep track of the original template slides so we can delete them at the end
     const originalSlidesToDelete = (await getPresentationSlides(accessToken, presentationId)).map(
       (s) => s.objectId
     )
+
     logger.info('Original slides to delete after content fill', {
       presentationId,
       originalSlideCount: originalSlidesToDelete.length,
     })
 
-    const slidesOrdered = [...schema.slides].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    const slidesOrdered = [...schema.slides]
     const slideIndexToShapeMap: Record<string, string>[] = []
 
+    // 2. Duplicate Slides (creates layout, maps objects)
     for (const slideSchema of slidesOrdered) {
       const templateSlideId = (slideSchema as SlideLike).templateSlideObjectId
       const blocks = (slideSchema as SlideLike).blocks || []
@@ -486,10 +362,29 @@ export const createFromTemplateTool: ToolConfig<
       slideIndexToShapeMap.push(objectIds)
     }
 
-    logger.info('Replacing content on slides', {
+    logger.info('Fetching presentation state to build list maps', { presentationId })
+
+    // 3. Fetch the presentation EXACTLY ONCE to get text endIndexes for lists
+    const presRes = await fetchWithRetry(
+      `https://slides.googleapis.com/v1/presentations/${presentationId}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    )
+    const presData = await presRes.json()
+    if (!presRes.ok) {
+      throw new Error(presData.error?.message || 'Failed to read presentation state for mapping')
+    }
+    const textEndIndexMap = buildTextEndIndexMap(presData)
+
+    // 4. Build a single massive batch of requests for ALL content replacements
+    logger.info('Preparing batch content replacements', {
       presentationId,
       slideCount: slidesOrdered.length,
     })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const batchRequests: any[] = []
 
     for (let s = 0; s < slidesOrdered.length; s++) {
       const slideSchema = slidesOrdered[s] as SlideLike
@@ -506,24 +401,63 @@ export const createFromTemplateTool: ToolConfig<
         if (block.type === 'TEXT' && !isList) {
           const text = typeof content === 'string' ? content : ''
           if (text) {
-            await replaceText(accessToken, presentationId, objectId, text)
+            batchRequests.push({ deleteText: { objectId, textRange: { type: 'ALL' } } })
+            batchRequests.push({ insertText: { objectId, insertionIndex: 0, text } })
           }
         } else if (block.type === 'IMAGE' && content) {
           const imageUrl = typeof content === 'string' ? content : ''
           if (imageUrl) {
-            await replaceImage(accessToken, presentationId, objectId, imageUrl)
+            batchRequests.push({ replaceImage: { imageObjectId: objectId, url: imageUrl } })
           }
         } else if (isList && Array.isArray(content) && content.length > 0) {
-          await replaceList(accessToken, presentationId, objectId, content)
+          const listText = content.join('\n')
+          const endIndex = textEndIndexMap[objectId] || 1 // Fallback to 1 if not found
+
+          batchRequests.push({
+            deleteText: {
+              objectId,
+              textRange: { type: 'FIXED_RANGE', startIndex: 0, endIndex: endIndex - 1 },
+            },
+          })
+          batchRequests.push({ insertText: { objectId, insertionIndex: 0, text: listText } })
         }
       }
     }
 
-    logger.info('Deleting original template slides', {
-      presentationId,
-      count: originalSlidesToDelete.length,
-    })
-    await deleteSlides(accessToken, presentationId, originalSlidesToDelete)
+    // 5. Append original slide deletions to the same batch payload
+    for (const objectId of originalSlidesToDelete) {
+      batchRequests.push({ deleteObject: { objectId } })
+    }
+
+    // 6. Execute ALL content replacements and deletions in ONE network call
+    if (batchRequests.length > 0) {
+      logger.info('Executing master batch update', {
+        presentationId,
+        requestCount: batchRequests.length,
+      })
+
+      const batchRes = await fetchWithRetry(
+        `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ requests: batchRequests }),
+        }
+      )
+
+      if (!batchRes.ok) {
+        const errData = await batchRes.json()
+        logger.error('Master batch update failed', {
+          presentationId,
+          status: batchRes.status,
+          error: errData.error?.message,
+        })
+        throw new Error(errData.error?.message || 'Failed to apply template updates')
+      }
+    }
 
     logger.info('Create from template completed', {
       presentationId,
