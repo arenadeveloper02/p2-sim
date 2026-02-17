@@ -370,6 +370,18 @@ const nextConfig: NextConfig = {
 
     return redirects
   },
+  async rewrites() {
+    return [
+      ...(isHosted
+        ? [
+            {
+              source: '/r/:shortCode',
+              destination: 'https://go.trybeluga.ai/:shortCode',
+            },
+          ]
+        : []),
+    ]
+  },
 }
 
 export default nextConfig
