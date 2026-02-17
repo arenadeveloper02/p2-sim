@@ -22,17 +22,17 @@ function resolveAccountKey(accountInput: string): string {
   if (GOOGLE_ADS_ACCOUNTS[accountInput]) {
     return accountInput
   }
-  
+
   // If not found, search by numeric ID
   const foundAccount = Object.entries(GOOGLE_ADS_ACCOUNTS).find(
     ([key, account]) => account.id === accountInput
   )
-  
+
   if (foundAccount) {
     logger.info(`Resolved numeric ID ${accountInput} to account key ${foundAccount[0]}`)
     return foundAccount[0]
   }
-  
+
   // Return original if not found (will show error in validation)
   return accountInput
 }
@@ -58,9 +58,9 @@ export async function POST(request: NextRequest) {
 
     // Resolve account key (supports both keys and numeric IDs)
     const resolvedAccountKey = resolveAccountKey(accounts)
-    logger.info(`[${requestId}] Resolved account key`, { 
-      original: accounts, 
-      resolved: resolvedAccountKey 
+    logger.info(`[${requestId}] Resolved account key`, {
+      original: accounts,
+      resolved: resolvedAccountKey,
     })
 
     // Get account information first
