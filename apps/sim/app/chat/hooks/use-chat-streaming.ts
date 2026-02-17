@@ -139,7 +139,7 @@ export function useChatStreaming() {
     let accumulatedText = ''
     let lastAudioPosition = 0
     let buffer = '' // Buffer for incomplete JSON strings
-    let pendingKnowledgeResults: ChatMessage['knowledgeResults'] = undefined
+    let pendingKnowledgeResults: ChatMessage['knowledgeResults']
 
     // Track which blocks have streamed content (like chat panel)
     const messageIdMap = new Map<string, string>()
@@ -330,7 +330,9 @@ export function useChatStreaming() {
                   return undefined
                 }
 
-                const isKnowledgeResultsArray = (value: unknown): value is Array<Record<string, unknown>> =>
+                const isKnowledgeResultsArray = (
+                  value: unknown
+                ): value is Array<Record<string, unknown>> =>
                   Array.isArray(value) &&
                   value.length > 0 &&
                   value.every(

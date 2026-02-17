@@ -59,7 +59,7 @@ export function KnowledgeResultsModal({
                 className='rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50'
               >
                 <div className='mb-1.5 font-medium text-gray-500 text-xs dark:text-gray-400'>
-                  Chunk {chunk.chunkIndex + 1}
+                  Chunk {chunk.chunkIndex}
                 </div>
                 <div className='whitespace-pre-wrap break-words font-medium text-gray-800 text-sm leading-relaxed dark:text-gray-200'>
                   {chunk.content}

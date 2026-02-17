@@ -1726,14 +1726,14 @@ import {
   zoomCreateMeetingTool,
   zoomDeleteMeetingTool,
   zoomDeleteRecordingTool,
+  zoomDownloadTranscriptTool,
   zoomGetMeetingInvitationTool,
   zoomGetMeetingRecordingsTool,
   zoomGetMeetingTool,
+  zoomListAccountRecordingsTool,
   zoomListMeetingsTool,
   zoomListPastParticipantsTool,
   zoomListRecordingsTool,
-  zoomListAccountRecordingsTool,
-  zoomDownloadTranscriptTool,
   zoomUpdateMeetingTool,
 } from '@/tools/zoom'
 

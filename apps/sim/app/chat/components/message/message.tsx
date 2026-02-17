@@ -43,12 +43,13 @@ export interface KnowledgeResultChunk {
 
 /**
  * Minimal reference persisted in chat history (no chunk content).
- * Used to show document name and open chunk link when loading from history.
+ * One ref per chunk; used to show document name, chunk index, and open-in-KB link when loading from history.
  */
 export interface KnowledgeRef {
   documentId: string
   documentName: string
   chunkId: string
+  chunkIndex: number
   knowledgeBaseId: string
   workspaceId: string | null
 }

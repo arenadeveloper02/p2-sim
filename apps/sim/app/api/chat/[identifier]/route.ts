@@ -635,7 +635,9 @@ export async function POST(
                     }
 
                     /** Check if value is a knowledge base results array (documentId, documentName, content, chunkIndex) */
-                    const isKnowledgeResultsArray = (value: unknown): value is Array<Record<string, unknown>> =>
+                    const isKnowledgeResultsArray = (
+                      value: unknown
+                    ): value is Array<Record<string, unknown>> =>
                       Array.isArray(value) &&
                       value.length > 0 &&
                       value.every(
@@ -654,9 +656,10 @@ export async function POST(
                         documentName: String(item.documentName ?? item.documentId),
                         content: String(item.content),
                         chunkIndex: Number(item.chunkIndex),
-                        ...(item.metadata && typeof item.metadata === 'object' && {
-                          metadata: item.metadata as Record<string, unknown>,
-                        }),
+                        ...(item.metadata &&
+                          typeof item.metadata === 'object' && {
+                            metadata: item.metadata as Record<string, unknown>,
+                          }),
                         ...(typeof item.similarity === 'number' && { similarity: item.similarity }),
                         ...(item.chunkId != null && { chunkId: String(item.chunkId) }),
                         ...(item.knowledgeBaseId != null && {
@@ -719,32 +722,33 @@ export async function POST(
                       controller.enqueue(encoder.encode(`data: ${knowledgeResultsEvent}\n\n`))
                     }
 
-                    /** Minimal refs for history: document name + chunk link only (no content). One per unique document. */
+                    /** Minimal refs for history: one per chunk (document name + chunk index + chunk link). */
                     const knowledgeRefs =
                       knowledgeResultsPayload.length > 0
                         ? (() => {
-                            const seen = new Set<string>()
                             const refs: Array<{
                               documentId: string
                               documentName: string
                               chunkId: string
+                              chunkIndex: number
                               knowledgeBaseId: string
                               workspaceId: string | null
                             }> = []
                             for (const item of knowledgeResultsPayload) {
-                              if (seen.has(item.documentId)) continue
                               if (
                                 item.chunkId != null &&
                                 item.knowledgeBaseId != null &&
-                                item.workspaceId !== undefined
+                                item.workspaceId !== undefined &&
+                                typeof item.chunkIndex === 'number'
                               ) {
-                                seen.add(item.documentId)
                                 refs.push({
                                   documentId: item.documentId,
                                   documentName: item.documentName || item.documentId,
                                   chunkId: String(item.chunkId),
+                                  chunkIndex: item.chunkIndex,
                                   knowledgeBaseId: String(item.knowledgeBaseId),
-                                  workspaceId: item.workspaceId === null ? null : String(item.workspaceId),
+                                  workspaceId:
+                                    item.workspaceId === null ? null : String(item.workspaceId),
                                 })
                               }
                             }
