@@ -67,7 +67,7 @@ export function addCorsHeaders(response: NextResponse, request: NextRequest) {
 export async function checkChatAccess(
   chatId: string,
   userId: string
-): Promise<{ hasAccess: boolean; chat?: any }> {
+): Promise<{ hasAccess: boolean; chat?: any; workspaceId?: string }> {
   const chatData = await db
     .select({
       chat: chat,
@@ -93,7 +93,9 @@ export async function checkChatAccess(
     action: 'admin',
   })
 
-  return authorization.allowed ? { hasAccess: true, chat: chatRecord } : { hasAccess: false }
+  return authorization.allowed
+    ? { hasAccess: true, chat: chatRecord, workspaceId: workflowWorkspaceId }
+    : { hasAccess: false }
 }
 
 export async function validateChatAuth(
