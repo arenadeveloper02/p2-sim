@@ -23,6 +23,14 @@ export interface IntentAnalyzerResult {
 }
 
 /**
+ * Result from fetching the latest conversation log entry.
+ */
+export interface LatestConversation {
+  initialInput: string | null
+  finalChatOutput: string | null
+}
+
+/**
  * Parameters for the intent analyzer.
  */
 export interface IntentAnalyzerParams {
@@ -34,6 +42,8 @@ export interface IntentAnalyzerParams {
   model?: string
   /** Whether to use Gemini 2.5 Pro instead of OpenAI GPT-4o for intent decision */
   useGemini?: boolean
+  /** Fact memories from Mem0 search (optional, will be fetched if not provided) */
+  factMemories?: Message[]
 }
 
 /**
@@ -156,9 +166,6 @@ RUN
 or
 SKIP
 `
-
-  logger.info('System prompt:', systemPrompt)
-  logger.info('Controller user prompt:', controllerUserPrompt)
 
   try {
     if (useGemini) {
@@ -292,18 +299,12 @@ SKIP
 }
 
 /**
- * Result from fetching the latest conversation log entry.
- */
-interface LatestConversation {
-  initialInput: string | null
-  finalChatOutput: string | null
-}
-
-/**
  * Fetches the latest `initial_input` and `final_chat_output` from
  * `workflow_execution_logs` for a given conversationId. Returns null if none found.
  */
-async function fetchLatestConversation(conversationId: string): Promise<LatestConversation | null> {
+export async function fetchLatestConversation(
+  conversationId: string
+): Promise<LatestConversation | null> {
   try {
     const { workflowExecutionLogs } = await import('@sim/db/schema')
 
@@ -338,30 +339,68 @@ async function fetchLatestConversation(conversationId: string): Promise<LatestCo
 
 /**
  * Generates a response using GPT-4o when the workflow is SKIPped.
- * Combines: user prompt + latest workflow execution output + Mem0 conversation context.
+ * Combines: user prompt + last conversation + fact memories + Mem0 conversation context.
  */
 async function generateSkipResponse(
   memoryContext: string,
   userPrompt: string,
-  lastChatOutput: string | null
+  lastConversation: LatestConversation | null,
+  factMemories: Message[] = []
 ): Promise<string> {
   try {
     const { OpenAI } = await import('openai')
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-    const systemPrompt = `You are a helpful assistant. Use the conversation history and the last assistant response provided below to answer the user's follow-up question directly. Do not mention that you are using previous conversation data.`
+    const systemPrompt = `You are a helpful assistant. Answer the user's question using the conversation history provided below. Prioritize information in this order:
+1. LAST CONVERSATION (most recent in current thread) - highest priority
+2. FACT MEMORIES (relevant facts from previous conversations)
+3. SEMANTICALLY RETRIEVED CHAT HISTORY (from other chats) - use as secondary reference
 
-    let contextParts = ''
+Provide a direct, helpful answer based on the available context. Do not mention that you are using previous conversation data. If the information is not available in the provided context, you can go through internet to find the answer.`
 
-    if (lastChatOutput) {
-      contextParts += `Last Assistant Response:\n${lastChatOutput}\n\n`
+    const contextParts: string[] = []
+
+    // Add last conversation (highest priority)
+    if (lastConversation) {
+      const lastConvParts: string[] = []
+      lastConvParts.push('LAST CONVERSATION (MOST RELEVANT):')
+      if (lastConversation.initialInput) {
+        lastConvParts.push(`User: ${lastConversation.initialInput}`)
+      }
+      if (lastConversation.finalChatOutput) {
+        lastConvParts.push(`Assistant: ${lastConversation.finalChatOutput}`)
+      }
+      if (lastConvParts.length > 1) {
+        contextParts.push(lastConvParts.join('\n'))
+      }
     }
 
+    // Add fact memories
+    if (factMemories && factMemories.length > 0) {
+      const factParts: string[] = []
+      factParts.push('FACT MEMORIES (RELEVANT FACTS):')
+      for (const fact of factMemories) {
+        factParts.push(`${fact.role === 'user' ? 'User' : 'Assistant'}: ${fact.content}`)
+      }
+      contextParts.push(factParts.join('\n'))
+    }
+
+    // Add semantically retrieved chat history (secondary reference)
     if (memoryContext) {
-      contextParts += `Conversation History:\n${memoryContext}\n\n`
+      contextParts.push(`SEMANTICALLY RETRIEVED CHAT HISTORY (from other chats):\n${memoryContext}`)
     }
 
-    const userMessage = `${contextParts}User Question: ${userPrompt}`
+    const contextText =
+      contextParts.length > 0
+        ? contextParts.join('\n\n')
+        : 'No previous conversation history available.'
+
+    const userMessage = `Context Information:
+${contextText}
+
+User Question: ${userPrompt}
+
+Please provide a helpful answer based on the context above.`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
@@ -376,7 +415,9 @@ async function generateSkipResponse(
 
     if (response) {
       logger.debug('Generated SKIP response from conversation context', {
-        hasLastChatOutput: !!lastChatOutput,
+        hasLastConversation: !!lastConversation,
+        factMemoriesCount: factMemories.length,
+        hasMemoryContext: !!memoryContext,
       })
       return response
     }
@@ -406,16 +447,6 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
   // 1. Search Mem0 for conversation memories and build token-limited context
   const { searchResults, memoryContext } = await searchAndBuildMemoryContext(params)
 
-  // If no conversation history exists, default to RUN
-  // if (searchResults.length === 0 || !memoryContext) {
-  //   logger.debug('No conversation memories found, defaulting to RUN')
-  //   return {
-  //     decision: 'RUN',
-  //     searchResults,
-  //     memoryContext: '',
-  //   }
-  // }
-
   // 2. Fetch the intent analyzer system prompt from DB
   const dbPrompt = await fetchIntentAnalyzerPrompt()
 
@@ -432,12 +463,22 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
   const conversationId = params.inputs.conversationId
   const lastConversation = conversationId ? await fetchLatestConversation(conversationId) : null
 
-  logger.debug('Last conversation fetched', {
+  // 4. Get fact memories (if not provided)
+  const factMemories =
+    params.factMemories !== undefined
+      ? params.factMemories
+      : params.inputs.memoryType
+        ? await memoryService.searchMemories(ctx, params.inputs, params.blockId, userPrompt, false)
+        : []
+
+  logger.debug('Intent analyzer context', {
     conversationId,
     hasLastConversation: !!lastConversation,
+    factMemoriesCount: factMemories.length,
+    conversationMemoriesCount: searchResults.length,
   })
 
-  // 4. Call LLM to decide RUN or SKIP (includes last conversation context)
+  // 5. Call LLM to decide RUN or SKIP (includes last conversation context)
   const decision = await callIntentDecision(
     dbPrompt,
     memoryContext,
@@ -448,11 +489,14 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
 
   logger.debug('Decision:', decision)
 
-  // 5. If SKIP, generate a response using the already-fetched conversation context
+  // 6. If SKIP, generate a response using the already-fetched conversation context
   if (decision === 'SKIP') {
-    const lastChatOutput = lastConversation?.finalChatOutput ?? null
-
-    const skipResponse = await generateSkipResponse(memoryContext, userPrompt, lastChatOutput)
+    const skipResponse = await generateSkipResponse(
+      memoryContext,
+      userPrompt,
+      lastConversation,
+      factMemories
+    )
     return {
       decision: 'SKIP',
       searchResults,

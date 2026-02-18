@@ -172,11 +172,7 @@ export async function searchMemoryAPI(
     }
 
     const result = await response.json()
-    logger.info(`[${requestId}] Memory search API call successful`, {
-      query,
-      userId,
-      response: result,
-    })
+    logger.info(`[${requestId}] Memory search API call successful`)
 
     return result
   } catch (error: any) {

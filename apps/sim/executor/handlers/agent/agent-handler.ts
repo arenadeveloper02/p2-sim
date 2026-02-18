@@ -118,6 +118,12 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
+    // Fetch fact memories early (used for both intent analysis and system prompt)
+    let factMemories: Message[] = []
+    if (filteredInputs.memoryType) {
+      factMemories = await memoryService.searchMemories(ctx, inputs, block.id, userPrompt, false)
+    }
+
     // Intent analysis: search Mem0 conversation memories and decide RUN/SKIP
     let preSearchedResults: Message[] | undefined
     if (filteredInputs.memoryType && filteredInputs.conversationId && userPrompt) {
@@ -128,6 +134,7 @@ export class AgentBlockHandler implements BlockHandler {
           blockId: block.id,
           userPrompt,
           model: filteredInputs.model,
+          factMemories,
         })
 
         if (intentResult.decision === 'SKIP' && intentResult.skipResponse) {
@@ -170,17 +177,8 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
-    // Get fact memories and add to system prompt if memory is enabled
-    if (filteredInputs.memoryType) {
-      // Get fact memories (isConversation: false)
-      const factMemories = await memoryService.searchMemories(
-        ctx,
-        inputs,
-        block.id,
-        userPrompt,
-        false
-      )
-
+    // Format fact memories and add to system prompt if memory is enabled
+    if (filteredInputs.memoryType && factMemories.length > 0) {
       // Format fact memories and add to system prompt
       if (factMemories && factMemories.length > 0) {
         const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')

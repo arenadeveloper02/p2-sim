@@ -231,8 +231,6 @@ export class Memory {
       // Only send the current turn: last user message + assistant message
       const currentTurnMessages: Message[] = [userMessage, assistantMessage]
 
-      logger.debug('Current turn messages:', currentTurnMessages)
-
       // Convert Message[] to the format expected by callMemoryAPI
       const messagesForAPI = currentTurnMessages.map((msg) => ({
         role: msg.role,
