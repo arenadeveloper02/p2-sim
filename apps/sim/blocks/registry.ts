@@ -114,7 +114,7 @@ import { SerperBlock } from '@/blocks/blocks/serper'
 import { ServiceNowBlock } from '@/blocks/blocks/servicenow'
 import { SftpBlock } from '@/blocks/blocks/sftp'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
-import { ShopifyBlock } from '@/blocks/blocks/shopify'
+import { ShopifyBlock, ShopifyV1Block } from '@/blocks/blocks/shopify'
 import { SlackBlock } from '@/blocks/blocks/slack'
 import { SmtpBlock } from '@/blocks/blocks/smtp'
 import { SpotifyBlock } from '@/blocks/blocks/spotify'
@@ -291,6 +291,7 @@ export const registry: Record<string, BlockConfig> = {
   sftp: SftpBlock,
   sharepoint: SharepointBlock,
   shopify: ShopifyBlock,
+  shopify_v1: ShopifyV1Block,
   slack: SlackBlock,
   spyfu: SpyfuBlock,
   smtp: SmtpBlock,

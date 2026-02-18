@@ -1373,6 +1373,9 @@ import {
   shopifyUpdateProductTool,
 } from '@/tools/shopify'
 import {
+  shopifyV1QueryTool,
+} from '@/tools/shopify_v1'
+import {
   slackAddReactionTool,
   slackCanvasTool,
   slackDeleteMessageTool,
@@ -2812,6 +2815,7 @@ export const tools: Record<string, ToolConfig> = {
   shopify_create_fulfillment: shopifyCreateFulfillmentTool,
   shopify_list_collections: shopifyListCollectionsTool,
   shopify_get_collection: shopifyGetCollectionTool,
+  shopify_v1_query: shopifyV1QueryTool,
   onedrive_create_folder: onedriveCreateFolderTool,
   onedrive_delete: onedriveDeleteTool,
   onedrive_download: onedriveDownloadTool,

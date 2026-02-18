@@ -843,3 +843,6 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }
+
+// Export ShopifyV1Block from separate file
+export { ShopifyV1Block } from './shopify_v1'
