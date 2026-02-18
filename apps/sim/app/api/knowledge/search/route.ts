@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { knowledgeBase } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { PlatformEvents } from '@/lib/core/telemetry'
@@ -354,6 +354,17 @@ export async function POST(request: NextRequest) {
       const documentIds = results.map((result) => result.documentId)
       const documentNameMap = await getDocumentNamesByIds(documentIds)
 
+      // Fetch workspaceId per knowledge base for "View in Knowledge Base" links (only for users with workspace access)
+      const kbIds = [...new Set(results.map((r) => r.knowledgeBaseId))]
+      const kbWorkspaceRows = await db
+        .select({ id: knowledgeBase.id, workspaceId: knowledgeBase.workspaceId })
+        .from(knowledgeBase)
+        .where(and(inArray(knowledgeBase.id, kbIds), isNull(knowledgeBase.deletedAt)))
+      const kbToWorkspace: Record<string, string | null> = {}
+      kbWorkspaceRows.forEach((row) => {
+        kbToWorkspace[row.id] = row.workspaceId
+      })
+
       const rerankConfig: RerankConfig = {
         ...(validatedData.rerank || {}),
         requestId,
@@ -402,6 +413,9 @@ export async function POST(request: NextRequest) {
               chunkIndex: result.chunkIndex,
               metadata: tags, // Clean display name mapped tags
               similarity: hasQuery ? 1 - result.distance : 1, // Perfect similarity for tag-only searches
+              chunkId: result.id,
+              knowledgeBaseId: result.knowledgeBaseId,
+              workspaceId: kbToWorkspace[result.knowledgeBaseId] ?? undefined,
             }
           }),
           query: validatedData.query || '',

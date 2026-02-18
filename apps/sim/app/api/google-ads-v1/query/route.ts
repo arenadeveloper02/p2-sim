@@ -6,12 +6,10 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { executeProviderRequest } from '@/providers'
 import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
 import { makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
-import { resolveAIProvider } from './ai-provider'
 import type { GoogleAdsV1Request } from './types'
 
 const logger = createLogger('GoogleAdsV1API')
@@ -24,21 +22,20 @@ function resolveAccountKey(accountInput: string): string {
   if (GOOGLE_ADS_ACCOUNTS[accountInput]) {
     return accountInput
   }
-  
+
   // If not found, search by numeric ID
   const foundAccount = Object.entries(GOOGLE_ADS_ACCOUNTS).find(
     ([key, account]) => account.id === accountInput
   )
-  
+
   if (foundAccount) {
     logger.info(`Resolved numeric ID ${accountInput} to account key ${foundAccount[0]}`)
     return foundAccount[0]
   }
-  
+
   // Return original if not found (will show error in validation)
   return accountInput
 }
-
 
 /**
  * POST /api/google-ads-v1/query
@@ -79,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     // Resolve account input (supports both keys and numeric IDs)
     const resolvedAccountKey = resolveAccountKey(accounts)
-    
+
     // Get account information
     const accountInfo = GOOGLE_ADS_ACCOUNTS[resolvedAccountKey]
     if (!accountInfo) {
@@ -100,7 +97,6 @@ export async function POST(request: NextRequest) {
       accountId: accountInfo.id,
       accountName: accountInfo.name,
     })
-
 
     // Generate GAQL query using AI
     const queryResult = await generateGAQLQuery(query)

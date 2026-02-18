@@ -1,5 +1,8 @@
 import type { ToolConfig } from '@/tools/types'
-import type { ZoomListAccountRecordingsParams, ZoomListAccountRecordingsResponse } from '@/tools/zoom/types'
+import type {
+  ZoomListAccountRecordingsParams,
+  ZoomListAccountRecordingsResponse,
+} from '@/tools/zoom/types'
 
 export const zoomListAccountRecordingsTool: ToolConfig<
   ZoomListAccountRecordingsParams,
