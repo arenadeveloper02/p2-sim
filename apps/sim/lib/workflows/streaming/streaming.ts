@@ -63,6 +63,23 @@ function isDangerousKey(key: string): boolean {
   return DANGEROUS_KEYS.includes(key)
 }
 
+/** Knowledge base results (documentId, documentName, content, chunkIndex). Excluded from streamed content; chat shows them as references only. */
+function isKnowledgeResultsArray(value: unknown): value is Array<Record<string, unknown>> {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) =>
+        item &&
+        typeof item === 'object' &&
+        'documentId' in item &&
+        'documentName' in item &&
+        'content' in item &&
+        'chunkIndex' in item
+    )
+  )
+}
+
 async function buildMinimalResult(
   result: ExecutionResult,
   selectedOutputs: string[] | undefined,
@@ -254,6 +271,9 @@ export async function createStreamingResponse(
           const outputValue = extractOutputValue(output, path)
 
           if (outputValue !== undefined) {
+            if (isKnowledgeResultsArray(outputValue)) {
+              continue
+            }
             const hydratedOutput = includeFileBase64
               ? await hydrateUserFilesWithBase64(outputValue, {
                   requestId,

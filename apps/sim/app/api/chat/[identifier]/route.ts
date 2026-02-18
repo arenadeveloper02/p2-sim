@@ -20,6 +20,7 @@ import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { ChatFiles } from '@/lib/uploads'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import type { InputFormatField } from '@/lib/workflows/types'
+import { getWorkspaceIdsForUser } from '@/lib/workspaces/permissions/utils'
 import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
@@ -613,7 +614,159 @@ export async function POST(
                       output?: Record<string, Record<string, any>>
                     }
 
-                    // Format final output based on outputConfigs
+                    const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
+                      if (!path || path === 'content') {
+                        if (blockOutputs.content !== undefined) return blockOutputs.content
+                        if (blockOutputs.result !== undefined) return blockOutputs.result
+                        return blockOutputs
+                      }
+                      if (blockOutputs[path] !== undefined) {
+                        return blockOutputs[path]
+                      }
+                      if (path.includes('.')) {
+                        return path.split('.').reduce<any>((current, segment) => {
+                          if (current && typeof current === 'object' && segment in current) {
+                            return current[segment]
+                          }
+                          return undefined
+                        }, blockOutputs)
+                      }
+                      return undefined
+                    }
+
+                    /** Check if value is a knowledge base results array (documentId, documentName, content, chunkIndex) */
+                    const isKnowledgeResultsArray = (
+                      value: unknown
+                    ): value is Array<Record<string, unknown>> =>
+                      Array.isArray(value) &&
+                      value.length > 0 &&
+                      value.every(
+                        (item) =>
+                          item &&
+                          typeof item === 'object' &&
+                          'documentId' in item &&
+                          'documentName' in item &&
+                          'content' in item &&
+                          'chunkIndex' in item
+                      )
+
+                    const mapToKnowledgePayload = (value: Array<Record<string, unknown>>) =>
+                      value.map((item) => ({
+                        documentId: String(item.documentId),
+                        documentName: String(item.documentName ?? item.documentId),
+                        content: String(item.content),
+                        chunkIndex: Number(item.chunkIndex),
+                        ...(item.metadata &&
+                          typeof item.metadata === 'object' && {
+                            metadata: item.metadata as Record<string, unknown>,
+                          }),
+                        ...(typeof item.similarity === 'number' && { similarity: item.similarity }),
+                        ...(item.chunkId != null && { chunkId: String(item.chunkId) }),
+                        ...(item.knowledgeBaseId != null && {
+                          knowledgeBaseId: String(item.knowledgeBaseId),
+                        }),
+                        ...(item.workspaceId != null && {
+                          workspaceId: item.workspaceId === null ? null : String(item.workspaceId),
+                        }),
+                      }))
+
+                    let knowledgeResultsPayload: Array<{
+                      documentId: string
+                      documentName: string
+                      content: string
+                      chunkIndex: number
+                      metadata?: Record<string, unknown>
+                      similarity?: number
+                      chunkId?: string
+                      knowledgeBaseId?: string
+                      workspaceId?: string | null
+                    }> = []
+
+                    if (finalData.output) {
+                      const fromOutputConfig =
+                        deployment.outputConfigs &&
+                        Array.isArray(deployment.outputConfigs) &&
+                        (() => {
+                          const aggregated: Array<{
+                            documentId: string
+                            documentName: string
+                            content: string
+                            chunkIndex: number
+                            metadata?: Record<string, unknown>
+                            similarity?: number
+                            chunkId?: string
+                            knowledgeBaseId?: string
+                            workspaceId?: string | null
+                          }> = []
+                          for (const config of deployment.outputConfigs) {
+                            if (config.path === 'results') {
+                              const blockOutputs = finalData.output[config.blockId]
+                              if (!blockOutputs) continue
+                              const value = getOutputValue(blockOutputs, config.path)
+                              if (isKnowledgeResultsArray(value)) {
+                                aggregated.push(...mapToKnowledgePayload(value))
+                              }
+                            }
+                          }
+                          return aggregated.length > 0 ? aggregated : null
+                        })()
+
+                      if (fromOutputConfig && fromOutputConfig.length > 0) {
+                        knowledgeResultsPayload = fromOutputConfig
+                      } else {
+                        for (const blockOutputs of Object.values(finalData.output)) {
+                          if (!blockOutputs || typeof blockOutputs !== 'object') continue
+                          const value = getOutputValue(blockOutputs, 'results')
+                          if (isKnowledgeResultsArray(value)) {
+                            knowledgeResultsPayload.push(...mapToKnowledgePayload(value))
+                          }
+                        }
+                      }
+                    }
+
+                    if (knowledgeResultsPayload.length > 0) {
+                      const knowledgeResultsEvent = JSON.stringify({
+                        event: 'knowledgeResults',
+                        data: knowledgeResultsPayload,
+                      })
+                      controller.enqueue(encoder.encode(`data: ${knowledgeResultsEvent}\n\n`))
+                    }
+
+                    /** Minimal refs for history: one per chunk (document name + chunk index + chunk link). */
+                    const knowledgeRefs =
+                      knowledgeResultsPayload.length > 0
+                        ? (() => {
+                            const refs: Array<{
+                              documentId: string
+                              documentName: string
+                              chunkId: string
+                              chunkIndex: number
+                              knowledgeBaseId: string
+                              workspaceId: string | null
+                            }> = []
+                            for (const item of knowledgeResultsPayload) {
+                              if (
+                                item.chunkId != null &&
+                                item.knowledgeBaseId != null &&
+                                item.workspaceId !== undefined &&
+                                typeof item.chunkIndex === 'number'
+                              ) {
+                                refs.push({
+                                  documentId: item.documentId,
+                                  documentName: item.documentName || item.documentId,
+                                  chunkId: String(item.chunkId),
+                                  chunkIndex: item.chunkIndex,
+                                  knowledgeBaseId: String(item.knowledgeBaseId),
+                                  workspaceId:
+                                    item.workspaceId === null ? null : String(item.workspaceId),
+                                })
+                              }
+                            }
+                            return refs
+                          })()
+                        : []
+
+                    // Format final output based on outputConfigs (exclude raw "results" for knowledge block)
                     let finalChatOutput = accumulatedContent.trim()
 
                     if (
@@ -638,32 +791,15 @@ export async function POST(
                         return String(value)
                       }
 
-                      const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
-                        if (!path || path === 'content') {
-                          if (blockOutputs.content !== undefined) return blockOutputs.content
-                          if (blockOutputs.result !== undefined) return blockOutputs.result
-                          return blockOutputs
-                        }
-                        if (blockOutputs[path] !== undefined) {
-                          return blockOutputs[path]
-                        }
-                        if (path.includes('.')) {
-                          return path.split('.').reduce<any>((current, segment) => {
-                            if (current && typeof current === 'object' && segment in current) {
-                              return current[segment]
-                            }
-                            return undefined
-                          }, blockOutputs)
-                        }
-                        return undefined
-                      }
-
                       const formattedOutputs: string[] = []
                       for (const config of deployment.outputConfigs) {
                         const blockOutputs = finalData.output[config.blockId]
                         if (!blockOutputs) continue
 
                         const value = getOutputValue(blockOutputs, config.path)
+                        if (config.path === 'results' && isKnowledgeResultsArray(value)) {
+                          continue
+                        }
                         const formatted = formatValue(value)
                         if (formatted) {
                           formattedOutputs.push(formatted)
@@ -693,15 +829,26 @@ export async function POST(
                       }
                     }
 
-                    // Update workflowExecutionLogs with final output directly in database
-                    // (logging session is already completed by streaming code)
+                    // Update workflowExecutionLogs with final output and optional knowledgeRefs (for history)
                     if (finalChatOutput) {
                       try {
+                        const updatePayload: { finalChatOutput: string; executionData?: object } = {
+                          finalChatOutput,
+                        }
+                        if (knowledgeRefs.length > 0) {
+                          const [row] = await db
+                            .select({ executionData: workflowExecutionLogs.executionData })
+                            .from(workflowExecutionLogs)
+                            .where(eq(workflowExecutionLogs.executionId, executionId))
+                          const existing = (row?.executionData as object) ?? {}
+                          updatePayload.executionData = {
+                            ...existing,
+                            knowledgeRefs,
+                          }
+                        }
                         await db
                           .update(workflowExecutionLogs)
-                          .set({
-                            finalChatOutput,
-                          })
+                          .set(updatePayload)
                           .where(eq(workflowExecutionLogs.executionId, executionId))
                         logger.debug(
                           `[${requestId}] Updated finalChatOutput for execution ${executionId}`
@@ -924,10 +1071,10 @@ export async function GET(
     const goldenQueries = await fetchGoldenQueries(deployment.workflowId)
 
     /**
-     * Helper function to build chat config response with inputFormat always included
-     * Ensures inputFormat is never missing from successful responses
+     * Helper function to build chat config response with inputFormat always included.
+     * When userWorkspaceIds is provided (logged-in user with workspace access), KB "View in Knowledge Base" links are shown.
      */
-    const buildChatConfigResponse = () => {
+    const buildChatConfigResponse = (userWorkspaceIds?: string[]) => {
       const departmentValue = deployment.department ?? null
       const departmentLabel =
         departmentValue != null ? (departmentLabelMap[departmentValue] ?? departmentValue) : null
@@ -944,6 +1091,7 @@ export async function GET(
         outputConfigs: deployment.outputConfigs,
         inputFormat, // Always included in successful responses
         department: departmentLabel, // Department in label format
+        ...(userWorkspaceIds && userWorkspaceIds.length > 0 && { userWorkspaceIds }),
       })
     }
 
@@ -955,7 +1103,16 @@ export async function GET(
       authCookie &&
       validateAuthToken(authCookie.value, deployment.id, deployment.password)
     ) {
-      return addCorsHeaders(buildChatConfigResponse(), request)
+      let userWorkspaceIds: string[] | undefined
+      try {
+        const session = await getSession()
+        if (session?.user?.id) {
+          userWorkspaceIds = await getWorkspaceIdsForUser(session.user.id)
+        }
+      } catch {
+        // Non-fatal; proceed without userWorkspaceIds
+      }
+      return addCorsHeaders(buildChatConfigResponse(userWorkspaceIds), request)
     }
 
     const authResult = await validateChatAuth(requestId, deployment, request)
@@ -969,7 +1126,17 @@ export async function GET(
       )
     }
 
-    const response = buildChatConfigResponse()
+    let userWorkspaceIds: string[] | undefined
+    try {
+      const session = await getSession()
+      if (session?.user?.id) {
+        userWorkspaceIds = await getWorkspaceIdsForUser(session.user.id)
+      }
+    } catch {
+      // Non-fatal; proceed without userWorkspaceIds
+    }
+
+    const response = buildChatConfigResponse(userWorkspaceIds)
 
     if (deployment.authType !== 'public') {
       setChatAuthCookie(response, deployment.id, deployment.authType)

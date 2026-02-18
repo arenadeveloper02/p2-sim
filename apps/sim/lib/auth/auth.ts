@@ -2539,8 +2539,7 @@ export const auth = betterAuth({
             'cloud_recording:read:list_user_recordings:admin',
             'cloud_recording:read:recording:admin',
             'cloud_recording:read:meeting_transcript:admin',
-            'cloud_recording:read:list_account_recordings:admin'
-
+            'cloud_recording:read:list_account_recordings:admin',
           ],
           responseType: 'code',
           accessType: 'offline',
