@@ -6,7 +6,7 @@ import {
   validateUrlWithDNS,
 } from '@/lib/core/security/input-validation.server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
@@ -286,7 +286,7 @@ export async function executeTool(
         `[${requestId}] Tool ${toolId} needs access token for credential: ${contextParams.credential}`
       )
       try {
-        const baseUrl = getBaseUrl()
+        const baseUrl = getInternalApiBaseUrl()
 
         const workflowId = contextParams._context?.workflowId
         const userId = contextParams._context?.userId
@@ -623,9 +623,10 @@ async function executeToolRequest(
   const requestParams = await formatRequestParams(tool, params)
 
   try {
-    const baseUrl = getBaseUrl()
     const endpointUrl =
       typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
+    const isInternalRoute = endpointUrl.startsWith('/api/')
+    const baseUrl = isInternalRoute ? getInternalApiBaseUrl() : getBaseUrl()
 
     // Check if the URL function returned an error response
     if (endpointUrl && typeof endpointUrl === 'object' && '_errorResponse' in endpointUrl) {
@@ -641,7 +642,6 @@ async function executeToolRequest(
     }
 
     const fullUrlObj = new URL(endpointUrl, baseUrl)
-    const isInternalRoute = typeof endpointUrl === 'string' && endpointUrl.startsWith('/api/')
 
     if (isInternalRoute) {
       const workflowId = params._context?.workflowId
@@ -1131,7 +1131,7 @@ async function executeMcpTool(
 
     const { serverId, toolName } = parseMcpToolId(toolId)
 
-    const baseUrl = getBaseUrl()
+    const baseUrl = getInternalApiBaseUrl()
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
 

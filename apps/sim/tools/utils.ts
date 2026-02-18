@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import * as Papa from 'papaparse'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { AGENT, isCustomTool } from '@/executor/constants'
 import { getCustomTool } from '@/hooks/queries/custom-tools'
 import { useEnvironmentStore } from '@/stores/settings/environment'
@@ -544,7 +544,7 @@ async function fetchCustomToolFromAPI(
   const identifier = customToolId.replace('custom_', '')
 
   try {
-    const baseUrl = getBaseUrl()
+    const baseUrl = getInternalApiBaseUrl()
     const url = new URL('/api/tools/custom', baseUrl)
 
     if (workflowId) {
