@@ -449,12 +449,20 @@ export async function executeWorkflowCore(
           ? (result.output.content as string)
           : undefined
 
+      // Use complete input from skipOutput if available (includes conversation history)
+      const completeInput =
+        (result.output &&
+          typeof result.output === 'object' &&
+          '_completeInputForLogging' in result.output &&
+          result.output._completeInputForLogging) ||
+        processedInput
+
       await loggingSession.safeCompleteAsSkipped({
         endedAt: new Date().toISOString(),
         totalDurationMs: totalDuration || 0,
         finalOutput: result.output || {},
         traceSpans: traceSpans || [],
-        workflowInput: processedInput,
+        workflowInput: completeInput,
         finalChatOutput: skipContent,
       })
 
@@ -521,6 +529,12 @@ export async function executeWorkflowCore(
       }
     }
 
+    // For RUN case, we need to capture the complete input (with conversation history)
+    // This is already in the messages, but we need to extract it from the execution result
+    // For now, use processedInput - the complete input with conversation history
+    // would be in the agent block's input after buildMessages modifies it
+    // Since we don't have direct access here, we'll store processedInput
+    // The actual complete input is in the trace spans if needed
     await loggingSession.safeComplete({
       endedAt: new Date().toISOString(),
       totalDurationMs: totalDuration || 0,

@@ -105,16 +105,20 @@ export class AgentBlockHandler implements BlockHandler {
     logger.debug('Agent block execution started')
 
     // Extract user prompt once for reuse across memory, intent analysis, etc.
+    // Store original userPrompt for memory API (without conversation history)
     let userPrompt: string | undefined
+    let originalUserPrompt: string | undefined
     if (inputs.userPrompt) {
       userPrompt =
         typeof inputs.userPrompt === 'string'
           ? inputs.userPrompt
           : JSON.stringify(inputs.userPrompt)
+      originalUserPrompt = userPrompt
     } else if (inputs.messages && Array.isArray(inputs.messages)) {
       const userMsg = inputs.messages.find((m) => m.role === 'user')
       if (userMsg) {
         userPrompt = userMsg.content
+        originalUserPrompt = userMsg.content
       }
     }
 
@@ -162,7 +166,11 @@ export class AgentBlockHandler implements BlockHandler {
           }
 
           if (filteredInputs.memoryType) {
-            const lastUserMsg: Message = { role: 'user', content: userPrompt }
+            // Use original userPrompt (without conversation history) for memory API
+            const lastUserMsg: Message = {
+              role: 'user',
+              content: originalUserPrompt || userPrompt || '',
+            }
             await memoryService.appendToMemory(
               ctx,
               filteredInputs,
@@ -171,6 +179,21 @@ export class AgentBlockHandler implements BlockHandler {
               lastUserMsg
             )
           }
+
+          // Store complete input (with conversation history) in skipOutput metadata for logging
+          // Build messages to get the complete input that would have been sent
+          const completeMessages = await this.buildMessages(
+            ctx,
+            filteredInputs,
+            block.id,
+            intentResult.searchResults
+          )
+          const completeInput = this.extractCompleteInputFromMessages(
+            completeMessages,
+            filteredInputs
+          )
+          // Store in skipOutput so it can be accessed in execution-core.ts
+          skipOutput._completeInputForLogging = completeInput
 
           return skipOutput
         }
@@ -209,8 +232,11 @@ export class AgentBlockHandler implements BlockHandler {
 
     const messages = await this.buildMessages(ctx, filteredInputs, block.id, preSearchedResults)
 
-    // Extract last user message for memory persistence
-    const lastUserMessage = messages?.filter((m) => m.role === 'user').slice(-1)[0] || null
+    // Extract last user message for memory persistence - use original userPrompt (without conversation history)
+    // The messages array may contain conversation history, so we use the original userPrompt instead
+    const lastUserMessage: Message | null = originalUserPrompt
+      ? { role: 'user', content: originalUserPrompt }
+      : messages?.filter((m) => m.role === 'user').slice(-1)[0] || null
 
     const providerRequest = this.buildProviderRequest({
       ctx,
@@ -249,6 +275,48 @@ export class AgentBlockHandler implements BlockHandler {
     }
 
     return result
+  }
+
+  /**
+   * Extracts complete input from messages array for logging purposes.
+   * This includes conversation history that was added to the prompt.
+   */
+  private extractCompleteInputFromMessages(
+    messages: Message[] | undefined,
+    inputs: AgentInputs
+  ): any {
+    if (!messages || messages.length === 0) {
+      return inputs
+    }
+
+    // Reconstruct the input with the complete user prompt (including conversation history)
+    const userMessages = messages.filter((m) => m.role === 'user')
+    const lastUserMessage = userMessages[userMessages.length - 1]
+
+    if (lastUserMessage) {
+      if (inputs.userPrompt) {
+        return {
+          ...inputs,
+          userPrompt: lastUserMessage.content,
+        }
+      }
+      if (inputs.messages && Array.isArray(inputs.messages)) {
+        const updatedMessages = [...inputs.messages]
+        const userMsgIndex = updatedMessages.findIndex((m) => m.role === 'user')
+        if (userMsgIndex !== -1) {
+          updatedMessages[userMsgIndex] = {
+            ...updatedMessages[userMsgIndex],
+            content: lastUserMessage.content,
+          }
+        }
+        return {
+          ...inputs,
+          messages: updatedMessages,
+        }
+      }
+    }
+
+    return inputs
   }
 
   private parseResponseFormat(responseFormat?: string | object): any {
@@ -924,10 +992,11 @@ export class AgentBlockHandler implements BlockHandler {
         const tokenLimit = getMemoryTokenLimit(inputs.model)
         const baseUserPromptTokens = getAccurateTokenCount(userPrompt, inputs.model)
         let currentTokenCount = baseUserPromptTokens
-        let memoryContext = ''
+        let memoryContext =
+          "\nHere is the older conversation which might be relevant to the current user input, but don't completely rely on it, it is to give you a context of the conversation:\n"
 
         for (const memory of searchResults) {
-          const memoryText = `\nPrevious conversation:\n${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
+          const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
           const memoryTokens = getAccurateTokenCount(memoryText, inputs.model)
 
           if (currentTokenCount + memoryTokens <= tokenLimit) {

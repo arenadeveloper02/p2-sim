@@ -94,10 +94,11 @@ async function searchAndBuildMemoryContext(
   const tokenLimit = getMemoryTokenLimit(model)
   const baseTokens = getAccurateTokenCount(userPrompt, model)
   let currentTokenCount = baseTokens
-  let memoryContext = ''
+  let memoryContext =
+    "\nHere is the older conversation which might be relevant to the current user input, but don't completely rely on it, it is to give you a context of the conversation:\n"
 
   for (const memory of searchResults) {
-    const memoryText = `\nPrevious conversation:\n${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
+    const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
     const memoryTokens = getAccurateTokenCount(memoryText, model)
 
     if (currentTokenCount + memoryTokens <= tokenLimit) {
@@ -542,11 +543,12 @@ Provide a direct, helpful answer based on the available context. Do not mention 
         ? contextParts.join('\n\n')
         : 'No previous conversation history available.'
 
-    const userMessage = `Context Information:
+    const userMessage = `
+    User Question: ${userPrompt}
+    --------------------------------------------
+    Context Information:
+    --------------------------------------------
 ${contextText}
-
-User Question: ${userPrompt}
-
 Please provide a helpful answer based on the context above.`
 
     const completion = await openai.chat.completions.create({
