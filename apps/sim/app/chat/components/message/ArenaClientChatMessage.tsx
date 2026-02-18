@@ -199,34 +199,36 @@ export const ArenaClientChatMessage = memo(
 
       if (results.length > 0) {
         const seen = new Set<string>()
-        return results.filter((r) => {
-          const kb = r.knowledgeBaseId ?? ''
-          const key = `${kb}-${r.documentId}-${r.chunkId ?? `i-${r.chunkIndex}`}`
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        }).map((r) => {
-          const linkUrl =
-            r.chunkId && r.knowledgeBaseId && r.workspaceId != null
-              ? (() => {
-                  const params = new URLSearchParams()
-                  params.set('chunk', r.chunkId)
-                  params.set('chunkIndex', String(r.chunkIndex))
-                  return `/workspace/${r.workspaceId}/knowledge/${r.knowledgeBaseId}/${r.documentId}?${params.toString()}`
-                })()
-              : null
-          return {
-            key: `${r.knowledgeBaseId ?? ''}-${r.documentId}-${r.chunkId ?? r.chunkIndex}`,
-            documentId: r.documentId,
-            documentName: r.documentName || r.documentId,
-            chunkIndex: r.chunkIndex,
-            chunks: [r],
-            linkUrl,
-            workspaceId: r.workspaceId ?? null,
-            knowledgeBaseId: r.knowledgeBaseId,
-            fromHistory: false,
-          }
-        })
+        return results
+          .filter((r) => {
+            const kb = r.knowledgeBaseId ?? ''
+            const key = `${kb}-${r.documentId}-${r.chunkId ?? `i-${r.chunkIndex}`}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
+          .map((r) => {
+            const linkUrl =
+              r.chunkId && r.knowledgeBaseId && r.workspaceId != null
+                ? (() => {
+                    const params = new URLSearchParams()
+                    params.set('chunk', r.chunkId)
+                    params.set('chunkIndex', String(r.chunkIndex))
+                    return `/workspace/${r.workspaceId}/knowledge/${r.knowledgeBaseId}/${r.documentId}?${params.toString()}`
+                  })()
+                : null
+            return {
+              key: `${r.knowledgeBaseId ?? ''}-${r.documentId}-${r.chunkId ?? r.chunkIndex}`,
+              documentId: r.documentId,
+              documentName: r.documentName || r.documentId,
+              chunkIndex: r.chunkIndex,
+              chunks: [r],
+              linkUrl,
+              workspaceId: r.workspaceId ?? null,
+              knowledgeBaseId: r.knowledgeBaseId,
+              fromHistory: false,
+            }
+          })
       }
 
       if (refsFromHistory.length > 0) {

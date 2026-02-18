@@ -899,8 +899,20 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
 
                 if (days === 1) {
                   // For "Today": from start of today to end of today (in UTC)
-                  const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0))
-                  const endOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999))
+                  const startOfToday = new Date(
+                    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)
+                  )
+                  const endOfToday = new Date(
+                    Date.UTC(
+                      now.getUTCFullYear(),
+                      now.getUTCMonth(),
+                      now.getUTCDate(),
+                      23,
+                      59,
+                      59,
+                      999
+                    )
+                  )
 
                   const oldestTimestamp = Math.floor(startOfToday.getTime() / 1000).toString()
                   const latestTimestamp = Math.floor(endOfToday.getTime() / 1000).toString()
@@ -912,7 +924,17 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
                   oldestDate.setUTCDate(now.getUTCDate() - days)
                   oldestDate.setUTCHours(0, 0, 0, 0) // Start of that day in UTC
 
-                  const endOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999)) // End of today in UTC
+                  const endOfToday = new Date(
+                    Date.UTC(
+                      now.getUTCFullYear(),
+                      now.getUTCMonth(),
+                      now.getUTCDate(),
+                      23,
+                      59,
+                      59,
+                      999
+                    )
+                  ) // End of today in UTC
 
                   const oldestTimestamp = Math.floor(oldestDate.getTime() / 1000).toString()
                   const latestTimestamp = Math.floor(endOfToday.getTime() / 1000).toString()

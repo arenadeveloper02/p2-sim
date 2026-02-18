@@ -287,7 +287,9 @@ export function ChatDeploy({
       hasSetDefaultKnowledgeOutputs.current = true
       setFormData((prev) => ({
         ...prev,
-        selectedOutputBlocks: [...new Set([...prev.selectedOutputBlocks, ...knowledgeResultOutputIds])],
+        selectedOutputBlocks: [
+          ...new Set([...prev.selectedOutputBlocks, ...knowledgeResultOutputIds]),
+        ],
       }))
     }
   }, [existingChat, isLoadingChat, workflowId, knowledgeResultOutputIds])
@@ -303,11 +305,7 @@ export function ChatDeploy({
         updateField('selectedOutputBlocks', newValues)
       }
     },
-    [
-      formData.selectedOutputBlocks,
-      knowledgeResultOutputIds,
-      updateField,
-    ]
+    [formData.selectedOutputBlocks, knowledgeResultOutputIds, updateField]
   )
 
   const handleConfirmUnselectKnowledge = useCallback(() => {
