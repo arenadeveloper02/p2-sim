@@ -17,7 +17,7 @@ import type {
 import type { BlockHandler, ExecutionContext, StreamingExecution } from '@/executor/types'
 import { collectBlockData } from '@/executor/utils/block-data'
 import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
-import { analyzeIntent } from '@/executor/utils/intent-analyzer'
+import { analyzeIntent, combineAndSortSearchResults } from '@/executor/utils/intent-analyzer'
 import { stringifyJSON } from '@/executor/utils/json'
 import {
   validateBlockType,
@@ -121,7 +121,14 @@ export class AgentBlockHandler implements BlockHandler {
     // Fetch fact memories early (used for both intent analysis and system prompt)
     let factMemories: Message[] = []
     if (filteredInputs.memoryType) {
-      factMemories = await memoryService.searchMemories(ctx, inputs, block.id, userPrompt, false)
+      factMemories = await memoryService.searchMemories(
+        ctx,
+        inputs,
+        block.id,
+        userPrompt,
+        false,
+        false
+      )
     }
 
     // Intent analysis: search Mem0 conversation memories and decide RUN/SKIP
@@ -904,10 +911,10 @@ export class AgentBlockHandler implements BlockHandler {
         }
       }
 
-      // Use pre-fetched results from intent analyzer or fetch new ones
+      // Use pre-fetched results from intent analyzer or fetch new ones with combined, deduplicated, and sorted logic
       const searchResults: Message[] = preSearchedResults
         ? preSearchedResults
-        : await memoryService.searchMemories(ctx, inputs, blockId, userPrompt, true)
+        : await combineAndSortSearchResults(ctx, inputs, blockId, userPrompt, inputs.model)
 
       // Add search results to user prompt incrementally with token checking
       if (searchResults && searchResults.length > 0 && userPrompt) {

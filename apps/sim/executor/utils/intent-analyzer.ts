@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNotNull } from 'drizzle-orm'
+import { generateRequestId } from '@/lib/core/utils/request'
 import { memoryService } from '@/executor/handlers/agent/memory'
 import type { AgentInputs, Message } from '@/executor/handlers/agent/types'
 import type { ExecutionContext } from '@/executor/types'
@@ -73,18 +74,20 @@ async function fetchIntentAnalyzerPrompt(): Promise<string | null> {
 
 /**
  * Searches Mem0 for conversation memories and builds a token-limited context string.
+ * Combines results from searches with and without conversationId filter, sorts by score (ascending),
+ * and builds memory context from the sorted combined results.
  */
 async function searchAndBuildMemoryContext(
   params: IntentAnalyzerParams
 ): Promise<{ searchResults: Message[]; memoryContext: string }> {
   const { ctx, inputs, blockId, userPrompt, model } = params
 
-  const searchResults = await memoryService.searchMemories(ctx, inputs, blockId, userPrompt, true)
+  // Use the reusable function to get combined, deduplicated, and sorted results
+  const searchResults = await combineAndSortSearchResults(ctx, inputs, blockId, userPrompt, model)
 
-  if (!searchResults || searchResults.length === 0) {
-    return { searchResults: [], memoryContext: '' }
-  }
+  logger.debug('Combined and sorted search results count:', searchResults.length)
 
+  // Build token-limited memory context from sorted results
   const { getMemoryTokenLimit } = await import('@/executor/handlers/agent/memory-utils')
   const { getAccurateTokenCount } = await import('@/lib/tokenization/estimators')
 
@@ -112,6 +115,150 @@ async function searchAndBuildMemoryContext(
   }
 
   return { searchResults, memoryContext }
+}
+
+/**
+ * Combines, deduplicates, and sorts raw search results by score (ascending).
+ * Returns sorted Message[] array.
+ */
+export async function combineAndSortSearchResults(
+  ctx: ExecutionContext,
+  inputs: AgentInputs,
+  blockId: string,
+  userPrompt: string | undefined,
+  model?: string
+): Promise<Message[]> {
+  // Get raw search results (before conversion to Messages) to access score field
+  const rawResultsWithoutConversationId = await getRawSearchResults(
+    ctx,
+    inputs,
+    blockId,
+    userPrompt,
+    true,
+    false
+  )
+
+  const rawResultsWithConversationId = await getRawSearchResults(
+    ctx,
+    inputs,
+    blockId,
+    userPrompt,
+    true,
+    true
+  )
+
+  // Combine both result sets
+  const allRawResults = [
+    ...(rawResultsWithoutConversationId || []),
+    ...(rawResultsWithConversationId || []),
+  ]
+
+  if (allRawResults.length === 0) {
+    return []
+  }
+
+  // Remove duplicates by id (keep first occurrence)
+  const uniqueResults = Array.from(new Map(allRawResults.map((item) => [item.id, item])).values())
+
+  // Sort by score in increasing order (lower score = higher relevance in semantic search)
+  const sortedResults = uniqueResults.sort((a, b) => {
+    const scoreA = a.score ?? 1.0 // Default to 1.0 if score is missing
+    const scoreB = b.score ?? 1.0
+    return scoreA - scoreB
+  })
+
+  // Convert sorted raw results to Messages
+  const searchResults: Message[] = sortedResults
+    .map((result) => {
+      if (result.memory && typeof result.memory === 'string' && result.role) {
+        return {
+          role: result.role as 'system' | 'user' | 'assistant',
+          content: result.memory,
+        }
+      }
+      return null
+    })
+    .filter((msg): msg is Message => msg !== null)
+
+  return searchResults
+}
+
+/**
+ * Gets raw search results from Mem0 API (before conversion to Messages) to access score field.
+ */
+async function getRawSearchResults(
+  ctx: ExecutionContext,
+  inputs: AgentInputs,
+  blockId: string,
+  userPrompt: string | undefined,
+  isConversation: boolean,
+  includeConversationId: boolean
+): Promise<any[] | null> {
+  // Only call Mem0 API for chat trigger type
+  const triggerType = ctx.metadata?.triggerType
+  if (triggerType !== 'chat') {
+    return null
+  }
+
+  // Skip if userId is not available (required for search API)
+  if (!ctx.userId) {
+    return null
+  }
+
+  try {
+    const query = userPrompt || ''
+
+    // Build filters object
+    const filters: Record<string, any> = {}
+
+    if (includeConversationId && inputs.conversationId) {
+      filters.conversation_id = inputs.conversationId
+    }
+
+    if (isConversation === true) {
+      filters.memory_type = 'conversation'
+    } else {
+      filters.memory_type = 'fact'
+    }
+
+    const isDeployed = ctx.isDeployedContext ?? false
+    const requestId = generateRequestId()
+
+    // Dynamically import searchMemoryAPI to avoid circular dependencies
+    const { searchMemoryAPI } = await import('@/app/api/chat/memory-api')
+
+    // Call search API and get raw results
+    const rawResults = await searchMemoryAPI(
+      requestId,
+      query,
+      ctx.userId,
+      Object.keys(filters).length > 0 ? filters : undefined,
+      undefined, // runId
+      undefined, // agentId
+      isDeployed
+    )
+
+    if (!rawResults) {
+      return null
+    }
+
+    // Extract results array from response
+    let results: any[] = []
+    if (Array.isArray(rawResults)) {
+      results = rawResults
+    } else if (rawResults.results && Array.isArray(rawResults.results)) {
+      results = rawResults.results
+    } else if (rawResults.memories && Array.isArray(rawResults.memories)) {
+      results = rawResults.memories
+    } else if (rawResults.data && Array.isArray(rawResults.data)) {
+      results = rawResults.data
+    }
+
+    return results
+  } catch (error) {
+    logger.error('Failed to get raw search results:', error)
+    return null
+  }
 }
 
 /**
@@ -468,7 +615,14 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
     params.factMemories !== undefined
       ? params.factMemories
       : params.inputs.memoryType
-        ? await memoryService.searchMemories(ctx, params.inputs, params.blockId, userPrompt, false)
+        ? await memoryService.searchMemories(
+            ctx,
+            params.inputs,
+            params.blockId,
+            userPrompt,
+            false,
+            false
+          )
         : []
 
   logger.debug('Intent analyzer context', {

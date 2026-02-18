@@ -29,7 +29,8 @@ export class Memory {
     inputs: AgentInputs,
     blockId: string,
     userPrompt?: string,
-    isConversation?: boolean
+    isConversation?: boolean,
+    includeConversationId?: boolean
   ): Promise<Message[]> {
     // Only call Mem0 API for chat trigger type
     const triggerType = ctx.metadata?.triggerType
@@ -53,9 +54,9 @@ export class Memory {
       const filters: Record<string, any> = {}
 
       // If conversationId is present, filter by it; otherwise filter by userId only
-      // if (inputs.conversationId) {
-      //   filters.conversation_id = inputs.conversationId
-      // }
+      if (includeConversationId && inputs.conversationId) {
+        filters.conversation_id = inputs.conversationId
+      }
       // Note: userId is automatically included in the searchMemoryAPI call
 
       if (isConversation === true) {
