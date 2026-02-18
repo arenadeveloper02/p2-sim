@@ -111,6 +111,7 @@ export const env = createEnv({
     DEEPSEEK_MODELS_ENABLED:               z.boolean().optional().default(false),  // Enable Deepseek models in UI (defaults to false for compliance)
     BLACKLISTED_PROVIDERS:                 z.string().optional(),                  // Comma-separated provider IDs to hide (e.g., "openai,anthropic")
     BLACKLISTED_MODELS:                    z.string().optional(),                  // Comma-separated model names/prefixes to hide (e.g., "gpt-4,claude-*")
+    ALLOWED_MCP_DOMAINS:                   z.string().optional(),                  // Comma-separated domains for MCP servers (e.g., "internal.company.com,mcp.example.org"). Empty = all allowed.
 
     //Tools API Keys
     SEMRUSH_API_KEY:                       z.string().min(1).optional(),           // Semrush API key for SEO data
