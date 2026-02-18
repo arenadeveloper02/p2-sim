@@ -12,7 +12,7 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
   hideFromToolbar: true,
   authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Google Slides into the workflow. Can read, write, create presentations, replace text, add slides, add images, get thumbnails, get page details, delete objects, duplicate objects, reorder slides, create tables, create shapes, and insert text.',
+    'Integrate Google Slides into the workflow. Can read, write, create presentations, duplicate presentations, replace all text, replace text in objects, replace lists, replace images, add slides, add images, get thumbnails, get page details, delete objects, duplicate objects, reorder slides, create tables, create shapes, and insert text.',
   docsLink: 'https://docs.sim.ai/tools/google_slides',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -27,9 +27,14 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Read Presentation', id: 'read' },
         { label: 'Write to Presentation', id: 'write' },
         { label: 'Create Presentation', id: 'create' },
+        { label: 'Create Presentation from Template', id: 'create_from_template' },
+        { label: 'Duplicate Presentation', id: 'duplicate_presentation' },
         { label: 'Replace All Text', id: 'replace_all_text' },
+        { label: 'Replace Text', id: 'replace_text' },
+        { label: 'Replace Lists', id: 'replace_lists' },
         { label: 'Add Slide', id: 'add_slide' },
         { label: 'Add Image', id: 'add_image' },
+        { label: 'Replace Image', id: 'replace_image' },
         { label: 'Get Thumbnail', id: 'get_thumbnail' },
         { label: 'Get Page', id: 'get_page' },
         { label: 'Delete Object', id: 'delete_object' },
@@ -38,6 +43,7 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Create Table', id: 'create_table' },
         { label: 'Create Shape', id: 'create_shape' },
         { label: 'Insert Text', id: 'insert_text' },
+        { label: 'Get Template Schema', id: 'get_template_schema' },
       ],
       value: () => 'read',
     },
@@ -72,6 +78,9 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
           'read',
           'write',
           'replace_all_text',
+          'replace_text',
+          'replace_lists',
+          'replace_image',
           'add_slide',
           'add_image',
           'get_thumbnail',
@@ -100,6 +109,9 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
           'read',
           'write',
           'replace_all_text',
+          'replace_text',
+          'replace_lists',
+          'replace_image',
           'add_slide',
           'add_image',
           'get_thumbnail',
@@ -211,6 +223,113 @@ Return ONLY the slide content - no explanations, no markdown formatting markers,
       },
     },
 
+    // ========== Create from Template Operation Fields ==========
+    {
+      id: 'createFromTemplatePresentationName',
+      title: 'Presentation Name',
+      type: 'short-input',
+      placeholder: 'Enter title for the new presentation',
+      condition: { field: 'operation', value: 'create_from_template' },
+      required: true,
+    },
+    {
+      id: 'createFromTemplateSchemaJson',
+      title: 'Schema JSON',
+      type: 'long-input',
+      placeholder:
+        'Valid JSON with id, templateVersion, slides (templateSlideObjectId, blocks with shapeId and content)',
+      condition: { field: 'operation', value: 'create_from_template' },
+      required: true,
+    },
+
+    // ========== Duplicate Presentation Operation Fields ==========
+    // Source presentation selector (basic mode)
+    {
+      id: 'sourcePresentationSelector',
+      title: 'Select Presentation to Duplicate',
+      type: 'file-selector',
+      canonicalParamId: 'sourcePresentationId',
+      serviceId: 'google-drive',
+      requiredScopes: [],
+      mimeType: 'application/vnd.google-apps.presentation',
+      placeholder: 'Select a presentation to duplicate',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+    },
+    // Presentation ID text input (basic mode) – use this ID to duplicate
+    {
+      id: 'presentationIdForDuplicate',
+      title: 'Presentation ID',
+      type: 'short-input',
+      canonicalParamId: 'sourcePresentationId',
+      placeholder: 'Enter presentation ID to duplicate',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+    },
+    // Manual source presentation ID input (advanced mode)
+    {
+      id: 'manualSourcePresentationId',
+      title: 'Source Presentation ID',
+      type: 'short-input',
+      canonicalParamId: 'sourcePresentationId',
+      placeholder: 'Enter source presentation ID',
+      dependsOn: ['credential'],
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+      required: true,
+    },
+    {
+      id: 'duplicateTitle',
+      title: 'New Presentation Title',
+      type: 'short-input',
+      placeholder: 'Enter title for the duplicated presentation',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+      required: true,
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate a professional presentation title based on the user's description.
+The title should be:
+- Clear and descriptive
+- Professional and engaging
+- Concise (typically 3-8 words)
+
+Examples:
+- "quarterly sales" -> Q4 2024 Sales Performance Review
+- "product launch" -> Introducing Our New Product Line
+- "team meeting" -> Weekly Team Sync - Updates & Goals
+
+Return ONLY the title - no explanations, no quotes, no extra text.`,
+        placeholder: 'Describe your presentation topic...',
+      },
+    },
+    // Folder selector for duplicate (basic mode)
+    {
+      id: 'duplicateFolderSelector',
+      title: 'Select Parent Folder',
+      type: 'file-selector',
+      canonicalParamId: 'folderId',
+      serviceId: 'google-drive',
+      requiredScopes: [],
+      mimeType: 'application/vnd.google-apps.folder',
+      placeholder: 'Select a parent folder',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+    },
+    // Manual folder ID input for duplicate (advanced mode)
+    {
+      id: 'duplicateFolderId',
+      title: 'Parent Folder ID',
+      type: 'short-input',
+      canonicalParamId: 'folderId',
+      placeholder: 'Enter parent folder ID (leave empty for root folder)',
+      dependsOn: ['credential'],
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'duplicate_presentation' },
+    },
+
     // ========== Replace All Text Operation Fields ==========
     {
       id: 'findText',
@@ -249,6 +368,85 @@ Return ONLY the replacement text - no explanations, no quotes, no extra text.`,
       placeholder: 'Comma-separated slide IDs (leave empty for all)',
       condition: { field: 'operation', value: 'replace_all_text' },
       mode: 'advanced',
+    },
+
+    // ========== Replace Text Operation Fields ==========
+    {
+      id: 'replaceTextObjectId',
+      title: 'Object ID',
+      type: 'short-input',
+      placeholder: 'Object ID of the shape or table cell',
+      condition: { field: 'operation', value: 'replace_text' },
+      required: true,
+    },
+    {
+      id: 'replaceTextContent',
+      title: 'New Text',
+      type: 'long-input',
+      placeholder: 'Text to replace existing text with',
+      condition: { field: 'operation', value: 'replace_text' },
+      required: true,
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate text content for a presentation slide based on the user's description.
+The text should be:
+- Clear and concise
+- Professional and appropriate for presentations
+- Well-structured with bullet points if listing items
+
+Return ONLY the text content - no explanations, no markdown formatting markers, no extra text.`,
+        placeholder: 'Describe the text you want to replace with...',
+      },
+    },
+
+    // ========== Replace Lists Operation Fields ==========
+    {
+      id: 'replaceListsObjectId',
+      title: 'Object ID',
+      type: 'short-input',
+      placeholder: 'Object ID of the shape containing the list',
+      condition: { field: 'operation', value: 'replace_lists' },
+      required: true,
+    },
+    {
+      id: 'replaceListsItems',
+      title: 'List Items',
+      type: 'long-input',
+      placeholder: 'Enter list items as JSON array: ["Item 1", "Item 2", "Item 3"]',
+      condition: { field: 'operation', value: 'replace_lists' },
+      required: true,
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate a list of items as a JSON array based on the user's description.
+Each item should be a string in the array.
+
+Examples:
+- "three marketing strategies" -> ["Content Marketing", "Social Media Advertising", "Email Campaigns"]
+- "product features" -> ["Fast Performance", "Easy to Use", "Secure", "Affordable"]
+- "quarterly goals" -> ["Increase Revenue by 20%", "Launch New Product Line", "Expand to 3 New Markets"]
+
+Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
+        placeholder: 'Describe the list items you want...',
+        generationType: 'json-object',
+      },
+    },
+
+    // ========== Replace Image Operation Fields ==========
+    {
+      id: 'replaceImageObjectId',
+      title: 'Image Object ID',
+      type: 'short-input',
+      placeholder: 'Object ID of the image to replace',
+      condition: { field: 'operation', value: 'replace_image' },
+      required: true,
+    },
+    {
+      id: 'replaceImageUrl',
+      title: 'New Image URL',
+      type: 'short-input',
+      placeholder: 'Public URL of the new image (PNG, JPEG, or GIF)',
+      condition: { field: 'operation', value: 'replace_image' },
+      required: true,
     },
 
     // ========== Add Slide Operation Fields ==========
@@ -607,13 +805,27 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       placeholder: 'Zero-based index (default: 0)',
       condition: { field: 'operation', value: 'insert_text' },
     },
+    // Get Template Schema operation
+    {
+      id: 'templateSchemaTemplate',
+      title: 'Template',
+      type: 'dropdown',
+      options: [{ label: 'Position2 2026', id: 'position2_2026' }],
+      canonicalParamId: 'template',
+      condition: { field: 'operation', value: 'get_template_schema' },
+      required: true,
+    },
   ],
   tools: {
     access: [
       'google_slides_read',
       'google_slides_write',
       'google_slides_create',
+      'google_slides_duplicate',
       'google_slides_replace_all_text',
+      'google_slides_replace_text',
+      'google_slides_replace_lists',
+      'google_slides_replace_image',
       'google_slides_add_slide',
       'google_slides_add_image',
       'google_slides_get_thumbnail',
@@ -624,6 +836,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       'google_slides_create_table',
       'google_slides_create_shape',
       'google_slides_insert_text',
+      'google_slides_get_template_schema',
+      'google_slides_create_from_template',
     ],
     config: {
       tool: (params) => {
@@ -634,8 +848,18 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_write'
           case 'create':
             return 'google_slides_create'
+          case 'create_from_template':
+            return 'google_slides_create_from_template'
+          case 'duplicate_presentation':
+            return 'google_slides_duplicate'
           case 'replace_all_text':
             return 'google_slides_replace_all_text'
+          case 'replace_text':
+            return 'google_slides_replace_text'
+          case 'replace_lists':
+            return 'google_slides_replace_lists'
+          case 'replace_image':
+            return 'google_slides_replace_image'
           case 'add_slide':
             return 'google_slides_add_slide'
           case 'add_image':
@@ -656,6 +880,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_create_shape'
           case 'insert_text':
             return 'google_slides_insert_text'
+          case 'get_template_schema':
+            return 'google_slides_get_template_schema'
           default:
             throw new Error(`Invalid Google Slides operation: ${params.operation}`)
         }
@@ -670,11 +896,35 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           thumbnailPageId,
           imageWidth,
           imageHeight,
+          sourcePresentationId,
+          sourcePresentationSelector,
+          presentationIdForDuplicate,
+          manualSourcePresentationId,
+          duplicateTitle,
+          duplicateFolderSelector,
+          duplicateFolderId,
+          template,
+          templateSchemaTemplate,
+          createFromTemplatePresentationName,
+          createFromTemplateSchemaJson,
           ...rest
         } = params
 
-        const effectivePresentationId = presentationId ? String(presentationId).trim() : ''
-        const effectiveFolderId = folderId ? String(folderId).trim() : ''
+        const effectivePresentationId = (presentationId || manualPresentationId || '').trim()
+        const effectiveFolderId = (
+          folderSelector ||
+          folderId ||
+          duplicateFolderSelector ||
+          duplicateFolderId ||
+          ''
+        ).trim()
+        const effectiveSourcePresentationId = (
+          sourcePresentationId ||
+          sourcePresentationSelector ||
+          presentationIdForDuplicate ||
+          manualSourcePresentationId ||
+          ''
+        ).trim()
 
         const result: Record<string, any> = {
           ...rest,
@@ -692,6 +942,59 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           if (createContent) {
             result.content = createContent
           }
+        }
+
+        if (params.operation === 'create_from_template') {
+          result.presentationName =
+            (createFromTemplatePresentationName as string)?.trim() || undefined
+          result.schemaJson = (createFromTemplateSchemaJson as string)?.trim() || undefined
+        }
+
+        if (params.operation === 'duplicate_presentation') {
+          result.sourcePresentationId = effectiveSourcePresentationId || undefined
+          result.title = duplicateTitle
+          result.folderId = effectiveFolderId || undefined
+        }
+
+        if (params.operation === 'get_template_schema') {
+          const effectiveTemplate = (
+            (template as string) ||
+            (templateSchemaTemplate as string) ||
+            ''
+          ).trim()
+          result.template = effectiveTemplate || undefined
+        }
+
+        // Replace Text operation
+        if (params.operation === 'replace_text') {
+          result.objectId = params.replaceTextObjectId
+          result.text = params.replaceTextContent
+        }
+
+        // Replace Lists operation
+        if (params.operation === 'replace_lists') {
+          result.objectId = params.replaceListsObjectId
+          // Parse JSON array string to array
+          if (params.replaceListsItems) {
+            try {
+              const parsed = JSON.parse(params.replaceListsItems as string)
+              if (Array.isArray(parsed)) {
+                result.listItems = parsed
+              } else {
+                throw new Error('List items must be a JSON array')
+              }
+            } catch (error) {
+              throw new Error(
+                `Invalid list items format: ${error instanceof Error ? error.message : 'Must be a valid JSON array'}`
+              )
+            }
+          }
+        }
+
+        // Replace Image operation
+        if (params.operation === 'replace_image') {
+          result.objectId = params.replaceImageObjectId
+          result.imageUrl = params.replaceImageUrl
         }
 
         if (params.operation === 'add_slide' && params.insertionIndex) {
@@ -808,6 +1111,28 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     title: { type: 'string', description: 'Presentation title' },
     folderId: { type: 'string', description: 'Parent folder identifier (canonical param)' },
     createContent: { type: 'string', description: 'Initial slide content' },
+    // Create from template operation
+    createFromTemplatePresentationName: {
+      type: 'string',
+      description: 'Title for the new presentation',
+    },
+    createFromTemplateSchemaJson: {
+      type: 'string',
+      description: 'Valid JSON schema with slides and block content',
+    },
+    // Duplicate presentation operation
+    sourcePresentationSelector: { type: 'string', description: 'Selected source presentation' },
+    presentationIdForDuplicate: {
+      type: 'string',
+      description: 'Presentation ID to duplicate (text input)',
+    },
+    manualSourcePresentationId: {
+      type: 'string',
+      description: 'Manual source presentation identifier',
+    },
+    duplicateTitle: { type: 'string', description: 'Title for duplicated presentation' },
+    duplicateFolderSelector: { type: 'string', description: 'Selected folder for duplicate' },
+    duplicateFolderId: { type: 'string', description: 'Folder identifier for duplicate' },
     // Replace all text operation
     findText: { type: 'string', description: 'Text to find' },
     replaceText: { type: 'string', description: 'Text to replace with' },
@@ -816,6 +1141,15 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       type: 'string',
       description: 'Comma-separated slide IDs to limit replacements',
     },
+    // Replace text operation
+    replaceTextObjectId: { type: 'string', description: 'Object ID to replace text in' },
+    replaceTextContent: { type: 'string', description: 'New text to replace existing text' },
+    // Replace lists operation
+    replaceListsObjectId: { type: 'string', description: 'Object ID to replace list in' },
+    replaceListsItems: { type: 'string', description: 'List items as JSON array' },
+    // Replace image operation
+    replaceImageObjectId: { type: 'string', description: 'Object ID of image to replace' },
+    replaceImageUrl: { type: 'string', description: 'New image URL' },
     // Add slide operation
     layout: { type: 'string', description: 'Slide layout' },
     insertionIndex: { type: 'number', description: 'Position to insert slide' },
@@ -860,6 +1194,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     insertTextObjectId: { type: 'string', description: 'Object ID for text insertion' },
     insertTextContent: { type: 'string', description: 'Text to insert' },
     insertTextIndex: { type: 'number', description: 'Insertion index' },
+    // Get template schema operation
+    templateSchemaTemplate: { type: 'string', description: 'Template id (e.g. position2_2026)' },
   },
   outputs: {
     // Read operation
@@ -869,6 +1205,12 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     updatedContent: { type: 'boolean', description: 'Content update status' },
     // Replace all text operation
     occurrencesChanged: { type: 'number', description: 'Number of text occurrences replaced' },
+    // Replace text operation
+    replaced: { type: 'boolean', description: 'Whether text was replaced' },
+    // Replace lists operation
+    listItems: { type: 'json', description: 'List items that were inserted' },
+    // Replace image operation
+    imageUrl: { type: 'string', description: 'The new image URL that was set' },
     // Add slide operation
     slideId: { type: 'string', description: 'Object ID of newly created slide' },
     // Add image operation

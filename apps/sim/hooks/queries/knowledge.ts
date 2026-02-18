@@ -27,6 +27,8 @@ export const knowledgeKeys = {
     [...knowledgeKeys.document(knowledgeBaseId, documentId), 'tagDefinitions'] as const,
   chunks: (knowledgeBaseId: string, documentId: string, paramsKey: string) =>
     [...knowledgeKeys.document(knowledgeBaseId, documentId), 'chunks', paramsKey] as const,
+  chunk: (knowledgeBaseId: string, documentId: string, chunkId: string) =>
+    [...knowledgeKeys.document(knowledgeBaseId, documentId), 'chunk', chunkId] as const,
 }
 
 export async function fetchKnowledgeBases(workspaceId?: string): Promise<KnowledgeBaseData[]> {
@@ -390,6 +392,44 @@ export function useDocumentChunkSearchQuery(
       Boolean(params.knowledgeBaseId && params.documentId && params.search.trim()),
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
+  })
+}
+
+export async function fetchChunk(
+  knowledgeBaseId: string,
+  documentId: string,
+  chunkId: string
+): Promise<ChunkData> {
+  const response = await fetch(
+    `/api/knowledge/${knowledgeBaseId}/documents/${documentId}/chunks/${chunkId}`
+  )
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error('Chunk not found')
+    }
+    throw new Error(`Failed to fetch chunk: ${response.statusText}`)
+  }
+
+  const result = await response.json()
+  if (!result?.success || !result?.data) {
+    throw new Error(result?.error || 'Failed to fetch chunk')
+  }
+
+  return result.data
+}
+
+export function useChunkById(
+  knowledgeBaseId: string,
+  documentId: string,
+  chunkId: string | null,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: knowledgeKeys.chunk(knowledgeBaseId, documentId, chunkId ?? ''),
+    queryFn: () => fetchChunk(knowledgeBaseId, documentId, chunkId!),
+    enabled: (options?.enabled ?? true) && Boolean(knowledgeBaseId && documentId && chunkId),
+    staleTime: 60 * 1000,
   })
 }
 

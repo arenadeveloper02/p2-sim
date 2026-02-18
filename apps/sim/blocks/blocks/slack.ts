@@ -886,24 +886,43 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
                 const now = new Date()
 
                 if (days === 1) {
-                  // For "Today": from start of today to end of today
-                  const startOfToday = new Date(now)
-                  startOfToday.setHours(0, 0, 0, 0)
-                  const endOfToday = new Date(now)
-                  endOfToday.setHours(23, 59, 59, 999)
+                  // For "Today": from start of today to end of today (in UTC)
+                  const startOfToday = new Date(
+                    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)
+                  )
+                  const endOfToday = new Date(
+                    Date.UTC(
+                      now.getUTCFullYear(),
+                      now.getUTCMonth(),
+                      now.getUTCDate(),
+                      23,
+                      59,
+                      59,
+                      999
+                    )
+                  )
 
                   const oldestTimestamp = Math.floor(startOfToday.getTime() / 1000).toString()
                   const latestTimestamp = Math.floor(endOfToday.getTime() / 1000).toString()
                   baseParams.oldest = oldestTimestamp
                   baseParams.latest = latestTimestamp
                 } else {
-                  // For "Last X days": from X days ago to end of today
+                  // For "Last X days": from X days ago to end of today (in UTC)
                   const oldestDate = new Date(now)
-                  oldestDate.setDate(now.getDate() - days)
-                  oldestDate.setHours(0, 0, 0, 0) // Start of that day
+                  oldestDate.setUTCDate(now.getUTCDate() - days)
+                  oldestDate.setUTCHours(0, 0, 0, 0) // Start of that day in UTC
 
-                  const endOfToday = new Date(now)
-                  endOfToday.setHours(23, 59, 59, 999) // End of today
+                  const endOfToday = new Date(
+                    Date.UTC(
+                      now.getUTCFullYear(),
+                      now.getUTCMonth(),
+                      now.getUTCDate(),
+                      23,
+                      59,
+                      59,
+                      999
+                    )
+                  ) // End of today in UTC
 
                   const oldestTimestamp = Math.floor(oldestDate.getTime() / 1000).toString()
                   const latestTimestamp = Math.floor(endOfToday.getTime() / 1000).toString()
