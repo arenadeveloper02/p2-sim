@@ -44,12 +44,14 @@ export interface KnowledgeResultChunk {
 /**
  * Minimal reference persisted in chat history (no chunk content).
  * One ref per chunk; used to show document name, chunk index, and open-in-KB link when loading from history.
+ * chunkIndex is optional for backward compatibility with refs saved before per-chunk indexing.
  */
 export interface KnowledgeRef {
   documentId: string
   documentName: string
   chunkId: string
-  chunkIndex: number
+  /** 0-based; may be missing on refs persisted before this field was added. */
+  chunkIndex?: number
   knowledgeBaseId: string
   workspaceId: string | null
 }

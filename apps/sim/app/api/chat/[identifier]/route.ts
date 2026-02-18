@@ -687,17 +687,28 @@ export async function POST(
                         deployment.outputConfigs &&
                         Array.isArray(deployment.outputConfigs) &&
                         (() => {
+                          const aggregated: Array<{
+                            documentId: string
+                            documentName: string
+                            content: string
+                            chunkIndex: number
+                            metadata?: Record<string, unknown>
+                            similarity?: number
+                            chunkId?: string
+                            knowledgeBaseId?: string
+                            workspaceId?: string | null
+                          }> = []
                           for (const config of deployment.outputConfigs) {
                             if (config.path === 'results') {
                               const blockOutputs = finalData.output[config.blockId]
                               if (!blockOutputs) continue
                               const value = getOutputValue(blockOutputs, config.path)
                               if (isKnowledgeResultsArray(value)) {
-                                return mapToKnowledgePayload(value)
+                                aggregated.push(...mapToKnowledgePayload(value))
                               }
                             }
                           }
-                          return null
+                          return aggregated.length > 0 ? aggregated : null
                         })()
 
                       if (fromOutputConfig && fromOutputConfig.length > 0) {
@@ -707,8 +718,7 @@ export async function POST(
                           if (!blockOutputs || typeof blockOutputs !== 'object') continue
                           const value = getOutputValue(blockOutputs, 'results')
                           if (isKnowledgeResultsArray(value)) {
-                            knowledgeResultsPayload = mapToKnowledgePayload(value)
-                            break
+                            knowledgeResultsPayload.push(...mapToKnowledgePayload(value))
                           }
                         }
                       }

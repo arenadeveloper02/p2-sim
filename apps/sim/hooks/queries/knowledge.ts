@@ -428,9 +428,7 @@ export function useChunkById(
   return useQuery({
     queryKey: knowledgeKeys.chunk(knowledgeBaseId, documentId, chunkId ?? ''),
     queryFn: () => fetchChunk(knowledgeBaseId, documentId, chunkId!),
-    enabled:
-      (options?.enabled ?? true) &&
-      Boolean(knowledgeBaseId && documentId && chunkId),
+    enabled: (options?.enabled ?? true) && Boolean(knowledgeBaseId && documentId && chunkId),
     staleTime: 60 * 1000,
   })
 }

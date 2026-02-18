@@ -191,13 +191,21 @@ export const ArenaClientChatMessage = memo(
         chunks?: KnowledgeResultChunk[]
         linkUrl: string | null
         workspaceId: string | null
+        knowledgeBaseId?: string
         fromHistory: boolean
       }
       const results = message.knowledgeResults ?? []
       const refsFromHistory = message.knowledgeRefs ?? []
 
       if (results.length > 0) {
-        return results.map((r) => {
+        const seen = new Set<string>()
+        return results.filter((r) => {
+          const kb = r.knowledgeBaseId ?? ''
+          const key = `${kb}-${r.documentId}-${r.chunkId ?? `i-${r.chunkIndex}`}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        }).map((r) => {
           const linkUrl =
             r.chunkId && r.knowledgeBaseId && r.workspaceId != null
               ? (() => {
@@ -208,13 +216,14 @@ export const ArenaClientChatMessage = memo(
                 })()
               : null
           return {
-            key: `${r.documentId}-${r.chunkId ?? r.chunkIndex}`,
+            key: `${r.knowledgeBaseId ?? ''}-${r.documentId}-${r.chunkId ?? r.chunkIndex}`,
             documentId: r.documentId,
             documentName: r.documentName || r.documentId,
             chunkIndex: r.chunkIndex,
             chunks: [r],
             linkUrl,
             workspaceId: r.workspaceId ?? null,
+            knowledgeBaseId: r.knowledgeBaseId,
             fromHistory: false,
           }
         })
@@ -222,13 +231,14 @@ export const ArenaClientChatMessage = memo(
 
       if (refsFromHistory.length > 0) {
         return refsFromHistory.map((r) => ({
-          key: `${r.documentId}-${r.chunkId}`,
+          key: `${r.knowledgeBaseId}-${r.documentId}-${r.chunkId}`,
           documentId: r.documentId,
           documentName: r.documentName || r.documentId,
           chunkIndex: typeof r.chunkIndex === 'number' ? r.chunkIndex : 0,
           chunks: undefined as KnowledgeResultChunk[] | undefined,
           linkUrl: r.workspaceId ? getKbLinkUrlFromRef(r) : null,
           workspaceId: r.workspaceId,
+          knowledgeBaseId: r.knowledgeBaseId,
           fromHistory: true,
         }))
       }
@@ -247,18 +257,18 @@ export const ArenaClientChatMessage = memo(
       return uniqueChunkRefs.filter((ref) => canShowKbLink(ref))
     }, [uniqueChunkRefs, workspaceIdsForKbLinks])
 
-    /** Refs grouped by document: document name once, then sorted chunk indices each with their link. */
+    /** Refs grouped by document (per knowledge base when multiple KBs): document name once, then sorted chunk indices. */
     const refsGroupedByDocument = useMemo(() => {
-      const byDoc = new Map<
-        string,
-        { documentName: string; chunks: typeof visibleChunkRefs }
-      >()
+      const groupKey = (ref: (typeof visibleChunkRefs)[0]) =>
+        `${ref.knowledgeBaseId ?? ''}-${ref.documentId}`
+      const byDoc = new Map<string, { documentName: string; chunks: typeof visibleChunkRefs }>()
       for (const ref of visibleChunkRefs) {
-        const existing = byDoc.get(ref.documentId)
+        const key = groupKey(ref)
+        const existing = byDoc.get(key)
         if (existing) {
           existing.chunks.push(ref)
         } else {
-          byDoc.set(ref.documentId, { documentName: ref.documentName, chunks: [ref] })
+          byDoc.set(key, { documentName: ref.documentName, chunks: [ref] })
         }
       }
       return Array.from(byDoc.entries()).map(([documentId, { documentName, chunks }]) => ({

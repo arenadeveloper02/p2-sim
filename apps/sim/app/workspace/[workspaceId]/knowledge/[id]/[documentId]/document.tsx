@@ -290,12 +290,9 @@ export function Document({
     }
   )
 
-  const { data: chunkByIdData } = useChunkById(
-    knowledgeBaseId,
-    documentId,
-    chunkIdFromUrl,
-    { enabled: Boolean(chunkIdFromUrl) }
-  )
+  const { data: chunkByIdData } = useChunkById(knowledgeBaseId, documentId, chunkIdFromUrl, {
+    enabled: Boolean(chunkIdFromUrl),
+  })
 
   const searchError = searchQueryError instanceof Error ? searchQueryError.message : null
 
@@ -332,8 +329,7 @@ export function Document({
 
   const displayChunks = showingSearch ? paginatedSearchResults : initialChunks
 
-  const pageForChunkIndex = (index: number) =>
-    Math.floor(Number(index) / CHUNK_PAGE_SIZE) + 1
+  const pageForChunkIndex = (index: number) => Math.floor(Number(index) / CHUNK_PAGE_SIZE) + 1
 
   useEffect(() => {
     if (!chunkIndexFromUrl || chunkIdFromUrl || showingSearch) return
@@ -347,7 +343,15 @@ export function Document({
     }
     params.set('chunkIndex', chunkIndexFromUrl)
     router.replace(`${pathname}?${params.toString()}`)
-  }, [chunkIndexFromUrl, chunkIdFromUrl, showingSearch, currentPageFromURL, pathname, searchParams, router])
+  }, [
+    chunkIndexFromUrl,
+    chunkIdFromUrl,
+    showingSearch,
+    currentPageFromURL,
+    pathname,
+    searchParams,
+    router,
+  ])
 
   useEffect(() => {
     if (chunkIdFromUrl) {
@@ -360,6 +364,15 @@ export function Document({
       if (chunkByIdData?.id === chunkIdFromUrl) {
         setSelectedChunk(chunkByIdData)
         setIsModalOpen(true)
+        const desiredPage = pageForChunkIndex(chunkByIdData.chunkIndex)
+        if (currentPageFromURL !== desiredPage) {
+          const params = new URLSearchParams(searchParams.toString())
+          params.set('chunk', chunkIdFromUrl)
+          params.set('chunkIndex', String(chunkByIdData.chunkIndex))
+          if (desiredPage > 1) params.set('page', String(desiredPage))
+          else params.delete('page')
+          router.replace(`${pathname}?${params.toString()}`)
+        }
       }
       return
     }
@@ -373,7 +386,16 @@ export function Document({
         }
       }
     }
-  }, [chunkIdFromUrl, chunkIndexFromUrl, displayChunks, chunkByIdData])
+  }, [
+    chunkIdFromUrl,
+    chunkIndexFromUrl,
+    displayChunks,
+    chunkByIdData,
+    currentPageFromURL,
+    pathname,
+    searchParams,
+    router,
+  ])
 
   const currentPage = showingSearch ? searchCurrentPage : initialPage
   const totalPages = showingSearch ? searchTotalPages : initialTotalPages
@@ -1096,9 +1118,7 @@ export function Document({
           const checkAndSelectChunk = () => {
             if (displayChunks.length > 0) {
               const chunk =
-                selectChunk === 'first'
-                  ? displayChunks[0]
-                  : displayChunks[displayChunks.length - 1]
+                selectChunk === 'first' ? displayChunks[0] : displayChunks[displayChunks.length - 1]
               setSelectedChunk(chunk)
               router.replace(getDocumentUrl(chunk.id, chunk.chunkIndex))
             } else {
