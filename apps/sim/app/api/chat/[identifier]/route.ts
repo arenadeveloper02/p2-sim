@@ -926,7 +926,10 @@ export async function GET(
     try {
       goldenQueries = await fetchGoldenQueries(deployment.workflowId)
     } catch (error) {
-      logger.warn(`[${requestId}] Failed to fetch golden queries (workflow_queries may be missing):`, error)
+      logger.warn(
+        `[${requestId}] Failed to fetch golden queries (workflow_queries may be missing):`,
+        error
+      )
       // Continue with empty goldenQueries so chat config still loads
     }
 

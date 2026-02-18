@@ -26,7 +26,7 @@ import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata } from '@/executor/execution/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
 import { createEnvVarPattern } from '@/executor/utils/reference-validation'
-import { mergeSubblockState } from '@/stores/workflows/server-utils'
+import { mergeSubblockState } from '@/stores/workflows/utils'
 import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
 
 const logger = createLogger('TriggerScheduleExecution')
