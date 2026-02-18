@@ -1,9 +1,7 @@
 import type { PresentationSchema } from './schema'
 
 /** Template ids supported by getTemplateMasterSchema (for dropdown) */
-export const TEMPLATE_OPTIONS = [
-  { value: 'position2_2026', label: 'Position2 2026' },
-] as const
+export const TEMPLATE_OPTIONS = [{ value: 'position2_2026', label: 'Position2 2026' }] as const
 
 export type TemplateId = (typeof TEMPLATE_OPTIONS)[number]['value']
 
@@ -18,7 +16,9 @@ export function getTemplateMasterSchema(template: string): PresentationSchema {
   if (template === 'position2_2026') {
     return buildTemplateSchema()
   }
-  throw new Error(`Unknown template: ${template}. Supported: ${TEMPLATE_OPTIONS.map((t) => t.value).join(', ')}`)
+  throw new Error(
+    `Unknown template: ${template}. Supported: ${TEMPLATE_OPTIONS.map((t) => t.value).join(', ')}`
+  )
 }
 
 /**
@@ -29,7 +29,7 @@ function buildTemplateSchema(): PresentationSchema {
   return {
     schemaVersion: '1.0',
     templateVersion: 'position2_2026',
-    id: "1wYE4gy_iHhLzmI1ra4F5U3wf_DI_fPWIzA_uRzPFwpU",
+    id: '1wYE4gy_iHhLzmI1ra4F5U3wf_DI_fPWIzA_uRzPFwpU',
     slides: [
       {
         slideKey: 'TITLE_SLIDE',
@@ -185,7 +185,7 @@ function buildTemplateSchema(): PresentationSchema {
             itemConstraints: {
               minChars: 30,
               maxChars: 100,
-              description: 'Body text for each bulleted point'
+              description: 'Body text for each bulleted point',
             },
             description: 'Left column bulleted list with body text only',
             content: [],
@@ -219,7 +219,7 @@ function buildTemplateSchema(): PresentationSchema {
             itemConstraints: {
               minChars: 30,
               maxChars: 100,
-              description: 'Body text for each bulleted point'
+              description: 'Body text for each bulleted point',
             },
             description: 'Right column bulleted list with body text only',
             content: [],
@@ -367,7 +367,7 @@ function buildTemplateSchema(): PresentationSchema {
             itemConstraints: {
               minChars: 30,
               maxChars: 160,
-              description: 'Body text for each bulleted point'
+              description: 'Body text for each bulleted point',
             },
             description: 'Left column bulleted list (14pt, DARK1 color)',
             content: [],
@@ -392,7 +392,7 @@ function buildTemplateSchema(): PresentationSchema {
             itemConstraints: {
               minChars: 30,
               maxChars: 160,
-              description: 'Body text for each bulleted point'
+              description: 'Body text for each bulleted point',
             },
             description: 'Right column bulleted list (14pt, DARK1 color)',
             content: [],
@@ -403,7 +403,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FOUR_COLUMN_TEXT_ONLY',
         order: 7,
         templateSlideObjectId: 'g392319e7c15_4_308',
-        description: 'Four-column text layout (2x2 grid) with headers and body text (no images, no bullets)',
+        description:
+          'Four-column text layout (2x2 grid) with headers and body text (no images, no bullets)',
         blocks: [
           {
             key: 'title',
@@ -495,7 +496,7 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Bottom-right column body text (14pt regular)',
             content: '',
           },
-        ]
+        ],
       },
       {
         slideKey: 'SIX_COLUMN_TEXT_ONLY',
@@ -639,7 +640,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'BULLETED_LIST_WITH_STATS',
         order: 9,
         templateSlideObjectId: 'g258f1f1ebd7_0_38',
-        description: 'Two-section layout: left side with bulleted list, right side with 3 circular stat items',
+        description:
+          'Two-section layout: left side with bulleted list, right side with 3 circular stat items',
         blocks: [
           {
             key: 'title',
@@ -661,7 +663,7 @@ function buildTemplateSchema(): PresentationSchema {
             itemConstraints: {
               minChars: 50,
               maxChars: 220,
-              description: 'Bulleted point with detailed content'
+              description: 'Bulleted point with detailed content',
             },
             description: 'Left side bulleted list with detailed points',
             content: [],
@@ -732,7 +734,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'BULLETED_LIST_WITH_LARGE_STAT',
         order: 10,
         templateSlideObjectId: 'g2380b89c92d_0_153',
-        description: 'Two-section layout: left side with bulleted list, right side with one large circular stat',
+        description:
+          'Two-section layout: left side with bulleted list, right side with one large circular stat',
         blocks: [
           {
             key: 'title',
@@ -754,7 +757,7 @@ function buildTemplateSchema(): PresentationSchema {
             itemConstraints: {
               minChars: 80,
               maxChars: 250,
-              description: 'Bulleted point with extensive detailed content'
+              description: 'Bulleted point with extensive detailed content',
             },
             description: 'Left side bulleted list with extensive points',
             content: [],
@@ -822,7 +825,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3b5c40508b0_1_8',
             minChars: 5,
             maxChars: 100,
-            description: 'Question or prompt text displayed in the white card (e.g., "Question:", "What questions do you have?")',
+            description:
+              'Question or prompt text displayed in the white card (e.g., "Question:", "What questions do you have?")',
             content: '',
           },
         ],
@@ -831,7 +835,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'CONTACT_SLIDE',
         order: 13,
         templateSlideObjectId: 'g2380b89c92d_0_168',
-        description: 'Contact/closing slide with company info, location, social media icons, and footer - no editable content blocks',
+        description:
+          'Contact/closing slide with company info, location, social media icons, and footer - no editable content blocks',
         blocks: [],
       },
       {
@@ -840,7 +845,7 @@ function buildTemplateSchema(): PresentationSchema {
         templateSlideObjectId: 'g380191f62e7_0_42',
         description: 'Thanks/closing slide - static design with no editable content blocks',
         blocks: [],
-      }
+      },
     ],
   }
 }

@@ -31,7 +31,7 @@ export interface TextBlock extends BaseBlock {
 export interface ListBlock extends BaseBlock {
   type: 'TEXT'
   role: 'LIST'
-  content: string[],
+  content: string[]
 
   minItems: number
   maxItems: number
@@ -74,6 +74,6 @@ export interface SlideSchema {
 export interface PresentationSchema {
   schemaVersion: string // e.g. "1.0"
   templateVersion: string // e.g. "company-deck-v3"
-  id:string,
+  id: string
   slides: SlideSchema[]
 }
