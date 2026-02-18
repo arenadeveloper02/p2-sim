@@ -44,7 +44,7 @@ interface SlideLike {
   blocks: BlockLike[]
 }
 
-// --- NEW: Exponential Backoff Wrapper ---
+// --- Exponential Backoff Wrapper ---
 async function fetchWithRetry(
   url: string,
   options: RequestInit = {},
@@ -104,7 +104,7 @@ function validateTemplateId(schema: PresentationSchema): void {
   }
 }
 
-// --- NEW: Helper to find text boundaries for lists ---
+// --- Helper to find text boundaries for lists ---
 function buildTextEndIndexMap(presentationData: any): Record<string, number> {
   const map: Record<string, number> = {}
   const slides = presentationData.slides || []
@@ -181,85 +181,6 @@ async function getPresentationSlides(
   return (data.slides || []).map((s: { objectId: string }) => ({
     objectId: s.objectId,
   }))
-}
-
-async function duplicateSlide(
-  accessToken: string,
-  presentationId: string,
-  slideObjectId: string,
-  objectIds: Record<string, string>
-): Promise<string> {
-  const res = await fetchWithRetry(
-    `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        requests: [
-          {
-            duplicateObject: {
-              objectId: slideObjectId,
-              objectIds,
-            },
-          },
-        ],
-      }),
-    }
-  )
-  const data = await res.json()
-  if (!res.ok) {
-    logger.error('Duplicate slide failed', {
-      presentationId,
-      slideObjectId,
-      status: res.status,
-      error: data.error?.message,
-    })
-    throw new Error(data.error?.message || 'Failed to duplicate slide')
-  }
-
-  const newSlideId = data.replies?.[0]?.duplicateObject?.objectId
-  if (!newSlideId) {
-    logger.error('Duplicate slide response missing object ID', { presentationId, slideObjectId })
-    throw new Error('Duplicate slide did not return object ID')
-  }
-
-  logger.info('Slide duplicated', {
-    presentationId,
-    sourceSlideId: slideObjectId,
-    newSlideId,
-    shapeMappings: Object.keys(objectIds).length,
-  })
-
-  // Reorder slide to the end
-  const totalSlides = (await getPresentationSlides(accessToken, presentationId)).length
-  const reorderRes = await fetchWithRetry(
-    `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        requests: [
-          {
-            updateSlidesPosition: {
-              slideObjectIds: [newSlideId],
-              insertionIndex: totalSlides,
-            },
-          },
-        ],
-      }),
-    }
-  )
-  if (!reorderRes.ok) {
-    const errData = await reorderRes.json()
-    logger.warn('Failed to reorder duplicated slide to end', { error: errData })
-  }
-  return newSlideId
 }
 
 export const createFromTemplateTool: ToolConfig<
@@ -347,19 +268,71 @@ export const createFromTemplateTool: ToolConfig<
     const slidesOrdered = [...schema.slides]
     const slideIndexToShapeMap: Record<string, string>[] = []
 
-    // 2. Duplicate Slides (creates layout, maps objects)
-    for (const slideSchema of slidesOrdered) {
+    // 2. Duplicate Slides & Reorder (Batch)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const duplicateRequests: any[] = []
+
+    for (let i = 0; i < slidesOrdered.length; i++) {
+      const slideSchema = slidesOrdered[i]
       const templateSlideId = (slideSchema as SlideLike).templateSlideObjectId
       const blocks = (slideSchema as SlideLike).blocks || []
 
       const objectIds: Record<string, string> = {}
+      const newSlideId = generateObjectId()
+
+      // Map the slide's own object ID so we know exactly what its new ID is going to be.
+      objectIds[templateSlideId] = newSlideId
+
       for (const b of blocks) {
         if (b.shapeId) {
           objectIds[b.shapeId] = generateObjectId()
         }
       }
-      await duplicateSlide(accessToken, presentationId, templateSlideId, objectIds)
+
+      // 1. Add the duplication request (inserts right after the template slide)
+      duplicateRequests.push({
+        duplicateObject: {
+          objectId: templateSlideId,
+          objectIds,
+        },
+      })
+
+      // 2. Immediately move this newly created slide to the absolute end of the presentation
+      // Because this executes sequentially in the batch, the total length increases by 1 each time.
+      duplicateRequests.push({
+        updateSlidesPosition: {
+          slideObjectIds: [newSlideId],
+          insertionIndex: originalSlidesToDelete.length + i + 1, // original length + loop index + 1
+        },
+      })
+
       slideIndexToShapeMap.push(objectIds)
+    }
+
+    logger.info('Executing batch slide duplication', { requestCount: duplicateRequests.length })
+
+    if (duplicateRequests.length > 0) {
+      const duplicateBatchRes = await fetchWithRetry(
+        `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ requests: duplicateRequests }),
+        }
+      )
+
+      if (!duplicateBatchRes.ok) {
+        const errData = await duplicateBatchRes.json()
+        logger.error('Batch slide duplication failed', {
+          presentationId,
+          status: duplicateBatchRes.status,
+          error: errData.error?.message,
+        })
+        throw new Error(errData.error?.message || 'Failed to duplicate template slides')
+      }
     }
 
     logger.info('Fetching presentation state to build list maps', { presentationId })
