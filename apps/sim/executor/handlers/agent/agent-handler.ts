@@ -1015,22 +1015,24 @@ export class AgentBlockHandler implements BlockHandler {
           }
         }
 
-        // Append memory context to user prompt
+        // Append memory context to user prompt with "User Input: " prefix
         if (memoryContext) {
           if (inputs.userPrompt) {
-            inputs.userPrompt =
+            const userPromptStr =
               typeof inputs.userPrompt === 'string'
-                ? `${inputs.userPrompt}${memoryContext}`
-                : `${JSON.stringify(inputs.userPrompt)}${memoryContext}`
+                ? inputs.userPrompt
+                : JSON.stringify(inputs.userPrompt)
+            inputs.userPrompt = `User Input: ${userPromptStr}${memoryContext}`
           } else if (conversationMessages.length > 0) {
             const userMsg = conversationMessages.find((m) => m.role === 'user')
             if (userMsg) {
-              userMsg.content += memoryContext
+              userMsg.content = `User Input: ${userMsg.content}${memoryContext}`
             }
           } else if (inputs.messages && Array.isArray(inputs.messages)) {
             const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
             if (userMsgIndex !== -1) {
-              inputs.messages[userMsgIndex].content += memoryContext
+              inputs.messages[userMsgIndex].content =
+                `User Input: ${inputs.messages[userMsgIndex].content}${memoryContext}`
             }
           }
 
