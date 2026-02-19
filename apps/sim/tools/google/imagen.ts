@@ -190,14 +190,35 @@ export const imagenTool: ToolConfig = {
 
       logger.info('Successfully received Imagen image, length:', base64Image.length)
 
+      // Get workflowId and userId from params context
+      const workflowId = params?._context?.workflowId || 'unknown'
+      const userId = params?._context?.userId || 'unknown'
+
+      // Save image to storage and get URL
+      let finalImageUrl: string | null = null
+      try {
+        // Determine MIME type (Imagen typically returns PNG)
+        const mimeType = 'image/png'
+        finalImageUrl = await saveGeneratedImage(base64Image, workflowId, userId, mimeType)
+        logger.info(`Successfully saved Imagen image to storage: ${finalImageUrl}`)
+      } catch (error) {
+        logger.error('Error saving Imagen image to storage:', error)
+        // Fallback to base64 data URL if storage fails
+        logger.warn('Falling back to base64 image data URL due to storage error')
+      }
+
+      // Use stored URL if available, otherwise create data URL from base64
+      const imageUrlToReturn = finalImageUrl || (base64Image ? `data:image/png;base64,${base64Image}` : '')
+
       return {
         success: true,
         output: {
-          content: 'imagen-generated-image',
-          image: base64Image,
+          content: finalImageUrl || 'imagen-generated-image',
+          image: imageUrlToReturn, // Return stored URL or base64 data URL
           metadata: {
             model: params?.model || 'imagen-4.0-generate-001',
             numberOfImages: generatedImages.length,
+            stored: !!finalImageUrl,
           },
         },
       }

@@ -6,6 +6,7 @@ export type StorageContext =
   | 'workspace'
   | 'profile-pictures'
   | 'og-images'
+  | 'agent-generated-images'
   | 'logs'
   | 'figma-design'
 

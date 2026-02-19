@@ -129,11 +129,29 @@ const nanoBananaTool: ToolConfig = {
 
       logger.info('Successfully received Nano Banana image, length:', base64Image.length)
 
+      // Get workflowId and userId from params context
+      const workflowId = params?._context?.workflowId || 'unknown'
+      const userId = params?._context?.userId || 'unknown'
+
+      // Save image to storage and get URL
+      let finalImageUrl: string | null = null
+      try {
+        finalImageUrl = await saveGeneratedImage(base64Image, workflowId, userId, mimeType)
+        logger.info(`Successfully saved Nano Banana image to storage: ${finalImageUrl}`)
+      } catch (error) {
+        logger.error('Error saving Nano Banana image to storage:', error)
+        // Fallback to base64 data URL if storage fails
+        logger.warn('Falling back to base64 image data URL due to storage error')
+      }
+
+      // Use stored URL if available, otherwise create data URL from base64
+      const imageUrlToReturn = finalImageUrl || (base64Image ? `data:${mimeType};base64,${base64Image}` : '')
+
       return {
         success: true,
         output: {
-          content: 'nano-banana-generated-image',
-          image: base64Image,
+          content: finalImageUrl || 'nano-banana-generated-image',
+          image: imageUrlToReturn, // Return stored URL or base64 data URL
           metadata: {
             model: params?.model || 'gemini-2.5-flash-image',
             mimeType: mimeType,
@@ -141,6 +159,7 @@ const nanoBananaTool: ToolConfig = {
             imageSize: params?.imageSize ?? null,
             hasInputImage: !!(params?.inputImage && params?.inputImageMimeType),
             inputImageMimeType: params?.inputImageMimeType || null,
+            stored: !!finalImageUrl,
           },
         },
       }

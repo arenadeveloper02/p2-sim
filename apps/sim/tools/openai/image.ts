@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
+import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import type { BaseImageRequestBody } from '@/tools/openai/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -102,12 +103,12 @@ export const imageTool: ToolConfig = {
       }
 
       const modelName = params?.model || 'dall-e-3'
-      let imageUrl = null
-      let base64Image = null
+      let imageUrl: string | null = null
+      let base64Image: string | null = null
 
       if (data.data?.[0]?.url) {
         imageUrl = data.data[0].url
-        logger.info('Found image URL in response for DALL-E 3')
+        logger.info('Found image URL in response for DALL-E 3', { imageUrl: imageUrl.substring(0, 100) })
       } else if (data.data?.[0]?.b64_json) {
         base64Image = data.data[0].b64_json
         logger.info(
@@ -119,31 +120,34 @@ export const imageTool: ToolConfig = {
         throw new Error('No image data found in response')
       }
 
+      // Preserve the original imageUrl before any processing
+      const originalImageUrl = imageUrl
+
+      // Get workflowId and userId from params context
+      const workflowId = params?._context?.workflowId || 'unknown'
+      const userId = params?._context?.userId || 'unknown'
+
+      logger.info('Image generation context:', {
+        workflowId,
+        userId,
+        hasImageUrl: !!imageUrl,
+        hasBase64Image: !!base64Image,
+        originalImageUrl: originalImageUrl ? originalImageUrl.substring(0, 100) : null,
+      })
+
+      let finalImageUrl: string | null = null
+
       if (imageUrl && !base64Image) {
         try {
-          logger.info('Fetching image from URL via proxy...')
-          const baseUrl = getBaseUrl()
-          const proxyUrl = new URL('/api/tools/image', baseUrl)
-          proxyUrl.searchParams.append('url', imageUrl)
-
-          const headers: Record<string, string> = {
-            Accept: 'image/*, */*',
-          }
-
-          if (typeof window === 'undefined') {
-            const { generateInternalToken } = await import('@/lib/auth/internal')
-            try {
-              const token = await generateInternalToken()
-              headers.Authorization = `Bearer ${token}`
-              logger.info('Added internal auth token for image proxy request')
-            } catch (error) {
-              logger.error('Failed to generate internal token for image proxy:', error)
-            }
-          }
-
-          const imageResponse = await fetch(proxyUrl.toString(), {
-            headers,
+          logger.info('Downloading image from DALL-E URL for storage...', {
+            imageUrl: imageUrl.substring(0, 100),
+          })
+          // Fetch the image directly
+          const imageResponse = await fetch(imageUrl, {
             cache: 'no-store',
+            headers: {
+              Accept: 'image/*',
+            },
           })
 
           if (!imageResponse.ok) {
@@ -151,59 +155,122 @@ export const imageTool: ToolConfig = {
             throw new Error(`Failed to fetch image: ${imageResponse.statusText}`)
           }
 
-          const imageBlob = await imageResponse.blob()
-
-          if (imageBlob.size === 0) {
-            logger.error('Empty image blob received')
+          const arrayBuffer = await imageResponse.arrayBuffer()
+          const buffer = Buffer.from(arrayBuffer)
+          
+          if (buffer.length === 0) {
+            logger.error('Empty image buffer received')
             throw new Error('Empty image received')
           }
 
-          const arrayBuffer = await imageBlob.arrayBuffer()
-          const buffer = Buffer.from(arrayBuffer)
           base64Image = buffer.toString('base64')
+          logger.info('Download from temporary storage completed', {
+            base64Length: base64Image.length,
+          })
         } catch (error) {
-          logger.error('Error fetching or processing image:', error)
-
-          try {
-            logger.info('Attempting fallback with direct browser fetch...')
-            const directImageResponse = await fetch(imageUrl, {
-              cache: 'no-store',
-              headers: {
-                Accept: 'image/*, */*',
-                'User-Agent': 'Mozilla/5.0 (compatible DalleProxy/1.0)',
-              },
-            })
-
-            if (!directImageResponse.ok) {
-              throw new Error(`Direct fetch failed: ${directImageResponse.status}`)
-            }
-
-            const imageBlob = await directImageResponse.blob()
-            if (imageBlob.size === 0) {
-              throw new Error('Empty blob received from direct fetch')
-            }
-
-            const arrayBuffer = await imageBlob.arrayBuffer()
-            const buffer = Buffer.from(arrayBuffer)
-            base64Image = buffer.toString('base64')
-
-            logger.info(
-              'Successfully converted image to base64 via direct fetch, length:',
-              base64Image.length
+          logger.error('Error downloading image from URL:', {
+            error: error instanceof Error ? error.message : String(error),
+            imageUrl: imageUrl ? imageUrl.substring(0, 100) : 'null',
+            originalImageUrl: originalImageUrl ? originalImageUrl.substring(0, 100) : 'null',
+          })
+          const agentS3Configured =
+            !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+            !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
+          if (agentS3Configured) {
+            throw new Error(
+              `Failed to download image from OpenAI temporary URL for S3 storage: ${error instanceof Error ? error.message : String(error)}`
             )
-          } catch (fallbackError) {
-            logger.error('Fallback fetch also failed:', fallbackError)
+          }
+          imageUrl = originalImageUrl
+        }
+      }
+
+      // Save image to storage and get URL
+      if (base64Image) {
+        try {
+          // Determine MIME type from base64 header or default to png
+          let mimeType = 'image/png'
+          if (base64Image.startsWith('/9j/') || base64Image.startsWith('iVBORw0KGgo')) {
+            mimeType = base64Image.startsWith('/9j/') ? 'image/jpeg' : 'image/png'
+          }
+
+          const agentS3Configured =
+            !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+            !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
+          if (agentS3Configured) {
+            logger.info('S3 upload started', { workflowId, userId, mimeType })
+          }
+          finalImageUrl = await saveGeneratedImage(base64Image, workflowId, userId, mimeType)
+          if (agentS3Configured && finalImageUrl) {
+            logger.info('S3 URL returned', { url: finalImageUrl })
+          }
+          logger.info(`Successfully saved generated image to storage: ${finalImageUrl}`)
+        } catch (error) {
+          logger.error('Error saving generated image to storage:', {
+            error: error instanceof Error ? error.message : String(error),
+            workflowId,
+            userId,
+            stack: error instanceof Error ? error.stack : undefined,
+          })
+          const agentS3Configured =
+            !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+            !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
+          if (agentS3Configured) {
+            throw new Error(
+              `Failed to upload generated image to S3: ${error instanceof Error ? error.message : String(error)}`
+            )
           }
         }
+      } else if (imageUrl && !base64Image) {
+        const agentS3Configured =
+          !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+          !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
+        if (agentS3Configured) {
+          throw new Error(
+            'Could not download image from OpenAI temporary URL; S3 storage requires the image to be downloaded first.'
+          )
+        }
+        logger.warn('Could not download image for storage, will return original URL', {
+          imageUrl: imageUrl.substring(0, 100),
+        })
+      }
+
+      // Use stored URL if available, otherwise fall back to original imageUrl
+      // Always ensure we return a URL in the image field
+      // Use originalImageUrl which was preserved before any processing
+      const imageUrlToReturn = finalImageUrl || originalImageUrl || ''
+
+      logger.info('Image generation result:', {
+        hasFinalImageUrl: !!finalImageUrl,
+        hasImageUrl: !!imageUrl,
+        hasOriginalImageUrl: !!originalImageUrl,
+        hasBase64Image: !!base64Image,
+        originalImageUrl: originalImageUrl ? originalImageUrl.substring(0, 100) : null,
+        imageUrlToReturn: imageUrlToReturn ? imageUrlToReturn.substring(0, 100) : '',
+        stored: !!finalImageUrl,
+      })
+
+      // Ensure we always return a URL - use originalImageUrl as final fallback
+      // If download failed but we have originalImageUrl, use it
+      const finalContent = imageUrlToReturn || originalImageUrl || 'direct-image'
+      // Always ensure image field has a value - prefer stored URL, then original URL
+      const finalImage = finalImageUrl || originalImageUrl || ''
+
+      // Log if we're falling back to original URL
+      if (!finalImageUrl && originalImageUrl) {
+        logger.warn('Using original DALL-E URL as fallback (download/storage failed)', {
+          originalImageUrl: originalImageUrl.substring(0, 100),
+        })
       }
 
       return {
         success: true,
         output: {
-          content: imageUrl || 'direct-image',
-          image: base64Image || '',
+          content: finalContent,
+          image: finalImage, // Return stored URL or original URL - always ensure this has a value
           metadata: {
             model: modelName,
+            stored: !!finalImageUrl,
           },
         },
       }
@@ -220,12 +287,13 @@ export const imageTool: ToolConfig = {
       description: 'Generated image data',
       properties: {
         content: { type: 'string', description: 'Image URL or identifier' },
-        image: { type: 'string', description: 'Base64 encoded image data' },
+        image: { type: 'string', description: 'Image URL (stored in S3/local storage) or base64 encoded image data' },
         metadata: {
           type: 'object',
           description: 'Image generation metadata',
           properties: {
             model: { type: 'string', description: 'Model used for image generation' },
+            stored: { type: 'boolean', description: 'Whether the image was stored in S3/local storage' },
           },
         },
       },

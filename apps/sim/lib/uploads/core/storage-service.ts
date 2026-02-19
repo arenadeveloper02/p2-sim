@@ -1,5 +1,9 @@
 import { createLogger } from '@sim/logger'
-import { getStorageConfig, USE_BLOB_STORAGE, USE_S3_STORAGE } from '@/lib/uploads/config'
+import {
+  getStorageConfig,
+  USE_BLOB_STORAGE,
+  USE_S3_STORAGE,
+} from '@/lib/uploads/config'
 import type { BlobConfig } from '@/lib/uploads/providers/blob/types'
 import type { S3Config } from '@/lib/uploads/providers/s3/types'
 import type {
@@ -119,7 +123,17 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
     return uploadResult
   }
 
-  if (USE_S3_STORAGE) {
+  const useS3ForThisUpload =
+    USE_S3_STORAGE ||
+    (context === 'agent-generated-images' && !!config.bucket && !!config.region)
+
+  if (useS3ForThisUpload && config.bucket && config.region) {
+    logger.info('Uploading to S3', {
+      bucket: config.bucket,
+      region: config.region,
+      key: keyToUse,
+      context,
+    })
     const { uploadToS3 } = await import('@/lib/uploads/providers/s3/client')
     const uploadResult = await uploadToS3(
       file,
@@ -130,6 +144,12 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
       preserveKey,
       metadata
     )
+
+    logger.info('S3 upload completed', {
+      bucket: config.bucket,
+      s3Key: uploadResult.key,
+      servePath: uploadResult.path,
+    })
 
     if (metadata) {
       await insertFileMetadataHelper(
@@ -191,7 +211,11 @@ export async function downloadFile(options: DownloadFileOptions): Promise<Buffer
       return downloadFromBlob(key, createBlobConfig(config))
     }
 
-    if (USE_S3_STORAGE) {
+    const useS3ForThisDownload =
+      USE_S3_STORAGE ||
+      (context === 'agent-generated-images' && !!config.bucket && !!config.region)
+
+    if (useS3ForThisDownload && config.bucket && config.region) {
       const { downloadFromS3 } = await import('@/lib/uploads/providers/s3/client')
       return downloadFromS3(key, createS3Config(config))
     }
@@ -221,7 +245,11 @@ export async function deleteFile(options: DeleteFileOptions): Promise<void> {
       return deleteFromBlob(key, createBlobConfig(config))
     }
 
-    if (USE_S3_STORAGE) {
+    const useS3ForThisDelete =
+      USE_S3_STORAGE ||
+      (context === 'agent-generated-images' && !!config.bucket && !!config.region)
+
+    if (useS3ForThisDelete && config.bucket && config.region) {
       const { deleteFromS3 } = await import('@/lib/uploads/providers/s3/client')
       return deleteFromS3(key, createS3Config(config))
     }

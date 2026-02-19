@@ -1,5 +1,6 @@
 export {
   getStorageConfig,
+  isStorageContextConfigured,
   isUsingCloudStorage,
   type StorageConfig,
   type StorageContext,

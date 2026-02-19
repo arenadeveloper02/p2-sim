@@ -96,6 +96,61 @@ export const ArenaClientChatMessage = memo(
       }
 
       try {
+        // If content is an object with an image field (from tool output)
+        if (typeof content === 'object' && content !== null && content.image) {
+          const imageValue = content.image
+          const isImageUrl = typeof imageValue === 'string' && (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
+          const isBase64Image = typeof imageValue === 'string' && isBase64(imageValue)
+
+          return (
+            <>
+              {content.content && typeof content.content === 'string' && content.content.trim() && (
+                <ArenaCopilotMarkdownRenderer content={content.content} />
+              )}
+              {isImageUrl && (
+                <div>{renderBs64Img({ isBase64: false, imageData: '', imageUrl: imageValue })}</div>
+              )}
+              {isBase64Image && (
+                <div>{renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}</div>
+              )}
+            </>
+          )
+        }
+
+        // Fallback: If content is an object with a content field that's a URL (from tool output)
+        // and image field is empty, try to render the content as an image URL
+        if (
+          typeof content === 'object' &&
+          content !== null &&
+          typeof content.content === 'string' &&
+          content.content &&
+          (!content.image || content.image === '') &&
+          (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
+        ) {
+          return (
+            <>
+              <div>{renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}</div>
+            </>
+          )
+        }
+
+        // Fallback: If content is an object with a content field that's a URL (from tool output)
+        // and image field is empty, try to render the content as an image URL
+        if (
+          typeof content === 'object' &&
+          content !== null &&
+          typeof content.content === 'string' &&
+          content.content &&
+          (!content.image || content.image === '') &&
+          (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
+        ) {
+          return (
+            <>
+              <div>{renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}</div>
+            </>
+          )
+        }
+
         // If content is a pure base64 image, render it directly
         if (typeof content === 'string' && isBase64(content)) {
           const cleanedContent = content.replace(/\s+/g, '')

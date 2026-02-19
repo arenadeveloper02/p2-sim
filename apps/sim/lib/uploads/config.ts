@@ -98,6 +98,22 @@ export const BLOB_OG_IMAGES_CONFIG = {
 }
 
 /**
+ * S3 config for agent-generated images (e.g. image generator block).
+ * Uses the same AWS credentials as the main S3 bucket (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION).
+ */
+export const S3_AGENT_GENERATED_IMAGES_CONFIG = {
+  bucket: env.S3_AGENT_GENERATED_IMAGES_BUCKET_NAME || '',
+  region: env.AWS_REGION || '',
+}
+
+export const BLOB_AGENT_GENERATED_IMAGES_CONFIG = {
+  accountName: env.AZURE_ACCOUNT_NAME || '',
+  accountKey: env.AZURE_ACCOUNT_KEY || '',
+  connectionString: env.AZURE_CONNECTION_STRING || '',
+  containerName: env.AZURE_STORAGE_AGENT_GENERATED_IMAGES_CONTAINER_NAME || env.AZURE_STORAGE_CONTAINER_NAME || '',
+}
+
+/**
  * Get the current storage provider as a human-readable string
  */
 export function getStorageProvider(): 'Azure Blob' | 'S3' | 'Local' {
@@ -168,6 +184,11 @@ function getS3Config(context: StorageContext): StorageConfig {
         bucket: S3_OG_IMAGES_CONFIG.bucket || S3_CONFIG.bucket,
         region: S3_OG_IMAGES_CONFIG.region || S3_CONFIG.region,
       }
+    case 'agent-generated-images':
+      return {
+        bucket: S3_AGENT_GENERATED_IMAGES_CONFIG.bucket || S3_CONFIG.bucket,
+        region: S3_AGENT_GENERATED_IMAGES_CONFIG.region || S3_CONFIG.region,
+      }
     default:
       return {
         bucket: S3_CONFIG.bucket,
@@ -230,6 +251,13 @@ function getBlobConfig(context: StorageContext): StorageConfig {
         connectionString: BLOB_OG_IMAGES_CONFIG.connectionString || BLOB_CONFIG.connectionString,
         containerName: BLOB_OG_IMAGES_CONFIG.containerName || BLOB_CONFIG.containerName,
       }
+    case 'agent-generated-images':
+      return {
+        accountName: BLOB_AGENT_GENERATED_IMAGES_CONFIG.accountName || BLOB_CONFIG.accountName,
+        accountKey: BLOB_AGENT_GENERATED_IMAGES_CONFIG.accountKey || BLOB_CONFIG.accountKey,
+        connectionString: BLOB_AGENT_GENERATED_IMAGES_CONFIG.connectionString || BLOB_CONFIG.connectionString,
+        containerName: BLOB_AGENT_GENERATED_IMAGES_CONFIG.containerName || BLOB_CONFIG.containerName,
+      }
     default:
       return {
         accountName: BLOB_CONFIG.accountName,
@@ -241,8 +269,9 @@ function getBlobConfig(context: StorageContext): StorageConfig {
 }
 
 /**
- * Check if a specific storage context is configured
- * Returns false if the context would fall back to general config but general isn't configured
+ * Check if a specific storage context is configured for cloud storage.
+ * Returns true if the context has its own bucket/container configured (e.g. agent-generated-images S3 bucket)
+ * or if global cloud storage is on and the context has config.
  */
 export function isStorageContextConfigured(context: StorageContext): boolean {
   const config = getStorageConfig(context)
@@ -256,6 +285,13 @@ export function isStorageContextConfigured(context: StorageContext): boolean {
 
   if (USE_S3_STORAGE) {
     return !!(config.bucket && config.region)
+  }
+
+  if (context === 'agent-generated-images') {
+    return !!(
+      S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+      S3_AGENT_GENERATED_IMAGES_CONFIG.region
+    )
   }
 
   return true

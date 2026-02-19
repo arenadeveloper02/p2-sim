@@ -160,6 +160,23 @@ function sanitizeFilename(filename: string): string {
 
 export function findLocalFile(filename: string): string | null {
   try {
+    // Handle agent-generated-images path directly (no sanitization needed)
+    if (filename.startsWith('agent-generated-images/')) {
+      // Store at /apps/sim/agent-generated-images
+      const appPath = resolve(process.cwd(), filename)
+      const appAllowedDir = resolve(process.cwd(), 'agent-generated-images')
+      
+      // Must be within allowed directory but NOT the directory itself
+      const isWithinAppDir =
+        appPath.startsWith(appAllowedDir + sep) && appPath !== appAllowedDir
+
+      if (isWithinAppDir && existsSync(appPath)) {
+        return appPath
+      }
+      
+      return null
+    }
+
     const sanitizedFilename = sanitizeFileKey(filename)
 
     // Reject if sanitized filename is empty or only contains path separators/dots

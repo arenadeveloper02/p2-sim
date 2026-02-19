@@ -222,7 +222,47 @@ export const renderBs64Img = ({
   try {
     const cleanImageData = typeof imageData === 'string' ? imageData.replace(/\s+/g, '') : ''
 
+    // If we have a URL and no base64 data, use the URL directly
+    if (!isBase64 && imageUrl && (!cleanImageData || cleanImageData.length === 0)) {
+      return (
+        <div className='my-2 w-full'>
+          <img
+            src={imageUrl}
+            alt='Generated image'
+            className='h-auto max-w-full rounded-lg border'
+            style={{ maxHeight: '500px', objectFit: 'contain' }}
+            onError={(e) => {
+              console.error('Image failed to load:', {
+                error: e,
+                imageUrl,
+              })
+            }}
+          />
+        </div>
+      )
+    }
+
+    // If we have base64 data, handle it
     if (!cleanImageData || cleanImageData.length === 0) {
+      // If no base64 but we have a URL, use URL
+      if (imageUrl) {
+        return (
+          <div className='my-2 w-full'>
+            <img
+              src={imageUrl}
+              alt='Generated image'
+              className='h-auto max-w-full rounded-lg border'
+              style={{ maxHeight: '500px', objectFit: 'contain' }}
+              onError={(e) => {
+                console.error('Image failed to load:', {
+                  error: e,
+                  imageUrl,
+                })
+              }}
+            />
+          </div>
+        )
+      }
       throw new Error('No image data provided')
     }
 
@@ -261,9 +301,10 @@ export const renderBs64Img = ({
       </div>
     )
   } catch (error) {
-    console.error('Error rendering base64 image:', error, {
+    console.error('Error rendering image:', error, {
       imageDataLength: imageData?.length,
       isBase64,
+      imageUrl,
     })
 
     return (

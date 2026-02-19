@@ -4,6 +4,7 @@ import path, { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { env } from '@/lib/core/config/env'
 import { getStorageProvider, USE_BLOB_STORAGE, USE_S3_STORAGE } from '@/lib/uploads/config'
+import { ensureAgentGeneratedImagesDirectory } from '@/lib/uploads/utils/image-storage.server'
 
 const logger = createLogger('UploadsSetup')
 
@@ -89,6 +90,15 @@ if (typeof process !== 'undefined') {
         logger.info('Local uploads directory initialized')
       } else {
         logger.error('Failed to initialize local uploads directory')
+      }
+    })
+
+    // Ensure agent-generated-images directory exists
+    ensureAgentGeneratedImagesDirectory().then((success) => {
+      if (success) {
+        logger.info('Agent-generated-images directory initialized')
+      } else {
+        logger.error('Failed to initialize agent-generated-images directory - check write permissions')
       }
     })
   }
