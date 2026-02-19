@@ -44,6 +44,7 @@ export type GenerationType =
   | 'timestamp'
   | 'timezone'
   | 'cron-expression'
+  | 'odata-expression'
 
 export type SubBlockType =
   | 'short-input' // Single line input
