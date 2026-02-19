@@ -409,6 +409,9 @@ describe.concurrent('Blocks Module', () => {
         'workflow-input-mapper',
         'text',
         'router-input',
+        'table-selector',
+        'filter-builder',
+        'sort-builder',
         'skill-input',
       ]
 
