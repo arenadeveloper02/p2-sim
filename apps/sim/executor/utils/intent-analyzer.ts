@@ -21,6 +21,10 @@ export interface IntentAnalyzerResult {
   memoryContext: string
   /** Generated LLM response when decision is SKIP */
   skipResponse?: string
+  /** Formatted user message sent to LLM when decision is SKIP */
+  skipUserMessage?: string
+  /** System prompt used when decision is SKIP */
+  skipSystemPrompt?: string
 }
 
 /**
@@ -465,7 +469,6 @@ export async function fetchLatestConversation(
       .where(
         and(
           eq(workflowExecutionLogs.conversationId, conversationId),
-          eq(workflowExecutionLogs.status, 'completed'),
           isNotNull(workflowExecutionLogs.finalChatOutput)
         )
       )
@@ -494,7 +497,7 @@ async function generateSkipResponse(
   userPrompt: string,
   lastConversation: LatestConversation | null,
   factMemories: Message[] = []
-): Promise<string> {
+): Promise<{ response: string; userMessage: string; systemPrompt: string }> {
   try {
     const { OpenAI } = await import('openai')
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -543,6 +546,8 @@ Provide a direct, helpful answer based on the available context. Do not mention 
         ? contextParts.join('\n\n')
         : 'No previous conversation history available.'
 
+    logger.debug('Context text:', contextText)
+
     const userMessage = `
     User Question: ${userPrompt}
     --------------------------------------------
@@ -568,13 +573,25 @@ Please provide a helpful answer based on the context above.`
         factMemoriesCount: factMemories.length,
         hasMemoryContext: !!memoryContext,
       })
-      return response
+      return {
+        response,
+        userMessage,
+        systemPrompt,
+      }
     }
 
-    return 'I was unable to generate a response from the conversation history.'
+    return {
+      response: 'I was unable to generate a response from the conversation history.',
+      userMessage,
+      systemPrompt,
+    }
   } catch (error) {
     logger.warn('Failed to generate SKIP response', { error })
-    return 'I was unable to generate a response. Please try again.'
+    return {
+      response: 'I was unable to generate a response. Please try again.',
+      userMessage: '',
+      systemPrompt: '',
+    }
   }
 }
 
@@ -647,17 +664,20 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
 
   // 6. If SKIP, generate a response using the already-fetched conversation context
   if (decision === 'SKIP') {
-    const skipResponse = await generateSkipResponse(
+    const skipResult = await generateSkipResponse(
       memoryContext,
       userPrompt,
       lastConversation,
       factMemories
     )
+    logger.debug('Skip response:', skipResult.response)
     return {
       decision: 'SKIP',
       searchResults,
       memoryContext,
-      skipResponse,
+      skipResponse: skipResult.response,
+      skipUserMessage: skipResult.userMessage,
+      skipSystemPrompt: skipResult.systemPrompt,
     }
   }
 

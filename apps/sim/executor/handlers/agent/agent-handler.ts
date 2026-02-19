@@ -180,20 +180,12 @@ export class AgentBlockHandler implements BlockHandler {
             )
           }
 
-          // Store complete input (with conversation history) in skipOutput metadata for logging
-          // Build messages to get the complete input that would have been sent
-          const completeMessages = await this.buildMessages(
-            ctx,
-            filteredInputs,
-            block.id,
-            intentResult.searchResults
-          )
-          const completeInput = this.extractCompleteInputFromMessages(
-            completeMessages,
-            filteredInputs
-          )
-          // Store in skipOutput so it can be accessed in execution-core.ts
-          skipOutput._completeInputForLogging = completeInput
+          // Store the actual formatted user message and system prompt used for generating the SKIP response
+          // These will be used to update the input in block-executor, but won't be stored in the output
+          skipOutput._actualPromptsForSkip = {
+            userMessage: intentResult.skipUserMessage || '',
+            systemPrompt: intentResult.skipSystemPrompt || '',
+          }
 
           return skipOutput
         }
@@ -963,6 +955,20 @@ export class AgentBlockHandler implements BlockHandler {
     const systemMessages = inputMessages.filter((m) => m.role === 'system')
     const conversationMessages = inputMessages.filter((m) => m.role !== 'system')
 
+    // Store original user prompt BEFORE memory enhancement for Mem0 storage
+    let originalUserPromptForMemory: string | undefined
+    if (inputs.userPrompt) {
+      originalUserPromptForMemory =
+        typeof inputs.userPrompt === 'string'
+          ? inputs.userPrompt
+          : JSON.stringify(inputs.userPrompt)
+    } else if (inputs.messages && Array.isArray(inputs.messages)) {
+      const userMsg = inputs.messages.find((m) => m.role === 'user')
+      if (userMsg) {
+        originalUserPromptForMemory = userMsg.content
+      }
+    }
+
     // 2. Fetch conversation memory history (using semantic search or pre-fetched results)
     if (memoryEnabled) {
       // Extract user prompt for search query
@@ -1081,25 +1087,13 @@ export class AgentBlockHandler implements BlockHandler {
     // 6. Handle legacy userPrompt - this is NEW input each run
     if (inputs.userPrompt) {
       this.addUserPrompt(messages, inputs.userPrompt)
-
-      if (memoryEnabled) {
-        const userMessages = messages.filter((m) => m.role === 'user')
-        const lastUserMessage = userMessages[userMessages.length - 1]
-        if (lastUserMessage) {
-          await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId, null)
-        }
-      }
+      // Note: User messages are NOT stored separately here to avoid duplicates.
+      // They will be stored together with the assistant response in persistResponseToMemory
+      // via callMem0API, which stores the complete turn (user + assistant) together.
     }
 
-    // 6b. Store user messages from inputs.messages to memory when memory is enabled
-    // This ensures user input is stored even when using messages array instead of userPrompt
-    if (memoryEnabled && conversationMessages.length > 0 && !inputs.userPrompt) {
-      const userMessages = conversationMessages.filter((m) => m.role === 'user')
-      const lastUserMessage = userMessages[userMessages.length - 1]
-      if (lastUserMessage) {
-        await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId, null)
-      }
-    }
+    // 6b. Note: User messages from inputs.messages are also not stored separately.
+    // They will be stored together with the assistant response to avoid duplicates.
 
     // 7. Prefix system messages from inputs.messages at the start (runtime only)
     // These are the agent's configured system prompts

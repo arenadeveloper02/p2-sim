@@ -338,45 +338,20 @@ export class Memory {
       return
     }
 
-    // Store user messages immediately to Mem0
+    // Don't store user messages separately - they will be stored together with the assistant response
+    // in callMem0API to avoid duplicates. User messages are only stored when the assistant response
+    // is persisted, as part of the conversation turn.
     if (message.role === 'user') {
-      const chatId = ctx.executionId || ctx.workflowId
-      const requestId = generateRequestId()
-      const isDeployed = ctx.isDeployedContext ?? false
-
-      try {
-        const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
-
-        // Store user message as conversation memory
-        await callMemoryAPI(
-          requestId,
-          [{ role: message.role, content: message.content }],
-          ctx.userId,
-          chatId,
-          inputs.conversationId, // Can be undefined
-          false, // infer: false
-          'conversation', // memoryType: 'conversation'
-          blockId,
-          isDeployed,
-          ctx.workflowId,
-          ctx.workspaceId
-        )
-
-        logger.debug('Stored user message to Mem0', {
-          workflowId: ctx.workflowId,
-          conversationId: inputs.conversationId,
-          blockId,
-        })
-      } catch (error) {
-        logger.warn('Failed to store user message to Mem0 (non-blocking)', {
-          error,
-          workflowId: ctx.workflowId,
-        })
-      }
+      logger.debug('User message received - will be stored with assistant response', {
+        workflowId: ctx.workflowId,
+        conversationId: inputs.conversationId,
+        blockId,
+      })
+      return
     }
 
     // Call Mem0 API to store in external service when assistant message is persisted
-    // This stores both the user prompt and assistant response
+    // This stores both the user prompt and assistant response together
     if (message.role === 'assistant') {
       // Use blockId if provided, otherwise use conversationId as fallback
       const blockIdForMem0 = blockId || inputs.conversationId || 'unknown'
