@@ -17,7 +17,11 @@ import type {
 import type { BlockHandler, ExecutionContext, StreamingExecution } from '@/executor/types'
 import { collectBlockData } from '@/executor/utils/block-data'
 import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
-import { analyzeIntent, combineAndSortSearchResults } from '@/executor/utils/intent-analyzer'
+import {
+  analyzeIntent,
+  combineAndSortSearchResults,
+  type LatestConversation,
+} from '@/executor/utils/intent-analyzer'
 import { stringifyJSON } from '@/executor/utils/json'
 import {
   validateBlockType,
@@ -160,9 +164,45 @@ export class AgentBlockHandler implements BlockHandler {
       )
     }
 
-    // Intent analysis: search Mem0 conversation memories and decide RUN/SKIP
+    // Use workflow-level intent analyzer result if available, otherwise run intent analyzer
     let preSearchedResults: Message[] | undefined
-    if (filteredInputs.memoryType && filteredInputs.conversationId && userPrompt) {
+    let lastConversation: LatestConversation | null | undefined
+    const workflowLevelIntentResult = ctx.intentAnalyzerResult
+
+    if (workflowLevelIntentResult) {
+      // Use pre-searched results from workflow-level intent analyzer
+      logger.debug('Using workflow-level intent analyzer results', {
+        blockId: block.id,
+        decision: workflowLevelIntentResult.decision,
+        searchResultsCount: workflowLevelIntentResult.searchResults.length,
+        hasLastConversation: !!workflowLevelIntentResult.lastConversation,
+      })
+
+      // If SKIP, this should have been handled at workflow level, but handle it here as fallback
+      if (workflowLevelIntentResult.decision === 'SKIP' && workflowLevelIntentResult.skipResponse) {
+        logger.info('Workflow-level intent analyzer decided SKIP — returning generated response', {
+          workflowId: ctx.workflowId,
+          blockId: block.id,
+          conversationId: filteredInputs.conversationId,
+        })
+
+        const skipOutput: Record<string, any> = {
+          content: workflowLevelIntentResult.skipResponse,
+          model: 'gpt-4o',
+          tokens: { input: 0, output: 0, total: 0 },
+          toolCalls: { list: [], count: 0 },
+          skippedWorkflow: true,
+        }
+
+        return skipOutput
+      }
+
+      // RUN path: use pre-searched results and last conversation
+      preSearchedResults = workflowLevelIntentResult.searchResults
+      lastConversation = workflowLevelIntentResult.lastConversation
+    } else if (filteredInputs.memoryType && filteredInputs.conversationId && userPrompt) {
+      // Fallback: run intent analyzer if workflow-level result not available
+      // This can happen if intent analyzer wasn't run (e.g., non-chat trigger, no Agent blocks initially)
       try {
         const intentResult = await analyzeIntent({
           ctx,
@@ -180,8 +220,6 @@ export class AgentBlockHandler implements BlockHandler {
             conversationId: filteredInputs.conversationId,
           })
 
-          // Persist the skip response to memory so future conversations include it
-          // Build output matching processStandardResponse format
           const skipOutput: Record<string, any> = {
             content: intentResult.skipResponse,
             model: 'gpt-4o',
@@ -191,7 +229,6 @@ export class AgentBlockHandler implements BlockHandler {
           }
 
           if (filteredInputs.memoryType) {
-            // Use original userPrompt (without conversation history) for memory API
             const lastUserMsg: Message = {
               role: 'user',
               content: originalUserPrompt || userPrompt || '',
@@ -205,8 +242,6 @@ export class AgentBlockHandler implements BlockHandler {
             )
           }
 
-          // Store the actual formatted user message and system prompt used for generating the SKIP response
-          // These will be used to update the input in block-executor, but won't be stored in the output
           skipOutput._actualPromptsForSkip = {
             userMessage: intentResult.skipUserMessage || '',
             systemPrompt: intentResult.skipSystemPrompt || '',
@@ -215,51 +250,54 @@ export class AgentBlockHandler implements BlockHandler {
           return skipOutput
         }
 
-        // RUN path: carry over search results so buildMessages doesn't re-fetch
         preSearchedResults = intentResult.searchResults
-
-        // Get original system prompt from messages array if systemPrompt is not set
-        if (
-          !filteredInputs.systemPrompt &&
-          filteredInputs.messages &&
-          Array.isArray(filteredInputs.messages)
-        ) {
-          const systemMsg = filteredInputs.messages.find((m) => m.role === 'system')
-          if (systemMsg) {
-            filteredInputs.systemPrompt = systemMsg.content
-          }
-        }
-
-        // Fetch additional execution rules from prompt_config table
-        const additionalExecutionRules = await this.fetchAgentSystemPrompt()
-
-        if (!additionalExecutionRules) {
-          logger.warn(
-            'Agent system prompt not found in prompt_config table, skipping additional execution rules',
-            {
-              blockId: block.id,
-            }
-          )
-        } else {
-          // Append to existing system prompt or create new one
-          if (filteredInputs.systemPrompt) {
-            filteredInputs.systemPrompt = `${filteredInputs.systemPrompt}\n\n${additionalExecutionRules}`
-          } else {
-            filteredInputs.systemPrompt = additionalExecutionRules
-          }
-        }
-
-        // Update system message in inputs.messages to keep them in sync
-        this.updateSystemMessageInInputs(filteredInputs)
-
-        logger.debug('Added additional execution rules to system prompt (RUN path)', {
-          blockId: block.id,
-        })
+        lastConversation = intentResult.lastConversation
       } catch (intentError) {
         logger.warn('Intent analysis failed, continuing with normal workflow execution', {
           error: intentError,
         })
       }
+    }
+
+    // Add additional execution rules if RUN path (from workflow-level or block-level intent analyzer)
+    if (preSearchedResults !== undefined) {
+      // Get original system prompt from messages array if systemPrompt is not set
+      if (
+        !filteredInputs.systemPrompt &&
+        filteredInputs.messages &&
+        Array.isArray(filteredInputs.messages)
+      ) {
+        const systemMsg = filteredInputs.messages.find((m) => m.role === 'system')
+        if (systemMsg) {
+          filteredInputs.systemPrompt = systemMsg.content
+        }
+      }
+
+      // Fetch additional execution rules from prompt_config table
+      const additionalExecutionRules = await this.fetchAgentSystemPrompt()
+
+      if (!additionalExecutionRules) {
+        logger.warn(
+          'Agent system prompt not found in prompt_config table, skipping additional execution rules',
+          {
+            blockId: block.id,
+          }
+        )
+      } else {
+        // Append to existing system prompt or create new one
+        if (filteredInputs.systemPrompt) {
+          filteredInputs.systemPrompt = `${filteredInputs.systemPrompt}\n\n${additionalExecutionRules}`
+        } else {
+          filteredInputs.systemPrompt = additionalExecutionRules
+        }
+      }
+
+      // Update system message in inputs.messages to keep them in sync
+      this.updateSystemMessageInInputs(filteredInputs)
+
+      logger.debug('Added additional execution rules to system prompt (RUN path)', {
+        blockId: block.id,
+      })
     }
 
     // Format fact memories and add to system prompt if memory is enabled
@@ -287,7 +325,13 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
-    const messages = await this.buildMessages(ctx, filteredInputs, block.id, preSearchedResults)
+    const messages = await this.buildMessages(
+      ctx,
+      filteredInputs,
+      block.id,
+      preSearchedResults,
+      lastConversation
+    )
 
     // Extract last user message for memory persistence - use original userPrompt (without conversation history)
     // The messages array may contain conversation history, so we use the original userPrompt instead
@@ -1029,7 +1073,8 @@ export class AgentBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     inputs: AgentInputs,
     blockId: string,
-    preSearchedResults?: Message[]
+    preSearchedResults?: Message[],
+    lastConversation?: LatestConversation | null
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
     const memoryEnabled = !!inputs.memoryType
@@ -1075,32 +1120,72 @@ export class AgentBlockHandler implements BlockHandler {
         : await combineAndSortSearchResults(ctx, inputs, blockId, userPrompt, inputs.model)
 
       // Add search results to user prompt incrementally with token checking
-      if (searchResults && searchResults.length > 0 && userPrompt) {
+      // Priority: lastConversation first (most recent), then semantic search results
+      if ((lastConversation || (searchResults && searchResults.length > 0)) && userPrompt) {
         const { getMemoryTokenLimit } = await import('@/executor/handlers/agent/memory-utils')
         const { getAccurateTokenCount } = await import('@/lib/tokenization/estimators')
 
         const tokenLimit = getMemoryTokenLimit(inputs.model)
         const baseUserPromptTokens = getAccurateTokenCount(userPrompt, inputs.model)
         let currentTokenCount = baseUserPromptTokens
-        let memoryContext = '\n=== PREVIOUS CONVERSATION === :\n'
+        let memoryContext = ''
 
-        for (const memory of searchResults) {
-          const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
-          const memoryTokens = getAccurateTokenCount(memoryText, inputs.model)
+        // Priority 1: Add last conversation first (highest priority, most recent)
+        if (lastConversation) {
+          const lastConvHeader = '\n=== LAST CONVERSATION (MOST RECENT) === :\n'
+          const lastConvHeaderTokens = getAccurateTokenCount(lastConvHeader, inputs.model)
 
-          if (currentTokenCount + memoryTokens <= tokenLimit) {
-            memoryContext += memoryText
-            currentTokenCount += memoryTokens
-          } else {
-            logger.debug('Stopped adding memories due to token limit', {
-              blockId,
-              tokenLimit,
-              currentTokens: currentTokenCount,
-              memoryTokens,
-              memoriesAdded: memoryContext.split('Previous conversation:').length - 1,
-              totalMemories: searchResults.length,
-            })
-            break
+          if (currentTokenCount + lastConvHeaderTokens <= tokenLimit) {
+            memoryContext += lastConvHeader
+            currentTokenCount += lastConvHeaderTokens
+
+            if (lastConversation.initialInput) {
+              const userMsg = `User: ${lastConversation.initialInput}`
+              const userMsgTokens = getAccurateTokenCount(userMsg, inputs.model)
+              if (currentTokenCount + userMsgTokens <= tokenLimit) {
+                memoryContext += userMsg
+                currentTokenCount += userMsgTokens
+              }
+            }
+
+            if (lastConversation.finalChatOutput) {
+              const assistantMsg = `Assistant: ${lastConversation.finalChatOutput}`
+              const assistantMsgTokens = getAccurateTokenCount(assistantMsg, inputs.model)
+              if (currentTokenCount + assistantMsgTokens <= tokenLimit) {
+                memoryContext += assistantMsg
+                currentTokenCount += assistantMsgTokens
+              }
+            }
+          }
+        }
+
+        // Priority 2: Add semantic search results (secondary priority)
+        if (searchResults && searchResults.length > 0) {
+          const searchHeader = '\n=== PREVIOUS CONVERSATION (SEMANTIC SEARCH) === :\n'
+          const searchHeaderTokens = getAccurateTokenCount(searchHeader, inputs.model)
+
+          if (currentTokenCount + searchHeaderTokens <= tokenLimit) {
+            memoryContext += searchHeader
+            currentTokenCount += searchHeaderTokens
+
+            for (const memory of searchResults) {
+              const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
+              const memoryTokens = getAccurateTokenCount(memoryText, inputs.model)
+
+              if (currentTokenCount + memoryTokens <= tokenLimit) {
+                memoryContext += memoryText
+                currentTokenCount += memoryTokens
+              } else {
+                logger.debug('Stopped adding semantic search memories due to token limit', {
+                  blockId,
+                  tokenLimit,
+                  currentTokens: currentTokenCount,
+                  memoryTokens,
+                  totalMemories: searchResults.length,
+                })
+                break
+              }
+            }
           }
         }
 
@@ -1125,12 +1210,12 @@ export class AgentBlockHandler implements BlockHandler {
             }
           }
 
-          logger.debug('Added search memories to user prompt with token checking', {
+          logger.debug('Added conversation history to user prompt with token checking', {
             blockId,
             tokenLimit,
             finalTokenCount: currentTokenCount,
-            memoriesAdded: memoryContext.split('Previous conversation:').length - 1,
-            totalMemories: searchResults.length,
+            hasLastConversation: !!lastConversation,
+            totalSemanticMemories: searchResults?.length || 0,
           })
         }
       } else if (searchResults && searchResults.length > 0) {

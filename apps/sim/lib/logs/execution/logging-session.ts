@@ -698,6 +698,7 @@ export class LoggingSession {
         models: {},
       }
 
+      // finalOutput is already enhanced with prompts in execution-core.ts
       await executionLogger.completeWorkflowExecution({
         executionId: this.executionId,
         endedAt: endTime.toISOString(),

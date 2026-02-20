@@ -322,7 +322,14 @@ export class ExecutionLogger implements IExecutionLoggerService {
           },
           models: executionCost.models,
         },
-        finalChatOutput: finalChatOutput || null,
+        // Ensure finalChatOutput is set - critical for UI display
+        // For skipped workflows, this should contain the skip response content
+        finalChatOutput:
+          finalChatOutput &&
+          typeof finalChatOutput === 'string' &&
+          finalChatOutput.trim().length > 0
+            ? finalChatOutput.trim()
+            : null,
         cost: executionCost,
       })
       .where(eq(workflowExecutionLogs.executionId, executionId))

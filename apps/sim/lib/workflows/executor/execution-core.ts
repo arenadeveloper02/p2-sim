@@ -449,6 +449,16 @@ export async function executeWorkflowCore(
           ? (result.output.content as string)
           : undefined
 
+      // Ensure we have skipContent - this is critical for UI display
+      if (!skipContent) {
+        logger.warn(`[${requestId}] Skip response content is missing, cannot display in UI`, {
+          executionId,
+          hasOutput: !!result.output,
+          outputKeys:
+            result.output && typeof result.output === 'object' ? Object.keys(result.output) : [],
+        })
+      }
+
       // Use complete input from skipOutput if available (includes conversation history)
       const completeInput =
         (result.output &&
@@ -457,13 +467,48 @@ export async function executeWorkflowCore(
           result.output._completeInputForLogging) ||
         processedInput
 
+      // Extract user prompt and system prompt from skip output for execution_data
+      const skipOutput = result.output && typeof result.output === 'object' ? result.output : {}
+      const userPrompt =
+        (skipOutput.userPrompt as string) ||
+        (skipOutput._actualPromptsForSkip &&
+        typeof skipOutput._actualPromptsForSkip === 'object' &&
+        'userMessage' in skipOutput._actualPromptsForSkip
+          ? (skipOutput._actualPromptsForSkip.userMessage as string)
+          : undefined) ||
+        (typeof processedInput === 'object' && processedInput && 'input' in processedInput
+          ? (processedInput.input as string)
+          : undefined)
+
+      const systemPrompt =
+        (skipOutput.systemPrompt as string) ||
+        (skipOutput._actualPromptsForSkip &&
+        typeof skipOutput._actualPromptsForSkip === 'object' &&
+        'systemPrompt' in skipOutput._actualPromptsForSkip
+          ? (skipOutput._actualPromptsForSkip.systemPrompt as string)
+          : undefined)
+
+      // Enhance finalOutput with prompts for execution_data
+      const enhancedFinalOutput = {
+        ...skipOutput,
+        ...(userPrompt && { userPrompt }),
+        ...(systemPrompt && { systemPrompt }),
+      }
+
+      logger.info(`[${requestId}] Completing skipped workflow with chat output`, {
+        executionId,
+        hasSkipContent: !!skipContent,
+        skipContentLength: skipContent?.length || 0,
+        triggerType,
+      })
+
       await loggingSession.safeCompleteAsSkipped({
         endedAt: new Date().toISOString(),
         totalDurationMs: totalDuration || 0,
-        finalOutput: result.output || {},
+        finalOutput: enhancedFinalOutput,
         traceSpans: traceSpans || [],
         workflowInput: completeInput,
-        finalChatOutput: skipContent,
+        finalChatOutput: skipContent, // This must be set for UI to display the response
       })
 
       await clearExecutionCancellation(executionId)

@@ -25,6 +25,8 @@ export interface IntentAnalyzerResult {
   skipUserMessage?: string
   /** System prompt used when decision is SKIP */
   skipSystemPrompt?: string
+  /** Latest conversation from workflow_execution_logs (most recent in current thread) */
+  lastConversation?: LatestConversation | null
 }
 
 /**
@@ -554,8 +556,6 @@ Provide a direct, helpful answer based on the available context. Do not mention 
         ? contextParts.join('\n\n')
         : 'No previous conversation history available.'
 
-    logger.debug('Context text:', contextText)
-
     const userMessage = `
     User Question: ${userPrompt}
     --------------------------------------------
@@ -626,10 +626,14 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
 
   if (!dbPrompt) {
     logger.warn('No intent analyzer prompt configured in prompt_config table, defaulting to RUN')
+    // Fetch the latest conversation even if we're defaulting to RUN
+    const conversationId = params.inputs.conversationId
+    const lastConversation = conversationId ? await fetchLatestConversation(conversationId) : null
     return {
       decision: 'RUN',
       searchResults,
       memoryContext,
+      lastConversation,
     }
   }
 
@@ -686,6 +690,7 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
       skipResponse: skipResult.response,
       skipUserMessage: skipResult.userMessage,
       skipSystemPrompt: skipResult.systemPrompt,
+      lastConversation,
     }
   }
 
@@ -693,5 +698,6 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
     decision: 'RUN',
     searchResults,
     memoryContext,
+    lastConversation,
   }
 }
