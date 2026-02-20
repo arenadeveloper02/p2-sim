@@ -69,8 +69,9 @@ async function resolveAuthorizedUserId(
 }
 
 /**
- * Returns the Arena token for the logged-in user. Accepts userId (and optional email) as query params from the executor.
- * Only allowed for @position2.com users.
+ * Returns the Arena token for the resolved user (logged-in user or workflow owner).
+ * Accepts userId (and optional email) as query params from the executor.
+ * Only allowed for users with @position2.com email (logged-in user and workflow owner must both be @position2.com when used).
  */
 export async function GET(req: NextRequest) {
   try {

@@ -80,6 +80,8 @@ export class ApiBlockHandler implements BlockHandler {
             executionId: ctx.executionId,
             isDeployedContext: ctx.isDeployedContext,
             userId: ctx.userId,
+            sessionUserId: ctx.metadata?.sessionUserId,
+            workflowUserId: ctx.metadata?.workflowUserId,
           },
         },
         false,
