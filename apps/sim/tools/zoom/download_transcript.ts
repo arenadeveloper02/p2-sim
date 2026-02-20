@@ -1,5 +1,8 @@
 import type { ToolConfig } from '@/tools/types'
-import type { ZoomDownloadTranscriptParams, ZoomDownloadTranscriptResponse } from '@/tools/zoom/types'
+import type {
+  ZoomDownloadTranscriptParams,
+  ZoomDownloadTranscriptResponse,
+} from '@/tools/zoom/types'
 
 export const zoomDownloadTranscriptTool: ToolConfig<
   ZoomDownloadTranscriptParams,
