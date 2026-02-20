@@ -239,25 +239,7 @@ export const renderBs64Img = ({
 
     if (!isBase64 && singleImageUrl && (!cleanImageData || cleanImageData.length === 0)) {
       return (
-        <div className={imageWrapperClass}>
-          <img
-            src={singleImageUrl}
-            alt='Generated image'
-            className='h-auto max-w-full rounded-lg object-contain'
-            onError={(e) => {
-              console.error('Image failed to load:', {
-                error: e,
-                imageUrl: singleImageUrl,
-              })
-            }}
-          />
-        </div>
-      )
-    }
-
-    if (!cleanImageData || cleanImageData.length === 0) {
-      if (singleImageUrl) {
-        return (
+        <>
           <div className={imageWrapperClass}>
             <img
               src={singleImageUrl}
@@ -271,6 +253,50 @@ export const renderBs64Img = ({
               }}
             />
           </div>
+          <p className='mt-1.5 text-muted-foreground text-xs'>
+            Image URL:{' '}
+            <a
+              href={singleImageUrl}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='break-all font-mono text-primary underline hover:underline'
+            >
+              {singleImageUrl}
+            </a>
+          </p>
+        </>
+      )
+    }
+
+    if (!cleanImageData || cleanImageData.length === 0) {
+      if (singleImageUrl) {
+        return (
+          <>
+            <div className={imageWrapperClass}>
+              <img
+                src={singleImageUrl}
+                alt='Generated image'
+                className='h-auto max-w-full rounded-lg object-contain'
+                onError={(e) => {
+                  console.error('Image failed to load:', {
+                    error: e,
+                    imageUrl: singleImageUrl,
+                  })
+                }}
+              />
+            </div>
+            <p className='mt-1.5 text-muted-foreground text-xs'>
+              Image URL:{' '}
+              <a
+                href={singleImageUrl}
+                target='_blank'
+                rel='noopener noreferrer'
+                className='break-all font-mono text-primary underline hover:underline'
+              >
+                {singleImageUrl}
+              </a>
+            </p>
+          </>
         )
       }
       throw new Error('No image data provided')
@@ -294,20 +320,35 @@ export const renderBs64Img = ({
     }
 
     return (
-      <div className={imageWrapperClass}>
-        <img
-          src={imageSrc}
-          alt='Generated image'
-          className='h-auto max-w-full rounded-lg object-contain'
-          onError={(e) => {
-            console.error('Image failed to load:', {
-              error: e,
-              imageSrcLength: imageSrc.length,
-              preview: imageSrc.substring(0, 100),
-            })
-          }}
-        />
-      </div>
+      <>
+        <div className={imageWrapperClass}>
+          <img
+            src={imageSrc}
+            alt='Generated image'
+            className='h-auto max-w-full rounded-lg object-contain'
+            onError={(e) => {
+              console.error('Image failed to load:', {
+                error: e,
+                imageSrcLength: imageSrc.length,
+                preview: imageSrc.substring(0, 100),
+              })
+            }}
+          />
+        </div>
+        {!isBase64 && singleImageUrl && (
+          <p className='mt-1.5 text-muted-foreground text-xs'>
+            Image URL:{' '}
+            <a
+              href={singleImageUrl}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='break-all font-mono text-primary underline hover:underline'
+            >
+              {singleImageUrl}
+            </a>
+          </p>
+        )}
+      </>
     )
   } catch (error) {
     console.error('Error rendering image:', error, {
