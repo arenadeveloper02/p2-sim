@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import {
   getStorageConfig,
+  S3_CONFIG,
   USE_BLOB_STORAGE,
   USE_S3_STORAGE,
 } from '@/lib/uploads/config'
@@ -325,7 +326,7 @@ async function generateS3PresignedUrl(
   config: { bucket?: string; region?: string },
   expirationSeconds: number
 ): Promise<PresignedUrlResponse> {
-  const { getS3Client } = await import('@/lib/uploads/providers/s3/client')
+  const { getS3Client, getS3ClientForRegion } = await import('@/lib/uploads/providers/s3/client')
   const { PutObjectCommand } = await import('@aws-sdk/client-s3')
   const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner')
 
@@ -346,7 +347,11 @@ async function generateS3PresignedUrl(
     Metadata: sanitizedMetadata,
   })
 
-  const presignedUrl = await getSignedUrl(getS3Client(), command, { expiresIn: expirationSeconds })
+  const s3Client =
+    config.region !== S3_CONFIG.region
+      ? getS3ClientForRegion(config.region)
+      : getS3Client()
+  const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: expirationSeconds })
 
   return {
     url: presignedUrl,

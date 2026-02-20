@@ -99,11 +99,12 @@ export const BLOB_OG_IMAGES_CONFIG = {
 
 /**
  * S3 config for agent-generated images (e.g. image generator block).
- * Uses the same AWS credentials as the main S3 bucket (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION).
+ * Uses the same AWS credentials as the main S3 bucket.
+ * Set S3_AGENT_GENERATED_IMAGES_REGION if the bucket is in a different region than AWS_REGION.
  */
 export const S3_AGENT_GENERATED_IMAGES_CONFIG = {
   bucket: env.S3_AGENT_GENERATED_IMAGES_BUCKET_NAME || '',
-  region: env.AWS_REGION || '',
+  region: env.S3_AGENT_GENERATED_IMAGES_REGION || env.AWS_REGION || '',
 }
 
 export const BLOB_AGENT_GENERATED_IMAGES_CONFIG = {

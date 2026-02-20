@@ -164,6 +164,7 @@ export const env = createEnv({
     S3_PROFILE_PICTURES_BUCKET_NAME:       z.string().optional(),                  // S3 bucket for profile pictures
     S3_OG_IMAGES_BUCKET_NAME:              z.string().optional(),                  // S3 bucket for OpenGraph images
     S3_AGENT_GENERATED_IMAGES_BUCKET_NAME: z.string().optional(),                  // S3 bucket for agent-generated images
+    S3_AGENT_GENERATED_IMAGES_REGION:      z.string().optional(),                  // AWS region for agent-generated images bucket (defaults to AWS_REGION)
 
     // Cloud Storage - Azure Blob 
     AZURE_ACCOUNT_NAME:                    z.string().optional(),                  // Azure storage account name
