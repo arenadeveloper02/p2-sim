@@ -73,7 +73,7 @@ export interface ChatState {
   setSelectedWorkflowOutput: (workflowId: string, outputIds: string[]) => void
   getSelectedWorkflowOutput: (workflowId: string) => string[]
   appendMessageContent: (messageId: string, content: string) => void
-  finalizeMessageStream: (messageId: string) => void
+  finalizeMessageStream: (messageId: string, finalContent?: string | Record<string, unknown>) => void
   getConversationId: (workflowId: string) => string
   generateNewConversationId: (workflowId: string) => string
 }

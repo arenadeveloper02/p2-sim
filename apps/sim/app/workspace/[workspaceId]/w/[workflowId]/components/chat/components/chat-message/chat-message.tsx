@@ -8,6 +8,7 @@ import {
   extractAllBase64Images,
   extractBase64Image,
   hasBase64Images,
+  isBase64,
   renderBs64Img,
 } from './constants'
 
@@ -265,11 +266,72 @@ export function ChatMessage({ message }: ChatMessageProps) {
     }
 
     try {
-      // If content is a string, check for mixed content (text + base64 images)
+      if (typeof content === 'object' && content !== null && content.image) {
+        const imageValue = content.image
+        const isImageUrl =
+          typeof imageValue === 'string' &&
+          (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
+        const isBase64Image = typeof imageValue === 'string' && isBase64(imageValue)
+
+        return (
+          <>
+            {content.content && typeof content.content === 'string' && content.content.trim() && (
+              <ArenaCopilotMarkdownRenderer content={content.content} />
+            )}
+            {isImageUrl && (
+              <div className="w-full">
+                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: imageValue })}
+              </div>
+            )}
+            {isBase64Image && (
+              <div className="w-full">
+                {renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}
+              </div>
+            )}
+          </>
+        )
+      }
+
+      if (
+        typeof content === 'object' &&
+        content !== null &&
+        typeof content.content === 'string' &&
+        content.content &&
+        (!content.image || content.image === '') &&
+        (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
+      ) {
+        return (
+          <div className="w-full">
+            {renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}
+          </div>
+        )
+      }
+
+      if (typeof content === 'string' && isBase64(content)) {
+        const cleanedContent = content.replace(/\s+/g, '')
+        return renderBs64Img({ isBase64: true, imageData: cleanedContent })
+      }
+
+      if (typeof content === 'string') {
+        const trimmed = content.trim()
+        const urlPrefix =
+          trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
+        const looksLikeImageUrl =
+          urlPrefix &&
+          (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(trimmed) ||
+            trimmed.includes('agent-generated-images'))
+        if (looksLikeImageUrl) {
+          return (
+            <div className="w-full">
+              {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
+            </div>
+          )
+        }
+      }
+
       if (typeof content === 'string') {
         const { textParts, base64Images } = extractBase64Image(content)
 
-        // If we found base64 images, render both text and images
         if (base64Images.length > 0) {
           return (
             <>
@@ -283,11 +345,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
           )
         }
 
-        // If no base64 images, just render as markdown
-        // return <ArenaCopilotMarkdownRenderer content={content} />
+        return <ArenaCopilotMarkdownRenderer content={content} />
       }
 
-      // For other content types, render as markdown
       return <ArenaCopilotMarkdownRenderer content={content} />
     } catch (error) {
       console.error('Error rendering message content:', error)

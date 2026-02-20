@@ -134,27 +134,28 @@ export const ArenaClientChatMessage = memo(
           )
         }
 
-        // Fallback: If content is an object with a content field that's a URL (from tool output)
-        // and image field is empty, try to render the content as an image URL
-        if (
-          typeof content === 'object' &&
-          content !== null &&
-          typeof content.content === 'string' &&
-          content.content &&
-          (!content.image || content.image === '') &&
-          (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
-        ) {
-          return (
-            <>
-              <div>{renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}</div>
-            </>
-          )
-        }
-
         // If content is a pure base64 image, render it directly
         if (typeof content === 'string' && isBase64(content)) {
           const cleanedContent = content.replace(/\s+/g, '')
           return renderBs64Img({ isBase64: true, imageData: cleanedContent })
+        }
+
+        // If content is a string that is an image URL (e.g. from image generator), render as <img>
+        if (typeof content === 'string') {
+          const trimmed = content.trim()
+          const urlPrefix =
+            trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
+          const looksLikeImageUrl =
+            urlPrefix &&
+            (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(trimmed) ||
+              trimmed.includes('agent-generated-images'))
+          if (looksLikeImageUrl) {
+            return (
+              <div className="w-full">
+                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
+              </div>
+            )
+          }
         }
 
         // If content is a string, check for mixed content (text + base64 images)

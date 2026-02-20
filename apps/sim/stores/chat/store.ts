@@ -292,37 +292,41 @@ export const useChatStore = create<ChatState>()(
             }
 
             const newMessages = state.messages.map((message) => {
-              if (message.id === messageId) {
-                const newContent =
-                  typeof message.content === 'string'
-                    ? message.content + content
-                    : message.content
-                      ? String(message.content) + content
-                      : content
-                logger.debug('[ChatStore] Updated message content', {
-                  messageId,
-                  oldLength: typeof message.content === 'string' ? message.content.length : 0,
-                  newLength: newContent.length,
-                  addedLength: content.length,
-                })
+              if (message.id !== messageId) return message
+
+              const prev = message.content
+              if (prev && typeof prev === 'object' && prev !== null && 'image' in prev) {
+                const text = typeof prev.content === 'string' ? prev.content : ''
                 return {
                   ...message,
-                  content: newContent,
+                  content: { ...prev, content: text + content },
                 }
               }
-              return message
+
+              const newContent =
+                typeof prev === 'string' ? prev + content : prev ? String(prev) + content : content
+              logger.debug('[ChatStore] Updated message content', {
+                messageId,
+                oldLength: typeof prev === 'string' ? prev.length : 0,
+                newLength: newContent.length,
+                addedLength: content.length,
+              })
+              return { ...message, content: newContent }
             })
 
             return { messages: newMessages }
           })
         },
 
-        finalizeMessageStream: (messageId) => {
+        finalizeMessageStream: (messageId, finalContent) => {
           set((state) => {
             const newMessages = state.messages.map((message) => {
               if (message.id === messageId) {
                 const { isStreaming, ...rest } = message
-                return rest
+                return {
+                  ...rest,
+                  ...(finalContent !== undefined && { content: finalContent }),
+                }
               }
               return message
             })

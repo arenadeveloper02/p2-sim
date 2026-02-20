@@ -412,13 +412,45 @@ export function useChatStreaming() {
                   }
                 }
 
+                let contentToSet: string | Record<string, unknown> | undefined = finalContent ?? undefined
+
+                const isImageUrlString = (s: unknown): boolean =>
+                  typeof s === 'string' &&
+                  s.length > 0 &&
+                  (s.startsWith('http') || s.startsWith('/api/files/serve/')) &&
+                  (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(s.trim()) || s.includes('agent-generated-images'))
+
+                const imageUrlFromOutput = (obj: any): string | null => {
+                  if (!obj || typeof obj !== 'object') return null
+                  const url =
+                    obj.output?.image ??
+                    obj.image ??
+                    (isImageUrlString(obj.content) ? obj.content : null)
+                  if (typeof url === 'string' && (url.startsWith('http') || url.startsWith('/api/files/serve/'))) {
+                    return url
+                  }
+                  return null
+                }
+                if (finalData.output) {
+                  for (const block of Object.values(finalData.output)) {
+                    const imageUrl = imageUrlFromOutput(block)
+                    if (imageUrl) {
+                      contentToSet = {
+                        content: typeof contentToSet === 'string' ? contentToSet : '',
+                        image: imageUrl,
+                      }
+                      break
+                    }
+                  }
+                }
+
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === messageId
                       ? {
                           ...msg,
                           isStreaming: false,
-                          content: finalContent ?? msg.content,
+                          content: contentToSet ?? msg.content,
                           executionId: finalData?.executionId || msg.executionId,
                           liked: null,
                           files: extractedFiles.length > 0 ? extractedFiles : undefined,

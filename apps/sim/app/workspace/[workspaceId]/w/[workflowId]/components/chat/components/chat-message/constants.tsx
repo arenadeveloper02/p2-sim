@@ -222,15 +222,16 @@ export const renderBs64Img = ({
   try {
     const cleanImageData = typeof imageData === 'string' ? imageData.replace(/\s+/g, '') : ''
 
-    // If we have a URL and no base64 data, use the URL directly
+    const imageWrapperClass =
+      'my-2 w-full max-h-[70vh] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
+
     if (!isBase64 && imageUrl && (!cleanImageData || cleanImageData.length === 0)) {
       return (
-        <div className='my-2 w-full'>
+        <div className={imageWrapperClass}>
           <img
             src={imageUrl}
             alt='Generated image'
-            className='h-auto max-w-full rounded-lg border'
-            style={{ maxHeight: '500px', objectFit: 'contain' }}
+            className='h-auto max-w-full rounded-lg object-contain'
             onError={(e) => {
               console.error('Image failed to load:', {
                 error: e,
@@ -242,17 +243,14 @@ export const renderBs64Img = ({
       )
     }
 
-    // If we have base64 data, handle it
     if (!cleanImageData || cleanImageData.length === 0) {
-      // If no base64 but we have a URL, use URL
       if (imageUrl) {
         return (
-          <div className='my-2 w-full'>
+          <div className={imageWrapperClass}>
             <img
               src={imageUrl}
               alt='Generated image'
-              className='h-auto max-w-full rounded-lg border'
-              style={{ maxHeight: '500px', objectFit: 'contain' }}
+              className='h-auto max-w-full rounded-lg object-contain'
               onError={(e) => {
                 console.error('Image failed to load:', {
                   error: e,
@@ -268,7 +266,7 @@ export const renderBs64Img = ({
 
     if (isBase64 && cleanImageData.length > BLOB_URL_BASE64_LENGTH_THRESHOLD) {
       return (
-        <div className='my-2 w-full'>
+        <div className={imageWrapperClass}>
           <Base64ImageWithBlobUrl cleanImageData={cleanImageData} />
         </div>
       )
@@ -284,12 +282,11 @@ export const renderBs64Img = ({
     }
 
     return (
-      <div className='my-2 w-full'>
+      <div className={imageWrapperClass}>
         <img
           src={imageSrc}
           alt='Generated image'
-          className='h-auto max-w-full rounded-lg border'
-          style={{ maxHeight: '500px', objectFit: 'contain' }}
+          className='h-auto max-w-full rounded-lg object-contain'
           onError={(e) => {
             console.error('Image failed to load:', {
               error: e,

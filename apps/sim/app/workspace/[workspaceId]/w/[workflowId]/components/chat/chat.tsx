@@ -651,15 +651,51 @@ export function Chat() {
               }
             }
 
-            // Handle final event if we received it
+            let contentToSet: string | Record<string, unknown> | undefined
             if (receivedFinalEvent && finalEventData) {
-              const result = finalEventData
+              const result = finalEventData as ExecutionResult & {
+                output?: Record<string, Record<string, unknown>>
+              }
               if ('success' in result && !result.success) {
                 const errorMessage = result.error || 'Workflow execution failed'
                 appendMessageContent(
                   responseMessageId,
                   `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
                 )
+              } else if (result.output) {
+                const isImageUrlString = (s: unknown): boolean =>
+                  typeof s === 'string' &&
+                  s.length > 0 &&
+                  (s.startsWith('http') || s.startsWith('/api/files/serve/')) &&
+                  (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(s.trim()) ||
+                    s.includes('agent-generated-images'))
+
+                const imageUrlFromOutput = (obj: unknown): string | null => {
+                  if (!obj || typeof obj !== 'object') return null
+                  const o = obj as Record<string, unknown>
+                  const url =
+                    (o.output as Record<string, unknown> | undefined)?.image ??
+                    o.image ??
+                    (isImageUrlString(o.content) ? o.content : null)
+                  if (
+                    typeof url === 'string' &&
+                    (url.startsWith('http') || url.startsWith('/api/files/serve/'))
+                  ) {
+                    return url
+                  }
+                  return null
+                }
+
+                for (const block of Object.values(result.output)) {
+                  const imageUrl = imageUrlFromOutput(block)
+                  if (imageUrl) {
+                    contentToSet = {
+                      content: accumulatedContent || '',
+                      image: imageUrl,
+                    }
+                    break
+                  }
+                }
               }
             }
 
@@ -669,7 +705,7 @@ export function Chat() {
               totalChunks: chunkCount,
             })
 
-            finalizeMessageStream(responseMessageId)
+            finalizeMessageStream(responseMessageId, contentToSet)
             break
           }
 
