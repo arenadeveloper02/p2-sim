@@ -62,8 +62,7 @@ export async function ensureAgentGeneratedImagesDirectory(): Promise<boolean> {
 
 /**
  * Save a generated image to storage (S3, Azure Blob, or local)
- * All images are stored directly in agent-generated-images directory
- * Filename format: [workflow_id]-[user_id]-[timestamp].[extension]
+ * Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
  * @param base64Image - Base64 encoded image data
  * @param workflowId - Workflow ID
  * @param userId - User ID
@@ -86,11 +85,10 @@ export async function saveGeneratedImage(
     // Determine file extension from MIME type
     const extension = mimeType.split('/')[1] || 'png'
     const timestamp = Date.now()
-    // Include workflow and user info in filename for identification
-    const fileName = `${workflowId}-${userId}-${timestamp}.${extension}`
+    const fileName = `${timestamp}.${extension}`
 
-    // Store all images directly in agent-generated-images directory
-    const key = `${LOCAL_STORAGE_DIR}/${fileName}`
+    // Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
+    const key = `${LOCAL_STORAGE_DIR}/${workflowId}/${userId}/${fileName}`
 
     const useCloudStorage =
       USE_S3_STORAGE ||
@@ -137,19 +135,18 @@ export async function saveGeneratedImage(
     // Local storage fallback
     logger.info(`Saving generated image to local storage: ${key}`)
 
-    // Store at /apps/sim/agent-generated-images
-    const fullPath = join(process.cwd(), LOCAL_STORAGE_DIR, fileName)
-
-    // Ensure base directory exists first
-    const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR)
-    if (!existsSync(baseDir)) {
+    // Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
+    const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR, workflowId, userId)
+    if (!existsSync(join(process.cwd(), LOCAL_STORAGE_DIR))) {
       const success = await ensureAgentGeneratedImagesDirectory()
       if (!success) {
         throw new Error('Failed to create agent-generated-images directory. Check write permissions.')
       }
     }
 
-    // Write file directly to agent-generated-images directory
+    await fs.mkdir(baseDir, { recursive: true })
+
+    const fullPath = join(baseDir, fileName)
     try {
       await fs.writeFile(fullPath, imageBuffer)
       logger.debug(`Successfully wrote image file: ${fullPath}`)
@@ -162,7 +159,7 @@ export async function saveGeneratedImage(
 
     // Return serve URL (path without leading slash for the API route)
     const baseUrl = getBaseUrl()
-    const servePath = `${LOCAL_STORAGE_DIR}/${fileName}`
+    const servePath = `${LOCAL_STORAGE_DIR}/${workflowId}/${userId}/${fileName}`
     return `${baseUrl}/api/files/serve/${servePath}`
   } catch (error) {
     logger.error('Error saving generated image:', error)

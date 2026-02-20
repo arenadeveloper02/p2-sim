@@ -63,17 +63,15 @@ export async function GET(
         authType: authResult.authType,
       })
 
-      // Extract userId from filename (format: workflowId-userId-timestamp.ext; workflowId may be UUID with dashes)
-      const filename = fullPath.split('/').pop() || ''
-      const nameWithoutExt = filename.replace(/\.[^.]+$/, '')
-      const filenameParts = nameWithoutExt.split('-')
-      if (filenameParts.length >= 3) {
-        const fileUserId = filenameParts[filenameParts.length - 2]
+      // Path format: agent-generated-images/[workflow_id]/[user_id]/[image]
+      const pathSegments = fullPath.split('/')
+      if (pathSegments.length >= 4 && pathSegments[0] === 'agent-generated-images') {
+        const fileUserId = pathSegments[2]
         if (fileUserId !== userId) {
           logger.warn('User ID mismatch for agent-generated-image', {
             fileUserId,
             authenticatedUserId: userId,
-            filename,
+            fullPath,
           })
           return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
         }
