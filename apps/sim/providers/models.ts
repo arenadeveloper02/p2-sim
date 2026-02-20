@@ -850,6 +850,23 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     icon: GeminiIcon,
     models: [
       {
+        id: 'gemini-3.1-pro-preview',
+        pricing: {
+          input: 2.0,
+          cachedInput: 0.2,
+          output: 12.0,
+          updatedAt: '2026-02-19',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'high',
+          },
+        },
+        contextWindow: 1048576,
+      },
+      {
         id: 'gemini-3-pro-preview',
         pricing: {
           input: 2.0,
@@ -860,7 +877,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 2 },
           thinking: {
-            levels: ['low', 'high'],
+            levels: ['low', 'medium', 'high'],
             default: 'high',
           },
         },
@@ -1026,6 +1043,23 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     models: [
       {
+        id: 'vertex/gemini-3.1-pro-preview',
+        pricing: {
+          input: 2.0,
+          cachedInput: 0.2,
+          output: 12.0,
+          updatedAt: '2026-02-19',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'high',
+          },
+        },
+        contextWindow: 1048576,
+      },
+      {
         id: 'vertex/gemini-3-pro-preview',
         pricing: {
           input: 2.0,
@@ -1036,7 +1070,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 2 },
           thinking: {
-            levels: ['low', 'high'],
+            levels: ['low', 'medium', 'high'],
             default: 'high',
           },
         },
