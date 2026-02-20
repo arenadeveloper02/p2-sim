@@ -210,6 +210,17 @@ function Base64ImageWithBlobUrl({ cleanImageData }: { cleanImageData: string }) 
   )
 }
 
+/**
+ * Ensures a single image URL is used when the value may contain duplicates (e.g. same URL twice with newline).
+ */
+function normalizeImageUrl(imageUrl: string | undefined): string {
+  if (!imageUrl || typeof imageUrl !== 'string') return ''
+  const trimmed = imageUrl.trim()
+  if (!trimmed) return ''
+  const first = trimmed.split(/\s+/).find((s) => s.length > 0)
+  return first ?? trimmed
+}
+
 export const renderBs64Img = ({
   isBase64,
   imageData,
@@ -221,21 +232,22 @@ export const renderBs64Img = ({
 }) => {
   try {
     const cleanImageData = typeof imageData === 'string' ? imageData.replace(/\s+/g, '') : ''
+    const singleImageUrl = normalizeImageUrl(imageUrl)
 
     const imageWrapperClass =
       'my-2 w-full max-h-[70vh] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
 
-    if (!isBase64 && imageUrl && (!cleanImageData || cleanImageData.length === 0)) {
+    if (!isBase64 && singleImageUrl && (!cleanImageData || cleanImageData.length === 0)) {
       return (
         <div className={imageWrapperClass}>
           <img
-            src={imageUrl}
+            src={singleImageUrl}
             alt='Generated image'
             className='h-auto max-w-full rounded-lg object-contain'
             onError={(e) => {
               console.error('Image failed to load:', {
                 error: e,
-                imageUrl,
+                imageUrl: singleImageUrl,
               })
             }}
           />
@@ -244,17 +256,17 @@ export const renderBs64Img = ({
     }
 
     if (!cleanImageData || cleanImageData.length === 0) {
-      if (imageUrl) {
+      if (singleImageUrl) {
         return (
           <div className={imageWrapperClass}>
             <img
-              src={imageUrl}
+              src={singleImageUrl}
               alt='Generated image'
               className='h-auto max-w-full rounded-lg object-contain'
               onError={(e) => {
                 console.error('Image failed to load:', {
                   error: e,
-                  imageUrl,
+                  imageUrl: singleImageUrl,
                 })
               }}
             />
@@ -275,7 +287,7 @@ export const renderBs64Img = ({
     const imageSrc =
       isBase64 && cleanImageData.length > 0
         ? `data:image/${getMimeFromBase64(cleanImageData).replace('image/', '')};base64,${cleanImageData}`
-        : imageUrl || ''
+        : singleImageUrl || ''
 
     if (!imageSrc) {
       throw new Error('No valid image source provided')
