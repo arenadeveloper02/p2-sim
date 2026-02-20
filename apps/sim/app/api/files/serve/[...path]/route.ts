@@ -63,18 +63,31 @@ export async function GET(
         authType: authResult.authType,
       })
 
-      // Path format: agent-generated-images/[workflow_id]/[user_id]/[image]
+      // Path format: agent-generated-images/[workflow_id]/[user_id]/[image] (exactly 4 segments)
       const pathSegments = fullPath.split('/')
-      if (pathSegments.length >= 4 && pathSegments[0] === 'agent-generated-images') {
-        const fileUserId = pathSegments[2]
-        if (fileUserId !== userId) {
-          logger.warn('User ID mismatch for agent-generated-image', {
-            fileUserId,
-            authenticatedUserId: userId,
-            fullPath,
-          })
-          return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-        }
+      const hasValidStructure =
+        pathSegments.length >= 4 &&
+        pathSegments[0] === 'agent-generated-images' &&
+        pathSegments[1] &&
+        pathSegments[2] &&
+        pathSegments[3]
+
+      if (!hasValidStructure) {
+        logger.warn('Agent-generated-image path must be agent-generated-images/[workflow_id]/[user_id]/[image]', {
+          fullPath,
+          segmentCount: pathSegments.length,
+        })
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
+
+      const fileUserId = pathSegments[2]
+      if (fileUserId !== userId) {
+        logger.warn('User ID mismatch for agent-generated-image', {
+          fileUserId,
+          authenticatedUserId: userId,
+          fullPath,
+        })
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
       }
 
       // Serve agent-generated-images file (cloud if context configured, else local)

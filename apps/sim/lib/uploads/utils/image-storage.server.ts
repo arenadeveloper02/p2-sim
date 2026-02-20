@@ -17,6 +17,12 @@ const logger = createLogger('ImageStorage')
 // Store images at /apps/sim/agent-generated-images
 const LOCAL_STORAGE_DIR = 'agent-generated-images'
 
+/** Sanitise segment for use in storage path (no slashes, no parent refs, no empty). */
+function sanitisePathSegment(value: string): string {
+  const s = value.replace(/[/\\\0]/g, '').replace(/\.\./g, '').trim()
+  return s || 'unknown'
+}
+
 /**
  * Ensure the agent-generated-images base directory exists
  * This should be called on server startup
@@ -87,8 +93,11 @@ export async function saveGeneratedImage(
     const timestamp = Date.now()
     const fileName = `${timestamp}.${extension}`
 
+    const safeWorkflowId = sanitisePathSegment(workflowId)
+    const safeUserId = sanitisePathSegment(userId)
+
     // Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
-    const key = `${LOCAL_STORAGE_DIR}/${workflowId}/${userId}/${fileName}`
+    const key = `${LOCAL_STORAGE_DIR}/${safeWorkflowId}/${safeUserId}/${fileName}`
 
     const useCloudStorage =
       USE_S3_STORAGE ||
@@ -136,7 +145,7 @@ export async function saveGeneratedImage(
     logger.info(`Saving generated image to local storage: ${key}`)
 
     // Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
-    const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR, workflowId, userId)
+    const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR, safeWorkflowId, safeUserId)
     if (!existsSync(join(process.cwd(), LOCAL_STORAGE_DIR))) {
       const success = await ensureAgentGeneratedImagesDirectory()
       if (!success) {
@@ -159,7 +168,7 @@ export async function saveGeneratedImage(
 
     // Return serve URL (path without leading slash for the API route)
     const baseUrl = getBaseUrl()
-    const servePath = `${LOCAL_STORAGE_DIR}/${workflowId}/${userId}/${fileName}`
+    const servePath = `${LOCAL_STORAGE_DIR}/${safeWorkflowId}/${safeUserId}/${fileName}`
     return `${baseUrl}/api/files/serve/${servePath}`
   } catch (error) {
     logger.error('Error saving generated image:', error)
