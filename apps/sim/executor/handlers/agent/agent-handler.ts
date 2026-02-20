@@ -69,6 +69,31 @@ export class AgentBlockHandler implements BlockHandler {
     return block.metadata?.id === BlockType.AGENT
   }
 
+  /**
+   * Fetches the agent system prompt from the prompt_config table.
+   * Returns null if unavailable (caller should handle fallback).
+   */
+  private async fetchAgentSystemPrompt(): Promise<string | null> {
+    try {
+      const { promptConfig } = await import('@sim/db/schema')
+      const { PROMPT_CONFIG_KEYS } = await import('@sim/db/constants')
+
+      const rows = await db
+        .select({ prompt: promptConfig.prompt })
+        .from(promptConfig)
+        .where(eq(promptConfig.key, PROMPT_CONFIG_KEYS.AGENT_SYSTEM_PROMPT))
+        .limit(1)
+
+      if (rows.length > 0 && rows[0].prompt) {
+        return rows[0].prompt
+      }
+    } catch (error) {
+      logger.warn('Failed to fetch agent system prompt from prompt_config table', { error })
+    }
+
+    return null
+  }
+
   async execute(
     ctx: ExecutionContext,
     block: SerializedBlock,
@@ -130,8 +155,8 @@ export class AgentBlockHandler implements BlockHandler {
         inputs,
         block.id,
         userPrompt,
-        false,
-        false
+        false, // isConversation = false (fetching fact memories)
+        false // includeConversationId = false
       )
     }
 
@@ -192,6 +217,44 @@ export class AgentBlockHandler implements BlockHandler {
 
         // RUN path: carry over search results so buildMessages doesn't re-fetch
         preSearchedResults = intentResult.searchResults
+
+        // Get original system prompt from messages array if systemPrompt is not set
+        if (
+          !filteredInputs.systemPrompt &&
+          filteredInputs.messages &&
+          Array.isArray(filteredInputs.messages)
+        ) {
+          const systemMsg = filteredInputs.messages.find((m) => m.role === 'system')
+          if (systemMsg) {
+            filteredInputs.systemPrompt = systemMsg.content
+          }
+        }
+
+        // Fetch additional execution rules from prompt_config table
+        const additionalExecutionRules = await this.fetchAgentSystemPrompt()
+
+        if (!additionalExecutionRules) {
+          logger.warn(
+            'Agent system prompt not found in prompt_config table, skipping additional execution rules',
+            {
+              blockId: block.id,
+            }
+          )
+        } else {
+          // Append to existing system prompt or create new one
+          if (filteredInputs.systemPrompt) {
+            filteredInputs.systemPrompt = `${filteredInputs.systemPrompt}\n\n${additionalExecutionRules}`
+          } else {
+            filteredInputs.systemPrompt = additionalExecutionRules
+          }
+        }
+
+        // Update system message in inputs.messages to keep them in sync
+        this.updateSystemMessageInInputs(filteredInputs)
+
+        logger.debug('Added additional execution rules to system prompt (RUN path)', {
+          blockId: block.id,
+        })
       } catch (intentError) {
         logger.warn('Intent analysis failed, continuing with normal workflow execution', {
           error: intentError,
@@ -205,19 +268,21 @@ export class AgentBlockHandler implements BlockHandler {
       if (factMemories && factMemories.length > 0) {
         const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
 
-        const factMemoriesPrompt = `Consider these user preferences when you are giving user response -\n${factMemoriesText}`
+        const factMemoriesPrompt = `\n\USER FACTS :\n${factMemoriesText}`
 
         // Append to existing system prompt or create new one
-        if (inputs.systemPrompt) {
-          inputs.systemPrompt = `${inputs.systemPrompt}\n\n${factMemoriesPrompt}`
+        if (filteredInputs.systemPrompt) {
+          filteredInputs.systemPrompt = `${filteredInputs.systemPrompt}${factMemoriesPrompt}`
         } else {
-          inputs.systemPrompt = factMemoriesPrompt
+          filteredInputs.systemPrompt = `USER FACTS :\n${factMemoriesText}`
         }
 
+        // Update system message in inputs.messages to keep them in sync
+        this.updateSystemMessageInInputs(filteredInputs)
+
         logger.debug('Added fact memories to system prompt', {
-          factMemoryCount: factMemories.length,
           blockId: block.id,
-          updatedSystemPrompt: inputs.systemPrompt,
+          factMemoryCount: factMemories.length,
         })
       }
     }
@@ -267,6 +332,25 @@ export class AgentBlockHandler implements BlockHandler {
     }
 
     return result
+  }
+
+  /**
+   * Updates the system message in inputs.messages array to match inputs.systemPrompt
+   * This ensures both are kept in sync when we modify the system prompt.
+   */
+  private updateSystemMessageInInputs(inputs: AgentInputs): void {
+    if (!inputs.systemPrompt) return
+
+    if (inputs.messages && Array.isArray(inputs.messages)) {
+      const systemMsgIndex = inputs.messages.findIndex((m) => m.role === 'system')
+      if (systemMsgIndex !== -1) {
+        // Update existing system message
+        inputs.messages[systemMsgIndex].content = inputs.systemPrompt
+      } else {
+        // Add system message at the beginning if it doesn't exist
+        inputs.messages.unshift({ role: 'system', content: inputs.systemPrompt })
+      }
+    }
   }
 
   /**
@@ -998,8 +1082,7 @@ export class AgentBlockHandler implements BlockHandler {
         const tokenLimit = getMemoryTokenLimit(inputs.model)
         const baseUserPromptTokens = getAccurateTokenCount(userPrompt, inputs.model)
         let currentTokenCount = baseUserPromptTokens
-        let memoryContext =
-          "\nHere is the older conversation which might be relevant to the current user input, but don't completely rely on it, it is to give you a context of the conversation:\n"
+        let memoryContext = '\n=== PREVIOUS CONVERSATION === :\n'
 
         for (const memory of searchResults) {
           const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
@@ -1028,17 +1111,17 @@ export class AgentBlockHandler implements BlockHandler {
               typeof inputs.userPrompt === 'string'
                 ? inputs.userPrompt
                 : JSON.stringify(inputs.userPrompt)
-            inputs.userPrompt = `User Input: ${userPromptStr}${memoryContext}`
+            inputs.userPrompt = `=== CURRENT USER INPUT === : ${userPromptStr}${memoryContext}`
           } else if (conversationMessages.length > 0) {
             const userMsg = conversationMessages.find((m) => m.role === 'user')
             if (userMsg) {
-              userMsg.content = `User Input: ${userMsg.content}${memoryContext}`
+              userMsg.content = `=== CURRENT USER INPUT === : ${userMsg.content}${memoryContext}`
             }
           } else if (inputs.messages && Array.isArray(inputs.messages)) {
             const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
             if (userMsgIndex !== -1) {
               inputs.messages[userMsgIndex].content =
-                `User Input: ${inputs.messages[userMsgIndex].content}${memoryContext}`
+                `=== CURRENT USER INPUT === : ${inputs.messages[userMsgIndex].content}${memoryContext}`
             }
           }
 
@@ -1075,13 +1158,14 @@ export class AgentBlockHandler implements BlockHandler {
       })
     }
 
-    // 5. Handle legacy systemPrompt (backward compatibility)
-    // Only add if no system message exists from any source
+    // 5. Handle systemPrompt - update existing system message or add new one
+    // inputs.systemPrompt may have been enhanced with additional execution rules and fact memories
     if (inputs.systemPrompt) {
-      const hasSystem = systemMessages.length > 0 || messages.some((m) => m.role === 'system')
-      if (!hasSystem) {
-        this.addSystemPrompt(messages, inputs.systemPrompt)
-      }
+      // Always use the enhanced systemPrompt from inputs, which includes additional rules and fact memories
+      this.addSystemPrompt(messages, inputs.systemPrompt)
+    } else if (systemMessages.length > 0) {
+      // If no systemPrompt but system messages exist in inputs.messages, use those
+      messages.unshift(...systemMessages)
     }
 
     // 6. Handle legacy userPrompt - this is NEW input each run
@@ -1094,12 +1178,6 @@ export class AgentBlockHandler implements BlockHandler {
 
     // 6b. Note: User messages from inputs.messages are also not stored separately.
     // They will be stored together with the assistant response to avoid duplicates.
-
-    // 7. Prefix system messages from inputs.messages at the start (runtime only)
-    // These are the agent's configured system prompts
-    if (systemMessages.length > 0) {
-      messages.unshift(...systemMessages)
-    }
 
     // Final validation: ensure we have at least one message
     if (messages.length === 0) {

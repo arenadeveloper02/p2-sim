@@ -85,12 +85,22 @@ export class Memory {
       )
 
       if (!searchResults) {
-        logger.debug('No search results returned from memory API')
+        logger.debug('No search results returned from memory API', {
+          requestId,
+        })
         return []
       }
 
       // Convert search results to Message[] format
       const messages = this.convertSearchResultsToMessages(searchResults)
+
+      logger.debug('Converted search results to messages', {
+        requestId,
+        inputResultsCount: Array.isArray(searchResults)
+          ? searchResults.length
+          : searchResults?.results?.length || 0,
+        outputMessageCount: messages.length,
+      })
 
       return messages
     } catch (error) {
@@ -122,7 +132,8 @@ export class Memory {
 
       for (const result of results) {
         // The search API returns results with structure:
-        // { id, memory (content string), role, metadata, score, ... }
+        // { id, memory (content string), role (optional), metadata, score, ... }
+        // Fact memories may not have a role field
         if (result && typeof result === 'object') {
           // Check if result has memory (content) and role fields directly
           if (result.memory && typeof result.memory === 'string' && result.role) {
@@ -131,10 +142,22 @@ export class Memory {
               role: result.role as 'system' | 'user' | 'assistant',
               content: result.memory,
             })
+          } else if (result.memory && typeof result.memory === 'string' && !result.role) {
+            // Fact memories: { memory: "content" } without role field - default to 'user'
+            messages.push({
+              role: 'user',
+              content: result.memory,
+            })
           } else if (result.content && result.role) {
             // Alternative structure: { content: "text", role: "user|assistant" }
             messages.push({
               role: result.role as 'system' | 'user' | 'assistant',
+              content: result.content,
+            })
+          } else if (result.content && !result.role) {
+            // Content without role field - default to 'user'
+            messages.push({
+              role: 'user',
               content: result.content,
             })
           } else if (result.messages && Array.isArray(result.messages)) {

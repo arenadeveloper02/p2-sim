@@ -98,8 +98,7 @@ async function searchAndBuildMemoryContext(
   const tokenLimit = getMemoryTokenLimit(model)
   const baseTokens = getAccurateTokenCount(userPrompt, model)
   let currentTokenCount = baseTokens
-  let memoryContext =
-    "\nHere is the older conversation which might be relevant to the current user input, but don't completely rely on it, it is to give you a context of the conversation:\n"
+  let memoryContext = '\n=== PREVIOUS CONVERSATION ===:\n'
 
   for (const memory of searchResults) {
     const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
@@ -165,8 +164,17 @@ export async function combineAndSortSearchResults(
   // Remove duplicates by id (keep first occurrence)
   const uniqueResults = Array.from(new Map(allRawResults.map((item) => [item.id, item])).values())
 
+  // Filter results by score threshold
+  // 1. Ignore results where score = 0
+  // 2. Ignore results where score > 8.5 (threshold)
+  const SCORE_THRESHOLD = 0.85
+  const filteredResults = uniqueResults.filter((result) => {
+    const score = result.score ?? 1.0 // Default to 1.0 if score is missing
+    return score !== 0 && score <= SCORE_THRESHOLD
+  })
+
   // Sort by score in increasing order (lower score = higher relevance in semantic search)
-  const sortedResults = uniqueResults.sort((a, b) => {
+  const sortedResults = filteredResults.sort((a, b) => {
     const scoreA = a.score ?? 1.0 // Default to 1.0 if score is missing
     const scoreB = b.score ?? 1.0
     return scoreA - scoreB

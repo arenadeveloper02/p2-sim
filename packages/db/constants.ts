@@ -78,6 +78,7 @@ export type BooleanTagSlot = (typeof BOOLEAN_TAG_SLOTS)[number]
  */
 export const PROMPT_CONFIG_KEYS = {
   INTENT_ANALYZER_SYSTEM_PROMPT: 'INTENT_ANALYZER_SYSTEM_PROMPT',
+  AGENT_SYSTEM_PROMPT: 'AGENT_SYSTEM_PROMPT',
 } as const
 
 /**
