@@ -1,6 +1,6 @@
-// import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@sim/logger'
 import type { NanoBananaRequestBody } from '@/app/api/google/api-service'
+import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')

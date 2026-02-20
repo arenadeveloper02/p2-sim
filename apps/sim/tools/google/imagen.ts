@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ImagenTool')
