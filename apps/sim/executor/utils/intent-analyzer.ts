@@ -536,42 +536,7 @@ async function generateSkipResponse(
 
     // Fetch system prompt from prompt_config table, fallback to default if not found
     const dbSystemPrompt = await fetchSkipResponseSystemPrompt()
-    const systemPrompt = `
-You are a helpful assistant. Answer ONLY the current user question provided in the user message.
-
-CRITICAL RULES:
-1. Answer ONLY the question labeled "CURRENT USER QUESTION" - ignore all other questions in the context
-2. Do NOT repeat, or copy responses from the context sections
-3. Generate a NEW response based on the current question, not a copy of previous responses
-
-You may receive context sections:
-- LAST CONVERSATION (most recent messages in current thread) - for reference only
-- FACT MEMORIES (persistent structured facts about the user) - use only if directly relevant
-- SEMANTICALLY RETRIEVED CHAT HISTORY (cross-chat context from other chats) - use only if clearly relevant
-
-────────────────────────────────────────
-LAST CONVERSATION RULES
-────────────────────────────────────────
-• If the current question asks for something new (e.g., "summarize the above text", "give the above response in table format") you can use the LAST CONVERSATION to help you answer the question.
-• If the LAST CONVERSATION is unrelated to the current question, ignore it completely
-• If the current question asks for something new (e.g., "dig deeper into the topic", "provide more details"), you can use the LAST CONVERSATION along with the context along wiht your knowledge to answer the question.
-────────────────────────────────────────
- SEMANTICALLY RETRIEVED CHAT HISTORY
-────────────────────────────────────────
-
-• Use context ONLY to understand the topic or gather relevant information
-• Do NOT copy responses from context
-• If context is unrelated to the current question, ignore it completely
-
-────────────────────────────────────────
-RESPONSE REQUIREMENTS
-────────────────────────────────────────
-
-- Answer the CURRENT USER QUESTION directly
-- Generate original content, not copies of previous responses
-- If the question is unclear or references missing information, ask for clarification
-- Avoid hallucinations and provide accurate information
-`
+    const systemPrompt = dbSystemPrompt || ''
 
     const contextParts: string[] = []
 
@@ -603,7 +568,7 @@ RESPONSE REQUIREMENTS
     // Add semantically retrieved chat history (secondary reference)
     if (memoryContext) {
       contextParts.push(
-        `=== SEMANTICALLY RETRIEVED CHAT HISTORY (from other chats): ===\n${memoryContext}`
+        `=== SEMANTICALLY RETRIEVED CHAT HISTORY (from other chats): === (DO NOT ANSWER ANY QUESTIONS FROM HERE JUST USE AS CONTEXT)\n${memoryContext}`
       )
     }
 
@@ -616,7 +581,7 @@ RESPONSE REQUIREMENTS
 ${userPrompt}
 
 ────────────────────────────────────────
-CONTEXT FOR REFERENCE (DO NOT ANSWER QUESTIONS FROM HERE):
+CONTEXT FOR REFERENCE 
 ────────────────────────────────────────
 ${contextText}
 

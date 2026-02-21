@@ -128,6 +128,29 @@ async function buildMinimalResult(
           hasContent: !!skipContent,
           contentLength: skipContent.length,
         })
+      } else {
+        // Even though we checked, ensure the output structure doesn't contain the skip content
+        // This is a safety measure to prevent UI from processing it
+        if (selectedOutputs && selectedOutputs.length > 0) {
+          const firstOutputId = selectedOutputs[0]
+          const blockId = extractBlockIdFromOutputId(firstOutputId)
+          const path = extractPathFromOutputId(firstOutputId, blockId)
+
+          // Ensure this blockId/path combination is not in the output
+          if (minimalResult.output[blockId]) {
+            const blockOutput = minimalResult.output[blockId] as Record<string, unknown>
+            if (blockOutput[path] === skipContent) {
+              blockOutput[path] = undefined
+              // If block is now empty, remove it
+              if (Object.keys(blockOutput).length === 0) {
+                minimalResult.output[blockId] = undefined
+              }
+            }
+          }
+        } else if (minimalResult.output.content === skipContent) {
+          // Remove content if it matches the skip content
+          minimalResult.output.content = undefined
+        }
       }
 
       return minimalResult
@@ -362,6 +385,7 @@ export async function createStreamingResponse(
         )
 
         // Handle skipped workflows - stream the skip response immediately
+        // Mark it as streamed so it won't be included in final result
         if (result.status === 'skipped' && result.output && typeof result.output === 'object') {
           const skipOutput = result.output as Record<string, any>
           const skipContent = skipOutput.content
@@ -383,6 +407,8 @@ export async function createStreamingResponse(
             })
 
             sendChunk(blockId, skipContent)
+            // Mark as streamed BEFORE buildMinimalResult is called
+            // This ensures buildMinimalResult will skip including it in the final result
             state.streamedContent.set(blockId, skipContent)
           }
         }
