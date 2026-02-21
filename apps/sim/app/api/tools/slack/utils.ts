@@ -14,7 +14,8 @@ export async function postSlackMessage(
   threadTs?: string | null,
   link_names?: boolean,
   unfurl_links?: boolean,
-  unfurl_media?: boolean
+  unfurl_media?: boolean,
+  blocks?: unknown[] | null
 ): Promise<{ ok: boolean; ts?: string; channel?: string; message?: any; error?: string }> {
   const response = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
@@ -29,6 +30,7 @@ export async function postSlackMessage(
       ...(link_names && { link_names: link_names }),
       ...(unfurl_links && { unfurl_links: unfurl_links }),
       ...(unfurl_media && { unfurl_media: unfurl_media }),
+      ...(blocks && blocks.length > 0 && { blocks }),
     }),
   })
 
@@ -226,6 +228,7 @@ export interface SlackMessageParams {
   userId?: string
   text: string
   threadTs?: string | null
+  blocks?: unknown[] | null
   files?: any[] | null
   link_names?: boolean
   unfurl_links?: boolean

@@ -20,6 +20,7 @@ const SlackSendMessageSchema = z
     link_names: z.boolean().optional(),
     unfurl_links: z.boolean().optional(),
     unfurl_media: z.boolean().optional(),
+    blocks: z.array(z.record(z.unknown())).optional().nullable(),
     files: RawFileInputArraySchema.optional().nullable(),
   })
   .refine((data) => data.channel || data.userId, {
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
         userId: validatedData.userId ?? undefined,
         text: validatedData.text,
         threadTs: validatedData.thread_ts ?? undefined,
+        blocks: validatedData.blocks ?? undefined,
         files: validatedData.files ?? undefined,
         link_names: validatedData.link_names ?? true,
         unfurl_links: validatedData.unfurl_links ?? true,

@@ -171,7 +171,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Create .next cache
 RUN mkdir -p apps/sim/.next/cache && \
-    chown -R nextjs:nodejs /app
+    chown -R nextjs:nodejs apps/sim/.next/cache
 
 
 # ========================================
