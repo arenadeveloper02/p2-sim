@@ -306,13 +306,13 @@ export class AgentBlockHandler implements BlockHandler {
       if (factMemories && factMemories.length > 0) {
         const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
 
-        const factMemoriesPrompt = `\n\USER FACTS :\n${factMemoriesText}`
+        const factMemoriesPrompt = `\n\=== USER FACTS : ===\n${factMemoriesText}`
 
         // Append to existing system prompt or create new one
         if (filteredInputs.systemPrompt) {
           filteredInputs.systemPrompt = `${filteredInputs.systemPrompt}${factMemoriesPrompt}`
         } else {
-          filteredInputs.systemPrompt = `USER FACTS :\n${factMemoriesText}`
+          filteredInputs.systemPrompt = `=== USER FACTS : ===\n${factMemoriesText}`
         }
 
         // Update system message in inputs.messages to keep them in sync
@@ -1196,17 +1196,17 @@ export class AgentBlockHandler implements BlockHandler {
               typeof inputs.userPrompt === 'string'
                 ? inputs.userPrompt
                 : JSON.stringify(inputs.userPrompt)
-            inputs.userPrompt = `=== CURRENT USER INPUT === : ${userPromptStr}${memoryContext}`
+            inputs.userPrompt = `=== CURRENT USER INPUT === (ANSWER THIS ONLY) : ${userPromptStr} \n DO NOT ANSWER QUESTIONS FROM HERE :${memoryContext}`
           } else if (conversationMessages.length > 0) {
             const userMsg = conversationMessages.find((m) => m.role === 'user')
             if (userMsg) {
-              userMsg.content = `=== CURRENT USER INPUT === : ${userMsg.content}${memoryContext}`
+              userMsg.content = `=== CURRENT USER INPUT === : ${userMsg.content} \n DO NOT ANSWER QUESTIONS FROM HERE : ${memoryContext}`
             }
           } else if (inputs.messages && Array.isArray(inputs.messages)) {
             const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
             if (userMsgIndex !== -1) {
               inputs.messages[userMsgIndex].content =
-                `=== CURRENT USER INPUT === : ${inputs.messages[userMsgIndex].content}${memoryContext}`
+                `=== CURRENT USER INPUT === : ${inputs.messages[userMsgIndex].content} \n DO NOT ANSWER QUESTIONS FROM HERE : ${memoryContext}`
             }
           }
 

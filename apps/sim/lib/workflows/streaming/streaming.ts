@@ -80,33 +80,55 @@ async function buildMinimalResult(
   }
 
   // Handle skipped workflows - include skip response in output
+  // BUT: if it was already streamed, don't include it again to avoid duplication
   if (result.status === 'skipped' && result.output && typeof result.output === 'object') {
     const skipOutput = result.output as Record<string, any>
     const skipContent = skipOutput.content
 
     if (skipContent && typeof skipContent === 'string') {
-      // For skipped workflows, include the skip response in the output
-      // Use a special key or the first selected output blockId if available
+      // Check if skip content was already streamed
+      let alreadyStreamed = false
       if (selectedOutputs && selectedOutputs.length > 0) {
-        // Extract blockId from first selected output
         const firstOutputId = selectedOutputs[0]
         const blockId = extractBlockIdFromOutputId(firstOutputId)
-        const path = extractPathFromOutputId(firstOutputId, blockId)
-
-        if (!minimalResult.output[blockId]) {
-          minimalResult.output[blockId] = Object.create(null) as Record<string, unknown>
+        // If this blockId was already streamed, skip including it in final result
+        if (streamedContent.has(blockId)) {
+          alreadyStreamed = true
+          logger.debug(
+            `[${requestId}] Skip response already streamed, skipping from final result`,
+            {
+              executionId,
+              blockId,
+            }
+          )
         }
-        ;(minimalResult.output[blockId] as Record<string, unknown>)[path] = skipContent
-      } else {
-        // If no selected outputs, include in a default structure
-        minimalResult.output = { content: skipContent }
       }
 
-      logger.debug(`[${requestId}] Included skip response in minimal result`, {
-        executionId,
-        hasContent: !!skipContent,
-        contentLength: skipContent.length,
-      })
+      // Only include in final result if it wasn't already streamed
+      if (!alreadyStreamed) {
+        // For skipped workflows, include the skip response in the output
+        // Use a special key or the first selected output blockId if available
+        if (selectedOutputs && selectedOutputs.length > 0) {
+          // Extract blockId from first selected output
+          const firstOutputId = selectedOutputs[0]
+          const blockId = extractBlockIdFromOutputId(firstOutputId)
+          const path = extractPathFromOutputId(firstOutputId, blockId)
+
+          if (!minimalResult.output[blockId]) {
+            minimalResult.output[blockId] = Object.create(null) as Record<string, unknown>
+          }
+          ;(minimalResult.output[blockId] as Record<string, unknown>)[path] = skipContent
+        } else {
+          // If no selected outputs, include in a default structure
+          minimalResult.output = { content: skipContent }
+        }
+
+        logger.debug(`[${requestId}] Included skip response in minimal result`, {
+          executionId,
+          hasContent: !!skipContent,
+          contentLength: skipContent.length,
+        })
+      }
 
       return minimalResult
     }

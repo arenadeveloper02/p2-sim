@@ -79,6 +79,31 @@ async function fetchIntentAnalyzerPrompt(): Promise<string | null> {
 }
 
 /**
+ * Fetches the skip response generation system prompt from the prompt_config table.
+ * Returns null if unavailable (caller should use a fallback).
+ */
+async function fetchSkipResponseSystemPrompt(): Promise<string | null> {
+  try {
+    const { promptConfig } = await import('@sim/db/schema')
+    const { PROMPT_CONFIG_KEYS } = await import('@sim/db/constants')
+
+    const rows = await db
+      .select({ prompt: promptConfig.prompt })
+      .from(promptConfig)
+      .where(eq(promptConfig.key, PROMPT_CONFIG_KEYS.GENERATE_SKIP_RESPONSE_SYSTEM_PROMPT))
+      .limit(1)
+
+    if (rows.length > 0 && rows[0].prompt) {
+      return rows[0].prompt
+    }
+  } catch (error) {
+    logger.warn('Failed to fetch skip response system prompt from prompt_config table', { error })
+  }
+
+  return null
+}
+
+/**
  * Searches Mem0 for conversation memories and builds a token-limited context string.
  * Combines results from searches with and without conversationId filter, sorts by score (ascending),
  * and builds memory context from the sorted combined results.
@@ -316,9 +341,6 @@ ${userPrompt}
 --------------------------------------------
 ${lastConversationText}
 --------------------------------------------
-SEMANTICALLY RETRIEVED USER CHAT HISTORY
-(across multiple chats, may be partial)
---------------------------------------------
 ${memoryContext}
 --------------------------------------------
 OUTPUT REQUIREMENT
@@ -512,19 +534,51 @@ async function generateSkipResponse(
     const { OpenAI } = await import('openai')
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-    const systemPrompt = `You are a helpful assistant. Answer the user's question using the conversation history provided below. Prioritize information in this order:
-1. LAST CONVERSATION (most recent in current thread) - highest priority
-2. FACT MEMORIES (relevant facts from previous conversations)
-3. SEMANTICALLY RETRIEVED CHAT HISTORY (from other chats) - use as secondary reference
+    // Fetch system prompt from prompt_config table, fallback to default if not found
+    const dbSystemPrompt = await fetchSkipResponseSystemPrompt()
+    const systemPrompt = `
+You are a helpful assistant. Answer ONLY the current user question provided in the user message.
 
-Provide a direct, helpful answer based on the available context. Do not mention that you are using previous conversation data. If the information is not available in the provided context, you can go through internet to find the answer.`
+CRITICAL RULES:
+1. Answer ONLY the question labeled "CURRENT USER QUESTION" - ignore all other questions in the context
+2. Do NOT repeat, or copy responses from the context sections
+3. Generate a NEW response based on the current question, not a copy of previous responses
+
+You may receive context sections:
+- LAST CONVERSATION (most recent messages in current thread) - for reference only
+- FACT MEMORIES (persistent structured facts about the user) - use only if directly relevant
+- SEMANTICALLY RETRIEVED CHAT HISTORY (cross-chat context from other chats) - use only if clearly relevant
+
+────────────────────────────────────────
+LAST CONVERSATION RULES
+────────────────────────────────────────
+• If the current question asks for something new (e.g., "summarize the above text", "give the above response in table format") you can use the LAST CONVERSATION to help you answer the question.
+• If the LAST CONVERSATION is unrelated to the current question, ignore it completely
+• If the current question asks for something new (e.g., "dig deeper into the topic", "provide more details"), you can use the LAST CONVERSATION along with the context along wiht your knowledge to answer the question.
+────────────────────────────────────────
+ SEMANTICALLY RETRIEVED CHAT HISTORY
+────────────────────────────────────────
+
+• Use context ONLY to understand the topic or gather relevant information
+• Do NOT copy responses from context
+• If context is unrelated to the current question, ignore it completely
+
+────────────────────────────────────────
+RESPONSE REQUIREMENTS
+────────────────────────────────────────
+
+- Answer the CURRENT USER QUESTION directly
+- Generate original content, not copies of previous responses
+- If the question is unclear or references missing information, ask for clarification
+- Avoid hallucinations and provide accurate information
+`
 
     const contextParts: string[] = []
 
     // Add last conversation (highest priority)
     if (lastConversation) {
       const lastConvParts: string[] = []
-      lastConvParts.push('LAST CONVERSATION (MOST RELEVANT):')
+      lastConvParts.push('=== LAST CONVERSATION (MOST RELEVANT): ===')
       if (lastConversation.initialInput) {
         lastConvParts.push(`User: ${lastConversation.initialInput}`)
       }
@@ -539,7 +593,7 @@ Provide a direct, helpful answer based on the available context. Do not mention 
     // Add fact memories
     if (factMemories && factMemories.length > 0) {
       const factParts: string[] = []
-      factParts.push('FACT MEMORIES (RELEVANT FACTS):')
+      factParts.push('=== FACT MEMORIES (RELEVANT FACTS): ===')
       for (const fact of factMemories) {
         factParts.push(`${fact.role === 'user' ? 'User' : 'Assistant'}: ${fact.content}`)
       }
@@ -548,7 +602,9 @@ Provide a direct, helpful answer based on the available context. Do not mention 
 
     // Add semantically retrieved chat history (secondary reference)
     if (memoryContext) {
-      contextParts.push(`SEMANTICALLY RETRIEVED CHAT HISTORY (from other chats):\n${memoryContext}`)
+      contextParts.push(
+        `=== SEMANTICALLY RETRIEVED CHAT HISTORY (from other chats): ===\n${memoryContext}`
+      )
     }
 
     const contextText =
@@ -556,13 +612,15 @@ Provide a direct, helpful answer based on the available context. Do not mention 
         ? contextParts.join('\n\n')
         : 'No previous conversation history available.'
 
-    const userMessage = `
-    User Question: ${userPrompt}
-    --------------------------------------------
-    Context Information:
-    --------------------------------------------
+    const userMessage = `CURRENT USER QUESTION (ANSWER THIS ONLY):
+${userPrompt}
+
+────────────────────────────────────────
+CONTEXT FOR REFERENCE (DO NOT ANSWER QUESTIONS FROM HERE):
+────────────────────────────────────────
 ${contextText}
-Please provide a helpful answer based on the context above.`
+
+IMPORTANT: Answer ONLY the CURRENT USER QUESTION above. The context sections are provided for reference only. Do NOT repeat or rephrase responses from the context. If the current question asks about "the above points" or similar references, and those points are not clearly visible in the context, use your general knowledge or ask for clarification.`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
