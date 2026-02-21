@@ -17,6 +17,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  varchar,
   vector,
 } from 'drizzle-orm/pg-core'
 import { DEFAULT_FREE_CREDITS, TAG_SLOTS } from './constants'
@@ -2502,5 +2503,23 @@ export const permissionGroupMember = pgTable(
   (table) => ({
     permissionGroupIdIdx: index('permission_group_member_group_id_idx').on(table.permissionGroupId),
     userIdUnique: uniqueIndex('permission_group_member_user_id_unique').on(table.userId),
+  })
+)
+
+/**
+ * Prompt Config - Stores configurable prompt templates keyed by a unique identifier.
+ * Enables dynamic prompt management without code deployments.
+ */
+export const promptConfig = pgTable(
+  'prompt_config',
+  {
+    id: text('id').primaryKey(),
+    key: varchar('key', { length: 256 }).notNull().unique(),
+    prompt: text('prompt').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    keyIdx: uniqueIndex('prompt_config_key_idx').on(table.key),
   })
 )

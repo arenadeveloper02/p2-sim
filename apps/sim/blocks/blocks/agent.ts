@@ -429,53 +429,6 @@ Return ONLY the JSON array.`,
           }),
     },
     {
-      id: 'memoryType',
-      title: 'Memory',
-      type: 'dropdown',
-      placeholder: 'Select memory...',
-      options: [
-        { label: 'None', id: 'none' },
-        { label: 'Conversation', id: 'conversation' },
-        { label: 'Sliding window (messages)', id: 'sliding_window' },
-        { label: 'Sliding window (tokens)', id: 'sliding_window_tokens' },
-      ],
-      defaultValue: 'none',
-    },
-    {
-      id: 'conversationId',
-      title: 'Conversation ID',
-      type: 'short-input',
-      placeholder: 'e.g., user-123, session-abc, customer-456',
-      required: {
-        field: 'memoryType',
-        value: ['conversation', 'sliding_window', 'sliding_window_tokens'],
-      },
-      condition: {
-        field: 'memoryType',
-        value: ['conversation', 'sliding_window', 'sliding_window_tokens'],
-      },
-    },
-    {
-      id: 'slidingWindowSize',
-      title: 'Sliding Window Size',
-      type: 'short-input',
-      placeholder: 'Enter number of messages (e.g., 10)...',
-      condition: {
-        field: 'memoryType',
-        value: ['sliding_window'],
-      },
-    },
-    {
-      id: 'slidingWindowTokens',
-      title: 'Max Tokens',
-      type: 'short-input',
-      placeholder: 'Enter max tokens (e.g., 4000)...',
-      condition: {
-        field: 'memoryType',
-        value: ['sliding_window_tokens'],
-      },
-    },
-    {
       id: 'temperature',
       title: 'Temperature',
       type: 'slider',
@@ -685,22 +638,12 @@ Example 3 (Array Input):
     memoryType: {
       type: 'string',
       description:
-        'Type of memory to use: none, conversation, sliding_window, or sliding_window_tokens',
+        'Type of memory to use: conversation (default). Defaults to conversation if not provided.',
     },
     conversationId: {
       type: 'string',
       description:
-        'Specific conversation ID to retrieve memories from (when memoryType is conversation_id)',
-    },
-    slidingWindowSize: {
-      type: 'string',
-      description:
-        'Number of recent messages to include (when memoryType is sliding_window, e.g., "10")',
-    },
-    slidingWindowTokens: {
-      type: 'string',
-      description:
-        'Maximum number of tokens for token-based sliding window memory (when memoryType is sliding_window_tokens, e.g., "4000")',
+        'Conversation ID to retrieve and store memories. Automatically retrieved from Start block output if not provided.',
     },
     model: { type: 'string', description: 'AI model to use' },
     apiKey: { type: 'string', description: 'Provider API key' },

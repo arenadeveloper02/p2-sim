@@ -205,7 +205,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     finalChatOutput?: string // Final chat output based on output_configs
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,
@@ -265,6 +265,27 @@ export class ExecutionLogger implements IExecutionLoggerService {
     const redactedTraceSpans = redactApiKeys(filteredTraceSpans)
     const redactedFinalOutput = redactApiKeys(filteredFinalOutput)
 
+    // Extract memory-enhanced input from agent block trace span
+    // This input includes the user prompt with memory context added
+    let memoryEnhancedInput: any
+    if (mergedTraceSpans && mergedTraceSpans.length > 0) {
+      const findAgentBlockInput = (spans: TraceSpan[]): any => {
+        for (const span of spans) {
+          // Look for agent block type
+          if (span.type === 'agent' && span.input) {
+            return span.input
+          }
+          // Recursively search children
+          if (span.children && span.children.length > 0) {
+            const found = findAgentBlockInput(span.children)
+            if (found) return found
+          }
+        }
+        return undefined
+      }
+      memoryEnhancedInput = findAgentBlockInput(mergedTraceSpans)
+    }
+
     const executionCost = {
       total: costSummary.totalCost,
       input: costSummary.totalInputCost,
@@ -293,6 +314,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         executionData: {
           traceSpans: redactedTraceSpans,
           finalOutput: redactedFinalOutput,
+          input: memoryEnhancedInput || workflowInput, // Use memory-enhanced input if available, fallback to workflowInput
           tokens: {
             input: executionCost.tokens.input,
             output: executionCost.tokens.output,
@@ -300,7 +322,14 @@ export class ExecutionLogger implements IExecutionLoggerService {
           },
           models: executionCost.models,
         },
-        finalChatOutput: finalChatOutput || null,
+        // Ensure finalChatOutput is set - critical for UI display
+        // For skipped workflows, this should contain the skip response content
+        finalChatOutput:
+          finalChatOutput &&
+          typeof finalChatOutput === 'string' &&
+          finalChatOutput.trim().length > 0
+            ? finalChatOutput.trim()
+            : null,
         cost: executionCost,
       })
       .where(eq(workflowExecutionLogs.executionId, executionId))

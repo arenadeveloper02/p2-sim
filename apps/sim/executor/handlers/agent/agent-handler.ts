@@ -17,6 +17,11 @@ import type {
 import type { BlockHandler, ExecutionContext, StreamingExecution } from '@/executor/types'
 import { collectBlockData } from '@/executor/utils/block-data'
 import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
+import {
+  analyzeIntent,
+  combineAndSortSearchResults,
+  type LatestConversation,
+} from '@/executor/utils/intent-analyzer'
 import { stringifyJSON } from '@/executor/utils/json'
 import {
   validateBlockType,
@@ -33,11 +38,64 @@ import { getTool, getToolAsync } from '@/tools/utils'
 const logger = createLogger('AgentBlockHandler')
 
 /**
+ * Gets conversationId from the Start block output in the execution context.
+ * Returns undefined if not found.
+ */
+function getConversationIdFromStartBlock(ctx: ExecutionContext): string | undefined {
+  if (!ctx.workflow?.blocks) {
+    return undefined
+  }
+
+  // Find the Start block (can be start_trigger or starter)
+  const startBlock = ctx.workflow.blocks.find(
+    (b) => b.metadata?.id === BlockType.START_TRIGGER || b.metadata?.id === BlockType.STARTER
+  )
+
+  if (!startBlock) {
+    return undefined
+  }
+
+  // Get the Start block's output from blockStates
+  const startBlockState = ctx.blockStates.get(startBlock.id)
+  if (!startBlockState?.output) {
+    return undefined
+  }
+
+  const conversationId = startBlockState.output.conversationId
+  return typeof conversationId === 'string' ? conversationId : undefined
+}
+
+/**
  * Handler for Agent blocks that process LLM requests with optional tools.
  */
 export class AgentBlockHandler implements BlockHandler {
   canHandle(block: SerializedBlock): boolean {
     return block.metadata?.id === BlockType.AGENT
+  }
+
+  /**
+   * Fetches the agent system prompt from the prompt_config table.
+   * Returns null if unavailable (caller should handle fallback).
+   */
+  private async fetchAgentSystemPrompt(): Promise<string | null> {
+    try {
+      const { promptConfig } = await import('@sim/db/schema')
+      const { PROMPT_CONFIG_KEYS } = await import('@sim/db/constants')
+
+      const rows = await db
+        .select({ prompt: promptConfig.prompt })
+        .from(promptConfig)
+        .where(eq(promptConfig.key, PROMPT_CONFIG_KEYS.AGENT_SYSTEM_PROMPT))
+        .limit(1)
+
+      if (rows.length > 0 && rows[0].prompt) {
+        return rows[0].prompt
+      }
+    } catch (error) {
+      logger.warn('Failed to fetch agent system prompt from prompt_config table', { error })
+    }
+
+    return null
   }
 
   async execute(
@@ -46,7 +104,20 @@ export class AgentBlockHandler implements BlockHandler {
     inputs: AgentInputs
   ): Promise<BlockOutput | StreamingExecution> {
     const filteredTools = await this.filterUnavailableMcpTools(ctx, inputs.tools || [])
-    const filteredInputs = { ...inputs, tools: filteredTools }
+
+    // Default memoryType to 'conversation' if not provided or is 'none'
+    const memoryType =
+      inputs.memoryType && inputs.memoryType !== 'none' ? inputs.memoryType : 'conversation'
+
+    // Automatically get conversationId from Start block if not provided
+    const conversationId = inputs.conversationId || getConversationIdFromStartBlock(ctx)
+
+    const filteredInputs = {
+      ...inputs,
+      tools: filteredTools,
+      memoryType: memoryType as 'conversation',
+      conversationId: conversationId,
+    }
 
     await this.validateToolPermissions(ctx, filteredInputs.tools || [])
 
@@ -62,53 +133,211 @@ export class AgentBlockHandler implements BlockHandler {
     // Log initial systemPrompt and userPrompt
     logger.debug('Agent block execution started')
 
-    // Get fact memories and add to system prompt if memory is enabled
-    if (inputs.memoryType && inputs.memoryType !== 'none') {
-      // Extract user prompt for fact memory search
-      let userPrompt: string | undefined
-      if (inputs.userPrompt) {
-        userPrompt =
-          typeof inputs.userPrompt === 'string'
-            ? inputs.userPrompt
-            : JSON.stringify(inputs.userPrompt)
-      } else if (inputs.messages && Array.isArray(inputs.messages)) {
-        const userMsg = inputs.messages.find((m) => m.role === 'user')
-        if (userMsg) {
-          userPrompt = userMsg.content
-        }
+    // Extract user prompt once for reuse across memory, intent analysis, etc.
+    // Store original userPrompt for memory API (without conversation history)
+    let userPrompt: string | undefined
+    let originalUserPrompt: string | undefined
+    if (inputs.userPrompt) {
+      userPrompt =
+        typeof inputs.userPrompt === 'string'
+          ? inputs.userPrompt
+          : JSON.stringify(inputs.userPrompt)
+      originalUserPrompt = userPrompt
+    } else if (inputs.messages && Array.isArray(inputs.messages)) {
+      const userMsg = inputs.messages.find((m) => m.role === 'user')
+      if (userMsg) {
+        userPrompt = userMsg.content
+        originalUserPrompt = userMsg.content
       }
+    }
 
-      // Get fact memories (isConversation: false)
-      const factMemories = await memoryService.searchMemories(
+    // Fetch fact memories early (used for both intent analysis and system prompt)
+    let factMemories: Message[] = []
+    if (filteredInputs.memoryType) {
+      factMemories = await memoryService.searchMemories(
         ctx,
         inputs,
         block.id,
         userPrompt,
-        false
+        false, // isConversation = false (fetching fact memories)
+        false // includeConversationId = false
       )
+    }
 
-      // Format fact memories and add to system prompt
-      if (factMemories && factMemories.length > 0) {
-        const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
+    // Use workflow-level intent analyzer result if available, otherwise run intent analyzer
+    let preSearchedResults: Message[] | undefined
+    let lastConversation: LatestConversation | null | undefined
+    const workflowLevelIntentResult = ctx.intentAnalyzerResult
 
-        const factMemoriesPrompt = `Consider these user preferences when you are giving user response -\n${factMemoriesText}`
+    if (workflowLevelIntentResult) {
+      // Use pre-searched results from workflow-level intent analyzer
+      logger.debug('Using workflow-level intent analyzer results', {
+        blockId: block.id,
+        decision: workflowLevelIntentResult.decision,
+        searchResultsCount: workflowLevelIntentResult.searchResults.length,
+        hasLastConversation: !!workflowLevelIntentResult.lastConversation,
+      })
 
-        // Append to existing system prompt or create new one
-        if (inputs.systemPrompt) {
-          inputs.systemPrompt = `${inputs.systemPrompt}\n\n${factMemoriesPrompt}`
-        } else {
-          inputs.systemPrompt = factMemoriesPrompt
+      // If SKIP, this should have been handled at workflow level, but handle it here as fallback
+      if (workflowLevelIntentResult.decision === 'SKIP' && workflowLevelIntentResult.skipResponse) {
+        logger.info('Workflow-level intent analyzer decided SKIP — returning generated response', {
+          workflowId: ctx.workflowId,
+          blockId: block.id,
+          conversationId: filteredInputs.conversationId,
+        })
+
+        const skipOutput: Record<string, any> = {
+          content: workflowLevelIntentResult.skipResponse,
+          model: 'gpt-4o',
+          tokens: { input: 0, output: 0, total: 0 },
+          toolCalls: { list: [], count: 0 },
+          skippedWorkflow: true,
         }
 
-        logger.debug('Added fact memories to system prompt', {
-          factMemoryCount: factMemories.length,
+        return skipOutput
+      }
+
+      // RUN path: use pre-searched results and last conversation
+      preSearchedResults = workflowLevelIntentResult.searchResults
+      lastConversation = workflowLevelIntentResult.lastConversation
+    } else if (filteredInputs.memoryType && filteredInputs.conversationId && userPrompt) {
+      // Fallback: run intent analyzer if workflow-level result not available
+      // This can happen if intent analyzer wasn't run (e.g., non-chat trigger, no Agent blocks initially)
+      try {
+        const intentResult = await analyzeIntent({
+          ctx,
+          inputs: filteredInputs,
           blockId: block.id,
-          updatedSystemPrompt: inputs.systemPrompt,
+          userPrompt,
+          model: filteredInputs.model,
+          factMemories,
+        })
+
+        if (intentResult.decision === 'SKIP' && intentResult.skipResponse) {
+          logger.info('Intent analyzer decided SKIP — returning generated response', {
+            workflowId: ctx.workflowId,
+            blockId: block.id,
+            conversationId: filteredInputs.conversationId,
+          })
+
+          const skipOutput: Record<string, any> = {
+            content: intentResult.skipResponse,
+            model: 'gpt-4o',
+            tokens: { input: 0, output: 0, total: 0 },
+            toolCalls: { list: [], count: 0 },
+            skippedWorkflow: true,
+          }
+
+          if (filteredInputs.memoryType) {
+            const lastUserMsg: Message = {
+              role: 'user',
+              content: originalUserPrompt || userPrompt || '',
+            }
+            await memoryService.appendToMemory(
+              ctx,
+              filteredInputs,
+              { role: 'assistant', content: intentResult.skipResponse },
+              block.id,
+              lastUserMsg
+            )
+          }
+
+          skipOutput._actualPromptsForSkip = {
+            userMessage: intentResult.skipUserMessage || '',
+            systemPrompt: intentResult.skipSystemPrompt || '',
+          }
+
+          return skipOutput
+        }
+
+        preSearchedResults = intentResult.searchResults
+        lastConversation = intentResult.lastConversation
+      } catch (intentError) {
+        logger.warn('Intent analysis failed, continuing with normal workflow execution', {
+          error: intentError,
         })
       }
     }
 
-    const messages = await this.buildMessages(ctx, inputs, block.id)
+    // Add additional execution rules if RUN path (from workflow-level or block-level intent analyzer)
+    if (preSearchedResults !== undefined) {
+      // Get original system prompt from messages array if systemPrompt is not set
+      if (
+        !filteredInputs.systemPrompt &&
+        filteredInputs.messages &&
+        Array.isArray(filteredInputs.messages)
+      ) {
+        const systemMsg = filteredInputs.messages.find((m) => m.role === 'system')
+        if (systemMsg) {
+          filteredInputs.systemPrompt = systemMsg.content
+        }
+      }
+
+      // Fetch additional execution rules from prompt_config table
+      const additionalExecutionRules = await this.fetchAgentSystemPrompt()
+
+      if (!additionalExecutionRules) {
+        logger.warn(
+          'Agent system prompt not found in prompt_config table, skipping additional execution rules',
+          {
+            blockId: block.id,
+          }
+        )
+      } else {
+        // Append to existing system prompt or create new one
+        if (filteredInputs.systemPrompt) {
+          filteredInputs.systemPrompt = `${filteredInputs.systemPrompt}\n\n${additionalExecutionRules}`
+        } else {
+          filteredInputs.systemPrompt = additionalExecutionRules
+        }
+      }
+
+      // Update system message in inputs.messages to keep them in sync
+      this.updateSystemMessageInInputs(filteredInputs)
+
+      logger.debug('Added additional execution rules to system prompt (RUN path)', {
+        blockId: block.id,
+      })
+    }
+
+    // Format fact memories and add to system prompt if memory is enabled
+    if (filteredInputs.memoryType && factMemories.length > 0) {
+      // Format fact memories and add to system prompt
+      if (factMemories && factMemories.length > 0) {
+        const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
+
+        const factMemoriesPrompt = `\n\=== USER FACTS : ===\n${factMemoriesText}`
+
+        // Append to existing system prompt or create new one
+        if (filteredInputs.systemPrompt) {
+          filteredInputs.systemPrompt = `${filteredInputs.systemPrompt}${factMemoriesPrompt}`
+        } else {
+          filteredInputs.systemPrompt = `=== USER FACTS : ===\n${factMemoriesText}`
+        }
+
+        // Update system message in inputs.messages to keep them in sync
+        this.updateSystemMessageInInputs(filteredInputs)
+
+        logger.debug('Added fact memories to system prompt', {
+          blockId: block.id,
+          factMemoryCount: factMemories.length,
+        })
+      }
+    }
+
+    const messages = await this.buildMessages(
+      ctx,
+      filteredInputs,
+      block.id,
+      preSearchedResults,
+      lastConversation
+    )
+
+    // Extract last user message for memory persistence - use original userPrompt (without conversation history)
+    // The messages array may contain conversation history, so we use the original userPrompt instead
+    const lastUserMessage: Message | null = originalUserPrompt
+      ? { role: 'user', content: originalUserPrompt }
+      : messages?.filter((m) => m.role === 'user').slice(-1)[0] || null
 
     const providerRequest = this.buildProviderRequest({
       ctx,
@@ -124,22 +353,90 @@ export class AgentBlockHandler implements BlockHandler {
     const result = await this.executeProviderRequest(ctx, providerRequest, block, responseFormat)
 
     if (this.isStreamingExecution(result)) {
-      if (filteredInputs.memoryType && filteredInputs.memoryType !== 'none') {
+      if (filteredInputs.memoryType) {
         return this.wrapStreamForMemoryPersistence(
           ctx,
           filteredInputs,
           result as StreamingExecution,
-          block.id
+          block.id,
+          lastUserMessage
         )
       }
       return result
     }
 
-    if (filteredInputs.memoryType && filteredInputs.memoryType !== 'none') {
-      await this.persistResponseToMemory(ctx, filteredInputs, result as BlockOutput, block.id)
+    if (filteredInputs.memoryType) {
+      await this.persistResponseToMemory(
+        ctx,
+        filteredInputs,
+        result as BlockOutput,
+        block.id,
+        lastUserMessage
+      )
     }
 
     return result
+  }
+
+  /**
+   * Updates the system message in inputs.messages array to match inputs.systemPrompt
+   * This ensures both are kept in sync when we modify the system prompt.
+   */
+  private updateSystemMessageInInputs(inputs: AgentInputs): void {
+    if (!inputs.systemPrompt) return
+
+    if (inputs.messages && Array.isArray(inputs.messages)) {
+      const systemMsgIndex = inputs.messages.findIndex((m) => m.role === 'system')
+      if (systemMsgIndex !== -1) {
+        // Update existing system message
+        inputs.messages[systemMsgIndex].content = inputs.systemPrompt
+      } else {
+        // Add system message at the beginning if it doesn't exist
+        inputs.messages.unshift({ role: 'system', content: inputs.systemPrompt })
+      }
+    }
+  }
+
+  /**
+   * Extracts complete input from messages array for logging purposes.
+   * This includes conversation history that was added to the prompt.
+   */
+  private extractCompleteInputFromMessages(
+    messages: Message[] | undefined,
+    inputs: AgentInputs
+  ): any {
+    if (!messages || messages.length === 0) {
+      return inputs
+    }
+
+    // Reconstruct the input with the complete user prompt (including conversation history)
+    const userMessages = messages.filter((m) => m.role === 'user')
+    const lastUserMessage = userMessages[userMessages.length - 1]
+
+    if (lastUserMessage) {
+      if (inputs.userPrompt) {
+        return {
+          ...inputs,
+          userPrompt: lastUserMessage.content,
+        }
+      }
+      if (inputs.messages && Array.isArray(inputs.messages)) {
+        const updatedMessages = [...inputs.messages]
+        const userMsgIndex = updatedMessages.findIndex((m) => m.role === 'user')
+        if (userMsgIndex !== -1) {
+          updatedMessages[userMsgIndex] = {
+            ...updatedMessages[userMsgIndex],
+            content: lastUserMessage.content,
+          }
+        }
+        return {
+          ...inputs,
+          messages: updatedMessages,
+        }
+      }
+    }
+
+    return inputs
   }
 
   private parseResponseFormat(responseFormat?: string | object): any {
@@ -775,19 +1072,34 @@ export class AgentBlockHandler implements BlockHandler {
   private async buildMessages(
     ctx: ExecutionContext,
     inputs: AgentInputs,
-    blockId: string
+    blockId: string,
+    preSearchedResults?: Message[],
+    lastConversation?: LatestConversation | null
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
-    const memoryEnabled = inputs.memoryType && inputs.memoryType !== 'none'
+    const memoryEnabled = !!inputs.memoryType
 
     // 1. Extract and validate messages from messages-input subblock
     const inputMessages = this.extractValidMessages(inputs.messages)
     const systemMessages = inputMessages.filter((m) => m.role === 'system')
     const conversationMessages = inputMessages.filter((m) => m.role !== 'system')
 
-    // 1. Fetch memory history if configured (using semantic search)
-    // 1. Fetch memory history if configured (using semantic search)
-    if (inputs.memoryType && inputs.memoryType !== 'none') {
+    // Store original user prompt BEFORE memory enhancement for Mem0 storage
+    let originalUserPromptForMemory: string | undefined
+    if (inputs.userPrompt) {
+      originalUserPromptForMemory =
+        typeof inputs.userPrompt === 'string'
+          ? inputs.userPrompt
+          : JSON.stringify(inputs.userPrompt)
+    } else if (inputs.messages && Array.isArray(inputs.messages)) {
+      const userMsg = inputs.messages.find((m) => m.role === 'user')
+      if (userMsg) {
+        originalUserPromptForMemory = userMsg.content
+      }
+    }
+
+    // 2. Fetch conversation memory history (using semantic search or pre-fetched results)
+    if (memoryEnabled) {
       // Extract user prompt for search query
       let userPrompt: string | undefined
       if (inputs.userPrompt) {
@@ -802,191 +1114,14 @@ export class AgentBlockHandler implements BlockHandler {
         }
       }
 
-      let lastConversationData = false
+      // Use pre-fetched results from intent analyzer or fetch new ones with combined, deduplicated, and sorted logic
+      const searchResults: Message[] = preSearchedResults
+        ? preSearchedResults
+        : await combineAndSortSearchResults(ctx, inputs, blockId, userPrompt, inputs.model)
 
-      let shouldRun = true
-
-      let historyContextForSkip = ''
-
-      // Controller logic if conversationId is present
-      const conversationId = inputs.conversationId
-      if (conversationId && userPrompt) {
-        try {
-          // Fetch latest log for this conversation
-          const { workflowExecutionLogs } = await import('@sim/db/schema')
-          const { desc, eq, and, isNotNull } = await import('drizzle-orm')
-
-          const latestLogs = await db
-            .select({
-              initialInput: workflowExecutionLogs.initialInput,
-              finalChatOutput: workflowExecutionLogs.finalChatOutput,
-            })
-            .from(workflowExecutionLogs)
-            .where(
-              and(
-                eq(workflowExecutionLogs.conversationId, conversationId),
-                eq(workflowExecutionLogs.status, 'completed'),
-                isNotNull(workflowExecutionLogs.initialInput),
-                isNotNull(workflowExecutionLogs.finalChatOutput)
-              )
-            )
-            .orderBy(desc(workflowExecutionLogs.startedAt))
-            .limit(1)
-
-          if (latestLogs.length > 0) {
-            lastConversationData = true
-            const lastLog = latestLogs[0]
-            logger.debug('Not calling the search API for agent Block')
-            // Format history for the controller prompt
-            // historyText = `\nLast Conversation Data(this should be used for answernig FOLLOW-UP QUESTIONS) -
-            //     User: ${lastLog.initialInput}
-            //     Assistant: ${lastLog.finalChatOutput}`
-
-            const systemPrompt = `You are a controller that decides whether to RUN a workflow or SKIP it.
-
-            Return ONLY ONE WORD:
-            RUN or SKIP (uppercase only).
-
-            ────────────────────────────────────────
-            PRIMARY DECISION PRINCIPLE
-
-            DEFAULT TO RUN.
-
-            Return SKIP when the user intent is the SAME as the previous assistant response
-            and the user is asking for a transformation, reuse, or downstream application
-            of the same content — even if light creativity is involved.
-
-            The workflow should RUN ONLY when the user introduces a NEW INTENT.
-
-            ────────────────────────────────────────
-            WHAT COUNTS AS NEW INTENT → RUN
-
-            ALWAYS RETURN RUN IF THE USER:
-
-            - Introduces a new topic, domain, industry, or subject
-            - Requests new information, data, or facts not already present
-            - Asks a new question unrelated to the previous response
-            - Requests validation, critique, judgment, or correctness checking
-            - Changes the goal, audience, or use case
-            - Asks to review, improve, or fix logic, prompts, or workflows
-            - Starts a new conversation
-            - Mentions a clearly different business objective
-            - If there is ANY doubt → RUN
-
-            ────────────────────────────────────────
-            WHAT COUNTS AS SAME INTENT → SKIP
-
-            Return SKIP ONLY IF ALL CONDITIONS ARE TRUE:
-
-            1. A previous assistant response exists
-            AND
-            2. The user refers ONLY to that response or its content
-            AND
-            3. The request is a derivative transformation or reuse of the same content
-
-            This INCLUDES:
-
-            - Formatting or restructuring
-              (table, bullets, summary, shorter, longer)
-            - Clarification or explanation without adding new facts
-            - Creative adaptation using the same content
-              (e.g., social posts, ads, captions, emails, landing copy)
-            - Applying “best practices” to existing content
-            - Channel-specific versions
-              (e.g., “turn this into a LinkedIn post”, “make this an ad”)
-            - Simple acknowledgments
-
-            If NO new topic, NO new domain, and NO new objective is introduced → SKIP
-
-            ────────────────────────────────────────
-            FINAL DECISION RULE
-
-            - False RUN is acceptable
-            - False SKIP is NOT acceptable
-            - If you are not absolutely certain → RUN
-
-            ────────────────────────────────────────
-            OUTPUT FORMAT (MANDATORY):
-
-            Return ONLY:
-            RUN
-            or
-            SKIP`
-
-            const controllerUserPrompt = `If the current request can be fulfilled using ONLY the information already present
-            in the conversation history, treat it as SAME INTENT.\n${historyContextForSkip}\n\nCurrent User Input: ${userPrompt}`
-
-            logger.debug('Controller user prompt', { controllerUserPrompt })
-            logger.debug('System prompt', { systemPrompt })
-
-            // Call OpenAI for decision
-            try {
-              const { OpenAI } = await import('openai')
-              const openai = new OpenAI({
-                apiKey: process.env.OPENAI_API_KEY,
-              })
-
-              const completion = await openai.chat.completions.create({
-                model: 'gpt-4o',
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: controllerUserPrompt },
-                ],
-                temperature: 0,
-                max_tokens: 10,
-              })
-
-              const decision = completion.choices[0]?.message?.content?.trim().toUpperCase()
-
-              if (decision === 'SKIP') {
-                shouldRun = false
-                historyContextForSkip = `\n\nLast Conversation Data(this should be used for answernig FOLLOW-UP QUESTIONS)- \nUser: ${lastLog.initialInput}\nAssistant: ${lastLog.finalChatOutput}`
-                logger.debug('Controller decided to SKIP semantic search', { conversationId })
-              } else {
-                logger.debug('Controller decided to RUN semantic search', {
-                  conversationId,
-                  decision,
-                })
-              }
-            } catch (openaiError) {
-              logger.warn('Failed to call OpenAI for controller decision, defaulting to RUN', {
-                error: openaiError,
-              })
-            }
-          }
-        } catch (dbError) {
-          logger.warn('Failed to fetch execution logs for controller, defaulting to RUN', {
-            error: dbError,
-          })
-        }
-      }
-
-      let searchResults: any[] = []
-
-      if (shouldRun) {
-        searchResults = await memoryService.searchMemories(ctx, inputs, blockId, userPrompt, true)
-      } else if (historyContextForSkip) {
-        // Directly append the history context to user prompt if skipping
-        if (inputs.userPrompt) {
-          inputs.userPrompt =
-            typeof inputs.userPrompt === 'string'
-              ? `${inputs.userPrompt}${historyContextForSkip}`
-              : `${JSON.stringify(inputs.userPrompt)}${historyContextForSkip}`
-        } else if (conversationMessages.length > 0) {
-          const userMsg = conversationMessages.find((m) => m.role === 'user')
-          if (userMsg) {
-            userMsg.content += historyContextForSkip
-          }
-        } else if (inputs.messages && Array.isArray(inputs.messages)) {
-          const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
-          if (userMsgIndex !== -1) {
-            inputs.messages[userMsgIndex].content += historyContextForSkip
-          }
-        }
-      }
-
-      // Add search results to user prompt incrementally with token checking (only if RUN was decided and we have results)
-      if (shouldRun && searchResults && searchResults.length > 0 && userPrompt) {
+      // Add search results to user prompt incrementally with token checking
+      // Priority: lastConversation first (most recent), then semantic search results
+      if ((lastConversation || (searchResults && searchResults.length > 0)) && userPrompt) {
         const { getMemoryTokenLimit } = await import('@/executor/handlers/agent/memory-utils')
         const { getAccurateTokenCount } = await import('@/lib/tokenization/estimators')
 
@@ -995,62 +1130,93 @@ export class AgentBlockHandler implements BlockHandler {
         let currentTokenCount = baseUserPromptTokens
         let memoryContext = ''
 
-        // if (lastConversationData) {
-        //   const memoryTokens = getAccurateTokenCount(historyText, inputs.model)
-        //   if (currentTokenCount + memoryTokens <= tokenLimit) {
-        //     memoryContext += historyText
-        //     currentTokenCount += memoryTokens
-        //   }
-        // }
+        // Priority 1: Add last conversation first (highest priority, most recent)
+        if (lastConversation) {
+          const lastConvHeader = '\n=== LAST CONVERSATION (MOST RECENT) === :\n'
+          const lastConvHeaderTokens = getAccurateTokenCount(lastConvHeader, inputs.model)
 
-        // Add search results one by one, checking token count
-        for (const memory of searchResults) {
-          const memoryText = `\nPrevious conversation:\n${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
-          const memoryTokens = getAccurateTokenCount(memoryText, inputs.model)
+          if (currentTokenCount + lastConvHeaderTokens <= tokenLimit) {
+            memoryContext += lastConvHeader
+            currentTokenCount += lastConvHeaderTokens
 
-          if (currentTokenCount + memoryTokens <= tokenLimit) {
-            memoryContext += memoryText
-            currentTokenCount += memoryTokens
-          } else {
-            logger.debug('Stopped adding memories due to token limit', {
-              blockId,
-              tokenLimit,
-              currentTokens: currentTokenCount,
-              memoryTokens,
-              memoriesAdded: memoryContext.split('Previous conversation:').length - 1,
-              totalMemories: searchResults.length,
-            })
-            break
+            if (lastConversation.initialInput) {
+              const userMsg = `User: ${lastConversation.initialInput}`
+              const userMsgTokens = getAccurateTokenCount(userMsg, inputs.model)
+              if (currentTokenCount + userMsgTokens <= tokenLimit) {
+                memoryContext += userMsg
+                currentTokenCount += userMsgTokens
+              }
+            }
+
+            if (lastConversation.finalChatOutput) {
+              const assistantMsg = `Assistant: ${lastConversation.finalChatOutput}`
+              const assistantMsgTokens = getAccurateTokenCount(assistantMsg, inputs.model)
+              if (currentTokenCount + assistantMsgTokens <= tokenLimit) {
+                memoryContext += assistantMsg
+                currentTokenCount += assistantMsgTokens
+              }
+            }
           }
         }
 
-        // Append memory context to user prompt
+        // Priority 2: Add semantic search results (secondary priority)
+        if (searchResults && searchResults.length > 0) {
+          const searchHeader =
+            '\n=== PREVIOUS CONVERSATION (SEMANTIC SEARCH) === : (DO NOT ANSWER ANY QUESTIONS FROM HERE JUST USE AS CONTEXT)\n'
+          const searchHeaderTokens = getAccurateTokenCount(searchHeader, inputs.model)
+
+          if (currentTokenCount + searchHeaderTokens <= tokenLimit) {
+            memoryContext += searchHeader
+            currentTokenCount += searchHeaderTokens
+
+            for (const memory of searchResults) {
+              const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
+              const memoryTokens = getAccurateTokenCount(memoryText, inputs.model)
+
+              if (currentTokenCount + memoryTokens <= tokenLimit) {
+                memoryContext += memoryText
+                currentTokenCount += memoryTokens
+              } else {
+                logger.debug('Stopped adding semantic search memories due to token limit', {
+                  blockId,
+                  tokenLimit,
+                  currentTokens: currentTokenCount,
+                  memoryTokens,
+                  totalMemories: searchResults.length,
+                })
+                break
+              }
+            }
+          }
+        }
+
+        // Append memory context to user prompt with "User Input: " prefix
         if (memoryContext) {
           if (inputs.userPrompt) {
-            inputs.userPrompt =
+            const userPromptStr =
               typeof inputs.userPrompt === 'string'
-                ? `${inputs.userPrompt}${memoryContext}`
-                : `${JSON.stringify(inputs.userPrompt)}${memoryContext}`
+                ? inputs.userPrompt
+                : JSON.stringify(inputs.userPrompt)
+            inputs.userPrompt = `=== CURRENT USER INPUT === (ANSWER THIS ONLY) : ${userPromptStr} \n DO NOT ANSWER QUESTIONS FROM HERE :${memoryContext}`
           } else if (conversationMessages.length > 0) {
-            // Modify the user message in conversationMessages directly
             const userMsg = conversationMessages.find((m) => m.role === 'user')
             if (userMsg) {
-              userMsg.content += memoryContext
+              userMsg.content = `=== CURRENT USER INPUT === : ${userMsg.content} \n DO NOT ANSWER QUESTIONS FROM HERE : ${memoryContext}`
             }
           } else if (inputs.messages && Array.isArray(inputs.messages)) {
-            // Fallback: modify inputs.messages if conversationMessages is empty
             const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
             if (userMsgIndex !== -1) {
-              inputs.messages[userMsgIndex].content += memoryContext
+              inputs.messages[userMsgIndex].content =
+                `=== CURRENT USER INPUT === : ${inputs.messages[userMsgIndex].content} \n DO NOT ANSWER QUESTIONS FROM HERE : ${memoryContext}`
             }
           }
 
-          logger.debug('Added search memories to user prompt with token checking', {
+          logger.debug('Added conversation history to user prompt with token checking', {
             blockId,
             tokenLimit,
             finalTokenCount: currentTokenCount,
-            memoriesAdded: memoryContext.split('Previous conversation:').length - 1,
-            totalMemories: searchResults.length,
+            hasLastConversation: !!lastConversation,
+            totalSemanticMemories: searchResults?.length || 0,
           })
         }
       } else if (searchResults && searchResults.length > 0) {
@@ -1078,43 +1244,26 @@ export class AgentBlockHandler implements BlockHandler {
       })
     }
 
-    // 5. Handle legacy systemPrompt (backward compatibility)
-    // Only add if no system message exists from any source
+    // 5. Handle systemPrompt - update existing system message or add new one
+    // inputs.systemPrompt may have been enhanced with additional execution rules and fact memories
     if (inputs.systemPrompt) {
-      const hasSystem = systemMessages.length > 0 || messages.some((m) => m.role === 'system')
-      if (!hasSystem) {
-        this.addSystemPrompt(messages, inputs.systemPrompt)
-      }
+      // Always use the enhanced systemPrompt from inputs, which includes additional rules and fact memories
+      this.addSystemPrompt(messages, inputs.systemPrompt)
+    } else if (systemMessages.length > 0) {
+      // If no systemPrompt but system messages exist in inputs.messages, use those
+      messages.unshift(...systemMessages)
     }
 
     // 6. Handle legacy userPrompt - this is NEW input each run
     if (inputs.userPrompt) {
       this.addUserPrompt(messages, inputs.userPrompt)
-
-      if (memoryEnabled) {
-        const userMessages = messages.filter((m) => m.role === 'user')
-        const lastUserMessage = userMessages[userMessages.length - 1]
-        if (lastUserMessage) {
-          await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId)
-        }
-      }
+      // Note: User messages are NOT stored separately here to avoid duplicates.
+      // They will be stored together with the assistant response in persistResponseToMemory
+      // via callMem0API, which stores the complete turn (user + assistant) together.
     }
 
-    // 6b. Store user messages from inputs.messages to memory when memory is enabled
-    // This ensures user input is stored even when using messages array instead of userPrompt
-    if (memoryEnabled && conversationMessages.length > 0 && !inputs.userPrompt) {
-      const userMessages = conversationMessages.filter((m) => m.role === 'user')
-      const lastUserMessage = userMessages[userMessages.length - 1]
-      if (lastUserMessage) {
-        await memoryService.appendToMemory(ctx, inputs, lastUserMessage, blockId)
-      }
-    }
-
-    // 7. Prefix system messages from inputs.messages at the start (runtime only)
-    // These are the agent's configured system prompts
-    if (systemMessages.length > 0) {
-      messages.unshift(...systemMessages)
-    }
+    // 6b. Note: User messages from inputs.messages are also not stored separately.
+    // They will be stored together with the assistant response to avoid duplicates.
 
     // Final validation: ensure we have at least one message
     if (messages.length === 0) {
@@ -1457,10 +1606,17 @@ export class AgentBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     inputs: AgentInputs,
     streamingExec: StreamingExecution,
-    blockId: string
+    blockId: string,
+    lastUserMessage: Message | null
   ): StreamingExecution {
     return {
-      stream: memoryService.wrapStreamForPersistence(streamingExec.stream, ctx, inputs, blockId),
+      stream: memoryService.wrapStreamForPersistence(
+        streamingExec.stream,
+        ctx,
+        inputs,
+        blockId,
+        lastUserMessage
+      ),
       execution: streamingExec.execution,
     }
   }
@@ -1469,7 +1625,8 @@ export class AgentBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     inputs: AgentInputs,
     result: BlockOutput,
-    blockId: string
+    blockId: string,
+    lastUserMessage: Message | null
   ): Promise<void> {
     const content = (result as any)?.content
     if (!content || typeof content !== 'string') {
@@ -1477,7 +1634,13 @@ export class AgentBlockHandler implements BlockHandler {
     }
 
     try {
-      await memoryService.appendToMemory(ctx, inputs, { role: 'assistant', content }, blockId)
+      await memoryService.appendToMemory(
+        ctx,
+        inputs,
+        { role: 'assistant', content },
+        blockId,
+        lastUserMessage
+      )
       logger.debug('Persisted assistant response to memory', {
         workflowId: ctx.workflowId,
         conversationId: inputs.conversationId,

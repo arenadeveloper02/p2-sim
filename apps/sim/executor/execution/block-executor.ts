@@ -181,6 +181,61 @@ export class BlockExecutor {
         blockLog.durationMs = duration
         blockLog.success = true
         blockLog.output = this.filterOutputForLog(block, normalizedOutput)
+
+        // If the agent was skipped (intent analyzer decided SKIP), update the input
+        // to reflect that the agent's model was not used - the intent analyzer's model was used instead
+        if (
+          normalizedOutput &&
+          typeof normalizedOutput === 'object' &&
+          'skippedWorkflow' in normalizedOutput &&
+          normalizedOutput.skippedWorkflow === true &&
+          'model' in normalizedOutput &&
+          typeof normalizedOutput.model === 'string'
+        ) {
+          // Update the input model to match the output model (intent analyzer's model)
+          // This makes it clear in the trace span that the agent's configured model was not used
+          if (blockLog.input && typeof blockLog.input === 'object' && 'model' in blockLog.input) {
+            const updatedInput: Record<string, any> = {
+              ...blockLog.input,
+              model: normalizedOutput.model,
+              _agentSkipped: true, // Metadata to indicate agent was skipped
+            }
+
+            // Store the actual formatted user message and system prompt used for generating the SKIP response
+            // These are the actual prompts sent to the LLM, not the raw user prompt
+            if (
+              '_actualPromptsForSkip' in normalizedOutput &&
+              normalizedOutput._actualPromptsForSkip &&
+              typeof normalizedOutput._actualPromptsForSkip === 'object'
+            ) {
+              const actualPrompts = normalizedOutput._actualPromptsForSkip as {
+                userMessage?: string
+                systemPrompt?: string
+              }
+
+              // Update the messages array to show the actual formatted user message sent to the LLM
+              if (actualPrompts.userMessage && Array.isArray(updatedInput.messages)) {
+                const userMessageIndex = updatedInput.messages.findIndex(
+                  (m: any) => m && m.role === 'user'
+                )
+                if (userMessageIndex !== -1) {
+                  updatedInput.messages = [...updatedInput.messages]
+                  updatedInput.messages[userMessageIndex] = {
+                    ...updatedInput.messages[userMessageIndex],
+                    content: actualPrompts.userMessage,
+                  }
+                }
+              }
+
+              // Store the system prompt used by the intent analyzer
+              if (actualPrompts.systemPrompt) {
+                updatedInput.systemPrompt = actualPrompts.systemPrompt
+              }
+            }
+
+            blockLog.input = updatedInput
+          }
+        }
       }
 
       this.state.setBlockOutput(node.id, normalizedOutput, duration)
@@ -392,7 +447,17 @@ export class BlockExecutor {
       return filtered
     }
 
-    return redactSensitiveKeys(output) as NormalizedBlockOutput
+    // Remove internal metadata fields that shouldn't be stored in DB
+    const filtered = redactSensitiveKeys(output) as NormalizedBlockOutput
+    if (filtered && typeof filtered === 'object') {
+      const { _actualPromptsForSkip, _completeInputForLogging, ...cleanOutput } = filtered as {
+        _actualPromptsForSkip?: unknown
+        _completeInputForLogging?: unknown
+      } & Record<string, unknown>
+      return cleanOutput as NormalizedBlockOutput
+    }
+
+    return filtered
   }
 
   private filterOutputForDisplay(
@@ -701,14 +766,14 @@ export class BlockExecutor {
     ) {
       try {
         const { memoryService } = await import('@/executor/handlers/agent/memory')
-        const { Message } = await import('@/executor/handlers/agent/types')
+        const { Message } = await import('@/executor/handlers/agent/types').default
 
         const assistantMessage: Message = {
           role: 'assistant',
           content: fullContent,
         }
 
-        await memoryService.persistMemoryMessage(ctx, resolvedInputs, assistantMessage, blockId)
+        await memoryService.appendToMemory(ctx, resolvedInputs, assistantMessage, blockId, null)
 
         logger.debug('Persisted assistant response to memory from stream consumption', {
           workflowId: ctx.workflowId,

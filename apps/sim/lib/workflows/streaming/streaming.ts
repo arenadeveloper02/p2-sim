@@ -96,6 +96,84 @@ async function buildMinimalResult(
     ...(executionId ? { executionId } : {}),
   }
 
+  // Handle skipped workflows - include skip response in output
+  // BUT: if it was already streamed, don't include it again to avoid duplication
+  if (result.status === 'skipped' && result.output && typeof result.output === 'object') {
+    const skipOutput = result.output as Record<string, any>
+    const skipContent = skipOutput.content
+
+    if (skipContent && typeof skipContent === 'string') {
+      // Check if skip content was already streamed
+      let alreadyStreamed = false
+      if (selectedOutputs && selectedOutputs.length > 0) {
+        const firstOutputId = selectedOutputs[0]
+        const blockId = extractBlockIdFromOutputId(firstOutputId)
+        // If this blockId was already streamed, skip including it in final result
+        if (streamedContent.has(blockId)) {
+          alreadyStreamed = true
+          logger.debug(
+            `[${requestId}] Skip response already streamed, skipping from final result`,
+            {
+              executionId,
+              blockId,
+            }
+          )
+        }
+      }
+
+      // Only include in final result if it wasn't already streamed
+      if (!alreadyStreamed) {
+        // For skipped workflows, include the skip response in the output
+        // Use a special key or the first selected output blockId if available
+        if (selectedOutputs && selectedOutputs.length > 0) {
+          // Extract blockId from first selected output
+          const firstOutputId = selectedOutputs[0]
+          const blockId = extractBlockIdFromOutputId(firstOutputId)
+          const path = extractPathFromOutputId(firstOutputId, blockId)
+
+          if (!minimalResult.output[blockId]) {
+            minimalResult.output[blockId] = Object.create(null) as Record<string, unknown>
+          }
+          ;(minimalResult.output[blockId] as Record<string, unknown>)[path] = skipContent
+        } else {
+          // If no selected outputs, include in a default structure
+          minimalResult.output = { content: skipContent }
+        }
+
+        logger.debug(`[${requestId}] Included skip response in minimal result`, {
+          executionId,
+          hasContent: !!skipContent,
+          contentLength: skipContent.length,
+        })
+      } else {
+        // Even though we checked, ensure the output structure doesn't contain the skip content
+        // This is a safety measure to prevent UI from processing it
+        if (selectedOutputs && selectedOutputs.length > 0) {
+          const firstOutputId = selectedOutputs[0]
+          const blockId = extractBlockIdFromOutputId(firstOutputId)
+          const path = extractPathFromOutputId(firstOutputId, blockId)
+
+          // Ensure this blockId/path combination is not in the output
+          if (minimalResult.output[blockId]) {
+            const blockOutput = minimalResult.output[blockId] as Record<string, unknown>
+            if (blockOutput[path] === skipContent) {
+              blockOutput[path] = undefined
+              // If block is now empty, remove it
+              if (Object.keys(blockOutput).length === 0) {
+                minimalResult.output[blockId] = undefined
+              }
+            }
+          }
+        } else if (minimalResult.output.content === skipContent) {
+          // Remove content if it matches the skip content
+          minimalResult.output.content = undefined
+        }
+      }
+
+      return minimalResult
+    }
+  }
+
   if (!selectedOutputs?.length) {
     minimalResult.output = result.output || {}
     return minimalResult
@@ -173,13 +251,29 @@ async function completeLoggingSession(result: ExecutionResult): Promise<void> {
 
   const { traceSpans, totalDuration } = buildTraceSpans(result)
 
-  await result._streamingMetadata.loggingSession.safeComplete({
-    endedAt: new Date().toISOString(),
-    totalDurationMs: totalDuration || 0,
-    finalOutput: result.output || {},
-    traceSpans: (traceSpans || []) as any,
-    workflowInput: result._streamingMetadata.processedInput,
-  })
+  if (result.status === 'skipped') {
+    const skipContent =
+      result.output && typeof result.output === 'object' && 'content' in result.output
+        ? (result.output.content as string)
+        : undefined
+
+    await result._streamingMetadata.loggingSession.safeCompleteAsSkipped({
+      endedAt: new Date().toISOString(),
+      totalDurationMs: totalDuration || 0,
+      finalOutput: result.output || {},
+      traceSpans: (traceSpans || []) as any,
+      workflowInput: result._streamingMetadata.processedInput,
+      finalChatOutput: skipContent,
+    })
+  } else {
+    await result._streamingMetadata.loggingSession.safeComplete({
+      endedAt: new Date().toISOString(),
+      totalDurationMs: totalDuration || 0,
+      finalOutput: result.output || {},
+      traceSpans: (traceSpans || []) as any,
+      workflowInput: result._streamingMetadata.processedInput,
+    })
+  }
 
   result._streamingMetadata = undefined
 }
@@ -309,6 +403,35 @@ export async function createStreamingResponse(
           },
           executionId
         )
+
+        // Handle skipped workflows - stream the skip response immediately
+        // Mark it as streamed so it won't be included in final result
+        if (result.status === 'skipped' && result.output && typeof result.output === 'object') {
+          const skipOutput = result.output as Record<string, any>
+          const skipContent = skipOutput.content
+
+          if (
+            skipContent &&
+            typeof skipContent === 'string' &&
+            streamConfig.selectedOutputs?.length
+          ) {
+            // Extract blockId from first selected output to stream to correct block
+            const firstOutputId = streamConfig.selectedOutputs[0]
+            const blockId = extractBlockIdFromOutputId(firstOutputId)
+
+            // Stream the skip response content immediately
+            logger.debug(`[${requestId}] Streaming skip response for skipped workflow`, {
+              executionId,
+              blockId,
+              contentLength: skipContent.length,
+            })
+
+            sendChunk(blockId, skipContent)
+            // Mark as streamed BEFORE buildMinimalResult is called
+            // This ensures buildMinimalResult will skip including it in the final result
+            state.streamedContent.set(blockId, skipContent)
+          }
+        }
 
         if (result.logs && state.streamedContent.size > 0) {
           result.logs = updateLogsWithStreamedContent(result.logs, state)
