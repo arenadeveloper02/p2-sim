@@ -91,9 +91,9 @@ export function validatePathSegment(
   const pathTraversalPatterns = [
     '..',
     './',
-    '.\\.', // Windows path traversal
-    '%2e%2e', // URL encoded ..
-    '%252e%252e', // Double URL encoded ..
+    '.\\.',
+    '%2e%2e',
+    '%252e%252e',
     '..%2f',
     '..%5c',
     '%2e%2e%2f',
@@ -393,7 +393,6 @@ export function validateHostname(
 
   const lowerHostname = hostname.toLowerCase()
 
-  // Block localhost
   if (lowerHostname === 'localhost') {
     logger.warn('Hostname is localhost', { paramName })
     return {
@@ -402,7 +401,6 @@ export function validateHostname(
     }
   }
 
-  // Use ipaddr.js to check if hostname is an IP and if it's private/reserved
   if (ipaddr.isValid(lowerHostname)) {
     if (isPrivateOrReservedIP(lowerHostname)) {
       logger.warn('Hostname matches blocked IP range', {
@@ -416,7 +414,6 @@ export function validateHostname(
     }
   }
 
-  // Basic hostname format validation
   const hostnamePattern =
     /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i
 
@@ -462,10 +459,7 @@ export function validateFileExtension(
     }
   }
 
-  // Remove leading dot if present
   const ext = extension.startsWith('.') ? extension.slice(1) : extension
-
-  // Normalize to lowercase
   const normalizedExt = ext.toLowerCase()
 
   if (!allowedExtensions.map((e) => e.toLowerCase()).includes(normalizedExt)) {
@@ -517,7 +511,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Check for path traversal patterns (../)
   const pathTraversalPatterns = [
     '../',
     '..\\',
@@ -527,7 +520,7 @@ export function validateMicrosoftGraphId(
     '%2e%2e%5c',
     '%2e%2e\\',
     '..%5c',
-    '%252e%252e%252f', // double encoded
+    '%252e%252e%252f',
   ]
 
   const lowerValue = value.toLowerCase()
@@ -544,7 +537,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Check for control characters and null bytes
   if (/[\x00-\x1f\x7f]/.test(value) || value.includes('%00')) {
     logger.warn('Control characters in Microsoft Graph ID', { paramName })
     return {
@@ -553,7 +545,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Check for newlines (which could be used for header injection)
   if (value.includes('\n') || value.includes('\r')) {
     return {
       isValid: false,
@@ -561,8 +552,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Microsoft Graph IDs can contain many characters, but not suspicious patterns
-  // We've blocked path traversal, so allow the rest
   return { isValid: true, sanitized: value }
 }
 
@@ -585,7 +574,6 @@ export function validateJiraCloudId(
   value: string | null | undefined,
   paramName = 'cloudId'
 ): ValidationResult {
-  // Jira cloud IDs are alphanumeric with hyphens (UUID-like)
   return validatePathSegment(value, {
     paramName,
     allowHyphens: true,
@@ -614,7 +602,6 @@ export function validateJiraIssueKey(
   value: string | null | undefined,
   paramName = 'issueKey'
 ): ValidationResult {
-  // Jira issue keys: letters, numbers, hyphens (PROJECT-123 format)
   return validatePathSegment(value, {
     paramName,
     allowHyphens: true,
@@ -655,7 +642,6 @@ export function validateExternalUrl(
     }
   }
 
-  // Must be a valid URL
   let parsedUrl: URL
   try {
     parsedUrl = new URL(url)
@@ -666,28 +652,29 @@ export function validateExternalUrl(
     }
   }
 
-  // Only allow https protocol
-  if (parsedUrl.protocol !== 'https:') {
+  const protocol = parsedUrl.protocol
+  const hostname = parsedUrl.hostname.toLowerCase()
+
+  const cleanHostname =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
+
+  let isLocalhost = cleanHostname === 'localhost'
+  if (ipaddr.isValid(cleanHostname)) {
+    const processedIP = ipaddr.process(cleanHostname).toString()
+    if (processedIP === '127.0.0.1' || processedIP === '::1') {
+      isLocalhost = true
+    }
+  }
+
+  if (protocol !== 'https:' && !(protocol === 'http:' && isLocalhost)) {
     return {
       isValid: false,
       error: `${paramName} must use https:// protocol`,
     }
   }
 
-  // Block private IP ranges and localhost
-  const hostname = parsedUrl.hostname.toLowerCase()
-
-  // Block localhost
-  if (hostname === 'localhost') {
-    return {
-      isValid: false,
-      error: `${paramName} cannot point to localhost`,
-    }
-  }
-
-  // Use ipaddr.js to check if hostname is an IP and if it's private/reserved
-  if (ipaddr.isValid(hostname)) {
-    if (isPrivateOrReservedIP(hostname)) {
+  if (!isLocalhost && ipaddr.isValid(cleanHostname)) {
+    if (isPrivateOrReservedIP(cleanHostname)) {
       return {
         isValid: false,
         error: `${paramName} cannot point to private IP addresses`,
