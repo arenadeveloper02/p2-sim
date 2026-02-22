@@ -59,6 +59,7 @@ import { GrafanaBlock } from '@/blocks/blocks/grafana'
 import { GrainBlock } from '@/blocks/blocks/grain'
 import { GreptileBlock } from '@/blocks/blocks/greptile'
 import { GuardrailsBlock } from '@/blocks/blocks/guardrails'
+import { HexBlock } from '@/blocks/blocks/hex'
 import { HubSpotBlock } from '@/blocks/blocks/hubspot'
 import { HuggingFaceBlock } from '@/blocks/blocks/huggingface'
 import { HumanInTheLoopBlock } from '@/blocks/blocks/human_in_the_loop'
@@ -251,6 +252,7 @@ export const registry: Record<string, BlockConfig> = {
   grain: GrainBlock,
   greptile: GreptileBlock,
   guardrails: GuardrailsBlock,
+  hex: HexBlock,
   hubspot: HubSpotBlock,
   huggingface: HuggingFaceBlock,
   human_in_the_loop: HumanInTheLoopBlock,
