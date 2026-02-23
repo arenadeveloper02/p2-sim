@@ -77,6 +77,7 @@ export class ApiBlockHandler implements BlockHandler {
             sessionUserId: ctx.metadata?.sessionUserId,
             workflowUserId: ctx.metadata?.workflowUserId,
             enforceCredentialAccess: ctx.enforceCredentialAccess,
+            callChain: ctx.callChain,
           },
         },
         false,

@@ -22,6 +22,7 @@ export type WorkflowExecutionPayload = {
   triggerType?: CoreTriggerType
   executionId?: string
   metadata?: Record<string, any>
+  callChain?: string[]
 }
 
 /**
@@ -96,6 +97,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
       useDraftState: false,
       startTime: new Date().toISOString(),
       isClientSession: false,
+      callChain: payload.callChain,
     }
 
     const snapshot = new ExecutionSnapshot(
