@@ -40,77 +40,73 @@ function resolveAccountKey(accountInput: string): string {
 }
 
 /**
- * Detects if a query is asking for comparison
+ * AI-powered query analysis — detects query type, extracts dates, intent, and comparison periods.
+ * No hardcoded keywords, month lists, or regex patterns. AI decides everything.
  */
-function detectComparisonQuery(query: string): boolean {
-  const comparisonKeywords = [
-    'compare',
-    'vs',
-    'versus',
-    'and',
-    'against',
-    'compared to',
-    'year over year',
-    'yoy',
-    'month over month',
-    'mom',
-    'previous year',
-    'last year',
-    'prior year',
-  ]
-
-  return comparisonKeywords.some((keyword) => query.toLowerCase().includes(keyword.toLowerCase()))
+interface AIQueryAnalysis {
+  isComparison: boolean
+  intent: string
+  periods: Array<{
+    label: string
+    startDate: string
+    endDate: string
+    naturalQuery: string
+  }>
 }
 
-/**
- * AI-powered date and intent extraction for comparison queries
- */
-async function extractDateRangesWithAI(
-  query: string,
-  requestId: string
-): Promise<{ dateRanges: string[]; intent: string } | null> {
-  const prompt = `
-Extract date ranges and user intent from this comparison query: "${query}"
+async function analyzeQueryWithAI(query: string, requestId: string): Promise<AIQueryAnalysis> {
+  const today = new Date().toISOString().split('T')[0]
 
-Return JSON with both dates and intent:
+  const prompt = `You are an expert Google Ads query analyzer. Analyze the following user query and return a structured JSON response.
+
+User query: "${query}"
+Today's date: ${today}
+
+Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 {
-  "dateRanges": ["Month YYYY", "Month YYYY"],
-  "intent": "what the user wants to see (conversions, impressions, clicks, etc.)"
+  "isComparison": true/false,
+  "intent": "what metrics/data the user wants (e.g. 'campaign performance', 'conversions', 'clicks', 'impressions', 'cost', 'ROAS')",
+  "periods": [
+    {
+      "label": "human-readable label for this period (e.g. 'October 2024', 'Q1 2025', 'Last 7 days')",
+      "startDate": "YYYY-MM-DD",
+      "endDate": "YYYY-MM-DD",
+      "naturalQuery": "a clear natural language query for ONLY this period that can generate a GAQL query"
+    }
+  ]
 }
 
-IMPORTANT RULES:
-- Extract REAL dates mentioned in the query
-- Extract the actual intent/metrics the user wants
-- If no clear intent, use "campaign performance" as default
-- Month must be full name (January, February, etc.)
-- Year must be 4 digits (any year 1900-3000)
-- CRITICAL: If user mentions "2024 vs 2025" with one month specified, extract BOTH with the same month. Example: "October 2024 vs 2025" → ["October 2024", "October 2025"]
-- CRITICAL: Always extract the full month-year format, never just the year
-- IMPORTANT: Convert M/D/YYYY format to Month YYYY format. Example: "1/1/2025 to 1/31/2025" → ["January 2025"]
+RULES:
+- "isComparison" is true if the user wants to compare two or more time periods. Use your understanding of language — don't rely on specific keywords.
+- For comparisons, return exactly 2 periods. For single queries, return exactly 1 period.
+- "intent" should capture what the user actually wants to see. If unclear, default to "campaign performance".
+- All dates must be in YYYY-MM-DD format. Resolve relative dates (e.g. "last month", "yesterday") using today's date.
+- "naturalQuery" for each period should be a standalone query that includes the date range and intent, suitable for generating a GAQL query independently.
+- For month-based periods, startDate is the 1st and endDate is the last day of that month.
+- For year-based periods, startDate is Jan 1 and endDate is Dec 31.
+- For quarter-based periods (Q1, Q2, Q3, Q4), use the correct 3-month range.
+- Handle ANY date format the user provides (M/D/YYYY, DD-MM-YYYY, "last week", "past 30 days", "this quarter", etc.)
+
+CRITICAL FOR COMPARISONS - NO HALLUCINATIONS:
+- For comparison queries, BOTH periods MUST use EXACTLY the same metrics, dimensions, and segmentations
+- The "naturalQuery" for each period should be nearly identical except for the date range
+- Example: If comparing "October 2024 vs October 2025 ROAS", both queries should request the same metrics (ROAS, cost, conversions, clicks, impressions)
+- DO NOT hallucinate different metrics for different periods - use the same exact metrics for both
+- If the user mentions specific metrics (ROAS, CPC, AOV, conversion rate), include ALL of them in BOTH periods
+- If user mentions campaign types (Pmax, Brand, etc.), include the same campaign types in BOTH periods
 
 Examples:
-- "Compare October 2025 vs October 2024" → {"dateRanges": ["October 2025", "October 2024"], "intent": "campaign performance"}
-- "Compare October 2024 vs 2025 Performance" → {"dateRanges": ["October 2024", "October 2025"], "intent": "campaign performance"}
-- "Compare October 2025 vs October 2024, I want to see conversions" → {"dateRanges": ["October 2025", "October 2024"], "intent": "conversions"}
-- "Show December 2025 compared to December 2024, give me impressions" → {"dateRanges": ["December 2025", "December 2024"], "intent": "impressions"}
-- "November 2025 and November 2024 yoy for clicks" → {"dateRanges": ["November 2025", "November 2024"], "intent": "clicks"}
-- "Compare 2019 vs 2018 conversions" → {"dateRanges": ["2019", "2018"], "intent": "conversions"}
-- "Show me the performance from 1/1/2025 to 1/31/2025 and then 1/1/2026 to 1/31/2026" → {"dateRanges": ["January 2025", "January 2026"], "intent": "campaign performance"}
-- "Compare last month vs same month last year" → null (no explicit dates)
+- "Compare October 2024 vs October 2025" → isComparison: true, 2 periods with Oct date ranges
+- "Show me clicks last 7 days" → isComparison: false, 1 period
+- "How did Q1 2025 perform against Q1 2024" → isComparison: true, 2 periods with quarter ranges
+- "Year over year performance 2024 vs 2025" → isComparison: true, 2 full-year periods
+- "What happened with conversions from 1/1/2025 to 3/31/2025 compared to same period 2024" → isComparison: true, 2 periods
+- "Show campaign performance" → isComparison: false, 1 period (default to last 30 days)
 `
 
   try {
-    logger.info(`[${requestId}] Starting AI date extraction for query: "${query}"`)
+    logger.info(`[${requestId}] Analyzing query with AI: "${query}"`)
 
-    // Check environment variables
-    logger.info(`[${requestId}] Environment variables check:`, {
-      hasXAIKey: !!process.env.XAI_API_KEY,
-      hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-      xaiKeyLength: process.env.XAI_API_KEY ? process.env.XAI_API_KEY.length : 0,
-      openAIKeyLength: process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.length : 0,
-    })
-
-    // Use the same AI provider as GAQL generation
     const { provider, model, apiKey } = resolveAIProvider(logger)
 
     logger.info(`[${requestId}] AI provider resolved:`, { provider, model, hasApiKey: !!apiKey })
@@ -118,8 +114,8 @@ Examples:
     const aiResponse = await executeProviderRequest(provider, {
       model,
       systemPrompt:
-        'You are a date extraction expert. Extract only explicit dates mentioned in queries.',
-      context: `Extract dates from: "${query}"`,
+        'You are a Google Ads query analyzer. Return ONLY valid JSON, no markdown fences or extra text.',
+      context: `Analyze this Google Ads query: "${query}"`,
       messages: [
         {
           role: 'user',
@@ -131,183 +127,87 @@ Examples:
       maxTokens: 2048,
     })
 
-    logger.info(`[${requestId}] AI response received successfully`)
+    logger.info(`[${requestId}] AI analysis response received`)
 
     // Extract content from AI response
-    const responseContent =
+    let responseContent =
       typeof aiResponse === 'string'
         ? aiResponse
         : 'content' in aiResponse
           ? aiResponse.content
           : JSON.stringify(aiResponse)
 
-    let extractedData
+    // Strip markdown code fences if AI included them
+    responseContent = responseContent
+      .replace(/```json\s*/g, '')
+      .replace(/```\s*/g, '')
+      .trim()
+
+    let analysis: AIQueryAnalysis
     try {
-      extractedData = JSON.parse(responseContent)
+      analysis = JSON.parse(responseContent)
     } catch (parseError) {
-      logger.error('AI returned invalid JSON:', responseContent)
-      return null
+      logger.error(`[${requestId}] AI returned invalid JSON:`, responseContent)
+      throw new Error(`AI API returned invalid JSON. Response: ${responseContent}`)
     }
 
-    // Validate AI response structure
-    if (
-      !extractedData ||
-      !extractedData.dateRanges ||
-      !Array.isArray(extractedData.dateRanges) ||
-      extractedData.dateRanges.length < 2
-    ) {
-      return null
+    // Basic structural validation — fail fast if AI returns invalid structure
+    if (!analysis.periods || !Array.isArray(analysis.periods) || analysis.periods.length === 0) {
+      logger.error(`[${requestId}] AI returned invalid or empty periods:`, analysis)
+      throw new Error(`AI API failed to extract valid periods from query: "${query}"`)
     }
 
-    // Validate each date format
-    const validDates = extractedData.dateRanges.filter((date: string) => {
-      if (typeof date !== 'string') return false
-
-      // Check if it matches "Month YYYY" format OR just "YYYY" (for years without months)
-      const monthYearPattern = /^([A-Z][a-z]+) (\d{4})$/
-      const yearOnlyPattern = /^(\d{4})$/
-
-      let match = date.match(monthYearPattern)
-      let month
-      let year
-
-      if (match) {
-        month = match[1]
-        year = match[2]
-      } else {
-        match = date.match(yearOnlyPattern)
-        if (!match) return false
-        month = null
-        year = match[1]
-      }
-
-      // Validate month if present
-      if (month) {
-        const validMonths = [
-          'January',
-          'February',
-          'March',
-          'April',
-          'May',
-          'June',
-          'July',
-          'August',
-          'September',
-          'October',
-          'November',
-          'December',
-        ]
-        if (!validMonths.includes(month)) return false
-
-        // For M/D/YYYY format, check if the year exists in query (month name won't be in original)
-        // For Month YYYY format, check both month and year
-        const hasMonthInQuery = query.toLowerCase().includes(month.toLowerCase())
-        const hasYearInQuery = query.includes(year)
-
-        if (!hasYearInQuery) {
-          logger.warn(`AI hallucinated year: ${year} not found in original query: ${query}`)
-          return false
-        }
-
-        // If month is not in query, it's likely M/D/YYYY format conversion (which is valid)
-        if (!hasMonthInQuery) {
-          // Check if query has M/D/YYYY pattern for this month/year
-          const monthNumber = new Date(`${month} 1, 2000`).getMonth() + 1
-          const monthPattern = new RegExp(`${monthNumber}/\\d+/${year}`)
-          if (!monthPattern.test(query)) {
-            logger.warn(`AI hallucinated date: ${date} not found in original query: ${query}`)
-            return false
-          }
-        }
-      } else {
-        // For year-only dates, verify the year exists in query
-        if (!query.includes(year)) {
-          logger.warn(`AI hallucinated year: ${year} not found in original query: ${query}`)
-          return false
-        }
-      }
-
-      // Validate year range (1900-3000)
-      const yearNum = Number.parseInt(year)
-      if (yearNum < 1900 || yearNum > 3000) return false
-
-      return true
+    logger.info(`[${requestId}] AI analysis complete:`, {
+      isComparison: analysis.isComparison,
+      intent: analysis.intent,
+      periodCount: analysis.periods.length,
+      periods: analysis.periods.map((p) => ({
+        label: p.label,
+        startDate: p.startDate,
+        endDate: p.endDate,
+      })),
     })
 
-    if (validDates.length >= 2) {
-      return {
-        dateRanges: validDates.slice(0, 2),
-        intent: extractedData.intent || 'campaign performance',
-      }
-    }
-
-    return null
+    return analysis
   } catch (error) {
-    logger.error('AI date extraction failed:', error)
-    return null
+    logger.error(`[${requestId}] AI query analysis failed:`, error)
+    throw new Error(
+      `AI query analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    )
   }
 }
 
 /**
- * Handles comparison queries by generating two GAQL queries
+ * Executes a comparison query using AI-analyzed periods
  */
 async function handleComparisonQuery(
   query: string,
-  accounts: string,
+  analysis: AIQueryAnalysis,
   accountInfo: any,
   requestId: string
 ): Promise<NextResponse> {
+  const comparisonStartTime = Date.now()
+
   try {
     logger.info(`[${requestId}] Processing comparison query: ${query}`)
+    logger.info(`[${requestId}] AI detected ${analysis.periods.length} periods to compare`)
+    logger.info(`[${requestId}] Period queries:`, {
+      period1: analysis.periods[0]?.naturalQuery,
+      period2: analysis.periods[1]?.naturalQuery,
+    })
 
-    // Extract date ranges and intent using AI
-    const extractionResult = await extractDateRangesWithAI(query, requestId)
-
-    if (
-      !extractionResult ||
-      !extractionResult.dateRanges ||
-      extractionResult.dateRanges.length < 2
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'AI API failed to extract date ranges. Please check your AI provider configuration (XAI_API_KEY or OPENAI_API_KEY) and try again.',
-          details:
-            'The comparison functionality requires AI to extract dates and intent from your query.',
-          example: 'Compare October 2025 vs October 2024',
-        },
-        { status: 500 }
-      )
-    }
-
-    const { dateRanges, intent } = extractionResult
     const results = []
 
-    // Generate and execute two GAQL queries
-    for (const dateRange of dateRanges.slice(0, 2)) {
-      // Create natural language query for this date range
-      // Ensure proper date format and maintain comparison context for AI accuracy
-      let formattedDateRange = dateRange
-      if (!dateRange.includes(' ') && /^\d{4}$/.test(dateRange)) {
-        // If it's just a year, add a month for better AI accuracy
-        formattedDateRange = `January ${dateRange}`
-      }
-      // Add comparison context to ensure both queries are equally accurate
-      const naturalQuery = `show ${intent} for ${formattedDateRange} (comparison period)`
-
+    for (const period of analysis.periods) {
       try {
-        logger.info(`[${requestId}] Generating GAQL for: ${naturalQuery}`)
-        logger.info(
-          `[${requestId}] Original date range: ${dateRange}, Formatted: ${formattedDateRange}`
-        )
+        logger.info(`[${requestId}] Generating GAQL for period: ${period.label}`)
+        logger.info(`[${requestId}] Natural query: ${period.naturalQuery}`)
+        logger.info(`[${requestId}] Date range: ${period.startDate} to ${period.endDate}`)
 
-        // Generate GAQL query using existing system
-        const queryResult = await generateGAQLQuery(naturalQuery)
+        // Generate GAQL query using existing system — AI already crafted the naturalQuery
+        const queryResult = await generateGAQLQuery(period.naturalQuery)
 
         logger.info(`[${requestId}] Generated GAQL: ${queryResult.gaql_query}`)
-        logger.info(`[${requestId}] GAQL Query Type: ${queryResult.query_type}`)
-        logger.info(`[${requestId}] GAQL Tables Used: ${JSON.stringify(queryResult.tables_used)}`)
-        logger.info(`[${requestId}] GAQL Metrics Used: ${JSON.stringify(queryResult.metrics_used)}`)
 
         // Execute the GAQL query
         const apiResult = await makeGoogleAdsRequest(accountInfo.id, queryResult.gaql_query)
@@ -315,16 +215,16 @@ async function handleComparisonQuery(
         // Process results
         const processedResults = processResults(apiResult, requestId, logger)
 
-        logger.info(`[${requestId}] API Response for ${dateRange}:`, {
+        logger.info(`[${requestId}] Results for ${period.label}:`, {
           rowCount: processedResults.row_count,
           totalRows: processedResults.total_rows,
-          totals: processedResults.totals,
-          sampleRows: processedResults.rows.slice(0, 2), // Show first 2 rows
         })
 
         results.push({
-          dateRange: dateRange,
-          naturalQuery: naturalQuery,
+          dateRange: period.label,
+          startDate: period.startDate,
+          endDate: period.endDate,
+          naturalQuery: period.naturalQuery,
           gaqlQuery: queryResult.gaql_query,
           queryType: queryResult.query_type,
           tablesUsed: queryResult.tables_used,
@@ -334,16 +234,13 @@ async function handleComparisonQuery(
           rowCount: processedResults.row_count,
           totalRows: processedResults.total_rows,
         })
-
-        logger.info(`[${requestId}] Successfully executed query for ${dateRange}`, {
-          rowCount: processedResults.row_count,
-          hasTotals: !!processedResults.totals,
-        })
       } catch (error) {
-        logger.error(`[${requestId}] Error executing query for ${dateRange}:`, error)
+        logger.error(`[${requestId}] Error executing query for ${period.label}:`, error)
         results.push({
-          dateRange: dateRange,
-          naturalQuery: naturalQuery,
+          dateRange: period.label,
+          startDate: period.startDate,
+          endDate: period.endDate,
+          naturalQuery: period.naturalQuery,
           error: error instanceof Error ? error.message : 'Unknown error',
           data: [],
           totals: {},
@@ -353,7 +250,7 @@ async function handleComparisonQuery(
       }
     }
 
-    const executionTime = Date.now() - Date.now()
+    const executionTime = Date.now() - comparisonStartTime
 
     return NextResponse.json({
       success: true,
@@ -364,7 +261,7 @@ async function handleComparisonQuery(
       },
       comparison: {
         type: 'date_comparison',
-        intent: intent,
+        intent: analysis.intent,
         periods: results,
       },
       execution_time_ms: executionTime,
@@ -441,16 +338,22 @@ export async function POST(request: NextRequest) {
       accountName: accountInfo.name,
     })
 
-    // Check if this is a comparison query
-    const isComparison = detectComparisonQuery(query)
+    // AI analyzes the query — detects comparison, extracts dates, intent, everything
+    const analysis = await analyzeQueryWithAI(query, requestId)
 
-    if (isComparison) {
-      logger.info(`[${requestId}] Detected comparison query, executing dynamic comparison`)
-      return await handleComparisonQuery(query, accounts, accountInfo, requestId)
+    if (analysis.isComparison) {
+      logger.info(`[${requestId}] AI detected comparison query, executing dynamic comparison`)
+      return await handleComparisonQuery(query, analysis, accountInfo, requestId)
+    }
+
+    // Single query — use AI-crafted naturalQuery
+    const effectiveQuery = analysis.periods[0]?.naturalQuery
+    if (!effectiveQuery) {
+      throw new Error(`AI failed to generate a valid natural query for: "${query}"`)
     }
 
     // Generate GAQL query using AI
-    const queryResult = await generateGAQLQuery(query)
+    const queryResult = await generateGAQLQuery(effectiveQuery)
 
     logger.info(`[${requestId}] Generated GAQL query`, {
       gaqlQuery: queryResult.gaql_query,
