@@ -5,6 +5,7 @@ import type { BlockOutput } from '@/blocks/types'
 import { Executor } from '@/executor'
 import { BlockType, DEFAULTS, HTTP } from '@/executor/constants'
 import { ChildWorkflowError } from '@/executor/errors/child-workflow-error'
+import type { ExecutionMetadata } from '@/executor/execution/types'
 import type {
   BlockHandler,
   ExecutionContext,
@@ -114,6 +115,7 @@ export class WorkflowBlockHandler implements BlockHandler {
           workspaceId: ctx.workspaceId,
           userId: ctx.userId,
           executionId: ctx.executionId,
+          metadata: ctx.metadata as ExecutionMetadata | undefined,
         },
       })
 
