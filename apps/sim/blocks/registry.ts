@@ -48,6 +48,7 @@ import { GoogleSlidesBlock } from '@/blocks/blocks/google_slides'
 import { GoogleVaultBlock } from '@/blocks/blocks/google_vault'
 import { GrafanaBlock } from '@/blocks/blocks/grafana'
 import { GrainBlock } from '@/blocks/blocks/grain'
+import { IndianStocksV1Block } from '@/blocks/blocks/indian_stocks_v1'
 import { GreptileBlock } from '@/blocks/blocks/greptile'
 import { GuardrailsBlock } from '@/blocks/blocks/guardrails'
 import { HubSpotBlock } from '@/blocks/blocks/hubspot'
@@ -226,6 +227,7 @@ export const registry: Record<string, BlockConfig> = {
   image_generator: ImageGeneratorBlock,
   imap: ImapBlock,
   incidentio: IncidentioBlock,
+  indian_stocks_v1: IndianStocksV1Block,
   input_trigger: InputTriggerBlock,
   intercom: IntercomBlock,
   intercom_v2: IntercomV2Block,

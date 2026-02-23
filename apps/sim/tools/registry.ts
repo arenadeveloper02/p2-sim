@@ -470,6 +470,7 @@ import {
 import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import { googleAdsQueryTool } from '@/tools/google_ads'
 import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
+import { indianStocksV1QueryTool } from '@/tools/indian_stocks_v1'
 import {
   googleCalendarCreateTool,
   googleCalendarCreateV2Tool,
@@ -2433,6 +2434,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_append: googleSheetsAppendTool,
   google_ads_query: googleAdsQueryTool,
   google_ads_v1_query: googleAdsV1QueryTool,
+  indian_stocks_v1_query: indianStocksV1QueryTool,
   facebook_ads_query: facebookAdsQueryTool,
   google_sheets_read_v2: googleSheetsReadV2Tool,
   google_sheets_write_v2: googleSheetsWriteV2Tool,
