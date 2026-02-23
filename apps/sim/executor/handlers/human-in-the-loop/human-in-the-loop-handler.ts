@@ -610,6 +610,7 @@ export class HumanInTheLoopBlockHandler implements BlockHandler {
             userId: ctx.userId,
             sessionUserId: ctx.metadata?.sessionUserId,
             workflowUserId: ctx.metadata?.workflowUserId,
+            enforceCredentialAccess: ctx.enforceCredentialAccess,
           },
           blockData: blockDataWithPause,
           blockNameMapping: blockNameMappingWithPause,

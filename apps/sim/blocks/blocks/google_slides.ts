@@ -52,6 +52,8 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
       id: 'credential',
       title: 'Google Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       required: true,
       serviceId: 'google-drive',
       requiredScopes: [
@@ -59,6 +61,15 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         'https://www.googleapis.com/auth/drive',
       ],
       placeholder: 'Select Google account',
+    },
+    {
+      id: 'manualCredential',
+      title: 'Google Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
     // Presentation selector (basic mode) - for operations that need an existing presentation
     {
@@ -888,7 +899,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       },
       params: (params) => {
         const {
-          credential,
+          oauthCredential,
           presentationId,
           folderId,
           slideIndex,
@@ -929,7 +940,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
         const result: Record<string, any> = {
           ...rest,
           presentationId: effectivePresentationId || undefined,
-          credential,
+          oauthCredential,
         }
 
         // Handle operation-specific params
@@ -1102,7 +1113,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Google Slides access token' },
+    oauthCredential: { type: 'string', description: 'Google Slides access token' },
     presentationId: { type: 'string', description: 'Presentation identifier (canonical param)' },
     // Write operation
     slideIndex: { type: 'number', description: 'Slide index to write to' },

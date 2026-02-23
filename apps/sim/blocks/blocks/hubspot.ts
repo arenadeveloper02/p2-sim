@@ -185,6 +185,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       id: 'credential',
       title: 'HubSpot Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       serviceId: 'hubspot',
       hidden: true,
       requiredScopes: [
@@ -329,6 +331,15 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         'crm.schemas.appointments.write',
       ],
       placeholder: 'Select HubSpot account',
+      required: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'HubSpot Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
     },
     {
@@ -1359,6 +1370,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
         const {
           accounts,
           credential,
+          oauthCredential,
           operation,
           propertiesToSet,
           properties,
@@ -1435,6 +1447,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     operation: { type: 'string', description: 'Operation to perform' },
     accounts: { type: 'string', description: 'Selected shared account' },
     credential: { type: 'string', description: 'HubSpot access token' },
+    oauthCredential: { type: 'string', description: 'HubSpot access token' },
     contactId: { type: 'string', description: 'Contact ID or email' },
     companyId: { type: 'string', description: 'Company ID or domain' },
     campaignGuid: {

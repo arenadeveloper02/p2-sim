@@ -78,6 +78,7 @@ export class GenericBlockHandler implements BlockHandler {
             userId: ctx.userId,
             sessionUserId: ctx.metadata?.sessionUserId,
             workflowUserId: ctx.metadata?.workflowUserId,
+            enforceCredentialAccess: ctx.enforceCredentialAccess,
           },
         },
         false,
