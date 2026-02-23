@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
+import { isExecutionCancelled } from '@/lib/execution/cancellation'
 import { BlockType, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
@@ -29,9 +29,15 @@ export class ExecutionEngine {
   private errorFlag = false
   private executionError: Error | null = null
   private skippedFlag = false // Track if workflow was skipped
-  private lastCancellationCheck = 0
-  private readonly useRedisCancellation: boolean
-  private readonly CANCELLATION_CHECK_INTERVAL_MS = 500
+  private cancellationCache: {
+    status: boolean
+    lastChecked: number
+  } = {
+    status: false,
+    lastChecked: 0,
+  }
+  private readonly CANCELLATION_CACHE_TTL_MS = 300 // 300ms cache TTL
+  private readonly CANCELLATION_CHECK_INTERVAL_MS = 500 // Check DB at most every 500ms
   private abortPromise: Promise<void> | null = null
   private abortResolve: (() => void) | null = null
 
@@ -42,7 +48,6 @@ export class ExecutionEngine {
     private nodeOrchestrator: NodeExecutionOrchestrator
   ) {
     this.allowResumeTriggers = this.context.metadata.resumeFromSnapshot === true
-    this.useRedisCancellation = isRedisCancellationEnabled() && !!this.context.executionId
     this.initializeAbortHandler()
   }
 
@@ -73,32 +78,66 @@ export class ExecutionEngine {
     )
   }
 
+  /**
+   * Check if execution has been cancelled using in-memory cache with database fallback.
+   * Uses caching to reduce database load while maintaining responsiveness.
+   * Cache TTL: 300ms (checks DB at most every 500ms)
+   */
   private async checkCancellation(): Promise<boolean> {
     if (this.cancelledFlag) {
       return true
     }
 
-    if (this.useRedisCancellation) {
-      const now = Date.now()
-      if (now - this.lastCancellationCheck < this.CANCELLATION_CHECK_INTERVAL_MS) {
-        return false
-      }
-      this.lastCancellationCheck = now
-
-      const cancelled = await isExecutionCancelled(this.context.executionId!)
-      if (cancelled) {
-        this.cancelledFlag = true
-        logger.info('Execution cancelled via Redis', { executionId: this.context.executionId })
-      }
-      return cancelled
-    }
-
+    // Check abort signal first (immediate, no DB query)
     if (this.context.abortSignal?.aborted) {
       this.cancelledFlag = true
       return true
     }
 
-    return false
+    // If no executionId, can't check database
+    if (!this.context.executionId) {
+      return false
+    }
+
+    const now = Date.now()
+    const cacheAge = now - this.cancellationCache.lastChecked
+
+    // Use cached value if still fresh
+    if (cacheAge < this.CANCELLATION_CACHE_TTL_MS) {
+      if (this.cancellationCache.status) {
+        this.cancelledFlag = true
+        return true
+      }
+      return false
+    }
+
+    // Throttle database checks (don't check more than every 500ms)
+    if (cacheAge < this.CANCELLATION_CHECK_INTERVAL_MS) {
+      return this.cancellationCache.status
+    }
+
+    // Refresh from database
+    try {
+      const cancelled = await isExecutionCancelled(this.context.executionId)
+      this.cancellationCache = {
+        status: cancelled,
+        lastChecked: now,
+      }
+
+      if (cancelled) {
+        this.cancelledFlag = true
+        logger.info('Execution cancelled via database', { executionId: this.context.executionId })
+      }
+
+      return cancelled
+    } catch (error) {
+      logger.error('Failed to check cancellation status', {
+        executionId: this.context.executionId,
+        error,
+      })
+      // On error, return cached value if available, otherwise false
+      return this.cancellationCache.status
+    }
   }
 
   async run(triggerBlockId?: string): Promise<ExecutionResult> {
@@ -231,10 +270,23 @@ export class ExecutionEngine {
 
   private async waitForAllExecutions(): Promise<void> {
     const abortPromise = this.getAbortPromise()
-    if (abortPromise) {
-      await Promise.race([Promise.all(this.executing), abortPromise])
-    } else {
-      await Promise.all(this.executing)
+
+    // Check cancellation periodically while waiting
+    while (this.executing.size > 0) {
+      if (await this.checkCancellation()) {
+        logger.info('Cancellation detected while waiting for executions', {
+          executionId: this.context.executionId,
+          remainingExecutions: this.executing.size,
+        })
+        break
+      }
+
+      // Wait for at least one execution to complete or abort
+      if (abortPromise) {
+        await Promise.race([this.waitForAnyExecution(), abortPromise])
+      } else {
+        await this.waitForAnyExecution()
+      }
     }
   }
 

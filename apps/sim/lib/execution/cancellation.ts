@@ -1,28 +1,26 @@
+import { db } from '@sim/db'
+import { workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { getRedisClient } from '@/lib/core/config/redis'
+import { eq } from 'drizzle-orm'
 
 const logger = createLogger('ExecutionCancellation')
 
-const EXECUTION_CANCEL_PREFIX = 'execution:cancel:'
-const EXECUTION_CANCEL_EXPIRY = 60 * 60
-
-export function isRedisCancellationEnabled(): boolean {
-  return getRedisClient() !== null
-}
-
 /**
- * Mark an execution as cancelled in Redis.
- * Returns true if Redis is available and the flag was set, false otherwise.
+ * Mark an execution as cancelled in the database.
+ * Updates the workflow_execution_logs status to 'cancelled'.
+ * Returns true if the update was successful, false otherwise.
  */
 export async function markExecutionCancelled(executionId: string): Promise<boolean> {
-  const redis = getRedisClient()
-  if (!redis) {
-    return false
-  }
-
   try {
-    await redis.set(`${EXECUTION_CANCEL_PREFIX}${executionId}`, '1', 'EX', EXECUTION_CANCEL_EXPIRY)
-    logger.info('Marked execution as cancelled', { executionId })
+    const result = await db
+      .update(workflowExecutionLogs)
+      .set({
+        status: 'cancelled',
+        endedAt: new Date(),
+      })
+      .where(eq(workflowExecutionLogs.executionId, executionId))
+
+    logger.info('Marked execution as cancelled in database', { executionId })
     return true
   } catch (error) {
     logger.error('Failed to mark execution as cancelled', { executionId, error })
@@ -31,18 +29,23 @@ export async function markExecutionCancelled(executionId: string): Promise<boole
 }
 
 /**
- * Check if an execution has been cancelled via Redis.
- * Returns false if Redis is not available (fallback to local abort signal).
+ * Check if an execution has been cancelled by querying the database.
+ * Uses indexed lookup on executionId for fast queries.
+ * Returns false if the execution is not found or not cancelled.
  */
 export async function isExecutionCancelled(executionId: string): Promise<boolean> {
-  const redis = getRedisClient()
-  if (!redis) {
-    return false
-  }
-
   try {
-    const result = await redis.exists(`${EXECUTION_CANCEL_PREFIX}${executionId}`)
-    return result === 1
+    const [execution] = await db
+      .select({ status: workflowExecutionLogs.status })
+      .from(workflowExecutionLogs)
+      .where(eq(workflowExecutionLogs.executionId, executionId))
+      .limit(1)
+
+    if (!execution) {
+      return false
+    }
+
+    return execution.status === 'cancelled'
   } catch (error) {
     logger.error('Failed to check execution cancellation', { executionId, error })
     return false
@@ -51,16 +54,11 @@ export async function isExecutionCancelled(executionId: string): Promise<boolean
 
 /**
  * Clear the cancellation flag for an execution.
+ * Note: This is typically not needed as the status is managed by the execution lifecycle.
+ * The status will be updated to 'completed' or 'failed' when execution finishes.
  */
 export async function clearExecutionCancellation(executionId: string): Promise<void> {
-  const redis = getRedisClient()
-  if (!redis) {
-    return
-  }
-
-  try {
-    await redis.del(`${EXECUTION_CANCEL_PREFIX}${executionId}`)
-  } catch (error) {
-    logger.error('Failed to clear execution cancellation', { executionId, error })
-  }
+  // No-op: Status is managed by execution completion
+  // The execution will be marked as 'completed' or 'failed' when it finishes
+  logger.debug('clearExecutionCancellation called (no-op)', { executionId })
 }

@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
+import { isExecutionCancelled } from '@/lib/execution/cancellation'
 import { EDGE } from '@/executor/constants'
 import type { DAG, DAGNode } from '@/executor/dag/builder'
 import type { BlockExecutor } from '@/executor/execution/block-executor'
@@ -92,12 +92,9 @@ export class NodeExecutionOrchestrator {
       // Initialize this loop's scope if needed
       if (!this.loopOrchestrator.getLoopScope(ctx, loopId)) {
         // Check for cancellation before starting a new loop iteration
-        const useRedis = isRedisCancellationEnabled() && !!ctx.executionId
-        let isCancelled = false
-        if (useRedis) {
-          isCancelled = await isExecutionCancelled(ctx.executionId!)
-        } else {
-          isCancelled = ctx.abortSignal?.aborted ?? false
+        let isCancelled = ctx.abortSignal?.aborted ?? false
+        if (!isCancelled && ctx.executionId) {
+          isCancelled = await isExecutionCancelled(ctx.executionId)
         }
         if (isCancelled) {
           logger.info('Loop iteration cancelled before initialization', { loopId, nodeId })

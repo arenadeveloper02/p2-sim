@@ -25,17 +25,14 @@ export async function POST(
     const marked = await markExecutionCancelled(executionId)
 
     if (marked) {
-      logger.info('Execution marked as cancelled in Redis', { executionId })
+      logger.info('Execution marked as cancelled in database', { executionId })
     } else {
-      logger.info('Redis not available, cancellation will rely on connection close', {
-        executionId,
-      })
+      logger.warn('Failed to mark execution as cancelled', { executionId })
     }
 
     return NextResponse.json({
-      success: true,
+      success: marked,
       executionId,
-      redisAvailable: marked,
     })
   } catch (error: any) {
     logger.error('Failed to cancel execution', { workflowId, executionId, error: error.message })

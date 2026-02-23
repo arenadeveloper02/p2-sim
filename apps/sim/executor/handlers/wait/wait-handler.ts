@@ -1,4 +1,4 @@
-import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
+import { isExecutionCancelled } from '@/lib/execution/cancellation'
 import { BlockType } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
@@ -12,9 +12,9 @@ interface SleepOptions {
 
 const sleep = async (ms: number, options: SleepOptions = {}): Promise<boolean> => {
   const { signal, executionId } = options
-  const useRedis = isRedisCancellationEnabled() && !!executionId
 
-  if (!useRedis && signal?.aborted) {
+  // Check abort signal immediately
+  if (signal?.aborted) {
     return false
   }
 
@@ -27,7 +27,7 @@ const sleep = async (ms: number, options: SleepOptions = {}): Promise<boolean> =
     const cleanup = () => {
       if (mainTimeoutId) clearTimeout(mainTimeoutId)
       if (checkIntervalId) clearInterval(checkIntervalId)
-      if (!useRedis && signal) signal.removeEventListener('abort', onAbort)
+      if (signal) signal.removeEventListener('abort', onAbort)
     }
 
     const onAbort = () => {
@@ -37,19 +37,25 @@ const sleep = async (ms: number, options: SleepOptions = {}): Promise<boolean> =
       resolve(false)
     }
 
-    if (useRedis) {
+    // Check for cancellation via database if executionId is available
+    if (executionId) {
       checkIntervalId = setInterval(async () => {
         if (resolved) return
         try {
-          const cancelled = await isExecutionCancelled(executionId!)
+          const cancelled = await isExecutionCancelled(executionId)
           if (cancelled) {
             resolved = true
             cleanup()
             resolve(false)
           }
-        } catch {}
+        } catch {
+          // Ignore errors, continue waiting
+        }
       }, CANCELLATION_CHECK_INTERVAL_MS)
-    } else if (signal) {
+    }
+
+    // Also listen to abort signal
+    if (signal) {
       signal.addEventListener('abort', onAbort, { once: true })
     }
 

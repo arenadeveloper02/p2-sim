@@ -8,10 +8,9 @@ vi.mock('@sim/logger', () => loggerMock)
 
 vi.mock('@/lib/execution/cancellation', () => ({
   isExecutionCancelled: vi.fn(),
-  isRedisCancellationEnabled: vi.fn(),
 }))
 
-import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
+import { isExecutionCancelled } from '@/lib/execution/cancellation'
 import type { DAG, DAGNode } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
 import type { NodeExecutionOrchestrator } from '@/executor/orchestrators/node'
@@ -118,7 +117,6 @@ describe('ExecutionEngine', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;(isExecutionCancelled as Mock).mockResolvedValue(false)
-    ;(isRedisCancellationEnabled as Mock).mockReturnValue(false)
   })
 
   afterEach(() => {
@@ -284,14 +282,13 @@ describe('ExecutionEngine', () => {
     })
   })
 
-  describe('Cancellation via Redis', () => {
-    it('should check Redis for cancellation when enabled', async () => {
-      ;(isRedisCancellationEnabled as Mock).mockReturnValue(true)
+  describe('Cancellation via Database', () => {
+    it('should check database for cancellation when executionId is present', async () => {
       ;(isExecutionCancelled as Mock).mockResolvedValue(false)
 
       const startNode = createMockNode('start', 'starter')
       const dag = createMockDAG([startNode])
-      const context = createMockContext()
+      const context = createMockContext({ executionId: 'test-execution-id' })
       const edgeManager = createMockEdgeManager()
       const nodeOrchestrator = createMockNodeOrchestrator()
 
@@ -301,9 +298,7 @@ describe('ExecutionEngine', () => {
       expect(isExecutionCancelled as Mock).toHaveBeenCalled()
     })
 
-    it('should stop execution when Redis reports cancellation', async () => {
-      ;(isRedisCancellationEnabled as Mock).mockReturnValue(true)
-
+    it('should stop execution when database reports cancellation', async () => {
       let checkCount = 0
       ;(isExecutionCancelled as Mock).mockImplementation(async () => {
         checkCount++
@@ -316,7 +311,7 @@ describe('ExecutionEngine', () => {
       }
 
       const dag = createMockDAG(nodes)
-      const context = createMockContext()
+      const context = createMockContext({ executionId: 'test-execution-id' })
       const edgeManager = createMockEdgeManager((node) => {
         const idx = Number.parseInt(node.id.replace('node', ''))
         if (idx < 4) return [`node${idx + 1}`]
@@ -331,13 +326,12 @@ describe('ExecutionEngine', () => {
       expect(result.status).toBe('cancelled')
     })
 
-    it('should respect cancellation check interval', async () => {
-      ;(isRedisCancellationEnabled as Mock).mockReturnValue(true)
+    it('should respect cancellation check interval and caching', async () => {
       ;(isExecutionCancelled as Mock).mockResolvedValue(false)
 
       const startNode = createMockNode('start', 'starter')
       const dag = createMockDAG([startNode])
-      const context = createMockContext()
+      const context = createMockContext({ executionId: 'test-execution-id' })
       const edgeManager = createMockEdgeManager()
       const nodeOrchestrator = createMockNodeOrchestrator()
 
@@ -987,13 +981,12 @@ describe('ExecutionEngine', () => {
       expect(result.status).toBe('cancelled')
     })
 
-    it('should cache Redis cancellation result', async () => {
-      ;(isRedisCancellationEnabled as Mock).mockReturnValue(true)
+    it('should cache cancellation result to reduce database queries', async () => {
       ;(isExecutionCancelled as Mock).mockResolvedValue(true)
 
       const nodes = Array.from({ length: 5 }, (_, i) => createMockNode(`node${i}`, 'function'))
       const dag = createMockDAG(nodes)
-      const context = createMockContext()
+      const context = createMockContext({ executionId: 'test-execution-id' })
       const edgeManager = createMockEdgeManager()
       const nodeOrchestrator = createMockNodeOrchestrator()
 
