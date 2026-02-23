@@ -139,6 +139,7 @@ export function useChatStreaming() {
     let accumulatedText = ''
     let lastAudioPosition = 0
     let buffer = '' // Buffer for incomplete JSON strings
+    let pendingKnowledgeResults: ChatMessage['knowledgeResults']
 
     // Track which blocks have streamed content (like chat panel)
     const messageIdMap = new Map<string, string>()
@@ -242,6 +243,12 @@ export function useChatStreaming() {
               const json = JSON.parse(data)
               const { blockId, chunk: contentChunk, event: eventType } = json
 
+              if (eventType === 'knowledgeResults' && Array.isArray(json.data)) {
+                pendingKnowledgeResults = json.data as ChatMessage['knowledgeResults']
+                lineEndIndex = buffer.indexOf('\n\n')
+                continue
+              }
+
               if (eventType === 'error' || json.event === 'error') {
                 const errorMessage = json.error || CHAT_ERROR_MESSAGES.GENERIC_ERROR
                 setMessages((prev) =>
@@ -323,12 +330,31 @@ export function useChatStreaming() {
                   return undefined
                 }
 
+                const isKnowledgeResultsArray = (
+                  value: unknown
+                ): value is Array<Record<string, unknown>> =>
+                  Array.isArray(value) &&
+                  value.length > 0 &&
+                  value.every(
+                    (item) =>
+                      item &&
+                      typeof item === 'object' &&
+                      'documentId' in item &&
+                      'documentName' in item &&
+                      'content' in item &&
+                      'chunkIndex' in item
+                  )
+
                 if (outputConfigs?.length && finalData.output) {
                   for (const config of outputConfigs) {
                     const blockOutputs = finalData.output[config.blockId]
                     if (!blockOutputs) continue
 
                     const value = getOutputValue(blockOutputs, config.path)
+
+                    if (config.path === 'results' && isKnowledgeResultsArray(value)) {
+                      continue
+                    }
 
                     if (isUserFileWithMetadata(value)) {
                       extractedFiles.push({
@@ -377,6 +403,7 @@ export function useChatStreaming() {
                     }
                   } else if (finalData.success && finalData.output) {
                     const fallbackOutput = Object.values(finalData.output)
+                      .filter((block) => !isKnowledgeResultsArray(block?.results))
                       .map((block) => formatValue(block)?.trim())
                       .filter(Boolean)[0]
                     if (fallbackOutput) {
@@ -395,11 +422,13 @@ export function useChatStreaming() {
                           executionId: finalData?.executionId || msg.executionId,
                           liked: null,
                           files: extractedFiles.length > 0 ? extractedFiles : undefined,
+                          knowledgeResults: pendingKnowledgeResults,
                         }
                       : msg
                   )
                 )
 
+                pendingKnowledgeResults = undefined
                 accumulatedTextRef.current = ''
                 lastStreamedPositionRef.current = 0
                 lastDisplayedPositionRef.current = 0
