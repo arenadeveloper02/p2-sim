@@ -253,6 +253,9 @@ export class BlockExecutor {
       this.state.setBlockOutput(node.id, normalizedOutput, duration)
 
       if (!isSentinel && blockLog) {
+        const childWorkflowInstanceId = normalizedOutput._childWorkflowInstanceId as
+          | string
+          | undefined
         const displayOutput = filterOutputForLog(block.metadata?.id || '', normalizedOutput, {
           block,
         })
@@ -265,7 +268,8 @@ export class BlockExecutor {
           duration,
           blockLog.startedAt,
           blockLog.executionOrder,
-          blockLog.endedAt
+          blockLog.endedAt,
+          childWorkflowInstanceId
         )
       }
 
@@ -291,6 +295,8 @@ export class BlockExecutor {
     parallelId?: string
     branchIndex?: number
     branchTotal?: number
+    originalBlockId?: string
+    isLoopNode?: boolean
   } {
     const metadata = node?.metadata ?? {}
     return {
@@ -299,6 +305,8 @@ export class BlockExecutor {
       parallelId: metadata.parallelId,
       branchIndex: metadata.branchIndex,
       branchTotal: metadata.branchTotal,
+      originalBlockId: metadata.originalBlockId,
+      isLoopNode: metadata.isLoopNode,
     }
   }
 
@@ -363,6 +371,9 @@ export class BlockExecutor {
     )
 
     if (!isSentinel && blockLog) {
+      const childWorkflowInstanceId = ChildWorkflowError.isChildWorkflowError(error)
+        ? error.childWorkflowInstanceId
+        : undefined
       const displayOutput = filterOutputForLog(block.metadata?.id || '', errorOutput, { block })
       this.callOnBlockComplete(
         ctx,
@@ -373,7 +384,8 @@ export class BlockExecutor {
         duration,
         blockLog.startedAt,
         blockLog.executionOrder,
-        blockLog.endedAt
+        blockLog.endedAt,
+        childWorkflowInstanceId
       )
     }
 
@@ -564,7 +576,8 @@ export class BlockExecutor {
         blockName,
         blockType,
         executionOrder,
-        iterationContext
+        iterationContext,
+        ctx.childWorkflowContext
       )
     }
   }
@@ -578,7 +591,8 @@ export class BlockExecutor {
     duration: number,
     startedAt: string,
     executionOrder: number,
-    endedAt: string
+    endedAt: string,
+    childWorkflowInstanceId?: string
   ): void {
     const blockId = node.metadata?.originalBlockId ?? node.id
     const blockName = block.metadata?.name ?? blockId
@@ -598,8 +612,10 @@ export class BlockExecutor {
           startedAt,
           executionOrder,
           endedAt,
+          childWorkflowInstanceId,
         },
-        iterationContext
+        iterationContext,
+        ctx.childWorkflowContext
       )
     }
   }
