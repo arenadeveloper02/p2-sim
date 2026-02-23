@@ -193,8 +193,8 @@ export async function combineAndSortSearchResults(
 
   // Filter results by score threshold
   // 1. Ignore results where score = 0
-  // 2. Ignore results where score > 8.5 (threshold)
-  const SCORE_THRESHOLD = 0.85
+  // 2. Ignore results where score > 0.80 (threshold)
+  const SCORE_THRESHOLD = 0.8
   const filteredResults = uniqueResults.filter((result) => {
     const score = result.score ?? 1.0 // Default to 1.0 if score is missing
     return score !== 0 && score <= SCORE_THRESHOLD
