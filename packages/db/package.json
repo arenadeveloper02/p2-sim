@@ -16,6 +16,10 @@
     "./schema": {
       "types": "./schema.ts",
       "default": "./schema.ts"
+    },
+    "./constants": {
+      "types": "./constants.ts",
+      "default": "./constants.ts"
     }
   },
   "scripts": {

@@ -109,7 +109,7 @@ export async function executeWorkflow(
           )
         }
       }
-    } else {
+    } else if (result.status !== 'skipped') {
       await PauseResumeManager.processQueuedResumes(executionId)
     }
 
