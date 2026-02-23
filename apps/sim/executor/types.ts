@@ -134,6 +134,8 @@ export interface ExecutionMetadata {
     depth: number
   }
   userId?: string
+  sessionUserId?: string
+  workflowUserId?: string
   executionId?: string
   triggerType?: string
   triggerBlockId?: string

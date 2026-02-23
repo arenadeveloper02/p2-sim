@@ -128,6 +128,8 @@ export type ArenaGetTokenParams = {
     executionId?: string
     isDeployedContext?: boolean
     userId?: string
+    sessionUserId?: string
+    workflowUserId?: string
     userEmail?: string
   }
 }

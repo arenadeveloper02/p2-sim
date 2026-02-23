@@ -4,7 +4,8 @@ import type { ToolConfig } from '@/tools/types'
 export const getToken: ToolConfig<ArenaGetTokenParams, ArenaGetTokenResponse> = {
   id: 'arena_get_token',
   name: 'Arena Get Token',
-  description: 'Get Arena token for the logged-in user (only @position2.com allowed).',
+  description:
+    'Get Arena token for the logged-in user or workflow owner. Both must have @position2.com email.',
   version: '1.0.0',
 
   params: {
@@ -18,10 +19,13 @@ export const getToken: ToolConfig<ArenaGetTokenParams, ArenaGetTokenResponse> = 
 
   request: {
     url: (params: ArenaGetTokenParams) => {
-      const userId = params._context?.userId
-      const userEmail = params._context?.userEmail
+      const c = params._context
+      const userId = c?.sessionUserId ?? c?.workflowUserId
+      const userEmail = c?.userEmail
       if (!userId)
-        throw new Error('Missing required field: logged-in userId (from execution context)')
+        throw new Error(
+          'Missing required field: userId (from logged-in user or workflow owner in execution context)'
+        )
       const url = `/api/tools/arena/get-token?userId=${encodeURIComponent(userId)}`
       if (userEmail) {
         return `${url}&email=${encodeURIComponent(userEmail)}`
