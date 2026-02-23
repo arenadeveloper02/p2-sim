@@ -13,7 +13,7 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   Badge,
   Breadcrumb,
@@ -52,6 +52,7 @@ import { useDocument, useDocumentChunks, useKnowledgeBase } from '@/hooks/kb/use
 import {
   knowledgeKeys,
   useBulkChunkOperation,
+  useChunkById,
   useDeleteDocument,
   useDocumentChunkSearchQuery,
   useUpdateChunk,
@@ -241,8 +242,12 @@ export function Document({
   const queryClient = useQueryClient()
   const { workspaceId } = useParams()
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
+  const CHUNK_PAGE_SIZE = 50
   const currentPageFromURL = Number.parseInt(searchParams.get('page') || '1', 10)
+  const chunkIdFromUrl = searchParams.get('chunk')
+  const chunkIndexFromUrl = searchParams.get('chunkIndex')
   const userPermissions = useUserPermissionsContext()
 
   const { knowledgeBase } = useKnowledgeBase(knowledgeBaseId)
@@ -285,6 +290,10 @@ export function Document({
     }
   )
 
+  const { data: chunkByIdData } = useChunkById(knowledgeBaseId, documentId, chunkIdFromUrl, {
+    enabled: Boolean(chunkIdFromUrl),
+  })
+
   const searchError = searchQueryError instanceof Error ? searchQueryError.message : null
 
   const [selectedChunks, setSelectedChunks] = useState<Set<string>>(new Set())
@@ -319,6 +328,75 @@ export function Document({
   )
 
   const displayChunks = showingSearch ? paginatedSearchResults : initialChunks
+
+  const pageForChunkIndex = (index: number) => Math.floor(Number(index) / CHUNK_PAGE_SIZE) + 1
+
+  useEffect(() => {
+    if (!chunkIndexFromUrl || chunkIdFromUrl || showingSearch) return
+    const desiredPage = pageForChunkIndex(chunkIndexFromUrl)
+    if (currentPageFromURL === desiredPage) return
+    const params = new URLSearchParams(searchParams.toString())
+    if (desiredPage > 1) {
+      params.set('page', String(desiredPage))
+    } else {
+      params.delete('page')
+    }
+    params.set('chunkIndex', chunkIndexFromUrl)
+    router.replace(`${pathname}?${params.toString()}`)
+  }, [
+    chunkIndexFromUrl,
+    chunkIdFromUrl,
+    showingSearch,
+    currentPageFromURL,
+    pathname,
+    searchParams,
+    router,
+  ])
+
+  useEffect(() => {
+    if (chunkIdFromUrl) {
+      const inList = displayChunks.find((c: ChunkData) => c.id === chunkIdFromUrl)
+      if (inList) {
+        setSelectedChunk(inList)
+        setIsModalOpen(true)
+        return
+      }
+      if (chunkByIdData?.id === chunkIdFromUrl) {
+        setSelectedChunk(chunkByIdData)
+        setIsModalOpen(true)
+        const desiredPage = pageForChunkIndex(chunkByIdData.chunkIndex)
+        if (currentPageFromURL !== desiredPage) {
+          const params = new URLSearchParams(searchParams.toString())
+          params.set('chunk', chunkIdFromUrl)
+          params.set('chunkIndex', String(chunkByIdData.chunkIndex))
+          if (desiredPage > 1) params.set('page', String(desiredPage))
+          else params.delete('page')
+          router.replace(`${pathname}?${params.toString()}`)
+        }
+      }
+      return
+    }
+    if (chunkIndexFromUrl !== null && chunkIndexFromUrl !== '') {
+      const indexNum = Number(chunkIndexFromUrl)
+      if (!Number.isNaN(indexNum)) {
+        const chunk = displayChunks.find((c: ChunkData) => c.chunkIndex === indexNum)
+        if (chunk) {
+          setSelectedChunk(chunk)
+          setIsModalOpen(true)
+        }
+      }
+    }
+  }, [
+    chunkIdFromUrl,
+    chunkIndexFromUrl,
+    displayChunks,
+    chunkByIdData,
+    currentPageFromURL,
+    pathname,
+    searchParams,
+    router,
+  ])
+
   const currentPage = showingSearch ? searchCurrentPage : initialPage
   const totalPages = showingSearch ? searchTotalPages : initialTotalPages
   const hasNextPage = showingSearch ? searchCurrentPage < searchTotalPages : initialHasNextPage
@@ -389,14 +467,34 @@ export function Document({
     { label: effectiveDocumentName },
   ]
 
+  const getDocumentUrl = useCallback(
+    (chunkId: string | null, chunkIndex?: number) => {
+      const params = new URLSearchParams(searchParams.toString())
+      if (chunkId != null && chunkId !== '') {
+        params.set('chunk', chunkId)
+        if (chunkIndex !== undefined) {
+          params.set('chunkIndex', String(chunkIndex))
+        }
+      } else {
+        params.delete('chunk')
+        params.delete('chunkIndex')
+      }
+      const qs = params.toString()
+      return qs ? `${pathname}?${qs}` : pathname
+    },
+    [pathname, searchParams]
+  )
+
   const handleChunkClick = (chunk: ChunkData) => {
     setSelectedChunk(chunk)
     setIsModalOpen(true)
+    router.replace(getDocumentUrl(chunk.id, chunk.chunkIndex))
   }
 
   const handleCloseModal = () => {
     setIsModalOpen(false)
     setSelectedChunk(null)
+    router.replace(getDocumentUrl(null))
   }
 
   const handleToggleEnabled = (chunkId: string) => {
@@ -1011,6 +1109,7 @@ export function Document({
         totalPages={totalPages}
         onNavigateToChunk={(chunk: ChunkData) => {
           setSelectedChunk(chunk)
+          router.replace(getDocumentUrl(chunk.id, chunk.chunkIndex))
         }}
         maxChunkSize={knowledgeBase?.chunkingConfig?.maxSize}
         onNavigateToPage={async (page: number, selectChunk: 'first' | 'last') => {
@@ -1018,11 +1117,10 @@ export function Document({
 
           const checkAndSelectChunk = () => {
             if (displayChunks.length > 0) {
-              if (selectChunk === 'first') {
-                setSelectedChunk(displayChunks[0])
-              } else {
-                setSelectedChunk(displayChunks[displayChunks.length - 1])
-              }
+              const chunk =
+                selectChunk === 'first' ? displayChunks[0] : displayChunks[displayChunks.length - 1]
+              setSelectedChunk(chunk)
+              router.replace(getDocumentUrl(chunk.id, chunk.chunkIndex))
             } else {
               setTimeout(checkAndSelectChunk, 100)
             }
@@ -1108,7 +1206,10 @@ export function Document({
         onOpenInNewTab={
           contextMenuChunk && selectedChunks.size === 1
             ? () => {
-                const url = `/workspace/${workspaceId}/knowledge/${knowledgeBaseId}/${documentId}?chunk=${contextMenuChunk.id}`
+                const params = new URLSearchParams()
+                params.set('chunk', contextMenuChunk.id)
+                params.set('chunkIndex', String(contextMenuChunk.chunkIndex))
+                const url = `/workspace/${workspaceId}/knowledge/${knowledgeBaseId}/${documentId}?${params.toString()}`
                 window.open(url, '_blank')
               }
             : undefined
@@ -1118,6 +1219,7 @@ export function Document({
             ? () => {
                 setSelectedChunk(contextMenuChunk)
                 setIsModalOpen(true)
+                router.replace(getDocumentUrl(contextMenuChunk.id, contextMenuChunk.chunkIndex))
               }
             : undefined
         }

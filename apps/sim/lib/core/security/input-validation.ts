@@ -797,8 +797,8 @@ export async function validateUrlWithDNS(
   const hostname = parsedUrl.hostname
 
   try {
-    // Dynamic import to avoid client-side bundle issues
-    const dns = await import('dns/promises')
+    // Dynamic import — webpackIgnore prevents bundler from resolving this Node.js built-in
+    const dns = await import(/* webpackIgnore: true */ 'dns/promises')
     const { address } = await dns.lookup(hostname)
 
     if (isPrivateOrReservedIP(address)) {
@@ -899,8 +899,11 @@ export async function secureFetchWithPinnedIP(
 ): Promise<SecureFetchResponse> {
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS
 
-  // Dynamic imports to avoid client-side bundle issues
-  const [httpModule, httpsModule] = await Promise.all([import('http'), import('https')])
+  // Dynamic imports — webpackIgnore prevents bundler from resolving these Node.js built-ins
+  const [httpModule, httpsModule] = await Promise.all([
+    import(/* webpackIgnore: true */ 'http'),
+    import(/* webpackIgnore: true */ 'https'),
+  ])
   // Type assertions for Node.js built-in modules
   const http = httpModule as unknown as typeof import('http')
   const https = httpsModule as unknown as typeof import('https')

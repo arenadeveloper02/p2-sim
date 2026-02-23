@@ -28,6 +28,7 @@ export class ExecutionEngine {
   private cancelledFlag = false
   private errorFlag = false
   private executionError: Error | null = null
+  private skippedFlag = false // Track if workflow was skipped
   private lastCancellationCheck = 0
   private readonly useRedisCancellation: boolean
   private readonly CANCELLATION_CHECK_INTERVAL_MS = 500
@@ -106,13 +107,13 @@ export class ExecutionEngine {
       this.initializeQueue(triggerBlockId)
 
       while (this.hasWork()) {
-        if ((await this.checkCancellation()) || this.errorFlag) {
+        if ((await this.checkCancellation()) || this.errorFlag || this.skippedFlag) {
           break
         }
         await this.processQueue()
       }
 
-      if (!this.cancelledFlag) {
+      if (!this.cancelledFlag && !this.skippedFlag) {
         await this.waitForAllExecutions()
       }
 
@@ -329,7 +330,7 @@ export class ExecutionEngine {
 
   private async processQueue(): Promise<void> {
     while (this.readyQueue.length > 0) {
-      if ((await this.checkCancellation()) || this.errorFlag) {
+      if ((await this.checkCancellation()) || this.errorFlag || this.skippedFlag) {
         break
       }
       const nodeId = this.dequeue()
@@ -338,15 +339,20 @@ export class ExecutionEngine {
       this.trackExecution(promise)
     }
 
-    if (this.executing.size > 0 && !this.cancelledFlag && !this.errorFlag) {
+    if (this.executing.size > 0 && !this.cancelledFlag && !this.errorFlag && !this.skippedFlag) {
       await this.waitForAnyExecution()
     }
   }
 
   private async executeNodeAsync(nodeId: string): Promise<void> {
-    // Check for cancellation before executing the node
+    // Check for cancellation or skip before executing the node
     if (await this.checkCancellation()) {
       logger.info('Node execution cancelled before starting', { nodeId })
+      return
+    }
+
+    if (this.skippedFlag) {
+      logger.info('Node execution skipped - workflow was skipped', { nodeId })
       return
     }
 
@@ -356,7 +362,10 @@ export class ExecutionEngine {
 
       if (!wasAlreadyExecuted) {
         await this.withQueueLock(async () => {
-          await this.handleNodeCompletion(nodeId, result.output, result.isFinalOutput)
+          // Check skip flag again after execution (intent analyzer might have set it)
+          if (!this.skippedFlag) {
+            await this.handleNodeCompletion(nodeId, result.output, result.isFinalOutput)
+          }
         })
       }
     } catch (error) {
@@ -377,6 +386,41 @@ export class ExecutionEngine {
       return
     }
 
+    // Check if this is a Start block and run intent analyzer if workflow has Agent blocks
+    const isStartBlock =
+      node.block.metadata?.id === BlockType.START_TRIGGER ||
+      node.block.metadata?.id === BlockType.STARTER
+
+    if (isStartBlock && !this.context.intentAnalyzerResult) {
+      await this.runWorkflowLevelIntentAnalyzer(output)
+
+      // Check if workflow was skipped after intent analyzer - return immediately to prevent any further execution
+      if (this.skippedFlag) {
+        logger.info('Workflow skipped by intent analyzer — stopping execution immediately', {
+          nodeId,
+          blockId: node.block.id,
+        })
+        return
+      }
+    }
+
+    // Check if workflow was skipped (from intent analyzer or block output) - BEFORE handling node completion
+    if (this.skippedFlag || output.skippedWorkflow === true) {
+      logger.info('Workflow skipped — stopping further execution', {
+        nodeId,
+        blockId: node.block.id,
+        skippedByIntentAnalyzer: this.skippedFlag,
+        skippedByBlock: output.skippedWorkflow === true,
+      })
+      if (output.skippedWorkflow === true) {
+        this.finalOutput = output
+      }
+      this.readyQueue = []
+      this.skippedFlag = true
+      // Don't call handleNodeCompletion - this prevents downstream nodes from being queued
+      return
+    }
+
     if (output._pauseMetadata) {
       const pauseMetadata = output._pauseMetadata
       this.pausedBlocks.set(pauseMetadata.contextId, pauseMetadata)
@@ -386,6 +430,8 @@ export class ExecutionEngine {
       return
     }
 
+    // Only handle node completion if workflow is not skipped
+    // This prevents downstream nodes from being queued when workflow is skipped
     await this.nodeOrchestrator.handleNodeCompletion(this.context, nodeId, output)
 
     if (isFinalOutput) {
@@ -567,6 +613,143 @@ export class ExecutionEngine {
       status: 'paused',
       pausePoints,
       snapshotSeed,
+    }
+  }
+
+  /**
+   * Runs intent analyzer once at workflow start if workflow has Agent blocks.
+   * Stores result in context for Agent blocks to use.
+   * If decision is SKIP, stops workflow execution.
+   */
+  private async runWorkflowLevelIntentAnalyzer(
+    startBlockOutput: NormalizedBlockOutput
+  ): Promise<void> {
+    try {
+      // Check if workflow has Agent blocks
+      const workflowBlocks = this.context.workflow?.blocks || []
+      const hasAgentBlocks = workflowBlocks.some((block) => block.metadata?.id === BlockType.AGENT)
+
+      if (!hasAgentBlocks) {
+        logger.debug('Workflow has no Agent blocks, skipping intent analyzer')
+        return
+      }
+
+      // Only run for chat trigger type
+      const triggerType = this.context.metadata?.triggerType
+      if (triggerType !== 'chat') {
+        logger.debug('Intent analyzer only runs for chat trigger type', { triggerType })
+        return
+      }
+
+      // Extract user prompt and conversationId from Start block output
+      const userPrompt = typeof startBlockOutput.input === 'string' ? startBlockOutput.input : ''
+      const conversationId =
+        typeof startBlockOutput.conversationId === 'string'
+          ? startBlockOutput.conversationId
+          : undefined
+
+      if (!userPrompt || !conversationId) {
+        logger.debug('Missing userPrompt or conversationId, skipping intent analyzer', {
+          hasUserPrompt: !!userPrompt,
+          hasConversationId: !!conversationId,
+        })
+        return
+      }
+
+      logger.info('Running workflow-level intent analyzer', {
+        workflowId: this.context.workflowId,
+        conversationId,
+        userPromptPreview: userPrompt.substring(0, 100),
+      })
+
+      // Get first Agent block to use for intent analyzer (we need inputs structure)
+      const firstAgentBlock = workflowBlocks.find((block) => block.metadata?.id === BlockType.AGENT)
+      if (!firstAgentBlock) {
+        logger.warn('Agent block not found despite hasAgentBlocks check')
+        return
+      }
+
+      // Build minimal AgentInputs for intent analyzer
+      const agentInputs = {
+        conversationId,
+        memoryType: 'conversation' as const, // Default to conversation memory
+        userPrompt,
+      }
+
+      // Run intent analyzer
+      const { analyzeIntent } = await import('@/executor/utils/intent-analyzer')
+      const intentResult = await analyzeIntent({
+        ctx: this.context,
+        inputs: agentInputs,
+        blockId: firstAgentBlock.id,
+        userPrompt,
+        model: undefined, // Will use default
+      })
+
+      // Store result in context
+      this.context.intentAnalyzerResult = intentResult
+
+      logger.info('Intent analyzer completed', {
+        workflowId: this.context.workflowId,
+        decision: intentResult.decision,
+        searchResultsCount: intentResult.searchResults.length,
+      })
+
+      // If SKIP, stop workflow execution
+      if (intentResult.decision === 'SKIP' && intentResult.skipResponse) {
+        logger.info('Intent analyzer decided SKIP — stopping workflow execution', {
+          workflowId: this.context.workflowId,
+          conversationId,
+        })
+
+        // Build skip output matching agent handler format
+        // Include user prompt and system prompt for UI rendering
+        const skipOutput: NormalizedBlockOutput = {
+          content: intentResult.skipResponse,
+          model: 'gpt-4o',
+          tokens: { input: 0, output: 0, total: 0 },
+          toolCalls: { list: [], count: 0 },
+          skippedWorkflow: true,
+          // Store prompts for UI rendering
+          userPrompt: userPrompt,
+          systemPrompt: intentResult.skipSystemPrompt || undefined,
+          // Store the formatted user message that was sent to LLM
+          _actualPromptsForSkip: {
+            userMessage: intentResult.skipUserMessage || userPrompt,
+            systemPrompt: intentResult.skipSystemPrompt || '',
+          },
+        }
+
+        // Set skip flag and clear queue to prevent any further execution
+        this.skippedFlag = true
+        this.readyQueue = []
+        this.finalOutput = skipOutput
+
+        // Persist skip response to memory if memory is enabled
+        if (agentInputs.memoryType) {
+          try {
+            const { memoryService } = await import('@/executor/handlers/agent/memory')
+            const lastUserMsg = { role: 'user' as const, content: userPrompt }
+            await memoryService.appendToMemory(
+              this.context,
+              agentInputs,
+              { role: 'assistant', content: intentResult.skipResponse },
+              firstAgentBlock.id,
+              lastUserMsg
+            )
+          } catch (memoryError) {
+            logger.warn('Failed to persist skip response to memory', { error: memoryError })
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        'Failed to run workflow-level intent analyzer, continuing with normal execution',
+        {
+          error: normalizeError(error),
+        }
+      )
+      // Continue execution even if intent analyzer fails
     }
   }
 

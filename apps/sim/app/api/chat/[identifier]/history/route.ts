@@ -5,6 +5,7 @@ import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { getWorkspaceIdsForUser } from '@/lib/workspaces/permissions/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { addCorsHeaders } from '../../utils'
 
@@ -148,6 +149,13 @@ export async function GET(
       .limit(limit)
       .offset(offset)
 
+    let userWorkspaceIds: string[] = []
+    try {
+      userWorkspaceIds = await getWorkspaceIdsForUser(executingUserId)
+    } catch {
+      // Non-fatal; user will get no knowledge refs in history
+    }
+
     // Batch fetch feedback status (liked) for all executionIds in this page
     const executionIds = logs.map((l) => l.executionId)
     let likedByExecutionId = new Map<string, boolean>()
@@ -210,6 +218,19 @@ export async function GET(
         }
       }
 
+      const rawKnowledgeRefs = Array.isArray(executionData?.knowledgeRefs)
+        ? executionData.knowledgeRefs
+        : null
+      const knowledgeRefs =
+        rawKnowledgeRefs == null
+          ? null
+          : userWorkspaceIds.length === 0
+            ? null
+            : rawKnowledgeRefs.filter(
+                (ref: { workspaceId?: string | null }) =>
+                  ref.workspaceId != null && userWorkspaceIds.includes(ref.workspaceId)
+              )
+
       return {
         id: log.id,
         executionId: log.executionId,
@@ -221,6 +242,7 @@ export async function GET(
         conversationId,
         userInput,
         modelOutput,
+        knowledgeRefs,
         liked: likedByExecutionId.has(log.executionId)
           ? likedByExecutionId.get(log.executionId)!
           : null,

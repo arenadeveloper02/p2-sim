@@ -9,10 +9,8 @@ export interface AgentInputs {
   // New message array input (from messages-input subblock)
   messages?: Message[]
   // Memory configuration
-  memoryType?: 'none' | 'conversation' | 'sliding_window' | 'sliding_window_tokens'
-  conversationId?: string // Required for all non-none memory types
-  slidingWindowSize?: string // For message-based sliding window
-  slidingWindowTokens?: string // For token-based sliding window
+  memoryType?: 'none' | 'conversation'
+  conversationId?: string // Required for conversation memory type
   // LLM parameters
   temperature?: number
   maxTokens?: number
