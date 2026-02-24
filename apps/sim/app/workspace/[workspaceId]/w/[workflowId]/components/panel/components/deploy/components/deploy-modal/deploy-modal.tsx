@@ -76,6 +76,7 @@ interface WorkflowDeploymentInfoUI {
   endpoint: string
   exampleCommand: string
   needsRedeployment: boolean
+  isPublicApi: boolean
 }
 
 type TabView = 'general' | 'api' | 'chat' | 'template' | 'mcp' | 'form' | 'a2a'
@@ -126,7 +127,7 @@ export function DeployModal({
   const [isApiInfoModalOpen, setIsApiInfoModalOpen] = useState(false)
   const userPermissions = useUserPermissionsContext()
   const canManageWorkspaceKeys = userPermissions.canAdmin
-  const { config: permissionConfig } = usePermissionConfig()
+  const { config: permissionConfig, isPublicApiDisabled } = usePermissionConfig()
   const { data: apiKeysData, isLoading: isLoadingKeys } = useApiKeys(workflowWorkspaceId || '')
   const { data: workspaceSettingsData, isLoading: isLoadingSettings } = useWorkspaceSettings(
     workflowWorkspaceId || ''
@@ -223,9 +224,11 @@ export function DeployModal({
       endpoint,
       exampleCommand: `curl -X POST -H "X-API-Key: ${placeholderKey}" -H "Content-Type: application/json"${inputFormatExample} ${endpoint}`,
       needsRedeployment: deploymentInfoData.needsRedeployment,
+      isPublicApi: isPublicApiDisabled ? false : (deploymentInfoData.isPublicApi ?? false),
     }
   }, [
     deploymentInfoData,
+    isPublicApiDisabled,
     workflowId,
     selectedStreamingOutputs,
     getInputFormatExample,
