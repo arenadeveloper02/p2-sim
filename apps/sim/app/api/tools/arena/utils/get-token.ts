@@ -19,22 +19,18 @@ export interface ArenaTokenNotFound {
 export type ArenaTokenResponse = ArenaTokenResult | ArenaTokenNotFound
 
 /**
- * Calls the get-token API to get the Arena token (session user).
- * Forwards the request's cookies so the API sees the same session.
+ * Calls the get-token API to resolve the Arena token for the session user.
+ * Forwards cookie and Authorization so the API can resolve from session or internal token.
  */
-export async function fetchArenaTokenFromApi(
-  req: NextRequest,
-  workflowId?: string
-): Promise<ArenaTokenResponse> {
+export async function fetchArenaTokenFromApi(req: NextRequest): Promise<ArenaTokenResponse> {
   const url = new URL(req.url)
-  const base = `${url.origin}/api/tools/arena/get-token`
-  const tokenUrl = workflowId ? `${base}?workflowId=${encodeURIComponent(workflowId)}` : base
-  const cookie = req.headers.get('cookie') ?? ''
-  const res = await fetch(tokenUrl, {
-    method: 'GET',
-    headers: { cookie },
-    cache: 'no-store',
-  })
+  const tokenUrl = `${url.origin}/api/tools/arena/get-token`
+  const headers: Record<string, string> = {
+    cookie: req.headers.get('cookie') ?? '',
+  }
+  const auth = req.headers.get('authorization')
+  if (auth) headers['authorization'] = auth
+  const res = await fetch(tokenUrl, { method: 'GET', headers, cache: 'no-store' })
   const data = (await res.json()) as ArenaTokenResponse
   if (!res.ok) {
     return { found: false, reason: (data as ArenaTokenNotFound).reason ?? 'Request failed' }
@@ -50,7 +46,7 @@ export async function getArenaToken(
   req: NextRequest,
   workflowId?: string
 ): Promise<ArenaTokenResponse> {
-  let tokenObject = await fetchArenaTokenFromApi(req, workflowId)
+  let tokenObject = await fetchArenaTokenFromApi(req)
   if (!tokenObject.found && workflowId) {
     const wf = await getArenaTokenByWorkflowId(workflowId)
     if (wf.found) {
