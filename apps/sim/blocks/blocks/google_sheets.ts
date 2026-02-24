@@ -556,6 +556,21 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
       placeholder: 'Comma-separated sheet names (e.g., Sheet1, Data, Summary)',
       condition: { field: 'operation', value: 'create' },
     },
+    {
+      id: 'parentFolderId',
+      title: 'Create in Folder',
+      type: 'file-selector',
+      canonicalParamId: 'parentFolderId',
+      serviceId: 'google-sheets',
+      requiredScopes: [
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/drive',
+      ],
+      mimeType: 'application/vnd.google-apps.folder',
+      placeholder: 'Optional – pick a Drive folder to create the spreadsheet in',
+      dependsOn: ['credential'],
+      condition: { field: 'operation', value: 'create' },
+    },
     // Batch Get Fields
     {
       id: 'ranges',
@@ -758,9 +773,11 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           const sheetTitlesArray = sheetTitles
             ? (sheetTitles as string).split(',').map((s: string) => s.trim())
             : undefined
+          const folderId = (params.parentFolderId as string)?.trim()
           return {
             title: (title as string)?.trim(),
             sheetTitles: sheetTitlesArray,
+            parentFolderId: folderId || undefined,
             credential,
           }
         }

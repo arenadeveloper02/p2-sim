@@ -192,6 +192,8 @@ export interface GoogleSheetsV2CreateSpreadsheetParams {
   sheetTitles?: string[]
   locale?: string
   timeZone?: string
+  /** Google Drive folder ID to create the spreadsheet inside. Omit to create in Drive root. */
+  parentFolderId?: string
 }
 
 export interface GoogleSheetsV2CreateSpreadsheetResponse extends ToolResponse {
