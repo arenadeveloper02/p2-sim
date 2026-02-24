@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Check, Copy, Download } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Check, Copy, Download, X } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
 import ArenaCopilotMarkdownRenderer from '../../../panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
@@ -32,6 +32,45 @@ interface ChatMessageProps {
 }
 
 const MAX_WORD_LENGTH = 25
+
+const S3_UPLOAD_FAILED_DISMISS_MS = 10_000
+
+/**
+ * Temporary alert shown when the generated image was saved to local storage because S3 upload failed.
+ * Auto-dismisses after 10s; user can dismiss manually.
+ */
+function S3UploadFailedAlert() {
+  const [dismissed, setDismissed] = useState(false)
+  const dismiss = useCallback(() => setDismissed(true), [])
+
+  useEffect(() => {
+    const t = setTimeout(dismiss, S3_UPLOAD_FAILED_DISMISS_MS)
+    return () => clearTimeout(t)
+  }, [dismiss])
+
+  if (dismissed) return null
+
+  return (
+    <div
+      className='mb-2 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-amber-800 text-sm dark:text-amber-200'
+      role='alert'
+    >
+      <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400' />
+      <p className='flex-1'>
+        Image was saved locally because upload to the storage bucket failed. Saving to the bucket is
+        important for this workflow and user.
+      </p>
+      <button
+        type='button'
+        onClick={dismiss}
+        className='flex-shrink-0 rounded p-1 hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500'
+        aria-label='Dismiss'
+      >
+        <X className='h-4 w-4' />
+      </button>
+    </div>
+  )
+}
 
 /**
  * Formats file size in human-readable format
@@ -272,19 +311,21 @@ export function ChatMessage({ message }: ChatMessageProps) {
           typeof imageValue === 'string' &&
           (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
         const isBase64Image = typeof imageValue === 'string' && isBase64(imageValue)
+        const showS3UploadFailed = content.s3UploadFailed === true && (isImageUrl || isBase64Image)
 
         return (
           <>
             {content.content && typeof content.content === 'string' && content.content.trim() && (
               <ArenaCopilotMarkdownRenderer content={content.content} />
             )}
+            {showS3UploadFailed && <S3UploadFailedAlert />}
             {isImageUrl && (
-              <div className="w-full">
+              <div className='w-full'>
                 {renderBs64Img({ isBase64: false, imageData: '', imageUrl: imageValue })}
               </div>
             )}
             {isBase64Image && (
-              <div className="w-full">
+              <div className='w-full'>
                 {renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}
               </div>
             )}
@@ -301,7 +342,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
         (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
       ) {
         return (
-          <div className="w-full">
+          <div className='w-full'>
             {renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}
           </div>
         )
@@ -314,15 +355,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
       if (typeof content === 'string') {
         const trimmed = content.trim()
-        const urlPrefix =
-          trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
+        const urlPrefix = trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
         const looksLikeImageUrl =
           urlPrefix &&
           (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(trimmed) ||
             trimmed.includes('agent-generated-images'))
         if (looksLikeImageUrl) {
           return (
-            <div className="w-full">
+            <div className='w-full'>
               {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
             </div>
           )

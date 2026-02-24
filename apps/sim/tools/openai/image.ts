@@ -136,6 +136,7 @@ export const imageTool: ToolConfig = {
       })
 
       let finalImageUrl: string | null = null
+      let s3UploadFailed: boolean | undefined
 
       if (imageUrl && !base64Image) {
         try {
@@ -200,7 +201,9 @@ export const imageTool: ToolConfig = {
           if (agentS3Configured) {
             logger.info('S3 upload started', { workflowId, userId, mimeType })
           }
-          finalImageUrl = await saveGeneratedImage(base64Image, workflowId, userId, mimeType)
+          const saveResult = await saveGeneratedImage(base64Image, workflowId, userId, mimeType)
+          finalImageUrl = saveResult.url
+          s3UploadFailed = saveResult.s3UploadFailed
           if (agentS3Configured && finalImageUrl) {
             logger.info('S3 URL returned', { url: finalImageUrl })
           }
@@ -212,14 +215,9 @@ export const imageTool: ToolConfig = {
             userId,
             stack: error instanceof Error ? error.stack : undefined,
           })
-          const agentS3Configured =
-            !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
-            !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
-          if (agentS3Configured) {
-            throw new Error(
-              `Failed to upload generated image to S3: ${error instanceof Error ? error.message : String(error)}`
-            )
-          }
+          throw new Error(
+            `Failed to save generated image: ${error instanceof Error ? error.message : String(error)}`
+          )
         }
       } else if (imageUrl && !base64Image) {
         const agentS3Configured =
@@ -267,11 +265,13 @@ export const imageTool: ToolConfig = {
         success: true,
         output: {
           content: finalContent,
-          image: finalImage, // Return stored URL or original URL - always ensure this has a value
+          image: finalImage,
           metadata: {
             model: modelName,
             stored: !!finalImageUrl,
+            s3UploadFailed,
           },
+          s3UploadFailed,
         },
       }
     } catch (error) {

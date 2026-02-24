@@ -222,7 +222,6 @@ describe('File Serve API Route', () => {
     vi.doMock('@/lib/uploads/setup', () => ({
       UPLOAD_DIR: '/test/uploads',
       USE_S3_STORAGE: true,
-      USE_BLOB_STORAGE: false,
     }))
 
     vi.doMock('@/lib/auth/hybrid', () => ({

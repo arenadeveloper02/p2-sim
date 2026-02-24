@@ -16,6 +16,8 @@ export interface FileInfo {
   name: string
   size: number
   type: string
+  /** Set when upload fell back to local after S3 failed (e.g. agent-generated-images). */
+  s3UploadFailed?: boolean
 }
 
 export interface StorageConfig {

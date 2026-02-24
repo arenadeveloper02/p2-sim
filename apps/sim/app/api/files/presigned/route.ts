@@ -3,7 +3,6 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { CopilotFiles } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
-import { USE_BLOB_STORAGE } from '@/lib/uploads/config'
 import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/storage-service'
 import { validateFileType } from '@/lib/uploads/utils/validation'
 import { createErrorResponse } from '@/app/api/files/utils'
@@ -149,7 +148,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const finalPath = `/api/files/serve/${USE_BLOB_STORAGE ? 'blob' : 's3'}/${encodeURIComponent(presignedUrlResponse.key)}?context=${uploadType}`
+    const finalPath = `/api/files/serve/s3/${encodeURIComponent(presignedUrlResponse.key)}?context=${uploadType}`
 
     return NextResponse.json({
       fileName,

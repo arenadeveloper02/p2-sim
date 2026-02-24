@@ -5,24 +5,12 @@ export type { StorageConfig, StorageContext } from '@/lib/uploads/shared/types'
 export const UPLOAD_DIR = '/uploads'
 
 const hasS3Config = !!(env.S3_BUCKET_NAME && env.AWS_REGION)
-const hasBlobConfig = !!(
-  env.AZURE_STORAGE_CONTAINER_NAME &&
-  ((env.AZURE_ACCOUNT_NAME && env.AZURE_ACCOUNT_KEY) || env.AZURE_CONNECTION_STRING)
-)
 
-export const USE_BLOB_STORAGE = hasBlobConfig
-export const USE_S3_STORAGE = hasS3Config && !USE_BLOB_STORAGE
+export const USE_S3_STORAGE = hasS3Config
 
 export const S3_CONFIG = {
   bucket: env.S3_BUCKET_NAME || '',
   region: env.AWS_REGION || '',
-}
-
-export const BLOB_CONFIG = {
-  accountName: env.AZURE_ACCOUNT_NAME || '',
-  accountKey: env.AZURE_ACCOUNT_KEY || '',
-  connectionString: env.AZURE_CONNECTION_STRING || '',
-  containerName: env.AZURE_STORAGE_CONTAINER_NAME || '',
 }
 
 export const S3_KB_CONFIG = {
@@ -35,30 +23,9 @@ export const S3_EXECUTION_FILES_CONFIG = {
   region: env.AWS_REGION || '',
 }
 
-export const BLOB_KB_CONFIG = {
-  accountName: env.AZURE_ACCOUNT_NAME || '',
-  accountKey: env.AZURE_ACCOUNT_KEY || '',
-  connectionString: env.AZURE_CONNECTION_STRING || '',
-  containerName: env.AZURE_STORAGE_KB_CONTAINER_NAME || '',
-}
-
-export const BLOB_EXECUTION_FILES_CONFIG = {
-  accountName: env.AZURE_ACCOUNT_NAME || '',
-  accountKey: env.AZURE_ACCOUNT_KEY || '',
-  connectionString: env.AZURE_CONNECTION_STRING || '',
-  containerName: env.AZURE_STORAGE_EXECUTION_FILES_CONTAINER_NAME || 'sim-execution-files',
-}
-
 export const S3_CHAT_CONFIG = {
   bucket: env.S3_CHAT_BUCKET_NAME || '',
   region: env.AWS_REGION || '',
-}
-
-export const BLOB_CHAT_CONFIG = {
-  accountName: env.AZURE_ACCOUNT_NAME || '',
-  accountKey: env.AZURE_ACCOUNT_KEY || '',
-  connectionString: env.AZURE_CONNECTION_STRING || '',
-  containerName: env.AZURE_STORAGE_CHAT_CONTAINER_NAME || '',
 }
 
 export const S3_COPILOT_CONFIG = {
@@ -66,35 +33,14 @@ export const S3_COPILOT_CONFIG = {
   region: env.AWS_REGION || '',
 }
 
-export const BLOB_COPILOT_CONFIG = {
-  accountName: env.AZURE_ACCOUNT_NAME || '',
-  accountKey: env.AZURE_ACCOUNT_KEY || '',
-  connectionString: env.AZURE_CONNECTION_STRING || '',
-  containerName: env.AZURE_STORAGE_COPILOT_CONTAINER_NAME || '',
-}
-
 export const S3_PROFILE_PICTURES_CONFIG = {
   bucket: env.S3_PROFILE_PICTURES_BUCKET_NAME || '',
   region: env.AWS_REGION || '',
 }
 
-export const BLOB_PROFILE_PICTURES_CONFIG = {
-  accountName: env.AZURE_ACCOUNT_NAME || '',
-  accountKey: env.AZURE_ACCOUNT_KEY || '',
-  connectionString: env.AZURE_CONNECTION_STRING || '',
-  containerName: env.AZURE_STORAGE_PROFILE_PICTURES_CONTAINER_NAME || '',
-}
-
 export const S3_OG_IMAGES_CONFIG = {
   bucket: env.S3_OG_IMAGES_BUCKET_NAME || '',
   region: env.AWS_REGION || '',
-}
-
-export const BLOB_OG_IMAGES_CONFIG = {
-  accountName: env.AZURE_ACCOUNT_NAME || '',
-  accountKey: env.AZURE_ACCOUNT_KEY || '',
-  connectionString: env.AZURE_CONNECTION_STRING || '',
-  containerName: env.AZURE_STORAGE_OG_IMAGES_CONTAINER_NAME || '',
 }
 
 /**
@@ -107,37 +53,25 @@ export const S3_AGENT_GENERATED_IMAGES_CONFIG = {
   region: env.S3_AGENT_GENERATED_IMAGES_REGION || env.AWS_REGION || '',
 }
 
-export const BLOB_AGENT_GENERATED_IMAGES_CONFIG = {
-  accountName: env.AZURE_ACCOUNT_NAME || '',
-  accountKey: env.AZURE_ACCOUNT_KEY || '',
-  connectionString: env.AZURE_CONNECTION_STRING || '',
-  containerName: env.AZURE_STORAGE_AGENT_GENERATED_IMAGES_CONTAINER_NAME || env.AZURE_STORAGE_CONTAINER_NAME || '',
-}
-
 /**
  * Get the current storage provider as a human-readable string
  */
-export function getStorageProvider(): 'Azure Blob' | 'S3' | 'Local' {
-  if (USE_BLOB_STORAGE) return 'Azure Blob'
+export function getStorageProvider(): 'S3' | 'Local' {
   if (USE_S3_STORAGE) return 'S3'
   return 'Local'
 }
 
 /**
- * Check if we're using any cloud storage (S3 or Blob)
+ * Check if we're using cloud storage (S3)
  */
 export function isUsingCloudStorage(): boolean {
-  return USE_S3_STORAGE || USE_BLOB_STORAGE
+  return USE_S3_STORAGE
 }
 
 /**
  * Get the appropriate storage configuration for a given context
  */
 export function getStorageConfig(context: StorageContext): StorageConfig {
-  if (USE_BLOB_STORAGE) {
-    return getBlobConfig(context)
-  }
-
   if (USE_S3_STORAGE) {
     return getS3Config(context)
   }
@@ -199,90 +133,12 @@ function getS3Config(context: StorageContext): StorageConfig {
 }
 
 /**
- * Get Azure Blob configuration for a given context
- */
-function getBlobConfig(context: StorageContext): StorageConfig {
-  switch (context) {
-    case 'knowledge-base':
-      return {
-        accountName: BLOB_KB_CONFIG.accountName,
-        accountKey: BLOB_KB_CONFIG.accountKey,
-        connectionString: BLOB_KB_CONFIG.connectionString,
-        containerName: BLOB_KB_CONFIG.containerName,
-      }
-    case 'chat':
-      return {
-        accountName: BLOB_CHAT_CONFIG.accountName,
-        accountKey: BLOB_CHAT_CONFIG.accountKey,
-        connectionString: BLOB_CHAT_CONFIG.connectionString,
-        containerName: BLOB_CHAT_CONFIG.containerName,
-      }
-    case 'copilot':
-      return {
-        accountName: BLOB_COPILOT_CONFIG.accountName,
-        accountKey: BLOB_COPILOT_CONFIG.accountKey,
-        connectionString: BLOB_COPILOT_CONFIG.connectionString,
-        containerName: BLOB_COPILOT_CONFIG.containerName,
-      }
-    case 'execution':
-      return {
-        accountName: BLOB_EXECUTION_FILES_CONFIG.accountName,
-        accountKey: BLOB_EXECUTION_FILES_CONFIG.accountKey,
-        connectionString: BLOB_EXECUTION_FILES_CONFIG.connectionString,
-        containerName: BLOB_EXECUTION_FILES_CONFIG.containerName,
-      }
-    case 'workspace':
-      return {
-        accountName: BLOB_CONFIG.accountName,
-        accountKey: BLOB_CONFIG.accountKey,
-        connectionString: BLOB_CONFIG.connectionString,
-        containerName: BLOB_CONFIG.containerName,
-      }
-    case 'profile-pictures':
-      return {
-        accountName: BLOB_PROFILE_PICTURES_CONFIG.accountName,
-        accountKey: BLOB_PROFILE_PICTURES_CONFIG.accountKey,
-        connectionString: BLOB_PROFILE_PICTURES_CONFIG.connectionString,
-        containerName: BLOB_PROFILE_PICTURES_CONFIG.containerName,
-      }
-    case 'og-images':
-      return {
-        accountName: BLOB_OG_IMAGES_CONFIG.accountName || BLOB_CONFIG.accountName,
-        accountKey: BLOB_OG_IMAGES_CONFIG.accountKey || BLOB_CONFIG.accountKey,
-        connectionString: BLOB_OG_IMAGES_CONFIG.connectionString || BLOB_CONFIG.connectionString,
-        containerName: BLOB_OG_IMAGES_CONFIG.containerName || BLOB_CONFIG.containerName,
-      }
-    case 'agent-generated-images':
-      return {
-        accountName: BLOB_AGENT_GENERATED_IMAGES_CONFIG.accountName || BLOB_CONFIG.accountName,
-        accountKey: BLOB_AGENT_GENERATED_IMAGES_CONFIG.accountKey || BLOB_CONFIG.accountKey,
-        connectionString: BLOB_AGENT_GENERATED_IMAGES_CONFIG.connectionString || BLOB_CONFIG.connectionString,
-        containerName: BLOB_AGENT_GENERATED_IMAGES_CONFIG.containerName || BLOB_CONFIG.containerName,
-      }
-    default:
-      return {
-        accountName: BLOB_CONFIG.accountName,
-        accountKey: BLOB_CONFIG.accountKey,
-        connectionString: BLOB_CONFIG.connectionString,
-        containerName: BLOB_CONFIG.containerName,
-      }
-  }
-}
-
-/**
  * Check if a specific storage context is configured for cloud storage.
- * Returns true if the context has its own bucket/container configured (e.g. agent-generated-images S3 bucket)
- * or if global cloud storage is on and the context has config.
+ * Returns true if the context has its own bucket configured (e.g. agent-generated-images S3 bucket)
+ * or if global S3 is on and the context has config.
  */
 export function isStorageContextConfigured(context: StorageContext): boolean {
   const config = getStorageConfig(context)
-
-  if (USE_BLOB_STORAGE) {
-    return !!(
-      config.containerName &&
-      (config.connectionString || (config.accountName && config.accountKey))
-    )
-  }
 
   if (USE_S3_STORAGE) {
     return !!(config.bucket && config.region)
@@ -295,5 +151,5 @@ export function isStorageContextConfigured(context: StorageContext): boolean {
     )
   }
 
-  return true
+  return false
 }

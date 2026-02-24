@@ -6,9 +6,8 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import { uploadFile } from '@/lib/uploads/core/storage-service'
 import {
-  USE_S3_STORAGE,
-  USE_BLOB_STORAGE,
   S3_AGENT_GENERATED_IMAGES_CONFIG,
+  USE_S3_STORAGE,
 } from '@/lib/uploads/config'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
@@ -30,7 +29,6 @@ function sanitisePathSegment(value: string): string {
 export async function ensureAgentGeneratedImagesDirectory(): Promise<boolean> {
   const useCloudForAgentImages =
     USE_S3_STORAGE ||
-    USE_BLOB_STORAGE ||
     (!!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
       !!S3_AGENT_GENERATED_IMAGES_CONFIG.region)
   if (useCloudForAgentImages) {
@@ -66,21 +64,26 @@ export async function ensureAgentGeneratedImagesDirectory(): Promise<boolean> {
   }
 }
 
+export interface SaveGeneratedImageResult {
+  url: string
+  s3UploadFailed?: boolean
+}
+
 /**
- * Save a generated image to storage (S3, Azure Blob, or local)
+ * Save a generated image to storage (S3 first, then local if S3 fails).
  * Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
  * @param base64Image - Base64 encoded image data
  * @param workflowId - Workflow ID
  * @param userId - User ID
  * @param mimeType - MIME type of the image (default: image/png)
- * @returns URL or path to the stored image
+ * @returns URL and optional flag when S3 upload failed and local was used
  */
 export async function saveGeneratedImage(
   base64Image: string,
   workflowId: string,
   userId: string,
   mimeType = 'image/png'
-): Promise<string> {
+): Promise<SaveGeneratedImageResult> {
   try {
     // Remove data URL prefix if present (e.g., "data:image/png;base64,")
     const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image
@@ -101,7 +104,6 @@ export async function saveGeneratedImage(
 
     const useCloudStorage =
       USE_S3_STORAGE ||
-      USE_BLOB_STORAGE ||
       (!!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
         !!S3_AGENT_GENERATED_IMAGES_CONFIG.region)
 
@@ -118,8 +120,8 @@ export async function saveGeneratedImage(
         file: imageBuffer,
         fileName: key,
         contentType: mimeType,
-        context: 'agent-generated-images', // Use dedicated context for agent-generated images
-        preserveKey: true, // Preserve the key structure
+        context: 'agent-generated-images',
+        preserveKey: true,
         metadata: {
           workflowId,
           userId,
@@ -127,10 +129,6 @@ export async function saveGeneratedImage(
         },
       })
 
-      // Return serve URL (not direct S3 URL) so the app can:
-      // 1. Handle authentication/authorization
-      // 2. Serve files through the app's domain
-      // 3. Support both S3 and local storage transparently
       const serveUrl = `${getBaseUrl()}${fileInfo.path}`
       logger.info('S3 URL returned for agent-generated image', {
         url: serveUrl,
@@ -138,10 +136,13 @@ export async function saveGeneratedImage(
         s3Key: fileInfo.key,
         s3Location: `s3://${S3_AGENT_GENERATED_IMAGES_CONFIG.bucket}/${fileInfo.key}`,
       })
-      return serveUrl
+      return {
+        url: serveUrl,
+        s3UploadFailed: fileInfo.s3UploadFailed,
+      }
     }
 
-    // Local storage fallback
+    // Local storage fallback when S3 not configured
     logger.info(`Saving generated image to local storage: ${key}`)
 
     // Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
@@ -166,10 +167,9 @@ export async function saveGeneratedImage(
       )
     }
 
-    // Return serve URL (path without leading slash for the API route)
     const baseUrl = getBaseUrl()
     const servePath = `${LOCAL_STORAGE_DIR}/${safeWorkflowId}/${safeUserId}/${fileName}`
-    return `${baseUrl}/api/files/serve/${servePath}`
+    return { url: `${baseUrl}/api/files/serve/${servePath}` }
   } catch (error) {
     logger.error('Error saving generated image:', error)
     throw new Error(`Failed to save generated image: ${error instanceof Error ? error.message : String(error)}`)

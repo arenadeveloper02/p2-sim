@@ -5,7 +5,6 @@ export {
   type StorageConfig,
   type StorageContext,
   UPLOAD_DIR,
-  USE_BLOB_STORAGE,
   USE_S3_STORAGE,
 } from '@/lib/uploads/config'
 export * as ChatFiles from '@/lib/uploads/contexts/chat'

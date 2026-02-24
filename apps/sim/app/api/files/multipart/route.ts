@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     if (!isUsingCloudStorage()) {
       return NextResponse.json(
-        { error: 'Multipart upload is only available with cloud storage (S3 or Azure Blob)' },
+        { error: 'Multipart upload is only available with S3 cloud storage' },
         { status: 400 }
       )
     }

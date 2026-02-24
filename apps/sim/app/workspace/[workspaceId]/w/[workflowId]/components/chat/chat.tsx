@@ -689,9 +689,13 @@ export function Chat() {
                 for (const block of Object.values(result.output)) {
                   const imageUrl = imageUrlFromOutput(block)
                   if (imageUrl) {
+                    const blockObj = block as Record<string, unknown>
+                    const output = blockObj?.output as Record<string, unknown> | undefined
+                    const s3UploadFailed = output?.s3UploadFailed ?? blockObj?.s3UploadFailed
                     contentToSet = {
                       content: accumulatedContent || '',
                       image: imageUrl,
+                      ...(s3UploadFailed === true && { s3UploadFailed: true }),
                     }
                     break
                   }
