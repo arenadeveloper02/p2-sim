@@ -177,6 +177,7 @@ export interface ProviderRequest {
   isDeployedContext?: boolean
   /** Previous interaction ID for multi-turn Interactions API requests (deep research follow-ups) */
   previousInteractionId?: string
+  abortSignal?: AbortSignal
 }
 
 /**
