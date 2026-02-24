@@ -42,6 +42,7 @@ import { GenericWebhookBlock } from '@/blocks/blocks/generic_webhook'
 import { GitHubBlock, GitHubV2Block } from '@/blocks/blocks/github'
 import { GitLabBlock } from '@/blocks/blocks/gitlab'
 import { GmailBlock, GmailV2Block } from '@/blocks/blocks/gmail'
+import { GongBlock } from '@/blocks/blocks/gong'
 import { GoogleSearchBlock } from '@/blocks/blocks/google'
 import { GoogleAdsBlock } from '@/blocks/blocks/google_ads'
 import { GoogleAdsV1Block } from '@/blocks/blocks/google_ads_v1'
@@ -242,6 +243,7 @@ export const registry: Record<string, BlockConfig> = {
   google_forms: GoogleFormsBlock,
   google_groups: GoogleGroupsBlock,
   google_maps: GoogleMapsBlock,
+  gong: GongBlock,
   google_search: GoogleSearchBlock,
   google_sheets: GoogleSheetsBlock,
   google_sheets_v2: GoogleSheetsV2Block,

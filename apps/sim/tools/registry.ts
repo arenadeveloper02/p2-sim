@@ -586,6 +586,27 @@ import {
 import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import { googleAdsQueryTool } from '@/tools/google_ads'
 import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
+import {
+  gongAggregateActivityTool,
+  gongAnsweredScorecardsTool,
+  gongGetCallTool,
+  gongGetCallTranscriptTool,
+  gongGetCoachingTool,
+  gongGetExtensiveCallsTool,
+  gongGetFolderContentTool,
+  gongGetUserTool,
+  gongInteractionStatsTool,
+  gongListCallsTool,
+  gongListFlowsTool,
+  gongListLibraryFoldersTool,
+  gongListScorecardsTool,
+  gongListTrackersTool,
+  gongListUsersTool,
+  gongListWorkspacesTool,
+  gongLookupEmailTool,
+  gongLookupPhoneTool,
+} from '@/tools/gong'
+import { googleSearchTool } from '@/tools/google'
 import { googleBooksVolumeDetailsTool, googleBooksVolumeSearchTool } from '@/tools/google_books'
 import {
   googleCalendarCreateTool,
@@ -2118,6 +2139,24 @@ export const tools: Record<string, ToolConfig> = {
   fireflies_create_bite: firefliesCreateBiteTool,
   fireflies_list_bites: firefliesListBitesTool,
   fireflies_list_contacts: firefliesListContactsTool,
+  gong_list_calls: gongListCallsTool,
+  gong_get_call: gongGetCallTool,
+  gong_get_call_transcript: gongGetCallTranscriptTool,
+  gong_get_extensive_calls: gongGetExtensiveCallsTool,
+  gong_list_users: gongListUsersTool,
+  gong_get_user: gongGetUserTool,
+  gong_aggregate_activity: gongAggregateActivityTool,
+  gong_interaction_stats: gongInteractionStatsTool,
+  gong_answered_scorecards: gongAnsweredScorecardsTool,
+  gong_list_library_folders: gongListLibraryFoldersTool,
+  gong_get_folder_content: gongGetFolderContentTool,
+  gong_list_scorecards: gongListScorecardsTool,
+  gong_list_trackers: gongListTrackersTool,
+  gong_list_workspaces: gongListWorkspacesTool,
+  gong_list_flows: gongListFlowsTool,
+  gong_get_coaching: gongGetCoachingTool,
+  gong_lookup_email: gongLookupEmailTool,
+  gong_lookup_phone: gongLookupPhoneTool,
   grafana_get_dashboard: grafanaGetDashboardTool,
   grafana_list_dashboards: grafanaListDashboardsTool,
   grafana_create_dashboard: grafanaCreateDashboardTool,
