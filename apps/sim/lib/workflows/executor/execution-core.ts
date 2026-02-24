@@ -441,8 +441,6 @@ export async function executeWorkflowCore(
       contextExtensions,
     })
 
-    loggingSession.setupExecutor(executorInstance)
-
     // Convert initial workflow variables to their native types
     if (workflowVariables) {
       for (const [varId, variable] of Object.entries(workflowVariables)) {
@@ -461,8 +459,10 @@ export async function executeWorkflowCore(
         )) as ExecutionResult)
       : ((await executorInstance.execute(workflowId, resolvedTriggerBlockId)) as ExecutionResult)
 
-    // Build trace spans for logging from the full execution result
-    const { traceSpans, totalDuration } = buildTraceSpans(result)
+    // Fire-and-forget: post-execution logging, billing, and cleanup
+    void (async () => {
+      try {
+        const { traceSpans, totalDuration } = buildTraceSpans(result)
 
     // Detect skipped workflow (intent analyzer decided to skip)
     const isSkippedExecution =
@@ -632,6 +632,7 @@ export async function executeWorkflowCore(
 
     logger.info(`[${requestId}] Workflow execution completed`, {
       success: result.success,
+      status: result.status,
       duration: result.metadata?.duration,
     })
 
@@ -639,20 +640,31 @@ export async function executeWorkflowCore(
   } catch (error: unknown) {
     logger.error(`[${requestId}] Execution failed:`, error)
 
-    const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
-    const { traceSpans } = executionResult ? buildTraceSpans(executionResult) : { traceSpans: [] }
+    // Fire-and-forget: error logging and cleanup
+    void (async () => {
+      try {
+        const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
+        const { traceSpans } = executionResult
+          ? buildTraceSpans(executionResult)
+          : { traceSpans: [] }
 
-    await loggingSession.safeCompleteWithError({
-      endedAt: new Date().toISOString(),
-      totalDurationMs: executionResult?.metadata?.duration || 0,
-      error: {
-        message: error instanceof Error ? error.message : 'Execution failed',
-        stackTrace: error instanceof Error ? error.stack : undefined,
-      },
-      traceSpans,
-    })
+        await loggingSession.safeCompleteWithError({
+          endedAt: new Date().toISOString(),
+          totalDurationMs: executionResult?.metadata?.duration || 0,
+          error: {
+            message: error instanceof Error ? error.message : 'Execution failed',
+            stackTrace: error instanceof Error ? error.stack : undefined,
+          },
+          traceSpans,
+        })
 
-    await clearExecutionCancellation(executionId)
+        await clearExecutionCancellation(executionId)
+      } catch (postExecError) {
+        logger.error(`[${requestId}] Post-execution error logging failed`, {
+          error: postExecError,
+        })
+      }
+    })()
 
     throw error
   }

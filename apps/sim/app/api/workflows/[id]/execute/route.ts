@@ -23,7 +23,6 @@ import { createExecutionEventWriter, setExecutionMeta } from '@/lib/execution/ev
 import { processInputFileFields } from '@/lib/execution/files'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
-import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import {
   cleanupExecutionBase64Cache,
   hydrateUserFilesWithBase64,
@@ -410,18 +409,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const shouldUseDraftState = isPublicApiAccess
       ? false
       : (useDraftState ?? auth.authType === 'session')
-    const workflowAuthorization = await authorizeWorkflowByWorkspacePermission({
-      workflowId,
-      userId,
-      action: shouldUseDraftState ? 'write' : 'read',
-    })
-    if (!workflowAuthorization.allowed) {
-      return NextResponse.json(
-        { error: workflowAuthorization.message || 'Access denied' },
-        { status: workflowAuthorization.status }
-      )
-    }
-
     const streamHeader = req.headers.get('X-Stream-Response') === 'true'
     const enableSSE = streamHeader || streamParam === true
     const executionModeHeader = req.headers.get('X-Execution-Mode')
@@ -456,6 +443,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const useAuthenticatedUserAsActor =
       isClientSession || (auth.authType === 'api_key' && auth.apiKeyType === 'personal')
 
+    // Authorization fetches the full workflow record and checks workspace permissions.
+    // Run it first so we can pass the record to preprocessing (eliminates a duplicate DB query).
+    const workflowAuthorization = await authorizeWorkflowByWorkspacePermission({
+      workflowId,
+      userId,
+      action: shouldUseDraftState ? 'write' : 'read',
+    })
+    if (!workflowAuthorization.allowed) {
+      return NextResponse.json(
+        { error: workflowAuthorization.message || 'Access denied' },
+        { status: workflowAuthorization.status }
+      )
+    }
+
+    // Pass the pre-fetched workflow record to skip the redundant Step 1 DB query in preprocessing.
     const preprocessResult = await preprocessExecution({
       workflowId,
       userId,
@@ -466,6 +468,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       loggingSession,
       useDraftState: shouldUseDraftState,
       useAuthenticatedUserAsActor,
+      workflowRecord: workflowAuthorization.workflow ?? undefined,
     })
 
     if (!preprocessResult.success) {
@@ -515,7 +518,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     try {
       const workflowData = shouldUseDraftState
         ? await loadWorkflowFromNormalizedTables(workflowId)
-        : await loadDeployedWorkflowState(workflowId)
+        : await loadDeployedWorkflowState(workflowId, workspaceId)
 
       if (workflowData) {
         const deployedVariables =
@@ -696,12 +699,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
 
-        await loggingSession.safeCompleteWithError({
-          totalDurationMs: executionResult?.metadata?.duration,
-          error: { message: errorMessage },
-          traceSpans: executionResult?.logs as any,
-        })
-
         return NextResponse.json(
           {
             success: false,
@@ -720,11 +717,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } finally {
         timeoutController.cleanup()
         if (executionId) {
-          try {
-            await cleanupExecutionBase64Cache(executionId)
-          } catch (error) {
+          void cleanupExecutionBase64Cache(executionId).catch((error) => {
             logger.error(`[${requestId}] Failed to cleanup base64 cache`, { error })
-          }
+          })
         }
       }
     }
@@ -1178,15 +1173,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           logger.error(`[${requestId}] SSE execution failed: ${errorMessage}`, { isTimeout })
 
           const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
-          const { traceSpans, totalDuration } = executionResult
-            ? buildTraceSpans(executionResult)
-            : { traceSpans: [], totalDuration: 0 }
-
-          await loggingSession.safeCompleteWithError({
-            totalDurationMs: totalDuration || executionResult?.metadata?.duration,
-            error: { message: errorMessage },
-            traceSpans,
-          })
 
           sendEvent({
             type: 'execution:error',

@@ -1003,8 +1003,6 @@ export async function GET(
   const requestId = generateRequestId()
 
   try {
-    logger.debug(`[${requestId}] Fetching chat info for identifier: ${identifier}`)
-
     const deploymentResult = await db
       .select({
         id: chat.id,

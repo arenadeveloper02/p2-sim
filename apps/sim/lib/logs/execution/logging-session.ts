@@ -110,6 +110,10 @@ export class LoggingSession {
     initialInput?: string
   }
   private completed = false
+  /** Synchronous flag to prevent concurrent completion attempts (race condition guard) */
+  private completing = false
+  /** Tracks the in-flight completion promise so callers can await it */
+  private completionPromise: Promise<void> | null = null
   private accumulatedCost: AccumulatedCost = {
     total: BASE_EXECUTION_CHARGE,
     input: 0,
@@ -207,7 +211,7 @@ export class LoggingSession {
         .limit(1)
 
       if (existing?.cost) {
-        const cost = existing.cost as any
+        const cost = existing.cost as AccumulatedCost
         this.accumulatedCost = {
           total: cost.total || BASE_EXECUTION_CHARGE,
           input: cost.input || 0,
@@ -281,18 +285,9 @@ export class LoggingSession {
           initialInput,
           deploymentVersionId,
         })
-
-        if (this.requestId) {
-          logger.debug(`[${this.requestId}] Started logging for execution ${this.executionId}`)
-        }
       } else {
         this.isResume = true
         await this.loadExistingCost()
-        if (this.requestId) {
-          logger.debug(
-            `[${this.requestId}] Resuming logging for existing execution ${this.executionId}`
-          )
-        }
       }
     } catch (error) {
       if (this.requestId) {
@@ -302,20 +297,11 @@ export class LoggingSession {
     }
   }
 
-  /**
-   * Set up logging on an executor instance
-   * Note: Logging now works through trace spans only, no direct executor integration needed
-   */
-  setupExecutor(executor: any): void {
-    if (this.requestId) {
-      logger.debug(`[${this.requestId}] Logging session ready for execution ${this.executionId}`)
-    }
-  }
-
   async complete(params: SessionCompleteParams = {}): Promise<void> {
-    if (this.completed) {
+    if (this.completed || this.completing) {
       return
     }
+    this.completing = true
 
     const {
       endedAt,
@@ -390,11 +376,8 @@ export class LoggingSession {
           // Silently fail
         }
       }
-
-      if (this.requestId) {
-        logger.debug(`[${this.requestId}] Completed logging for execution ${this.executionId}`)
-      }
     } catch (error) {
+      this.completing = false
       logger.error(`Failed to complete logging for execution ${this.executionId}:`, {
         requestId: this.requestId,
         workflowId: this.workflowId,
@@ -407,9 +390,10 @@ export class LoggingSession {
   }
 
   async completeWithError(params: SessionErrorCompleteParams = {}): Promise<void> {
-    if (this.completed) {
+    if (this.completed || this.completing) {
       return
     }
+    this.completing = true
 
     try {
       const { endedAt, totalDurationMs, error, traceSpans, skipCost } = params
@@ -509,6 +493,7 @@ export class LoggingSession {
         )
       }
     } catch (enhancedError) {
+      this.completing = false
       logger.error(`Failed to complete error logging for execution ${this.executionId}:`, {
         requestId: this.requestId,
         workflowId: this.workflowId,
@@ -521,9 +506,10 @@ export class LoggingSession {
   }
 
   async completeWithCancellation(params: SessionCancelledParams = {}): Promise<void> {
-    if (this.completed) {
+    if (this.completed || this.completing) {
       return
     }
+    this.completing = true
 
     try {
       const { endedAt, totalDurationMs, traceSpans } = params
@@ -594,6 +580,7 @@ export class LoggingSession {
         )
       }
     } catch (cancelError) {
+      this.completing = false
       logger.error(`Failed to complete cancelled logging for execution ${this.executionId}:`, {
         requestId: this.requestId,
         workflowId: this.workflowId,
@@ -825,7 +812,28 @@ export class LoggingSession {
     }
   }
 
+  /**
+   * Wait for any in-flight fire-and-forget completion to finish.
+   * Called internally by markAsFailed to ensure completion has settled
+   * before overwriting execution status.
+   */
+  async waitForCompletion(): Promise<void> {
+    if (this.completionPromise) {
+      try {
+        await this.completionPromise
+      } catch {
+        /* already handled by safe* wrapper */
+      }
+    }
+  }
+
   async safeComplete(params: SessionCompleteParams = {}): Promise<void> {
+    if (this.completionPromise) return this.completionPromise
+    this.completionPromise = this._safeCompleteImpl(params)
+    return this.completionPromise
+  }
+
+  private async _safeCompleteImpl(params: SessionCompleteParams = {}): Promise<void> {
     try {
       await this.complete(params)
     } catch (error) {
@@ -845,6 +853,12 @@ export class LoggingSession {
   }
 
   async safeCompleteWithError(params?: SessionErrorCompleteParams): Promise<void> {
+    if (this.completionPromise) return this.completionPromise
+    this.completionPromise = this._safeCompleteWithErrorImpl(params)
+    return this.completionPromise
+  }
+
+  private async _safeCompleteWithErrorImpl(params?: SessionErrorCompleteParams): Promise<void> {
     try {
       await this.completeWithError(params)
     } catch (error) {
@@ -866,6 +880,12 @@ export class LoggingSession {
   }
 
   async safeCompleteWithCancellation(params?: SessionCancelledParams): Promise<void> {
+    if (this.completionPromise) return this.completionPromise
+    this.completionPromise = this._safeCompleteWithCancellationImpl(params)
+    return this.completionPromise
+  }
+
+  private async _safeCompleteWithCancellationImpl(params?: SessionCancelledParams): Promise<void> {
     try {
       await this.completeWithCancellation(params)
     } catch (error) {
@@ -886,6 +906,12 @@ export class LoggingSession {
   }
 
   async safeCompleteWithPause(params?: SessionPausedParams): Promise<void> {
+    if (this.completionPromise) return this.completionPromise
+    this.completionPromise = this._safeCompleteWithPauseImpl(params)
+    return this.completionPromise
+  }
+
+  private async _safeCompleteWithPauseImpl(params?: SessionPausedParams): Promise<void> {
     try {
       await this.completeWithPause(params)
     } catch (error) {
@@ -926,6 +952,7 @@ export class LoggingSession {
   }
 
   async markAsFailed(errorMessage?: string): Promise<void> {
+    await this.waitForCompletion()
     await LoggingSession.markExecutionAsFailed(this.executionId, errorMessage, this.requestId)
   }
 
@@ -969,9 +996,10 @@ export class LoggingSession {
     isError: boolean
     status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
   }): Promise<void> {
-    if (this.completed) {
+    if (this.completed || this.completing) {
       return
     }
+    this.completing = true
 
     logger.warn(
       `[${this.requestId || 'unknown'}] Logging completion failed for execution ${this.executionId} - attempting cost-only fallback`
@@ -1010,6 +1038,7 @@ export class LoggingSession {
         `[${this.requestId || 'unknown'}] Cost-only fallback succeeded for execution ${this.executionId}`
       )
     } catch (fallbackError) {
+      this.completing = false
       logger.error(
         `[${this.requestId || 'unknown'}] Cost-only fallback also failed for execution ${this.executionId}:`,
         { error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError) }
