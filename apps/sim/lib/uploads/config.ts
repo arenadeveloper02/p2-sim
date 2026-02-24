@@ -121,8 +121,8 @@ function getS3Config(context: StorageContext): StorageConfig {
       }
     case 'agent-generated-images':
       return {
-        bucket: S3_AGENT_GENERATED_IMAGES_CONFIG.bucket,
-        region: S3_AGENT_GENERATED_IMAGES_CONFIG.region,
+        bucket: S3_AGENT_GENERATED_IMAGES_CONFIG.bucket || S3_CONFIG.bucket,
+        region: S3_AGENT_GENERATED_IMAGES_CONFIG.region || S3_CONFIG.region,
       }
     default:
       return {
