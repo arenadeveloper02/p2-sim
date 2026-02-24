@@ -5,10 +5,7 @@ import { existsSync } from 'fs'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 import { uploadFile } from '@/lib/uploads/core/storage-service'
-import {
-  S3_AGENT_GENERATED_IMAGES_CONFIG,
-  USE_S3_STORAGE,
-} from '@/lib/uploads/config'
+import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 const logger = createLogger('ImageStorage')
@@ -28,9 +25,8 @@ function sanitisePathSegment(value: string): string {
  */
 export async function ensureAgentGeneratedImagesDirectory(): Promise<boolean> {
   const useCloudForAgentImages =
-    USE_S3_STORAGE ||
-    (!!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
-      !!S3_AGENT_GENERATED_IMAGES_CONFIG.region)
+    !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+    !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
   if (useCloudForAgentImages) {
     return true
   }
@@ -103,9 +99,8 @@ export async function saveGeneratedImage(
     const key = `${LOCAL_STORAGE_DIR}/${safeWorkflowId}/${safeUserId}/${fileName}`
 
     const useCloudStorage =
-      USE_S3_STORAGE ||
-      (!!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
-        !!S3_AGENT_GENERATED_IMAGES_CONFIG.region)
+      !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+      !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
 
     if (useCloudStorage) {
       logger.info('S3 upload started for agent-generated image', {

@@ -185,6 +185,7 @@ export const env = createEnv({
     // Rate Limiting Configuration
     RATE_LIMIT_WINDOW_MS:                  z.string().optional().default('60000'), // Rate limit window duration in milliseconds (default: 1 minute)
     MANUAL_EXECUTION_LIMIT:                z.string().optional().default('999999'),// Manual execution bypass value (effectively unlimited)
+    DISABLE_EXECUTION_RATE_LIMIT:          z.string().optional(),                  // When set (e.g. true), skip execution rate limits (self-hosted / EC2)
     RATE_LIMIT_FREE_SYNC:                  z.string().optional().default('10'),    // Free tier sync API executions per minute
     RATE_LIMIT_FREE_ASYNC:                 z.string().optional().default('50'),    // Free tier async API executions per minute
     RATE_LIMIT_PRO_SYNC:                   z.string().optional().default('25'),    // Pro tier sync API executions per minute
