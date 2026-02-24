@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { extractBlockIdFromOutputId } from '@/lib/core/utils/response-format'
 import { SSE_HEADERS } from '@/lib/core/utils/sse'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { markExecutionCancelled } from '@/lib/execution/cancellation'
@@ -450,6 +451,42 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // Cleanup base64 cache for this execution
         await cleanupExecutionBase64Cache(executionId)
 
+        // Handle skipped workflows - always return the skip response content directly
+        // Ignore selectedOutputs - just return the content
+        if (
+          result.status === 'skipped' &&
+          resultWithBase64.output &&
+          typeof resultWithBase64.output === 'object'
+        ) {
+          const skipOutput = resultWithBase64.output as Record<string, any>
+          const skipContent = skipOutput.content
+
+          if (skipContent && typeof skipContent === 'string') {
+            // Always return the skip response content directly, ignoring selectedOutputs
+            const filteredResult = {
+              success: result.success,
+              output: skipContent, // Return the content directly as the output
+              error: result.error,
+              status: 'skipped',
+              metadata: result.metadata
+                ? {
+                    duration: result.metadata.duration,
+                    startTime: result.metadata.startTime,
+                    endTime: result.metadata.endTime,
+                  }
+                : undefined,
+            }
+
+            logger.debug(`[${requestId}] Returning skipped workflow response`, {
+              executionId,
+              hasContent: !!skipContent,
+              contentLength: skipContent.length,
+            })
+
+            return NextResponse.json(filteredResult)
+          }
+        }
+
         const hasResponseBlock = workflowHasResponseBlock(resultWithBase64)
         if (hasResponseBlock) {
           return createHttpResponseFromBlock(resultWithBase64)
@@ -768,6 +805,65 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             return
           }
 
+          // Handle skipped workflows - extract content for SSE response
+          let finalOutput = includeFileBase64
+            ? await hydrateUserFilesWithBase64(result.output, {
+                requestId,
+                executionId,
+                maxBytes: base64MaxBytes,
+              })
+            : result.output
+
+          // For skipped workflows, always return the skip response content directly
+          // Ignore selectedOutputs - just return the content
+          // Also send stream chunks so the UI can display it
+          if (result.status === 'skipped' && finalOutput && typeof finalOutput === 'object') {
+            const skipOutput = finalOutput as Record<string, any>
+            const skipContent = skipOutput.content
+
+            if (skipContent && typeof skipContent === 'string') {
+              // Always return the skip response content directly, ignoring selectedOutputs
+              finalOutput = skipContent
+
+              // Send stream chunks for the skip response so the UI can display it
+              // Use the first selected output's blockId if available, otherwise use a default
+              const blockIdForSkip =
+                selectedOutputs && selectedOutputs.length > 0
+                  ? extractBlockIdFromOutputId(selectedOutputs[0])
+                  : 'skip-response'
+
+              // Send the skip content as stream chunks
+              sendEvent({
+                type: 'stream:chunk',
+                timestamp: new Date().toISOString(),
+                executionId,
+                workflowId,
+                data: {
+                  blockId: blockIdForSkip,
+                  chunk: skipContent,
+                },
+              })
+
+              // Send stream done event
+              sendEvent({
+                type: 'stream:done',
+                timestamp: new Date().toISOString(),
+                executionId,
+                workflowId,
+                data: {
+                  blockId: blockIdForSkip,
+                },
+              })
+
+              logger.debug(`[${requestId}] Including skipped workflow response in SSE event`, {
+                executionId,
+                hasContent: !!skipContent,
+                contentLength: skipContent.length,
+                blockId: blockIdForSkip,
+              })
+            }
+          }
+
           sendEvent({
             type: 'execution:completed',
             timestamp: new Date().toISOString(),
@@ -775,13 +871,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             workflowId,
             data: {
               success: result.success,
-              output: includeFileBase64
-                ? await hydrateUserFilesWithBase64(result.output, {
-                    requestId,
-                    executionId,
-                    maxBytes: base64MaxBytes,
-                  })
-                : result.output,
+              output: finalOutput,
               duration: result.metadata?.duration || 0,
               startTime: result.metadata?.startTime || startTime.toISOString(),
               endTime: result.metadata?.endTime || new Date().toISOString(),
