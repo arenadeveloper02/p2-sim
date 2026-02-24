@@ -57,6 +57,8 @@ app:
     S3_COPILOT_BUCKET_NAME: "copilot-files"   # Copilot attachments
     S3_PROFILE_PICTURES_BUCKET_NAME: "profile-pictures"  # User avatars
     S3_OG_IMAGES_BUCKET_NAME: "og-images"                 # OpenGraph preview images
+    S3_AGENT_GENERATED_IMAGES_BUCKET_NAME: "agent-generated-images"  # Agent-generated images
+    S3_AGENT_GENERATED_IMAGES_REGION: "us-west-2"        # AWS region for agent-generated images bucket (defaults to AWS_REGION)
 
 # Realtime service
 realtime:

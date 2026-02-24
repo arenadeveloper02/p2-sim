@@ -184,6 +184,8 @@ app:
     S3_COPILOT_BUCKET_NAME: ""                            # S3 bucket for copilot files
     S3_PROFILE_PICTURES_BUCKET_NAME: ""                   # S3 bucket for user profile pictures
     S3_OG_IMAGES_BUCKET_NAME: ""                          # S3 bucket for OpenGraph preview images
+    S3_AGENT_GENERATED_IMAGES_BUCKET_NAME: ""             # S3 bucket for agent-generated images
+    S3_AGENT_GENERATED_IMAGES_REGION: ""                  # AWS region for agent-generated images bucket (defaults to AWS_REGION)
 
     # Azure Blob Storage Configuration (optional - for file storage)
     # If configured, files will be stored in Azure Blob instead of local storage
