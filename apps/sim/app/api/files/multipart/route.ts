@@ -67,31 +67,6 @@ export async function POST(request: NextRequest) {
             key: result.key,
           })
         }
-        if (storageProvider === 'blob') {
-          const { initiateMultipartUpload } = await import('@/lib/uploads/providers/blob/client')
-
-          const result = await initiateMultipartUpload({
-            fileName,
-            contentType,
-            fileSize,
-            customConfig: {
-              containerName: config.containerName!,
-              accountName: config.accountName!,
-              accountKey: config.accountKey,
-              connectionString: config.connectionString,
-            },
-          })
-
-          logger.info(
-            `Initiated Azure multipart upload for ${fileName} (context: ${context}): ${result.uploadId}`
-          )
-
-          return NextResponse.json({
-            uploadId: result.uploadId,
-            key: result.key,
-          })
-        }
-
         return NextResponse.json(
           { error: `Unsupported storage provider: ${storageProvider}` },
           { status: 400 }
@@ -111,19 +86,6 @@ export async function POST(request: NextRequest) {
 
           return NextResponse.json({ presignedUrls })
         }
-        if (storageProvider === 'blob') {
-          const { getMultipartPartUrls } = await import('@/lib/uploads/providers/blob/client')
-
-          const presignedUrls = await getMultipartPartUrls(key, partNumbers, {
-            containerName: config.containerName!,
-            accountName: config.accountName!,
-            accountKey: config.accountKey,
-            connectionString: config.connectionString,
-          })
-
-          return NextResponse.json({ presignedUrls })
-        }
-
         return NextResponse.json(
           { error: `Unsupported storage provider: ${storageProvider}` },
           { status: 400 }
@@ -148,26 +110,6 @@ export async function POST(request: NextRequest) {
                 const parts = upload.parts // S3 format: { ETag, PartNumber }
 
                 const result = await completeS3MultipartUpload(key, uploadId, parts)
-
-                return {
-                  success: true,
-                  location: result.location,
-                  path: result.path,
-                  key: result.key,
-                }
-              }
-              if (storageProvider === 'blob') {
-                const { completeMultipartUpload } = await import(
-                  '@/lib/uploads/providers/blob/client'
-                )
-                const parts = upload.parts // Azure format: { blockId, partNumber }
-
-                const result = await completeMultipartUpload(key, parts, {
-                  containerName: config.containerName!,
-                  accountName: config.accountName!,
-                  accountKey: config.accountKey,
-                  connectionString: config.connectionString,
-                })
 
                 return {
                   success: true,
@@ -201,26 +143,6 @@ export async function POST(request: NextRequest) {
             key: result.key,
           })
         }
-        if (storageProvider === 'blob') {
-          const { completeMultipartUpload } = await import('@/lib/uploads/providers/blob/client')
-
-          const result = await completeMultipartUpload(key, parts, {
-            containerName: config.containerName!,
-            accountName: config.accountName!,
-            accountKey: config.accountKey,
-            connectionString: config.connectionString,
-          })
-
-          logger.info(`Completed Azure multipart upload for key ${key} (context: ${context})`)
-
-          return NextResponse.json({
-            success: true,
-            location: result.location,
-            path: result.path,
-            key: result.key,
-          })
-        }
-
         return NextResponse.json(
           { error: `Unsupported storage provider: ${storageProvider}` },
           { status: 400 }
@@ -239,17 +161,6 @@ export async function POST(request: NextRequest) {
           await abortS3MultipartUpload(key, uploadId)
 
           logger.info(`Aborted S3 multipart upload for key ${key} (context: ${context})`)
-        } else if (storageProvider === 'blob') {
-          const { abortMultipartUpload } = await import('@/lib/uploads/providers/blob/client')
-
-          await abortMultipartUpload(key, {
-            containerName: config.containerName!,
-            accountName: config.accountName!,
-            accountKey: config.accountKey,
-            connectionString: config.connectionString,
-          })
-
-          logger.info(`Aborted Azure multipart upload for key ${key} (context: ${context})`)
         } else {
           return NextResponse.json(
             { error: `Unsupported storage provider: ${storageProvider}` },

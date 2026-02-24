@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { BLOB_CONFIG } from '@/lib/uploads/config'
+import { env } from '@/lib/core/config/env'
 import type {
   AzureMultipartPart,
   AzureMultipartUploadInit,
@@ -17,6 +17,16 @@ type BlobServiceClientInstance = Awaited<
 const logger = createLogger('BlobClient')
 
 let _blobServiceClient: BlobServiceClientInstance | null = null
+
+/** Default Blob config from env (used when no custom config is passed). Not exported from uploads config. */
+function getDefaultBlobConfig() {
+  return {
+    accountName: env.AZURE_ACCOUNT_NAME || '',
+    accountKey: env.AZURE_ACCOUNT_KEY || '',
+    connectionString: env.AZURE_CONNECTION_STRING || '',
+    containerName: env.AZURE_STORAGE_CONTAINER_NAME || '',
+  }
+}
 
 interface ParsedCredentials {
   accountName: string
@@ -45,17 +55,18 @@ function parseConnectionString(connectionString: string): ParsedCredentials {
 }
 
 /**
- * Get account credentials from BLOB_CONFIG, extracting from connection string if necessary.
+ * Get account credentials from default Blob config (env), extracting from connection string if necessary.
  */
 function getAccountCredentials(): ParsedCredentials {
-  if (BLOB_CONFIG.connectionString) {
-    return parseConnectionString(BLOB_CONFIG.connectionString)
+  const config = getDefaultBlobConfig()
+  if (config.connectionString) {
+    return parseConnectionString(config.connectionString)
   }
 
-  if (BLOB_CONFIG.accountName && BLOB_CONFIG.accountKey) {
+  if (config.accountName && config.accountKey) {
     return {
-      accountName: BLOB_CONFIG.accountName,
-      accountKey: BLOB_CONFIG.accountKey,
+      accountName: config.accountName,
+      accountKey: config.accountKey,
     }
   }
 
@@ -68,7 +79,7 @@ export async function getBlobServiceClient(): Promise<BlobServiceClientInstance>
   if (_blobServiceClient) return _blobServiceClient
 
   const { BlobServiceClient, StorageSharedKeyCredential } = await import('@azure/storage-blob')
-  const { accountName, accountKey, connectionString } = BLOB_CONFIG
+  const { accountName, accountKey, connectionString } = getDefaultBlobConfig()
 
   if (connectionString) {
     _blobServiceClient = BlobServiceClient.fromConnectionString(connectionString)
@@ -116,12 +127,7 @@ export async function uploadToBlob(
     fileSize = size ?? file.length
     shouldPreserveKey = preserveKey ?? false
   } else {
-    config = {
-      containerName: BLOB_CONFIG.containerName,
-      accountName: BLOB_CONFIG.accountName,
-      accountKey: BLOB_CONFIG.accountKey,
-      connectionString: BLOB_CONFIG.connectionString,
-    }
+    config = getDefaultBlobConfig()
     fileSize = configOrSize ?? file.length
     shouldPreserveKey = preserveKey ?? false
   }
@@ -169,14 +175,15 @@ export async function uploadToBlob(
 export async function getPresignedUrl(key: string, expiresIn = 3600) {
   const { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential } =
     await import('@azure/storage-blob')
+  const defaultConfig = getDefaultBlobConfig()
   const blobServiceClient = await getBlobServiceClient()
-  const containerClient = blobServiceClient.getContainerClient(BLOB_CONFIG.containerName)
+  const containerClient = blobServiceClient.getContainerClient(defaultConfig.containerName)
   const blockBlobClient = containerClient.getBlockBlobClient(key)
 
   const { accountName, accountKey } = getAccountCredentials()
 
   const sasOptions = {
-    containerName: BLOB_CONFIG.containerName,
+    containerName: defaultConfig.containerName,
     blobName: key,
     permissions: BlobSASPermissions.parse('r'), // Read permission
     startsOn: new Date(),
@@ -292,7 +299,7 @@ export async function downloadFromBlob(key: string, customConfig?: BlobConfig): 
     containerName = customConfig.containerName
   } else {
     blobServiceClient = await getBlobServiceClient()
-    containerName = BLOB_CONFIG.containerName
+    containerName = getDefaultBlobConfig().containerName
   }
 
   const containerClient = blobServiceClient.getContainerClient(containerName)
@@ -343,7 +350,7 @@ export async function deleteFromBlob(key: string, customConfig?: BlobConfig): Pr
     containerName = customConfig.containerName
   } else {
     blobServiceClient = await getBlobServiceClient()
-    containerName = BLOB_CONFIG.containerName
+    containerName = getDefaultBlobConfig().containerName
   }
 
   const containerClient = blobServiceClient.getContainerClient(containerName)
@@ -398,7 +405,7 @@ export async function initiateMultipartUpload(
     containerName = customConfig.containerName
   } else {
     blobServiceClient = await getBlobServiceClient()
-    containerName = BLOB_CONFIG.containerName
+    containerName = getDefaultBlobConfig().containerName
   }
 
   const safeFileName = sanitizeFileName(fileName)
@@ -466,7 +473,8 @@ export async function getMultipartPartUrls(
     containerName = customConfig.containerName
   } else {
     blobServiceClient = await getBlobServiceClient()
-    containerName = BLOB_CONFIG.containerName
+    const defaultConfig = getDefaultBlobConfig()
+    containerName = defaultConfig.containerName
     const credentials = getAccountCredentials()
     accountName = credentials.accountName
     accountKey = credentials.accountKey
@@ -531,7 +539,7 @@ export async function completeMultipartUpload(
     containerName = customConfig.containerName
   } else {
     blobServiceClient = await getBlobServiceClient()
-    containerName = BLOB_CONFIG.containerName
+    containerName = getDefaultBlobConfig().containerName
   }
 
   const containerClient = blobServiceClient.getContainerClient(containerName)
@@ -584,7 +592,7 @@ export async function abortMultipartUpload(key: string, customConfig?: BlobConfi
     containerName = customConfig.containerName
   } else {
     blobServiceClient = await getBlobServiceClient()
-    containerName = BLOB_CONFIG.containerName
+    containerName = getDefaultBlobConfig().containerName
   }
 
   const containerClient = blobServiceClient.getContainerClient(containerName)

@@ -59,10 +59,10 @@ export function SlackChannelSelector({
 
   const { finalDisabled } = useDependsOnGate(
     blockId,
-    { dependsOn },
+    { id: subBlockId, type: 'channel-selector', dependsOn },
     {
       isPreview,
-      subBlockValues,
+      previewContextValues: subBlockValues,
       disabled,
     }
   )

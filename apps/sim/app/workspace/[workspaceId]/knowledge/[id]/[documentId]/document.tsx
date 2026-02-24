@@ -333,7 +333,7 @@ export function Document({
 
   useEffect(() => {
     if (!chunkIndexFromUrl || chunkIdFromUrl || showingSearch) return
-    const desiredPage = pageForChunkIndex(chunkIndexFromUrl)
+    const desiredPage = pageForChunkIndex(Number(chunkIndexFromUrl))
     if (currentPageFromURL === desiredPage) return
     const params = new URLSearchParams(searchParams.toString())
     if (desiredPage > 1) {

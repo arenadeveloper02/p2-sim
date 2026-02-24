@@ -656,18 +656,17 @@ export async function POST(
                         documentName: String(item.documentName ?? item.documentId),
                         content: String(item.content),
                         chunkIndex: Number(item.chunkIndex),
-                        ...(item.metadata &&
-                          typeof item.metadata === 'object' && {
-                            metadata: item.metadata as Record<string, unknown>,
-                          }),
-                        ...(typeof item.similarity === 'number' && { similarity: item.similarity }),
-                        ...(item.chunkId != null && { chunkId: String(item.chunkId) }),
-                        ...(item.knowledgeBaseId != null && {
-                          knowledgeBaseId: String(item.knowledgeBaseId),
-                        }),
-                        ...(item.workspaceId != null && {
-                          workspaceId: item.workspaceId === null ? null : String(item.workspaceId),
-                        }),
+                        ...(item.metadata && typeof item.metadata === 'object'
+                          ? { metadata: item.metadata as Record<string, unknown> }
+                          : {}),
+                        ...(typeof item.similarity === 'number' ? { similarity: item.similarity } : {}),
+                        ...(item.chunkId != null ? { chunkId: String(item.chunkId) } : {}),
+                        ...(item.knowledgeBaseId != null
+                          ? { knowledgeBaseId: String(item.knowledgeBaseId) }
+                          : {}),
+                        ...(item.workspaceId != null
+                          ? { workspaceId: item.workspaceId === null ? null : String(item.workspaceId) }
+                          : {}),
                       }))
 
                     let knowledgeResultsPayload: Array<{
@@ -711,7 +710,7 @@ export async function POST(
                           return aggregated.length > 0 ? aggregated : null
                         })()
 
-                      if (fromOutputConfig && fromOutputConfig.length > 0) {
+                      if (Array.isArray(fromOutputConfig) && fromOutputConfig.length > 0) {
                         knowledgeResultsPayload = fromOutputConfig
                       } else {
                         for (const blockOutputs of Object.values(finalData.output)) {

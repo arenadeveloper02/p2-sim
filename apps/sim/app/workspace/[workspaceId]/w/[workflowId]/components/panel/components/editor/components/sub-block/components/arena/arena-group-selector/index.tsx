@@ -51,9 +51,13 @@ export function ArenaGroupSelector({
   // Determine the client and project keys based on the group subBlockId
   const clientKey = subBlockId === 'comment-group' ? 'comment-client' : 'task-client'
   const projectKey = subBlockId === 'comment-group' ? 'comment-project' : 'task-project'
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]?.clientId
+  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
+    | { clientId?: string }
+    | undefined
+  const clientId = clientRef?.clientId
   const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.[projectKey]
-  const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
+  const projectId =
+    typeof projectValue === 'string' ? projectValue : (projectValue as { sysId?: string })?.sysId
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue
