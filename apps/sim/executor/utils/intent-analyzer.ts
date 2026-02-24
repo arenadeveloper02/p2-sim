@@ -405,9 +405,7 @@ SKIP
 
       const candidate = data.candidates?.[0]
       if (!candidate) {
-        logger.warn('No candidates in Gemini API response, defaulting to RUN', {
-          responseData: JSON.stringify(data).substring(0, 500),
-        })
+        // No candidates in Gemini API response, defaulting to RUN
         return 'RUN'
       }
 
