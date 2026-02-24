@@ -2026,6 +2026,35 @@ export const a2aPushNotificationConfig = pgTable(
   })
 )
 
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
+    actorId: text('actor_id').references(() => user.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    resourceType: text('resource_type').notNull(),
+    resourceId: text('resource_id'),
+    actorName: text('actor_name'),
+    actorEmail: text('actor_email'),
+    resourceName: text('resource_name'),
+    description: text('description'),
+    metadata: jsonb('metadata').default('{}'),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceCreatedIdx: index('audit_log_workspace_created_idx').on(
+      table.workspaceId,
+      table.createdAt
+    ),
+    actorCreatedIdx: index('audit_log_actor_created_idx').on(table.actorId, table.createdAt),
+    resourceIdx: index('audit_log_resource_idx').on(table.resourceType, table.resourceId),
+    actionIdx: index('audit_log_action_idx').on(table.action),
+  })
+)
+
 export const usageLogCategoryEnum = pgEnum('usage_log_category', ['model', 'fixed'])
 export const usageLogSourceEnum = pgEnum('usage_log_source', [
   'workflow',
@@ -2240,3 +2269,138 @@ export const asyncJobs = pgTable(
     ),
   })
 )
+
+/**
+ * User-defined table definitions
+ * Stores schema and metadata for custom tables created by users
+ */
+export const userTableDefinitions = pgTable(
+  'user_table_definitions',
+  {
+    id: text('id').primaryKey(), // tbl_xxxxx
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    /**
+     * @remarks
+     * Stores the table schema definition. Example: { columns: [{ name: string, type: string, required: boolean }] }
+     */
+    schema: jsonb('schema').notNull(),
+    maxRows: integer('max_rows').notNull().default(10000),
+    rowCount: integer('row_count').notNull().default(0),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdIdx: index('user_table_def_workspace_id_idx').on(table.workspaceId),
+    workspaceNameUnique: uniqueIndex('user_table_def_workspace_name_unique').on(
+      table.workspaceId,
+      table.name
+    ),
+  })
+)
+
+/**
+ * User-defined table rows
+ * Stores actual row data as JSONB for flexible schema
+ */
+export const userTableRows = pgTable(
+  'user_table_rows',
+  {
+    id: text('id').primaryKey(), // row_xxxxx
+    tableId: text('table_id')
+      .notNull()
+      .references(() => userTableDefinitions.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    data: jsonb('data').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+  },
+  (table) => ({
+    tableIdIdx: index('user_table_rows_table_id_idx').on(table.tableId),
+    workspaceIdIdx: index('user_table_rows_workspace_id_idx').on(table.workspaceId),
+    dataGinIdx: index('user_table_rows_data_gin_idx').using('gin', table.data),
+    workspaceTableIdx: index('user_table_rows_workspace_table_idx').on(
+      table.workspaceId,
+      table.tableId
+    ),
+  })
+)
+
+export const oauthApplication = pgTable(
+  'oauth_application',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    icon: text('icon'),
+    metadata: text('metadata'),
+    clientId: text('client_id').notNull().unique(),
+    clientSecret: text('client_secret'),
+    redirectURLs: text('redirect_urls').notNull(),
+    type: text('type').notNull(),
+    disabled: boolean('disabled').default(false),
+    userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (table) => ({
+    clientIdIdx: index('oauth_application_client_id_idx').on(table.clientId),
+  })
+)
+
+export const oauthAccessToken = pgTable(
+  'oauth_access_token',
+  {
+    id: text('id').primaryKey(),
+    accessToken: text('access_token').notNull().unique(),
+    refreshToken: text('refresh_token').notNull().unique(),
+    accessTokenExpiresAt: timestamp('access_token_expires_at').notNull(),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at').notNull(),
+    clientId: text('client_id')
+      .notNull()
+      .references(() => oauthApplication.clientId, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+    scopes: text('scopes').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (table) => ({
+    accessTokenIdx: index('oauth_access_token_access_token_idx').on(table.accessToken),
+    refreshTokenIdx: index('oauth_access_token_refresh_token_idx').on(table.refreshToken),
+  })
+)
+
+export const oauthConsent = pgTable(
+  'oauth_consent',
+  {
+    id: text('id').primaryKey(),
+    clientId: text('client_id')
+      .notNull()
+      .references(() => oauthApplication.clientId, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    scopes: text('scopes').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+    consentGiven: boolean('consent_given').notNull(),
+  },
+  (table) => ({
+    userClientIdx: index('oauth_consent_user_client_idx').on(table.userId, table.clientId),
+  })
+)
+
+export const jwks = pgTable('jwks', {
+  id: text('id').primaryKey(),
+  publicKey: text('public_key').notNull(),
+  privateKey: text('private_key').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+})

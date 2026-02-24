@@ -619,7 +619,6 @@ function cleanupWorker(workerId: number) {
   workerInfo.activeExecutions = 0
 
   workers.delete(workerId)
-  logger.info('Worker removed from pool', { workerId, poolSize: workers.size })
 }
 
 function resetWorkerIdleTimeout(workerId: number) {
@@ -635,7 +634,6 @@ function resetWorkerIdleTimeout(workerId: number) {
     workerInfo.idleTimeout = setTimeout(() => {
       const w = workers.get(workerId)
       if (w && w.activeExecutions === 0) {
-        logger.info('Cleaning up idle worker', { workerId })
         cleanupWorker(workerId)
       }
     }, WORKER_IDLE_TIMEOUT_MS)
@@ -679,11 +677,15 @@ function spawnWorker(): Promise<WorkerInfo> {
     }
 
     const currentDir = path.dirname(fileURLToPath(import.meta.url))
-    const workerPath = path.join(currentDir, 'isolated-vm-worker.cjs')
+    const candidatePaths = [
+      path.join(currentDir, 'isolated-vm-worker.cjs'),
+      path.join(process.cwd(), 'lib', 'execution', 'isolated-vm-worker.cjs'),
+    ]
+    const workerPath = candidatePaths.find((p) => fs.existsSync(p))
 
-    if (!fs.existsSync(workerPath)) {
+    if (!workerPath) {
       settleSpawnInProgress()
-      reject(new Error(`Worker file not found at ${workerPath}`))
+      reject(new Error(`Worker file not found at any of: ${candidatePaths.join(', ')}`))
       return
     }
 
@@ -983,15 +985,8 @@ export async function executeInIsolatedVM(
     }
   }
   if (leaseAcquireResult === 'unavailable') {
-    maybeCleanupOwner(ownerKey)
-    return {
-      result: null,
-      stdout: '',
-      error: {
-        message: 'Code execution is temporarily unavailable. Please try again in a moment.',
-        name: 'Error',
-      },
-    }
+    logger.warn('Distributed lease unavailable, falling back to local execution', { ownerKey })
+    // Continue execution — local pool still enforces per-process concurrency limits
   }
 
   let settled = false

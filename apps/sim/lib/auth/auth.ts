@@ -11,6 +11,8 @@ import {
   customSession,
   emailOTP,
   genericOAuth,
+  jwt,
+  oidcProvider,
   oneTimeToken,
   organization,
 } from 'better-auth/plugins'
@@ -23,6 +25,12 @@ import {
   renderPasswordResetEmail,
   renderWelcomeEmail,
 } from '@/components/emails'
+import {
+  evictCachedMetadata,
+  isMetadataUrl,
+  resolveClientMetadata,
+  upsertCimdClient,
+} from '@/lib/auth/cimd'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
 import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
 import { handleNewUser } from '@/lib/billing/core/usage'
@@ -80,6 +88,8 @@ export const auth = betterAuth({
   trustedOrigins: [
     getBaseUrl(),
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
+    'https://claude.ai',
+    'https://claude.com',
   ].filter(Boolean),
   database: drizzleAdapter(db, {
     provider: 'pg',
@@ -395,6 +405,7 @@ export const auth = betterAuth({
         'google-groups',
         'vertex-ai',
         'github-repo',
+        'microsoft-dataverse',
         'microsoft-teams',
         'microsoft-excel',
         'microsoft-planner',
@@ -483,6 +494,17 @@ export const auth = betterAuth({
         throw new Error(`Failed to send reset password email: ${result.message}`)
       }
     },
+    onPasswordReset: async ({ user: resetUser }) => {
+      const { AuditAction, AuditResourceType, recordAudit } = await import('@/lib/audit/log')
+      recordAudit({
+        actorId: resetUser.id,
+        actorName: resetUser.name,
+        actorEmail: resetUser.email,
+        action: AuditAction.PASSWORD_RESET,
+        resourceType: AuditResourceType.PASSWORD,
+        description: 'Password reset completed',
+      })
+    },
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
@@ -525,11 +547,51 @@ export const auth = betterAuth({
         }
       }
 
+      if (ctx.path === '/oauth2/authorize' || ctx.path === '/oauth2/token') {
+        const clientId = (ctx.query?.client_id ?? ctx.body?.client_id) as string | undefined
+        if (clientId && isMetadataUrl(clientId)) {
+          try {
+            const { metadata, fromCache } = await resolveClientMetadata(clientId)
+            if (!fromCache) {
+              try {
+                await upsertCimdClient(metadata)
+              } catch (upsertErr) {
+                evictCachedMetadata(clientId)
+                throw upsertErr
+              }
+            }
+          } catch (err) {
+            logger.warn('CIMD resolution failed', {
+              clientId,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }
+      }
+
       return
     }),
   },
   plugins: [
     nextCookies(),
+    jwt({
+      jwks: {
+        keyPairConfig: { alg: 'RS256' },
+      },
+      disableSettingJwtHeader: true,
+    }),
+    oidcProvider({
+      loginPage: '/login',
+      consentPage: '/oauth/consent',
+      requirePKCE: true,
+      allowPlainCodeChallengeMethod: false,
+      allowDynamicClientRegistration: true,
+      useJWTPlugin: true,
+      scopes: ['openid', 'profile', 'email', 'offline_access', 'mcp:tools'],
+      metadata: {
+        client_id_metadata_document_supported: true,
+      } as Record<string, unknown>,
+    }),
     oneTimeToken({
       expiresIn: 24 * 60 * 60, // 24 hours - Socket.IO handles connection persistence with heartbeats
     }),
@@ -1139,6 +1201,54 @@ export const auth = betterAuth({
             } catch (error) {
               logger.error('Error in Microsoft getUserInfo', { error })
               throw error
+            }
+          },
+        },
+        {
+          providerId: 'microsoft-dataverse',
+          clientId: env.MICROSOFT_CLIENT_ID as string,
+          clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
+          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
+          scopes: [
+            'openid',
+            'profile',
+            'email',
+            'https://dynamics.microsoft.com/user_impersonation',
+            'offline_access',
+          ],
+          responseType: 'code',
+          accessType: 'offline',
+          authentication: 'basic',
+          pkce: true,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/microsoft-dataverse`,
+          getUserInfo: async (tokens) => {
+            // Dataverse access tokens target dynamics.microsoft.com, not graph.microsoft.com,
+            // so we cannot call the Graph API /me endpoint. Instead, we decode the ID token JWT
+            // which is always returned when the openid scope is requested.
+            const idToken = (tokens as Record<string, unknown>).idToken as string | undefined
+            if (!idToken) {
+              logger.error(
+                'Microsoft Dataverse OAuth: no ID token received. Ensure openid scope is requested.'
+              )
+              throw new Error('Microsoft Dataverse OAuth requires an ID token (openid scope)')
+            }
+
+            const parts = idToken.split('.')
+            if (parts.length !== 3) {
+              throw new Error('Microsoft Dataverse OAuth: malformed ID token')
+            }
+
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'))
+            const now = new Date()
+            return {
+              id: `${payload.oid || payload.sub}-${crypto.randomUUID()}`,
+              name: payload.name || 'Microsoft User',
+              email: payload.preferred_username || payload.email || payload.upn,
+              emailVerified: true,
+              createdAt: now,
+              updatedAt: now,
             }
           },
         },

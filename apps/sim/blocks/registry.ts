@@ -3,6 +3,7 @@ import { AgentBlock } from '@/blocks/blocks/agent'
 import { AhrefsBlock } from '@/blocks/blocks/ahrefs'
 import { AirtableBlock } from '@/blocks/blocks/airtable'
 import { AirweaveBlock } from '@/blocks/blocks/airweave'
+import { AlgoliaBlock } from '@/blocks/blocks/algolia'
 import { ApiBlock } from '@/blocks/blocks/api'
 import { ApiTriggerBlock } from '@/blocks/blocks/api_trigger'
 import { ApifyBlock } from '@/blocks/blocks/apify'
@@ -16,6 +17,7 @@ import { ChatTriggerBlock } from '@/blocks/blocks/chat_trigger'
 import { CirclebackBlock } from '@/blocks/blocks/circleback'
 import { ClayBlock } from '@/blocks/blocks/clay'
 import { ClerkBlock } from '@/blocks/blocks/clerk'
+import { CloudflareBlock } from '@/blocks/blocks/cloudflare'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock, ConfluenceV2Block } from '@/blocks/blocks/confluence'
 import { CursorBlock, CursorV2Block } from '@/blocks/blocks/cursor'
@@ -53,6 +55,7 @@ import { GrafanaBlock } from '@/blocks/blocks/grafana'
 import { GrainBlock } from '@/blocks/blocks/grain'
 import { GreptileBlock } from '@/blocks/blocks/greptile'
 import { GuardrailsBlock } from '@/blocks/blocks/guardrails'
+import { HexBlock } from '@/blocks/blocks/hex'
 import { HubSpotBlock } from '@/blocks/blocks/hubspot'
 import { HuggingFaceBlock } from '@/blocks/blocks/huggingface'
 import { HumanInTheLoopBlock } from '@/blocks/blocks/human_in_the_loop'
@@ -78,6 +81,7 @@ import { ManualTriggerBlock } from '@/blocks/blocks/manual_trigger'
 import { McpBlock } from '@/blocks/blocks/mcp'
 import { Mem0Block } from '@/blocks/blocks/mem0'
 import { MemoryBlock } from '@/blocks/blocks/memory'
+import { MicrosoftDataverseBlock } from '@/blocks/blocks/microsoft_dataverse'
 import { MicrosoftExcelBlock, MicrosoftExcelV2Block } from '@/blocks/blocks/microsoft_excel'
 import { MicrosoftPlannerBlock } from '@/blocks/blocks/microsoft_planner'
 import { MicrosoftTeamsBlock } from '@/blocks/blocks/microsoft_teams'
@@ -106,9 +110,11 @@ import { PulseBlock, PulseV2Block } from '@/blocks/blocks/pulse'
 import { QdrantBlock } from '@/blocks/blocks/qdrant'
 import { RDSBlock } from '@/blocks/blocks/rds'
 import { RedditBlock } from '@/blocks/blocks/reddit'
+import { RedisBlock } from '@/blocks/blocks/redis'
 import { ReductoBlock, ReductoV2Block } from '@/blocks/blocks/reducto'
 import { ResendBlock } from '@/blocks/blocks/resend'
 import { ResponseBlock } from '@/blocks/blocks/response'
+import { RevenueCatBlock } from '@/blocks/blocks/revenuecat'
 import { RouterBlock, RouterV2Block } from '@/blocks/blocks/router'
 import { RssBlock } from '@/blocks/blocks/rss'
 import { S3Block } from '@/blocks/blocks/s3'
@@ -145,7 +151,9 @@ import { TtsBlock } from '@/blocks/blocks/tts'
 import { TwilioSMSBlock } from '@/blocks/blocks/twilio'
 import { TwilioVoiceBlock } from '@/blocks/blocks/twilio_voice'
 import { TypeformBlock } from '@/blocks/blocks/typeform'
+import { UpstashBlock } from '@/blocks/blocks/upstash'
 import { VariablesBlock } from '@/blocks/blocks/variables'
+import { VercelBlock } from '@/blocks/blocks/vercel'
 import { VideoGeneratorBlock, VideoGeneratorV2Block } from '@/blocks/blocks/video_generator'
 import { VisionBlock, VisionV2Block } from '@/blocks/blocks/vision'
 import { WaitBlock } from '@/blocks/blocks/wait'
@@ -171,6 +179,7 @@ export const registry: Record<string, BlockConfig> = {
   ahrefs: AhrefsBlock,
   airtable: AirtableBlock,
   airweave: AirweaveBlock,
+  algolia: AlgoliaBlock,
   api: ApiBlock,
   api_trigger: ApiTriggerBlock,
   apify: ApifyBlock,
@@ -182,6 +191,7 @@ export const registry: Record<string, BlockConfig> = {
   calendly: CalendlyBlock,
   chat_trigger: ChatTriggerBlock,
   circleback: CirclebackBlock,
+  cloudflare: CloudflareBlock,
   clay: ClayBlock,
   clerk: ClerkBlock,
   condition: ConditionBlock,
@@ -231,6 +241,7 @@ export const registry: Record<string, BlockConfig> = {
   grain: GrainBlock,
   greptile: GreptileBlock,
   guardrails: GuardrailsBlock,
+  hex: HexBlock,
   hubspot: HubSpotBlock,
   huggingface: HuggingFaceBlock,
   human_in_the_loop: HumanInTheLoopBlock,
@@ -258,6 +269,7 @@ export const registry: Record<string, BlockConfig> = {
   mcp: McpBlock,
   mem0: Mem0Block,
   memory: MemoryBlock,
+  microsoft_dataverse: MicrosoftDataverseBlock,
   microsoft_excel: MicrosoftExcelBlock,
   microsoft_excel_v2: MicrosoftExcelV2Block,
   microsoft_planner: MicrosoftPlannerBlock,
@@ -287,10 +299,12 @@ export const registry: Record<string, BlockConfig> = {
   qdrant: QdrantBlock,
   rds: RDSBlock,
   reddit: RedditBlock,
+  redis: RedisBlock,
   reducto: ReductoBlock,
   reducto_v2: ReductoV2Block,
   resend: ResendBlock,
   response: ResponseBlock,
+  revenuecat: RevenueCatBlock,
   router: RouterBlock,
   router_v2: RouterV2Block,
   rss: RssBlock,
@@ -318,6 +332,8 @@ export const registry: Record<string, BlockConfig> = {
   stt: SttBlock,
   stt_v2: SttV2Block,
   supabase: SupabaseBlock,
+  // TODO: Uncomment when working on tables
+  // table: TableBlock,
   tavily: TavilyBlock,
   telegram: TelegramBlock,
   textract: TextractBlock,
@@ -330,6 +346,8 @@ export const registry: Record<string, BlockConfig> = {
   twilio_sms: TwilioSMSBlock,
   twilio_voice: TwilioVoiceBlock,
   typeform: TypeformBlock,
+  upstash: UpstashBlock,
+  vercel: VercelBlock,
   variables: VariablesBlock,
   video_generator: VideoGeneratorBlock,
   video_generator_v2: VideoGeneratorV2Block,
