@@ -1,17 +1,16 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/core/config/env'
-import { getArenaTokenByWorkflowId } from '../utils/db-utils'
+import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url)
     const searchParams = new URLSearchParams(url.searchParams)
-    // Extract workflowId separately
     const workflowId = searchParams.get('workflowId')
     if (!workflowId) {
       return NextResponse.json({ error: 'workflowId is required' }, { status: 400 })
     }
-    const tokenObject = await getArenaTokenByWorkflowId(workflowId)
+    const tokenObject = await getArenaToken(req, workflowId)
     if (tokenObject.found === false) {
       return NextResponse.json(
         { error: 'Failed to create task', details: tokenObject.reason },

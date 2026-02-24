@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/core/config/env'
-import { getArenaTokenByWorkflowId } from '../utils/db-utils'
+import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 const logger = createLogger('ArenaProjectSummaryAPI')
 
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   let arenaToken = headerToken ?? ''
   if (!arenaToken) {
-    const tokenObject = await getArenaTokenByWorkflowId(workflowId as string)
+    const tokenObject = await getArenaToken(req, workflowId ?? undefined)
     if (tokenObject.found === false) {
       return NextResponse.json(
         { error: 'Failed to get project summary', details: tokenObject.reason },
