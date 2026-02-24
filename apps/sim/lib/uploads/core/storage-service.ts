@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import {
   getStorageConfig,
+  S3_AGENT_GENERATED_IMAGES_CONFIG,
   S3_CONFIG,
   USE_BLOB_STORAGE,
   USE_S3_STORAGE,
@@ -94,9 +95,51 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
 
   logger.info(`Uploading file to ${context} storage: ${fileName}`)
 
-  const config = getStorageConfig(context)
-
   const keyToUse = customKey || fileName
+
+  if (
+    context === 'agent-generated-images' &&
+    S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+    S3_AGENT_GENERATED_IMAGES_CONFIG.region
+  ) {
+    const s3Config = createS3Config({
+      bucket: S3_AGENT_GENERATED_IMAGES_CONFIG.bucket,
+      region: S3_AGENT_GENERATED_IMAGES_CONFIG.region,
+    })
+    logger.info('Uploading agent-generated image to dedicated S3 bucket', {
+      bucket: s3Config.bucket,
+      region: s3Config.region,
+      key: keyToUse,
+    })
+    const { uploadToS3 } = await import('@/lib/uploads/providers/s3/client')
+    const uploadResult = await uploadToS3(
+      file,
+      keyToUse,
+      contentType,
+      s3Config,
+      file.length,
+      preserveKey,
+      metadata
+    )
+    if (metadata) {
+      await insertFileMetadataHelper(
+        uploadResult.key,
+        metadata,
+        context,
+        fileName,
+        contentType,
+        file.length
+      )
+    }
+    logger.info('S3 upload completed for agent-generated image', {
+      bucket: s3Config.bucket,
+      s3Key: uploadResult.key,
+      servePath: uploadResult.path,
+    })
+    return uploadResult
+  }
+
+  const config = getStorageConfig(context)
 
   if (USE_BLOB_STORAGE) {
     const { uploadToBlob } = await import('@/lib/uploads/providers/blob/client')
