@@ -124,6 +124,7 @@ app:
     ELEVENLABS_API_KEY: ""                                # ElevenLabs API key for text-to-speech in deployed chat
     
     # Rate Limiting Configuration (per minute)
+    DISABLE_EXECUTION_RATE_LIMIT: ""                      # Set to "true" to disable execution rate limits (self-hosted / EC2)
     RATE_LIMIT_WINDOW_MS: "60000"                         # Rate limit window duration (1 minute)
     RATE_LIMIT_FREE_SYNC: "10"                            # Sync API executions per minute
     RATE_LIMIT_FREE_ASYNC: "50"                           # Async API executions per minute
