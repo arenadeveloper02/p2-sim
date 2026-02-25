@@ -68,10 +68,10 @@ export async function POST(request: NextRequest) {
       })),
     }
     if (typeof body.locale === 'string' && body.locale) {
-      (createBody.properties as Record<string, string>).locale = body.locale
+      ;(createBody.properties as Record<string, string>).locale = body.locale
     }
     if (typeof body.timeZone === 'string' && body.timeZone) {
-      (createBody.properties as Record<string, string>).timeZone = body.timeZone
+      ;(createBody.properties as Record<string, string>).timeZone = body.timeZone
     }
 
     const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
@@ -85,7 +85,8 @@ export async function POST(request: NextRequest) {
 
     if (!createRes.ok) {
       const errData = await createRes.json().catch(() => ({}))
-      const message = errData?.error?.message || createRes.statusText || 'Failed to create spreadsheet'
+      const message =
+        errData?.error?.message || createRes.statusText || 'Failed to create spreadsheet'
       logger.error(`[${requestId}] Sheets API create failed`, { status: createRes.status, message })
       return NextResponse.json(
         { error: message, ...(errData?.error ? { details: errData.error } : {}) },
@@ -113,11 +114,13 @@ export async function POST(request: NextRequest) {
     }
 
     const sheets =
-      data.sheets?.map((s: { properties?: { sheetId?: number; title?: string; index?: number } }) => ({
-        sheetId: s.properties?.sheetId ?? 0,
-        title: s.properties?.title ?? '',
-        index: s.properties?.index ?? 0,
-      })) ?? []
+      data.sheets?.map(
+        (s: { properties?: { sheetId?: number; title?: string; index?: number } }) => ({
+          sheetId: s.properties?.sheetId ?? 0,
+          title: s.properties?.title ?? '',
+          index: s.properties?.index ?? 0,
+        })
+      ) ?? []
 
     return NextResponse.json({
       output: {

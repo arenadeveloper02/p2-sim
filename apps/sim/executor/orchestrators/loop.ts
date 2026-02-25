@@ -665,8 +665,8 @@ export class LoopOrchestrator {
       const result = Boolean(vmResult.result)
 
       logger.info('Loop condition evaluation result', {
-        originalCondition: condition,
-        evaluatedCondition,
+        // originalCondition: condition,
+        // evaluatedCondition,
         result,
       })
 
