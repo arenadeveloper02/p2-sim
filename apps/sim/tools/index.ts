@@ -617,6 +617,10 @@ async function executeToolRequest(
       if (workflowId) {
         fullUrlObj.searchParams.set('workflowId', workflowId)
       }
+      const userId = params._context?.sessionUserId ?? params._context?.workflowUserId
+      if (userId) {
+        fullUrlObj.searchParams.set('userId', userId)
+      }
     }
 
     const fullUrl = fullUrlObj.toString()
