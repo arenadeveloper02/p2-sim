@@ -36,6 +36,11 @@ export const S3_PROFILE_PICTURES_CONFIG = {
   region: env.AWS_REGION || '',
 }
 
+export const S3_AGENT_GENERATED_IMAGES_CONFIG = {
+  bucket: env.S3_AGENT_GENERATED_IMAGES_BUCKET_NAME || '',
+  region: env.S3_AGENT_GENERATED_IMAGES_REGION || env.AWS_REGION || '',
+}
+
 export function getStorageProvider(): 'S3' | 'Local' {
   if (USE_S3_STORAGE) return 'S3'
   return 'Local'
