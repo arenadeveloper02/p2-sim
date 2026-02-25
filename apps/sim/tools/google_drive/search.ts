@@ -549,8 +549,8 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
   id: 'google_drive_search',
   name: 'Search Google Drive Files',
   description:
-    'Search Google Drive files using natural language prompts. Supports time windows, file types, folder filters, and keyword search.',
-  version: '1.0',
+    'Search for files in Google Drive using advanced query syntax (e.g., fullText contains, mimeType, modifiedTime, etc.)',
+  version: '1.0.0',
 
   oauth: {
     required: true,
