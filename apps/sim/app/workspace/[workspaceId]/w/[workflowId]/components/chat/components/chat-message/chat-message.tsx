@@ -7,6 +7,7 @@ import {
   downloadImage,
   extractAllBase64Images,
   extractBase64Image,
+  getImageUrlFromContent,
   hasBase64Images,
   isBase64,
   renderBs64Img,
@@ -159,22 +160,27 @@ const RenderButtons = ({
   }
 
   const handleDownload = () => {
+    const imageUrl = getImageUrlFromContent(message?.content)
+    if (imageUrl) {
+      downloadImage(false, undefined, imageUrl)
+      return
+    }
     const base64Images = extractAllBase64Images(message?.content)
     if (base64Images.length > 0) {
-      // Download the first image (or all if multiple)
-      base64Images.forEach((imageData, index) => {
+      base64Images.forEach((imageData) => {
         downloadImage(true, imageData)
       })
     }
   }
 
   const containsBase64Images = hasBase64Images(message?.content)
+  const hasImageUrl = !!getImageUrlFromContent(message?.content)
 
   return (
     <>
       {!message.isStreaming && (
         <div className='mt-2 flex items-center gap-2'>
-          {!containsBase64Images && (
+          {!containsBase64Images && !hasImageUrl && (
             <Tooltip.Provider>
               <Tooltip.Root delayDuration={300}>
                 <Tooltip.Trigger asChild>
@@ -198,7 +204,7 @@ const RenderButtons = ({
             </Tooltip.Provider>
           )}
 
-          {containsBase64Images && (
+          {(containsBase64Images || hasImageUrl) && (
             <Tooltip.Provider>
               <Tooltip.Root delayDuration={300}>
                 <Tooltip.Trigger asChild>
