@@ -35,6 +35,7 @@ export interface OAuthConfig {
   required: boolean // Whether this tool requires OAuth authentication
   provider: OAuthService // The service that needs to be authorized
   requiredScopes?: string[] // Specific scopes this tool needs (for granular scope validation)
+  useUserToken?: boolean // Indicates if the tool requires a user token (xoxp-) instead of a bot token (xoxb-)
 }
 
 export interface ToolConfig<P = any, R = any> {

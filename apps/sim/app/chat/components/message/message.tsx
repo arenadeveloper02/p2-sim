@@ -27,6 +27,35 @@ export interface ChatFile {
   context?: string
 }
 
+/** Single chunk from knowledge base search (used when deployment outputs "Knowledge base results") */
+export interface KnowledgeResultChunk {
+  documentId: string
+  documentName: string
+  content: string
+  chunkIndex: number
+  metadata?: Record<string, unknown>
+  similarity?: number
+  /** Chunk UUID for "View in Knowledge Base" link; only present when user has workspace access */
+  chunkId?: string
+  knowledgeBaseId?: string
+  workspaceId?: string | null
+}
+
+/**
+ * Minimal reference persisted in chat history (no chunk content).
+ * One ref per chunk; used to show document name, chunk index, and open-in-KB link when loading from history.
+ * chunkIndex is optional for backward compatibility with refs saved before per-chunk indexing.
+ */
+export interface KnowledgeRef {
+  documentId: string
+  documentName: string
+  chunkId: string
+  /** 0-based; may be missing on refs persisted before this field was added. */
+  chunkIndex?: number
+  knowledgeBaseId: string
+  workspaceId: string | null
+}
+
 export interface ChatMessage {
   id: string
   content: string | Record<string, unknown>
@@ -37,6 +66,10 @@ export interface ChatMessage {
   attachments?: ChatAttachment[]
   executionId?: string
   files?: ChatFile[]
+  /** Knowledge base search results when workflow outputs "results"; used for clickable references and modal (live only, not in history) */
+  knowledgeResults?: KnowledgeResultChunk[]
+  /** Persisted refs for history: document name + chunk link only; no chunks */
+  knowledgeRefs?: KnowledgeRef[]
 }
 
 function EnhancedMarkdownRenderer({ content }: { content: string }) {

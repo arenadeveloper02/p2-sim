@@ -4,6 +4,7 @@ import {
   type Dispatch,
   memo,
   type SetStateAction,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -12,6 +13,8 @@ import {
 import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
+import type { KnowledgeRef, KnowledgeResultChunk } from '@/app/chat/components/message/message'
 // import MarkdownRenderer from './components/markdown-renderer'
 // import { toastError, toastSuccess } from '@/components/ui'
 import {
@@ -35,6 +38,8 @@ export interface ChatMessage {
   isStreaming?: boolean
   executionId?: string
   liked?: boolean | null
+  knowledgeResults?: KnowledgeResultChunk[]
+  knowledgeRefs?: KnowledgeRef[]
 }
 
 // function EnhancedMarkdownRenderer({ content }: { content: string }) {
@@ -49,9 +54,12 @@ export const ArenaClientChatMessage = memo(
   function ArenaClientChatMessage({
     message,
     setMessages,
+    workspaceIdsForKbLinks,
   }: {
     message: ChatMessage
     setMessages?: Dispatch<SetStateAction<ChatMessage[]>>
+    /** When set, show "View in Knowledge Base" link for refs whose workspaceId is in this list */
+    workspaceIdsForKbLinks?: string[]
   }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
@@ -156,6 +164,131 @@ export const ArenaClientChatMessage = memo(
     }
 
     const containsBase64Images = hasBase64Images(cleanTextContent)
+
+    const [knowledgeModalDoc, setKnowledgeModalDoc] = useState<{
+      documentName: string
+      chunks: KnowledgeResultChunk[]
+      viewInKbUrl?: string
+    } | null>(null)
+
+    /** Build KB chunk URL from KnowledgeRef (history). */
+    const getKbLinkUrlFromRef = useCallback((ref: KnowledgeRef): string => {
+      const params = new URLSearchParams()
+      params.set('chunk', ref.chunkId)
+      if (typeof ref.chunkIndex === 'number') {
+        params.set('chunkIndex', String(ref.chunkIndex))
+      }
+      return `/workspace/${ref.workspaceId}/knowledge/${ref.knowledgeBaseId}/${ref.documentId}?${params.toString()}`
+    }, [])
+
+    /** One ref per chunk: from live (knowledgeResults) or history (knowledgeRefs). */
+    const uniqueChunkRefs = useMemo(() => {
+      type ChunkRefItem = {
+        key: string
+        documentId: string
+        documentName: string
+        chunkIndex: number
+        chunks?: KnowledgeResultChunk[]
+        linkUrl: string | null
+        workspaceId: string | null
+        knowledgeBaseId?: string
+        fromHistory: boolean
+      }
+      const results = message.knowledgeResults ?? []
+      const refsFromHistory = message.knowledgeRefs ?? []
+
+      if (results.length > 0) {
+        const seen = new Set<string>()
+        return results
+          .filter((r) => {
+            const kb = r.knowledgeBaseId ?? ''
+            const key = `${kb}-${r.documentId}-${r.chunkId ?? `i-${r.chunkIndex}`}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
+          .map((r) => {
+            const linkUrl =
+              r.chunkId && r.knowledgeBaseId && r.workspaceId != null
+                ? (() => {
+                    const params = new URLSearchParams()
+                    params.set('chunk', r.chunkId)
+                    params.set('chunkIndex', String(r.chunkIndex))
+                    return `/workspace/${r.workspaceId}/knowledge/${r.knowledgeBaseId}/${r.documentId}?${params.toString()}`
+                  })()
+                : null
+            return {
+              key: `${r.knowledgeBaseId ?? ''}-${r.documentId}-${r.chunkId ?? r.chunkIndex}`,
+              documentId: r.documentId,
+              documentName: r.documentName || r.documentId,
+              chunkIndex: r.chunkIndex,
+              chunks: [r],
+              linkUrl,
+              workspaceId: r.workspaceId ?? null,
+              knowledgeBaseId: r.knowledgeBaseId,
+              fromHistory: false,
+            }
+          })
+      }
+
+      if (refsFromHistory.length > 0) {
+        return refsFromHistory.map((r) => ({
+          key: `${r.knowledgeBaseId}-${r.documentId}-${r.chunkId}`,
+          documentId: r.documentId,
+          documentName: r.documentName || r.documentId,
+          chunkIndex: typeof r.chunkIndex === 'number' ? r.chunkIndex : 0,
+          chunks: undefined as KnowledgeResultChunk[] | undefined,
+          linkUrl: r.workspaceId ? getKbLinkUrlFromRef(r) : null,
+          workspaceId: r.workspaceId,
+          knowledgeBaseId: r.knowledgeBaseId,
+          fromHistory: true,
+        }))
+      }
+
+      return []
+    }, [message.knowledgeResults, message.knowledgeRefs, getKbLinkUrlFromRef])
+
+    const canShowKbLink = (ref: { linkUrl: string | null; workspaceId: string | null }) => {
+      if (!ref.linkUrl || !workspaceIdsForKbLinks?.length) return false
+      return ref.workspaceId !== null && workspaceIdsForKbLinks.includes(ref.workspaceId)
+    }
+
+    /** Only refs the user can open (has workspace access). Chat-only users see no references. */
+    const visibleChunkRefs = useMemo(() => {
+      if (!workspaceIdsForKbLinks?.length) return []
+      return uniqueChunkRefs.filter((ref) => canShowKbLink(ref))
+    }, [uniqueChunkRefs, workspaceIdsForKbLinks])
+
+    /** Refs grouped by document (per knowledge base when multiple KBs): document name once, then sorted chunk indices. */
+    const refsGroupedByDocument = useMemo(() => {
+      const groupKey = (ref: (typeof visibleChunkRefs)[0]) =>
+        `${ref.knowledgeBaseId ?? ''}-${ref.documentId}`
+      const byDoc = new Map<string, { documentName: string; chunks: typeof visibleChunkRefs }>()
+      for (const ref of visibleChunkRefs) {
+        const key = groupKey(ref)
+        const existing = byDoc.get(key)
+        if (existing) {
+          existing.chunks.push(ref)
+        } else {
+          byDoc.set(key, { documentName: ref.documentName, chunks: [ref] })
+        }
+      }
+      return Array.from(byDoc.entries()).map(([documentId, { documentName, chunks }]) => ({
+        documentId,
+        documentName,
+        chunks: [...chunks].sort((a, b) => a.chunkIndex - b.chunkIndex),
+      }))
+    }, [visibleChunkRefs])
+
+    /** Hide during streaming; show only when done and user has access to at least one ref (streaming + history). */
+    const showReferencesSection = !message.isStreaming && visibleChunkRefs.length > 0
+
+    const openKnowledgeModal = useCallback(
+      (documentName: string, chunks: KnowledgeResultChunk[], viewInKbUrl?: string) => {
+        setKnowledgeModalDoc({ documentName, chunks, viewInKbUrl })
+      },
+      []
+    )
 
     const handleLike = async (currentExecutionId: string) => {
       if (!currentExecutionId) return
@@ -358,6 +491,86 @@ export const ArenaClientChatMessage = memo(
                 )} */}
               </div>
             </div>
+            {message.type === 'assistant' && message.isStreaming && (
+              <div className='mt-2 flex items-center gap-2 text-muted-foreground text-sm'>
+                <div className='flex gap-1' aria-hidden>
+                  <span
+                    className='h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 dark:bg-gray-400'
+                    style={{ animationDuration: '1s', animationDelay: '0ms' }}
+                  />
+                  <span
+                    className='h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 dark:bg-gray-400'
+                    style={{ animationDuration: '1s', animationDelay: '150ms' }}
+                  />
+                  <span
+                    className='h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 dark:bg-gray-400'
+                    style={{ animationDuration: '1s', animationDelay: '300ms' }}
+                  />
+                </div>
+                <span className='font-medium'>Fetching references...</span>
+              </div>
+            )}
+            {showReferencesSection && (
+              <div className='mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
+                <span className='text-gray-500 dark:text-gray-400'>References:</span>
+                {refsGroupedByDocument.map((group, groupIndex) => {
+                  const docChunks = group.chunks.flatMap((r) => r.chunks ?? [])
+                  const hasModalChunks = docChunks.length > 0
+                  return (
+                    <span
+                      key={group.documentId}
+                      className='inline-flex flex-wrap items-center gap-x-0.5 gap-y-0.5'
+                    >
+                      {groupIndex > 0 && (
+                        <span className='text-gray-400 dark:text-gray-500'>,</span>
+                      )}
+                      {hasModalChunks ? (
+                        <button
+                          type='button'
+                          className='cursor-pointer rounded px-1 py-0.5 text-primary underline decoration-primary/50 underline-offset-2 transition-colors hover:bg-gray-100 hover:decoration-primary dark:hover:bg-gray-800'
+                          onClick={() =>
+                            openKnowledgeModal(
+                              group.documentName,
+                              docChunks,
+                              group.chunks[0]?.linkUrl ?? undefined
+                            )
+                          }
+                        >
+                          {group.documentName}
+                        </button>
+                      ) : (
+                        <span className='rounded px-1 py-0.5 text-[var(--text-primary)]'>
+                          {group.documentName}
+                        </span>
+                      )}
+                      {group.chunks.map((ref) =>
+                        ref.linkUrl ? (
+                          <a
+                            key={ref.key}
+                            href={ref.linkUrl}
+                            target='_blank'
+                            rel='noopener noreferrer'
+                            className='cursor-pointer rounded px-1 py-0.5 text-primary underline decoration-primary/50 underline-offset-2 transition-colors hover:bg-gray-100 hover:decoration-primary dark:hover:bg-gray-800'
+                            aria-label={`Open chunk ${ref.chunkIndex} of ${group.documentName} in Knowledge Base`}
+                          >
+                            #{ref.chunkIndex}
+                          </a>
+                        ) : null
+                      )}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+            {knowledgeModalDoc && (
+              <KnowledgeResultsModal
+                isOpen={!!knowledgeModalDoc}
+                onClose={() => setKnowledgeModalDoc(null)}
+                documentName={knowledgeModalDoc.documentName}
+                chunks={knowledgeModalDoc.chunks}
+                viewInKbUrl={knowledgeModalDoc.viewInKbUrl}
+              />
+            )}
             {message.type === 'assistant' &&
               !message.isStreaming &&
               !message.isInitialMessage &&
@@ -532,7 +745,10 @@ export const ArenaClientChatMessage = memo(
       prevProps.message.isStreaming === nextProps.message.isStreaming &&
       prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
       prevProps.message.executionId === nextProps.message.executionId &&
-      prevProps.message.liked === nextProps.message.liked
+      prevProps.message.liked === nextProps.message.liked &&
+      prevProps.message.knowledgeResults?.length === nextProps.message.knowledgeResults?.length &&
+      prevProps.message.knowledgeRefs?.length === nextProps.message.knowledgeRefs?.length &&
+      prevProps.workspaceIdsForKbLinks?.length === nextProps.workspaceIdsForKbLinks?.length
     )
   }
 )

@@ -10,6 +10,7 @@ import {
   ComboBox,
   ConditionInput,
   CredentialSelector,
+  DateInput,
   DocumentSelector,
   DocumentTagEntry,
   Dropdown,
@@ -32,6 +33,8 @@ import {
   ScheduleInfo,
   SheetSelectorInput,
   ShortInput,
+  SlackDateInput,
+  SlackDateRangeSelector,
   SlackSelectorInput,
   SliderInput,
   Switch,
@@ -45,6 +48,7 @@ import {
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
 import { ArenaCommentInput } from './components/arena/arena-comment-input'
@@ -53,6 +57,8 @@ import { ArenaProjectSelector } from './components/arena/arena-projects-selector
 import { ArenaStatesSelector } from './components/arena/arena-states-selector'
 import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-subtask-selector'
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
+import { SlackChannelSelector } from './components/slack-channel-selector'
+import { SlackClientSelector } from './components/slack-client-selector'
 
 /**
  * Interface for wand control handlers exposed by sub-block inputs
@@ -397,6 +403,9 @@ function SubBlockComponent({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const wandControlRef = useRef<WandControlHandlers | null>(null)
 
+  // Get block type to determine if this is a Slack block
+  const blockType = useWorkflowStore((state) => state.blocks?.[blockId]?.type)
+
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
     e.stopPropagation()
   }
@@ -536,6 +545,21 @@ function SubBlockComponent({
         )
 
       case 'dropdown':
+        // Use Slack-specific date range selector for Slack blocks with dateRange field
+        if (blockType === 'slack' && config.id === 'dateRange') {
+          return (
+            <div onMouseDown={handleMouseDown}>
+              <SlackDateRangeSelector
+                blockId={blockId}
+                subBlockId={config.id}
+                placeholder={config.placeholder}
+                isPreview={isPreview}
+                previewValue={previewValue}
+                disabled={isDisabled}
+              />
+            </div>
+          )
+        }
         return (
           <div onMouseDown={handleMouseDown}>
             <Dropdown
@@ -651,6 +675,7 @@ function SubBlockComponent({
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}
+            value={config.defaultValue as boolean}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -733,6 +758,31 @@ function SubBlockComponent({
       case 'time-input':
         return (
           <TimeInput
+            blockId={blockId}
+            subBlockId={config.id}
+            placeholder={config.placeholder}
+            isPreview={isPreview}
+            previewValue={previewValue as any}
+            disabled={isDisabled}
+          />
+        )
+
+      case 'date-input':
+        // Use Slack-specific date input for Slack blocks with date fields
+        if (blockType === 'slack' && (config.id === 'fromDate' || config.id === 'toDate')) {
+          return (
+            <SlackDateInput
+              blockId={blockId}
+              subBlockId={config.id}
+              placeholder={config.placeholder}
+              isPreview={isPreview}
+              previewValue={previewValue as any}
+              disabled={isDisabled}
+            />
+          )
+        }
+        return (
+          <DateInput
             blockId={blockId}
             subBlockId={config.id}
             placeholder={config.placeholder}
@@ -996,6 +1046,29 @@ function SubBlockComponent({
             isPreview={isPreview}
             subBlockValues={subBlockValues}
             disabled={isDisabled}
+          />
+        )
+      case 'slack-client-selector':
+        return (
+          <SlackClientSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+          />
+        )
+      case 'slack-channel-selector':
+        return (
+          <SlackChannelSelector
+            blockId={blockId}
+            subBlockId={config.id}
+            title={config.title ?? ''}
+            isPreview={isPreview}
+            subBlockValues={subBlockValues}
+            disabled={isDisabled}
+            dependsOn={config.dependsOn}
           />
         )
       case 'arena-states-selector':

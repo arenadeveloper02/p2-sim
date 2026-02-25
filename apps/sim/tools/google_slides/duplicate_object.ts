@@ -125,6 +125,67 @@ export const duplicateObjectTool: ToolConfig<DuplicateObjectParams, DuplicateObj
 
     const presentationId = params?.presentationId?.trim() || ''
     const objectId = params?.objectId?.trim() || ''
+    let reordered = false
+
+    // Check if the duplicated object is a slide and reorder it to the end
+    if (duplicatedObjectId) {
+      try {
+        // Fetch presentation details to check if it's a slide
+        const getPresentationResponse = await fetch(
+          `https://slides.googleapis.com/v1/presentations/${presentationId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${params?.accessToken}`,
+            },
+          }
+        )
+
+        if (getPresentationResponse.ok) {
+          const presentationData = await getPresentationResponse.json()
+          const slides = presentationData.slides || []
+
+          // Check if the duplicated object is a slide
+          const isSlide = slides.some((slide: any) => slide.objectId === duplicatedObjectId)
+
+          if (isSlide) {
+            // Get the total number of slides to determine the insertion index
+            const totalSlides = slides.length
+
+            // Reorder the duplicated slide to the end
+            const reorderResponse = await fetch(
+              `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${params?.accessToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  requests: [
+                    {
+                      updateSlidesPosition: {
+                        slideObjectIds: [duplicatedObjectId],
+                        insertionIndex: totalSlides,
+                      },
+                    },
+                  ],
+                }),
+              }
+            )
+
+            if (reorderResponse.ok) {
+              reordered = true
+              logger.info('Successfully reordered duplicated slide to end')
+            } else {
+              const reorderError = await reorderResponse.json()
+              logger.warn('Failed to reorder slide:', reorderError)
+            }
+          }
+        }
+      } catch (e) {
+        logger.warn('Error checking/reordering slide:', e)
+      }
+    }
 
     return {
       success: true,

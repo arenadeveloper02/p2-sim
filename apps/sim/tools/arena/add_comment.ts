@@ -46,6 +46,18 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
       description:
         'Task number (advanced mode) - accepts dynamic values like <function.result.task_number>',
     },
+    'comment-to': {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'To (advanced mode) - e.g. variable for emails like <function.result.to_emails>',
+    },
+    'comment-cc': {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'CC (advanced mode) - e.g. variable for emails like <function.result.cc_emails>',
+    },
     'comment-text': {
       type: 'string',
       required: true,
@@ -123,6 +135,8 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
           comment: commentText,
           userMentionedIds: [],
           showToClient: clientNote,
+          to: params['comment-to']?.trim() ?? '',
+          cc: params['comment-cc']?.trim() ?? '',
         }
 
         return body

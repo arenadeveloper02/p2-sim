@@ -27,7 +27,9 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
         { label: 'Delete Meeting', id: 'zoom_delete_meeting' },
         { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
         { label: 'List Recordings', id: 'zoom_list_recordings' },
+        { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
         { label: 'Get Meeting Recordings', id: 'zoom_get_meeting_recordings' },
+        { label: 'Download Transcript/File', id: 'zoom_download_transcript' },
         { label: 'Delete Recording', id: 'zoom_delete_recording' },
         { label: 'List Past Participants', id: 'zoom_list_past_participants' },
       ],
@@ -48,6 +50,8 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
         'meeting:read:invitation',
         'meeting:read:list_past_participants',
         'cloud_recording:read:list_user_recordings',
+        'recording:read:list_account_recordings',
+        'recording:read:admin',
         'cloud_recording:read:list_recording_files',
         'cloud_recording:delete:recording_file',
       ],
@@ -283,7 +287,12 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'Number of results (max 300)',
       condition: {
         field: 'operation',
-        value: ['zoom_list_meetings', 'zoom_list_recordings', 'zoom_list_past_participants'],
+        value: [
+          'zoom_list_meetings',
+          'zoom_list_recordings',
+          'zoom_list_account_recordings',
+          'zoom_list_past_participants',
+        ],
       },
     },
     {
@@ -293,7 +302,12 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'Token for next page',
       condition: {
         field: 'operation',
-        value: ['zoom_list_meetings', 'zoom_list_recordings', 'zoom_list_past_participants'],
+        value: [
+          'zoom_list_meetings',
+          'zoom_list_recordings',
+          'zoom_list_account_recordings',
+          'zoom_list_past_participants',
+        ],
       },
     },
     // Recording date range
@@ -304,7 +318,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'yyyy-mm-dd (within last 6 months)',
       condition: {
         field: 'operation',
-        value: ['zoom_list_recordings'],
+        value: ['zoom_list_recordings', 'zoom_list_account_recordings'],
       },
       wandConfig: {
         enabled: true,
@@ -329,7 +343,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       placeholder: 'yyyy-mm-dd',
       condition: {
         field: 'operation',
-        value: ['zoom_list_recordings'],
+        value: ['zoom_list_recordings', 'zoom_list_account_recordings'],
       },
       wandConfig: {
         enabled: true,
@@ -393,6 +407,18 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
         value: ['zoom_delete_meeting'],
       },
     },
+    // Download URL for download operation
+    {
+      id: 'downloadUrl',
+      title: 'Download URL',
+      type: 'short-input',
+      placeholder: 'Enter the download URL from recording files',
+      required: true,
+      condition: {
+        field: 'operation',
+        value: ['zoom_download_transcript'],
+      },
+    },
   ],
   tools: {
     access: [
@@ -403,6 +429,8 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       'zoom_delete_meeting',
       'zoom_get_meeting_invitation',
       'zoom_list_recordings',
+      'zoom_list_account_recordings',
+      'zoom_download_transcript',
       'zoom_get_meeting_recordings',
       'zoom_delete_recording',
       'zoom_list_past_participants',
@@ -519,6 +547,15 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
               nextPageToken: params.nextPageToken,
             }
 
+          case 'zoom_list_account_recordings':
+            return {
+              ...baseParams,
+              from: params.fromDate,
+              to: params.toDate,
+              pageSize: params.pageSize ? Number(params.pageSize) : undefined,
+              nextPageToken: params.nextPageToken,
+            }
+
           case 'zoom_get_meeting_recordings':
             if (!params.meetingId?.trim()) {
               throw new Error('Meeting ID is required.')
@@ -548,6 +585,15 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
               meetingId: params.meetingId.trim(),
               pageSize: params.pageSize ? Number(params.pageSize) : undefined,
               nextPageToken: params.nextPageToken,
+            }
+
+          case 'zoom_download_transcript':
+            if (!params.downloadUrl?.trim()) {
+              throw new Error('Download URL is required.')
+            }
+            return {
+              ...baseParams,
+              downloadUrl: params.downloadUrl.trim(),
             }
 
           default:
@@ -584,6 +630,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     toDate: { type: 'string', description: 'End date for recordings list (yyyy-mm-dd)' },
     recordingId: { type: 'string', description: 'Specific recording file ID' },
     deleteAction: { type: 'string', description: 'Delete action (trash or delete)' },
+    downloadUrl: { type: 'string', description: 'Download URL for transcript or recording file' },
   },
   outputs: {
     // Success indicator
@@ -600,5 +647,6 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     participants: { type: 'json', description: 'List of participants (list_past_participants)' },
     // Pagination
     pageInfo: { type: 'json', description: 'Pagination information' },
+    content: { type: 'string', description: 'The downloaded content' },
   },
 }

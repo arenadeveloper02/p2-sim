@@ -230,6 +230,27 @@ export interface ZoomListRecordingsResponse extends ToolResponse {
   }
 }
 
+// List Account Recordings tool types
+export interface ZoomListAccountRecordingsParams extends ZoomBaseParams {
+  from?: string
+  to?: string
+  pageSize?: number
+  nextPageToken?: string
+}
+
+export interface ZoomListAccountRecordingsResponse extends ToolResponse {
+  output: {
+    recordings: ZoomRecording[]
+    pageInfo: {
+      from: string
+      to: string
+      pageSize: number
+      totalRecords: number
+      nextPageToken?: string
+    }
+  }
+}
+
 // Get Meeting Recordings tool types
 export interface ZoomGetMeetingRecordingsParams extends ZoomBaseParams {
   meetingId: string
@@ -288,6 +309,17 @@ export interface ZoomListPastParticipantsResponse extends ToolResponse {
   }
 }
 
+// Download Transcript tool types
+export interface ZoomDownloadTranscriptParams extends ZoomBaseParams {
+  downloadUrl: string
+}
+
+export interface ZoomDownloadTranscriptResponse extends ToolResponse {
+  output: {
+    content: string
+  }
+}
+
 // Combined response type for block
 export type ZoomResponse =
   | ZoomCreateMeetingResponse
@@ -297,6 +329,8 @@ export type ZoomResponse =
   | ZoomDeleteMeetingResponse
   | ZoomGetMeetingInvitationResponse
   | ZoomListRecordingsResponse
+  | ZoomListAccountRecordingsResponse
   | ZoomGetMeetingRecordingsResponse
   | ZoomDeleteRecordingResponse
   | ZoomListPastParticipantsResponse
+  | ZoomDownloadTranscriptResponse

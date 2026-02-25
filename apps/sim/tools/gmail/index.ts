@@ -1,4 +1,5 @@
 import { gmailAddLabelTool, gmailAddLabelV2Tool } from '@/tools/gmail/add_label'
+import { gmailAdvancedSearchTool, gmailAdvancedSearchV2Tool } from '@/tools/gmail/advanced_search'
 import { gmailArchiveTool, gmailArchiveV2Tool } from '@/tools/gmail/archive'
 import { gmailDeleteTool, gmailDeleteV2Tool } from '@/tools/gmail/delete'
 import { gmailDraftTool, gmailDraftV2Tool } from '@/tools/gmail/draft'
@@ -17,6 +18,8 @@ export {
   gmailReadTool,
   gmailReadV2Tool,
   gmailSearchTool,
+  gmailAdvancedSearchTool,
+  gmailAdvancedSearchV2Tool,
   gmailSearchV2Tool,
   gmailDraftTool,
   gmailDraftV2Tool,

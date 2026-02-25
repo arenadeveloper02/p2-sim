@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
-import { BlockType } from '@/executor/constants'
+import { BlockType, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
 import { serializePauseSnapshot } from '@/executor/execution/snapshot-serializer'
@@ -14,6 +14,7 @@ import type {
   ResumeStatus,
 } from '@/executor/types'
 import { attachExecutionResult, normalizeError } from '@/executor/utils/errors'
+import { buildSentinelEndId } from '@/executor/utils/subflow-utils'
 
 const logger = createLogger('ExecutionEngine')
 
@@ -27,6 +28,7 @@ export class ExecutionEngine {
   private cancelledFlag = false
   private errorFlag = false
   private executionError: Error | null = null
+  private skippedFlag = false // Track if workflow was skipped
   private lastCancellationCheck = 0
   private readonly useRedisCancellation: boolean
   private readonly CANCELLATION_CHECK_INTERVAL_MS = 500
@@ -105,13 +107,13 @@ export class ExecutionEngine {
       this.initializeQueue(triggerBlockId)
 
       while (this.hasWork()) {
-        if ((await this.checkCancellation()) || this.errorFlag) {
+        if ((await this.checkCancellation()) || this.errorFlag || this.skippedFlag) {
           break
         }
         await this.processQueue()
       }
 
-      if (!this.cancelledFlag) {
+      if (!this.cancelledFlag && !this.skippedFlag) {
         await this.waitForAllExecutions()
       }
 
@@ -328,7 +330,7 @@ export class ExecutionEngine {
 
   private async processQueue(): Promise<void> {
     while (this.readyQueue.length > 0) {
-      if ((await this.checkCancellation()) || this.errorFlag) {
+      if ((await this.checkCancellation()) || this.errorFlag || this.skippedFlag) {
         break
       }
       const nodeId = this.dequeue()
@@ -337,15 +339,20 @@ export class ExecutionEngine {
       this.trackExecution(promise)
     }
 
-    if (this.executing.size > 0 && !this.cancelledFlag && !this.errorFlag) {
+    if (this.executing.size > 0 && !this.cancelledFlag && !this.errorFlag && !this.skippedFlag) {
       await this.waitForAnyExecution()
     }
   }
 
   private async executeNodeAsync(nodeId: string): Promise<void> {
-    // Check for cancellation before executing the node
+    // Check for cancellation or skip before executing the node
     if (await this.checkCancellation()) {
       logger.info('Node execution cancelled before starting', { nodeId })
+      return
+    }
+
+    if (this.skippedFlag) {
+      logger.info('Node execution skipped - workflow was skipped', { nodeId })
       return
     }
 
@@ -355,7 +362,10 @@ export class ExecutionEngine {
 
       if (!wasAlreadyExecuted) {
         await this.withQueueLock(async () => {
-          await this.handleNodeCompletion(nodeId, result.output, result.isFinalOutput)
+          // Check skip flag again after execution (intent analyzer might have set it)
+          if (!this.skippedFlag) {
+            await this.handleNodeCompletion(nodeId, result.output, result.isFinalOutput)
+          }
         })
       }
     } catch (error) {
@@ -376,6 +386,41 @@ export class ExecutionEngine {
       return
     }
 
+    // Check if this is a Start block and run intent analyzer if workflow has Agent blocks
+    const isStartBlock =
+      node.block.metadata?.id === BlockType.START_TRIGGER ||
+      node.block.metadata?.id === BlockType.STARTER
+
+    if (isStartBlock && !this.context.intentAnalyzerResult) {
+      await this.runWorkflowLevelIntentAnalyzer(output)
+
+      // Check if workflow was skipped after intent analyzer - return immediately to prevent any further execution
+      if (this.skippedFlag) {
+        logger.info('Workflow skipped by intent analyzer — stopping execution immediately', {
+          nodeId,
+          blockId: node.block.id,
+        })
+        return
+      }
+    }
+
+    // Check if workflow was skipped (from intent analyzer or block output) - BEFORE handling node completion
+    if (this.skippedFlag || output.skippedWorkflow === true) {
+      logger.info('Workflow skipped — stopping further execution', {
+        nodeId,
+        blockId: node.block.id,
+        skippedByIntentAnalyzer: this.skippedFlag,
+        skippedByBlock: output.skippedWorkflow === true,
+      })
+      if (output.skippedWorkflow === true) {
+        this.finalOutput = output
+      }
+      this.readyQueue = []
+      this.skippedFlag = true
+      // Don't call handleNodeCompletion - this prevents downstream nodes from being queued
+      return
+    }
+
     if (output._pauseMetadata) {
       const pauseMetadata = output._pauseMetadata
       this.pausedBlocks.set(pauseMetadata.contextId, pauseMetadata)
@@ -385,12 +430,97 @@ export class ExecutionEngine {
       return
     }
 
+    // Only handle node completion if workflow is not skipped
+    // This prevents downstream nodes from being queued when workflow is skipped
     await this.nodeOrchestrator.handleNodeCompletion(this.context, nodeId, output)
 
     if (isFinalOutput) {
       this.finalOutput = output
     }
 
+    // Check if this is a terminal block (Response blocks or blocks with no outgoing edges)
+    // Terminal blocks outside loops should stop the workflow, but inside loops they should allow continuation
+    const blockType = node.block.metadata?.id
+    const isResponseBlock = blockType === BlockType.RESPONSE
+    const isInsideLoop = !!node.metadata.loopId
+    const isTerminalBlock = isResponseBlock || node.outgoingEdges.size === 0
+
+    if (isResponseBlock && !isInsideLoop) {
+      // Response block outside of loops - stop entire workflow execution
+      // Verify this is actually a Response block output (has 'status' and 'data')
+      if (output && 'status' in output && 'data' in output) {
+        logger.info('Response block executed outside loop - stopping workflow execution', {
+          nodeId,
+          blockId: node.block.id,
+        })
+        // Clear the ready queue to prevent further nodes from executing
+        this.readyQueue = []
+        // Set final output to the Response block output
+        this.finalOutput = output
+        return
+      }
+    }
+
+    // When a loop sentinel start exits early (e.g., empty forEach collection),
+    // the loop body is skipped but we must still trigger the sentinel end so its
+    // LOOP_EXIT edge routes execution to the block after the loop.
+    if (
+      node.metadata.isSentinel &&
+      node.metadata.sentinelType === 'start' &&
+      node.metadata.loopId &&
+      output?.shouldExit === true &&
+      output?.selectedRoute === EDGE.LOOP_EXIT
+    ) {
+      const loopId = node.metadata.loopId
+      const sentinelEndId = buildSentinelEndId(loopId)
+      const sentinelEndNode = this.dag.nodes.get(sentinelEndId)
+
+      if (sentinelEndNode) {
+        logger.info('Loop sentinel start exiting early, triggering sentinel end directly', {
+          loopId,
+          sentinelStartId: nodeId,
+          sentinelEndId,
+        })
+
+        // Build the sentinel end output that will activate its LOOP_EXIT edge
+        const sentinelEndOutput: NormalizedBlockOutput = {
+          results: [],
+          shouldContinue: false,
+          shouldExit: true,
+          selectedRoute: EDGE.LOOP_EXIT,
+          totalIterations: 0,
+        }
+
+        // Set the sentinel end's output and mark it as executed
+        await this.nodeOrchestrator.handleNodeCompletion(
+          this.context,
+          sentinelEndId,
+          sentinelEndOutput
+        )
+
+        // Clear all incoming edges on sentinel end so it becomes ready
+        sentinelEndNode.incomingEdges.clear()
+
+        // Process sentinel end's outgoing edges to find blocks after the loop
+        const exitReadyNodes = this.edgeManager.processOutgoingEdges(
+          sentinelEndNode,
+          sentinelEndOutput,
+          false,
+          this.context
+        )
+
+        logger.info('Loop early exit: routing to blocks after loop', {
+          loopId,
+          readyNodes: exitReadyNodes,
+        })
+
+        this.addMultipleToQueue(exitReadyNodes)
+        return
+      }
+    }
+
+    // For Response blocks inside loops, process outgoing edges normally
+    // Response blocks should have edges to sentinel end (they're terminal nodes)
     const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false, this.context)
 
     logger.info('Processing outgoing edges', {
@@ -398,9 +528,55 @@ export class ExecutionEngine {
       outgoingEdgesCount: node.outgoingEdges.size,
       readyNodesCount: readyNodes.length,
       readyNodes,
+      isResponseBlock,
+      isInsideLoop,
     })
 
     this.addMultipleToQueue(readyNodes)
+
+    // If this is a terminal block inside a loop, ensure the loop's sentinel end gets triggered
+    // Terminal blocks (Response blocks or blocks with no outgoing edges) indicate iteration completion
+    // When they complete, the iteration is done and loop should continue
+    if (isTerminalBlock && isInsideLoop) {
+      const loopId = node.metadata.loopId
+      if (loopId) {
+        const sentinelEndId = buildSentinelEndId(loopId)
+        const sentinelEndNode = this.dag.nodes.get(sentinelEndId)
+
+        if (sentinelEndNode) {
+          // Remove the incoming edge from the Response block to sentinel end (if it exists)
+          // This simulates the edge being processed by the edge manager
+          if (sentinelEndNode.incomingEdges.has(nodeId)) {
+            sentinelEndNode.incomingEdges.delete(nodeId)
+          }
+
+          // For Response blocks, we need to force-trigger the sentinel end
+          // Response blocks are terminal - when they complete, the iteration is done
+          // Even if the sentinel end has other incoming edges (from deactivated paths),
+          // we should trigger it because the Response block path has completed
+          const sentinelEndInReadyNodes = readyNodes.includes(sentinelEndId)
+
+          if (!sentinelEndInReadyNodes) {
+            // Terminal blocks indicate iteration completion - their completion means the iteration is done
+            // Force trigger the sentinel end to allow the loop to continue to the next iteration
+            logger.info(
+              'Terminal block completed in loop - forcing sentinel end trigger (iteration complete)',
+              {
+                loopId,
+                terminalNodeId: nodeId,
+                blockType: blockType || 'unknown',
+                sentinelEndId,
+                hadEdgeToSentinelEnd: node.outgoingEdges.size > 0,
+                incomingEdgesCount: sentinelEndNode.incomingEdges.size,
+                incomingEdges: Array.from(sentinelEndNode.incomingEdges),
+              }
+            )
+            // Force trigger the sentinel end - terminal block completion means iteration is done
+            this.addToQueue(sentinelEndId)
+          }
+        }
+      }
+    }
 
     if (this.context.pendingDynamicNodes && this.context.pendingDynamicNodes.length > 0) {
       const dynamicNodes = this.context.pendingDynamicNodes
@@ -437,6 +613,143 @@ export class ExecutionEngine {
       status: 'paused',
       pausePoints,
       snapshotSeed,
+    }
+  }
+
+  /**
+   * Runs intent analyzer once at workflow start if workflow has Agent blocks.
+   * Stores result in context for Agent blocks to use.
+   * If decision is SKIP, stops workflow execution.
+   */
+  private async runWorkflowLevelIntentAnalyzer(
+    startBlockOutput: NormalizedBlockOutput
+  ): Promise<void> {
+    try {
+      // Check if workflow has Agent blocks
+      const workflowBlocks = this.context.workflow?.blocks || []
+      const hasAgentBlocks = workflowBlocks.some((block) => block.metadata?.id === BlockType.AGENT)
+
+      if (!hasAgentBlocks) {
+        logger.debug('Workflow has no Agent blocks, skipping intent analyzer')
+        return
+      }
+
+      // Only run for chat trigger type
+      const triggerType = this.context.metadata?.triggerType
+      if (triggerType !== 'chat') {
+        logger.debug('Intent analyzer only runs for chat trigger type', { triggerType })
+        return
+      }
+
+      // Extract user prompt and conversationId from Start block output
+      const userPrompt = typeof startBlockOutput.input === 'string' ? startBlockOutput.input : ''
+      const conversationId =
+        typeof startBlockOutput.conversationId === 'string'
+          ? startBlockOutput.conversationId
+          : undefined
+
+      if (!userPrompt || !conversationId) {
+        logger.debug('Missing userPrompt or conversationId, skipping intent analyzer', {
+          hasUserPrompt: !!userPrompt,
+          hasConversationId: !!conversationId,
+        })
+        return
+      }
+
+      logger.info('Running workflow-level intent analyzer', {
+        workflowId: this.context.workflowId,
+        conversationId,
+        userPromptPreview: userPrompt.substring(0, 100),
+      })
+
+      // Get first Agent block to use for intent analyzer (we need inputs structure)
+      const firstAgentBlock = workflowBlocks.find((block) => block.metadata?.id === BlockType.AGENT)
+      if (!firstAgentBlock) {
+        logger.warn('Agent block not found despite hasAgentBlocks check')
+        return
+      }
+
+      // Build minimal AgentInputs for intent analyzer
+      const agentInputs = {
+        conversationId,
+        memoryType: 'conversation' as const, // Default to conversation memory
+        userPrompt,
+      }
+
+      // Run intent analyzer
+      const { analyzeIntent } = await import('@/executor/utils/intent-analyzer')
+      const intentResult = await analyzeIntent({
+        ctx: this.context,
+        inputs: agentInputs,
+        blockId: firstAgentBlock.id,
+        userPrompt,
+        model: undefined, // Will use default
+      })
+
+      // Store result in context
+      this.context.intentAnalyzerResult = intentResult
+
+      logger.info('Intent analyzer completed', {
+        workflowId: this.context.workflowId,
+        decision: intentResult.decision,
+        searchResultsCount: intentResult.searchResults.length,
+      })
+
+      // If SKIP, stop workflow execution
+      if (intentResult.decision === 'SKIP' && intentResult.skipResponse) {
+        logger.info('Intent analyzer decided SKIP — stopping workflow execution', {
+          workflowId: this.context.workflowId,
+          conversationId,
+        })
+
+        // Build skip output matching agent handler format
+        // Include user prompt and system prompt for UI rendering
+        const skipOutput: NormalizedBlockOutput = {
+          content: intentResult.skipResponse,
+          model: 'gpt-4o',
+          tokens: { input: 0, output: 0, total: 0 },
+          toolCalls: { list: [], count: 0 },
+          skippedWorkflow: true,
+          // Store prompts for UI rendering
+          userPrompt: userPrompt,
+          systemPrompt: intentResult.skipSystemPrompt || undefined,
+          // Store the formatted user message that was sent to LLM
+          _actualPromptsForSkip: {
+            userMessage: intentResult.skipUserMessage || userPrompt,
+            systemPrompt: intentResult.skipSystemPrompt || '',
+          },
+        }
+
+        // Set skip flag and clear queue to prevent any further execution
+        this.skippedFlag = true
+        this.readyQueue = []
+        this.finalOutput = skipOutput
+
+        // Persist skip response to memory if memory is enabled
+        if (agentInputs.memoryType) {
+          try {
+            const { memoryService } = await import('@/executor/handlers/agent/memory')
+            const lastUserMsg = { role: 'user' as const, content: userPrompt }
+            await memoryService.appendToMemory(
+              this.context,
+              agentInputs,
+              { role: 'assistant', content: intentResult.skipResponse },
+              firstAgentBlock.id,
+              lastUserMsg
+            )
+          } catch (memoryError) {
+            logger.warn('Failed to persist skip response to memory', { error: memoryError })
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        'Failed to run workflow-level intent analyzer, continuing with normal execution',
+        {
+          error: normalizeError(error),
+        }
+      )
+      // Continue execution even if intent analyzer fails
     }
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { AlertTriangle, Check, Clipboard, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react'
 import {
@@ -33,6 +33,7 @@ import {
   useDeleteChat,
   useUpdateChat,
 } from '@/hooks/queries/chats'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { useIdentifierValidation } from './hooks'
 
 const logger = createLogger('ChatDeploy')
@@ -143,6 +144,17 @@ export function ChatDeploy({
   const [formData, setFormData] = useState<ChatFormData>(initialFormData)
   const [errors, setErrors] = useState<FormErrors>({})
   const formRef = useRef<HTMLFormElement>(null)
+  const hasSetDefaultKnowledgeOutputs = useRef(false)
+
+  const blocks = useWorkflowStore((state) => state.blocks)
+  const knowledgeResultOutputIds = useMemo(() => {
+    return Object.values(blocks)
+      .filter((block: { type?: string }) => block?.type === 'knowledge')
+      .map((block: { id: string }) => `${block.id}_results`)
+  }, [blocks])
+
+  const [showUnselectKnowledgeConfirm, setShowUnselectKnowledgeConfirm] = useState(false)
+  const [pendingOutputSelection, setPendingOutputSelection] = useState<string[] | null>(null)
 
   const createChatMutation = useCreateChat()
   const updateChatMutation = useUpdateChat()
@@ -260,8 +272,54 @@ export function ChatDeploy({
       setFormData(initialFormData)
       setImageUrl(null)
       setHasInitializedForm(false)
+      hasSetDefaultKnowledgeOutputs.current = false
     }
   }, [existingChat, isLoadingChat, hasInitializedForm])
+
+  useEffect(() => {
+    if (
+      !existingChat &&
+      !isLoadingChat &&
+      workflowId &&
+      knowledgeResultOutputIds.length > 0 &&
+      !hasSetDefaultKnowledgeOutputs.current
+    ) {
+      hasSetDefaultKnowledgeOutputs.current = true
+      setFormData((prev) => ({
+        ...prev,
+        selectedOutputBlocks: [
+          ...new Set([...prev.selectedOutputBlocks, ...knowledgeResultOutputIds]),
+        ],
+      }))
+    }
+  }, [existingChat, isLoadingChat, workflowId, knowledgeResultOutputIds])
+
+  const handleOutputSelect = useCallback(
+    (newValues: string[]) => {
+      const removed = formData.selectedOutputBlocks.filter((id) => !newValues.includes(id))
+      const removedKnowledge = removed.filter((id) => knowledgeResultOutputIds.includes(id))
+      if (removedKnowledge.length > 0) {
+        setPendingOutputSelection(newValues)
+        setShowUnselectKnowledgeConfirm(true)
+      } else {
+        updateField('selectedOutputBlocks', newValues)
+      }
+    },
+    [formData.selectedOutputBlocks, knowledgeResultOutputIds, updateField]
+  )
+
+  const handleConfirmUnselectKnowledge = useCallback(() => {
+    if (pendingOutputSelection !== null) {
+      updateField('selectedOutputBlocks', pendingOutputSelection)
+      setPendingOutputSelection(null)
+    }
+    setShowUnselectKnowledgeConfirm(false)
+  }, [pendingOutputSelection, updateField])
+
+  const handleCancelUnselectKnowledge = useCallback(() => {
+    setPendingOutputSelection(null)
+    setShowUnselectKnowledgeConfirm(false)
+  }, [])
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -434,7 +492,7 @@ export function ChatDeploy({
             <OutputSelect
               workflowId={workflowId}
               selectedOutputs={formData.selectedOutputBlocks}
-              onOutputSelect={(values) => updateField('selectedOutputBlocks', values)}
+              onOutputSelect={handleOutputSelect}
               placeholder='Select which block outputs to use'
               disabled={chatSubmitting}
             />
@@ -538,6 +596,30 @@ export function ChatDeploy({
             </Button>
             <Button variant='destructive' onClick={handleDelete} disabled={isDeleting}>
               {isDeleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        open={showUnselectKnowledgeConfirm}
+        onOpenChange={(open) => {
+          if (!open) handleCancelUnselectKnowledge()
+        }}
+      >
+        <ModalContent size='sm'>
+          <ModalHeader>Unselect knowledge base results</ModalHeader>
+          <ModalBody>
+            <p className='text-[12px] text-[var(--text-secondary)]'>
+              Knowledge base reference will not be shown for the generated output.
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant='tertiary' onClick={handleCancelUnselectKnowledge}>
+              Cancel
+            </Button>
+            <Button variant='default' onClick={handleConfirmUnselectKnowledge}>
+              Continue
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -729,6 +811,8 @@ function AuthSelector({
   const [copySuccess, setCopySuccess] = useState(false)
   const [invalidEmails, setInvalidEmails] = useState<string[]>([])
   const [emailValidationErrors, setEmailValidationErrors] = useState<Map<string, string>>(new Map())
+  /** Tracks if we already prefilled session email once; prevents re-adding when user clears the list (create mode). */
+  const hasPrefilledSessionEmailRef = useRef(false)
 
   useEffect(() => {
     onInvalidEmailsChange?.(invalidEmails.length > 0)
@@ -975,24 +1059,38 @@ function AuthSelector({
     })
   }
 
-  // Prefill session.email on mount
+  /** Reset prefill ref when in edit mode so create mode can prefill again on next open. */
   useEffect(() => {
-    if (session?.user?.email && !isExistingChat) {
-      const sessionEmail = session.user.email.toLowerCase().trim()
-      const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
-      const normalizedInvalidEmails = invalidEmails.map((e) => e.toLowerCase().trim())
-      const normalizedEmailItems = emailItems.map((item) => item.value.toLowerCase().trim())
-
-      if (
-        !normalizedEmails.includes(sessionEmail) &&
-        !normalizedInvalidEmails.includes(sessionEmail) &&
-        !normalizedEmailItems.includes(sessionEmail)
-      ) {
-        addEmail(sessionEmail).catch((error) => {
-          logger.error('Error prefilling session email', { error })
-        })
-      }
+    if (isExistingChat) {
+      hasPrefilledSessionEmailRef.current = false
     }
+  }, [isExistingChat])
+
+  /**
+   * Prefill session email once when in create mode and list is empty.
+   * Skip re-adding after user has cleared the list (use ref so we only prefill once per create session).
+   */
+  useEffect(() => {
+    if (!session?.user?.email || isExistingChat || hasPrefilledSessionEmailRef.current) return
+
+    const sessionEmail = session.user.email.toLowerCase().trim()
+    const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
+    const normalizedInvalidEmails = invalidEmails.map((e) => e.toLowerCase().trim())
+    const normalizedEmailItems = emailItems.map((item) => item.value.toLowerCase().trim())
+
+    const alreadyInList =
+      normalizedEmails.includes(sessionEmail) ||
+      normalizedInvalidEmails.includes(sessionEmail) ||
+      normalizedEmailItems.includes(sessionEmail)
+    if (alreadyInList) return
+
+    addEmail(sessionEmail)
+      .then(() => {
+        hasPrefilledSessionEmailRef.current = true
+      })
+      .catch((error) => {
+        logger.error('Error prefilling session email', { error })
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.email, isExistingChat, emails, emailItems])
 

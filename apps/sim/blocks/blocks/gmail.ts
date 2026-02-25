@@ -13,6 +13,8 @@ function selectGmailToolId(params: Record<string, any>): string {
       return 'gmail_draft'
     case 'search_gmail':
       return 'gmail_search'
+    case 'advanced_search_gmail':
+      return 'gmail_advanced_search'
     case 'read_gmail':
       return 'gmail_read'
     case 'move_gmail':
@@ -60,6 +62,7 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
         { label: 'Read Email', id: 'read_gmail' },
         { label: 'Draft Email', id: 'draft_gmail' },
         { label: 'Search Email', id: 'search_gmail' },
+        { label: 'Advanced Search', id: 'advanced_search_gmail' },
         { label: 'Move Email', id: 'move_gmail' },
         { label: 'Mark as Read', id: 'mark_read_gmail' },
         { label: 'Mark as Unread', id: 'mark_unread_gmail' },
@@ -250,9 +253,25 @@ Return ONLY the email body - no explanations, no extra text.`,
       id: 'messageId',
       title: 'Message ID',
       type: 'short-input',
-      placeholder: 'Read specific email by ID (overrides label/folder)',
-      condition: { field: 'operation', value: 'read_gmail' },
+      placeholder: 'Enter message ID to read (optional)',
+      condition: {
+        field: 'operation',
+        value: 'read_gmail',
+        and: {
+          field: 'folder',
+          value: '',
+        },
+      },
+      mode: 'basic',
+    },
+    // Manual message ID input (advanced mode)
+    {
+      id: 'manualMessageId',
+      title: 'Message ID',
+      type: 'short-input',
+      placeholder: 'Enter message ID to read (optional)',
       mode: 'advanced',
+      condition: { field: 'operation', value: 'read_gmail' },
     },
     // Search Fields
     {
@@ -281,6 +300,37 @@ Return ONLY the search query - no explanations, no extra text.`,
       type: 'short-input',
       placeholder: 'Maximum number of results (default: 10)',
       condition: { field: 'operation', value: ['search_gmail', 'read_gmail'] },
+    },
+    // Advanced Search Fields
+    {
+      id: 'advancedSearchQuery',
+      title: 'Search Query',
+      type: 'short-input',
+      placeholder: 'Enter search terms',
+      condition: { field: 'operation', value: 'advanced_search_gmail' },
+      required: true,
+    },
+    {
+      id: 'includeAttachments',
+      title: 'Include Attachments',
+      type: 'switch',
+      condition: { field: 'operation', value: 'advanced_search_gmail' },
+    },
+    {
+      id: 'advancedMaxResults',
+      title: 'Max Results',
+      type: 'short-input',
+      placeholder: 'Maximum number of results (default: 5)',
+      condition: { field: 'operation', value: 'advanced_search_gmail' },
+      value: () => '5',
+    },
+    {
+      id: 'clientName',
+      title: 'Client Name',
+      type: 'short-input',
+      placeholder: 'Enter client name for tracking',
+      condition: { field: 'operation', value: 'advanced_search_gmail' },
+      required: false,
     },
     // Move Email Fields
     {
@@ -401,6 +451,7 @@ Return ONLY the search query - no explanations, no extra text.`,
       'gmail_draft',
       'gmail_read',
       'gmail_search',
+      'gmail_advanced_search',
       'gmail_move',
       'gmail_mark_read',
       'gmail_mark_unread',
@@ -411,12 +462,49 @@ Return ONLY the search query - no explanations, no extra text.`,
       'gmail_remove_label',
     ],
     config: {
-      tool: selectGmailToolId,
+      tool: (params) => {
+        switch (params.operation) {
+          case 'send_gmail':
+            return 'gmail_send'
+          case 'draft_gmail':
+            return 'gmail_draft'
+          case 'search_gmail':
+            return 'gmail_search'
+          case 'advanced_search_gmail':
+            return 'gmail_advanced_search'
+          case 'read_gmail':
+            return 'gmail_read'
+          case 'move_gmail':
+            return 'gmail_move'
+          case 'mark_read_gmail':
+            return 'gmail_mark_read'
+          case 'mark_unread_gmail':
+            return 'gmail_mark_unread'
+          case 'archive_gmail':
+            return 'gmail_archive'
+          case 'unarchive_gmail':
+            return 'gmail_unarchive'
+          case 'delete_gmail':
+            return 'gmail_delete'
+          case 'add_label_gmail':
+            return 'gmail_add_label'
+          case 'remove_label_gmail':
+            return 'gmail_remove_label'
+          default:
+            throw new Error(`Invalid Gmail operation: ${params.operation}`)
+        }
+      },
       params: (params) => {
         const {
           credential,
           folder,
           manualFolder,
+          messageId,
+          manualMessageId,
+          advancedSearchQuery,
+          advancedMaxResults,
+          includeAttachments,
+          clientName,
           destinationLabel,
           manualDestinationLabel,
           sourceLabel,
@@ -434,6 +522,29 @@ Return ONLY the search query - no explanations, no extra text.`,
 
         if (rest.operation === 'read_gmail') {
           rest.folder = effectiveFolder || 'INBOX'
+          // Handle both basic and advanced mode message ID input
+          const effectiveMessageId = (messageId || manualMessageId || '').trim()
+          if (effectiveMessageId) {
+            rest.messageId = effectiveMessageId
+          }
+        }
+
+        // Handle advanced search operation
+        if (rest.operation === 'advanced_search_gmail') {
+          if (advancedSearchQuery) {
+            rest.query = advancedSearchQuery
+          }
+          if (advancedMaxResults) {
+            rest.maxResults = Number(advancedMaxResults) || 5
+          } else {
+            rest.maxResults = 5
+          }
+          if (includeAttachments !== undefined) {
+            rest.includeAttachments = includeAttachments
+          }
+          if (clientName) {
+            rest.clientName = clientName
+          }
         }
 
         // Handle move operation
@@ -499,12 +610,21 @@ Return ONLY the search query - no explanations, no extra text.`,
     // Read operation inputs
     folder: { type: 'string', description: 'Gmail folder' },
     manualFolder: { type: 'string', description: 'Manual folder name' },
+    messageId: { type: 'string', description: 'Message ID to read (basic mode)' },
+    manualMessageId: { type: 'string', description: 'Message ID to read (advanced mode)' },
     readMessageId: { type: 'string', description: 'Message identifier for reading specific email' },
     unreadOnly: { type: 'boolean', description: 'Unread messages only' },
     includeAttachments: { type: 'boolean', description: 'Include email attachments' },
     // Search operation inputs
     query: { type: 'string', description: 'Search query' },
     maxResults: { type: 'number', description: 'Maximum results' },
+    // Advanced Search operation inputs
+    advancedSearchQuery: { type: 'string', description: 'Advanced search query' },
+    advancedMaxResults: {
+      type: 'string',
+      description: 'Maximum results for advanced search (default: 5)',
+    },
+    clientName: { type: 'string', description: 'Client name for tracking and summarization' },
     // Move operation inputs
     moveMessageId: { type: 'string', description: 'Message ID to move' },
     destinationLabel: { type: 'string', description: 'Destination label ID' },
@@ -525,6 +645,10 @@ Return ONLY the search query - no explanations, no extra text.`,
     content: { type: 'string', description: 'Response content' },
     metadata: { type: 'json', description: 'Email metadata' },
     attachments: { type: 'json', description: 'Email attachments array' },
+    results: {
+      type: 'json',
+      description: 'Advanced search results with full content and parsed attachments',
+    },
     // Trigger outputs
     email_id: { type: 'string', description: 'Gmail message ID' },
     thread_id: { type: 'string', description: 'Gmail thread ID' },
@@ -558,6 +682,7 @@ export const GmailV2Block: BlockConfig<GmailToolResponse> = {
       'gmail_draft_v2',
       'gmail_read_v2',
       'gmail_search_v2',
+      'gmail_advanced_search_v2',
       'gmail_move_v2',
       'gmail_mark_read_v2',
       'gmail_mark_unread_v2',
