@@ -16,6 +16,7 @@ const logger = createLogger('GoogleAdsV1API')
 
 /**
  * Resolves account input to account key (supports both keys and numeric IDs)
+ * Updated: Added numeric ID support for better account resolution
  */
 function resolveAccountKey(accountInput: string): string {
   // Try direct key match first (gentle_dental)

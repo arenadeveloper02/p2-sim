@@ -134,6 +134,8 @@ export interface ExecutionMetadata {
     depth: number
   }
   userId?: string
+  sessionUserId?: string
+  workflowUserId?: string
   executionId?: string
   triggerType?: string
   triggerBlockId?: string
@@ -250,6 +252,12 @@ export interface ExecutionContext {
    * will not have their base64 content fetched.
    */
   base64MaxBytes?: number
+
+  /**
+   * Intent analyzer result from workflow-level analysis (runs once at start).
+   * This is used by Agent blocks to avoid re-running intent analysis.
+   */
+  intentAnalyzerResult?: import('./utils/intent-analyzer').IntentAnalyzerResult
 }
 
 export interface ExecutionResult {
@@ -258,7 +266,7 @@ export interface ExecutionResult {
   error?: string
   logs?: BlockLog[]
   metadata?: ExecutionMetadata
-  status?: 'completed' | 'paused' | 'cancelled'
+  status?: 'completed' | 'paused' | 'cancelled' | 'skipped'
   pausePoints?: PausePoint[]
   snapshotSeed?: SerializedSnapshot
   _streamingMetadata?: {

@@ -17,7 +17,10 @@ export async function callMemoryAPI(
   conversationId: string | undefined,
   infer: boolean,
   memoryType: 'fact' | 'conversation',
-  blockId?: string
+  blockId?: string,
+  isDeployed?: boolean,
+  workflowId?: string,
+  workspaceId?: string
 ): Promise<void> {
   try {
     const timestamp = new Date().toISOString()
@@ -28,6 +31,17 @@ export async function callMemoryAPI(
       memory_type: memoryType,
       conversation_id: memoryConversationId,
       timestamp: timestamp,
+      isDeployed: isDeployed ?? false,
+    }
+
+    // Add workflow_id to metadata if provided
+    if (workflowId) {
+      metadata.workflow_id = workflowId
+    }
+
+    // Add workspace_id to metadata if provided
+    if (workspaceId) {
+      metadata.workspace_id = workspaceId
     }
 
     // Add blockId to metadata if provided
@@ -89,7 +103,8 @@ export async function searchMemoryAPI(
   userId: string,
   filters?: Record<string, any>,
   runId?: string,
-  agentId?: string
+  agentId?: string,
+  isDeployed?: boolean
 ): Promise<any | null> {
   try {
     const payload: {
@@ -119,9 +134,22 @@ export async function searchMemoryAPI(
       payload.filters = filters
     }
 
-    payload.limit = 5
+    // Add isDeployed to filters if provided
+    if (isDeployed !== undefined) {
+      if (!payload.filters) {
+        payload.filters = {}
+      }
+      if (isDeployed === true) {
+        payload.filters.isDeployed = 'true'
+      } else {
+        payload.filters.isDeployed = 'false'
+      }
+    }
+
+    payload.limit = 20
 
     logger.debug(`[${requestId}] Calling memory search API`)
+    logger.debug('Payload:', payload)
 
     const response = await fetch(`${MEMORY_API_BASE_URL}/search`, {
       method: 'POST',
@@ -144,11 +172,7 @@ export async function searchMemoryAPI(
     }
 
     const result = await response.json()
-    logger.info(`[${requestId}] Memory search API call successful`, {
-      query,
-      userId,
-      response: result,
-    })
+    logger.info(`[${requestId}] Memory search API call successful`)
 
     return result
   } catch (error: any) {
