@@ -54,14 +54,14 @@ export class EvaluatorBlockHandler implements BlockHandler {
       responseFormat: null,
     }
 
-    logger.info('Inputs for evaluator:', inputs)
+    // logger.info('Inputs for evaluator:', inputs)
     let metrics: any[]
     if (Array.isArray(inputs.metrics)) {
       metrics = inputs.metrics
     } else {
       metrics = []
     }
-    logger.info('Metrics for evaluator:', metrics)
+    // logger.info('Metrics for evaluator:', metrics)
     const metricDescriptions = metrics
       .filter((m: any) => m?.name && m.range)
       .map((m: any) => `"${m.name}" (${m.range.min}-${m.range.max}): ${m.description || ''}`)
@@ -223,7 +223,7 @@ export class EvaluatorBlockHandler implements BlockHandler {
       return parseJSON(contentStr, {})
     } catch (error) {
       logger.error('Error parsing evaluator response:', error)
-      logger.error('Raw response content:', responseContent)
+      // logger.error('Raw response content:', responseContent)
       return {}
     }
   }

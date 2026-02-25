@@ -1,24 +1,19 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
 import { env } from '@/lib/core/config/env'
-import { getArenaTokenByWorkflowId } from '../utils/db-utils'
+import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 export async function POST(req: NextRequest) {
   const data = await req.json()
   const { workflowId, ...restData } = data
 
-  const tokenObject = await getArenaTokenByWorkflowId(workflowId)
+  const tokenObject = await getArenaToken(req, workflowId)
   if (tokenObject.found === false) {
     return NextResponse.json(
       { error: 'Failed to create task', details: tokenObject.reason },
       { status: 400 }
     )
   }
-  const { arenaToken } = tokenObject
-
-  // Get user email for createdBy if needed
-  const session = await getSession()
-  const createdBy = session?.user?.email || ''
+  const { arenaToken, email: createdBy } = tokenObject
 
   const payload = {
     ...restData,

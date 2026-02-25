@@ -71,13 +71,13 @@ export class NodeExecutionOrchestrator {
             isNestedForEachNeedingRefresh
 
           if (needsReset) {
-            logger.info('Resetting nested loop scope for new outer loop iteration', {
-              loopId,
-              loopType: existingScope.loopType,
-              isNestedForEachNeedingRefresh,
-              completedIterations: existingScope.allIterationOutputs.length,
-              maxIterations: existingScope.maxIterations || existingScope.items?.length,
-            })
+            // logger.info('Resetting nested loop scope for new outer loop iteration', {
+            //   loopId,
+            //   loopType: existingScope.loopType,
+            //   isNestedForEachNeedingRefresh,
+            //   completedIterations: existingScope.allIterationOutputs.length,
+            //   maxIterations: existingScope.maxIterations || existingScope.items?.length,
+            // })
             // Clear execution state for all nodes in the loop so they can execute again
             this.loopOrchestrator.clearLoopExecutionState(loopId)
             // Restore loop edges that may have been deactivated

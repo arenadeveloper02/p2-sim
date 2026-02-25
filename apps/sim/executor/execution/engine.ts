@@ -267,7 +267,7 @@ export class ExecutionEngine {
     if (remainingEdges && Array.isArray(remainingEdges) && remainingEdges.length > 0) {
       logger.info('Removing edges from resumed pause blocks', {
         edgeCount: remainingEdges.length,
-        edges: remainingEdges,
+        // edges: remainingEdges,
       })
 
       for (const edge of remainingEdges) {
@@ -285,7 +285,7 @@ export class ExecutionEngine {
 
       logger.info('Edge removal complete, queued ready nodes', {
         queueLength: this.readyQueue.length,
-        queuedNodes: this.readyQueue,
+        // queuedNodes: this.readyQueue,
       })
 
       return
@@ -293,7 +293,7 @@ export class ExecutionEngine {
 
     if (pendingBlocks && pendingBlocks.length > 0) {
       logger.info('Initializing queue from pending blocks (resume mode)', {
-        pendingBlocks,
+        // pendingBlocks,
         allowResumeTriggers: this.allowResumeTriggers,
         dagNodeCount: this.dag.nodes.size,
       })
@@ -304,7 +304,7 @@ export class ExecutionEngine {
 
       logger.info('Pending blocks queued', {
         queueLength: this.readyQueue.length,
-        queuedNodes: this.readyQueue,
+        // queuedNodes: this.readyQueue,
       })
 
       this.context.metadata.pendingBlocks = []
@@ -527,7 +527,6 @@ export class ExecutionEngine {
       nodeId,
       outgoingEdgesCount: node.outgoingEdges.size,
       readyNodesCount: readyNodes.length,
-      readyNodes,
       isResponseBlock,
       isInsideLoop,
     })
@@ -568,7 +567,7 @@ export class ExecutionEngine {
                 sentinelEndId,
                 hadEdgeToSentinelEnd: node.outgoingEdges.size > 0,
                 incomingEdgesCount: sentinelEndNode.incomingEdges.size,
-                incomingEdges: Array.from(sentinelEndNode.incomingEdges),
+                // incomingEdges: Array.from(sentinelEndNode.incomingEdges),
               }
             )
             // Force trigger the sentinel end - terminal block completion means iteration is done
@@ -581,7 +580,9 @@ export class ExecutionEngine {
     if (this.context.pendingDynamicNodes && this.context.pendingDynamicNodes.length > 0) {
       const dynamicNodes = this.context.pendingDynamicNodes
       this.context.pendingDynamicNodes = []
-      logger.info('Adding dynamically expanded parallel nodes', { dynamicNodes })
+      logger.info('Adding dynamically expanded parallel nodes count ', {
+        dynamicNodesCount: dynamicNodes.length,
+      })
       this.addMultipleToQueue(dynamicNodes)
     }
   }

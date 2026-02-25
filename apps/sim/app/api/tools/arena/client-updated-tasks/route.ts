@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/core/config/env'
-import { getArenaTokenByWorkflowId } from '../utils/db-utils'
+import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 const logger = createLogger('ArenaClientUpdatedTasksAPI')
 
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid pageSize' }, { status: 400 })
   }
 
-  const tokenObject = await getArenaTokenByWorkflowId(workflowId)
+  const tokenObject = await getArenaToken(req, workflowId)
   if (tokenObject.found === false) {
     return NextResponse.json(
       { error: 'Failed to get updated tasks', details: tokenObject.reason },

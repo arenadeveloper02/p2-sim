@@ -50,10 +50,20 @@ export const createSpreadsheetV2Tool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'The time zone of the spreadsheet (e.g., "America/New_York")',
     },
+    parentFolderId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Google Drive folder ID to create the spreadsheet inside. Omit to create in Drive root.',
+    },
   },
 
   request: {
-    url: () => 'https://sheets.googleapis.com/v4/spreadsheets',
+    url: (params) =>
+      params.parentFolderId?.trim()
+        ? '/api/tools/google_sheets/create_spreadsheet'
+        : 'https://sheets.googleapis.com/v4/spreadsheets',
     method: 'POST',
     headers: (params) => {
       if (!params.accessToken) {
@@ -69,6 +79,19 @@ export const createSpreadsheetV2Tool: ToolConfig<
       const title = params.title?.trim()
       if (!title) {
         throw new Error('Spreadsheet title is required')
+      }
+
+      const useInternalApi = Boolean(params.parentFolderId?.trim())
+
+      if (useInternalApi) {
+        return JSON.stringify({
+          title,
+          sheetTitles: params.sheetTitles ?? ['Sheet1'],
+          locale: params.locale || undefined,
+          timeZone: params.timeZone || undefined,
+          parentFolderId: params.parentFolderId?.trim(),
+          accessToken: params.accessToken,
+        })
       }
 
       const sheetTitles = params.sheetTitles ?? ['Sheet1']
@@ -101,19 +124,20 @@ export const createSpreadsheetV2Tool: ToolConfig<
   transformResponse: async (response: Response) => {
     const data = await response.json()
 
+    const output = data.output ?? data
     const sheets =
-      data.sheets?.map((sheet: any) => ({
-        sheetId: sheet.properties?.sheetId ?? 0,
-        title: sheet.properties?.title ?? '',
-        index: sheet.properties?.index ?? 0,
+      output.sheets?.map((sheet: any) => ({
+        sheetId: sheet.sheetId ?? sheet.properties?.sheetId ?? 0,
+        title: sheet.title ?? sheet.properties?.title ?? '',
+        index: sheet.index ?? sheet.properties?.index ?? 0,
       })) ?? []
 
     return {
       success: true,
       output: {
-        spreadsheetId: data.spreadsheetId ?? '',
-        title: data.properties?.title ?? '',
-        spreadsheetUrl: data.spreadsheetUrl ?? '',
+        spreadsheetId: output.spreadsheetId ?? '',
+        title: output.title ?? '',
+        spreadsheetUrl: output.spreadsheetUrl ?? '',
         sheets,
       },
     }
