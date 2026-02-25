@@ -59,6 +59,14 @@ export interface OAuthConfig {
   useUserToken?: boolean // Indicates if the tool requires a user token (xoxp-) instead of a bot token (xoxb-)
 }
 
+export interface ToolRetryConfig {
+  enabled: boolean
+  maxRetries?: number
+  initialDelayMs?: number
+  maxDelayMs?: number
+  retryIdempotentOnly?: boolean
+}
+
 export interface ToolConfig<P = any, R = any> {
   // Basic tool identification
   id: string
@@ -118,6 +126,7 @@ export interface ToolConfig<P = any, R = any> {
     body?: (params: P) => Record<string, any> | string | FormData | undefined
     /** Timeout in ms for external HTTP requests (default 30000). Use higher values for slow APIs (e.g. image generation). */
     timeout?: number
+    retry?: ToolRetryConfig
   }
 
   // Post-processing (optional) - allows additional processing after the initial request
