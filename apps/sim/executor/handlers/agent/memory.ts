@@ -255,8 +255,16 @@ export class Memory {
       // Only send the current turn: last user message + assistant message
       const currentTurnMessages: Message[] = [userMessage, assistantMessage]
 
+      const currentTurnFactMessages: Message[] = [userMessage]
+
       // Convert Message[] to the format expected by callMemoryAPI
       const messagesForAPI = currentTurnMessages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }))
+
+      // Convert Message[] to the format expected by callMemoryAPI
+      const factMessagesForAPI = currentTurnFactMessages.map((msg) => ({
         role: msg.role,
         content: msg.content,
       }))
@@ -274,7 +282,7 @@ export class Memory {
       try {
         await callMemoryAPI(
           requestId,
-          messagesForAPI,
+          factMessagesForAPI,
           ctx.userId,
           chatId,
           inputs.conversationId, // Can be undefined, Mem0 will handle it
