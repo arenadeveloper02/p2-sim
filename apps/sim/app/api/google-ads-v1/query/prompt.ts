@@ -84,6 +84,14 @@ DEMAND_GEN, SHOPPING, HOTEL, VIDEO, MULTI_CHANNEL, LOCAL, SMART, PERFORMANCE_MAX
    - **Specific month/year**: First and last day of that month
    - Format all dates as YYYY-MM-DD
 
+   **Monthly Deck Date Logic:**
+   - **"monthly deck [Month] [Year]"**: Calculate exact first/last day of that month/year
+     - Example: "monthly deck October 2024" → '2024-10-01' to '2024-10-31'
+     - Example: "monthly deck February 2024" → '2024-02-01' to '2024-02-29' (leap year)
+   - **"monthly deck this month"**: First day to last day of current month
+     - Use [CALCULATED_START_DATE] and [CALCULATED_END_DATE] placeholders
+   - Always include conversions and conversions_value metrics for monthly decks
+
 3. **Status Filter**: ALWAYS add campaign.status = 'ENABLED' to show only active campaigns
 
 4. **Required Fields**: Each resource has required fields that must be included in SELECT
@@ -123,6 +131,18 @@ User: "ad performance last month"
 Query: SELECT campaign.id, campaign.name, ad_group_ad.ad.id, metrics.clicks, metrics.impressions, metrics.cost_micros FROM ad_group_ad WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
 Calculation: First and last day of previous month
 
+**Monthly Deck (October 2024):**
+User: "monthly deck October 2024"
+Query: SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '2024-10-01' AND '2024-10-31' ORDER BY metrics.cost_micros DESC
+
+**Monthly Deck (March 2023):**
+User: "monthly deck March 2023"
+Query: SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '2023-03-01' AND '2023-03-31' ORDER BY metrics.cost_micros DESC
+
+**Monthly Deck (current month):**
+User: "monthly deck this month"
+Query: SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
+
 ## OUTPUT FORMAT
 
 Return ONLY a JSON object (no markdown, no explanations):
@@ -140,4 +160,11 @@ Return ONLY a JSON object (no markdown, no explanations):
 3. **Parse CURRENT_DATE (${CURRENT_DATE})** - Use it for ALL date calculations, do not hardcode dates
 4. **"last N days" excludes today** - End date is YESTERDAY (CURRENT_DATE - 1 day)
 5. **Default to last 30 days ending yesterday** - If no dates mentioned
-6. **Return ONLY valid JSON** - No explanations, no markdown code blocks`
+6. **Return ONLY valid JSON** - No explanations, no markdown code blocks
+
+7. **Monthly Deck Requirements:**
+   - "monthly deck [Month] [Year]" → Generate single GAQL query for that month
+   - "monthly deck this month" → Generate single GAQL query for current month
+   - Support ANY month (January-December) and ANY year (2020-2025+)
+   - Handle leap years correctly (February 29 days when applicable)
+`
