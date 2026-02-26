@@ -28,6 +28,10 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
         { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
         { label: 'List Recordings', id: 'zoom_list_recordings' },
         { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
+        {
+          label: 'Get Account Recordings with Transcript',
+          id: 'zoom_get_account_recordings_with_transcript',
+        },
         { label: 'Get Meeting Recordings', id: 'zoom_get_meeting_recordings' },
         { label: 'Download Transcript/File', id: 'zoom_download_transcript' },
         { label: 'Delete Recording', id: 'zoom_delete_recording' },
@@ -318,7 +322,11 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'yyyy-mm-dd (within last 6 months, max 30 days from "To Date")',
       condition: {
         field: 'operation',
-        value: ['zoom_list_recordings', 'zoom_list_account_recordings'],
+        value: [
+          'zoom_list_recordings',
+          'zoom_list_account_recordings',
+          'zoom_get_account_recordings_with_transcript',
+        ],
       },
       wandConfig: {
         enabled: true,
@@ -343,7 +351,11 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       placeholder: 'yyyy-mm-dd (date range must not exceed 30 days)',
       condition: {
         field: 'operation',
-        value: ['zoom_list_recordings', 'zoom_list_account_recordings'],
+        value: [
+          'zoom_list_recordings',
+          'zoom_list_account_recordings',
+          'zoom_get_account_recordings_with_transcript',
+        ],
       },
       wandConfig: {
         enabled: true,
@@ -359,6 +371,17 @@ Examples:
 Return ONLY the date string - no explanations, no quotes, no extra text.`,
         placeholder: 'Describe the end date (e.g., "today", "yesterday")...',
         generationType: 'timestamp',
+      },
+    },
+    // Meeting title filter for transcript operation
+    {
+      id: 'meetingTitle',
+      title: 'Meeting Title',
+      type: 'short-input',
+      placeholder: 'Filter by meeting topic/title (optional)',
+      condition: {
+        field: 'operation',
+        value: ['zoom_get_account_recordings_with_transcript'],
       },
     },
     // Recording ID for delete
@@ -430,6 +453,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       'zoom_get_meeting_invitation',
       'zoom_list_recordings',
       'zoom_list_account_recordings',
+      'zoom_get_account_recordings_with_transcript',
       'zoom_download_transcript',
       'zoom_get_meeting_recordings',
       'zoom_delete_recording',
@@ -556,6 +580,16 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
               nextPageToken: params.nextPageToken,
             }
 
+          case 'zoom_get_account_recordings_with_transcript':
+            return {
+              ...baseParams,
+              from: params.fromDate,
+              to: params.toDate,
+              pageSize: params.pageSize ? Number(params.pageSize) : undefined,
+              nextPageToken: params.nextPageToken,
+              meetingTitle: params.meetingTitle,
+            }
+
           case 'zoom_get_meeting_recordings':
             if (!params.meetingId?.trim()) {
               throw new Error('Meeting ID is required.')
@@ -628,6 +662,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     cancelMeetingReminder: { type: 'boolean', description: 'Send cancellation email' },
     fromDate: { type: 'string', description: 'Start date for recordings list (yyyy-mm-dd)' },
     toDate: { type: 'string', description: 'End date for recordings list (yyyy-mm-dd)' },
+    meetingTitle: { type: 'string', description: 'Filter recordings by meeting topic/title' },
     recordingId: { type: 'string', description: 'Specific recording file ID' },
     deleteAction: { type: 'string', description: 'Delete action (trash or delete)' },
     downloadUrl: { type: 'string', description: 'Download URL for transcript or recording file' },
