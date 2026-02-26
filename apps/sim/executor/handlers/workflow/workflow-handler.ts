@@ -63,6 +63,7 @@ export class WorkflowBlockHandler implements BlockHandler {
       branchTotal?: number
       originalBlockId?: string
       isLoopNode?: boolean
+      executionOrder?: number
     }
   ): Promise<BlockOutput | StreamingExecution> {
     return this._executeCore(ctx, block, inputs, nodeMetadata)
@@ -80,6 +81,7 @@ export class WorkflowBlockHandler implements BlockHandler {
       branchTotal?: number
       originalBlockId?: string
       isLoopNode?: boolean
+      executionOrder?: number
     }
   ): Promise<BlockOutput | StreamingExecution> {
     logger.info(`Executing workflow block: ${block.id}`)
@@ -170,7 +172,12 @@ export class WorkflowBlockHandler implements BlockHandler {
         const iterationContext = nodeMetadata
           ? this.getIterationContext(ctx, nodeMetadata)
           : undefined
-        ctx.onChildWorkflowInstanceReady?.(effectiveBlockId, instanceId, iterationContext)
+        ctx.onChildWorkflowInstanceReady?.(
+          effectiveBlockId,
+          instanceId,
+          iterationContext,
+          nodeMetadata?.executionOrder
+        )
       }
 
       const subExecutor = new Executor({
