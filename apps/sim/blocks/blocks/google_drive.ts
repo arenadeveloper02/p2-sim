@@ -139,6 +139,7 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       type: 'file-selector',
       canonicalParamId: 'uploadFolderId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -211,6 +212,7 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       type: 'file-selector',
       canonicalParamId: 'createFolderParentId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -237,6 +239,7 @@ Return ONLY the file content - no explanations, no markdown code blocks, no extr
       type: 'file-selector',
       canonicalParamId: 'listFolderId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -295,6 +298,7 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       type: 'file-selector',
       canonicalParamId: 'downloadFileId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -399,6 +403,7 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       type: 'file-selector',
       canonicalParamId: 'getFileId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -426,6 +431,7 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       type: 'file-selector',
       canonicalParamId: 'copyFileId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -459,6 +465,7 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       type: 'file-selector',
       canonicalParamId: 'copyDestFolderId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -485,6 +492,7 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       type: 'file-selector',
       canonicalParamId: 'updateFileId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -563,6 +571,7 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
       type: 'file-selector',
       canonicalParamId: 'trashFileId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -590,6 +599,7 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
       type: 'file-selector',
       canonicalParamId: 'deleteFileId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -617,6 +627,7 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
       type: 'file-selector',
       canonicalParamId: 'shareFileId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -731,6 +742,7 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
       type: 'file-selector',
       canonicalParamId: 'unshareFileId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
@@ -766,6 +778,7 @@ Return ONLY the message text - no subject line, no greetings/signatures, no extr
       type: 'file-selector',
       canonicalParamId: 'listPermissionsFileId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',

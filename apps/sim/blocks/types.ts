@@ -1,5 +1,6 @@
 import type { JSX, SVGProps } from 'react'
 import type { ImageProps } from 'next/image'
+import type { SelectorKey } from '@/hooks/selectors/types'
 import type { ToolResponse } from '@/tools/types'
 
 export type BlockIcon =
@@ -303,6 +304,9 @@ export interface SubBlockConfig {
   requiredScopes?: string[]
   // Whether this credential selector supports credential sets (for trigger blocks)
   supportsCredentialSets?: boolean
+  // Selector properties — declarative mapping to a SelectorKey
+  selectorKey?: SelectorKey
+  selectorAllowSearch?: boolean
   // File selector specific properties
   mimeType?: string
   // File upload specific properties
