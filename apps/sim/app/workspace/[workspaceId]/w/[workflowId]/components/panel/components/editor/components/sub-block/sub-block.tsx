@@ -18,15 +18,16 @@ import {
   ComboBox,
   ConditionInput,
   CredentialSelector,
+<<<<<<< HEAD
   DateInput,
   DocumentSelector,
+=======
+>>>>>>> 49db3ca50 (improvement(selectors): consolidate selector input logic (#3375))
   DocumentTagEntry,
   Dropdown,
   EvalInput,
-  FileSelectorInput,
   FileUpload,
   FilterBuilder,
-  FolderSelectorInput,
   GroupedCheckboxList,
   InputFormat,
   InputMapping,
@@ -37,15 +38,18 @@ import {
   McpServerSelector,
   McpToolSelector,
   MessagesInput,
-  ProjectSelectorInput,
   ResponseFormat,
   ScheduleInfo,
-  SheetSelectorInput,
+  SelectorInput,
+  type SelectorOverrides,
   ShortInput,
   SkillInput,
+<<<<<<< HEAD
   SlackDateInput,
   SlackDateRangeSelector,
   SlackSelectorInput,
+=======
+>>>>>>> 49db3ca50 (improvement(selectors): consolidate selector input logic (#3375))
   SliderInput,
   SortBuilder,
   Switch,
@@ -72,6 +76,23 @@ import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-s
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector/index'
 import { SlackChannelSelector } from './components/slack-channel-selector/index'
 import { SlackClientSelector } from './components/slack-client-selector/index'
+
+const SLACK_OVERRIDES: SelectorOverrides = {
+  transformContext: (context, deps) => {
+    const authMethod = deps.authMethod as string
+    const credentialId =
+      authMethod === 'bot_token' ? String(deps.botToken ?? '') : String(deps.credential ?? '')
+    return { ...context, credentialId }
+  },
+}
+
+const FOLDER_OVERRIDES: SelectorOverrides = {
+  getDefaultValue: (subBlock) => {
+    const isGmail = subBlock.serviceId === 'gmail'
+    const isCopyDest = subBlock.canonicalParamId === 'copyDestinationId'
+    return isGmail && !isCopyDest ? 'INBOX' : null
+  },
+}
 
 /**
  * Interface for wand control handlers exposed by sub-block inputs
@@ -986,32 +1007,10 @@ function SubBlockComponent({
         )
 
       case 'file-selector':
-        return (
-          <FileSelectorInput
-            blockId={blockId}
-            subBlock={config}
-            disabled={isDisabled}
-            isPreview={isPreview}
-            previewValue={previewValue}
-            previewContextValues={contextValues}
-          />
-        )
-
       case 'sheet-selector':
-        return (
-          <SheetSelectorInput
-            blockId={blockId}
-            subBlock={config}
-            disabled={isDisabled}
-            isPreview={isPreview}
-            previewValue={previewValue}
-            previewContextValues={contextValues}
-          />
-        )
-
       case 'project-selector':
         return (
-          <ProjectSelectorInput
+          <SelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}
@@ -1023,13 +1022,14 @@ function SubBlockComponent({
 
       case 'folder-selector':
         return (
-          <FolderSelectorInput
+          <SelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
             previewContextValues={contextValues}
+            overrides={FOLDER_OVERRIDES}
           />
         )
 
@@ -1070,12 +1070,12 @@ function SubBlockComponent({
 
       case 'document-selector':
         return (
-          <DocumentSelector
+          <SelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}
             isPreview={isPreview}
-            previewValue={previewValue as any}
+            previewValue={previewValue}
             previewContextValues={contextValues}
           />
         )
@@ -1153,13 +1153,14 @@ function SubBlockComponent({
       case 'channel-selector':
       case 'user-selector':
         return (
-          <SlackSelectorInput
+          <SelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
             previewContextValues={contextValues}
+            overrides={SLACK_OVERRIDES}
           />
         )
 

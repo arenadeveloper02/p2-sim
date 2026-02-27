@@ -90,6 +90,7 @@ export const KnowledgeBlock: BlockConfig = {
       title: 'Tag Filters',
       type: 'knowledge-tag-filters',
       placeholder: 'Add tag filters',
+      dependsOn: ['knowledgeBaseSelector'],
       condition: { field: 'operation', value: 'search' },
     },
     {
@@ -133,6 +134,7 @@ export const KnowledgeBlock: BlockConfig = {
       id: 'documentTags',
       title: 'Document Tags',
       type: 'document-tag-entry',
+      dependsOn: ['knowledgeBaseSelector'],
       condition: { field: 'operation', value: 'create_document' },
     },
   ],
