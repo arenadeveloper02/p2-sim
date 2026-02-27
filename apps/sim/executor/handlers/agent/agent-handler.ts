@@ -1136,7 +1136,8 @@ export class AgentBlockHandler implements BlockHandler {
 
         // Priority 1: Add last conversation first (highest priority, most recent)
         if (lastConversation) {
-          const lastConvHeader = '\n=== LAST CONVERSATION (MOST RECENT) === :\n'
+          const lastConvHeader =
+            '\n=== LAST CONVERSATION (This conversation is the most recent one and cab be used to answer the current user question, if the user question is a follow up question to the last conversation) === :\n'
           const lastConvHeaderTokens = getAccurateTokenCount(lastConvHeader, inputs.model)
 
           if (currentTokenCount + lastConvHeaderTokens <= tokenLimit) {
