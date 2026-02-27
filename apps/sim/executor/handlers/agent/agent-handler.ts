@@ -306,7 +306,7 @@ export class AgentBlockHandler implements BlockHandler {
       if (factMemories && factMemories.length > 0) {
         const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
 
-        const factMemoriesPrompt = `\n\=== USER FACTS : ===\n${factMemoriesText}`
+        const factMemoriesPrompt = `\n\=== USER FACTS (A User Facts are an explicitly stated, long-term, and reusable detail about who the user is, how they typically work, or what they consistently prefer, used only to personalize responses) : ===\n${factMemoriesText}`
 
         // Append to existing system prompt or create new one
         if (filteredInputs.systemPrompt) {
@@ -1136,7 +1136,8 @@ export class AgentBlockHandler implements BlockHandler {
 
         // Priority 1: Add last conversation first (highest priority, most recent)
         if (lastConversation) {
-          const lastConvHeader = '\n=== LAST CONVERSATION (MOST RECENT) === :\n'
+          const lastConvHeader =
+            '\n=== LAST CONVERSATION (This conversation is the most recent one and cab be used to answer the current user question, if the user question is a follow up question to the last conversation) === :\n'
           const lastConvHeaderTokens = getAccurateTokenCount(lastConvHeader, inputs.model)
 
           if (currentTokenCount + lastConvHeaderTokens <= tokenLimit) {
