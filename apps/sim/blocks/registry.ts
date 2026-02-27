@@ -89,6 +89,7 @@ import { LemlistBlock } from '@/blocks/blocks/lemlist'
 import { LinearBlock } from '@/blocks/blocks/linear'
 import { LinkedInBlock } from '@/blocks/blocks/linkedin'
 import { LinkupBlock } from '@/blocks/blocks/linkup'
+import { LoopsBlock } from '@/blocks/blocks/loops'
 import { LumaBlock } from '@/blocks/blocks/luma'
 import { MailchimpBlock } from '@/blocks/blocks/mailchimp'
 import { MailgunBlock } from '@/blocks/blocks/mailgun'
@@ -296,6 +297,7 @@ export const registry: Record<string, BlockConfig> = {
   linkedin: LinkedInBlock,
   linkup: LinkupBlock,
   presentation: PresentationBlock,
+  loops: LoopsBlock,
   luma: LumaBlock,
   mailchimp: MailchimpBlock,
   mailgun: MailgunBlock,
