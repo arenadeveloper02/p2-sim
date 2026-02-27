@@ -378,7 +378,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       id: 'meetingTitle',
       title: 'Meeting Title',
       type: 'short-input',
-      placeholder: 'Filter by meeting topic/title (optional)',
+      placeholder: 'Comma-separated meeting titles (optional)',
       condition: {
         field: 'operation',
         value: ['zoom_get_account_recordings_with_transcript'],

@@ -31,6 +31,16 @@ export const zoomGetAccountRecordingsWithTranscriptTool: ToolConfig<
   description: 'Get all account recordings with transcripts, optionally filtered by meeting title',
   version: '1.0.0',
 
+  // Dummy request configuration (not used because we rely on directExecution)
+  // Required to satisfy ToolConfig type which expects a request object.
+  request: {
+    url: () => 'https://api.zoom.us/v2/accounts/me/recordings',
+    method: () => 'GET',
+    headers: () => ({
+      'Content-Type': 'application/json',
+    }),
+  },
+
   oauth: {
     required: true,
     provider: 'zoom',
@@ -72,7 +82,8 @@ export const zoomGetAccountRecordingsWithTranscriptTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter recordings by meeting topic/title (case-insensitive partial match)',
+      description:
+        'Filter recordings by meeting topic/title. Supports comma-separated list for matching multiple titles (case-insensitive, partial match).',
     },
   },
 
@@ -158,16 +169,29 @@ export const zoomGetAccountRecordingsWithTranscriptTool: ToolConfig<
 
       logger.info(`Fetched ${allRecordings.length} total recordings`)
 
-      // Step 2: Filter by meetingTitle if provided
+      // Step 2: Filter by meetingTitle if provided (supports comma-separated list)
       if (params.meetingTitle) {
-        const titleFilter = params.meetingTitle.toLowerCase().trim()
-        allRecordings = allRecordings.filter((recording) => {
-          const topic = (recording.topic || '').toLowerCase()
-          return topic.includes(titleFilter)
-        })
-        logger.info(`Filtered to ${allRecordings.length} recordings matching title`, {
-          meetingTitle: params.meetingTitle,
-        })
+        const rawTitleFilter = params.meetingTitle
+        const titleFilters = rawTitleFilter
+          .split(',')
+          .map((title) => title.trim().toLowerCase())
+          .filter((title) => title.length > 0)
+
+        if (titleFilters.length > 0) {
+          allRecordings = allRecordings.filter((recording) => {
+            const topic = (recording.topic || '').toLowerCase()
+            return titleFilters.some((filter) => topic.includes(filter))
+          })
+
+          logger.info(`Filtered to ${allRecordings.length} recordings matching meeting titles`, {
+            meetingTitle: rawTitleFilter,
+            parsedTitles: titleFilters,
+          })
+        } else {
+          logger.warn('meetingTitle was provided but no valid titles were parsed after splitting', {
+            meetingTitle: rawTitleFilter,
+          })
+        }
       }
 
       // Step 3: Filter recordings that have TRANSCRIPT in recording_files
