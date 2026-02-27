@@ -91,14 +91,44 @@ export class Memory {
         return []
       }
 
+      // Filter results by score threshold
+      // 1. Ignore results where score = 0
+      // 2. Ignore results where score > 0.80 (threshold)
+      const SCORE_THRESHOLD = 0.8
+
+      // Extract original count for logging
+      let originalCount = 0
+      if (Array.isArray(searchResults)) {
+        originalCount = searchResults.length
+      } else if (searchResults?.results && Array.isArray(searchResults.results)) {
+        originalCount = searchResults.results.length
+      } else if (searchResults?.memories && Array.isArray(searchResults.memories)) {
+        originalCount = searchResults.memories.length
+      } else if (searchResults?.data && Array.isArray(searchResults.data)) {
+        originalCount = searchResults.data.length
+      }
+
+      const filteredSearchResults = this.filterResultsByThreshold(searchResults, SCORE_THRESHOLD)
+
+      // Extract filtered count for logging
+      let filteredCount = 0
+      if (Array.isArray(filteredSearchResults)) {
+        filteredCount = filteredSearchResults.length
+      } else if (filteredSearchResults?.results && Array.isArray(filteredSearchResults.results)) {
+        filteredCount = filteredSearchResults.results.length
+      } else if (filteredSearchResults?.memories && Array.isArray(filteredSearchResults.memories)) {
+        filteredCount = filteredSearchResults.memories.length
+      } else if (filteredSearchResults?.data && Array.isArray(filteredSearchResults.data)) {
+        filteredCount = filteredSearchResults.data.length
+      }
+
       // Convert search results to Message[] format
-      const messages = this.convertSearchResultsToMessages(searchResults)
+      const messages = this.convertSearchResultsToMessages(filteredSearchResults)
 
       logger.debug('Converted search results to messages', {
         requestId,
-        inputResultsCount: Array.isArray(searchResults)
-          ? searchResults.length
-          : searchResults?.results?.length || 0,
+        originalResultsCount: originalCount,
+        filteredResultsCount: filteredCount,
         outputMessageCount: messages.length,
       })
 
@@ -106,6 +136,60 @@ export class Memory {
     } catch (error) {
       logger.error('Failed to search memories:', error)
       return []
+    }
+  }
+
+  /**
+   * Filter search results by score threshold
+   * 1. Ignore results where score = 0
+   * 2. Ignore results where score > threshold
+   * Preserves the original response structure
+   */
+  private filterResultsByThreshold(searchResults: any, threshold: number): any {
+    try {
+      // Handle different possible response structures
+      let results: any[] = []
+      let originalStructure: 'array' | 'results' | 'memories' | 'data' = 'array'
+
+      if (Array.isArray(searchResults)) {
+        results = searchResults
+        originalStructure = 'array'
+      } else if (searchResults.results && Array.isArray(searchResults.results)) {
+        results = searchResults.results
+        originalStructure = 'results'
+      } else if (searchResults.memories && Array.isArray(searchResults.memories)) {
+        results = searchResults.memories
+        originalStructure = 'memories'
+      } else if (searchResults.data && Array.isArray(searchResults.data)) {
+        results = searchResults.data
+        originalStructure = 'data'
+      }
+
+      // Filter results by score threshold
+      const filteredResults = results.filter((result) => {
+        const score = result.score ?? 1.0 // Default to 1.0 if score is missing
+        return score !== 0 && score <= threshold
+      })
+
+      // Reconstruct the response in the same format
+      if (originalStructure === 'array') {
+        return filteredResults
+      }
+      if (originalStructure === 'results') {
+        return { ...searchResults, results: filteredResults }
+      }
+      if (originalStructure === 'memories') {
+        return { ...searchResults, memories: filteredResults }
+      }
+      if (originalStructure === 'data') {
+        return { ...searchResults, data: filteredResults }
+      }
+
+      // Fallback: return original if structure is unknown
+      return searchResults
+    } catch (error) {
+      logger.error('Error filtering search results by threshold:', error)
+      return searchResults
     }
   }
 
