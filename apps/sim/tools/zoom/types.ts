@@ -320,6 +320,23 @@ export interface ZoomDownloadTranscriptResponse extends ToolResponse {
   }
 }
 
+// Get Account Recordings with Transcript tool types
+export interface ZoomGetAccountRecordingsWithTranscriptParams
+  extends ZoomListAccountRecordingsParams {
+  meetingTitle?: string
+}
+
+export interface ZoomGetAccountRecordingsWithTranscriptResponse extends ToolResponse {
+  output: {
+    recordings: Array<{
+      topic: string
+      start_time: string
+      transcript_download_url: string
+      content: string
+    }>
+  }
+}
+
 // Combined response type for block
 export type ZoomResponse =
   | ZoomCreateMeetingResponse
@@ -330,6 +347,7 @@ export type ZoomResponse =
   | ZoomGetMeetingInvitationResponse
   | ZoomListRecordingsResponse
   | ZoomListAccountRecordingsResponse
+  | ZoomGetAccountRecordingsWithTranscriptResponse
   | ZoomGetMeetingRecordingsResponse
   | ZoomDeleteRecordingResponse
   | ZoomListPastParticipantsResponse
