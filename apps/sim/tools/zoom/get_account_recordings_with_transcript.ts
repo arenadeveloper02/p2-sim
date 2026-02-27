@@ -228,7 +228,7 @@ export const zoomGetAccountRecordingsWithTranscriptTool: ToolConfig<
 
         logger.info(`Downloading transcript ${i + 1}/${recordingsWithTranscript.length}`, {
           topic: recording.topic,
-          downloadUrl: transcriptFile.download_url.substring(0, 100) + '...',
+          downloadUrl: `${transcriptFile.download_url.substring(0, 100)}...`,
         })
 
         try {
