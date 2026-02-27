@@ -54,6 +54,7 @@ import { GoogleAdsV1Block } from '@/blocks/blocks/google_ads_v1'
 import { GoogleBigQueryBlock } from '@/blocks/blocks/google_bigquery'
 import { GoogleBooksBlock } from '@/blocks/blocks/google_books'
 import { GoogleCalendarBlock, GoogleCalendarV2Block } from '@/blocks/blocks/google_calendar'
+import { GoogleContactsBlock } from '@/blocks/blocks/google_contacts'
 import { GoogleDocsBlock } from '@/blocks/blocks/google_docs'
 import { GoogleDriveBlock } from '@/blocks/blocks/google_drive'
 import { GoogleFormsBlock } from '@/blocks/blocks/google_forms'
@@ -254,6 +255,7 @@ export const registry: Record<string, BlockConfig> = {
   google_calendar: GoogleCalendarBlock,
   google_calendar_v2: GoogleCalendarV2Block,
   google_books: GoogleBooksBlock,
+  google_contacts: GoogleContactsBlock,
   google_docs: GoogleDocsBlock,
   google_drive: GoogleDriveBlock,
   google_forms: GoogleFormsBlock,
