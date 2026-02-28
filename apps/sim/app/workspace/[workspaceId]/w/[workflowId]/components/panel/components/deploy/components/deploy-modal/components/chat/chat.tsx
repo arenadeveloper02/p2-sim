@@ -130,7 +130,6 @@ export function ChatDeploy({
   chatAlreadyExists,
 }: ChatDeployProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
   const [internalShowDeleteConfirmation, setInternalShowDeleteConfirmation] = useState(false)
 
   const showDeleteConfirmation =
@@ -328,13 +327,20 @@ export function ChatDeploy({
 
     setChatSubmitting(true)
 
+    const isNewChat = !existingChat?.id
+
+    // Open window before async operation to avoid popup blockers
+    const newTab = isNewChat ? window.open('', '_blank') : null
+
     try {
       if (!validateForm(!!existingChat)) {
+        newTab?.close()
         setChatSubmitting(false)
         return
       }
 
       if (!isIdentifierValid && formData.identifier !== existingChat?.identifier) {
+        newTab?.close()
         setError('identifier', 'Please wait for identifier validation to complete')
         setChatSubmitting(false)
         return
@@ -370,6 +376,7 @@ export function ChatDeploy({
       await onRefetchChat()
       setHasInitializedForm(false)
     } catch (error: any) {
+      newTab?.close()
       if (error.message?.includes('identifier')) {
         setError('identifier', error.message)
       } else {
@@ -384,8 +391,6 @@ export function ChatDeploy({
     if (!existingChat || !existingChat.id) return
 
     try {
-      setIsDeleting(true)
-
       await deleteChatMutation.mutateAsync({
         chatId: existingChat.id,
         workflowId,
@@ -393,6 +398,7 @@ export function ChatDeploy({
 
       setImageUrl(null)
       setHasInitializedForm(false)
+      setFormInitCounter((c) => c + 1)
       await onRefetchChat()
 
       onDeploymentComplete?.()
@@ -400,7 +406,6 @@ export function ChatDeploy({
       logger.error('Failed to delete chat:', error)
       setError('general', error.message || 'An unexpected error occurred while deleting')
     } finally {
-      setIsDeleting(false)
       setShowDeleteConfirmation(false)
     }
   }
@@ -502,7 +507,7 @@ export function ChatDeploy({
           </div>
 
           <AuthSelector
-            key={existingChat?.id ?? 'new'}
+            key={`${existingChat?.id ?? 'new'}-${formInitCounter}`}
             authType={formData.authType}
             password={formData.password}
             emails={formData.emails}
@@ -590,7 +595,7 @@ export function ChatDeploy({
             <Button
               variant='default'
               onClick={() => setShowDeleteConfirmation(false)}
-              disabled={isDeleting}
+              disabled={deleteChatMutation.isPending}
             >
               Cancel
             </Button>
@@ -865,7 +870,6 @@ function AuthSelector({
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     setCopySuccess(true)
-    setTimeout(() => setCopySuccess(false), 2000)
   }
 
   const addEmail = async (email: string): Promise<boolean> => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -122,6 +122,7 @@ export function DeployModal({
   const [showA2aDeleteConfirm, setShowA2aDeleteConfirm] = useState(false)
 
   const [chatSuccess, setChatSuccess] = useState(false)
+  const chatSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [isCreateKeyModalOpen, setIsCreateKeyModalOpen] = useState(false)
   const [isApiInfoModalOpen, setIsApiInfoModalOpen] = useState(false)
@@ -241,6 +242,12 @@ export function DeployModal({
       setActiveTab('general')
       setDeployError(null)
       setDeployWarnings([])
+      setChatSuccess(false)
+    }
+    return () => {
+      if (chatSuccessTimeoutRef.current) {
+        clearTimeout(chatSuccessTimeoutRef.current)
+      }
     }
   }, [open, workflowId])
 
@@ -391,15 +398,16 @@ export function DeployModal({
   const handleChatDeployed = useCallback(async () => {
     if (!workflowId) return
 
-    queryClient.invalidateQueries({ queryKey: deploymentKeys.info(workflowId) })
     queryClient.invalidateQueries({ queryKey: deploymentKeys.versions(workflowId) })
-    queryClient.invalidateQueries({ queryKey: deploymentKeys.chatStatus(workflowId) })
 
     await refetchDeployedState()
     useWorkflowRegistry.getState().setWorkflowNeedsRedeployment(workflowId, false)
 
+    if (chatSuccessTimeoutRef.current) {
+      clearTimeout(chatSuccessTimeoutRef.current)
+    }
     setChatSuccess(true)
-    setTimeout(() => setChatSuccess(false), 2000)
+    chatSuccessTimeoutRef.current = setTimeout(() => setChatSuccess(false), 2000)
   }, [workflowId, queryClient, refetchDeployedState])
 
   const handleRefetchChat = useCallback(async () => {
@@ -424,6 +432,7 @@ export function DeployModal({
         form.requestSubmit()
       }
     }
+    form?.requestSubmit()
   }, [])
 
   const handleChatDelete = useCallback(() => {
