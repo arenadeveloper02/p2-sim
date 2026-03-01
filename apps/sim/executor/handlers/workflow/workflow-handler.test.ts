@@ -9,6 +9,20 @@ vi.mock('@/lib/auth/internal', () => ({
   generateInternalToken: vi.fn().mockResolvedValue('test-token'),
 }))
 
+vi.mock('@/executor/utils/http', () => ({
+  buildAuthHeaders: vi.fn().mockResolvedValue({ 'Content-Type': 'application/json' }),
+  buildAPIUrl: vi.fn((path: string) => new URL(path, 'http://localhost:3000')),
+  extractAPIErrorMessage: vi.fn(async (response: Response) => {
+    const defaultMessage = `API request failed with status ${response.status}`
+    try {
+      const errorData = await response.json()
+      return errorData.error || defaultMessage
+    } catch {
+      return defaultMessage
+    }
+  }),
+}))
+
 // Mock fetch globally
 setupGlobalFetchMock()
 
@@ -108,18 +122,16 @@ describe('WorkflowBlockHandler', () => {
       )
     })
 
-    it('should enforce maximum depth limit', async () => {
+    it('should enforce maximum call chain depth limit', async () => {
       const inputs = { workflowId: 'child-workflow-id' }
 
-      // Create a deeply nested context (simulate 11 levels deep to exceed the limit of 10)
       const deepContext = {
         ...mockContext,
-        workflowId:
-          'level1_sub_level2_sub_level3_sub_level4_sub_level5_sub_level6_sub_level7_sub_level8_sub_level9_sub_level10_sub_level11',
+        callChain: Array.from({ length: 25 }, (_, i) => `wf-${i}`),
       }
 
       await expect(handler.execute(deepContext, mockBlock, inputs)).rejects.toThrow(
-        '"child-workflow-id" failed: Maximum workflow nesting depth of 10 exceeded'
+        'Maximum workflow call chain depth (25) exceeded'
       )
     })
 
