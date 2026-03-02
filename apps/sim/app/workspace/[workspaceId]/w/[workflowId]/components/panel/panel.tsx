@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { ArrowUp, Lock, Square, Unlock } from 'lucide-react'
+import { ArrowUp, Lock, Square, Unlock, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
@@ -88,10 +88,15 @@ const RunAgentExternalChat = ({
       return
     }
 
+    const controller = new AbortController()
+
     const fetchChatUrl = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch(`/api/workflows/${workflowId}/chat/status`)
+        const response = await fetch(`/api/workflows/${workflowId}/chat/status`, {
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted) return
         if (response.ok) {
           const data = await response.json()
           if (data.isDeployed && data.deployment?.identifier) {
@@ -104,14 +109,16 @@ const RunAgentExternalChat = ({
           setChatUrl(null)
         }
       } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return
         logger.error('Error fetching chat status:', error)
-        setChatUrl(null)
+        if (!controller.signal.aborted) setChatUrl(null)
       } finally {
-        setIsLoading(false)
+        if (!controller.signal.aborted) setIsLoading(false)
       }
     }
 
     fetchChatUrl()
+    return () => controller.abort()
   }, [workflowId, deploymentStatus?.isDeployed, deploymentStatus?.deployedAt])
 
   if (!chatUrl) {
