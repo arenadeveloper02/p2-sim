@@ -11,7 +11,7 @@ const logger = createLogger('zoom:list_account_recordings')
 /**
  * Format a date as yyyy-mm-dd
  */
-function formatDate(date: Date): string {
+export function formatDate(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
@@ -21,7 +21,7 @@ function formatDate(date: Date): string {
 /**
  * Split a date range into 30-day chunks
  */
-function splitDateRange(from: string, to: string): Array<{ from: string; to: string }> {
+export function splitDateRange(from: string, to: string): Array<{ from: string; to: string }> {
   const fromDate = new Date(from)
   const toDate = new Date(to)
   const chunks: Array<{ from: string; to: string }> = []
@@ -53,7 +53,7 @@ function splitDateRange(from: string, to: string): Array<{ from: string; to: str
 /**
  * Make a single API call to Zoom for a date range, handling pagination
  */
-async function fetchZoomRecordings(
+export async function fetchZoomRecordings(
   params: ZoomListAccountRecordingsParams,
   chunkFrom?: string,
   chunkTo?: string
