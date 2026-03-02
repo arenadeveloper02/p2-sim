@@ -17,7 +17,7 @@ import { getSubscriptionStatus } from '@/lib/billing/client/utils'
 import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { organizationKeys, useOrganizations } from '@/hooks/queries/organization'
-import { useSubscriptionData } from '@/hooks/queries/subscription'
+import { subscriptionKeys, useSubscriptionData } from '@/hooks/queries/subscription'
 
 const logger = createLogger('CancelSubscription')
 

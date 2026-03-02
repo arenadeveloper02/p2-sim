@@ -44,10 +44,10 @@ const TagIcon: React.FC<{
  * Props for the OutputSelect component
  */
 interface OutputSelectProps {
-  /** The workspace name */
-  workspaceName: string
-  /** The workspace ID */
-  workspaceId: string
+  /** The workspace name (optional in deploy modal context) */
+  workspaceName?: string
+  /** The workspace ID (optional in deploy modal context) */
+  workspaceId?: string
   /** The workflow ID to fetch outputs from */
   workflowId: string | null
   /** Array of currently selected output IDs or labels */
@@ -77,8 +77,8 @@ interface OutputSelectProps {
  * @returns The OutputSelect component
  */
 export function OutputSelect({
-  workspaceName,
-  workspaceId,
+  workspaceName: _workspaceName,
+  workspaceId: _workspaceId,
   workflowId,
   selectedOutputs = [],
   onOutputSelect,

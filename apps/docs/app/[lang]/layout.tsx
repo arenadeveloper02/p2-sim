@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { defineI18nUI } from 'fumadocs-ui/i18n'
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
 import { RootProvider } from 'fumadocs-ui/provider/next'
-import { Geist_Mono, Inter } from 'next/font/google'
 import {
   SidebarFolder,
   SidebarItem,
@@ -14,15 +13,17 @@ import { i18n } from '@/lib/i18n'
 import { source } from '@/lib/source'
 import '../global.css'
 
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-geist-sans',
-})
-
-const geistMono = Geist_Mono({
-  subsets: ['latin'],
-  variable: '--font-geist-mono',
-})
+/** Fonts loaded via link in head to avoid next/font Turbopack resolution during build. */
+const FONT_LINKS = (
+  <>
+    <link rel='preconnect' href='https://fonts.googleapis.com' />
+    <link rel='preconnect' href='https://fonts.gstatic.com' crossOrigin='anonymous' />
+    <link
+      href='https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap'
+      rel='stylesheet'
+    />
+  </>
+)
 
 const { provider } = defineI18nUI(i18n, {
   translations: {
@@ -83,12 +84,9 @@ export default async function Layout({ children, params }: LayoutProps) {
   }
 
   return (
-    <html
-      lang={lang}
-      className={`${inter.variable} ${geistMono.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang={lang} suppressHydrationWarning>
       <head>
+        {FONT_LINKS}
         <script
           type='application/ld+json'
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}

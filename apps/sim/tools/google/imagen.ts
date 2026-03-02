@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ImagenTool')
@@ -190,15 +191,37 @@ export const imagenTool: ToolConfig = {
 
       logger.info('Successfully received Imagen image, length:', base64Image.length)
 
+      // Get workflowId and userId from params context
+      const workflowId = params?._context?.workflowId || 'unknown'
+      const userId = params?._context?.userId || 'unknown'
+
+      let finalImageUrl: string | null = null
+      let s3UploadFailed: boolean | undefined
+      try {
+        const mimeType = 'image/png'
+        const saveResult = await saveGeneratedImage(base64Image, workflowId, userId, mimeType)
+        finalImageUrl = saveResult.url
+        s3UploadFailed = saveResult.s3UploadFailed
+        logger.info(`Successfully saved Imagen image to storage: ${finalImageUrl}`)
+      } catch (error) {
+        logger.error('Error saving Imagen image to storage:', error)
+        logger.warn('Falling back to base64 image data URL due to storage error')
+      }
+
+      const imageUrlToReturn = finalImageUrl || (base64Image ? `data:image/png;base64,${base64Image}` : '')
+
       return {
         success: true,
         output: {
-          content: 'imagen-generated-image',
-          image: base64Image,
+          content: finalImageUrl || 'imagen-generated-image',
+          image: imageUrlToReturn,
           metadata: {
             model: params?.model || 'imagen-4.0-generate-001',
             numberOfImages: generatedImages.length,
+            stored: !!finalImageUrl,
+            s3UploadFailed,
           },
+          s3UploadFailed,
         },
       }
     } catch (error) {

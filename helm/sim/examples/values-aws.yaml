@@ -45,6 +45,9 @@ app:
     NODE_ENV: "production"
     NEXT_TELEMETRY_DISABLED: "1"
 
+    # Self-hosted / EC2: disable execution rate limits (no per-minute caps)
+    DISABLE_EXECUTION_RATE_LIMIT: "true"
+
     # AWS S3 Cloud Storage Configuration (RECOMMENDED for production)
     # Create S3 buckets in your AWS account and configure IAM permissions
     AWS_REGION: "us-west-2"
@@ -57,6 +60,8 @@ app:
     S3_COPILOT_BUCKET_NAME: "copilot-files"   # Copilot attachments
     S3_PROFILE_PICTURES_BUCKET_NAME: "profile-pictures"  # User avatars
     S3_OG_IMAGES_BUCKET_NAME: "og-images"                 # OpenGraph preview images
+    S3_AGENT_GENERATED_IMAGES_BUCKET_NAME: "arena-agent-generated-images"  # Agent-generated images
+    S3_AGENT_GENERATED_IMAGES_REGION: "us-west-2"        # AWS region for agent-generated images bucket (defaults to AWS_REGION)
 
 # Realtime service
 realtime:

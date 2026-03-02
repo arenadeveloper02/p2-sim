@@ -8,7 +8,7 @@ import {
   type SecureFetchResponse,
   secureFetchWithPinnedIP,
   validateUrlWithDNS,
-} from '@/lib/core/security/input-validation'
+} from '@/lib/core/security/input-validation.server'
 import type { DbOrTx } from '@/lib/db/types'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
 import {

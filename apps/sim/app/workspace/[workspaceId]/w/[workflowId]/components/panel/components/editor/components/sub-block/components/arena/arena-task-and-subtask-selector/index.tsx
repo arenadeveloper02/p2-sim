@@ -55,9 +55,13 @@ export function ArenaTaskAndSubtaskSelector({
   const values = useSubBlockStore((state) => state.workflowValues)
 
   // Get client and project for comments operation
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client']?.clientId
+  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client'] as
+    | { clientId?: string }
+    | undefined
+  const clientId = clientRef?.clientId
   const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-project']
-  const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
+  const projectId =
+    typeof projectValue === 'string' ? projectValue : (projectValue as { sysId?: string })?.sysId
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue

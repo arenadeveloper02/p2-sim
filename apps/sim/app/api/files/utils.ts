@@ -160,6 +160,21 @@ function sanitizeFilename(filename: string): string {
 
 export function findLocalFile(filename: string): string | null {
   try {
+    if (filename.startsWith('agent-generated-images/')) {
+      if (filename.includes('..')) {
+        return null
+      }
+      const appAllowedDir = resolve(process.cwd(), 'agent-generated-images')
+      const appPath = resolve(process.cwd(), filename)
+      const isWithinAppDir =
+        appPath.startsWith(appAllowedDir + sep) && appPath !== appAllowedDir
+
+      if (isWithinAppDir && existsSync(appPath)) {
+        return appPath
+      }
+      return null
+    }
+
     const sanitizedFilename = sanitizeFileKey(filename)
 
     // Reject if sanitized filename is empty or only contains path separators/dots
