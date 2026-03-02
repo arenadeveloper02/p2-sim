@@ -60,3 +60,10 @@ export async function getChannelAccounts(
 export async function getGoogleAdsAccounts(): Promise<Record<string, ChannelAccount>> {
   return getChannelAccounts('google')
 }
+
+/**
+ * Fetches Bing Ads accounts from database
+ */
+export async function getBingAdsAccounts(): Promise<Record<string, ChannelAccount>> {
+  return getChannelAccounts('bing')
+}

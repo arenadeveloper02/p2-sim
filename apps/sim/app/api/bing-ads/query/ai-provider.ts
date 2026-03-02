@@ -1,5 +1,5 @@
 /**
- * AI provider resolution for Bing Ads V1
+ * AI provider resolution for Bing Ads
  */
 
 import type { AIProviderConfig } from './types'

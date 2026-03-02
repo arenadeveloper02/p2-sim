@@ -1,10 +1,10 @@
 /**
- * Bing Ads V1 Query Generation
+ * Bing Ads Query Generation
  * Uses AI to generate Bing Ads queries with dynamic date calculation
  */
 
 import { resolveAIProvider } from './ai-provider'
-import { BING_ADS_SYSTEM_PROMPT } from './prompt-new'
+import { BING_ADS_SYSTEM_PROMPT } from './prompt'
 import type { BingAdsQueryResponse } from './types'
 
 /**
