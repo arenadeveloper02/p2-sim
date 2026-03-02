@@ -137,7 +137,8 @@ Return ONLY a JSON object (no markdown, no explanations):
 
 1. **ALWAYS include date filtering** - Every query MUST have segments.date BETWEEN filter
 2. **NEVER use DURING** - Always calculate exact dates and use BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
-3. **Parse CURRENT_DATE (${CURRENT_DATE})** - Use it for ALL date calculations, do not hardcode dates
-4. **"last N days" excludes today** - End date is YESTERDAY (CURRENT_DATE - 1 day)
-5. **Default to last 30 days ending yesterday** - If no dates mentioned
-6. **Return ONLY valid JSON** - No explanations, no markdown code blocks`
+3. **Parse CURRENT_DATE (${CURRENT_DATE})** - Use it for relative dates (last N days, this week, etc.)
+4. **Specific date takes priority** - If user mentions a specific date (March 2 2026, 2nd March 2026, etc.), use that date for BOTH start and end. Do NOT use "this week" or CURRENT_DATE for explicit date requests
+5. **"last N days" excludes today** - End date is YESTERDAY (CURRENT_DATE - 1 day)
+6. **Default to last 30 days ending yesterday** - If no dates mentioned
+7. **Return ONLY valid JSON** - No explanations, no markdown code blocks`
