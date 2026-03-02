@@ -687,9 +687,6 @@ import {
   gmailUnarchiveV2Tool,
   gmailUntrashThreadV2Tool,
 } from '@/tools/gmail'
-import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
-import { googleAdsQueryTool } from '@/tools/google_ads'
-import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
 import {
   gongAggregateActivityTool,
   gongAnsweredScorecardsTool,
@@ -710,7 +707,9 @@ import {
   gongLookupEmailTool,
   gongLookupPhoneTool,
 } from '@/tools/gong'
-import { googleSearchTool } from '@/tools/google'
+import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
+import { googleAdsQueryTool } from '@/tools/google_ads'
+import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
 import {
   googleBigQueryGetTableTool,
   googleBigQueryInsertRowsTool,
@@ -948,6 +947,18 @@ import { httpRequestTool, webhookRequestTool } from '@/tools/http'
 import {
   hubspotCreateCompanyTool,
   hubspotCreateContactTool,
+  hubspotGetCompanyTool,
+  hubspotGetContactTool,
+  hubspotGetUsersTool,
+  hubspotListCompaniesTool,
+  hubspotListContactsTool,
+  hubspotListDealsTool,
+  hubspotSearchCompaniesTool,
+  hubspotSearchContactsTool,
+  hubspotUpdateCompanyTool,
+  hubspotUpdateContactTool,
+} from '@/tools/hubspot'
+import {
   hubspotGetCampaignAssetsTool,
   hubspotGetCampaignBudgetItemTool,
   hubspotGetCampaignBudgetTotalsTool,
@@ -956,21 +967,11 @@ import {
   hubspotGetCampaignRevenueTool,
   hubspotGetCampaignSpendTool,
   hubspotGetCampaignTool,
-  hubspotGetCompanyTool,
-  hubspotGetContactTool,
   hubspotGetEmailStatisticsHistogramTool,
   hubspotGetEmailTool,
-  hubspotGetUsersTool,
   hubspotListCampaignsTool,
-  hubspotListCompaniesTool,
-  hubspotListContactsTool,
-  hubspotListDealsTool,
   hubspotListEmailsTool,
-  hubspotSearchCompaniesTool,
-  hubspotSearchContactsTool,
-  hubspotUpdateCompanyTool,
-  hubspotUpdateContactTool,
-} from '@/tools/hubspot'
+} from '@/tools/hubspot/campaigns'
 import { huggingfaceChatTool } from '@/tools/huggingface'
 import {
   hunterCompaniesFindTool,
@@ -3165,7 +3166,6 @@ export const tools: Record<string, ToolConfig> = {
   reddit_edit: redditEditTool,
   reddit_delete: redditDeleteTool,
   reddit_subscribe: redditSubscribeTool,
-  google_drive_search: googleDriveSearchTool,
   redis_get: redisGetTool,
   redis_set: redisSetTool,
   redis_delete: redisDeleteTool,

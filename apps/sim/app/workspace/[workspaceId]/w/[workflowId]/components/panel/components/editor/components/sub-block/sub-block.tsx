@@ -18,11 +18,7 @@ import {
   ComboBox,
   ConditionInput,
   CredentialSelector,
-<<<<<<< HEAD
   DateInput,
-  DocumentSelector,
-=======
->>>>>>> 49db3ca50 (improvement(selectors): consolidate selector input logic (#3375))
   DocumentTagEntry,
   Dropdown,
   EvalInput,
@@ -44,12 +40,8 @@ import {
   type SelectorOverrides,
   ShortInput,
   SkillInput,
-<<<<<<< HEAD
   SlackDateInput,
   SlackDateRangeSelector,
-  SlackSelectorInput,
-=======
->>>>>>> 49db3ca50 (improvement(selectors): consolidate selector input logic (#3375))
   SliderInput,
   SortBuilder,
   Switch,

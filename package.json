@@ -51,5 +51,8 @@
   },
   "trustedDependencies": [
     "sharp"
-  ]
+  ],
+  "dependencies": {
+    "dns": "0.2.2"
+  }
 }

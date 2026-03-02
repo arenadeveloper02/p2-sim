@@ -458,29 +458,18 @@ export async function createStreamingResponse(
         } else {
           await completeLoggingSession(result)
 
-<<<<<<< HEAD
-        const minimalResult = await buildMinimalResult(
-          result,
-          streamConfig.selectedOutputs,
-          state.streamedContent,
-          requestId,
-          executionId,
-          streamConfig.includeFileBase64 ?? true,
-          streamConfig.base64MaxBytes
-        )
-=======
           const minimalResult = await buildMinimalResult(
             result,
             streamConfig.selectedOutputs,
             state.streamedContent,
             requestId,
+            executionId,
             streamConfig.includeFileBase64 ?? true,
             streamConfig.base64MaxBytes
           )
 
           controller.enqueue(encodeSSE({ event: 'final', data: minimalResult }))
         }
->>>>>>> a627faabe (feat(timeouts): execution timeout limits (#3120))
 
         controller.enqueue(encodeSSE('[DONE]'))
 

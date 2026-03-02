@@ -1,16 +1,11 @@
 import { createLogger } from '@sim/logger'
 import { generateInternalToken } from '@/lib/auth/internal'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
-import {
-  secureFetchWithPinnedIP,
-  validateUrlWithDNS,
-} from '@/lib/core/security/input-validation.server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
-import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
 import type { ExecutionContext } from '@/executor/types'
 import type { ErrorInfo } from '@/tools/error-extractors'
 import { extractErrorMessage } from '@/tools/error-extractors'
@@ -251,6 +246,10 @@ export async function executeTool(
           error: 'Missing skill_name or workspace context',
         }
       }
+      const { resolveSkillContent } = await import(
+        /* webpackIgnore: true */
+        '@/executor/handlers/agent/skills-resolver'
+      )
       const content = await resolveSkillContent(skillName, workspaceId)
       if (!content) {
         return {
@@ -823,6 +822,7 @@ async function executeToolRequest(
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const isLastAttempt = attempt === maxAttempts - 1
+      let urlValidation: { isValid: boolean; resolvedIP?: string; error?: string } | undefined
 
       try {
         if (isInternalRoute) {
@@ -846,7 +846,11 @@ async function executeToolRequest(
             clearTimeout(timeoutId)
           }
         } else {
-          const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl')
+          const { validateUrlWithDNS, secureFetchWithPinnedIP } = await import(
+            /* webpackIgnore: true */
+            '@/lib/core/security/input-validation.server'
+          )
+          urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl')
           if (!urlValidation.isValid) {
             throw new Error(`Invalid tool URL: ${urlValidation.error}`)
           }
@@ -894,30 +898,40 @@ async function executeToolRequest(
         continue
       }
 
-      const requestTimeout = tool.request.timeout ?? 300000 // 5 minutes default timeout
-      const secureResponse = await secureFetchWithPinnedIP(fullUrl, urlValidation.resolvedIP!, {
-        method: requestParams.method,
-        headers: headersRecord,
-        body: requestParams.body ?? undefined,
-        timeout: requestTimeout,
-      })
+      if (!isInternalRoute && urlValidation?.resolvedIP) {
+        const { secureFetchWithPinnedIP: secureFetchWithPinnedIPRetry } = await import(
+          /* webpackIgnore: true */
+          '@/lib/core/security/input-validation.server'
+        )
+        const requestTimeout = tool.request.timeout ?? 300000 // 5 minutes default timeout
+        const secureResponse = await secureFetchWithPinnedIPRetry(
+          fullUrl,
+          urlValidation.resolvedIP,
+          {
+            method: requestParams.method,
+            headers: headersRecord,
+            body: requestParams.body ?? undefined,
+            timeout: requestTimeout,
+          }
+        )
 
-      const responseHeaders = new Headers(secureResponse.headers.toRecord())
-      const nullBodyStatuses = new Set([101, 204, 205, 304])
+        const responseHeaders = new Headers(secureResponse.headers.toRecord())
+        const nullBodyStatuses = new Set([101, 204, 205, 304])
 
-      if (nullBodyStatuses.has(secureResponse.status)) {
-        response = new Response(null, {
-          status: secureResponse.status,
-          statusText: secureResponse.statusText,
-          headers: responseHeaders,
-        })
-      } else {
-        const bodyBuffer = await secureResponse.arrayBuffer()
-        response = new Response(bodyBuffer, {
-          status: secureResponse.status,
-          statusText: secureResponse.statusText,
-          headers: responseHeaders,
-        })
+        if (nullBodyStatuses.has(secureResponse.status)) {
+          response = new Response(null, {
+            status: secureResponse.status,
+            statusText: secureResponse.statusText,
+            headers: responseHeaders,
+          })
+        } else {
+          const bodyBuffer = await secureResponse.arrayBuffer()
+          response = new Response(bodyBuffer, {
+            status: secureResponse.status,
+            statusText: secureResponse.statusText,
+            headers: responseHeaders,
+          })
+        }
       }
 
       contentType = response.headers.get('content-type') || ''

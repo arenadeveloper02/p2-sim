@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Tooltip } from '@/components/emcn'
+import { useForeignCredential } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-foreign-credential'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import {
   type SlackUserInfo,
@@ -10,7 +11,6 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/user-selector/components/slack-user-selector'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useDependsOnGate } from '../../../../../panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
-import { useForeignCredential } from '../../../../../panel/components/editor/components/sub-block/hooks/use-foreign-credential'
 
 interface UserSelectorInputProps {
   blockId: string

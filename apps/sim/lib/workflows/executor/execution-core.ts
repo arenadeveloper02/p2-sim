@@ -194,108 +194,11 @@ export async function executeWorkflowCore(
     const { personalEncrypted, workspaceEncrypted, personalDecrypted, workspaceDecrypted } =
       await getPersonalAndWorkspaceEnv(personalEnvUserId, providedWorkspaceId)
 
-    // For scheduler/webhook executions, prioritize server environment variables
-    const isScheduledOrWebhook =
-      metadata.triggerType === 'schedule' || metadata.triggerType === 'webhook'
-    const serverEnvVars: Record<string, string> = {}
-
-    if (isScheduledOrWebhook) {
-      const { env } = await import('@/lib/core/config/env')
-      const serverEnvVarNames = [
-        'OPENAI_API_KEY',
-        'OPENAI_API_KEY_1',
-        'OPENAI_API_KEY_2',
-        'OPENAI_API_KEY_3',
-        'ANTHROPIC_API_KEY',
-        'ANTHROPIC_API_KEY_1',
-        'ANTHROPIC_API_KEY_2',
-        'ANTHROPIC_API_KEY_3',
-        'GEMINI_API_KEY',
-        'SAMBANOVA_API_KEY',
-        'SAMBANOVA_API_KEY_1',
-        'SAMBANOVA_API_KEY_2',
-        'SAMBANOVA_API_KEY_3',
-        'XAI_API_KEY',
-        'XAI_API_KEY_1',
-        'XAI_API_KEY_2',
-        'XAI_API_KEY_3',
-        'AZURE_OPENAI_API_KEY',
-        'SEMRUSH_API_KEY',
-        'BROWSERBASE_API_KEY',
-        'PRESENTATION_API_BASE_URL',
-        'EXA_API_KEY',
-        'COPILOT_API_KEY',
-        'S3_PROFILE_PICTURES_BUCKET_NAME',
-        'S3_COPILOT_BUCKET_NAME',
-        'S3_CHAT_BUCKET_NAME',
-        'S3_EXECUTION_FILES_BUCKET_NAME',
-        'S3_KB_BUCKET_NAME',
-        'S3_LOGS_BUCKET_NAME',
-        'NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS',
-        'CRON_SECRET',
-        'FB_CLIENT_SECRET',
-        'FB_CLIENT_ID',
-        'FB_ACCESS_TOKEN',
-        'FROM_EMAIL_ADDRESS',
-        'NEXT_PUBLIC_FIRECRAWL_API_KEY',
-        'FIRECRAWL_API_KEY',
-        'BROWSER_USE_API_KEY',
-        'SPYFU_API_PASSWORD',
-        'SPYFU_API_USERNAME',
-        'CHROMEDRIVER_PATH',
-        'FIGMA_API_KEY',
-        'GOOGLE_ADS_REFRESH_TOKEN',
-        'GOOGLE_ADS_CLIENT_SECRET',
-        'GOOGLE_ADS_CLIENT_ID',
-        'GOOGLE_ADS_DEVELOPER_TOKEN',
-        'S3_COPILOT_BUCKET_NAME',
-        'INTERNAL_API_SECRET',
-        'S3_KB_BUCKET_NAME',
-        'AWS_SECRET_ACCESS_KEY',
-        'AWS_ACCESS_KEY_ID',
-        'AWS_REGION',
-        'S3_BUCKET_NAME',
-        'SLACK_CLIENT_ID',
-        'SLACK_CLIENT_SECRET',
-        'GOOGLE_CLIENT_SECRET',
-        'GOOGLE_CLIENT_ID',
-      ]
-
-      for (const varName of serverEnvVarNames) {
-        const value = env[varName as keyof typeof env]
-        if (value && typeof value === 'string') {
-          serverEnvVars[varName] = value
-        }
-      }
-    }
-
-    // Merge: Server env vars take priority, then workspace, then personal
     // Use encrypted values for logging (don't log decrypted secrets)
-    const variables = EnvVarsSchema.parse({
-      ...personalEncrypted,
-      ...workspaceEncrypted,
-      ...serverEnvVars, // Server vars override user/workspace vars
-    })
+    const variables = EnvVarsSchema.parse({ ...personalEncrypted, ...workspaceEncrypted })
 
     // Use already-decrypted values for execution (no redundant decryption)
-    // Server env vars override user/workspace vars
-    const decryptedEnvVars: Record<string, string> = {
-      ...personalDecrypted,
-      ...workspaceDecrypted,
-      ...serverEnvVars, // Server vars override user/workspace vars
-    }
-
-    // Extract conversationId from input if available (for chat workflows)
-    const conversationId =
-      typeof input === 'object' && input !== null && 'conversationId' in input
-        ? input.conversationId
-        : undefined
-
-    // Extract initial input for chat workflows
-    const initialInput =
-      triggerType === 'chat' && typeof input === 'object' && input !== null && 'input' in input
-        ? input.input
-        : undefined
+    const decryptedEnvVars: Record<string, string> = { ...personalDecrypted, ...workspaceDecrypted }
 
     await loggingSession.safeStart({
       userId,
@@ -303,8 +206,6 @@ export async function executeWorkflowCore(
       variables,
       skipLogCreation,
       deploymentVersionId,
-      conversationId,
-      initialInput,
     })
 
     // Use edges directly - trigger-to-trigger edges are prevented at creation time
@@ -464,171 +365,43 @@ export async function executeWorkflowCore(
       try {
         const { traceSpans, totalDuration } = buildTraceSpans(result)
 
-    // Detect skipped workflow (intent analyzer decided to skip)
-    const isSkippedExecution =
-      result.success &&
-      result.output &&
-      typeof result.output === 'object' &&
-      'skippedWorkflow' in result.output &&
-      result.output.skippedWorkflow === true
-
-    if (isSkippedExecution) {
-      result.status = 'skipped'
-    }
-
-    // Update workflow run counts (skip for paused and skipped executions)
-    if (result.success && result.status !== 'paused' && result.status !== 'skipped') {
-      await updateWorkflowRunCounts(workflowId)
-    }
-
-    if (result.status === 'skipped') {
-      const skipContent =
-        result.output && typeof result.output === 'object' && 'content' in result.output
-          ? (result.output.content as string)
-          : undefined
-
-      // Ensure we have skipContent - this is critical for UI display
-      if (!skipContent) {
-        logger.warn(`[${requestId}] Skip response content is missing, cannot display in UI`, {
-          executionId,
-          hasOutput: !!result.output,
-          outputKeys:
-            result.output && typeof result.output === 'object' ? Object.keys(result.output) : [],
-        })
-      }
-
-      // Use complete input from skipOutput if available (includes conversation history)
-      const completeInput =
-        (result.output &&
-          typeof result.output === 'object' &&
-          '_completeInputForLogging' in result.output &&
-          result.output._completeInputForLogging) ||
-        processedInput
-
-      // Extract user prompt and system prompt from skip output for execution_data
-      const skipOutput = result.output && typeof result.output === 'object' ? result.output : {}
-      const userPrompt =
-        (skipOutput.userPrompt as string) ||
-        (skipOutput._actualPromptsForSkip &&
-        typeof skipOutput._actualPromptsForSkip === 'object' &&
-        'userMessage' in skipOutput._actualPromptsForSkip
-          ? (skipOutput._actualPromptsForSkip.userMessage as string)
-          : undefined) ||
-        (typeof processedInput === 'object' && processedInput && 'input' in processedInput
-          ? (processedInput.input as string)
-          : undefined)
-
-      const systemPrompt =
-        (skipOutput.systemPrompt as string) ||
-        (skipOutput._actualPromptsForSkip &&
-        typeof skipOutput._actualPromptsForSkip === 'object' &&
-        'systemPrompt' in skipOutput._actualPromptsForSkip
-          ? (skipOutput._actualPromptsForSkip.systemPrompt as string)
-          : undefined)
-
-      // Enhance finalOutput with prompts for execution_data
-      const enhancedFinalOutput = {
-        ...skipOutput,
-        ...(userPrompt && { userPrompt }),
-        ...(systemPrompt && { systemPrompt }),
-      }
-
-      logger.info(`[${requestId}] Completing skipped workflow with chat output`, {
-        executionId,
-        hasSkipContent: !!skipContent,
-        skipContentLength: skipContent?.length || 0,
-        triggerType,
-      })
-
-      await loggingSession.safeCompleteAsSkipped({
-        endedAt: new Date().toISOString(),
-        totalDurationMs: totalDuration || 0,
-        finalOutput: enhancedFinalOutput,
-        traceSpans: traceSpans || [],
-        workflowInput: completeInput,
-        finalChatOutput: skipContent, // This must be set for UI to display the response
-      })
-
-      await clearExecutionCancellation(executionId)
-
-      logger.info(`[${requestId}] Workflow execution skipped by intent analyzer`, {
-        duration: result.metadata?.duration,
-      })
-
-      return result
-    }
-
-    if (result.status === 'cancelled') {
-      await loggingSession.safeCompleteWithCancellation({
-        endedAt: new Date().toISOString(),
-        totalDurationMs: totalDuration || 0,
-        traceSpans: traceSpans || [],
-      })
-
-      await clearExecutionCancellation(executionId)
-
-      logger.info(`[${requestId}] Workflow execution cancelled`, {
-        duration: result.metadata?.duration,
-      })
-
-      return result
-    }
-
-    if (result.status === 'paused') {
-      await loggingSession.safeCompleteWithPause({
-        endedAt: new Date().toISOString(),
-        totalDurationMs: totalDuration || 0,
-        traceSpans: traceSpans || [],
-        workflowInput: processedInput,
-      })
-
-      await clearExecutionCancellation(executionId)
-
-      logger.info(`[${requestId}] Workflow execution paused`, {
-        duration: result.metadata?.duration,
-      })
-
-      return result
-    }
-
-    let finalChatOutput: string | undefined
-    if (triggerType === 'chat' && result.success) {
-      const output = result.output
-      if (typeof output === 'string') {
-        finalChatOutput = output
-      } else if (output !== undefined && output !== null) {
-        // Extract content field if it exists (e.g., from provider response objects)
-        // This ensures we only store the text content, not the entire metadata object
-        if (
-          typeof output === 'object' &&
-          'content' in output &&
-          typeof output.content === 'string'
-        ) {
-          finalChatOutput = output.content
-        } else {
-          // Fallback to JSON.stringify for other object types
-          finalChatOutput = JSON.stringify(output)
+        if (result.success && result.status !== 'paused') {
+          try {
+            await updateWorkflowRunCounts(workflowId)
+          } catch (runCountError) {
+            logger.error(`[${requestId}] Failed to update run counts`, { error: runCountError })
+          }
         }
+
+        if (result.status === 'cancelled') {
+          await loggingSession.safeCompleteWithCancellation({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            traceSpans: traceSpans || [],
+          })
+        } else if (result.status === 'paused') {
+          await loggingSession.safeCompleteWithPause({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            traceSpans: traceSpans || [],
+            workflowInput: processedInput,
+          })
+        } else {
+          await loggingSession.safeComplete({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            finalOutput: result.output || {},
+            traceSpans: traceSpans || [],
+            workflowInput: processedInput,
+            executionState: result.executionState,
+          })
+        }
+
+        await clearExecutionCancellation(executionId)
+      } catch (postExecError) {
+        logger.error(`[${requestId}] Post-execution logging failed`, { error: postExecError })
       }
-    }
-
-    // For RUN case, we need to capture the complete input (with conversation history)
-    // This is already in the messages, but we need to extract it from the execution result
-    // For now, use processedInput - the complete input with conversation history
-    // would be in the agent block's input after buildMessages modifies it
-    // Since we don't have direct access here, we'll store processedInput
-    // The actual complete input is in the trace spans if needed
-    await loggingSession.safeComplete({
-      endedAt: new Date().toISOString(),
-      totalDurationMs: totalDuration || 0,
-      finalOutput: result.output || {},
-      traceSpans: traceSpans || [],
-      workflowInput: processedInput,
-      finalChatOutput,
-      executionState: result.executionState,
-    })
-
-    await clearExecutionCancellation(executionId)
+    })()
 
     logger.info(`[${requestId}] Workflow execution completed`, {
       success: result.success,

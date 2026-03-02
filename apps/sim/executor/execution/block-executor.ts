@@ -519,9 +519,15 @@ export class BlockExecutor {
       } else {
         result[key] = value
       }
-      return filtered
     }
 
+    return result
+  }
+
+  private filterOutputForLog(
+    block: SerializedBlock,
+    output: NormalizedBlockOutput
+  ): NormalizedBlockOutput {
     if (isWorkflowBlockType(block.metadata?.id)) {
       const filtered: NormalizedBlockOutput = {}
       const internalKeys = ['webhook', 'workflowId']

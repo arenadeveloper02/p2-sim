@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Tooltip } from '@/components/emcn/components'
+import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
+import { useForeignCredential } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-foreign-credential'
+import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { SlackMentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/slack-mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
-import { useDependsOnGate } from '../../../../../panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
-import { useForeignCredential } from '../../../../../panel/components/editor/components/sub-block/hooks/use-foreign-credential'
-import { useSubBlockValue } from '../../../../../panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 
 interface MentionInputProps {
   blockId: string

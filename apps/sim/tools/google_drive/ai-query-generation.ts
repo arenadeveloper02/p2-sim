@@ -78,9 +78,7 @@ Now generate the query string for the user's prompt. Return ONLY the query strin
     const { executeProviderRequest } = await import('@/providers')
 
     // Try to use Anthropic (Claude) first, fallback to other providers
-    // @ts-expect-error - process.env is available in Node.js runtime
     const apiKey = process.env.ANTHROPIC_API_KEY
-    // @ts-expect-error - process.env is available in Node.js runtime
     const openaiKey = process.env.OPENAI_API_KEY
     const provider = apiKey ? 'anthropic' : 'openai'
     const model = apiKey ? 'claude-sonnet-4-20250514' : 'gpt-4o'

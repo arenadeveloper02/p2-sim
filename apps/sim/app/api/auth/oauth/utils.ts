@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { account, accountTokens, credentialSetMember, credential } from '@sim/db/schema'
+import { account, accountTokens, credential, credentialSetMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { refreshOAuthToken } from '@/lib/oauth'

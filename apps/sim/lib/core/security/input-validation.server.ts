@@ -1,8 +1,12 @@
-import dns from 'dns/promises'
+import dns from 'dns'
 import http from 'http'
 import https from 'https'
 import type { LookupFunction } from 'net'
+import { promisify } from 'util'
 import { createLogger } from '@sim/logger'
+
+const dnsLookup = promisify(dns.lookup)
+
 import * as ipaddr from 'ipaddr.js'
 import { type ValidationResult, validateExternalUrl } from '@/lib/core/security/input-validation'
 
@@ -79,7 +83,10 @@ export async function validateUrlWithDNS(
   }
 
   try {
-    const { address } = await dns.lookup(cleanHostname, { verbatim: true })
+    const { address } = await (dnsLookup(cleanHostname, { verbatim: true }) as Promise<{
+      address: string
+      family: number
+    }>)
 
     const resolvedIsLoopback =
       ipaddr.isValid(address) &&

@@ -28,7 +28,6 @@ export const googleDriveListTool = listTool
 export const googleDriveSearchTool = searchTool
 export const googleDriveListPermissionsTool = listPermissionsTool
 export const googleDriveMoveTool = moveTool
-export const googleDriveSearchTool = searchTool
 export const googleDriveShareTool = shareTool
 export const googleDriveTrashTool = trashTool
 export const googleDriveUnshareTool = unshareTool

@@ -1,5 +1,11 @@
 import { db } from '@sim/db'
-import { account, accountTokens, credential, credentialMember, workflow as workflowTable } from '@sim/db/schema'
+import {
+  account,
+  accountTokens,
+  credential,
+  credentialMember,
+  workflow as workflowTable,
+} from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
@@ -41,8 +47,7 @@ export async function authorizeCredentialUse(
 
   // Lookup credential owner and provider
   // Support both UUID id and alias for HubSpot
-  let [credRow] = await db
-    .select({ userId: account.userId, providerId: account.providerId })
+  let [credRow] = await db.select({ userId: account.userId, providerId: account.providerId })
   const actingUserId = auth.authType === 'internal_jwt' ? callerUserId : auth.userId
 
   const [workflowContext] = workflowId
@@ -265,6 +270,11 @@ export async function authorizeCredentialUse(
 
   // For collaboration paths, workflowId is required to scope to a workspace
   if (!workflowId) {
+    if (auth.authType === 'internal_jwt') {
+      return { ok: false, error: 'workflowId is required' }
+    }
+  }
+
   if (!legacyAccount) {
     return { ok: false, error: 'Credential not found' }
   }

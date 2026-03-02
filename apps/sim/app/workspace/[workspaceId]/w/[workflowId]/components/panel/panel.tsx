@@ -2,8 +2,8 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import Link from 'next/link'
 import { ArrowUp, Lock, Square, Unlock } from 'lucide-react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import {

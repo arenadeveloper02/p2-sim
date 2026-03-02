@@ -81,6 +81,10 @@ const nextConfig: NextConfig = {
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
   },
   serverExternalPackages: [
+    'dns',
+    'dgram',
+    'native-dns',
+    'native-dns-cache',
     '@1password/sdk',
     'unpdf',
     'ffmpeg-static',
@@ -100,7 +104,7 @@ const nextConfig: NextConfig = {
     '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
     '/*': ['./node_modules/sharp/**/*', './node_modules/@img/**/*'],
   },
-  webpack: (config, { webpack }) => {
+  webpack: (config, { webpack, isServer }) => {
     // Ignore native modules and optional dependencies that shouldn't be bundled
     config.plugins = config.plugins || []
     config.plugins.push(
@@ -124,6 +128,11 @@ const nextConfig: NextConfig = {
       fastbench: false,
       tap: false,
       'pino-elasticsearch': false,
+      // Client bundle must not resolve Node built-ins used by input-validation.server (dns -> native-dns -> dgram)
+      ...(!isServer && {
+        dns: false,
+        dgram: false,
+      }),
     }
 
     config.resolve.alias = {

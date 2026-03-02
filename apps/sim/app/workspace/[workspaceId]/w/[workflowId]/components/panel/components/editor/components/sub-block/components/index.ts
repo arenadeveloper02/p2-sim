@@ -4,7 +4,6 @@ export { ComboBox } from './combobox/combobox'
 export { ConditionInput } from './condition-input/condition-input'
 export { CredentialSelector } from './credential-selector/credential-selector'
 export { DateInput } from './date-input/date-input'
-export { DocumentSelector } from './document-selector/document-selector'
 export { DocumentTagEntry } from './document-tag-entry/document-tag-entry'
 export { Dropdown } from './dropdown/dropdown'
 export { EvalInput } from './eval-input/eval-input'
@@ -28,7 +27,6 @@ export {
   SlackDateInput,
   SlackDateRangeSelector,
 } from './slack-date-range-selector/slack-date-range-selector'
-export { SlackSelectorInput } from './slack-selector/slack-selector-input'
 export { SliderInput } from './slider-input/slider-input'
 export { SortBuilder } from './sort-builder/sort-builder'
 export { InputFormat } from './starter/input-format'
