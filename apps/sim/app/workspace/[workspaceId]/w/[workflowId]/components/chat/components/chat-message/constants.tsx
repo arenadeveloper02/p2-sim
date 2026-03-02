@@ -210,6 +210,17 @@ function Base64ImageWithBlobUrl({ cleanImageData }: { cleanImageData: string }) 
   )
 }
 
+/**
+ * Ensures a single image URL is used when the value may contain duplicates (e.g. same URL twice with newline).
+ */
+function normalizeImageUrl(imageUrl: string | undefined): string {
+  if (!imageUrl || typeof imageUrl !== 'string') return ''
+  const trimmed = imageUrl.trim()
+  if (!trimmed) return ''
+  const first = trimmed.split(/\s+/).find((s) => s.length > 0)
+  return first ?? trimmed
+}
+
 export const renderBs64Img = ({
   isBase64,
   imageData,
@@ -221,14 +232,53 @@ export const renderBs64Img = ({
 }) => {
   try {
     const cleanImageData = typeof imageData === 'string' ? imageData.replace(/\s+/g, '') : ''
+    const singleImageUrl = normalizeImageUrl(imageUrl)
+
+    const imageWrapperClass =
+      'my-2 w-full max-h-[70vh] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
+
+    if (!isBase64 && singleImageUrl && (!cleanImageData || cleanImageData.length === 0)) {
+      return (
+        <div className={imageWrapperClass}>
+          <img
+            src={singleImageUrl}
+            alt='Generated image'
+            className='h-auto max-w-full rounded-lg object-contain'
+            onError={(e) => {
+              console.error('Image failed to load:', {
+                error: e,
+                imageUrl: singleImageUrl,
+              })
+            }}
+          />
+        </div>
+      )
+    }
 
     if (!cleanImageData || cleanImageData.length === 0) {
+      if (singleImageUrl) {
+        return (
+          <div className={imageWrapperClass}>
+            <img
+              src={singleImageUrl}
+              alt='Generated image'
+              className='h-auto max-w-full rounded-lg object-contain'
+              onError={(e) => {
+                console.error('Image failed to load:', {
+                  error: e,
+                  imageUrl: singleImageUrl,
+                })
+              }}
+            />
+          </div>
+        )
+      }
       throw new Error('No image data provided')
     }
 
     if (isBase64 && cleanImageData.length > BLOB_URL_BASE64_LENGTH_THRESHOLD) {
       return (
-        <div className='my-2 w-full'>
+        <div className={imageWrapperClass}>
           <Base64ImageWithBlobUrl cleanImageData={cleanImageData} />
         </div>
       )
@@ -237,19 +287,18 @@ export const renderBs64Img = ({
     const imageSrc =
       isBase64 && cleanImageData.length > 0
         ? `data:image/${getMimeFromBase64(cleanImageData).replace('image/', '')};base64,${cleanImageData}`
-        : imageUrl || ''
+        : singleImageUrl || ''
 
     if (!imageSrc) {
       throw new Error('No valid image source provided')
     }
 
     return (
-      <div className='my-2 w-full'>
+      <div className={imageWrapperClass}>
         <img
           src={imageSrc}
           alt='Generated image'
-          className='h-auto max-w-full rounded-lg border'
-          style={{ maxHeight: '500px', objectFit: 'contain' }}
+          className='h-auto max-w-full rounded-lg object-contain'
           onError={(e) => {
             console.error('Image failed to load:', {
               error: e,
@@ -261,9 +310,10 @@ export const renderBs64Img = ({
       </div>
     )
   } catch (error) {
-    console.error('Error rendering base64 image:', error, {
+    console.error('Error rendering image:', error, {
       imageDataLength: imageData?.length,
       isBase64,
+      imageUrl,
     })
 
     return (
@@ -275,6 +325,61 @@ export const renderBs64Img = ({
         </div>
       </div>
     )
+  }
+}
+
+/**
+ * Returns a single image URL from a string that might contain multiple URLs or markdown.
+ * Used so the fetch URL is never a concatenation of several URLs.
+ */
+function toSingleImageUrl(imageUrl: string): string {
+  const trimmed = imageUrl.trim()
+  if (!trimmed) return trimmed
+  const first = extractFirstImageUrlFromString(trimmed)
+  if (first) return first
+  return trimmed
+}
+
+/**
+ * Returns a URL suitable for same-origin fetch. Uses current origin when the path is our serve path
+ * so workspace and deployed chat both hit the same backend (avoids proxy/cross-origin).
+ * Ensures only one URL is used even if the input accidentally contains multiple.
+ */
+function getDownloadFetchUrl(imageUrl: string): string {
+  const single = toSingleImageUrl(imageUrl)
+  const trimmed = single.trim()
+  if (!trimmed) return trimmed
+  if (typeof window === 'undefined') return trimmed
+  const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  try {
+    const parsed = new URL(trimmed.startsWith('http') ? trimmed : withSlash, window.location.origin)
+    if (parsed.pathname.startsWith('/api/files/serve/')) {
+      return `${window.location.origin}${parsed.pathname}${parsed.search}`
+    }
+    if (parsed.origin === window.location.origin) {
+      return parsed.toString()
+    }
+    return trimmed
+  } catch {
+    return withSlash.startsWith('/') ? `${window.location.origin}${withSlash}` : trimmed
+  }
+}
+
+/**
+ * Returns true if we can fetch the image with credentials (same-origin or our serve path on current origin).
+ */
+function canFetchDirect(imageUrl: string): boolean {
+  if (imageUrl.startsWith('/')) return true
+  if (typeof window === 'undefined') return false
+  try {
+    const parsed = new URL(
+      imageUrl.startsWith('http') ? imageUrl : `/${imageUrl}`,
+      window.location.origin
+    )
+    if (parsed.pathname.startsWith('/api/files/serve/')) return true
+    return parsed.origin === window.location.origin
+  } catch {
+    return true
   }
 }
 
@@ -291,13 +396,21 @@ export const downloadImage = async (isBase64?: boolean, imageData?: string, imag
       }
       blob = new Blob([arrayBuffer], { type: 'image/png' })
     } else if (imageUrl && imageUrl.length > 0) {
-      // Use proxy endpoint to fetch image
-      const proxyUrl = `/api/proxy/image?url=${encodeURIComponent(imageUrl)}`
-      const response = await fetch(proxyUrl)
-      if (!response.ok) {
-        throw new Error(`Failed to download image: ${response.statusText}`)
+      if (canFetchDirect(imageUrl)) {
+        const fetchUrl = getDownloadFetchUrl(imageUrl)
+        const response = await fetch(fetchUrl, { credentials: 'include' })
+        if (!response.ok) {
+          throw new Error(`Failed to download image: ${response.statusText}`)
+        }
+        blob = await response.blob()
+      } else {
+        const proxyUrl = `/api/proxy/image?url=${encodeURIComponent(imageUrl)}`
+        const response = await fetch(proxyUrl)
+        if (!response.ok) {
+          throw new Error(`Failed to download image: ${response.statusText}`)
+        }
+        blob = await response.blob()
       }
-      blob = await response.blob()
     } else {
       throw new Error('No image data or URL provided')
     }
@@ -499,6 +612,79 @@ export function hasBase64Images(content: any): boolean {
   }
 
   return false
+}
+
+/**
+ * Returns true if the string looks like a single image URL (http, https, or /api/files/serve/ with image extension or agent-generated path).
+ */
+export function isImageUrlString(s: string): boolean {
+  if (!s || typeof s !== 'string') return false
+  const trimmed = s.trim()
+  const urlPrefix =
+    trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
+  return (
+    !!urlPrefix &&
+    ((/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(trimmed) ||
+      trimmed.includes('agent-generated-images')))
+  )
+}
+
+/** Characters that end a URL when scanning from the start. */
+const URL_END_CHARS = /[\s)\]"'\u00A0]/
+
+/**
+ * Extracts the first image URL from a string that may contain multiple URLs, markdown, or extra text.
+ * Returns only the first valid image URL segment, or null.
+ */
+function extractFirstImageUrlFromString(s: string): string | null {
+  if (!s || typeof s !== 'string') return null
+  const trimmed = s.trim()
+  const patterns: RegExp[] = [
+    /https?:\/\/[^\s)\]"']*?(?:agent-generated-images[^\s)\]"']*?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s)\]"']*)?)/i,
+    /\/api\/files\/serve\/[^\s)\]"']*?(?:agent-generated-images[^\s)\]"']*?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s)\]"']*)?)/i,
+    /https?:\/\/[^\s)\]"']*?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s)\]"']*)?/i,
+    /\/api\/files\/serve\/[^\s)\]"']+agent-generated-images[^\s)\]"']+/i,
+  ]
+  for (const re of patterns) {
+    const match = trimmed.match(re)
+    if (match?.[0]) {
+      let url = match[0]
+      const endIdx = url.search(URL_END_CHARS)
+      if (endIdx !== -1) url = url.slice(0, endIdx)
+      if (url.length > 0) return url
+    }
+  }
+  return null
+}
+
+/**
+ * Extracts the first image URL from message content (for download). Returns null if none.
+ * When content is a string, extracts only the first URL (avoids returning concatenated or markdown text).
+ */
+export function getImageUrlFromContent(content: unknown): string | null {
+  if (!content) return null
+  if (typeof content === 'string') {
+    const single = extractFirstImageUrlFromString(content)
+    if (single) return single
+    if (isImageUrlString(content)) return content.trim()
+    return null
+  }
+  if (typeof content === 'object' && content !== null) {
+    const o = content as Record<string, unknown>
+    const image = o.image ?? (o.output as Record<string, unknown> | undefined)?.image
+    if (typeof image === 'string') {
+      const single = extractFirstImageUrlFromString(image)
+      if (single) return single
+      if (isImageUrlString(image)) return image.trim()
+    }
+    const contentStr = o.content
+    if (typeof contentStr === 'string') {
+      const single = extractFirstImageUrlFromString(contentStr)
+      if (single) return single
+      if (isImageUrlString(contentStr)) return contentStr.trim()
+    }
+  }
+  return null
 }
 
 /**

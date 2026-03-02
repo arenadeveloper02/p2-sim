@@ -74,15 +74,6 @@ describe('Azure Blob Storage Client', () => {
       }),
     }))
 
-    vi.doMock('@/lib/uploads/setup', () => ({
-      BLOB_CONFIG: {
-        accountName: 'testaccount',
-        accountKey: 'testkey',
-        connectionString:
-          'DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net',
-        containerName: 'testcontainer',
-      },
-    }))
   })
 
   afterEach(() => {

@@ -163,6 +163,8 @@ export const env = createEnv({
     S3_COPILOT_BUCKET_NAME:                z.string().optional(),                  // S3 bucket for copilot files
     S3_PROFILE_PICTURES_BUCKET_NAME:       z.string().optional(),                  // S3 bucket for profile pictures
     S3_OG_IMAGES_BUCKET_NAME:              z.string().optional(),                  // S3 bucket for OpenGraph images
+    S3_AGENT_GENERATED_IMAGES_BUCKET_NAME: z.string().optional(),                  // S3 bucket for agent-generated images
+    S3_AGENT_GENERATED_IMAGES_REGION:      z.string().optional(),                  // AWS region for agent-generated images bucket (defaults to AWS_REGION)
 
     // Cloud Storage - Azure Blob 
     AZURE_ACCOUNT_NAME:                    z.string().optional(),                  // Azure storage account name
@@ -175,6 +177,7 @@ export const env = createEnv({
     AZURE_STORAGE_COPILOT_CONTAINER_NAME:  z.string().optional(),                  // Azure container for copilot files
     AZURE_STORAGE_PROFILE_PICTURES_CONTAINER_NAME: z.string().optional(),          // Azure container for profile pictures
     AZURE_STORAGE_OG_IMAGES_CONTAINER_NAME: z.string().optional(),                 // Azure container for OpenGraph images
+    AZURE_STORAGE_AGENT_GENERATED_IMAGES_CONTAINER_NAME: z.string().optional(),    // Azure container for agent-generated images
 
     // Data Retention
     FREE_PLAN_LOG_RETENTION_DAYS:          z.string().optional(),                  // Log retention days for free plan users
@@ -182,6 +185,7 @@ export const env = createEnv({
     // Rate Limiting Configuration
     RATE_LIMIT_WINDOW_MS:                  z.string().optional().default('60000'), // Rate limit window duration in milliseconds (default: 1 minute)
     MANUAL_EXECUTION_LIMIT:                z.string().optional().default('999999'),// Manual execution bypass value (effectively unlimited)
+    DISABLE_EXECUTION_RATE_LIMIT:          z.string().optional(),                  // When set (e.g. true), skip execution rate limits (self-hosted / EC2)
     RATE_LIMIT_FREE_SYNC:                  z.string().optional().default('10'),    // Free tier sync API executions per minute
     RATE_LIMIT_FREE_ASYNC:                 z.string().optional().default('50'),    // Free tier async API executions per minute
     RATE_LIMIT_PRO_SYNC:                   z.string().optional().default('25'),    // Pro tier sync API executions per minute

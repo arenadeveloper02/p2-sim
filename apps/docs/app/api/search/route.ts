@@ -1,7 +1,5 @@
 import { sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { db, docsEmbeddings } from '@/lib/db'
-import { generateSearchEmbedding } from '@/lib/embeddings'
 
 export const runtime = 'nodejs'
 export const revalidate = 0
@@ -10,9 +8,13 @@ export const revalidate = 0
  * Hybrid search API endpoint
  * - English: Vector embeddings + keyword search
  * - Other languages: Keyword search only
+ * Uses dynamic imports so db/embeddings are not loaded at build time (avoids DATABASE_URL requirement).
  */
 export async function GET(request: NextRequest) {
   try {
+    const { db, docsEmbeddings } = await import('@/lib/db')
+    const { generateSearchEmbedding } = await import('@/lib/embeddings')
+
     const searchParams = request.nextUrl.searchParams
     const query = searchParams.get('query') || searchParams.get('q') || ''
     const locale = searchParams.get('locale') || 'en'

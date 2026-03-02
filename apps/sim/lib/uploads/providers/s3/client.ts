@@ -25,6 +25,7 @@ import {
 import { sanitizeFileName } from '@/executor/constants'
 
 let _s3Client: S3Client | null = null
+const _s3ClientsByRegion = new Map<string, S3Client>()
 
 export function getS3Client(): S3Client {
   if (_s3Client) return _s3Client
@@ -49,6 +50,28 @@ export function getS3Client(): S3Client {
   })
 
   return _s3Client
+}
+
+/**
+ * Returns an S3 client for the given region. Use when the bucket is in a different region than AWS_REGION.
+ * Clients are cached per region.
+ */
+export function getS3ClientForRegion(region: string): S3Client {
+  if (!region) return getS3Client()
+  let client = _s3ClientsByRegion.get(region)
+  if (client) return client
+  client = new S3Client({
+    region,
+    credentials:
+      env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
+        ? {
+            accessKeyId: env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+          }
+        : undefined,
+  })
+  _s3ClientsByRegion.set(region, client)
+  return client
 }
 
 /**
@@ -88,7 +111,10 @@ export async function uploadToS3(
   const safeFileName = sanitizeFileName(fileName)
   const uniqueKey = shouldSkipTimestamp ? fileName : `${Date.now()}-${safeFileName}`
 
-  const s3Client = getS3Client()
+  const s3Client =
+    config.region && config.region !== S3_CONFIG.region
+      ? getS3ClientForRegion(config.region)
+      : getS3Client()
 
   const s3Metadata: Record<string, string> = {
     originalName: sanitizeFilenameForMetadata(fileName),
@@ -152,7 +178,11 @@ export async function getPresignedUrlWithConfig(
     Key: key,
   })
 
-  return getSignedUrl(getS3Client(), command, { expiresIn })
+  const s3Client =
+    customConfig.region && customConfig.region !== S3_CONFIG.region
+      ? getS3ClientForRegion(customConfig.region)
+      : getS3Client()
+  return getSignedUrl(s3Client, command, { expiresIn })
 }
 
 /**
@@ -178,7 +208,11 @@ export async function downloadFromS3(key: string, customConfig?: S3Config): Prom
     Key: key,
   })
 
-  const response = await getS3Client().send(command)
+  const s3Client =
+    config.region && config.region !== S3_CONFIG.region
+      ? getS3ClientForRegion(config.region)
+      : getS3Client()
+  const response = await s3Client.send(command)
   const stream = response.Body as any
 
   return new Promise<Buffer>((resolve, reject) => {
@@ -205,7 +239,11 @@ export async function deleteFromS3(key: string, customConfig: S3Config): Promise
 export async function deleteFromS3(key: string, customConfig?: S3Config): Promise<void> {
   const config = customConfig || { bucket: S3_CONFIG.bucket, region: S3_CONFIG.region }
 
-  await getS3Client().send(
+  const s3Client =
+    config.region && config.region !== S3_CONFIG.region
+      ? getS3ClientForRegion(config.region)
+      : getS3Client()
+  await s3Client.send(
     new DeleteObjectCommand({
       Bucket: config.bucket,
       Key: key,

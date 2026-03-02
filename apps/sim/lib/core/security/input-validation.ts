@@ -1,6 +1,6 @@
+import { createLogger } from '@sim/logger'
 import type { AgentOptions, RequestOptions } from 'http'
 import type { LookupFunction } from 'net'
-import { createLogger } from '@sim/logger'
 import * as ipaddr from 'ipaddr.js'
 
 const logger = createLogger('InputValidation')
@@ -748,7 +748,7 @@ export function validateProxyUrl(
  * - IPv4-mapped IPv6 (::ffff:127.0.0.1)
  * - Various edge cases that regex patterns miss
  */
-function isPrivateOrReservedIP(ip: string): boolean {
+export function isPrivateOrReservedIP(ip: string): boolean {
   try {
     if (!ipaddr.isValid(ip)) {
       return true
@@ -830,6 +830,7 @@ export async function validateUrlWithDNS(
     }
   }
 }
+
 export interface SecureFetchOptions {
   method?: string
   headers?: Record<string, string>
@@ -917,8 +918,8 @@ export async function secureFetchWithPinnedIP(
     const isIPv6 = resolvedIP.includes(':')
     const family = isIPv6 ? 6 : 4
 
-    const lookup: LookupFunction = (_hostname, options, callback) => {
-      if (options.all) {
+    const lookup: LookupFunction = (_hostname, opts, callback) => {
+      if (opts?.all) {
         callback(null, [{ address: resolvedIP, family }])
       } else {
         callback(null, resolvedIP, family)

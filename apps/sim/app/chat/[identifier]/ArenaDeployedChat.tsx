@@ -1175,45 +1175,23 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     ) {
       return <UnauthorizedEmailError message={error} />
     }
-    return <ChatErrorState error={error} starCount={starCount} />
+    return <ChatErrorState error={error} />
   }
 
   // If authentication is required, use the extracted components
   if (authRequired) {
-    // Get title and description from the URL params or use defaults
-    const title = new URLSearchParams(window.location.search).get('title') || 'chat'
-    const primaryColor =
-      new URLSearchParams(window.location.search).get('color') || 'var(--brand-primary-hover-hex)'
-
     if (authRequired === 'password') {
       return (
-        <PasswordAuth
-          identifier={identifier}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
+        <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
       )
     }
     if (authRequired === 'email') {
       return (
-        <EmailAuth
-          identifier={identifier}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
+        <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
       )
     }
     if (authRequired === 'sso') {
-      return (
-        <SSOAuth
-          identifier={identifier}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
-      )
+      return <SSOAuth identifier={identifier} />
     }
   }
 

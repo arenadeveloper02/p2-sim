@@ -1,6 +1,6 @@
-// import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createLogger } from '@sim/logger'
 import type { NanoBananaRequestBody } from '@/app/api/google/api-service'
+import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')
@@ -129,11 +129,29 @@ const nanoBananaTool: ToolConfig = {
 
       logger.info('Successfully received Nano Banana image, length:', base64Image.length)
 
+      // Get workflowId and userId from params context
+      const workflowId = params?._context?.workflowId || 'unknown'
+      const userId = params?._context?.userId || 'unknown'
+
+      let finalImageUrl: string | null = null
+      let s3UploadFailed: boolean | undefined
+      try {
+        const saveResult = await saveGeneratedImage(base64Image, workflowId, userId, mimeType)
+        finalImageUrl = saveResult.url
+        s3UploadFailed = saveResult.s3UploadFailed
+        logger.info(`Successfully saved Nano Banana image to storage: ${finalImageUrl}`)
+      } catch (error) {
+        logger.error('Error saving Nano Banana image to storage:', error)
+        logger.warn('Falling back to base64 image data URL due to storage error')
+      }
+
+      const imageUrlToReturn = finalImageUrl || (base64Image ? `data:${mimeType};base64,${base64Image}` : '')
+
       return {
         success: true,
         output: {
-          content: 'nano-banana-generated-image',
-          image: base64Image,
+          content: finalImageUrl || 'nano-banana-generated-image',
+          image: imageUrlToReturn,
           metadata: {
             model: params?.model || 'gemini-2.5-flash-image',
             mimeType: mimeType,
@@ -141,7 +159,10 @@ const nanoBananaTool: ToolConfig = {
             imageSize: params?.imageSize ?? null,
             hasInputImage: !!(params?.inputImage && params?.inputImageMimeType),
             inputImageMimeType: params?.inputImageMimeType || null,
+            stored: !!finalImageUrl,
+            s3UploadFailed,
           },
+          s3UploadFailed,
         },
       }
     } catch (error) {

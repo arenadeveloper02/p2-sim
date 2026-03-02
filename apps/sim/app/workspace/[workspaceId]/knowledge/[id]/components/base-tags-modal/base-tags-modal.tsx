@@ -231,7 +231,7 @@ export function BaseTagsModal({
       addTagsforKBEvent({
         'Knowledge Base Name': knowledgeBaseName || '',
         'Knowledge Base ID': knowledgeBaseId,
-        'Tag Name': newTagDefinition.displayName,
+        'Tag Name': createTagForm.displayName.trim(),
       })
 
       setCreateTagForm({

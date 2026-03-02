@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Check, Copy, Download } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Check, Copy, Download, X } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
 import ArenaCopilotMarkdownRenderer from '../../../panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
@@ -7,7 +7,9 @@ import {
   downloadImage,
   extractAllBase64Images,
   extractBase64Image,
+  getImageUrlFromContent,
   hasBase64Images,
+  isBase64,
   renderBs64Img,
 } from './constants'
 
@@ -31,6 +33,45 @@ interface ChatMessageProps {
 }
 
 const MAX_WORD_LENGTH = 25
+
+const S3_UPLOAD_FAILED_DISMISS_MS = 10_000
+
+/**
+ * Temporary alert shown when the generated image was saved to local storage because S3 upload failed.
+ * Auto-dismisses after 10s; user can dismiss manually.
+ */
+function S3UploadFailedAlert() {
+  const [dismissed, setDismissed] = useState(false)
+  const dismiss = useCallback(() => setDismissed(true), [])
+
+  useEffect(() => {
+    const t = setTimeout(dismiss, S3_UPLOAD_FAILED_DISMISS_MS)
+    return () => clearTimeout(t)
+  }, [dismiss])
+
+  if (dismissed) return null
+
+  return (
+    <div
+      className='mb-2 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-amber-800 text-sm dark:text-amber-200'
+      role='alert'
+    >
+      <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400' />
+      <p className='flex-1'>
+        Image was saved locally because upload to the storage bucket failed. Saving to the bucket is
+        important for this workflow and user.
+      </p>
+      <button
+        type='button'
+        onClick={dismiss}
+        className='flex-shrink-0 rounded p-1 hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500'
+        aria-label='Dismiss'
+      >
+        <X className='h-4 w-4' />
+      </button>
+    </div>
+  )
+}
 
 /**
  * Formats file size in human-readable format
@@ -119,22 +160,27 @@ const RenderButtons = ({
   }
 
   const handleDownload = () => {
+    const imageUrl = getImageUrlFromContent(message?.content)
+    if (imageUrl) {
+      downloadImage(false, undefined, imageUrl)
+      return
+    }
     const base64Images = extractAllBase64Images(message?.content)
     if (base64Images.length > 0) {
-      // Download the first image (or all if multiple)
-      base64Images.forEach((imageData, index) => {
+      base64Images.forEach((imageData) => {
         downloadImage(true, imageData)
       })
     }
   }
 
   const containsBase64Images = hasBase64Images(message?.content)
+  const hasImageUrl = !!getImageUrlFromContent(message?.content)
 
   return (
     <>
       {!message.isStreaming && (
         <div className='mt-2 flex items-center gap-2'>
-          {!containsBase64Images && (
+          {!containsBase64Images && !hasImageUrl && (
             <Tooltip.Provider>
               <Tooltip.Root delayDuration={300}>
                 <Tooltip.Trigger asChild>
@@ -158,7 +204,7 @@ const RenderButtons = ({
             </Tooltip.Provider>
           )}
 
-          {containsBase64Images && (
+          {(containsBase64Images || hasImageUrl) && (
             <Tooltip.Provider>
               <Tooltip.Root delayDuration={300}>
                 <Tooltip.Trigger asChild>
@@ -265,11 +311,73 @@ export function ChatMessage({ message }: ChatMessageProps) {
     }
 
     try {
-      // If content is a string, check for mixed content (text + base64 images)
+      if (typeof content === 'object' && content !== null && content.image) {
+        const imageValue = content.image
+        const isImageUrl =
+          typeof imageValue === 'string' &&
+          (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
+        const isBase64Image = typeof imageValue === 'string' && isBase64(imageValue)
+        const showS3UploadFailed = content.s3UploadFailed === true && (isImageUrl || isBase64Image)
+
+        return (
+          <>
+            {content.content && typeof content.content === 'string' && content.content.trim() && (
+              <ArenaCopilotMarkdownRenderer content={content.content} />
+            )}
+            {showS3UploadFailed && <S3UploadFailedAlert />}
+            {isImageUrl && (
+              <div className='w-full'>
+                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: imageValue })}
+              </div>
+            )}
+            {isBase64Image && (
+              <div className='w-full'>
+                {renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}
+              </div>
+            )}
+          </>
+        )
+      }
+
+      if (
+        typeof content === 'object' &&
+        content !== null &&
+        typeof content.content === 'string' &&
+        content.content &&
+        (!content.image || content.image === '') &&
+        (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
+      ) {
+        return (
+          <div className='w-full'>
+            {renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}
+          </div>
+        )
+      }
+
+      if (typeof content === 'string' && isBase64(content)) {
+        const cleanedContent = content.replace(/\s+/g, '')
+        return renderBs64Img({ isBase64: true, imageData: cleanedContent })
+      }
+
+      if (typeof content === 'string') {
+        const trimmed = content.trim()
+        const urlPrefix = trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
+        const looksLikeImageUrl =
+          urlPrefix &&
+          (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(trimmed) ||
+            trimmed.includes('agent-generated-images'))
+        if (looksLikeImageUrl) {
+          return (
+            <div className='w-full'>
+              {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
+            </div>
+          )
+        }
+      }
+
       if (typeof content === 'string') {
         const { textParts, base64Images } = extractBase64Image(content)
 
-        // If we found base64 images, render both text and images
         if (base64Images.length > 0) {
           return (
             <>
@@ -283,11 +391,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
           )
         }
 
-        // If no base64 images, just render as markdown
-        // return <ArenaCopilotMarkdownRenderer content={content} />
+        return <ArenaCopilotMarkdownRenderer content={content} />
       }
 
-      // For other content types, render as markdown
       return <ArenaCopilotMarkdownRenderer content={content} />
     } catch (error) {
       console.error('Error rendering message content:', error)
