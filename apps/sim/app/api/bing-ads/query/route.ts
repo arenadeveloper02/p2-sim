@@ -1,11 +1,12 @@
 /**
- * Bing Ads V1 API Route
- * Handles Bing Ads queries with dynamic date calculation like Google Ads V1
+ * Bing Ads API Route
+ * Handles Bing Ads queries with dynamic date calculation
  */
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { BING_ADS_ACCOUNTS } from './constants'
-import { generateBingAdsQuery } from './query-generation-simple'
+import { generateBingAdsQuery } from './query-generation'
+import { makeBingAdsRequest } from './bing-ads-api'
 import { processResults } from './result-processing'
 import type { BingAdsV1Request } from './types'
 
@@ -46,58 +47,27 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
 
       const start = new Date(timeRange.start)
       const end = new Date(timeRange.end)
-      const today = new Date()
-      const daysDiff = Math.ceil((today.getTime() - end.getTime()) / (1000 * 60 * 60 * 24))
       const rangeDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
 
       // Map to closest preset (only use Bing Ads supported presets)
       if (rangeDays === 1) return 'Yesterday'
       if (rangeDays === 0) return 'Today'
-      if (rangeDays === 3) return 'LastThreeDays' // 🎯 Keep as is - will return empty if not supported
       if (rangeDays <= 7) return 'LastSevenDays'
       if (rangeDays <= 14) return 'Last14Days'
       return 'Last30Days'
     }
 
-    // Execute the Bing Ads query against Bing Ads API
-    const apiRequest = {
-      accountId: accountInfo.id,
-      reportType: queryResult.reportType,
-      columns: queryResult.columns,
-      timeRange: queryResult.timeRange,
-      aggregation: queryResult.aggregation,
-    }
-
     // Map dynamic dates to preset for Bing Ads API
     const datePreset = mapTimeRangeToPreset(queryResult.timeRange || { start: '', end: '' })
 
-    console.log('=== ROUTE CALLING BING API ===', {
-      accountId: apiRequest.accountId,
-      timeRange: apiRequest.timeRange,
-      mappedPreset: datePreset,
-      reportType: apiRequest.reportType,
-    })
-
-    const { makeBingAdsRequest: realBingAdsRequest } = await import(
-      '../../bing-ads/query/bing-ads-api'
-    )
-
-    const apiResult = await realBingAdsRequest(apiRequest.accountId, {
-      reportType: apiRequest.reportType,
-      columns: apiRequest.columns,
+    // Execute the Bing Ads query against Bing Ads API
+    const apiResult = await makeBingAdsRequest(accountInfo.id, {
+      reportType: queryResult.reportType,
+      columns: queryResult.columns,
       timeRange: undefined, // Use preset instead of custom dates
       datePreset: datePreset, // Use mapped preset
-      aggregation: apiRequest.aggregation,
+      aggregation: queryResult.aggregation,
       campaignFilter: undefined,
-    })
-
-    console.log('=== ROUTE GOT API RESULT ===', {
-      hasData: !!apiResult?.campaigns,
-      dataLength: apiResult?.campaigns?.length || 0,
-      success: apiResult?.success,
-      error: apiResult?.error,
-      apiResultKeys: Object.keys(apiResult || {}),
-      fullApiResult: apiResult,
     })
 
     // Process results
@@ -136,7 +106,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
       {
         success: false,
         error: errorMessage,
-        details: 'Failed to process Bing Ads V1 query',
+        details: 'Failed to process Bing Ads query',
         suggestion: 'Please check your query and try again.',
         execution_time_ms: executionTime,
       },

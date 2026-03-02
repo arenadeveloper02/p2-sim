@@ -34,7 +34,7 @@ export const BingAdsBlock: BlockConfig<BingAdsQueryResponse> = {
       options: [],
       fetchOptions: async () => {
         try {
-          const response = await fetch('/api/bing-ads-v1/accounts')
+          const response = await fetch('/api/bing-ads/accounts')
           const data = await response.json()
 
           console.log('Bing Ads API response:', data)
@@ -57,7 +57,7 @@ export const BingAdsBlock: BlockConfig<BingAdsQueryResponse> = {
       },
       fetchOptionById: async (optionId: string) => {
         try {
-          const response = await fetch('/api/bing-ads-v1/accounts')
+          const response = await fetch('/api/bing-ads/accounts')
           const data = await response.json()
 
           if (data.success && data.accounts[optionId]) {

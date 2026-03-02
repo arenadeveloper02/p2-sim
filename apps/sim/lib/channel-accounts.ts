@@ -210,3 +210,13 @@ export async function getFacebookAdsAccounts(): Promise<Record<string, ChannelAc
     return {}
   }
 }
+
+/**
+ * Fetches Bing Ads accounts from database for the current workspace.
+ */
+export async function getBingAdsAccounts(
+  workspaceId?: string,
+  userId?: string
+): Promise<Record<string, ChannelAccount>> {
+  return getChannelAccounts('bing', workspaceId, userId)
+}

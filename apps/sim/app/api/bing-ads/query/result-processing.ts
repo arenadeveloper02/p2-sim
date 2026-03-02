@@ -1,11 +1,11 @@
 /**
- * Result processing for Bing Ads V1 API
+ * Result processing for Bing Ads API
  */
 
 import { createLogger } from '@sim/logger'
 import type { ProcessedResults } from './types'
 
-const logger = createLogger('BingAdsV1ResultProcessing')
+const logger = createLogger('BingAdsResultProcessing')
 
 /**
  * Processes Bing Ads API results
