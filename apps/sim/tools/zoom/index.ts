@@ -3,6 +3,7 @@ export { zoomCreateMeetingTool } from './create_meeting'
 export { zoomDeleteMeetingTool } from './delete_meeting'
 export { zoomDeleteRecordingTool } from './delete_recording'
 export { zoomDownloadTranscriptTool } from './download_transcript'
+export { zoomGetAccountRecordingsWithTranscriptTool } from './get_account_recordings_with_transcript'
 export { zoomGetMeetingTool } from './get_meeting'
 export { zoomGetMeetingInvitationTool } from './get_meeting_invitation'
 export { zoomGetMeetingRecordingsTool } from './get_meeting_recordings'
@@ -20,6 +21,8 @@ export type {
   ZoomDeleteRecordingResponse,
   ZoomDownloadTranscriptParams,
   ZoomDownloadTranscriptResponse,
+  ZoomGetAccountRecordingsWithTranscriptParams,
+  ZoomGetAccountRecordingsWithTranscriptResponse,
   ZoomGetMeetingInvitationParams,
   ZoomGetMeetingInvitationResponse,
   ZoomGetMeetingParams,

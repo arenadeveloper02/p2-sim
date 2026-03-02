@@ -52,9 +52,13 @@ export function ArenaAssigneeSelector({
   const isCreateTask = subBlockId === 'task-assignee'
   const clientKey = subBlockId === 'task-assignee' ? 'task-client' : 'search-task-client'
   const projectKey = subBlockId === 'task-assignee' ? 'task-project' : 'search-task-project'
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]?.clientId
+  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
+    | { clientId?: string }
+    | undefined
+  const clientId = clientRef?.clientId
   const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.[projectKey]
-  const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
+  const projectId =
+    typeof projectValue === 'string' ? projectValue : (projectValue as { sysId?: string })?.sysId
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue

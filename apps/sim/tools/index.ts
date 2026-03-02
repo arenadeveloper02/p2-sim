@@ -1,6 +1,5 @@
 import { createLogger } from '@sim/logger'
 import { generateInternalToken } from '@/lib/auth/internal'
-import { secureFetchWithPinnedIP, validateUrlWithDNS } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { parseMcpToolId } from '@/lib/mcp/utils'
@@ -618,6 +617,10 @@ async function executeToolRequest(
       if (workflowId) {
         fullUrlObj.searchParams.set('workflowId', workflowId)
       }
+      const userId = params._context?.sessionUserId ?? params._context?.workflowUserId
+      if (userId) {
+        fullUrlObj.searchParams.set('userId', userId)
+      }
     }
 
     const fullUrl = fullUrlObj.toString()
@@ -673,6 +676,9 @@ async function executeToolRequest(
         body: requestParams.body,
       })
     } else {
+      const { validateUrlWithDNS, secureFetchWithPinnedIP } = await import(
+        '@/lib/core/security/input-validation.server'
+      )
       const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl')
       if (!urlValidation.isValid) {
         throw new Error(`Invalid tool URL: ${urlValidation.error}`)

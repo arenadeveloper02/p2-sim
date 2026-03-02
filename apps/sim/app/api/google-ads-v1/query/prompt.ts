@@ -75,7 +75,7 @@ DEMAND_GEN, SHOPPING, HOTEL, VIDEO, MULTI_CHANNEL, LOCAL, SMART, PERFORMANCE_MAX
 
 2. **Date Calculation Logic** (based on CURRENT_DATE: ${CURRENT_DATE}):
    - Parse CURRENT_DATE to extract: year, month, day
-   - **"last N days"**: Yesterday = CURRENT_DATE - 1 day, Start = Yesterday - (N - 1) days
+   - **"last N days"** (CRITICAL - inclusive count): End = Yesterday (CURRENT_DATE - 1). Start = End - (N - 1) days. This gives exactly N days inclusive. Example: last 7 days with Yesterday=Mar 1 → Start=Feb 23, End=Mar 1 (Feb 23,24,25,26,27,28,Mar1 = 7 days). Example: last 30 days with Yesterday=Mar 1 → Start=Jan 31, End=Mar 1 (30 days inclusive).
    - **"this week"**: Monday of current week to yesterday
    - **"last month"**: First and last day of previous month
    - **"this month"**: First day of current month to yesterday
@@ -109,12 +109,12 @@ DEMAND_GEN, SHOPPING, HOTEL, VIDEO, MULTI_CHANNEL, LOCAL, SMART, PERFORMANCE_MAX
 **Campaign Performance (no date mentioned):**
 User: "show campaign performance"
 Query: SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
-Calculation: Last 30 days ending yesterday (Yesterday = CURRENT_DATE - 1, Start = Yesterday - 29 days)
+Calculation: Last 30 days: End = Yesterday (CURRENT_DATE - 1), Start = End - 29 days. Must yield exactly 30 days inclusive. If Yesterday=Mar 1 → 2026-01-31 to 2026-03-01
 
 **Campaign Performance (last 7 days):**
 User: "campaign performance last 7 days"
 Query: SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
-Calculation: Yesterday = CURRENT_DATE - 1, Start = Yesterday - 6 days
+Calculation: End = Yesterday (CURRENT_DATE - 1). Start = End - 6 days. Must yield exactly 7 days inclusive. If Yesterday=Mar 1 → 2026-02-23 to 2026-03-01
 
 **Keywords with Quality Score:**
 User: "keywords with quality score below 5"

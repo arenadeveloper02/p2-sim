@@ -1207,7 +1207,10 @@ function AuthSelector({
           </Label>
           <TagInput
             items={emailItems}
-            onAdd={(value) => addEmail(value)}
+            onAdd={(value) => {
+              void addEmail(value)
+              return true
+            }}
             onRemove={handleRemoveEmailItem}
             placeholder={
               emails.length > 0 || invalidEmails.length > 0

@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { RateLimiter } from '@/lib/core/rate-limiter/rate-limiter'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
@@ -342,7 +343,9 @@ export async function preprocessExecution(
   // ========== STEP 5: Check Rate Limits ==========
   let rateLimitInfo: { allowed: boolean; remaining: number; resetAt: Date } | undefined
 
-  if (checkRateLimit) {
+  const executionRateLimitDisabled = isTruthy(getEnv('DISABLE_EXECUTION_RATE_LIMIT'))
+
+  if (checkRateLimit && !executionRateLimitDisabled) {
     try {
       const rateLimiter = new RateLimiter()
       rateLimitInfo = await rateLimiter.checkRateLimitWithSubscription(

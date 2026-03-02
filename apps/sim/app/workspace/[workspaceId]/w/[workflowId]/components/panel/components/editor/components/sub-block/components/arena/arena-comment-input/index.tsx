@@ -391,9 +391,13 @@ export function ArenaCommentInput({
   // Get project and client from store
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client']?.clientId
+  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client'] as
+    | { clientId?: string }
+    | undefined
+  const clientId = clientRef?.clientId
   const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-project']
-  const projectId = typeof projectValue === 'string' ? projectValue : projectValue?.sysId
+  const projectId =
+    typeof projectValue === 'string' ? projectValue : (projectValue as { sysId?: string })?.sysId
 
   // Wand functionality
   const wandHook = useWand({

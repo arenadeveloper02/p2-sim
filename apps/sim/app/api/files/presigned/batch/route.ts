@@ -2,7 +2,6 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import type { StorageContext } from '@/lib/uploads/config'
-import { USE_BLOB_STORAGE } from '@/lib/uploads/config'
 import {
   generateBatchPresignedUploadUrls,
   hasCloudStorage,
@@ -156,7 +155,7 @@ export async function POST(request: NextRequest) {
       `Generated ${files.length} presigned URLs in ${duration}ms (avg ${Math.round(duration / files.length)}ms per file)`
     )
 
-    const storagePrefix = USE_BLOB_STORAGE ? 'blob' : 's3'
+    const storagePrefix = 's3'
 
     return NextResponse.json({
       files: presignedUrls.map((urlResponse, index) => {

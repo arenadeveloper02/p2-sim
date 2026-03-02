@@ -1,11 +1,11 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { env } from '@/lib/core/config/env'
-import { getArenaTokenByWorkflowId } from '../utils/db-utils'
+import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 
 export async function POST(req: NextRequest) {
   const data = await req.json()
   const { workflowId, ...restData } = data
-  const tokenObject = await getArenaTokenByWorkflowId(workflowId)
+  const tokenObject = await getArenaToken(req, workflowId)
   if (tokenObject.found === false) {
     return NextResponse.json(
       { error: 'Failed to save summary', details: tokenObject.reason },

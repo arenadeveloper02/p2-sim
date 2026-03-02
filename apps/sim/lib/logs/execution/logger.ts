@@ -733,9 +733,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
       extractFilesFromObject(workflowInput, 'workflow_input')
     }
 
-    logger.debug(`Extracted ${files.length} file(s) from execution`, {
-      fileNames: files.map((f) => f.name),
-    })
+    // logger.debug(`Extracted ${files.length} file(s) from execution`, {
+    //   fileNames: files.map((f) => f.name),
+    // })
 
     return files
   }

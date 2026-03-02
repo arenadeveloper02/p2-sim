@@ -33,6 +33,7 @@ import { buildBlockExecutionError, normalizeError } from '@/executor/utils/error
 import { validateBlockType } from '@/executor/utils/permission-check'
 import type { VariableResolver } from '@/executor/variables/resolver'
 import type { SerializedBlock } from '@/serializer/types'
+import type { Message } from '@/executor/handlers/agent/types'
 import type { SubflowType } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('BlockExecutor')
@@ -766,7 +767,6 @@ export class BlockExecutor {
     ) {
       try {
         const { memoryService } = await import('@/executor/handlers/agent/memory')
-        const { Message } = await import('@/executor/handlers/agent/types').default
 
         const assistantMessage: Message = {
           role: 'assistant',
