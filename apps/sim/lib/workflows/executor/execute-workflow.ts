@@ -19,6 +19,8 @@ export interface ExecuteWorkflowOptions {
   skipLoggingComplete?: boolean
   includeFileBase64?: boolean
   base64MaxBytes?: number
+  /** When set (e.g. deployed chat with logged-in user), Arena tools use this user's token from DB via getArenaToken. */
+  sessionUserId?: string | null
 }
 
 export interface WorkflowInfo {
@@ -48,6 +50,7 @@ export async function executeWorkflow(
   const loggingSession = new LoggingSession(workflowId, executionId, triggerType, requestId)
 
   try {
+    const sessionUserId = streamConfig?.sessionUserId ?? undefined
     const metadata: ExecutionMetadata = {
       requestId,
       executionId,
@@ -55,10 +58,11 @@ export async function executeWorkflow(
       workspaceId,
       userId: actorUserId,
       workflowUserId: workflow.userId,
+      sessionUserId,
       triggerType,
       useDraftState: false,
       startTime: new Date().toISOString(),
-      isClientSession: false,
+      isClientSession: Boolean(sessionUserId),
     }
 
     const snapshot = new ExecutionSnapshot(
