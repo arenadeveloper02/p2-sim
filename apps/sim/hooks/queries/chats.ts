@@ -146,7 +146,19 @@ export function useCreateChat() {
         body: JSON.stringify(payload),
       })
 
-      const result = await response.json()
+      let result: {
+        chatUrl?: string
+        chatId?: string
+        id?: string
+        error?: string
+        data?: { chatUrl?: string; id?: string }
+      }
+      try {
+        const parsed = await response.json()
+        result = parsed && typeof parsed === 'object' ? parsed : {}
+      } catch {
+        result = {}
+      }
 
       if (!response.ok) {
         if (result.error === 'Identifier already in use') {
@@ -155,12 +167,13 @@ export function useCreateChat() {
         throw new Error(result.error || 'Failed to deploy chat')
       }
 
-      if (!result.chatUrl) {
+      const chatUrl = result.chatUrl ?? result.data?.chatUrl
+      if (!chatUrl) {
         throw new Error('Response missing chatUrl')
       }
 
-      logger.info('Chat deployed successfully:', result.chatUrl)
-      return { chatUrl: result.chatUrl, chatId: result.chatId }
+      logger.info('Chat deployed successfully:', chatUrl)
+      return { chatUrl, chatId: result.chatId ?? result.id ?? result.data?.id }
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
@@ -174,7 +187,8 @@ export function useCreateChat() {
       })
     },
     onError: (error) => {
-      logger.error('Failed to create chat', { error })
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error('Failed to create chat', { message, error })
     },
   })
 }

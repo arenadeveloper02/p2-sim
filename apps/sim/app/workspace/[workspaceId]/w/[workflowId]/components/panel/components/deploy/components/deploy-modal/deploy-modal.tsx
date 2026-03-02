@@ -148,7 +148,11 @@ export function DeployModal({
     refetch: refetchDeploymentInfo,
   } = useDeploymentInfo(workflowId, { enabled: open && isDeployed })
 
-  const { data: versionsData, isLoading: versionsLoading } = useDeploymentVersions(workflowId, {
+  const {
+    data: versionsData,
+    isLoading: versionsLoading,
+    refetch: fetchVersions,
+  } = useDeploymentVersions(workflowId, {
     enabled: open,
   })
 
@@ -579,6 +583,7 @@ export function DeployModal({
                   isLoadingDeployedState={isLoadingDeployedState}
                   versions={versions}
                   versionsLoading={versionsLoading}
+                  fetchVersions={fetchVersions}
                   onPromoteToLive={handlePromoteToLive}
                   onLoadDeploymentComplete={handleCloseModal}
                 />
@@ -587,6 +592,7 @@ export function DeployModal({
               <ModalTabsContent value='api'>
                 <ApiDeploy
                   workflowId={workflowId}
+                  apiDeployError={deployError}
                   deploymentInfo={deploymentInfo}
                   isLoading={isLoadingDeploymentInfo}
                   needsRedeployment={needsRedeployment}
@@ -600,6 +606,7 @@ export function DeployModal({
                 <ChatDeploy
                   workflowId={workflowId || ''}
                   workflowWorkspaceId={workflowWorkspaceId || ''}
+                  workspaceName={workspaceName}
                   deploymentInfo={deploymentInfo}
                   existingChat={existingChat as ExistingChat | null}
                   isLoadingChat={isLoadingChat}

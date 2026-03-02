@@ -25,10 +25,10 @@ import {
   EmailAuth,
   GoldenQueriesModal,
   PasswordAuth,
-  SSOAuth,
   UnauthorizedEmailError,
   VoiceInterface,
 } from '@/app/chat/components'
+import SSOAuth from '@/ee/sso/components/sso-auth'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
@@ -383,12 +383,19 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       })
 
       if (!response.ok) {
+        let errorData: { error?: string; message?: string } = {}
+        try {
+          errorData = (await response.json()) as { error?: string; message?: string }
+        } catch {
+          // Ignore JSON parse failure for error body
+        }
+
         // Check if auth is required or unauthorized
         if (response.status === 401 || response.status === 403) {
-          const errorData = await response.json()
+          const err = errorData?.error
 
           // Attempt a safe, one-time auto-login for email-gated chats when an email cookie exists
-          if (errorData.error === 'auth_required_email') {
+          if (err === 'auth_required_email') {
             try {
               const autoLoginKey = `chat:autoLoginTried:${identifier}:${
                 new URLSearchParams(window.location.search).get('chatId') || 'nochat'
@@ -420,23 +427,23 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             }
           }
 
-          if (errorData.error === 'auth_required_password') {
+          if (err === 'auth_required_password') {
             setAuthRequired('password')
             return
           }
 
           // Skip email auth screen; rely on server to auto-auth or deny
-          if (errorData.error === 'auth_required_email') {
+          if (err === 'auth_required_email') {
             setError('You do not have access to this chat')
             return
           }
 
           // If user email is not authorized, show error
           if (
-            errorData.error === 'Email is not authorized for this chat' ||
-            errorData.error === 'Email not authorized' ||
+            err === 'Email is not authorized for this chat' ||
+            err === 'Email not authorized' ||
             errorData.message === 'Email not authorized' ||
-            errorData.error === 'You do not have access to this chat' ||
+            err === 'You do not have access to this chat' ||
             errorData.message === 'You do not have access to this chat'
           ) {
             setError('You do not have access to this chat')
@@ -444,7 +451,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           }
         }
 
-        throw new Error(`Failed to load chat configuration: ${response.status}`)
+        const serverMessage = errorData?.error || errorData?.message
+        throw new Error(
+          serverMessage
+            ? `Failed to load chat configuration: ${serverMessage}`
+            : `Failed to load chat configuration: ${response.status}`
+        )
       }
 
       // Reset auth required state when authentication is successful
@@ -1206,14 +1218,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       )
     }
     if (authRequired === 'sso') {
-      return (
-        <SSOAuth
-          identifier={identifier}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
-      )
+      return <SSOAuth identifier={identifier} />
     }
   }
 

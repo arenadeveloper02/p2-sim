@@ -9,6 +9,7 @@ export interface ThemeColors {
 export interface BrandConfig {
   name: string
   logoUrl?: string
+  logoUrlBlacktext?: string
   faviconUrl?: string
   customCssUrl?: string
   supportEmail?: string

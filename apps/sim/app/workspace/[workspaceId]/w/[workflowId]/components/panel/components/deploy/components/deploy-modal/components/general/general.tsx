@@ -30,6 +30,7 @@ interface GeneralDeployProps {
   isLoadingDeployedState: boolean
   versions: WorkflowDeploymentVersionResponse[]
   versionsLoading: boolean
+  fetchVersions: () => Promise<unknown>
   onPromoteToLive: (version: number) => Promise<void>
   onLoadDeploymentComplete: () => void
 }
@@ -45,6 +46,7 @@ export function GeneralDeploy({
   isLoadingDeployedState,
   versions,
   versionsLoading,
+  fetchVersions,
   onPromoteToLive,
   onLoadDeploymentComplete,
 }: GeneralDeployProps) {

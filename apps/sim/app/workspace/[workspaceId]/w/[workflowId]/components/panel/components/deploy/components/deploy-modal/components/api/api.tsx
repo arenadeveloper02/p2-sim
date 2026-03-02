@@ -26,6 +26,7 @@ interface WorkflowDeploymentInfo {
 
 interface ApiDeployProps {
   workflowId: string | null
+  apiDeployError: string | null
   deploymentInfo: WorkflowDeploymentInfo | null
   isLoading: boolean
   needsRedeployment: boolean
@@ -60,6 +61,7 @@ const LANGUAGE_SYNTAX: Record<CodeLanguage, 'python' | 'javascript' | 'json'> = 
 
 export function ApiDeploy({
   workflowId,
+  apiDeployError,
   deploymentInfo,
   isLoading,
   needsRedeployment,

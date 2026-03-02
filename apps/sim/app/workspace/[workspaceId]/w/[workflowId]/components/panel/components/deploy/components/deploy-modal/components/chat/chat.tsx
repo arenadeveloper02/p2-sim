@@ -43,6 +43,7 @@ const IDENTIFIER_PATTERN = /^[a-z0-9-]+$/
 interface ChatDeployProps {
   workflowId: string
   workflowWorkspaceId?: string
+  workspaceName?: string
   deploymentInfo: {
     apiKey: string
   } | null
@@ -115,6 +116,7 @@ const initialFormData: ChatFormData = {
 export function ChatDeploy({
   workflowId,
   workflowWorkspaceId,
+  workspaceName,
   deploymentInfo,
   existingChat,
   isLoadingChat,
@@ -142,6 +144,7 @@ export function ChatDeploy({
 
   const [formData, setFormData] = useState<ChatFormData>(initialFormData)
   const [errors, setErrors] = useState<FormErrors>({})
+  const [formInitCounter, setFormInitCounter] = useState(0)
   const formRef = useRef<HTMLFormElement>(null)
   const hasSetDefaultKnowledgeOutputs = useRef(false)
 
@@ -267,11 +270,13 @@ export function ChatDeploy({
       }
 
       setHasInitializedForm(true)
+      setFormInitCounter((c) => c + 1)
     } else if (!existingChat && !isLoadingChat) {
       setFormData(initialFormData)
       setImageUrl(null)
       setHasInitializedForm(false)
       hasSetDefaultKnowledgeOutputs.current = false
+      setFormInitCounter((c) => c + 1)
     }
   }, [existingChat, isLoadingChat, hasInitializedForm])
 
@@ -495,6 +500,8 @@ export function ChatDeploy({
               Output
             </Label>
             <OutputSelect
+              workspaceId={workflowWorkspaceId ?? ''}
+              workspaceName={workspaceName ?? 'Unknown Workspace'}
               workflowId={workflowId}
               selectedOutputs={formData.selectedOutputBlocks}
               onOutputSelect={handleOutputSelect}
@@ -599,8 +606,12 @@ export function ChatDeploy({
             >
               Cancel
             </Button>
-            <Button variant='destructive' onClick={handleDelete} disabled={isDeleting}>
-              {isDeleting ? 'Deleting...' : 'Delete'}
+            <Button
+              variant='destructive'
+              onClick={handleDelete}
+              disabled={deleteChatMutation.isPending}
+            >
+              {deleteChatMutation.isPending ? 'Deleting...' : 'Delete'}
             </Button>
           </ModalFooter>
         </ModalContent>

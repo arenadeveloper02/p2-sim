@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { useBrandConfig } from '@/lib/branding/branding'
+import { defaultBrandConfig } from '@/lib/branding'
 import { inter } from '@/app/_styles/fonts/inter/inter'
 import { soehne } from '@/app/_styles/fonts/soehne/soehne'
 
@@ -21,7 +21,7 @@ export function UnauthorizedEmailError({
 }: UnauthorizedEmailErrorProps) {
   const router = useRouter()
   const [buttonClass, setButtonClass] = useState('auth-button-gradient')
-  const brandConfig = useBrandConfig()
+  const brandConfig = defaultBrandConfig
 
   useEffect(() => {
     // Check if CSS variable has been customized
