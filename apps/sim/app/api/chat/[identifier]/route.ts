@@ -559,6 +559,7 @@ export async function POST(
           selectedOutputs,
           isSecureMode: true,
           workflowTriggerType: 'chat',
+          sessionUserId: userId ?? undefined,
         },
         executionId,
       })
