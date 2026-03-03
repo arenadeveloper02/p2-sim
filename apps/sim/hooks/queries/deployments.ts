@@ -224,6 +224,8 @@ export function useChatDeploymentInfo(workflowId: string | null, options?: { ena
     isError: statusQuery.isError || detailQuery.isError,
     error: statusQuery.error ?? detailQuery.error,
     chatExists: statusQuery.data?.isDeployed ?? false,
+    /** Chat record id from status; use for update path when detail is not yet loaded */
+    existingChatId: statusQuery.data?.deployment?.id ?? null,
     existingChat: detailQuery.data ?? null,
     refetch,
   }

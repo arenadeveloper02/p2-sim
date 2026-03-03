@@ -1066,7 +1066,17 @@ export async function GET(
       logger.warn(`[${requestId}] Failed to extract inputFormat:`, error)
       // Continue without inputFormat - not critical for chat config
     }
-    const goldenQueries = await fetchGoldenQueries(deployment.workflowId)
+
+    let goldenQueries: Array<{ id: string; query: string }>
+    try {
+      goldenQueries = await fetchGoldenQueries(deployment.workflowId)
+    } catch (error) {
+      logger.warn(
+        `[${requestId}] Failed to fetch golden queries for workflow ${deployment.workflowId}:`,
+        error
+      )
+      goldenQueries = []
+    }
 
     /**
      * Helper function to build chat config response with inputFormat always included.

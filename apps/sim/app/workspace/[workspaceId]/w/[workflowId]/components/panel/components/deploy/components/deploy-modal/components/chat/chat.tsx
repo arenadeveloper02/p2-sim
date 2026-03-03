@@ -47,6 +47,8 @@ interface ChatDeployProps {
   deploymentInfo: {
     apiKey: string
   } | null
+  /** Chat id from status; use for update when existingChat is not yet loaded */
+  existingChatId?: string | null
   existingChat: ExistingChat | null
   isLoadingChat: boolean
   onRefetchChat: () => Promise<void>
@@ -118,6 +120,7 @@ export function ChatDeploy({
   workflowWorkspaceId,
   workspaceName,
   deploymentInfo,
+  existingChatId,
   existingChat,
   isLoadingChat,
   onRefetchChat,
@@ -332,19 +335,20 @@ export function ChatDeploy({
 
     setChatSubmitting(true)
 
-    const isNewChat = !existingChat?.id
+    const effectiveChatId = existingChat?.id ?? existingChatId ?? null
+    const isNewChat = !effectiveChatId
 
     // Open window before async operation to avoid popup blockers
     const newTab = isNewChat ? window.open('', '_blank') : null
 
     try {
-      if (!validateForm(!!existingChat)) {
+      if (!validateForm(!!effectiveChatId)) {
         newTab?.close()
         setChatSubmitting(false)
         return
       }
 
-      if (!isIdentifierValid && formData.identifier !== existingChat?.identifier) {
+      if (!isIdentifierValid && formData.identifier !== (existingChat?.identifier ?? formData.identifier)) {
         newTab?.close()
         setError('identifier', 'Please wait for identifier validation to complete')
         setChatSubmitting(false)
@@ -353,9 +357,9 @@ export function ChatDeploy({
 
       let chatUrl: string
 
-      if (existingChat?.id) {
+      if (effectiveChatId) {
         const result = await updateChatMutation.mutateAsync({
-          chatId: existingChat.id,
+          chatId: effectiveChatId,
           workflowId,
           formData,
           imageUrl,
@@ -393,11 +397,12 @@ export function ChatDeploy({
   }
 
   const handleDelete = async () => {
-    if (!existingChat || !existingChat.id) return
+    const chatIdToDelete = existingChat?.id ?? existingChatId ?? null
+    if (!chatIdToDelete) return
 
     try {
       await deleteChatMutation.mutateAsync({
-        chatId: existingChat.id,
+        chatId: chatIdToDelete,
         workflowId,
       })
 

@@ -1,6 +1,7 @@
 export interface ThemeColors {
   primaryColor?: string
   primaryHoverColor?: string
+  secondaryColor?: string
   accentColor?: string
   accentHoverColor?: string
   backgroundColor?: string

@@ -215,7 +215,13 @@ export function useUpdateChat() {
         body: JSON.stringify(payload),
       })
 
-      const result = await response.json()
+      let result: { error?: string; chatUrl?: string; id?: string } = {}
+      try {
+        const parsed = await response.json()
+        result = parsed && typeof parsed === 'object' ? parsed : {}
+      } catch {
+        result = {}
+      }
 
       if (!response.ok) {
         if (result.error === 'Identifier already in use') {
@@ -224,12 +230,13 @@ export function useUpdateChat() {
         throw new Error(result.error || 'Failed to update chat')
       }
 
-      if (!result.chatUrl) {
+      const chatUrl = result.chatUrl
+      if (!chatUrl) {
         throw new Error('Response missing chatUrl')
       }
 
-      logger.info('Chat updated successfully:', result.chatUrl)
-      return { chatUrl: result.chatUrl, chatId }
+      logger.info('Chat updated successfully:', chatUrl)
+      return { chatUrl, chatId }
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
@@ -240,7 +247,8 @@ export function useUpdateChat() {
       })
     },
     onError: (error) => {
-      logger.error('Failed to update chat', { error })
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error('Failed to update chat', { message, error })
     },
   })
 }

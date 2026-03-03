@@ -28,7 +28,6 @@ import {
   UnauthorizedEmailError,
   VoiceInterface,
 } from '@/app/chat/components'
-import SSOAuth from '@/ee/sso/components/sso-auth'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
@@ -383,19 +382,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       })
 
       if (!response.ok) {
-        let errorData: { error?: string; message?: string } = {}
-        try {
-          errorData = (await response.json()) as { error?: string; message?: string }
-        } catch {
-          // Ignore JSON parse failure for error body
-        }
-
         // Check if auth is required or unauthorized
         if (response.status === 401 || response.status === 403) {
-          const err = errorData?.error
+          const errorData = await response.json()
 
           // Attempt a safe, one-time auto-login for email-gated chats when an email cookie exists
-          if (err === 'auth_required_email') {
+          if (errorData.error === 'auth_required_email') {
             try {
               const autoLoginKey = `chat:autoLoginTried:${identifier}:${
                 new URLSearchParams(window.location.search).get('chatId') || 'nochat'
@@ -427,23 +419,23 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             }
           }
 
-          if (err === 'auth_required_password') {
+          if (errorData.error === 'auth_required_password') {
             setAuthRequired('password')
             return
           }
 
           // Skip email auth screen; rely on server to auto-auth or deny
-          if (err === 'auth_required_email') {
+          if (errorData.error === 'auth_required_email') {
             setError('You do not have access to this chat')
             return
           }
 
           // If user email is not authorized, show error
           if (
-            err === 'Email is not authorized for this chat' ||
-            err === 'Email not authorized' ||
+            errorData.error === 'Email is not authorized for this chat' ||
+            errorData.error === 'Email not authorized' ||
             errorData.message === 'Email not authorized' ||
-            err === 'You do not have access to this chat' ||
+            errorData.error === 'You do not have access to this chat' ||
             errorData.message === 'You do not have access to this chat'
           ) {
             setError('You do not have access to this chat')
@@ -451,12 +443,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           }
         }
 
-        const serverMessage = errorData?.error || errorData?.message
-        throw new Error(
-          serverMessage
-            ? `Failed to load chat configuration: ${serverMessage}`
-            : `Failed to load chat configuration: ${response.status}`
-        )
+        throw new Error(`Failed to load chat configuration: ${response.status}`)
       }
 
       // Reset auth required state when authentication is successful
@@ -1187,35 +1174,16 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     ) {
       return <UnauthorizedEmailError message={error} />
     }
-    return <ChatErrorState error={error} starCount={starCount} />
+    return <ChatErrorState error={error} />
   }
 
   // If authentication is required, use the extracted components
   if (authRequired) {
-    // Get title and description from the URL params or use defaults
-    const title = new URLSearchParams(window.location.search).get('title') || 'chat'
-    const primaryColor =
-      new URLSearchParams(window.location.search).get('color') || 'var(--brand-primary-hover-hex)'
-
     if (authRequired === 'password') {
-      return (
-        <PasswordAuth
-          identifier={identifier}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
-      )
+      return <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
     }
     if (authRequired === 'email') {
-      return (
-        <EmailAuth
-          identifier={identifier}
-          onAuthSuccess={handleAuthSuccess}
-          title={title}
-          primaryColor={primaryColor}
-        />
-      )
+      return <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
     }
     if (authRequired === 'sso') {
       return <SSOAuth identifier={identifier} />

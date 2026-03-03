@@ -273,11 +273,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       await db.update(chat).set(updateData).where(eq(chat.id, chatId))
 
       if (customizations?.goldenQueries) {
-        await replaceWorkflowQueries({
-          workflowId: workflowId || existingChat[0].workflowId,
-          userId: session.user.id,
-          queries: goldenQueries,
-        })
+        try {
+          await replaceWorkflowQueries({
+            workflowId: workflowId || existingChat[0].workflowId,
+            userId: session.user.id,
+            queries: goldenQueries,
+          })
+        } catch (goldenQueriesError: any) {
+          logger.warn('Failed to update golden queries for chat, continuing:', {
+            chatId,
+            error: goldenQueriesError?.message ?? goldenQueriesError,
+          })
+        }
       }
 
       const updatedIdentifier = identifier || existingChat[0].identifier
