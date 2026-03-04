@@ -119,7 +119,7 @@ export function EmailFooter({
               </td>
               <td style={baseStyles.footerText}>
                 {brand.name}
-                {isHosted && <>, Position 2, Bangalore, India</>}
+                {isHosted && <>, Position Square, 2880 Lakeside Drive, STE 131 Santa Clara, CA 95054, USA</>}
               </td>
               <td style={baseStyles.gutter} width={spacing.gutter}>
                 &nbsp;
