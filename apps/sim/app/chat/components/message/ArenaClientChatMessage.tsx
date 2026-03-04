@@ -21,8 +21,10 @@ import {
   downloadImage,
   extractAllBase64Images,
   extractBase64Image,
+  getImageUrlFromContent,
   hasBase64Images,
   isBase64,
+  isImageUrlString,
   renderBs64Img,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
@@ -96,10 +98,69 @@ export const ArenaClientChatMessage = memo(
       }
 
       try {
+        // If content is an object with an image field (from tool output)
+        if (typeof content === 'object' && content !== null && content.image) {
+          const imageValue = content.image
+          const isImageUrl =
+            typeof imageValue === 'string' &&
+            (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
+          const isBase64Image = typeof imageValue === 'string' && isBase64(imageValue)
+          const contentStr =
+            content.content && typeof content.content === 'string' ? content.content.trim() : ''
+          const contentIsImageUrl = contentStr && isImageUrlString(contentStr)
+
+          return (
+            <>
+              {contentStr && !contentIsImageUrl && (
+                <ArenaCopilotMarkdownRenderer content={content.content} />
+              )}
+              {isImageUrl && (
+                <div>{renderBs64Img({ isBase64: false, imageData: '', imageUrl: imageValue })}</div>
+              )}
+              {isBase64Image && (
+                <div>
+                  {renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}
+                </div>
+              )}
+            </>
+          )
+        }
+
+        // Fallback: If content is an object with a content field that's a URL (from tool output)
+        // and image field is empty, try to render the content as an image URL
+        if (
+          typeof content === 'object' &&
+          content !== null &&
+          typeof content.content === 'string' &&
+          content.content &&
+          (!content.image || content.image === '') &&
+          (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
+        ) {
+          return (
+            <>
+              <div>
+                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}
+              </div>
+            </>
+          )
+        }
+
         // If content is a pure base64 image, render it directly
         if (typeof content === 'string' && isBase64(content)) {
           const cleanedContent = content.replace(/\s+/g, '')
           return renderBs64Img({ isBase64: true, imageData: cleanedContent })
+        }
+
+        // If content is a string that is an image URL (e.g. from image generator), render as <img> only (no URL text)
+        if (typeof content === 'string') {
+          const trimmed = content.trim()
+          if (isImageUrlString(trimmed)) {
+            return (
+              <div className='w-full'>
+                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
+              </div>
+            )
+          }
         }
 
         // If content is a string, check for mixed content (text + base64 images)
@@ -154,16 +215,21 @@ export const ArenaClientChatMessage = memo(
     }
 
     const handleDownload = () => {
+      const imageUrl = getImageUrlFromContent(cleanTextContent)
+      if (imageUrl) {
+        downloadImage(false, undefined, imageUrl)
+        return
+      }
       const base64Images = extractAllBase64Images(cleanTextContent)
       if (base64Images.length > 0) {
-        // Download the first image (or all if multiple)
-        base64Images.forEach((imageData, index) => {
+        base64Images.forEach((imageData) => {
           downloadImage(true, imageData)
         })
       }
     }
 
     const containsBase64Images = hasBase64Images(cleanTextContent)
+    const hasImageUrl = !!getImageUrlFromContent(cleanTextContent)
 
     const [knowledgeModalDoc, setKnowledgeModalDoc] = useState<{
       documentName: string
@@ -576,7 +642,7 @@ export const ArenaClientChatMessage = memo(
               !message.isInitialMessage &&
               hasRenderableText && (
                 <div className='flex items-center justify-start space-x-2'>
-                  {!isJsonObject && !containsBase64Images && hasRenderableText && (
+                  {!isJsonObject && hasRenderableText && !hasImageUrl && (
                     <Tooltip.Provider>
                       <Tooltip.Root>
                         <Tooltip.Trigger asChild>
@@ -596,6 +662,23 @@ export const ArenaClientChatMessage = memo(
 
                         <Tooltip.Content>
                           {isCopied ? 'Copied!' : 'Copy to clipboard'}
+                        </Tooltip.Content>
+                      </Tooltip.Root>
+                    </Tooltip.Provider>
+                  )}
+                  {(containsBase64Images || hasImageUrl) && (
+                    <Tooltip.Provider>
+                      <Tooltip.Root>
+                        <Tooltip.Trigger asChild>
+                          <button
+                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            onClick={handleDownload}
+                          >
+                            <Download className='h-4 w-4' strokeWidth={2} />
+                          </button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content side='top' align='center' sideOffset={5}>
+                          Download image
                         </Tooltip.Content>
                       </Tooltip.Root>
                     </Tooltip.Provider>
@@ -711,24 +794,6 @@ export const ArenaClientChatMessage = memo(
                         </>
                       )}
                     </>
-                  )}
-
-                  {containsBase64Images && (
-                    <Tooltip.Provider>
-                      <Tooltip.Root>
-                        <Tooltip.Trigger asChild>
-                          <button
-                            className='text-muted-foreground transition-colors hover:bg-muted'
-                            onClick={handleDownload}
-                          >
-                            <Download className='h-4 w-4' strokeWidth={2} />
-                          </button>
-                        </Tooltip.Trigger>
-                        <Tooltip.Content side='top' align='center' sideOffset={5}>
-                          Download image
-                        </Tooltip.Content>
-                      </Tooltip.Root>
-                    </Tooltip.Provider>
                   )}
                 </div>
               )}

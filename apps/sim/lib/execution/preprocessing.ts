@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import type { HighestPrioritySubscription } from '@/lib/billing/core/plan'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { getExecutionTimeout } from '@/lib/core/execution-limits'
 import { RateLimiter } from '@/lib/core/rate-limiter/rate-limiter'
 import type { SubscriptionPlan } from '@/lib/core/rate-limiter/types'
@@ -340,7 +341,9 @@ export async function preprocessExecution(
   // ========== STEP 6: Check Rate Limits ==========
   let rateLimitInfo: { allowed: boolean; remaining: number; resetAt: Date } | undefined
 
-  if (checkRateLimit) {
+  const executionRateLimitDisabled = isTruthy(getEnv('DISABLE_EXECUTION_RATE_LIMIT'))
+
+  if (checkRateLimit && !executionRateLimitDisabled) {
     try {
       const rateLimiter = new RateLimiter()
       rateLimitInfo = await rateLimiter.checkRateLimitWithSubscription(

@@ -1,4 +1,4 @@
-import { Container, Img, Link, Section } from '@react-email/components'
+import { Container, Section } from '@react-email/components'
 import { baseStyles, colors, spacing, typography } from '@/components/emails/_styles'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -66,7 +66,7 @@ export function EmailFooter({
               <td>
                 <table cellPadding={0} cellSpacing={0} style={{ border: 0 }}>
                   <tbody>
-                    <tr>
+                    {/* <tr>
                       <td align='left' style={{ padding: '0 8px 0 0' }}>
                         <Link href={`${baseUrl}/x`} rel='noopener noreferrer'>
                           <Img
@@ -97,7 +97,7 @@ export function EmailFooter({
                           />
                         </Link>
                       </td>
-                    </tr>
+                    </tr> */}
                   </tbody>
                 </table>
               </td>
@@ -119,7 +119,11 @@ export function EmailFooter({
               </td>
               <td style={baseStyles.footerText}>
                 {brand.name}
-                {isHosted && <>, 80 Langton St, San Francisco, CA 94103, USA</>}
+                {isHosted && (
+                  <>
+                    , Position<sup>2</sup>, 2880 Lakeside Drive, STE 131 Santa Clara, CA 95054, USA
+                  </>
+                )}
               </td>
               <td style={baseStyles.gutter} width={spacing.gutter}>
                 &nbsp;

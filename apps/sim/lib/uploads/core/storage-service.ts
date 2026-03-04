@@ -1,6 +1,10 @@
 import { createLogger } from '@sim/logger'
-import { getStorageConfig, USE_BLOB_STORAGE, USE_S3_STORAGE } from '@/lib/uploads/config'
-import type { BlobConfig } from '@/lib/uploads/providers/blob/types'
+import {
+  getStorageConfig,
+  S3_AGENT_GENERATED_IMAGES_CONFIG,
+  S3_CONFIG,
+  USE_S3_STORAGE,
+} from '@/lib/uploads/config'
 import type { S3Config } from '@/lib/uploads/providers/s3/types'
 import type {
   DeleteFileOptions,
@@ -19,29 +23,6 @@ import {
 } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('StorageService')
-
-/**
- * Create a Blob config from StorageConfig
- * @throws Error if required properties are missing
- */
-function createBlobConfig(config: StorageConfig): BlobConfig {
-  if (!config.containerName || !config.accountName) {
-    throw new Error('Blob configuration missing required properties: containerName and accountName')
-  }
-
-  if (!config.connectionString && !config.accountKey) {
-    throw new Error(
-      'Blob configuration missing authentication: either connectionString or accountKey must be provided'
-    )
-  }
-
-  return {
-    containerName: config.containerName,
-    accountName: config.accountName,
-    accountKey: config.accountKey,
-    connectionString: config.connectionString,
-  }
-}
 
 /**
  * Create an S3 config from StorageConfig
@@ -89,37 +70,108 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
 
   logger.info(`Uploading file to ${context} storage: ${fileName}`)
 
-  const config = getStorageConfig(context)
-
   const keyToUse = customKey || fileName
 
-  if (USE_BLOB_STORAGE) {
-    const { uploadToBlob } = await import('@/lib/uploads/providers/blob/client')
-    const uploadResult = await uploadToBlob(
-      file,
-      keyToUse,
-      contentType,
-      createBlobConfig(config),
-      file.length,
-      preserveKey,
-      metadata
+  if (
+    context === 'agent-generated-images' &&
+    (!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket || !S3_AGENT_GENERATED_IMAGES_CONFIG.region)
+  ) {
+    logger.warn(
+      'Agent-generated image will use local storage: S3_AGENT_GENERATED_IMAGES_BUCKET_NAME or S3_AGENT_GENERATED_IMAGES_REGION not set',
+      {
+        hasBucket: !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket,
+        hasRegion: !!S3_AGENT_GENERATED_IMAGES_CONFIG.region,
+      }
     )
-
-    if (metadata) {
-      await insertFileMetadataHelper(
-        uploadResult.key,
-        metadata,
-        context,
-        fileName,
-        contentType,
-        file.length
-      )
-    }
-
-    return uploadResult
   }
 
-  if (USE_S3_STORAGE) {
+  if (
+    context === 'agent-generated-images' &&
+    S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+    S3_AGENT_GENERATED_IMAGES_CONFIG.region
+  ) {
+    const s3Config = createS3Config({
+      bucket: S3_AGENT_GENERATED_IMAGES_CONFIG.bucket,
+      region: S3_AGENT_GENERATED_IMAGES_CONFIG.region,
+    })
+    logger.info('Uploading agent-generated image to dedicated S3 bucket', {
+      bucket: s3Config.bucket,
+      region: s3Config.region,
+      key: keyToUse,
+    })
+    try {
+      const { uploadToS3 } = await import('@/lib/uploads/providers/s3/client')
+      const uploadResult = await uploadToS3(
+        file,
+        keyToUse,
+        contentType,
+        s3Config,
+        file.length,
+        preserveKey,
+        metadata
+      )
+      if (metadata) {
+        await insertFileMetadataHelper(
+          uploadResult.key,
+          metadata,
+          context,
+          fileName,
+          contentType,
+          file.length
+        )
+      }
+      logger.info('S3 upload completed for agent-generated image', {
+        bucket: s3Config.bucket,
+        s3Key: uploadResult.key,
+        servePath: uploadResult.path,
+      })
+      return uploadResult
+    } catch (s3Error) {
+      logger.warn('S3 upload failed for agent-generated image, falling back to local storage', {
+        bucket: s3Config.bucket,
+        key: keyToUse,
+        error: s3Error instanceof Error ? s3Error.message : String(s3Error),
+      })
+      const { writeFile, mkdir } = await import('fs/promises')
+      const { join, dirname } = await import('path')
+      const { UPLOAD_DIR_SERVER } = await import('./setup.server')
+      const safeKey = sanitizeFileKey(keyToUse)
+      const filesystemPath = join(UPLOAD_DIR_SERVER, safeKey)
+      await mkdir(dirname(filesystemPath), { recursive: true })
+      await writeFile(filesystemPath, file)
+      if (metadata) {
+        await insertFileMetadataHelper(
+          keyToUse,
+          metadata,
+          context,
+          fileName,
+          contentType,
+          file.length
+        )
+      }
+      return {
+        path: `/api/files/serve/${keyToUse}`,
+        key: keyToUse,
+        name: fileName,
+        size: file.length,
+        type: contentType,
+        s3UploadFailed: true,
+      }
+    }
+  }
+
+  const config = getStorageConfig(context)
+
+  const useS3ForThisUpload =
+    USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
+
+  if (useS3ForThisUpload && config.bucket && config.region) {
+    logger.info('Uploading to S3', {
+      bucket: config.bucket,
+      region: config.region,
+      key: keyToUse,
+      context,
+    })
     const { uploadToS3 } = await import('@/lib/uploads/providers/s3/client')
     const uploadResult = await uploadToS3(
       file,
@@ -130,6 +182,12 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
       preserveKey,
       metadata
     )
+
+    logger.info('S3 upload completed', {
+      bucket: config.bucket,
+      s3Key: uploadResult.key,
+      servePath: uploadResult.path,
+    })
 
     if (metadata) {
       await insertFileMetadataHelper(
@@ -183,15 +241,26 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
 export async function downloadFile(options: DownloadFileOptions): Promise<Buffer> {
   const { key, context } = options
 
+  if (
+    context === 'agent-generated-images' &&
+    S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+    S3_AGENT_GENERATED_IMAGES_CONFIG.region
+  ) {
+    const s3Config = createS3Config({
+      bucket: S3_AGENT_GENERATED_IMAGES_CONFIG.bucket,
+      region: S3_AGENT_GENERATED_IMAGES_CONFIG.region,
+    })
+    const { downloadFromS3 } = await import('@/lib/uploads/providers/s3/client')
+    return downloadFromS3(key, s3Config)
+  }
+
   if (context) {
     const config = getStorageConfig(context)
 
-    if (USE_BLOB_STORAGE) {
-      const { downloadFromBlob } = await import('@/lib/uploads/providers/blob/client')
-      return downloadFromBlob(key, createBlobConfig(config))
-    }
+    const useS3ForThisDownload =
+      USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
 
-    if (USE_S3_STORAGE) {
+    if (useS3ForThisDownload && config.bucket && config.region) {
       const { downloadFromS3 } = await import('@/lib/uploads/providers/s3/client')
       return downloadFromS3(key, createS3Config(config))
     }
@@ -213,15 +282,26 @@ export async function downloadFile(options: DownloadFileOptions): Promise<Buffer
 export async function deleteFile(options: DeleteFileOptions): Promise<void> {
   const { key, context } = options
 
+  if (
+    context === 'agent-generated-images' &&
+    S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
+    S3_AGENT_GENERATED_IMAGES_CONFIG.region
+  ) {
+    const s3Config = createS3Config({
+      bucket: S3_AGENT_GENERATED_IMAGES_CONFIG.bucket,
+      region: S3_AGENT_GENERATED_IMAGES_CONFIG.region,
+    })
+    const { deleteFromS3 } = await import('@/lib/uploads/providers/s3/client')
+    return deleteFromS3(key, s3Config)
+  }
+
   if (context) {
     const config = getStorageConfig(context)
 
-    if (USE_BLOB_STORAGE) {
-      const { deleteFromBlob } = await import('@/lib/uploads/providers/blob/client')
-      return deleteFromBlob(key, createBlobConfig(config))
-    }
+    const useS3ForThisDelete =
+      USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
 
-    if (USE_S3_STORAGE) {
+    if (useS3ForThisDelete && config.bucket && config.region) {
       const { deleteFromS3 } = await import('@/lib/uploads/providers/s3/client')
       return deleteFromS3(key, createS3Config(config))
     }
@@ -279,10 +359,6 @@ export async function generatePresignedUploadUrl(
     )
   }
 
-  if (USE_BLOB_STORAGE) {
-    return generateBlobPresignedUrl(key, contentType, allMetadata, config, expirationSeconds)
-  }
-
   throw new Error('Cloud storage not configured. Cannot generate presigned URL for local storage.')
 }
 
@@ -297,7 +373,7 @@ async function generateS3PresignedUrl(
   config: { bucket?: string; region?: string },
   expirationSeconds: number
 ): Promise<PresignedUrlResponse> {
-  const { getS3Client } = await import('@/lib/uploads/providers/s3/client')
+  const { getS3Client, getS3ClientForRegion } = await import('@/lib/uploads/providers/s3/client')
   const { PutObjectCommand } = await import('@aws-sdk/client-s3')
   const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner')
 
@@ -318,79 +394,13 @@ async function generateS3PresignedUrl(
     Metadata: sanitizedMetadata,
   })
 
-  const presignedUrl = await getSignedUrl(getS3Client(), command, { expiresIn: expirationSeconds })
+  const s3Client =
+    config.region !== S3_CONFIG.region ? getS3ClientForRegion(config.region) : getS3Client()
+  const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: expirationSeconds })
 
   return {
     url: presignedUrl,
     key,
-  }
-}
-
-/**
- * Generate presigned URL for Azure Blob
- */
-async function generateBlobPresignedUrl(
-  key: string,
-  contentType: string,
-  metadata: Record<string, string>,
-  config: {
-    containerName?: string
-    accountName?: string
-    accountKey?: string
-    connectionString?: string
-  },
-  expirationSeconds: number
-): Promise<PresignedUrlResponse> {
-  const { getBlobServiceClient } = await import('@/lib/uploads/providers/blob/client')
-  const { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential } =
-    await import('@azure/storage-blob')
-
-  if (!config.containerName) {
-    throw new Error('Blob configuration missing container name')
-  }
-
-  const blobServiceClient = await getBlobServiceClient()
-  const containerClient = blobServiceClient.getContainerClient(config.containerName)
-  const blobClient = containerClient.getBlockBlobClient(key)
-
-  const startsOn = new Date()
-  const expiresOn = new Date(startsOn.getTime() + expirationSeconds * 1000)
-
-  let sasToken: string
-
-  if (config.accountName && config.accountKey) {
-    const sharedKeyCredential = new StorageSharedKeyCredential(
-      config.accountName,
-      config.accountKey
-    )
-    sasToken = generateBlobSASQueryParameters(
-      {
-        containerName: config.containerName,
-        blobName: key,
-        permissions: BlobSASPermissions.parse('w'), // write permission for upload
-        startsOn,
-        expiresOn,
-      },
-      sharedKeyCredential
-    ).toString()
-  } else {
-    throw new Error('Azure Blob SAS generation requires accountName and accountKey')
-  }
-
-  return {
-    url: `${blobClient.url}?${sasToken}`,
-    key,
-    uploadHeaders: {
-      'x-ms-blob-type': 'BlockBlob',
-      'x-ms-blob-content-type': contentType,
-      ...Object.entries(metadata).reduce(
-        (acc, [k, v]) => {
-          acc[`x-ms-meta-${k}`] = encodeURIComponent(v)
-          return acc
-        },
-        {} as Record<string, string>
-      ),
-    },
   }
 }
 
@@ -439,11 +449,6 @@ export async function generatePresignedDownloadUrl(
     return getPresignedUrlWithConfig(key, createS3Config(config), expirationSeconds)
   }
 
-  if (USE_BLOB_STORAGE) {
-    const { getPresignedUrlWithConfig } = await import('@/lib/uploads/providers/blob/client')
-    return getPresignedUrlWithConfig(key, createBlobConfig(config), expirationSeconds)
-  }
-
   const { getBaseUrl } = await import('@/lib/core/utils/urls')
   const baseUrl = getBaseUrl()
   return `${baseUrl}/api/files/serve/${encodeURIComponent(key)}`
@@ -453,7 +458,7 @@ export async function generatePresignedDownloadUrl(
  * Check if cloud storage is available
  */
 export function hasCloudStorage(): boolean {
-  return USE_BLOB_STORAGE || USE_S3_STORAGE
+  return USE_S3_STORAGE
 }
 
 /**

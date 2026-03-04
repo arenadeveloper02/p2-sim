@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Check, ChevronDown, User, X } from 'lucide-react'
-import { Label } from '@/components/emcn'
-import { Badge } from '@/components/ui/badge'
+import { Badge, Label } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -14,7 +13,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/core/utils/cn'
 
 export interface SlackUserInfo {
   id: string
@@ -141,7 +140,7 @@ export function SlackUserSelector({
             <div className='flex flex-1 flex-wrap items-center gap-1'>
               {selectedUsers.length > 0 ? (
                 selectedUsers.map((user) => (
-                  <Badge key={user.id} variant='secondary' className='flex items-center gap-1'>
+                  <Badge key={user.id} variant='gray-secondary' className='flex items-center gap-1'>
                     <User className='h-3 w-3' />
                     <span className='text-xs'>
                       {user.displayName || user.realName || user.name}

@@ -9,8 +9,8 @@ import {
   secureFetchWithPinnedIP,
   validateUrlWithDNS,
 } from '@/lib/core/security/input-validation.server'
-import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
+import { getBaseUrl } from '../core/utils/urls'
 
 const logger = createLogger('RssPollingService')
 const MAX_GUIDS_TO_TRACK = 100 // Track recent guids to prevent duplicates
@@ -373,7 +373,7 @@ async function processRssItems(
             timestamp: new Date().toISOString(),
           }
 
-          const webhookUrl = `${getInternalApiBaseUrl()}/api/webhooks/trigger/${webhookData.path}`
+          const webhookUrl = `${getBaseUrl()}/api/webhooks/trigger/${webhookData.path}`
 
           const response = await fetch(webhookUrl, {
             method: 'POST',

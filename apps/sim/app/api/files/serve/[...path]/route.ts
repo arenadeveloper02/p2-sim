@@ -2,8 +2,8 @@ import { readFile } from 'fs/promises'
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { CopilotFiles, isUsingCloudStorage } from '@/lib/uploads'
+import { checkHybridAuth, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
@@ -31,11 +31,75 @@ export async function GET(
 
     logger.info('File serve request:', { path })
 
-    const fullPath = path.join('/')
-    const isS3Path = path[0] === 's3'
-    const isBlobPath = path[0] === 'blob'
+    const decodedPath = path.map((p) => decodeURIComponent(p))
+    const fullPath = decodedPath.join('/')
+    const isS3Path = decodedPath[0] === 's3'
+    const isBlobPath = decodedPath[0] === 'blob'
     const isCloudPath = isS3Path || isBlobPath
-    const cloudKey = isCloudPath ? path.slice(1).join('/') : fullPath
+    const cloudKey = isCloudPath ? decodedPath.slice(1).join('/') : fullPath
+
+    // Handle agent-generated-images paths specially
+    if (fullPath.startsWith('agent-generated-images/')) {
+      logger.info('Agent-generated-image serve: checking auth', { fullPath })
+      const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
+
+      if (!authResult.success || !authResult.userId) {
+        logger.warn('Unauthorized agent-generated-image access attempt', {
+          path,
+          fullPath,
+          error: authResult.error || 'Missing userId',
+          authType: authResult.authType,
+        })
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      const userId = authResult.userId
+      logger.info('Agent-generated-image serve: auth success', {
+        userId,
+        authType: authResult.authType,
+      })
+
+      // Path format: agent-generated-images/[workflow_id]/[user_id]/[image] (exactly 4 segments)
+      const pathSegments = fullPath.split('/')
+      const hasValidStructure =
+        pathSegments.length >= 4 &&
+        pathSegments[0] === 'agent-generated-images' &&
+        pathSegments[1] &&
+        pathSegments[2] &&
+        pathSegments[3]
+
+      if (!hasValidStructure) {
+        logger.warn(
+          'Agent-generated-image path must be agent-generated-images/[workflow_id]/[user_id]/[image]',
+          {
+            fullPath,
+            segmentCount: pathSegments.length,
+          }
+        )
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
+
+      const fileUserId = pathSegments[2]
+      if (fileUserId !== userId) {
+        logger.warn('User ID mismatch for agent-generated-image', {
+          fileUserId,
+          authenticatedUserId: userId,
+          fullPath,
+        })
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      }
+
+      // Serve agent-generated-images file (cloud if context configured, else local)
+      const agentImagesInCloud = isStorageContextConfigured('agent-generated-images')
+      logger.info('Agent-generated-image serve: storage mode', {
+        agentImagesInCloud,
+        fullPath,
+      })
+      if (agentImagesInCloud) {
+        return await handleAgentGeneratedImageCloud(fullPath, userId)
+      }
+      return await handleAgentGeneratedImageLocal(fullPath, userId)
+    }
 
     const contextParam = request.nextUrl.searchParams.get('context')
 
@@ -235,6 +299,99 @@ async function handleLocalFilePublic(filename: string): Promise<NextResponse> {
     })
   } catch (error) {
     logger.error('Error reading public local file:', error)
+    throw error
+  }
+}
+
+async function handleAgentGeneratedImageLocal(
+  filename: string,
+  userId: string
+): Promise<NextResponse> {
+  try {
+    logger.info('Looking for agent-generated image:', { filename, userId })
+
+    const filePath = findLocalFile(filename)
+
+    if (!filePath) {
+      // Try direct path resolution as fallback
+      const { join, resolve } = await import('path')
+      const directPath = resolve(process.cwd(), filename)
+      const { existsSync } = await import('fs')
+
+      logger.warn('File not found via findLocalFile, trying direct path:', {
+        filename,
+        filePath,
+        directPath,
+        exists: existsSync(directPath),
+      })
+
+      if (existsSync(directPath)) {
+        const fileBuffer = await readFile(directPath)
+        const contentType = getContentType(filename)
+
+        logger.info('Agent-generated image served locally (direct path)', {
+          userId,
+          filename,
+          size: fileBuffer.length,
+        })
+
+        return createFileResponse({
+          buffer: fileBuffer,
+          contentType,
+          filename,
+        })
+      }
+
+      throw new FileNotFoundError(`File not found: ${filename}`)
+    }
+
+    const fileBuffer = await readFile(filePath)
+    const contentType = getContentType(filename)
+
+    logger.info('Agent-generated image served locally', {
+      userId,
+      filename,
+      filePath,
+      size: fileBuffer.length,
+    })
+
+    return createFileResponse({
+      buffer: fileBuffer,
+      contentType,
+      filename,
+    })
+  } catch (error) {
+    logger.error('Error reading agent-generated image:', error)
+    throw error
+  }
+}
+
+async function handleAgentGeneratedImageCloud(
+  cloudKey: string,
+  userId: string
+): Promise<NextResponse> {
+  try {
+    const fileBuffer = await downloadFile({
+      key: cloudKey,
+      context: 'agent-generated-images',
+    })
+
+    const originalFilename = cloudKey.split('/').pop() || 'download'
+    const contentType = getContentType(originalFilename)
+
+    logger.info('Agent-generated image served from cloud', {
+      userId,
+      key: cloudKey,
+      size: fileBuffer.length,
+    })
+
+    return createFileResponse({
+      buffer: fileBuffer,
+      contentType,
+      filename: originalFilename,
+    })
+  } catch (error) {
+    logger.error('Error downloading agent-generated image from cloud:', error)
     throw error
   }
 }

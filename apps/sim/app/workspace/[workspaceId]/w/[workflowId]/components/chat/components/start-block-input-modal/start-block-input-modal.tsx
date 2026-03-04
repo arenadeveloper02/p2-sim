@@ -134,6 +134,8 @@ export function StartBlockInputModal({
 
   // Ref to track the first input field for auto-focus
   const firstInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+  // Ref to the modal body so we only auto-focus when focus is not already inside the modal
+  const modalBodyRef = useRef<HTMLDivElement | null>(null)
 
   // Reset form when modal opens (only when opening, not on every change)
   useEffect(() => {
@@ -150,9 +152,13 @@ export function StartBlockInputModal({
       }
       setFormValues(newValues)
 
-      // Auto-focus the first input field after a short delay to ensure modal is fully rendered
+      // Auto-focus the first input only when modal opens and focus is not already inside the modal
+      // (avoids stealing focus from another input after the user has clicked it)
       setTimeout(() => {
-        if (firstInputRef.current) {
+        const body = modalBodyRef.current
+        const active = document.activeElement
+        const focusAlreadyInside = body && active && body.contains(active)
+        if (firstInputRef.current && !focusAlreadyInside) {
           firstInputRef.current.focus()
         }
       }, 100)
@@ -236,6 +242,24 @@ export function StartBlockInputModal({
   }, [])
 
   /**
+   * Ensures the clicked form control receives focus (workaround for focus trap / pointer event
+   * ordering so mouse clicks reliably focus inputs inside the modal).
+   */
+  const handlePointerDownCapture = useCallback((e: React.PointerEvent) => {
+    const target = e.target as HTMLElement
+    if (
+      target.isContentEditable ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT'
+    ) {
+      requestAnimationFrame(() => {
+        target.focus()
+      })
+    }
+  }, [])
+
+  /**
    * Handles modal close
    */
   const handleClose = useCallback(() => {
@@ -252,7 +276,11 @@ export function StartBlockInputModal({
       <ModalContent className='max-w-[500px]' showClose={true}>
         <ModalHeader>Workflow Inputs</ModalHeader>
 
-        <div className='flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-4 py-2'>
+        <div
+          ref={modalBodyRef}
+          className='flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-4 py-2'
+          onPointerDownCapture={handlePointerDownCapture}
+        >
           {customFields.map((field, index) => {
             const fieldName = field.name?.trim()
             if (!fieldName) return null
@@ -290,7 +318,13 @@ export function StartBlockInputModal({
                 {fieldType === 'boolean' ? (
                   <div className='flex items-center gap-2'>
                     <input
-                      ref={isFirstField ? (el) => (firstInputRef.current = el) : undefined}
+                      ref={
+                        isFirstField
+                          ? (el) => {
+                              firstInputRef.current = el
+                            }
+                          : undefined
+                      }
                       type='checkbox'
                       id={fieldName}
                       checked={value === true || value === 'true'}
@@ -303,7 +337,13 @@ export function StartBlockInputModal({
                   </div>
                 ) : fieldType === 'number' ? (
                   <Input
-                    ref={isFirstField ? (el) => (firstInputRef.current = el) : undefined}
+                    ref={
+                      isFirstField
+                        ? (el) => {
+                            firstInputRef.current = el
+                          }
+                        : undefined
+                    }
                     id={fieldName}
                     type='number'
                     value={
@@ -352,7 +392,13 @@ export function StartBlockInputModal({
                   />
                 ) : fieldType === 'object' || fieldType === 'array' ? (
                   <textarea
-                    ref={isFirstField ? (el) => (firstInputRef.current = el) : undefined}
+                    ref={
+                      isFirstField
+                        ? (el) => {
+                            firstInputRef.current = el
+                          }
+                        : undefined
+                    }
                     id={fieldName}
                     value={
                       typeof value === 'string'
@@ -380,7 +426,13 @@ export function StartBlockInputModal({
                   />
                 ) : (
                   <Input
-                    ref={isFirstField ? (el) => (firstInputRef.current = el) : undefined}
+                    ref={
+                      isFirstField
+                        ? (el) => {
+                            firstInputRef.current = el
+                          }
+                        : undefined
+                    }
                     id={fieldName}
                     type='text'
                     value={(() => {

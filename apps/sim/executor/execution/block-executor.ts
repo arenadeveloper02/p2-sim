@@ -22,6 +22,7 @@ import type {
   ContextExtensions,
   IterationContext,
 } from '@/executor/execution/types'
+import type { Message } from '@/executor/handlers/agent/types'
 import {
   generatePauseContextId,
   mapNodeMetadataToPauseScopes,
@@ -891,7 +892,6 @@ export class BlockExecutor {
     ) {
       try {
         const { memoryService } = await import('@/executor/handlers/agent/memory')
-        const { Message } = await import('@/executor/handlers/agent/types').default
 
         const assistantMessage: Message = {
           role: 'assistant',

@@ -707,7 +707,11 @@ function SubBlockComponent({
                 subBlockId={config.id}
                 placeholder={config.placeholder}
                 isPreview={isPreview}
-                previewValue={previewValue}
+                previewValue={
+                  Array.isArray(previewValue)
+                    ? (previewValue[0] as string | undefined)
+                    : (previewValue ?? undefined)
+                }
                 disabled={isDisabled}
               />
             </div>
@@ -719,11 +723,14 @@ function SubBlockComponent({
               blockId={blockId}
               subBlockId={config.id}
               options={config.options as { label: string; id: string }[]}
-              defaultValue={
-                typeof config.value === 'function'
-                  ? config.value(subBlockValues || {})
-                  : config.value
-              }
+              defaultValue={(() => {
+                const raw =
+                  typeof config.value === 'function'
+                    ? config.value(subBlockValues || {})
+                    : config.value
+                const v = Array.isArray(raw) ? ((raw[0] as string | undefined) ?? undefined) : raw
+                return v === null ? undefined : v
+              })()}
               placeholder={config.placeholder}
               isPreview={isPreview}
               previewValue={previewValue}
@@ -1257,7 +1264,11 @@ function SubBlockComponent({
             isPreview={isPreview}
             subBlockValues={subBlockValues}
             disabled={isDisabled}
-            dependsOn={config.dependsOn}
+            dependsOn={
+              Array.isArray(config.dependsOn)
+                ? config.dependsOn
+                : [...(config.dependsOn?.all ?? []), ...(config.dependsOn?.any ?? [])]
+            }
           />
         )
       case 'arena-states-selector':

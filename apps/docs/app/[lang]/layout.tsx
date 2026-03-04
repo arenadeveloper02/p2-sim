@@ -26,6 +26,17 @@ const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   display: 'swap',
 })
+/** Fonts loaded via link in head to avoid next/font Turbopack resolution during build. */
+const FONT_LINKS = (
+  <>
+    <link rel='preconnect' href='https://fonts.googleapis.com' />
+    <link rel='preconnect' href='https://fonts.gstatic.com' crossOrigin='anonymous' />
+    <link
+      href='https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap'
+      rel='stylesheet'
+    />
+  </>
+)
 
 const { provider } = defineI18nUI(i18n, {
   translations: {
@@ -86,12 +97,9 @@ export default async function Layout({ children, params }: LayoutProps) {
   }
 
   return (
-    <html
-      lang={lang}
-      className={`${inter.variable} ${geistMono.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang={lang} suppressHydrationWarning>
       <head>
+        {FONT_LINKS}
         <script
           type='application/ld+json'
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}

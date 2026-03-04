@@ -34,6 +34,8 @@ export interface StreamingConfig {
   includeFileBase64?: boolean
   base64MaxBytes?: number
   timeoutMs?: number
+  /** When set (e.g. deployed chat with logged-in user), Arena tools use this user's token from DB. */
+  sessionUserId?: string | null
 }
 
 export interface StreamingResponseOptions {
@@ -404,6 +406,7 @@ export async function createStreamingResponse(
             includeFileBase64: streamConfig.includeFileBase64,
             base64MaxBytes: streamConfig.base64MaxBytes,
             abortSignal: timeoutController.signal,
+            sessionUserId: streamConfig.sessionUserId,
           },
           executionId
         )

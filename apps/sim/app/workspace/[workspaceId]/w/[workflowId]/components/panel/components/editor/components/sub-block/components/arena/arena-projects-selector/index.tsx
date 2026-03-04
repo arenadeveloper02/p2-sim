@@ -56,7 +56,10 @@ export function ArenaProjectSelector({
       : subBlockId === 'comment-project'
         ? 'comment-client'
         : 'search-task-client'
-  const clientId = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey]?.clientId
+  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
+    | { clientId?: string }
+    | undefined
+  const clientId = clientRef?.clientId
 
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValue = isPreview ? previewValue : storeValue
