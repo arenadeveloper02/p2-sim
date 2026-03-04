@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
@@ -181,6 +181,10 @@ export default function Invite() {
   const [invitationType, setInvitationType] = useState<'organization' | 'workspace'>('workspace')
   const [currentOrgName, setCurrentOrgName] = useState<string | null>(null)
   const userEmail = Cookies.get('email')
+  const [autoLoginAttempted, setAutoLoginAttempted] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.sessionStorage.getItem('inviteAutoLoginAttempted') === 'true'
+  })
 
   useEffect(() => {
     const errorReason = searchParams.get('error')
@@ -205,7 +209,7 @@ export default function Invite() {
     }
   }, [searchParams, inviteId])
 
-  const handleAutoLogin = async () => {
+  const handleAutoLogin = useCallback(async () => {
     try {
       await client.signIn.email(
         {
@@ -216,15 +220,19 @@ export default function Invite() {
         {}
       )
     } catch (error) {
-      console.error('Error auto-logging in:', error)
+      logger.error('Error auto-logging in for invite flow', { error })
     }
-  }
+  }, [userEmail])
 
   useEffect(() => {
-    if (!session?.user && userEmail) {
-      handleAutoLogin()
+    if (!session?.user && userEmail && !autoLoginAttempted) {
+      setAutoLoginAttempted(true)
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem('inviteAutoLoginAttempted', 'true')
+      }
+      void handleAutoLogin()
     }
-  }, [session?.user])
+  }, [session?.user, userEmail, autoLoginAttempted, handleAutoLogin])
 
   useEffect(() => {
     if (!token) return
