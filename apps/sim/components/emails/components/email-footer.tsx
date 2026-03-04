@@ -66,7 +66,7 @@ export function EmailFooter({
               <td>
                 <table cellPadding={0} cellSpacing={0} style={{ border: 0 }}>
                   <tbody>
-                    <tr>
+                    {/* <tr>
                       <td align='left' style={{ padding: '0 8px 0 0' }}>
                         <Link href={`${baseUrl}/x`} rel='noopener noreferrer'>
                           <Img
@@ -97,7 +97,7 @@ export function EmailFooter({
                           />
                         </Link>
                       </td>
-                    </tr>
+                    </tr> */}
                   </tbody>
                 </table>
               </td>
@@ -119,7 +119,7 @@ export function EmailFooter({
               </td>
               <td style={baseStyles.footerText}>
                 {brand.name}
-                {isHosted && <>, 80 Langton St, San Francisco, CA 94103, USA</>}
+                {isHosted && <>, Position 2, Bangalore, India</>}
               </td>
               <td style={baseStyles.gutter} width={spacing.gutter}>
                 &nbsp;
