@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getFacebookAccountId, getFacebookAccountName } from '@/lib/facebook-accounts'
+import { getChannelAccounts } from '@/lib/channel-accounts'
 import { parseQueryWithAI } from './ai-query-generation'
 import { makeFacebookAdsRequest } from './facebook-ads-api'
 import type { FacebookAdsRequest, FacebookAdsResponse } from './types'
@@ -38,9 +38,25 @@ export async function POST(request: NextRequest) {
       level,
     })
 
-    // Get account ID
-    const accountId = getFacebookAccountId(account as any)
-    const accountName = getFacebookAccountName(account as any)
+    // Get accounts from database
+    const facebookAccounts = await getChannelAccounts('facebook')
+    
+    // Find the requested account
+    const accountInfo = facebookAccounts[account]
+    if (!accountInfo) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Invalid account key: ${account}. Available accounts: ${Object.keys(facebookAccounts).join(', ')}`,
+          requestId,
+          timestamp,
+        },
+        { status: 400 }
+      )
+    }
+    
+    const accountId = `act_${accountInfo.id}`
+    const accountName = accountInfo.name
 
     logger.info('Account details', { accountId, accountName })
 

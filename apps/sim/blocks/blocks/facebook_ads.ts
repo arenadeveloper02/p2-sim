@@ -17,31 +17,30 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
       id: 'account',
       title: 'Facebook Ad Account',
       type: 'dropdown',
-      options: [
-        { label: '42 North Dental', id: '42_north_dental' },
-        { label: 'AMI', id: 'ami' },
-        { label: 'AUHI', id: 'auhi' },
-        { label: 'Acalvio Technologies', id: 'acalvio' },
-        { label: 'Capital City Nurses', id: 'capital_city_nurses' },
-        { label: 'Care Advantage', id: 'care_advantage' },
-        { label: 'Eventgroove', id: 'eventgroove' },
-        { label: 'Great Hill Dental Partners', id: 'great_hill_dental' },
-        { label: 'HEART HOLM', id: 'heart_holm' },
-        { label: 'HOLM', id: 'holm' },
-        { label: 'Health Rhythms', id: 'health_rhythms' },
-        { label: 'IDI', id: 'idi' },
-        { label: 'MSRN', id: 'msrn' },
-        { label: 'NHI', id: 'nhi' },
-        { label: 'ODC AL', id: 'odc_al' },
-        { label: 'OIA', id: 'oia' },
-        { label: 'SMI', id: 'smi' },
-        { label: 'Silver Lining Home Healthcare', id: 'silver_lining' },
-        { label: 'UCONN', id: 'uconn' },
-        { label: 'UD', id: 'ud' },
-        { label: 'UVA', id: 'uva' },
-        { label: 'WFBI', id: 'wfbi' },
-        { label: 'Youngs Healthcare, Inc.', id: 'youngs_healthcare' },
-      ],
+      options: [],
+      fetchOptions: async () => {
+        try {
+          const response = await fetch('/api/facebook-ads/accounts')
+          const data = await response.json()
+
+          console.log('Facebook Ads API response:', data)
+
+          if (data?.success && data.accounts && typeof data.accounts === 'object') {
+            const accounts = data.accounts as Record<string, { id: string; name: string }>
+            const options = Object.entries(accounts).map(([key, account]) => ({
+              id: key,
+              label: account.name,
+            }))
+            console.log('Facebook Ads options:', options)
+            return Array.isArray(options) ? options : []
+          }
+          console.log('Facebook Ads: Invalid response format')
+          return []
+        } catch (error) {
+          console.error('Failed to fetch Facebook Ads accounts:', error)
+          return []
+        }
+      },
       placeholder: 'Select Facebook ad account...',
       required: true,
     },
