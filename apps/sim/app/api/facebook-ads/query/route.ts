@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getFacebookAccountId, getFacebookAccountName } from '@/lib/facebook-accounts'
+import { getFacebookAdsAccounts } from '@/lib/channel-accounts'
 import { parseQueryWithAI } from './ai-query-generation'
 import { makeFacebookAdsRequest } from './facebook-ads-api'
 import type { FacebookAdsRequest, FacebookAdsResponse } from './types'
@@ -38,9 +38,24 @@ export async function POST(request: NextRequest) {
       level,
     })
 
-    // Get account ID
-    const accountId = getFacebookAccountId(account as any)
-    const accountName = getFacebookAccountName(account as any)
+    // Get account ID from database
+    const facebookAccounts = await getFacebookAdsAccounts()
+    const accountData = facebookAccounts[account as string]
+    
+    if (!accountData) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Account '${account}' not found in database`,
+          requestId,
+          timestamp,
+        },
+        { status: 400 }
+      )
+    }
+    
+    const accountId = `act_${accountData.id}`
+    const accountName = accountData.name
 
     logger.info('Account details', { accountId, accountName })
 
