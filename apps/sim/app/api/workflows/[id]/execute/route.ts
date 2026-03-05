@@ -828,6 +828,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                   iterationTotal: iterationContext.iterationTotal,
                   iterationType: iterationContext.iterationType,
                   iterationContainerId: iterationContext.iterationContainerId,
+                  ...(iterationContext.parentIterations?.length && {
+                    parentIterations: iterationContext.parentIterations,
+                  }),
                 }),
                 ...(childWorkflowContext && {
                   childWorkflowBlockId: childWorkflowContext.parentBlockId,
@@ -884,6 +887,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     iterationTotal: iterationContext.iterationTotal,
                     iterationType: iterationContext.iterationType,
                     iterationContainerId: iterationContext.iterationContainerId,
+                    ...(iterationContext.parentIterations?.length && {
+                      parentIterations: iterationContext.parentIterations,
+                    }),
                   }),
                   ...childWorkflowData,
                   ...instanceData,
@@ -915,6 +921,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     iterationTotal: iterationContext.iterationTotal,
                     iterationType: iterationContext.iterationType,
                     iterationContainerId: iterationContext.iterationContainerId,
+                    ...(iterationContext.parentIterations?.length && {
+                      parentIterations: iterationContext.parentIterations,
+                    }),
                   }),
                   ...childWorkflowData,
                   ...instanceData,
@@ -955,7 +964,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               logger.error(`[${requestId}] Error streaming block content:`, error)
             } finally {
               try {
-                reader.releaseLock()
+                await reader.cancel().catch(() => {})
               } catch {}
             }
           }

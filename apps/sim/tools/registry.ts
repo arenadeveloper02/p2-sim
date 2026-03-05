@@ -21,7 +21,10 @@ import {
 import {
   airtableCreateRecordsTool,
   airtableGetRecordTool,
+  airtableListBasesTool,
   airtableListRecordsTool,
+  airtableListTablesTool,
+  airtableUpdateMultipleRecordsTool,
   airtableUpdateRecordTool,
 } from '@/tools/airtable'
 import { airweaveSearchTool } from '@/tools/airweave'
@@ -149,6 +152,7 @@ import {
   attioUpdateTaskTool,
   attioUpdateWebhookTool,
 } from '@/tools/attio'
+import { brandfetchGetBrandTool, brandfetchSearchTool } from '@/tools/brandfetch'
 import { browserUseRunTaskTool } from '@/tools/browser_use'
 import {
   calcomCancelBookingTool,
@@ -356,6 +360,15 @@ import {
   dropboxUploadTool,
 } from '@/tools/dropbox'
 import { chainOfThoughtTool, predictTool, reactTool } from '@/tools/dspy'
+import {
+  dubCreateLinkTool,
+  dubDeleteLinkTool,
+  dubGetAnalyticsTool,
+  dubGetLinkTool,
+  dubListLinksTool,
+  dubUpdateLinkTool,
+  dubUpsertLinkTool,
+} from '@/tools/dub'
 import { duckduckgoSearchTool } from '@/tools/duckduckgo'
 import {
   dynamodbDeleteTool,
@@ -799,6 +812,14 @@ import {
   googleMapsTimezoneTool,
   googleMapsValidateAddressTool,
 } from '@/tools/google_maps'
+import {
+  googleMeetCreateSpaceTool,
+  googleMeetEndConferenceTool,
+  googleMeetGetConferenceRecordTool,
+  googleMeetGetSpaceTool,
+  googleMeetListConferenceRecordsTool,
+  googleMeetListParticipantsTool,
+} from '@/tools/google_meet'
 import { googlePagespeedAnalyzeTool } from '@/tools/google_pagespeed'
 import {
   googleSheetsAppendTool,
@@ -1776,17 +1797,22 @@ import {
 import {
   slackAddReactionTool,
   slackCanvasTool,
+  slackCreateChannelCanvasTool,
   slackDeleteMessageTool,
   slackDownloadTool,
+  slackEditCanvasTool,
   slackEphemeralMessageTool,
+  slackGetChannelInfoTool,
   slackGetMessageTool,
   slackGetThreadTool,
+  slackGetUserPresenceTool,
   slackGetUserTool,
   slackListChannelsTool,
   slackListMembersTool,
   slackListUsersTool,
   slackMessageReaderTool,
   slackMessageTool,
+  slackRemoveReactionTool,
   slackUpdateMessageTool,
 } from '@/tools/slack'
 import { smsSendTool } from '@/tools/sms'
@@ -2303,6 +2329,8 @@ export const tools: Record<string, ToolConfig> = {
   ashby_list_offers: ashbyListOffersTool,
   ashby_search_candidates: ashbySearchCandidatesTool,
   ashby_update_candidate: ashbyUpdateCandidateTool,
+  brandfetch_get_brand: brandfetchGetBrandTool,
+  brandfetch_search: brandfetchSearchTool,
   browser_use_run_task: browserUseRunTaskTool,
   openai_embeddings: openAIEmbeddingsTool,
   http_request: httpRequestTool,
@@ -2588,6 +2616,11 @@ export const tools: Record<string, ToolConfig> = {
   slack_update_message: slackUpdateMessageTool,
   slack_delete_message: slackDeleteMessageTool,
   slack_add_reaction: slackAddReactionTool,
+  slack_remove_reaction: slackRemoveReactionTool,
+  slack_get_channel_info: slackGetChannelInfoTool,
+  slack_get_user_presence: slackGetUserPresenceTool,
+  slack_edit_canvas: slackEditCanvasTool,
+  slack_create_channel_canvas: slackCreateChannelCanvasTool,
   github_repo_info: githubRepoInfoTool,
   github_repo_info_v2: githubRepoInfoV2Tool,
   github_latest_commit: githubLatestCommitTool,
@@ -2831,6 +2864,13 @@ export const tools: Record<string, ToolConfig> = {
   databricks_list_jobs: databricksListJobsTool,
   databricks_list_runs: databricksListRunsTool,
   databricks_run_job: databricksRunJobTool,
+  dub_create_link: dubCreateLinkTool,
+  dub_delete_link: dubDeleteLinkTool,
+  dub_get_analytics: dubGetAnalyticsTool,
+  dub_get_link: dubGetLinkTool,
+  dub_list_links: dubListLinksTool,
+  dub_update_link: dubUpdateLinkTool,
+  dub_upsert_link: dubUpsertLinkTool,
   duckduckgo_search: duckduckgoSearchTool,
   dspy_predict: predictTool,
   dspy_chain_of_thought: chainOfThoughtTool,
@@ -3196,6 +3236,12 @@ export const tools: Record<string, ToolConfig> = {
   google_maps_speed_limits: googleMapsSpeedLimitsTool,
   google_maps_timezone: googleMapsTimezoneTool,
   google_maps_validate_address: googleMapsValidateAddressTool,
+  google_meet_create_space: googleMeetCreateSpaceTool,
+  google_meet_end_conference: googleMeetEndConferenceTool,
+  google_meet_get_conference_record: googleMeetGetConferenceRecordTool,
+  google_meet_get_space: googleMeetGetSpaceTool,
+  google_meet_list_conference_records: googleMeetListConferenceRecordsTool,
+  google_meet_list_participants: googleMeetListParticipantsTool,
   google_pagespeed_analyze: googlePagespeedAnalyzeTool,
   google_tasks_create: googleTasksCreateTool,
   google_tasks_delete: googleTasksDeleteTool,
@@ -3431,7 +3477,10 @@ export const tools: Record<string, ToolConfig> = {
   algolia_delete_by_filter: algoliaDeleteByFilterTool,
   airtable_create_records: airtableCreateRecordsTool,
   airtable_get_record: airtableGetRecordTool,
+  airtable_list_bases: airtableListBasesTool,
   airtable_list_records: airtableListRecordsTool,
+  airtable_list_tables: airtableListTablesTool,
+  airtable_update_multiple_records: airtableUpdateMultipleRecordsTool,
   airtable_update_record: airtableUpdateRecordTool,
   attio_assert_record: attioAssertRecordTool,
   attio_create_comment: attioCreateCommentTool,
