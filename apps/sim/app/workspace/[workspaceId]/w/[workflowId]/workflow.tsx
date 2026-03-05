@@ -31,6 +31,7 @@ import {
   SubflowNodeComponent,
   Terminal,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components'
+import { SimCopilotPanel, SimCopilotToggle } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/sim-copilot'
 import { BlockMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/block-menu'
 import { CanvasMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/canvas-menu'
 import { Cursors } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/cursors/cursors'
@@ -93,6 +94,18 @@ const LazyOAuthRequiredModal = lazy(() =>
   import(
     '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/components/oauth-required-modal'
   ).then((mod) => ({ default: mod.OAuthRequiredModal }))
+)
+
+// Lazy load Sim Copilot to prevent initialization issues
+const LazySimCopilotPanel = lazy(() =>
+  import('@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/sim-copilot').then((mod) => ({
+    default: mod.SimCopilotPanel,
+  }))
+)
+const LazySimCopilotToggle = lazy(() =>
+  import('@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/sim-copilot').then((mod) => ({
+    default: mod.SimCopilotToggle,
+  }))
 )
 
 const logger = createLogger('Workflow')
@@ -3465,6 +3478,14 @@ const WorkflowContent = React.memo(() => {
       <DiffControls />
 
       <Terminal />
+
+      {/* Sim Copilot - Dynamic AI Assistant with error boundary */}
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <LazySimCopilotPanel />
+          <LazySimCopilotToggle />
+        </Suspense>
+      </ErrorBoundary>
 
       {oauthModal && (
         <Suspense fallback={null}>
