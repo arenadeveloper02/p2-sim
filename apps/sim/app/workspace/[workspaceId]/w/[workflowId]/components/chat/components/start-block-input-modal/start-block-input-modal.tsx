@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import {
   Button,
+  Combobox,
   Input,
   Label,
   Modal,
@@ -11,7 +12,10 @@ import {
   ModalFooter,
   ModalHeader,
 } from '@/components/emcn'
-import { getCustomInputFields } from '@/lib/workflows/input-format-utils'
+import {
+  getCustomInputFields,
+  parseFixedInputSetValue,
+} from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 
 const logger = createLogger('StartBlockInputModal')
@@ -118,16 +122,22 @@ export function StartBlockInputModal({
     }
   }, [])
 
-  // Initialize form state with initial values or empty strings
+  // Initialize form state with initial values or empty strings; fixed-input-set defaults to first option
   const [formValues, setFormValues] = useState<Record<string, unknown>>(() => {
     const initial: Record<string, unknown> = {}
     for (const field of customFields) {
       const fieldName = field.name?.trim()
-      if (fieldName) {
-        const initialValue = initialValues[fieldName]
-        // Safely normalize initial value
-        initial[fieldName] = initialValue === null || initialValue === undefined ? '' : initialValue
+      if (!fieldName) continue
+      let initialValue = initialValues[fieldName]
+      if (
+        (initialValue === null || initialValue === undefined || initialValue === '') &&
+        field.type === 'fixed-input-set' &&
+        Array.isArray(field.value) &&
+        field.value.length > 0
+      ) {
+        initialValue = field.value[0]
       }
+      initial[fieldName] = initialValue === null || initialValue === undefined ? '' : initialValue
     }
     return initial
   })
@@ -143,12 +153,18 @@ export function StartBlockInputModal({
       const newValues: Record<string, unknown> = {}
       for (const field of customFields) {
         const fieldName = field.name?.trim()
-        if (fieldName) {
-          const initialValue = initialValues[fieldName]
-          // Safely normalize initial value
-          newValues[fieldName] =
-            initialValue === null || initialValue === undefined ? '' : initialValue
+        if (!fieldName) continue
+        let initialValue = initialValues[fieldName]
+        if (
+          (initialValue === null || initialValue === undefined || initialValue === '') &&
+          field.type === 'fixed-input-set' &&
+          Array.isArray(field.value) &&
+          field.value.length > 0
+        ) {
+          initialValue = field.value[0]
         }
+        newValues[fieldName] =
+          initialValue === null || initialValue === undefined ? '' : initialValue
       }
       setFormValues(newValues)
 
@@ -378,6 +394,22 @@ export function StartBlockInputModal({
                     placeholder={`Enter ${displayName}`}
                     className='text-[12px]'
                   />
+                ) : fieldType === 'fixed-input-set' ? (
+                  (() => {
+                    const optionStrings = parseFixedInputSetValue(field.value)
+                    const options = optionStrings.map((v) => ({ label: v, value: v }))
+                    return (
+                      <Combobox
+                        options={options}
+                        value={
+                          typeof value === 'string' ? value : value != null ? String(value) : ''
+                        }
+                        onChange={(v) => handleFieldChange(fieldName, v)}
+                        placeholder={`Select ${displayName}`}
+                        disabled={options.length === 0}
+                      />
+                    )
+                  })()
                 ) : fieldType === 'object' || fieldType === 'array' ? (
                   <textarea
                     ref={isFirstField ? (el) => { firstInputRef.current = el } : undefined}

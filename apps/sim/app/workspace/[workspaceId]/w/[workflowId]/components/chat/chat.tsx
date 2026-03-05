@@ -15,6 +15,7 @@ import { useParams } from 'next/navigation'
 import {
   Badge,
   Button,
+  Combobox,
   Input,
   Popover,
   PopoverContent,
@@ -31,7 +32,12 @@ import {
   extractPathFromOutputId,
   parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
-import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import {
+  getCustomInputFields,
+  getFirstFixedInputSetOption,
+  getFixedInputSetFields,
+  normalizeInputFormatValue,
+} from '@/lib/workflows/input-format-utils'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { type InputFormatField, START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 import {
@@ -278,6 +284,7 @@ export function Chat() {
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [isInputModalOpen, setIsInputModalOpen] = useState(false)
   const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
+  const [fixedInputSetSelections, setFixedInputSetSelections] = useState<Record<string, string>>({})
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
@@ -452,6 +459,29 @@ export function Chat() {
   // Get custom fields (excluding reserved fields: input, conversationId, files)
   const customFields = useMemo(() => {
     return getCustomInputFields(startBlockInputFormat as InputFormatField[])
+  }, [startBlockInputFormat])
+
+  // Fixed-input-set fields: show dropdown in chat; default to first option
+  const fixedInputSetFields = useMemo(
+    () => getFixedInputSetFields(startBlockInputFormat as InputFormatField[]),
+    [startBlockInputFormat]
+  )
+
+  useEffect(() => {
+    const fields = getFixedInputSetFields(startBlockInputFormat as InputFormatField[])
+    if (fields.length === 0) return
+    setFixedInputSetSelections((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const field of fields) {
+        const first = field.options[0]
+        if (first && next[field.name] !== first) {
+          next[field.name] = first
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
   }, [startBlockInputFormat])
 
   // Reset modal flags when workflow changes or messages are added
@@ -882,34 +912,35 @@ export function Chat() {
       userInput: string,
       conversationId: string,
       files?: Array<{ name: string; size: number; type: string; file: File }>,
-      overrideValues?: Record<string, unknown>
+      overrideValues?: Record<string, unknown>,
+      fixedInputSetOverrides?: Record<string, string>
     ) => {
       const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
       const completeInput: Record<string, unknown> = {}
 
-      // Read values from Start Block inputFormat field values (field.value)
-      // This ensures values persist and are used naturally in execution flow
       for (const field of normalizedFields) {
         const fieldName = field.name?.trim()
-        if (fieldName) {
-          // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
-          if (overrideValues && fieldName in overrideValues) {
-            completeInput[fieldName] = overrideValues[fieldName] ?? ''
-          } else if (field.value !== undefined && field.value !== null) {
-            // Use the value from Start Block inputFormat field (persisted value)
-            completeInput[fieldName] = field.value
-          } else {
-            // Fallback to state or empty string
-            completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
-          }
+        if (!fieldName) continue
+
+        if (field.type === 'fixed-input-set') {
+          completeInput[fieldName] =
+            fixedInputSetOverrides?.[fieldName] ?? getFirstFixedInputSetOption(field)
+          continue
+        }
+
+        // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
+        if (overrideValues && fieldName in overrideValues) {
+          completeInput[fieldName] = overrideValues[fieldName] ?? ''
+        } else if (field.value !== undefined && field.value !== null) {
+          completeInput[fieldName] = field.value
+        } else {
+          completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
         }
       }
 
-      // Override with actual values for reserved fields
       completeInput.input = userInput
       completeInput.conversationId = conversationId
 
-      // Handle files - only include if present, otherwise don't set it
       if (files && files.length > 0) {
         completeInput.files = files
       }
@@ -925,7 +956,15 @@ export function Chat() {
    * and triggers workflow execution with the message as input
    */
   const handleSendMessage = useCallback(async () => {
-    if ((!chatMessage.trim() && chatFiles.length === 0) || !activeWorkflowId || isExecuting) return
+    const canSendWithFixedSet =
+      fixedInputSetFields.length > 0 &&
+      Object.keys(fixedInputSetSelections).some((k) => fixedInputSetSelections[k] != null)
+    if (
+      (!chatMessage.trim() && chatFiles.length === 0 && !canSendWithFixedSet) ||
+      !activeWorkflowId ||
+      isExecuting
+    )
+      return
 
     const sentMessage = chatMessage.trim()
 
@@ -972,8 +1011,14 @@ export function Chat() {
             }))
           : undefined
 
-      // Build complete workflow input with all Start Block fields
-      const workflowInput = buildCompleteWorkflowInput(sentMessage, conversationId, fileArray)
+      // Build complete workflow input with all Start Block fields (include fixed-input-set selections)
+      const workflowInput = buildCompleteWorkflowInput(
+        sentMessage,
+        conversationId,
+        fileArray,
+        undefined,
+        fixedInputSetSelections
+      )
 
       // Add upload error handler if files are present
       if (fileArray && fileArray.length > 0) {
@@ -1008,6 +1053,8 @@ export function Chat() {
     clearFiles,
     clearErrors,
     buildCompleteWorkflowInput,
+    fixedInputSetSelections,
+    fixedInputSetFields.length,
   ])
 
   /**
@@ -1484,12 +1531,36 @@ export function Chat() {
                 }}
                 onKeyDown={handleKeyPress}
                 placeholder={isDragOver ? 'Drop files here...' : 'Type a message...'}
-                className='w-full border-0 bg-transparent pr-[56px] pl-[4px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
+                className={cn(
+                  'w-full border-0 bg-transparent pl-[4px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
+                  fixedInputSetFields.length === 0 && 'pr-[56px]'
+                )}
+                style={
+                  fixedInputSetFields.length > 0
+                    ? { paddingRight: `${56 + fixedInputSetFields.length * 148}px` }
+                    : undefined
+                }
                 disabled={!activeWorkflowId}
               />
 
-              {/* Buttons positioned absolutely on the right */}
+              {/* Fixed-input-set dropdown(s) and action buttons on the right */}
               <div className='-translate-y-1/2 absolute top-1/2 right-[2px] flex items-center gap-[10px]'>
+                {fixedInputSetFields.map((field) => (
+                  <Combobox
+                    key={field.name}
+                    options={field.options.map((opt) => ({ label: opt, value: opt }))}
+                    value={fixedInputSetSelections[field.name] ?? field.options[0] ?? ''}
+                    onChange={(value) =>
+                      setFixedInputSetSelections((prev) => ({
+                        ...prev,
+                        [field.name]: value,
+                      }))
+                    }
+                    placeholder={field.name.replace(/_/g, ' ')}
+                    disabled={!activeWorkflowId || isExecuting}
+                    className='w-[140px] shrink-0'
+                  />
+                ))}
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
                     <Badge
@@ -1517,7 +1588,9 @@ export function Chat() {
                   <Button
                     onClick={handleSendMessage}
                     disabled={
-                      (!chatMessage.trim() && chatFiles.length === 0) ||
+                      (!chatMessage.trim() &&
+                        chatFiles.length === 0 &&
+                        fixedInputSetFields.length === 0) ||
                       !activeWorkflowId ||
                       isExecuting ||
                       isStreaming

@@ -68,3 +68,92 @@ export function getCustomInputFields(
     return !reservedFieldsLower.has(fieldName)
   })
 }
+
+/**
+ * Fixed-input-set field with its options array for dropdown UI.
+ */
+export interface FixedInputSetField {
+  name: string
+  options: string[]
+}
+
+/**
+ * Splits a string by comma or newline and trims each part for use as separate options.
+ */
+function splitOptionString(s: string): string[] {
+  return s
+    .split(/[,\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+/**
+ * Normalizes a parsed array into option strings; if the array has one string that
+ * contains commas/newlines, splits it into multiple options.
+ */
+function normalizeOptionsArray(arr: unknown[]): string[] {
+  const mapped = arr.map((v) => (v != null ? String(v).trim() : '')).filter(Boolean)
+  if (mapped.length === 1 && mapped[0]!.includes(',')) {
+    return splitOptionString(mapped[0])
+  }
+  if (mapped.length === 1 && mapped[0]!.includes('\n')) {
+    return splitOptionString(mapped[0])
+  }
+  return mapped
+}
+
+/**
+ * Parses the value of a fixed-input-set field into an array of option strings.
+ * The value may be stored as a JSON array string (from the editor), an actual array,
+ * or a single comma/newline-separated string.
+ */
+export function parseFixedInputSetValue(raw: unknown): string[] {
+  if (Array.isArray(raw) && raw.length > 0) {
+    return normalizeOptionsArray(raw)
+  }
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return normalizeOptionsArray(parsed)
+      }
+    } catch {
+      // Not valid JSON; treat as comma/newline-separated list
+      return splitOptionString(raw)
+    }
+  }
+  return []
+}
+
+/**
+ * Extracts fields of type 'fixed-input-set' that have a non-empty set of options.
+ * Used by the workspace chat to show a dropdown for run-time selection.
+ * Options come from the Start Block's field.value (array or JSON array string).
+ *
+ * @param inputFormat - Input format array from Start Block configuration
+ * @returns Array of fixed-input-set fields with their option arrays
+ */
+export function getFixedInputSetFields(
+  inputFormat: InputFormatField[] | null | undefined
+): FixedInputSetField[] {
+  const normalized = normalizeInputFormatValue(inputFormat)
+  const result: FixedInputSetField[] = []
+  for (const field of normalized) {
+    if (field.type !== 'fixed-input-set') continue
+    const name = field.name?.trim()
+    if (!name) continue
+    const options = parseFixedInputSetValue(field.value)
+    if (options.length > 0) {
+      result.push({ name, options })
+    }
+  }
+  return result
+}
+
+/**
+ * Returns the first option for a fixed-input-set field (for default/fallback value).
+ */
+export function getFirstFixedInputSetOption(field: InputFormatField): string {
+  const options = parseFixedInputSetValue(field.value)
+  return options[0] ?? ''
+}

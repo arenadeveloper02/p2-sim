@@ -5,6 +5,7 @@ import {
   resolveStartCandidates,
   StartBlockPath,
 } from '@/lib/workflows/triggers/triggers'
+import { getFirstFixedInputSetOption } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import type { NormalizedBlockOutput, UserFile } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
@@ -164,6 +165,8 @@ export function coerceValue(type: string | null | undefined, value: unknown): un
       }
       return value
     }
+    case 'fixed-input-set':
+      return typeof value === 'string' ? value : value != null ? String(value) : value
     default:
       return value
   }
@@ -208,6 +211,10 @@ function deriveInputFromFormat(
     // Use the default value from inputFormat if the field value wasn't provided at runtime
     if (fieldValue === undefined || fieldValue === null) {
       fieldValue = field.value
+      // For fixed-input-set, default to the first option (value may be array or JSON string)
+      if (field.type === 'fixed-input-set') {
+        fieldValue = getFirstFixedInputSetOption(field)
+      }
     }
 
     structuredInput[fieldName] = coerceValue(field.type, fieldValue)

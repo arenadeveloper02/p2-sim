@@ -1,6 +1,14 @@
 export interface InputFormatField {
   name?: string
-  type?: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'files' | string
+  type?:
+    | 'string'
+    | 'number'
+    | 'boolean'
+    | 'object'
+    | 'array'
+    | 'files'
+    | 'fixed-input-set'
+    | string
   description?: string
   value?: unknown
 }

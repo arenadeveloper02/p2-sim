@@ -26,7 +26,7 @@ import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/
 interface Field {
   id: string
   name: string
-  type?: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'files'
+  type?: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'files' | 'fixed-input-set'
   value?: string
   description?: string
   collapsed?: boolean
@@ -57,6 +57,7 @@ const TYPE_OPTIONS: ComboboxOption[] = [
   { label: 'Boolean', value: 'boolean' },
   { label: 'Object', value: 'object' },
   { label: 'Array', value: 'array' },
+  { label: 'Fixed input set', value: 'fixed-input-set' },
   { label: 'Files', value: 'files' },
 ]
 
@@ -409,9 +410,13 @@ export function FieldFormat({
       )
     }
 
-    if (field.type === 'array') {
+    if (field.type === 'array' || field.type === 'fixed-input-set') {
       const lineCount = fieldValue.split('\n').length
       const gutterWidth = calculateGutterWidth(lineCount)
+      const placeholder =
+        field.type === 'fixed-input-set'
+          ? '[\n  "Option A", "Option B", "Option C"\n]'
+          : '[\n  1, 2, 3\n]'
 
       const renderLineNumbers = () => {
         return Array.from({ length: lineCount }, (_, i) => (
@@ -430,7 +435,7 @@ export function FieldFormat({
           <Code.Gutter width={gutterWidth}>{renderLineNumbers()}</Code.Gutter>
           <Code.Content paddingLeft={`${gutterWidth}px`}>
             <Code.Placeholder gutterWidth={gutterWidth} show={fieldValue.length === 0}>
-              {'[\n  1, 2, 3\n]'}
+              {placeholder}
             </Code.Placeholder>
             <Editor
               value={fieldValue}
