@@ -708,7 +708,8 @@ function spawnWorker(): Promise<WorkerInfo> {
 
     import('node:child_process')
       .then(({ spawn }) => {
-        const proc = spawn('node', [workerPath], {
+        // Node 20+ with V8 snapshots can cause SIGSEGV in isolated-vm; --no-node-snapshot avoids it.
+        const proc = spawn('node', ['--no-node-snapshot', workerPath], {
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
           serialization: 'json',
         })
