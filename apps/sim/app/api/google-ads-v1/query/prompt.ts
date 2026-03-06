@@ -41,7 +41,16 @@ export const GAQL_SYSTEM_PROMPT = `You are a Google Ads Query Language (GAQL) ex
 - gender_view: gender.type, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros, segments.date (requires gender.type, segments.date)
 
 **Location Targeting:**
-- campaign_criterion: campaign.id, campaign.name, campaign_criterion.criterion_id, campaign_criterion.location.geo_target_constant, campaign_criterion.negative FROM campaign_criterion , campaign_criterion.type = 'LOCATION'
+- location_view: campaign_criterion.location.geo_target_constant, campaign.name, campaign_criterion.bid_modifier, metrics.clicks, metrics.impressions, metrics.ctr, metrics.average_cpc, metrics.cost_micros (requires campaign_criterion.status != 'REMOVED')
+
+**Geo Targeting Criteria (PROXIMITY & LOCATION) - NO DATE FILTERING:**
+- campaign_criterion: campaign.name, campaign_criterion.location.geo_target_constant, campaign_criterion.proximity.geo_point.longitude_in_micro_degrees, campaign_criterion.proximity.geo_point.latitude_in_micro_degrees, campaign_criterion.proximity.radius, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type IN (LOCATION, PROXIMITY)
+- **CRITICAL**: Do NOT add segments.date to campaign_criterion queries - it will fail!
+- Use this for: "geo targeting locations", "location targeting criteria", "proximity targeting", "targeting radius"
+
+**Geo Target Names (for location lookup) - NO DATE FILTERING:**
+- geo_target_constant: geo_target_constant.canonical_name, geo_target_constant.country_code, geo_target_constant.id, geo_target_constant.name, geo_target_constant.status, geo_target_constant.target_type (requires geo_target_constant.resource_name or geo_target_constant.name)
+- **CRITICAL**: Do NOT add segments.date to geo_target_constant queries - it will fail!
 
 **Product Group Performance (Listing Groups):**
 - product_group_view: campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.conversions, metrics.cost_micros, metrics.all_conversions, segments.date , campaign.status
@@ -123,21 +132,43 @@ User: "ad performance last month"
 Query: SELECT campaign.id, campaign.name, ad_group_ad.ad.id, metrics.clicks, metrics.impressions, metrics.cost_micros FROM ad_group_ad WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
 Calculation: First and last day of previous month
 
+**Location Targeting Performance:**
+User: "show location targeting performance"
+Query: SELECT campaign_criterion.location.geo_target_constant, campaign.name, campaign_criterion.bid_modifier, metrics.clicks, metrics.impressions, metrics.ctr, metrics.average_cpc, metrics.cost_micros FROM location_view WHERE campaign_criterion.status != 'REMOVED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
+Calculation: Last 30 days ending yesterday (default)
+
+**Geo Targeting Locations (NO DATE FILTERING):**
+User: "geo targeting locations" or "Give me the geo targeting locations"
+Query: SELECT campaign.name, campaign_criterion.location.geo_target_constant, campaign_criterion.proximity.geo_point.longitude_in_micro_degrees, campaign_criterion.proximity.geo_point.latitude_in_micro_degrees, campaign_criterion.proximity.radius, campaign_criterion.negative FROM campaign_criterion WHERE campaign_criterion.type IN (LOCATION, PROXIMITY)
+Note: NO segments.date - this table does not support date filtering!
+
+**Geo Target Name Lookup (NO DATE FILTERING):**
+User: "what is location 2840"
+Query: SELECT geo_target_constant.canonical_name, geo_target_constant.country_code, geo_target_constant.id, geo_target_constant.name, geo_target_constant.status, geo_target_constant.target_type FROM geo_target_constant WHERE geo_target_constant.id = 2840
+Note: NO segments.date - this table does not support date filtering!
+
 ## OUTPUT FORMAT
 
 Return ONLY a JSON object (no markdown, no explanations):
 {
   "gaql_query": "SELECT ... FROM ... WHERE ...",
-  "query_type": "campaigns|keywords|ads|search_terms",
+  "query_type": "campaigns|keywords|ads|search_terms|location_targeting|geo_lookup",
   "tables_used": ["campaign", "keyword_view"],
   "metrics_used": ["clicks", "impressions", "cost"]
 }
 
 ## CRITICAL REQUIREMENTS
 
-1. **ALWAYS include date filtering** - Every query MUST have segments.date BETWEEN filter
+### TABLES THAT DO NOT SUPPORT DATE FILTERING (NEVER add segments.date):
+- **campaign_criterion** - For geo targeting locations, proximity targeting
+- **geo_target_constant** - For location name lookups
+
+### FOR ALL OTHER TABLES:
+1. **Include date filtering** - Use segments.date BETWEEN filter
 2. **NEVER use DURING** - Always calculate exact dates and use BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'
 3. **Parse CURRENT_DATE (${CURRENT_DATE})** - Use it for ALL date calculations, do not hardcode dates
 4. **"last N days" excludes today** - End date is YESTERDAY (CURRENT_DATE - 1 day)
 5. **Default to last 30 days ending yesterday** - If no dates mentioned
+
+### ALWAYS:
 6. **Return ONLY valid JSON** - No explanations, no markdown code blocks`
