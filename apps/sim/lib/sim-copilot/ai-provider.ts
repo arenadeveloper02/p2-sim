@@ -42,7 +42,7 @@ export function getDefaultProviderConfig(): AIProviderConfig {
   if (process.env.ANTHROPIC_API_KEY) {
     return {
       provider: 'anthropic',
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       apiKey: process.env.ANTHROPIC_API_KEY,
       temperature: 0.1,
       maxTokens: 4096,

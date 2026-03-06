@@ -1709,6 +1709,63 @@ const WorkflowContent = React.memo(() => {
     }
   }, [addNotification, activeWorkflowId])
 
+  // Handle copilot edit operations - moved outside useEffect
+  const handleCopilotEdit = useCallback((event: CustomEvent) => {
+    const { operations } = event.detail
+    logger.info('Handling copilot edit operations', { operations })
+
+    operations.forEach((op: any) => {
+      switch (op.action) {
+        case 'add_block':
+          if (op.block_type && op.position) {
+            // Generate a unique ID for the new block
+            const blockId = `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            addBlock(
+              blockId,
+              op.block_type,
+              op.block_type, // Use block_type as name for now
+              op.position,
+              op.values || {}
+            )
+          }
+          break
+        case 'remove_block':
+          if (op.block_id) {
+            collaborativeBatchRemoveBlocks([op.block_id])
+          }
+          break
+        case 'add_connection':
+          if (op.source_id && op.target_id) {
+            addEdge({
+              id: `edge-${op.source_id}-${op.target_id}`,
+              source: op.source_id,
+              target: op.target_id,
+              sourceHandle: op.source_handle || 'output',
+              targetHandle: op.target_handle || 'input',
+            })
+          }
+          break
+        case 'remove_connection':
+          if (op.connection_id) {
+            collaborativeBatchRemoveEdges([op.connection_id])
+          }
+          break
+        case 'update_block':
+          // TODO: Implement block value updates
+          console.log('Update block operation not yet implemented:', op)
+          break
+      }
+    })
+  }, [addBlock, addEdge, collaborativeBatchRemoveBlocks, collaborativeBatchRemoveEdges])
+
+  // Add copilot event listener in a separate useEffect
+  useEffect(() => {
+    window.addEventListener('sim-copilot-edit', handleCopilotEdit as EventListener)
+    return () => {
+      window.removeEventListener('sim-copilot-edit', handleCopilotEdit as EventListener)
+    }
+  }, [handleCopilotEdit])
+
   /** Handles drop events on the ReactFlow canvas. */
   const onDrop = useCallback(
     (event: React.DragEvent) => {

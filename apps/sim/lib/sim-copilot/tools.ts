@@ -188,24 +188,20 @@ export function executeServerTool(
 function executeGetAvailableBlocks(): ToolResult {
   const blocks = getAllBlocks()
   
+  // Return minimal info to save tokens - use get_block_details for full config
   const formatted = blocks.map(block => ({
     type: block.type,
     name: block.name,
-    description: block.description,
     category: block.category,
-    configFields: block.subBlocks.map(sb => ({
-      id: sb.id,
-      title: sb.title,
-      type: sb.type,
-      required: sb.required,
-      options: sb.options,
-      defaultValue: sb.defaultValue,
-    })),
-    inputs: Object.keys(block.inputs),
-    outputs: Object.keys(block.outputs),
   }))
 
-  return { success: true, data: formatted }
+  return { 
+    success: true, 
+    data: {
+      blocks: formatted,
+      hint: 'Use get_block_details(block_type) for full configuration of a specific block'
+    }
+  }
 }
 
 function executeGetBlockDetails(args: Record<string, unknown>): ToolResult {

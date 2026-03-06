@@ -82,20 +82,45 @@ export async function POST(req: NextRequest) {
     // Build messages array - sanitize and limit conversation history
     const systemPrompt = generateSystemPrompt()
     
-    // Filter out messages with tool_calls that don't have corresponding tool results
-    // This prevents the "tool_use without tool_result" error from Anthropic
+    // Sanitize conversation history for Anthropic's strict tool_use/tool_result requirements
+    // Each tool_use MUST have a corresponding tool_result immediately after
     const sanitizedHistory: AIMessage[] = []
+    
     for (let i = 0; i < conversationHistory.length; i++) {
       const msg = conversationHistory[i]
       
-      // If this message has tool_calls, check if the next message is a tool result
-      if (msg.tool_calls && msg.tool_calls.length > 0) {
-        const nextMsg = conversationHistory[i + 1]
-        // Only include if there's a corresponding tool result
-        if (nextMsg && nextMsg.role === 'tool' && nextMsg.tool_call_id) {
+      // Skip tool messages that are orphaned (no preceding tool_call)
+      if (msg.role === 'tool') {
+        // Check if previous message in sanitized history has matching tool_call
+        const prevMsg = sanitizedHistory[sanitizedHistory.length - 1]
+        if (prevMsg?.tool_calls?.some((tc: any) => tc.id === msg.tool_call_id)) {
           sanitizedHistory.push(msg)
         }
-        // Otherwise skip this message (incomplete tool call)
+        // Otherwise skip orphaned tool result
+        continue
+      }
+      
+      // If this message has tool_calls, verify ALL tool_calls have results
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        const toolCallIds = msg.tool_calls.map((tc: any) => tc.id)
+        
+        // Look ahead to find all tool results for this message's tool calls
+        const toolResultIds: string[] = []
+        for (let j = i + 1; j < conversationHistory.length; j++) {
+          const nextMsg = conversationHistory[j]
+          if (nextMsg.role === 'tool' && nextMsg.tool_call_id) {
+            toolResultIds.push(nextMsg.tool_call_id)
+          } else if (nextMsg.role !== 'tool') {
+            break // Stop at first non-tool message
+          }
+        }
+        
+        // Only include if ALL tool_calls have corresponding results
+        const allToolCallsHaveResults = toolCallIds.every((id: string) => toolResultIds.includes(id))
+        if (allToolCallsHaveResults) {
+          sanitizedHistory.push(msg)
+        }
+        // Otherwise skip this message (incomplete tool call chain)
       } else {
         sanitizedHistory.push(msg)
       }
@@ -103,7 +128,20 @@ export async function POST(req: NextRequest) {
     
     // Limit conversation history to prevent token limit exceeded
     // Keep only the last 20 messages (10 exchanges) to stay within token limits
-    const limitedHistory = sanitizedHistory.slice(-20)
+    // But ensure we don't cut in the middle of a tool_call/tool_result pair
+    let limitedHistory = sanitizedHistory.slice(-20)
+    
+    // If first message is a tool result, we need to include the preceding assistant message
+    while (limitedHistory.length > 0 && limitedHistory[0].role === 'tool') {
+      // Find the assistant message with tool_calls before this
+      const cutIndex = sanitizedHistory.length - limitedHistory.length - 1
+      if (cutIndex >= 0) {
+        limitedHistory = [sanitizedHistory[cutIndex], ...limitedHistory]
+      } else {
+        // Can't find preceding message, remove the orphaned tool result
+        limitedHistory = limitedHistory.slice(1)
+      }
+    }
     
     const messages: AIMessage[] = [
       { role: 'system', content: systemPrompt },

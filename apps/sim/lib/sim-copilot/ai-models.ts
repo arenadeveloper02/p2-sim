@@ -33,10 +33,12 @@ export const PROVIDER_MODELS: Record<ProviderId, string[]> = {
     'o1-mini',
   ],
   anthropic: [
+    'claude-opus-4-6',
+    'claude-sonnet-4-6',
+    'claude-opus-4-5',
+    'claude-sonnet-4-5-20250929',
     'claude-sonnet-4-20250514',
-    'claude-3-5-sonnet-latest',
-    'claude-3-5-haiku-latest',
-    'claude-3-opus-latest',
+    'claude-3-5-haiku-20241022',
   ],
   xai: [
     'grok-2-latest',
