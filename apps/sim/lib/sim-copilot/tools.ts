@@ -3,7 +3,7 @@
  * Defines the tools available to the AI copilot for workflow manipulation
  */
 
-import { getAllBlocks, getBlockInfo, getBlockConfigDetails } from './block-discovery'
+import { getAllBlocks, getBlockInfo, getBlockConfigDetails, generateBlockConfiguration, detectBlocksFromRequest, getBlockCategory, UNIVERSAL_BLOCK_CONFIGS } from './block-discovery'
 
 // OpenAI function-calling tool schemas
 export const COPILOT_TOOLS = [
@@ -188,18 +188,28 @@ export function executeServerTool(
 function executeGetAvailableBlocks(): ToolResult {
   const blocks = getAllBlocks()
   
-  // Return minimal info to save tokens - use get_block_details for full config
-  const formatted = blocks.map(block => ({
-    type: block.type,
-    name: block.name,
-    category: block.category,
-  }))
+  // Enhanced info with universal configuration hints
+  const formatted = blocks.map(block => {
+    const universalConfig = UNIVERSAL_BLOCK_CONFIGS[block.type]
+    return {
+      type: block.type,
+      name: block.name,
+      category: block.category,
+      // NEW: Universal configuration information
+      universalCategory: universalConfig?.category || 'unknown',
+      commonUses: universalConfig?.commonUses || [],
+      keywords: universalConfig?.keywords || [],
+      configurableFields: block.subBlocks?.map(sb => sb.id) || [],
+      hasAutoConfiguration: !!universalConfig
+    }
+  })
 
   return { 
     success: true, 
     data: {
       blocks: formatted,
-      hint: 'Use get_block_details(block_type) for full configuration of a specific block'
+      hint: 'Use get_block_details(block_type) for full configuration. Blocks with auto-configuration will be automatically configured based on your request.',
+      universalInfo: 'I can automatically configure blocks based on keywords in your request. For example: "Google Ads" will configure google_ads_v1 with relevant metrics.'
     }
   }
 }

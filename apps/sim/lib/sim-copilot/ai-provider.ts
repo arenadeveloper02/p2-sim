@@ -73,6 +73,102 @@ export function getDefaultProviderConfig(): AIProviderConfig {
 }
 
 /**
+ * Smart model selection based on task requirements and token limits
+ */
+export function selectOptimalProvider(
+  taskType: 'analysis' | 'generation' | 'optimization' | 'general',
+  estimatedTokens: number,
+  complexity: 'low' | 'medium' | 'high' = 'medium'
+): AIProviderConfig {
+  
+  // Large context requirement → Use Claude 4.6 (1M tokens)
+  if (estimatedTokens > 150000) {
+    if (process.env.ANTHROPIC_API_KEY) {
+      return {
+        provider: 'anthropic',
+        model: 'claude-opus-4-6',
+        apiKey: process.env.ANTHROPIC_API_KEY,
+        temperature: 0.1,
+        maxTokens: 128000,
+      }
+    }
+  }
+  
+  // Complex reasoning → Use GPT-5
+  if (complexity === 'high') {
+    if (process.env.OPENAI_API_KEY) {
+      return {
+        provider: 'openai',
+        model: 'gpt-5',
+        apiKey: process.env.OPENAI_API_KEY,
+        temperature: 0.1,
+        maxTokens: 8000,
+      }
+    }
+  }
+  
+  // Real-time search → Use Grok 2
+  if (taskType === 'analysis' && complexity === 'medium') {
+    if (process.env.XAI_API_KEY) {
+      return {
+        provider: 'xai',
+        model: 'grok-2-latest',
+        apiKey: process.env.XAI_API_KEY,
+        temperature: 0.1,
+        maxTokens: 4000,
+      }
+    }
+  }
+  
+  // Default: Use Claude Sonnet 4.6 (balanced performance)
+  if (process.env.ANTHROPIC_API_KEY) {
+    return {
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      temperature: 0.1,
+      maxTokens: 4000,
+    }
+  }
+  
+  // Fallback to default
+  return getDefaultProviderConfig()
+}
+
+/**
+ * Analyze task complexity from user request
+ */
+export function analyzeTaskComplexity(userRequest: string): {
+  type: 'analysis' | 'generation' | 'optimization' | 'general'
+  complexity: 'low' | 'medium' | 'high'
+  estimatedTokens: number
+} {
+  let type: 'analysis' | 'generation' | 'optimization' | 'general' = 'general'
+  let complexity: 'low' | 'medium' | 'high' = 'medium'
+  
+  // Determine task type
+  if (userRequest.includes('analyze') || userRequest.includes('review') || userRequest.includes('examine')) {
+    type = 'analysis'
+  } else if (userRequest.includes('generate') || userRequest.includes('create') || userRequest.includes('build')) {
+    type = 'generation'
+  } else if (userRequest.includes('optimize') || userRequest.includes('improve') || userRequest.includes('enhance')) {
+    type = 'optimization'
+  }
+  
+  // Determine complexity
+  if (userRequest.includes('complex') || userRequest.includes('advanced') || userRequest.includes('detailed')) {
+    complexity = 'high'
+  } else if (userRequest.includes('simple') || userRequest.includes('basic') || userRequest.includes('quick')) {
+    complexity = 'low'
+  }
+  
+  // Estimate tokens (rough calculation)
+  const estimatedTokens = Math.ceil(userRequest.length * 1.5) + 1000 // Base tokens + request
+  
+  return { type, complexity, estimatedTokens }
+}
+
+/**
  * Call the AI provider with messages and tools
  */
 export async function callAIProvider(

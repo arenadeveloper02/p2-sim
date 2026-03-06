@@ -1714,49 +1714,110 @@ const WorkflowContent = React.memo(() => {
     const { operations } = event.detail
     logger.info('Handling copilot edit operations', { operations })
 
+    // Map copilot-provided IDs (block_type) to real generated block IDs
+    const idMap: Record<string, string> = {}
+
+    // Check existing blocks in the store to prevent duplication
+    const existingBlocks = useWorkflowStore.getState().blocks
+    const existingBlockTypes = new Map<string, string>()
+    Object.entries(existingBlocks).forEach(([id, block]) => {
+      existingBlockTypes.set(block.type, id)
+    })
+
+    // Collect all new blocks, edges, and subBlockValues for a single batch call
+    const newBlockStates: BlockState[] = []
+    const newEdges: Edge[] = []
+    const allSubBlockValues: Record<string, Record<string, unknown>> = {}
+
+    // First pass: prepare blocks
     operations.forEach((op: any) => {
-      switch (op.action) {
-        case 'add_block':
-          if (op.block_type && op.position) {
-            // Generate a unique ID for the new block
-            const blockId = `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-            addBlock(
-              blockId,
-              op.block_type,
-              op.block_type, // Use block_type as name for now
-              op.position,
-              op.values || {}
-            )
+      if (op.action === 'add_block' && op.block_type && op.position) {
+        // Skip if this block type already exists on canvas
+        const existingId = existingBlockTypes.get(op.block_type)
+        if (existingId) {
+          logger.info('Block type already exists, reusing', { type: op.block_type, id: existingId })
+          idMap[op.block_type] = existingId
+          idMap[`${op.block_type}-block`] = existingId
+          if (op.block_id) idMap[op.block_id] = existingId
+          return
+        }
+
+        const blockId = `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+        // Map copilot ID formats to the real ID
+        if (op.block_id) idMap[op.block_id] = blockId
+        idMap[`${op.block_type}-block`] = blockId
+        idMap[op.block_type] = blockId
+
+        // Prepare the block state using the same utility the rest of the app uses
+        const blockState = prepareBlockState({
+          id: blockId,
+          type: op.block_type,
+          name: op.block_type,
+          position: op.position,
+        })
+        newBlockStates.push(blockState)
+
+        // Collect sub-block values to write into the block
+        // Normalize values: parse JSON strings into proper arrays/objects
+        if (op.values && Object.keys(op.values).length > 0) {
+          const normalized: Record<string, unknown> = {}
+          for (const [key, val] of Object.entries(op.values)) {
+            if (typeof val === 'string') {
+              try {
+                const parsed = JSON.parse(val)
+                // Only use parsed value if it's an array or object (not a primitive)
+                if (Array.isArray(parsed) || (typeof parsed === 'object' && parsed !== null)) {
+                  normalized[key] = parsed
+                  continue
+                }
+              } catch {
+                // Not JSON, keep as string
+              }
+            }
+            normalized[key] = val
           }
-          break
-        case 'remove_block':
-          if (op.block_id) {
-            collaborativeBatchRemoveBlocks([op.block_id])
-          }
-          break
-        case 'add_connection':
-          if (op.source_id && op.target_id) {
-            addEdge({
-              id: `edge-${op.source_id}-${op.target_id}`,
-              source: op.source_id,
-              target: op.target_id,
-              sourceHandle: op.source_handle || 'output',
-              targetHandle: op.target_handle || 'input',
-            })
-          }
-          break
-        case 'remove_connection':
-          if (op.connection_id) {
-            collaborativeBatchRemoveEdges([op.connection_id])
-          }
-          break
-        case 'update_block':
-          // TODO: Implement block value updates
-          console.log('Update block operation not yet implemented:', op)
-          break
+          allSubBlockValues[blockId] = normalized
+        }
       }
     })
-  }, [addBlock, addEdge, collaborativeBatchRemoveBlocks, collaborativeBatchRemoveEdges])
+
+    // Second pass: prepare edges with resolved IDs
+    operations.forEach((op: any) => {
+      if (op.action === 'add_connection' && op.source_id && op.target_id) {
+        const realSourceId = idMap[op.source_id] || op.source_id
+        const realTargetId = idMap[op.target_id] || op.target_id
+
+        logger.info('Preparing connection', {
+          original: { source: op.source_id, target: op.target_id },
+          resolved: { source: realSourceId, target: realTargetId },
+        })
+
+        newEdges.push({
+          id: `edge-${realSourceId}-${realTargetId}`,
+          source: realSourceId,
+          target: realTargetId,
+          sourceHandle: 'source',
+          targetHandle: 'target',
+        })
+      } else if (op.action === 'remove_block' && op.block_id) {
+        const realId = idMap[op.block_id] || op.block_id
+        collaborativeBatchRemoveBlocks([realId])
+      } else if (op.action === 'remove_connection' && op.connection_id) {
+        collaborativeBatchRemoveEdges([op.connection_id])
+      }
+    })
+
+    // Single atomic batch call: adds all blocks + edges + subBlockValues together
+    if (newBlockStates.length > 0 || newEdges.length > 0) {
+      logger.info('Batch adding blocks and edges', {
+        blockCount: newBlockStates.length,
+        edgeCount: newEdges.length,
+        subBlockValueCount: Object.keys(allSubBlockValues).length,
+      })
+      collaborativeBatchAddBlocks(newBlockStates, newEdges, {}, {}, allSubBlockValues)
+    }
+  }, [collaborativeBatchAddBlocks, collaborativeBatchRemoveBlocks, collaborativeBatchRemoveEdges])
 
   // Add copilot event listener in a separate useEffect
   useEffect(() => {

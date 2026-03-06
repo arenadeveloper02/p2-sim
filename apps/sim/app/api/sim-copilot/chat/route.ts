@@ -14,6 +14,8 @@ import {
   requiresClientExecution,
   getDefaultProviderConfig,
   callAIProvider,
+  selectOptimalProvider,
+  analyzeTaskComplexity,
   type AIMessage,
   type AIProviderConfig,
 } from '@/lib/sim-copilot'
@@ -54,26 +56,47 @@ export async function POST(req: NextRequest) {
       provider,
     })
 
-    // Get AI provider config
+    // Get AI provider config with smart selection
     let providerConfig: AIProviderConfig
     try {
-      providerConfig = getDefaultProviderConfig()
-      // Override with user preferences if provided
-      if (provider) {
-        const apiKeyMap: Record<string, string | undefined> = {
-          openai: process.env.OPENAI_API_KEY,
-          anthropic: process.env.ANTHROPIC_API_KEY,
-          xai: process.env.XAI_API_KEY,
+      // Analyze task complexity for smart model selection
+      const taskAnalysis = analyzeTaskComplexity(message)
+      
+      // Use smart model selection unless user explicitly specified provider/model
+      if (provider || model) {
+        providerConfig = getDefaultProviderConfig()
+        // Override with user preferences if provided
+        if (provider) {
+          const apiKeyMap: Record<string, string | undefined> = {
+            openai: process.env.OPENAI_API_KEY,
+            anthropic: process.env.ANTHROPIC_API_KEY,
+            xai: process.env.XAI_API_KEY,
+          }
+          const apiKey = apiKeyMap[provider]
+          if (apiKey) {
+            providerConfig.provider = provider
+            providerConfig.apiKey = apiKey
+          }
         }
-        const apiKey = apiKeyMap[provider]
-        if (apiKey) {
-          providerConfig.provider = provider
-          providerConfig.apiKey = apiKey
+        if (model) {
+          providerConfig.model = model
         }
+      } else {
+        // Smart model selection based on task
+        providerConfig = selectOptimalProvider(
+          taskAnalysis.type,
+          taskAnalysis.estimatedTokens,
+          taskAnalysis.complexity
+        )
       }
-      if (model) {
-        providerConfig.model = model
-      }
+      
+      logger.info('AI provider selected', {
+        provider: providerConfig.provider,
+        model: providerConfig.model,
+        taskType: taskAnalysis.type,
+        complexity: taskAnalysis.complexity,
+        estimatedTokens: taskAnalysis.estimatedTokens
+      })
     } catch (error) {
       logger.error('Failed to get AI provider config', { error })
       return NextResponse.json({ error: 'No AI provider configured' }, { status: 500 })
