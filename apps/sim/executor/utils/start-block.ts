@@ -365,6 +365,19 @@ function buildChatOutput(workflowInput: unknown): NormalizedBlockOutput {
     output.conversationId = conversationId
   }
 
+  // Merge all other fields from workflowInput (e.g. fixed-input-set, startBlockInputs)
+  // so that Start block output includes custom fields selected in chat
+  if (isPlainObject(workflowInput)) {
+    for (const [key, value] of Object.entries(workflowInput)) {
+      if (key === 'onUploadError') continue
+      if (value !== undefined && value !== null) {
+        output[key] = value
+      } else if (!Object.hasOwn(output, key)) {
+        output[key] = value
+      }
+    }
+  }
+
   return mergeFilesIntoOutput(output, workflowInput)
 }
 

@@ -216,4 +216,26 @@ describe('start-block utilities', () => {
       expect(output.customField).toBe('defaultValue')
     })
   })
+
+  it.concurrent('SPLIT_CHAT includes fixed-input-set and startBlockInputs in output', () => {
+    const block = createBlock('chat_trigger', 'chat')
+    const resolution = {
+      blockId: 'chat',
+      block,
+      path: StartBlockPath.SPLIT_CHAT,
+    } as const
+
+    const output = buildStartBlockOutput({
+      resolution,
+      workflowInput: {
+        input: '',
+        conversationId: '11f57bdb-4b1a-47b3-a53b-d744113206ba',
+        department: 'Sales',
+      },
+    })
+
+    expect(output.input).toBe('')
+    expect(output.conversationId).toBe('11f57bdb-4b1a-47b3-a53b-d744113206ba')
+    expect(output.department).toBe('Sales')
+  })
 })

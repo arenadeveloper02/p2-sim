@@ -3,12 +3,19 @@
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
+import { Send } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
+import { Combobox } from '@/components/emcn'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
-import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import {
+  getCustomInputFields,
+  getFirstFixedInputSetOption,
+  getFixedInputSetFields,
+  normalizeInputFormatValue,
+} from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
@@ -160,6 +167,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Start Block input modal state
   const [isInputModalOpen, setIsInputModalOpen] = useState(false)
   const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
+  const [fixedInputSetSelections, setFixedInputSetSelections] = useState<Record<string, string>>({})
   const hasShownModalRef = useRef<boolean>(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
@@ -432,8 +440,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       // Check if we should show modal on load (no messages and has inputFormat)
       if (data.inputFormat && Array.isArray(data.inputFormat) && data.inputFormat.length > 0) {
         const customFields = getCustomInputFields(data.inputFormat)
+        const fixedOnly = getFixedInputSetFields(data.inputFormat)
+        const showModal =
+          customFields.length > 0 &&
+          messages.length === 0 &&
+          !hasShownModalRef.current &&
+          (fixedOnly.length === 0 || customFields.length > fixedOnly.length)
 
-        if (customFields.length > 0 && messages.length === 0 && !hasShownModalRef.current) {
+        if (showModal) {
           hasShownModalRef.current = true
           setIsInputModalOpen(true)
         }
@@ -483,8 +497,16 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     overrideValues?: Record<string, unknown> // Override values for Start Block inputs (e.g., from form submission)
   ) => {
     const messageToSend = messageParam ?? inputValue
-    // Allow execution if forceExecution is true (form submission) or if there's input/files
-    if ((!messageToSend.trim() && (!files || files.length === 0) && !forceExecution) || isLoading)
+    const canSendWithFixedSet =
+      fixedInputSetFields.length > 0 &&
+      Object.keys(fixedInputSetSelections).some((k) => fixedInputSetSelections[k] != null)
+    if (
+      (!messageToSend.trim() &&
+        (!files || files.length === 0) &&
+        !forceExecution &&
+        !canSendWithFixedSet) ||
+      isLoading
+    )
       return
 
     logger.info('Sending message:', {
@@ -496,13 +518,17 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
     setUserHasScrolled(false)
 
-    // Only add user message to chat if there's actual content or files
-    // When form is submitted with empty input, we don't add a user message
     let userMessageId: string | null = null
-    if (messageToSend.trim() || (files && files.length > 0)) {
+    const displayContent =
+      messageToSend.trim() ||
+      (files && files.length > 0 ? `Sent ${files.length} file(s)` : '') ||
+      (canSendWithFixedSet
+        ? `Selected: ${Object.values(fixedInputSetSelections).filter(Boolean).join(', ')}`
+        : '')
+    if (displayContent) {
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
-        content: messageToSend || (files && files.length > 0 ? `Sent ${files.length} file(s)` : ''),
+        content: displayContent,
         type: 'user',
         timestamp: new Date(),
         attachments: files?.map((file) => ({
@@ -534,14 +560,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }, CHAT_REQUEST_TIMEOUT_MS)
 
     try {
-      // Build complete workflow input with all Start Block fields
-      // Use messageToSend directly (may be empty if form was submitted)
-      // Pass overrideValues if provided (e.g., from form submission)
+      const effectiveOverrides =
+        overrideValues ?? (canSendWithFixedSet ? fixedInputSetSelections : undefined)
       const completeInput = buildCompleteWorkflowInput(
         messageToSend,
         conversationId,
         files,
-        overrideValues
+        effectiveOverrides,
+        fixedInputSetSelections
       )
 
       // Send structured payload to maintain chat context
@@ -553,6 +579,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           startBlockInputsPayload[key] = value
         }
       }
+      if (fixedInputSetFields.length > 0 && Object.keys(fixedInputSetSelections).length > 0) {
+        Object.assign(startBlockInputsPayload, fixedInputSetSelections)
+      }
 
       logger.debug('Building payload with Start Block inputs:', {
         hasCustomFields: customFields.length > 0,
@@ -563,9 +592,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const payload: any = {
         input: completeInput.input,
         conversationId: completeInput.conversationId,
-        // Always include startBlockInputs if there are any custom fields in inputFormat
-        // This ensures all Start Block fields are passed to execution, even if empty
-        startBlockInputs: customFields.length > 0 ? startBlockInputsPayload : undefined,
+        // Include startBlockInputs when we have custom fields or fixed-input-set (API needs values for hasStartBlockInputValues)
+        startBlockInputs:
+          customFields.length > 0 || fixedInputSetFields.length > 0
+            ? startBlockInputsPayload
+            : undefined,
       }
 
       if (files && files.length > 0) {
@@ -737,6 +768,28 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     return getCustomInputFields(chatConfig?.inputFormat)
   }, [chatConfig?.inputFormat])
 
+  const fixedInputSetFields = useMemo(
+    () => getFixedInputSetFields(chatConfig?.inputFormat),
+    [chatConfig?.inputFormat]
+  )
+
+  useEffect(() => {
+    const fields = getFixedInputSetFields(chatConfig?.inputFormat)
+    if (fields.length === 0) return
+    setFixedInputSetSelections((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const field of fields) {
+        const first = field.options[0]
+        if (first && next[field.name] !== first) {
+          next[field.name] = first
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [chatConfig?.inputFormat])
+
   /**
    * Builds complete workflow input with all Start Block fields (including reserved ones)
    * Ensures all fields from inputFormat are present, with empty values when not provided
@@ -753,33 +806,34 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         file: File
         dataUrl?: string
       }>,
-      overrideValues?: Record<string, unknown>
+      overrideValues?: Record<string, unknown>,
+      fixedInputSetOverrides?: Record<string, string>
     ): Record<string, unknown> => {
       const normalizedFields = normalizeInputFormatValue(chatConfig?.inputFormat)
       const completeInput: Record<string, unknown> = {}
 
-      // Read values from Start Block inputFormat field values (field.value)
-      // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
       for (const field of normalizedFields) {
         const fieldName = field.name?.trim()
-        if (fieldName) {
-          if (overrideValues && fieldName in overrideValues) {
-            completeInput[fieldName] = overrideValues[fieldName] ?? ''
-          } else if (field.value !== undefined && field.value !== null) {
-            // Use the value from Start Block inputFormat field (persisted value)
-            completeInput[fieldName] = field.value
-          } else {
-            // Fallback to state or empty string
-            completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
-          }
+        if (!fieldName) continue
+
+        if (field.type === 'fixed-input-set') {
+          completeInput[fieldName] =
+            fixedInputSetOverrides?.[fieldName] ?? getFirstFixedInputSetOption(field)
+          continue
+        }
+
+        if (overrideValues && fieldName in overrideValues) {
+          completeInput[fieldName] = overrideValues[fieldName] ?? ''
+        } else if (field.value !== undefined && field.value !== null) {
+          completeInput[fieldName] = field.value
+        } else {
+          completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
         }
       }
 
-      // Override with actual values for reserved fields
       completeInput.input = userInput
       completeInput.conversationId = conversationId
 
-      // Handle files - only include if present
       if (files && files.length > 0) {
         // Files will be added separately in the payload
       }
@@ -1033,17 +1087,60 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
       />
 
-      {/* Input area (free-standing at the bottom) */}
+      {/* Input area: fixed-input-set = dropdown(s) only; otherwise full chat input */}
       <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
         <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-          <ChatInput
-            onSubmit={(value, isVoiceInput, files) => {
-              void handleSendMessage(value, isVoiceInput, files)
-            }}
-            isStreaming={isStreamingResponse}
-            onStopStreaming={() => stopStreaming(setMessages)}
-            onVoiceStart={handleVoiceStart}
-          />
+          {fixedInputSetFields.length > 0 ? (
+            <div className='flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm md:rounded-3xl md:p-4'>
+              {fixedInputSetFields.map((field) => (
+                <div
+                  key={field.name}
+                  className='flex min-w-0 flex-1 items-center gap-2 md:min-w-[180px]'
+                >
+                  <span className='shrink-0 text-gray-600 text-sm dark:text-gray-400'>
+                    {field.name.replace(/_/g, ' ')}:
+                  </span>
+                  <Combobox
+                    options={field.options.map((opt) => ({ label: opt, value: opt }))}
+                    value={fixedInputSetSelections[field.name] ?? field.options[0] ?? ''}
+                    onChange={(value) =>
+                      setFixedInputSetSelections((prev) => ({
+                        ...prev,
+                        [field.name]: value,
+                      }))
+                    }
+                    placeholder={`Select ${field.name.replace(/_/g, ' ')}`}
+                    disabled={isLoading || isStreamingResponse}
+                    className='min-w-0 flex-1'
+                  />
+                </div>
+              ))}
+              <button
+                type='button'
+                onClick={() =>
+                  void handleSendMessage('', false, undefined, true, fixedInputSetSelections)
+                }
+                disabled={
+                  isLoading ||
+                  isStreamingResponse ||
+                  !Object.keys(fixedInputSetSelections).some((k) => fixedInputSetSelections[k])
+                }
+                className='flex shrink-0 items-center justify-center rounded-full bg-black p-2 text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:hover:bg-gray-400'
+                title='Send'
+              >
+                <Send size={18} />
+              </button>
+            </div>
+          ) : (
+            <ChatInput
+              onSubmit={(value, isVoiceInput, files) => {
+                void handleSendMessage(value, isVoiceInput, files)
+              }}
+              isStreaming={isStreamingResponse}
+              onStopStreaming={() => stopStreaming(setMessages)}
+              onVoiceStart={handleVoiceStart}
+            />
+          )}
         </div>
       </div>
 
