@@ -397,6 +397,50 @@ export async function refreshTokenIfNeeded(
   const refreshTokenExpiresAt = credential.refreshTokenExpiresAt
   const now = new Date()
 
+  // Check if credential was just created (within last 5 seconds) - might indicate race condition
+  const createdAt = credential.createdAt
+  const isRecentlyCreated = createdAt && new Date(createdAt).getTime() > now.getTime() - 5000
+
+  // If accessToken is missing but credential was just created, retry fetching from DB before attempting refresh.
+  // This avoids immediately calling the provider refresh endpoint while the OAuth callback write is still committing.
+  if (!credential.accessToken && isRecentlyCreated) {
+    logger.info(
+      `[${requestId}] Access token missing for recently created credential, retrying fetch from DB`
+    )
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const retryCredential = await getCredential(requestId, credentialId, credential.userId)
+    if (retryCredential?.accessToken) {
+      logger.info(`[${requestId}] Found access token on retry`)
+      return { accessToken: retryCredential.accessToken, refreshed: false }
+    }
+  }
+
+  // If refreshToken is missing but credential was just created, retry fetching from DB
+  // This handles race condition where OAuth callback hasn't fully persisted tokens yet
+  if (!credential.refreshToken && isRecentlyCreated) {
+    logger.info(
+      `[${requestId}] Refresh token missing for recently created credential, retrying fetch from DB`
+    )
+    // Wait a bit for DB transaction to commit
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const retryCredential = await getCredential(requestId, credentialId, credential.userId)
+    if (retryCredential?.refreshToken) {
+      logger.info(`[${requestId}] Found refresh token on retry`)
+      credential = retryCredential
+    } else {
+      logger.warn(
+        `[${requestId}] Refresh token still missing after retry, credential may not be fully initialized`
+      )
+      // If we have an accessToken, use it even without refreshToken
+      if (credential.accessToken) {
+        logger.info(`[${requestId}] Using existing access token without refresh capability`)
+        return { accessToken: credential.accessToken, refreshed: false }
+      }
+      // No tokens available, throw error
+      throw new Error('Credential not fully initialized: missing both access token and refresh token')
+    }
+  }
+
   // Check if access token needs refresh (missing or expired)
   const accessTokenNeedsRefresh =
     !!credential.refreshToken &&
@@ -419,6 +463,16 @@ export async function refreshTokenIfNeeded(
   if (!shouldRefresh) {
     logger.info(`[${requestId}] Access token is valid`)
     return { accessToken: credential.accessToken, refreshed: false }
+  }
+
+  // Ensure we have a refreshToken before attempting refresh
+  if (!credential.refreshToken) {
+    logger.warn(`[${requestId}] Cannot refresh: refresh token is missing`)
+    if (credential.accessToken) {
+      logger.info(`[${requestId}] Using existing access token without refresh capability`)
+      return { accessToken: credential.accessToken, refreshed: false }
+    }
+    throw new Error('Cannot refresh token: refresh token is missing and access token is not available')
   }
 
   try {
