@@ -451,27 +451,28 @@ SKIP
       logger.info('Intent analyzer decided RUN (Gemini)', { decision })
       return 'RUN'
     }
-    const { OpenAI } = await import('openai')
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: controllerUserPrompt },
-      ],
-      temperature: 0,
-      max_tokens: 10,
-    })
+    // const { OpenAI } = await import('openai')
+    // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-    const decision = completion.choices[0]?.message?.content?.trim().toUpperCase()
+    // const completion = await openai.chat.completions.create({
+    //   model: 'gpt-4o',
+    //   messages: [
+    //     { role: 'system', content: systemPrompt },
+    //     { role: 'user', content: controllerUserPrompt },
+    //   ],
+    //   temperature: 0,
+    //   max_tokens: 10,
+    // })
 
-    if (decision === 'SKIP') {
-      logger.debug('Intent analyzer decided SKIP')
-      return 'SKIP'
-    }
+    // const decision = completion.choices[0]?.message?.content?.trim().toUpperCase()
 
-    logger.info('Intent analyzer decided RUN', { decision })
+    // if (decision === 'SKIP') {
+    //   logger.debug('Intent analyzer decided SKIP')
+    //   return 'SKIP'
+    // }
+
+    // logger.info('Intent analyzer decided RUN', { decision })
     return 'RUN'
   } catch (error) {
     const provider = useGemini ? 'Gemini' : 'OpenAI'
