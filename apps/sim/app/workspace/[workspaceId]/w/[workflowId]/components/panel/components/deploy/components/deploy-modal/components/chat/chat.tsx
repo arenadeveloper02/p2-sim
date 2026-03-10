@@ -253,8 +253,12 @@ export function ChatDeploy({
         authType: existingChat.authType || 'public',
         password: '',
         emails: uniqueEmails,
+        // Only use default if welcomeMessage is undefined/null, not if it's an empty string
         welcomeMessage:
-          existingChat.customizations?.welcomeMessage || 'Hi there! How can I help you today?',
+          existingChat.customizations?.welcomeMessage !== undefined &&
+          existingChat.customizations?.welcomeMessage !== null
+            ? existingChat.customizations.welcomeMessage
+            : 'Hi there! How can I help you today?',
         goldenQueries: existingChat.customizations?.goldenQueries ?? [],
         selectedOutputBlocks: Array.isArray(existingChat.outputConfigs)
           ? existingChat.outputConfigs.map(

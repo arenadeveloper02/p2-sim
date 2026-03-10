@@ -285,10 +285,33 @@ export async function executeWorkflowCore(
         : undefined
 
     // Extract initial input for chat workflows
-    const initialInput =
-      triggerType === 'chat' && typeof input === 'object' && input !== null && 'input' in input
-        ? input.input
-        : undefined
+    // Include startBlockInputs (custom fields from inputFormat) in the format:
+    // variable1: Value entered by User\nvariable2: value entered by User
+    let initialInput: string | undefined
+    if (triggerType === 'chat' && typeof input === 'object' && input !== null) {
+      const baseInput = 'input' in input ? (input.input as string | undefined) : undefined
+      const startBlockInputLines: string[] = []
+
+      // Extract custom fields (excluding reserved fields)
+      for (const [key, value] of Object.entries(input)) {
+        if (key === 'input' || key === 'conversationId' || key === 'files') {
+          continue
+        }
+        if (value !== null && value !== undefined && value !== '') {
+          const formattedValue = typeof value === 'string' ? value : String(value)
+          startBlockInputLines.push(`${key}: ${formattedValue}`)
+        }
+      }
+
+      if (startBlockInputLines.length > 0) {
+        const startBlockInputsFormatted = startBlockInputLines.join('\n')
+        initialInput = baseInput
+          ? `${baseInput}\n${startBlockInputsFormatted}`
+          : startBlockInputsFormatted
+      } else {
+        initialInput = baseInput
+      }
+    }
 
     await loggingSession.safeStart({
       userId,

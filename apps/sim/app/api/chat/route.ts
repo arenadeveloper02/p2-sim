@@ -195,7 +195,11 @@ export async function POST(request: NextRequest) {
       const mergedCustomizations = {
         ...(customizations || {}),
         primaryColor: customizations?.primaryColor || 'var(--brand-primary-hover-hex)',
-        welcomeMessage: customizations?.welcomeMessage || 'Hi there! How can I help you today?',
+        // Only use default if welcomeMessage is undefined/null, not if it's an empty string
+        welcomeMessage:
+          customizations?.welcomeMessage !== undefined && customizations?.welcomeMessage !== null
+            ? customizations.welcomeMessage
+            : 'Hi there! How can I help you today?',
       }
       const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
 
