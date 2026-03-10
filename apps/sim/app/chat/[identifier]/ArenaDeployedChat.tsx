@@ -629,7 +629,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         signal: abortController.signal,
       })
 
-      // Clear timeout since request succeeded
+      // Clear timeout immediately once we get a response - the SSE stream will continue
+      // until completion regardless of how long it takes
       clearTimeout(timeoutId)
 
       if (!response.ok) {
@@ -1181,14 +1182,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // If authentication is required, use the extracted components
   if (authRequired) {
     if (authRequired === 'password') {
-      return (
-        <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
-      )
+      return <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
     }
     if (authRequired === 'email') {
-      return (
-        <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
-      )
+      return <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
     }
     if (authRequired === 'sso') {
       return <SSOAuth identifier={identifier} />
