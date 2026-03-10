@@ -461,6 +461,29 @@ export async function POST(
       )
     }
 
+    // Format startBlockInputs into initialInput format
+    // Format: variable1: Value entered by User\nvariable2: value entered by User
+    let formattedInitialInput = input || ''
+    if (startBlockInputs && typeof startBlockInputs === 'object') {
+      const startBlockInputLines: string[] = []
+      for (const [key, value] of Object.entries(startBlockInputs)) {
+        // Skip reserved fields and empty values
+        if (key === 'input' || key === 'conversationId' || key === 'files') {
+          continue
+        }
+        if (value !== null && value !== undefined && value !== '') {
+          const formattedValue = typeof value === 'string' ? value : String(value)
+          startBlockInputLines.push(`${key}: ${formattedValue}`)
+        }
+      }
+      if (startBlockInputLines.length > 0) {
+        const startBlockInputsFormatted = startBlockInputLines.join('\n')
+        formattedInitialInput = formattedInitialInput
+          ? `${formattedInitialInput}\n${startBlockInputsFormatted}`
+          : startBlockInputsFormatted
+      }
+    }
+
     // Start logging session with chat metadata
     await loggingSession.safeStart({
       userId: userId || workspaceOwnerId,
@@ -469,7 +492,7 @@ export async function POST(
       isExternalChat: true,
       chatId: payload || conversationId || undefined,
       conversationId: conversationId || undefined,
-      initialInput: input || undefined,
+      initialInput: formattedInitialInput || undefined,
     })
 
     try {
@@ -660,13 +683,18 @@ export async function POST(
                         ...(item.metadata && typeof item.metadata === 'object'
                           ? { metadata: item.metadata as Record<string, unknown> }
                           : {}),
-                        ...(typeof item.similarity === 'number' ? { similarity: item.similarity } : {}),
+                        ...(typeof item.similarity === 'number'
+                          ? { similarity: item.similarity }
+                          : {}),
                         ...(item.chunkId != null ? { chunkId: String(item.chunkId) } : {}),
                         ...(item.knowledgeBaseId != null
                           ? { knowledgeBaseId: String(item.knowledgeBaseId) }
                           : {}),
                         ...(item.workspaceId != null
-                          ? { workspaceId: item.workspaceId === null ? null : String(item.workspaceId) }
+                          ? {
+                              workspaceId:
+                                item.workspaceId === null ? null : String(item.workspaceId),
+                            }
                           : {}),
                       }))
 

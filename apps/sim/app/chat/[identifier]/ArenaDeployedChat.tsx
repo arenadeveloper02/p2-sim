@@ -190,6 +190,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
   const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
   const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
+  const [userName, setUserName] = useState<string | null>(null)
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -278,18 +279,32 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             setHasCheckedHistory(true)
           } else {
             // History exists - load messages and prevent modal from showing
+            const initialMessages: ChatMessage[] = []
+
+            // Add personalized greeting if user name is available
+            if (userName) {
+              initialMessages.push({
+                id: 'greeting',
+                content: `Hi ${userName}, how can I help you?`,
+                type: 'assistant',
+                timestamp: new Date(),
+                isInitialMessage: true,
+              })
+            }
+
+            // Add welcome message if it exists
+            if (chatConfig?.customizations?.welcomeMessage) {
+              initialMessages.push({
+                id: 'welcome',
+                content: chatConfig.customizations.welcomeMessage,
+                type: 'assistant',
+                isInitialMessage: true,
+                timestamp: new Date(),
+              })
+            }
+
             setMessages([
-              ...(chatConfig?.customizations?.welcomeMessage
-                ? [
-                    {
-                      id: 'welcome',
-                      content: chatConfig.customizations.welcomeMessage,
-                      type: 'assistant',
-                      isInitialMessage: true,
-                      timestamp: new Date(),
-                    },
-                  ]
-                : []),
+              ...initialMessages,
               ...data.logs.flatMap((log: any) => {
                 const messages = []
                 if (log.userInput) {
@@ -458,10 +473,35 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       }
 
       if (data?.customizations?.welcomeMessage) {
+        const messages: ChatMessage[] = []
+
+        // Add personalized greeting if user name is available
+        if (userName) {
+          messages.push({
+            id: 'greeting',
+            content: `Hi ${userName}, how can I help you?`,
+            type: 'assistant',
+            timestamp: new Date(),
+            isInitialMessage: true,
+          })
+        }
+
+        // Add welcome message
+        messages.push({
+          id: 'welcome',
+          content: data.customizations.welcomeMessage,
+          type: 'assistant',
+          timestamp: new Date(),
+          isInitialMessage: true,
+        })
+
+        setMessages(messages)
+      } else if (userName) {
+        // If no welcome message but we have user name, still show greeting
         setMessages([
           {
-            id: 'welcome',
-            content: data.customizations.welcomeMessage,
+            id: 'greeting',
+            content: `Hi ${userName}, how can I help you?`,
             type: 'assistant',
             timestamp: new Date(),
             isInitialMessage: true,
@@ -476,6 +516,64 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setError('This chat is currently unavailable. Please try again later.')
     }
   }
+
+  // Fetch user session to get name for personalized greeting
+  useEffect(() => {
+    const fetchUserSession = async () => {
+      try {
+        const sessionRes = await client.getSession()
+        const name = sessionRes?.data?.user?.name || sessionRes?.data?.user?.email || null
+        setUserName(name)
+      } catch (error) {
+        logger.debug('Could not fetch user session for greeting:', error)
+        // Continue without user name - greeting will show without name
+      }
+    }
+    fetchUserSession()
+  }, [])
+
+  // Update messages to include greeting when userName becomes available
+  useEffect(() => {
+    if (!userName || !chatConfig) return
+
+    setMessages((prev) => {
+      // Check if greeting already exists
+      const hasGreeting = prev.some((msg) => msg.id === 'greeting')
+      if (hasGreeting) return prev
+
+      // Check if welcome message exists
+      const welcomeMessage = prev.find((msg) => msg.id === 'welcome')
+      const otherMessages = prev.filter((msg) => msg.id !== 'welcome' && msg.id !== 'greeting')
+
+      // Build new messages array with greeting before welcome
+      const newMessages: ChatMessage[] = [
+        {
+          id: 'greeting',
+          content: `Hi ${userName}, how can I help you?`,
+          type: 'assistant',
+          timestamp: new Date(),
+          isInitialMessage: true,
+        },
+      ]
+
+      // Add welcome message if it exists
+      if (welcomeMessage) {
+        newMessages.push(welcomeMessage)
+      } else if (chatConfig?.customizations?.welcomeMessage) {
+        // Add welcome message if it exists in config but not in messages yet
+        newMessages.push({
+          id: 'welcome',
+          content: chatConfig.customizations.welcomeMessage,
+          type: 'assistant',
+          timestamp: new Date(),
+          isInitialMessage: true,
+        })
+      }
+
+      // Add other messages
+      return [...newMessages, ...otherMessages]
+    })
+  }, [userName, chatConfig])
 
   // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
@@ -629,7 +727,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         signal: abortController.signal,
       })
 
-      // Clear timeout since request succeeded
+      // Clear timeout immediately once we get a response - the SSE stream will continue
+      // until completion regardless of how long it takes
       clearTimeout(timeoutId)
 
       if (!response.ok) {
@@ -1022,10 +1121,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setFeedbackError(null)
       setShowScrollButton(false)
       setCurrentChatId(chatId)
-      // Clear messages except welcome
+      // Clear messages except greeting and welcome (initial messages)
       setMessages((prev) => {
-        const welcome = prev.find((m) => (m as any).isInitialMessage)
-        return welcome ? [welcome] : []
+        const initialMessages = prev.filter((m) => (m as any).isInitialMessage)
+        return initialMessages.length > 0 ? initialMessages : []
       })
       updateUrlChatId(chatId)
 
@@ -1181,14 +1280,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // If authentication is required, use the extracted components
   if (authRequired) {
     if (authRequired === 'password') {
-      return (
-        <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
-      )
+      return <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
     }
     if (authRequired === 'email') {
-      return (
-        <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
-      )
+      return <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
     }
     if (authRequired === 'sso') {
       return <SSOAuth identifier={identifier} />
