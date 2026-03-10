@@ -576,8 +576,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           startBlockInputsPayload[key] = value
         }
       }
+      // Fixed-input-set: merge selections, but "input" must be the concatenated value (dropdown + typed text), not dropdown-only
       if (fixedInputSetFields.length > 0 && Object.keys(fixedInputSetSelections).length > 0) {
-        Object.assign(startBlockInputsPayload, fixedInputSetSelections)
+        for (const [key, value] of Object.entries(fixedInputSetSelections)) {
+          startBlockInputsPayload[key] = key === 'input' ? messageToSend : value
+        }
       }
 
       logger.debug('Building payload with Start Block inputs:', {
@@ -816,8 +819,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         if (!fieldName) continue
 
         if (field.type === 'fixed-input-set') {
+          // Reserved "input" = user message: use full concatenated value, not dropdown-only
           completeInput[fieldName] =
-            fixedInputSetOverrides?.[fieldName] ?? getFirstFixedInputSetOption(field)
+            fieldName === 'input'
+              ? userInput
+              : (fixedInputSetOverrides?.[fieldName] ?? getFirstFixedInputSetOption(field))
           continue
         }
 
