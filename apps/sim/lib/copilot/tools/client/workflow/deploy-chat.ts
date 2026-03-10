@@ -219,8 +219,12 @@ export class DeployChatClientTool extends BaseClientTool {
       const baseTitle = existingDeployment?.title || workflow?.name || 'Chat'
       const baseDescription = existingDeployment?.description || ''
       const baseAuthType = existingDeployment?.authType || 'public'
+      // Only use default if welcomeMessage is undefined/null, not if it's an empty string
       const baseWelcomeMessage =
-        existingDeployment?.customizations?.welcomeMessage || 'Hi there! How can I help you today?'
+        existingDeployment?.customizations?.welcomeMessage !== undefined &&
+        existingDeployment?.customizations?.welcomeMessage !== null
+          ? existingDeployment.customizations.welcomeMessage
+          : 'Hi there! How can I help you today?'
       const basePrimaryColor =
         existingDeployment?.customizations?.primaryColor || 'var(--brand-primary-hover-hex)'
       const baseAllowedEmails = Array.isArray(existingDeployment?.allowedEmails)
