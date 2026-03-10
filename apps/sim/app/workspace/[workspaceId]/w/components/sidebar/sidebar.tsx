@@ -80,7 +80,12 @@ export const Sidebar = memo(function Sidebar() {
 
   const { data: sessionData, isPending: sessionLoading } = useSession()
   const { canEdit } = useUserPermissionsContext()
-  const { config: permissionConfig } = usePermissionConfig()
+  const { config: permissionConfig, filterBlocks } = usePermissionConfig()
+  const initializeSearchData = useSearchModalStore((state) => state.initializeData)
+
+  useEffect(() => {
+    initializeSearchData(filterBlocks)
+  }, [initializeSearchData, filterBlocks])
 
   /**
    * Sidebar state from store with hydration tracking to prevent SSR mismatch.
@@ -248,39 +253,50 @@ export const Sidebar = memo(function Sidebar() {
   )
 
   const footerNavigationItems = useMemo(
-    () => [
-      {
-        id: 'logs',
-        label: 'Logs',
-        icon: Library,
-        href: `/workspace/${workspaceId}/logs`,
-      },
-      {
-        id: 'templates',
-        label: 'Templates',
-        icon: Layout,
-        href: `/workspace/${workspaceId}/templates`,
-      },
-      {
-        id: 'knowledge-base',
-        label: 'Knowledge Base',
-        icon: Database,
-        href: `/workspace/${workspaceId}/knowledge`,
-      },
-      // {
-      //   id: 'help',
-      //   label: 'Help',
-      //   icon: HelpCircle,
-      //   onClick: () => setIsHelpModalOpen(true),
-      // },
-      {
-        id: 'settings',
-        label: 'Settings',
-        icon: Settings,
-        onClick: () => openSettingsModal(),
-      },
-    ],
-    [workspaceId]
+    () =>
+      [
+        {
+          id: 'logs',
+          label: 'Logs',
+          icon: Library,
+          href: `/workspace/${workspaceId}/logs`,
+        },
+        {
+          id: 'templates',
+          label: 'Templates',
+          icon: Layout,
+          href: `/workspace/${workspaceId}/templates`,
+          hidden: permissionConfig.hideTemplates,
+        },
+        {
+          id: 'knowledge-base',
+          label: 'Knowledge Base',
+          icon: Database,
+          href: `/workspace/${workspaceId}/knowledge`,
+          hidden: permissionConfig.hideKnowledgeBaseTab,
+        },
+        // TODO: Uncomment when working on tables
+        // {
+        //   id: 'tables',
+        //   label: 'Tables',
+        //   icon: Table,
+        //   href: `/workspace/${workspaceId}/tables`,
+        //   hidden: permissionConfig.hideTablesTab,
+        // },
+        // {
+        //   id: 'help',
+        //   label: 'Help',
+        //   icon: HelpCircle,
+        //   onClick: () => setIsHelpModalOpen(true),
+        // },
+        {
+          id: 'settings',
+          label: 'Settings',
+          icon: Settings,
+          onClick: () => openSettingsModal(),
+        },
+      ].filter((item) => !item.hidden),
+    [workspaceId, permissionConfig.hideTemplates, permissionConfig.hideKnowledgeBaseTab]
   )
 
   const isLoading = workflowsLoading || sessionLoading

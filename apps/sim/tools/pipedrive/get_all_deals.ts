@@ -3,6 +3,10 @@ import type {
   PipedriveGetAllDealsParams,
   PipedriveGetAllDealsResponse,
 } from '@/tools/pipedrive/types'
+import {
+  PIPEDRIVE_DEAL_OUTPUT_PROPERTIES,
+  PIPEDRIVE_METADATA_OUTPUT_PROPERTIES,
+} from '@/tools/pipedrive/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('PipedriveGetAllDeals')
@@ -26,40 +30,48 @@ export const pipedriveGetAllDealsTool: ToolConfig<
     status: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description:
         'Only fetch deals with a specific status. Values: open, won, lost. If omitted, all not deleted deals are returned',
     },
     person_id: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'If supplied, only deals linked to the specified person are returned',
+      visibility: 'user-or-llm',
+      description:
+        'If supplied, only deals linked to the specified person are returned (e.g., "456")',
     },
     org_id: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'If supplied, only deals linked to the specified organization are returned',
+      visibility: 'user-or-llm',
+      description:
+        'If supplied, only deals linked to the specified organization are returned (e.g., "789")',
     },
     pipeline_id: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'If supplied, only deals in the specified pipeline are returned',
+      visibility: 'user-or-llm',
+      description: 'If supplied, only deals in the specified pipeline are returned (e.g., "1")',
     },
     updated_since: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description:
         'If set, only deals updated after this time are returned. Format: 2025-01-01T10:20:00Z',
     },
     limit: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Number of results to return (default: 100, max: 500)',
+      visibility: 'user-or-llm',
+      description: 'Number of results to return (e.g., "50", default: 100, max: 500)',
+    },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'For pagination, the marker representing the first item on the next page',
     },
   },
 
@@ -75,6 +87,7 @@ export const pipedriveGetAllDealsTool: ToolConfig<
       if (params.pipeline_id) queryParams.append('pipeline_id', params.pipeline_id)
       if (params.updated_since) queryParams.append('updated_since', params.updated_since)
       if (params.limit) queryParams.append('limit', params.limit)
+      if (params.cursor) queryParams.append('cursor', params.cursor)
 
       const queryString = queryParams.toString()
       return queryString ? `${baseUrl}?${queryString}` : baseUrl
@@ -101,7 +114,8 @@ export const pipedriveGetAllDealsTool: ToolConfig<
     }
 
     const deals = data.data || []
-    const hasMore = data.additional_data?.pagination?.more_items_in_collection || false
+    const nextCursor = data.additional_data?.next_cursor ?? null
+    const hasMore = nextCursor !== null
 
     return {
       success: true,
@@ -110,6 +124,7 @@ export const pipedriveGetAllDealsTool: ToolConfig<
         metadata: {
           total_items: deals.length,
           has_more: hasMore,
+          next_cursor: nextCursor,
         },
         success: true,
       },
@@ -117,10 +132,18 @@ export const pipedriveGetAllDealsTool: ToolConfig<
   },
 
   outputs: {
-    deals: { type: 'array', description: 'Array of deal objects from Pipedrive' },
+    deals: {
+      type: 'array',
+      description: 'Array of deal objects from Pipedrive',
+      items: {
+        type: 'object',
+        properties: PIPEDRIVE_DEAL_OUTPUT_PROPERTIES,
+      },
+    },
     metadata: {
       type: 'object',
       description: 'Pagination metadata for the response',
+      properties: PIPEDRIVE_METADATA_OUTPUT_PROPERTIES,
     },
     success: { type: 'boolean', description: 'Operation success status' },
   },

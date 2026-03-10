@@ -8,7 +8,7 @@ import type { DAGEdge, NodeMetadata } from '@/executor/dag/types'
 import {
   buildParallelSentinelStartId,
   buildSentinelStartId,
-  extractBaseBlockId,
+  normalizeNodeId,
 } from '@/executor/utils/subflow-utils'
 import type {
   SerializedBlock,
@@ -33,6 +33,15 @@ export interface DAG {
   parallelConfigs: Map<string, SerializedParallel>
 }
 
+export interface DAGBuildOptions {
+  /** Trigger block ID to start path construction from */
+  triggerBlockId?: string
+  /** Saved incoming edges from snapshot for resumption */
+  savedIncomingEdges?: Record<string, string[]>
+  /** Include all enabled blocks instead of only those reachable from trigger */
+  includeAllBlocks?: boolean
+}
+
 export class DAGBuilder {
   private pathConstructor = new PathConstructor()
   private loopConstructor = new LoopConstructor()
@@ -40,11 +49,9 @@ export class DAGBuilder {
   private nodeConstructor = new NodeConstructor()
   private edgeConstructor = new EdgeConstructor()
 
-  build(
-    workflow: SerializedWorkflow,
-    triggerBlockId?: string,
-    savedIncomingEdges?: Record<string, string[]>
-  ): DAG {
+  build(workflow: SerializedWorkflow, options: DAGBuildOptions = {}): DAG {
+    const { triggerBlockId, savedIncomingEdges, includeAllBlocks } = options
+
     const dag: DAG = {
       nodes: new Map(),
       loopConfigs: new Map(),
@@ -53,7 +60,7 @@ export class DAGBuilder {
 
     this.initializeConfigs(workflow, dag)
 
-    const reachableBlocks = this.pathConstructor.execute(workflow, triggerBlockId)
+    const reachableBlocks = this.pathConstructor.execute(workflow, triggerBlockId, includeAllBlocks)
 
     this.loopConstructor.execute(dag, reachableBlocks)
     this.parallelConstructor.execute(dag, reachableBlocks)
@@ -149,7 +156,7 @@ export class DAGBuilder {
     }
 
     const hasConnections = Array.from(sentinelStartNode.outgoingEdges.values()).some((edge) =>
-      nodes.includes(extractBaseBlockId(edge.target))
+      nodes.includes(normalizeNodeId(edge.target))
     )
 
     if (!hasConnections) {

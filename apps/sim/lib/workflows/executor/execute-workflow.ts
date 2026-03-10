@@ -4,7 +4,7 @@ import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import { PauseResumeManager } from '@/lib/workflows/executor/human-in-the-loop-manager'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
-import type { ExecutionMetadata } from '@/executor/execution/types'
+import type { ExecutionMetadata, SerializableExecutionState } from '@/executor/execution/types'
 import type { ExecutionResult, StreamingExecution } from '@/executor/types'
 
 const logger = createLogger('WorkflowExecution')
@@ -13,7 +13,7 @@ export interface ExecuteWorkflowOptions {
   enabled: boolean
   selectedOutputs?: string[]
   isSecureMode?: boolean
-  workflowTriggerType?: 'api' | 'chat'
+  workflowTriggerType?: 'api' | 'chat' | 'copilot'
   onStream?: (streamingExec: StreamingExecution) => Promise<void>
   onBlockComplete?: (blockId: string, output: unknown) => Promise<void>
   skipLoggingComplete?: boolean
@@ -21,6 +21,16 @@ export interface ExecuteWorkflowOptions {
   base64MaxBytes?: number
   /** When set (e.g. deployed chat with logged-in user), Arena tools use this user's token from DB via getArenaToken. */
   sessionUserId?: string | null
+  abortSignal?: AbortSignal
+  /** Use the live/draft workflow state instead of the deployed state. Used by copilot. */
+  useDraftState?: boolean
+  /** Stop execution after this block completes. Used for "run until block" feature. */
+  stopAfterBlockId?: string
+  /** Run-from-block configuration using a prior execution snapshot. */
+  runFromBlock?: {
+    startBlockId: string
+    sourceSnapshot: SerializableExecutionState
+  }
 }
 
 export interface WorkflowInfo {
@@ -60,7 +70,7 @@ export async function executeWorkflow(
       workflowUserId: workflow.userId,
       sessionUserId,
       triggerType,
-      useDraftState: false,
+      useDraftState: streamConfig?.useDraftState ?? false,
       startTime: new Date().toISOString(),
       isClientSession: Boolean(sessionUserId),
     }
@@ -86,6 +96,9 @@ export async function executeWorkflow(
       loggingSession,
       includeFileBase64: streamConfig?.includeFileBase64,
       base64MaxBytes: streamConfig?.base64MaxBytes,
+      abortSignal: streamConfig?.abortSignal,
+      stopAfterBlockId: streamConfig?.stopAfterBlockId,
+      runFromBlock: streamConfig?.runFromBlock,
     })
 
     if (result.status === 'paused') {

@@ -115,11 +115,17 @@ function handleWorkspaceInvitationAPI(
  */
 function handleSecurityFiltering(request: NextRequest): NextResponse | null {
   const userAgent = request.headers.get('user-agent') || ''
-  const isWebhookEndpoint = request.nextUrl.pathname.startsWith('/api/webhooks/trigger/')
+  const { pathname } = request.nextUrl
+  const isWebhookEndpoint = pathname.startsWith('/api/webhooks/trigger/')
+  const isMcpEndpoint = pathname.startsWith('/api/mcp/')
+  const isMcpOauthDiscoveryEndpoint =
+    pathname.startsWith('/.well-known/oauth-authorization-server') ||
+    pathname.startsWith('/.well-known/oauth-protected-resource')
   const isSuspicious = SUSPICIOUS_UA_PATTERNS.some((pattern) => pattern.test(userAgent))
 
-  // Block suspicious requests, but exempt webhook endpoints from User-Agent validation
-  if (isSuspicious && !isWebhookEndpoint) {
+  // Block suspicious requests, but exempt machine-to-machine endpoints that may
+  // legitimately omit User-Agent headers (webhooks and MCP protocol discovery/calls).
+  if (isSuspicious && !isWebhookEndpoint && !isMcpEndpoint && !isMcpOauthDiscoveryEndpoint) {
     logger.warn('Blocked suspicious request', {
       userAgent,
       ip: request.headers.get('x-forwarded-for') || 'unknown',
@@ -146,6 +152,36 @@ function handleSecurityFiltering(request: NextRequest): NextResponse | null {
   return null
 }
 
+const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'] as const
+const UTM_COOKIE_NAME = 'sim_utm'
+const UTM_COOKIE_MAX_AGE = 3600
+
+/**
+ * Sets a `sim_utm` cookie when UTM params are present on auth pages.
+ * Captures UTM values, the HTTP Referer, landing page, and a timestamp.
+ */
+function setUtmCookie(request: NextRequest, response: NextResponse): void {
+  const { searchParams, pathname } = request.nextUrl
+  const hasUtm = UTM_KEYS.some((key) => searchParams.get(key))
+  if (!hasUtm) return
+
+  const utmData: Record<string, string> = {}
+  for (const key of UTM_KEYS) {
+    const value = searchParams.get(key)
+    if (value) utmData[key] = value
+  }
+  utmData.referrer_url = request.headers.get('referer') || ''
+  utmData.landing_page = pathname
+  utmData.created_at = Date.now().toString()
+
+  response.cookies.set(UTM_COOKIE_NAME, JSON.stringify(utmData), {
+    path: '/',
+    maxAge: UTM_COOKIE_MAX_AGE,
+    sameSite: 'lax',
+    httpOnly: false, // Client-side hook needs to detect cookie presence
+  })
+}
+
 export async function proxy(request: NextRequest) {
   const url = request.nextUrl
 
@@ -156,13 +192,14 @@ export async function proxy(request: NextRequest) {
   if (redirect) return redirect
 
   if (url.pathname === '/login' || url.pathname === '/signup') {
-    // Block login/signup pages in non-local environments
-    if (!isDev) {
-      // In non-local environments, redirect to workspace (auto-login will handle authentication)
-      return NextResponse.redirect(new URL('/workspace', request.url))
+    if (hasActiveSession) {
+      const redirect = NextResponse.redirect(new URL('/workspace', request.url))
+      setUtmCookie(request, redirect)
+      return redirect
     }
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    setUtmCookie(request, response)
     return response
   }
 
@@ -232,6 +269,6 @@ export const config = {
     '/signup',
     '/invite/:path*', // Match invitation routes
     // Catch-all for other pages, excluding static assets and public directories
-    '/((?!_next/static|_next/image|favicon.ico|logo/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
+    '/((?!_next/static|_next/image|ingest|favicon.ico|logo/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
   ],
 }

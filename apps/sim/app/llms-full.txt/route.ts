@@ -5,7 +5,7 @@ export async function GET() {
 
   const llmsFullContent = `# Sim - AI Agent Workflow Builder
 
-> Sim is an open-source AI agent workflow builder used by 60,000+ developers at startups to Fortune 500 companies. Build and deploy agentic workflows with a visual drag-and-drop canvas. SOC2 and HIPAA compliant.
+> Sim is an open-source AI agent workflow builder used by 70,000+ developers at startups to Fortune 500 companies. Build and deploy agentic workflows with a visual drag-and-drop canvas. SOC2 and HIPAA compliant.
 
 ## Overview
 
@@ -56,7 +56,7 @@ An execution is a single run of a workflow. It includes:
 ### LLM Orchestration
 Sim supports all major LLM providers:
 - OpenAI (GPT-5.2, GPT-5.1, GPT-5, GPT-4o, GPT-4.1)
-- Anthropic (Claude Opus 4.5, Claude Opus 4.1, Claude Sonnet 4.5, Claude Haiku 4.5)
+- Anthropic (Claude Opus 4.6, Claude Opus 4.5, Claude Sonnet 4.5, Claude Haiku 4.5)
 - Google (Gemini Pro 3, Gemini Pro 3 Preview, Gemini 2.5 Pro, Gemini 2.5 Flash)
 - Mistral (Mistral Large, Mistral Medium)
 - xAI (Grok)

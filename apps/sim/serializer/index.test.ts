@@ -1,5 +1,5 @@
 /**
- * @vitest-environment jsdom
+ * @vitest-environment node
  *
  * Serializer Class Unit Tests
  *
@@ -464,6 +464,108 @@ describe('Serializer', () => {
       }).not.toThrow()
     })
 
+    it.concurrent(
+      'should validate required fields for blocks without tools (empty tools.access)',
+      () => {
+        const serializer = new Serializer()
+
+        const waitBlockMissingRequired: any = {
+          id: 'wait-block',
+          type: 'wait',
+          name: 'Wait Block',
+          position: { x: 0, y: 0 },
+          subBlocks: {
+            timeValue: { value: '' },
+            timeUnit: { value: 'seconds' },
+          },
+          outputs: {},
+          enabled: true,
+        }
+
+        expect(() => {
+          serializer.serializeWorkflow(
+            { 'wait-block': waitBlockMissingRequired },
+            [],
+            {},
+            undefined,
+            true
+          )
+        }).toThrow('Wait Block is missing required fields: Wait Amount')
+      }
+    )
+
+    it.concurrent(
+      'should pass validation for blocks without tools when required fields are present',
+      () => {
+        const serializer = new Serializer()
+
+        const waitBlockWithFields: any = {
+          id: 'wait-block',
+          type: 'wait',
+          name: 'Wait Block',
+          position: { x: 0, y: 0 },
+          subBlocks: {
+            timeValue: { value: '10' },
+            timeUnit: { value: 'seconds' },
+          },
+          outputs: {},
+          enabled: true,
+        }
+
+        expect(() => {
+          serializer.serializeWorkflow(
+            { 'wait-block': waitBlockWithFields },
+            [],
+            {},
+            undefined,
+            true
+          )
+        }).not.toThrow()
+      }
+    )
+
+    it.concurrent('should report all missing required fields for blocks without tools', () => {
+      const serializer = new Serializer()
+
+      const waitBlockAllMissing: any = {
+        id: 'wait-block',
+        type: 'wait',
+        name: 'Wait Block',
+        position: { x: 0, y: 0 },
+        subBlocks: {
+          timeValue: { value: null },
+          timeUnit: { value: '' },
+        },
+        outputs: {},
+        enabled: true,
+      }
+
+      expect(() => {
+        serializer.serializeWorkflow({ 'wait-block': waitBlockAllMissing }, [], {}, undefined, true)
+      }).toThrow('Wait Block is missing required fields: Wait Amount, Unit')
+    })
+
+    it.concurrent('should skip validation for disabled blocks without tools', () => {
+      const serializer = new Serializer()
+
+      const disabledWaitBlock: any = {
+        id: 'wait-block',
+        type: 'wait',
+        name: 'Wait Block',
+        position: { x: 0, y: 0 },
+        subBlocks: {
+          timeValue: { value: null },
+          timeUnit: { value: null },
+        },
+        outputs: {},
+        enabled: false,
+      }
+
+      expect(() => {
+        serializer.serializeWorkflow({ 'wait-block': disabledWaitBlock }, [], {}, undefined, true)
+      }).not.toThrow()
+    })
+
     it.concurrent('should handle empty string values as missing', () => {
       const serializer = new Serializer()
 
@@ -581,34 +683,37 @@ describe('Serializer', () => {
       expect(slackBlock?.config.params.username).toBe('bot')
     })
 
-    it.concurrent('should fall back to legacy advancedMode when canonicalModes not set', () => {
-      const serializer = new Serializer()
+    it.concurrent(
+      'should fall back to legacy advancedMode for non-credential canonical groups when canonicalModes not set',
+      () => {
+        const serializer = new Serializer()
 
-      const block: any = {
-        id: 'slack-1',
-        type: 'slack',
-        name: 'Test Slack Block',
-        position: { x: 0, y: 0 },
-        advancedMode: true,
-        subBlocks: {
-          operation: { value: 'send' },
-          destinationType: { value: 'channel' },
-          channel: { value: 'general' },
-          manualChannel: { value: 'C1234567890' },
-          text: { value: 'Hello world' },
-          username: { value: 'bot' },
-        },
-        outputs: {},
-        enabled: true,
+        const block: any = {
+          id: 'slack-1',
+          type: 'slack',
+          name: 'Test Slack Block',
+          position: { x: 0, y: 0 },
+          advancedMode: true,
+          subBlocks: {
+            operation: { value: 'send' },
+            destinationType: { value: 'channel' },
+            channel: { value: 'general' },
+            manualChannel: { value: 'C1234567890' },
+            text: { value: 'Hello world' },
+            username: { value: 'bot' },
+          },
+          outputs: {},
+          enabled: true,
+        }
+
+        const serialized = serializer.serializeWorkflow({ 'slack-1': block }, [], {})
+        const slackBlock = serialized.blocks.find((b) => b.id === 'slack-1')
+
+        expect(slackBlock).toBeDefined()
+        expect(slackBlock?.config.params.channel).toBe('C1234567890')
+        expect(slackBlock?.config.params.manualChannel).toBeUndefined()
       }
-
-      const serialized = serializer.serializeWorkflow({ 'slack-1': block }, [], {})
-      const slackBlock = serialized.blocks.find((b) => b.id === 'slack-1')
-
-      expect(slackBlock).toBeDefined()
-      expect(slackBlock?.config.params.channel).toBe('C1234567890')
-      expect(slackBlock?.config.params.manualChannel).toBeUndefined()
-    })
+    )
 
     it.concurrent('should use basic value by default when no mode specified', () => {
       const serializer = new Serializer()

@@ -1,5 +1,4 @@
 import { createLogger } from '@sim/logger'
-import { executeTool } from '@/tools/index'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 import type { ZoomListAccountRecordingsParams } from '@/tools/zoom/types'
 import { fetchZoomRecordings, splitDateRange } from './list_account_recordings'
@@ -91,6 +90,8 @@ export const zoomGetAccountRecordingsWithTranscriptTool: ToolConfig<
     params: ZoomGetAccountRecordingsWithTranscriptParams
   ): Promise<ToolResponse> => {
     try {
+      const { executeTool } = await import('@/tools/index')
+
       // Step 1: Fetch all recordings using the same logic as zoom_list_account_recordings
       logger.info('Fetching account recordings', {
         from: params.from,

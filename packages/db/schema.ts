@@ -91,10 +91,6 @@ export const account = pgTable(
       table.accountId,
       table.providerId
     ),
-    uniqueUserProvider: uniqueIndex('account_user_provider_unique').on(
-      table.userId,
-      table.providerId
-    ),
   })
 )
 
@@ -185,6 +181,7 @@ export const workflow = pgTable(
     updatedAt: timestamp('updated_at').notNull(),
     isDeployed: boolean('is_deployed').notNull().default(false),
     deployedAt: timestamp('deployed_at'),
+    isPublicApi: boolean('is_public_api').notNull().default(false),
     runCount: integer('run_count').notNull().default(0),
     lastRunAt: timestamp('last_run_at'),
     variables: json('variables').default('{}'),
@@ -216,6 +213,7 @@ export const workflowBlocks = pgTable(
     isWide: boolean('is_wide').notNull().default(false),
     advancedMode: boolean('advanced_mode').notNull().default(false),
     triggerMode: boolean('trigger_mode').notNull().default(false),
+    locked: boolean('locked').notNull().default(false),
     height: decimal('height').notNull().default('0'),
 
     subBlocks: jsonb('sub_blocks').notNull().default('{}'),
@@ -295,9 +293,7 @@ export const workflowExecutionSnapshots = pgTable(
   'workflow_execution_snapshots',
   {
     id: text('id').primaryKey(),
-    workflowId: text('workflow_id')
-      .notNull()
-      .references(() => workflow.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
     stateHash: text('state_hash').notNull(),
     stateData: jsonb('state_data').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -317,9 +313,7 @@ export const workflowExecutionLogs = pgTable(
   'workflow_execution_logs',
   {
     id: text('id').primaryKey(),
-    workflowId: text('workflow_id')
-      .notNull()
-      .references(() => workflow.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspace.id, { onDelete: 'cascade' }),
@@ -374,6 +368,9 @@ export const workflowExecutionLogs = pgTable(
       table.workspaceId,
       table.startedAt
     ),
+    runningStartedAtIdx: index('workflow_execution_logs_running_started_at_idx')
+      .on(table.startedAt)
+      .where(sql`status = 'running'`),
   })
 )
 
@@ -752,12 +749,71 @@ export const userStats = pgTable('user_stats', {
   lastPeriodCopilotCost: decimal('last_period_copilot_cost').default('0'),
   totalCopilotTokens: integer('total_copilot_tokens').notNull().default(0),
   totalCopilotCalls: integer('total_copilot_calls').notNull().default(0),
+  // MCP Copilot usage tracking
+  totalMcpCopilotCalls: integer('total_mcp_copilot_calls').notNull().default(0),
+  totalMcpCopilotCost: decimal('total_mcp_copilot_cost').notNull().default('0'),
+  currentPeriodMcpCopilotCost: decimal('current_period_mcp_copilot_cost').notNull().default('0'),
   // Storage tracking (for free/pro users)
   storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull().default(0),
   lastActive: timestamp('last_active').notNull().defaultNow(),
   billingBlocked: boolean('billing_blocked').notNull().default(false),
   billingBlockedReason: billingBlockedReasonEnum('billing_blocked_reason'),
 })
+
+export const referralCampaigns = pgTable(
+  'referral_campaigns',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    code: text('code').unique(),
+    utmSource: text('utm_source'),
+    utmMedium: text('utm_medium'),
+    utmCampaign: text('utm_campaign'),
+    utmContent: text('utm_content'),
+    bonusCreditAmount: decimal('bonus_credit_amount').notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    activeIdx: index('referral_campaigns_active_idx').on(table.isActive),
+  })
+)
+
+export const referralAttribution = pgTable(
+  'referral_attribution',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' })
+      .unique(),
+    organizationId: text('organization_id').references(() => organization.id, {
+      onDelete: 'set null',
+    }),
+    campaignId: text('campaign_id').references(() => referralCampaigns.id, {
+      onDelete: 'set null',
+    }),
+    utmSource: text('utm_source'),
+    utmMedium: text('utm_medium'),
+    utmCampaign: text('utm_campaign'),
+    utmContent: text('utm_content'),
+    referrerUrl: text('referrer_url'),
+    landingPage: text('landing_page'),
+    bonusCreditAmount: decimal('bonus_credit_amount').notNull().default('0'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index('referral_attribution_user_id_idx').on(table.userId),
+    orgUniqueIdx: uniqueIndex('referral_attribution_org_unique_idx')
+      .on(table.organizationId)
+      .where(sql`${table.organizationId} IS NOT NULL`),
+    campaignIdIdx: index('referral_attribution_campaign_id_idx').on(table.campaignId),
+    utmCampaignIdx: index('referral_attribution_utm_campaign_idx').on(table.utmCampaign),
+    utmContentIdx: index('referral_attribution_utm_content_idx').on(table.utmContent),
+    createdAtIdx: index('referral_attribution_created_at_idx').on(table.createdAt),
+  })
+)
 
 export const customTools = pgTable(
   'custom_tools',
@@ -776,6 +832,26 @@ export const customTools = pgTable(
     workspaceTitleUnique: uniqueIndex('custom_tools_workspace_title_unique').on(
       table.workspaceId,
       table.title
+    ),
+  })
+)
+
+export const skill = pgTable(
+  'skill',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceNameUnique: uniqueIndex('skill_workspace_name_unique').on(
+      table.workspaceId,
+      table.name
     ),
   })
 )
@@ -1734,6 +1810,7 @@ export const workflowDeploymentVersion = pgTable(
       .references(() => workflow.id, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
     name: text('name'),
+    description: text('description'),
     state: json('state').notNull(),
     isActive: boolean('is_active').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -2069,7 +2146,6 @@ export const a2aAgent = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
-    workspaceIdIdx: index('a2a_agent_workspace_id_idx').on(table.workspaceId),
     workflowIdIdx: index('a2a_agent_workflow_id_idx').on(table.workflowId),
     createdByIdx: index('a2a_agent_created_by_idx').on(table.createdBy),
     workspaceWorkflowUnique: uniqueIndex('a2a_agent_workspace_workflow_unique').on(
@@ -2153,13 +2229,46 @@ export const a2aPushNotificationConfig = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
-    taskIdIdx: index('a2a_push_notification_config_task_id_idx').on(table.taskId),
     taskIdUnique: uniqueIndex('a2a_push_notification_config_task_unique').on(table.taskId),
   })
 )
 
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
+    actorId: text('actor_id').references(() => user.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    resourceType: text('resource_type').notNull(),
+    resourceId: text('resource_id'),
+    actorName: text('actor_name'),
+    actorEmail: text('actor_email'),
+    resourceName: text('resource_name'),
+    description: text('description'),
+    metadata: jsonb('metadata').default('{}'),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceCreatedIdx: index('audit_log_workspace_created_idx').on(
+      table.workspaceId,
+      table.createdAt
+    ),
+    actorCreatedIdx: index('audit_log_actor_created_idx').on(table.actorId, table.createdAt),
+    resourceIdx: index('audit_log_resource_idx').on(table.resourceType, table.resourceId),
+    actionIdx: index('audit_log_action_idx').on(table.action),
+  })
+)
+
 export const usageLogCategoryEnum = pgEnum('usage_log_category', ['model', 'fixed'])
-export const usageLogSourceEnum = pgEnum('usage_log_source', ['workflow', 'wand', 'copilot'])
+export const usageLogSourceEnum = pgEnum('usage_log_source', [
+  'workflow',
+  'wand',
+  'copilot',
+  'mcp_copilot',
+])
 
 export const usageLog = pgTable(
   'usage_log',
@@ -2190,336 +2299,5 @@ export const usageLog = pgTable(
     sourceIdx: index('usage_log_source_idx').on(table.source),
     workspaceIdIdx: index('usage_log_workspace_id_idx').on(table.workspaceId),
     workflowIdIdx: index('usage_log_workflow_id_idx').on(table.workflowId),
-  })
-)
-
-export const slackSummary = pgTable(
-  'slack_summary',
-  {
-    id: text('id').primaryKey(),
-    clientIdRef: text('client_id_ref').notNull(),
-    clientName: text('client_name').notNull(),
-    channelIdRef: text('channel_id_ref').notNull(),
-    channelName: text('channel_name').notNull(),
-    channelType: text('channel_type').notNull(),
-    type: text('type'),
-    oneDaySummary: text('one_day_summary'),
-    sevenDaySummary: text('seven_day_summary'),
-    fourteenDaySummary: text('fourteen_day_summary'),
-    createdDate: timestamp('created_date').notNull().defaultNow(),
-    updatedDate: timestamp('updated_date').notNull().defaultNow(),
-    startTime: timestamp('start_time'),
-    endTime: timestamp('end_time'),
-    status: text('status').notNull(),
-    retryCount: integer('retry_count').notNull().default(0),
-    runDate: date('run_date').notNull(),
-  },
-  (table) => ({
-    clientIdRefIdx: index('slack_summary_client_id_ref_idx').on(table.clientIdRef),
-    channelIdRefIdx: index('slack_summary_channel_id_ref_idx').on(table.channelIdRef),
-    statusIdx: index('slack_summary_status_idx').on(table.status),
-    runDateIdx: index('slack_summary_run_date_idx').on(table.runDate),
-    clientChannelIdx: index('slack_summary_client_channel_idx').on(
-      table.clientIdRef,
-      table.channelIdRef
-    ),
-  })
-)
-
-export const gmailClientSummary = pgTable(
-  'gmail_client_summary',
-  {
-    id: text('id').primaryKey(),
-    runDate: date('run_date').notNull(),
-    status: text('status').notNull(),
-    runStartTime: timestamp('run_start_time'),
-    runEndTime: timestamp('run_end_time'),
-    clientId: text('client_id'),
-    clientName: text('client_name'),
-    clientDomain: text('client_domain'),
-    type: text('type'),
-    oneDaySummary: text('one_day_summary'),
-    sevenDaySummary: text('seven_day_summary'),
-  },
-  (table) => ({
-    clientIdIdx: index('gmail_client_summary_client_id_idx').on(table.clientId),
-    statusIdx: index('gmail_client_summary_status_idx').on(table.status),
-    runDateIdx: index('gmail_client_summary_run_date_idx').on(table.runDate),
-  })
-)
-
-export const meetingSummary = pgTable(
-  'meeting_summary',
-  {
-    id: text('id').primaryKey(),
-    clientIdRef: text('client_id_ref').notNull(),
-    clientName: text('client_name').notNull(),
-    meetingType: text('meeting_type'),
-    type: text('type'),
-    oneDaySummary: text('one_day_summary'),
-    sevenDaySummary: text('seven_day_summary'),
-    fourteenDaySummary: text('fourteen_day_summary'),
-    createdDate: timestamp('created_date').notNull().defaultNow(),
-    updatedDate: timestamp('updated_date').notNull().defaultNow(),
-    startTime: timestamp('start_time'),
-    endTime: timestamp('end_time'),
-    status: text('status').notNull(),
-    retryCount: integer('retry_count').notNull().default(0),
-    runDate: date('run_date').notNull(),
-  },
-  (table) => ({
-    clientIdRefIdx: index('meeting_summary_client_id_ref_idx').on(table.clientIdRef),
-    statusIdx: index('meeting_summary_status_idx').on(table.status),
-    runDateIdx: index('meeting_summary_run_date_idx').on(table.runDate),
-  })
-)
-
-export const overallClientSummary = pgTable(
-  'overall_client_summary',
-  {
-    id: text('id').primaryKey(),
-    clientIdRef: text('client_id_ref').notNull(),
-    clientName: text('client_name').notNull(),
-    type: text('type'),
-    oneDaySummary: text('one_day_summary'),
-    sevenDaySummary: text('seven_day_summary'),
-    fourteenDaySummary: text('fourteen_day_summary'),
-    dailySummaryChanges: text('daily_summary_changes'),
-    weeklySentiment: text('weekly_sentiment'),
-    createdDate: timestamp('created_date').notNull().defaultNow(),
-    updatedDate: timestamp('updated_date').notNull().defaultNow(),
-    startTime: timestamp('start_time'),
-    endTime: timestamp('end_time'),
-    status: text('status').notNull(),
-    retryCount: integer('retry_count').notNull().default(0),
-    runDate: date('run_date').notNull(),
-  },
-  (table) => ({
-    clientIdRefIdx: index('overall_client_summary_client_id_ref_idx').on(table.clientIdRef),
-    statusIdx: index('overall_client_summary_status_idx').on(table.status),
-    runDateIdx: index('overall_client_summary_run_date_idx').on(table.runDate),
-  })
-)
-
-export const arenaTaskSummary = pgTable(
-  'arena_task_summary',
-  {
-    id: text('id').primaryKey(),
-    clientIdRef: text('client_id_ref').notNull(),
-    clientName: text('client_name').notNull(),
-    type: text('type'),
-    oneDaySummary: text('one_day_summary'),
-    sevenDaySummary: text('seven_day_summary'),
-    fourteenDaySummary: text('fourteen_day_summary'),
-    createdDate: timestamp('created_date').notNull().defaultNow(),
-    updatedDate: timestamp('updated_date').notNull().defaultNow(),
-    startTime: timestamp('start_time'),
-    endTime: timestamp('end_time'),
-    status: text('status').notNull(),
-    retryCount: integer('retry_count').notNull().default(0),
-    runDate: date('run_date').notNull(),
-  },
-  (table) => ({
-    clientIdRefIdx: index('arena_task_summary_client_id_ref_idx').on(table.clientIdRef),
-    statusIdx: index('arena_task_summary_status_idx').on(table.status),
-    runDateIdx: index('arena_task_summary_run_date_idx').on(table.runDate),
-  })
-)
-
-export const clientChannelMapping = pgTable(
-  'client_channel_mapping',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    clientId: text('client_id').notNull(),
-    channelId: text('channel_id').notNull(),
-    channelName: text('channel_name').notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    clientIdIdx: index('client_channel_mapping_client_id_idx').on(table.clientId),
-    channelIdIdx: index('client_channel_mapping_channel_id_idx').on(table.channelId),
-  })
-)
-
-export const clientDetails = pgTable(
-  'client_details',
-  {
-    id: text('id').primaryKey(),
-    clientId: text('client_id').notNull(),
-    clientName: text('client_name'),
-    gmailDomain: text('gmail_domain'),
-    clientCustomerId: text('client_customer_id'),
-    clientManager: text('client_manager'),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    clientIdIdx: index('client_details_client_id_idx').on(table.clientId),
-  })
-)
-
-// -----------------------------
-// Credential Set
-// -----------------------------
-export const credentialSet = pgTable(
-  'credential_set',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
-    description: text('description'),
-    providerId: text('provider_id').notNull(),
-    createdBy: text('created_by')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    organizationIdIdx: index('credential_set_organization_id_idx').on(table.organizationId),
-    createdByIdx: index('credential_set_created_by_idx').on(table.createdBy),
-    providerIdIdx: index('credential_set_provider_id_idx').on(table.providerId),
-    orgNameUnique: uniqueIndex('credential_set_org_name_unique').on(
-      table.organizationId,
-      table.name
-    ),
-  })
-)
-
-export const credentialSetMemberStatusEnum = pgEnum('credential_set_member_status', [
-  'active',
-  'pending',
-  'revoked',
-])
-
-export const credentialSetMember = pgTable(
-  'credential_set_member',
-  {
-    id: text('id').primaryKey(),
-    credentialSetId: text('credential_set_id')
-      .notNull()
-      .references(() => credentialSet.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    status: credentialSetMemberStatusEnum('status').notNull().default('pending'),
-    joinedAt: timestamp('joined_at'),
-    invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    credentialSetIdIdx: index('credential_set_member_set_id_idx').on(table.credentialSetId),
-    userIdIdx: index('credential_set_member_user_id_idx').on(table.userId),
-    statusIdx: index('credential_set_member_status_idx').on(table.status),
-    uniqueMembership: uniqueIndex('credential_set_member_unique').on(
-      table.credentialSetId,
-      table.userId
-    ),
-  })
-)
-
-export const credentialSetInvitationStatusEnum = pgEnum('credential_set_invitation_status', [
-  'pending',
-  'accepted',
-  'expired',
-  'cancelled',
-])
-
-export const credentialSetInvitation = pgTable(
-  'credential_set_invitation',
-  {
-    id: text('id').primaryKey(),
-    credentialSetId: text('credential_set_id')
-      .notNull()
-      .references(() => credentialSet.id, { onDelete: 'cascade' }),
-    email: text('email'),
-    token: text('token').notNull().unique(),
-    invitedBy: text('invited_by')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    status: credentialSetInvitationStatusEnum('status').notNull().default('pending'),
-    expiresAt: timestamp('expires_at').notNull(),
-    acceptedAt: timestamp('accepted_at'),
-    acceptedByUserId: text('accepted_by_user_id').references(() => user.id, {
-      onDelete: 'set null',
-    }),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    credentialSetIdIdx: index('credential_set_invitation_set_id_idx').on(table.credentialSetId),
-    tokenIdx: index('credential_set_invitation_token_idx').on(table.token),
-    statusIdx: index('credential_set_invitation_status_idx').on(table.status),
-    expiresAtIdx: index('credential_set_invitation_expires_at_idx').on(table.expiresAt),
-  })
-)
-
-export const permissionGroup = pgTable(
-  'permission_group',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
-    description: text('description'),
-    config: jsonb('config').notNull().default('{}'),
-    createdBy: text('created_by')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    autoAddNewMembers: boolean('auto_add_new_members').notNull().default(false),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    organizationIdIdx: index('permission_group_organization_id_idx').on(table.organizationId),
-    createdByIdx: index('permission_group_created_by_idx').on(table.createdBy),
-    orgNameUnique: uniqueIndex('permission_group_org_name_unique').on(
-      table.organizationId,
-      table.name
-    ),
-    autoAddNewMembersUnique: uniqueIndex('permission_group_org_auto_add_unique')
-      .on(table.organizationId)
-      .where(sql`auto_add_new_members = true`),
-  })
-)
-
-export const permissionGroupMember = pgTable(
-  'permission_group_member',
-  {
-    id: text('id').primaryKey(),
-    permissionGroupId: text('permission_group_id')
-      .notNull()
-      .references(() => permissionGroup.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    assignedBy: text('assigned_by').references(() => user.id, { onDelete: 'set null' }),
-    assignedAt: timestamp('assigned_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    permissionGroupIdIdx: index('permission_group_member_group_id_idx').on(table.permissionGroupId),
-    userIdUnique: uniqueIndex('permission_group_member_user_id_unique').on(table.userId),
-  })
-)
-
-/**
- * Prompt Config - Stores configurable prompt templates keyed by a unique identifier.
- * Enables dynamic prompt management without code deployments.
- */
-export const promptConfig = pgTable(
-  'prompt_config',
-  {
-    id: text('id').primaryKey(),
-    key: varchar('key', { length: 256 }).notNull().unique(),
-    prompt: text('prompt').notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    keyIdx: uniqueIndex('prompt_config_key_idx').on(table.key),
   })
 )

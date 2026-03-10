@@ -1,12 +1,16 @@
 import { GoogleSlidesIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
+import { resolveHttpsUrlFromFileInput } from '@/lib/uploads/utils/file-utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import type { GoogleSlidesResponse } from '@/tools/google_slides/types'
 
 export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
   type: 'google_slides',
-  name: 'Google Slides',
+  name: 'Google Slides (Legacy)',
   description: 'Read, write, and create presentations',
+  hideFromToolbar: true,
   authMode: AuthMode.OAuth,
   longDescription:
     'Integrate Google Slides into the workflow. Can read, write, create presentations, duplicate presentations, replace all text, replace text in objects, replace lists, replace images, add slides, add images, get thumbnails, get page details, delete objects, duplicate objects, reorder slides, create tables, create shapes, and insert text.',
@@ -49,13 +53,21 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
       id: 'credential',
       title: 'Google Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       required: true,
       serviceId: 'google-drive',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive',
-      ],
+      requiredScopes: getScopesForService('google-drive'),
       placeholder: 'Select Google account',
+    },
+    {
+      id: 'manualCredential',
+      title: 'Google Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
     // Presentation selector (basic mode) - for operations that need an existing presentation
     {
@@ -64,6 +76,7 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
       type: 'file-selector',
       canonicalParamId: 'presentationId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [],
       mimeType: 'application/vnd.google-apps.presentation',
       placeholder: 'Select a presentation',
@@ -183,6 +196,7 @@ Return ONLY the title - no explanations, no quotes, no extra text.`,
       type: 'file-selector',
       canonicalParamId: 'folderId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [],
       mimeType: 'application/vnd.google-apps.folder',
       placeholder: 'Select a parent folder',
@@ -513,12 +527,26 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
       required: true,
     },
     {
-      id: 'imageUrl',
-      title: 'Image URL',
-      type: 'short-input',
-      placeholder: 'Public URL of the image (PNG, JPEG, or GIF)',
-      condition: { field: 'operation', value: 'add_image' },
+      id: 'imageFile',
+      title: 'Image',
+      type: 'file-upload',
+      canonicalParamId: 'imageSource',
+      placeholder: 'Upload image (PNG, JPEG, or GIF)',
+      mode: 'basic',
+      multiple: false,
       required: true,
+      acceptedTypes: '.png,.jpg,.jpeg,.gif',
+      condition: { field: 'operation', value: 'add_image' },
+    },
+    {
+      id: 'imageUrl',
+      title: 'Image',
+      type: 'short-input',
+      canonicalParamId: 'imageSource',
+      placeholder: 'Reference image from previous blocks or enter URL',
+      mode: 'advanced',
+      required: true,
+      condition: { field: 'operation', value: 'add_image' },
     },
     {
       id: 'imageWidth',
@@ -871,10 +899,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       },
       params: (params) => {
         const {
-          credential,
+          oauthCredential,
           presentationId,
-          manualPresentationId,
-          folderSelector,
           folderId,
           slideIndex,
           createContent,
@@ -895,26 +921,13 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           ...rest
         } = params
 
-        const effectivePresentationId = (presentationId || manualPresentationId || '').trim()
-        const effectiveFolderId = (
-          folderSelector ||
-          folderId ||
-          duplicateFolderSelector ||
-          duplicateFolderId ||
-          ''
-        ).trim()
-        const effectiveSourcePresentationId = (
-          sourcePresentationId ||
-          sourcePresentationSelector ||
-          presentationIdForDuplicate ||
-          manualSourcePresentationId ||
-          ''
-        ).trim()
+        const effectivePresentationId = presentationId ? String(presentationId).trim() : ''
+        const effectiveFolderId = folderId ? String(folderId).trim() : ''
 
         const result: Record<string, any> = {
           ...rest,
           presentationId: effectivePresentationId || undefined,
-          credential,
+          oauthCredential,
         }
 
         // Handle operation-specific params
@@ -1087,16 +1100,14 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Google Slides access token' },
-    presentationId: { type: 'string', description: 'Presentation identifier' },
-    manualPresentationId: { type: 'string', description: 'Manual presentation identifier' },
+    oauthCredential: { type: 'string', description: 'Google Slides access token' },
+    presentationId: { type: 'string', description: 'Presentation identifier (canonical param)' },
     // Write operation
     slideIndex: { type: 'number', description: 'Slide index to write to' },
     content: { type: 'string', description: 'Slide content' },
     // Create operation
     title: { type: 'string', description: 'Presentation title' },
-    folderSelector: { type: 'string', description: 'Selected folder' },
-    folderId: { type: 'string', description: 'Folder identifier' },
+    folderId: { type: 'string', description: 'Parent folder identifier (canonical param)' },
     createContent: { type: 'string', description: 'Initial slide content' },
     // Create from template operation
     createFromTemplatePresentationName: {
@@ -1143,7 +1154,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     placeholderIdMappings: { type: 'string', description: 'JSON array of placeholder ID mappings' },
     // Add image operation
     pageObjectId: { type: 'string', description: 'Slide object ID for image' },
-    imageUrl: { type: 'string', description: 'Image URL' },
+    imageSource: { type: 'json', description: 'Image source (file or URL)' },
     imageWidth: { type: 'number', description: 'Image width in points' },
     imageHeight: { type: 'number', description: 'Image height in points' },
     positionX: { type: 'number', description: 'X position in points' },
@@ -1235,4 +1246,81 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     // Create from template operation
     slidesCreated: { type: 'number', description: 'Number of slides created' },
   },
+}
+
+const googleSlidesV2SubBlocks = (GoogleSlidesBlock.subBlocks || []).flatMap((subBlock) => {
+  if (subBlock.id === 'imageFile') {
+    return [
+      {
+        ...subBlock,
+        canonicalParamId: 'imageFile',
+      },
+    ]
+  }
+
+  if (subBlock.id !== 'imageUrl') {
+    return [subBlock]
+  }
+
+  return [
+    {
+      id: 'imageFileReference',
+      title: 'Image',
+      type: 'short-input' as const,
+      canonicalParamId: 'imageFile',
+      placeholder: 'Reference image from previous blocks',
+      mode: 'advanced' as const,
+      required: true,
+      condition: { field: 'operation', value: 'add_image' },
+    },
+  ]
+})
+
+const googleSlidesV2Inputs = GoogleSlidesBlock.inputs
+  ? {
+      ...Object.fromEntries(
+        Object.entries(GoogleSlidesBlock.inputs).filter(([key]) => key !== 'imageSource')
+      ),
+      imageFile: { type: 'json', description: 'Image source (file or URL)' },
+    }
+  : {}
+
+export const GoogleSlidesV2Block: BlockConfig<GoogleSlidesResponse> = {
+  ...GoogleSlidesBlock,
+  type: 'google_slides_v2',
+  name: 'Google Slides',
+  description: 'Read, write, and create presentations',
+  hideFromToolbar: false,
+  subBlocks: googleSlidesV2SubBlocks,
+  tools: {
+    access: GoogleSlidesBlock.tools!.access,
+    config: {
+      tool: GoogleSlidesBlock.tools!.config!.tool,
+      params: (params) => {
+        const baseParams = GoogleSlidesBlock.tools?.config?.params
+        if (!baseParams) {
+          return params
+        }
+
+        if (params.operation === 'add_image') {
+          const fileObject = normalizeFileInput(params.imageFile, { single: true })
+          if (!fileObject) {
+            throw new Error('Image file is required.')
+          }
+          const imageUrl = resolveHttpsUrlFromFileInput(fileObject)
+          if (!imageUrl) {
+            throw new Error('Image file must include a https URL.')
+          }
+
+          return baseParams({
+            ...params,
+            imageUrl,
+          })
+        }
+
+        return baseParams(params)
+      },
+    },
+  },
+  inputs: googleSlidesV2Inputs,
 }

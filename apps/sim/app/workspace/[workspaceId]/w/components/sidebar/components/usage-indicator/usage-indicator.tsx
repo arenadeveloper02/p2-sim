@@ -285,6 +285,7 @@ export function UsageIndicator({ onClick }: UsageIndicatorProps) {
   const isPro = planType === 'pro'
   const isTeam = planType === 'team'
   const isEnterprise = planType === 'enterprise'
+  const isEnterpriseMember = isEnterprise && !userCanManageBilling
 
   const handleUpgradeToPro = useCallback(async () => {
     try {
@@ -397,7 +398,7 @@ export function UsageIndicator({ onClick }: UsageIndicatorProps) {
     return () => window.clearInterval(interval)
   }, [isHovered, pillCount, startAnimationIndex])
 
-  if (isLoading) {
+  if (isLoading && !subscriptionData) {
     return (
       <div className='flex flex-shrink-0 flex-col gap-[8px] border-t px-[13.5px] pt-[8px] pb-[10px]'>
         <div className='flex h-[18px] items-center justify-between'>
@@ -461,6 +462,18 @@ export function UsageIndicator({ onClick }: UsageIndicatorProps) {
     } catch (error) {
       logger.error('Failed to handle usage indicator click', { error })
     }
+  }
+
+  if (isEnterpriseMember) {
+    return (
+      <div className='flex flex-shrink-0 flex-col border-t px-[13.5px] pt-[8px] pb-[10px]'>
+        <div className='flex h-[18px] items-center'>
+          <span className='font-medium text-[12px] text-[var(--text-primary)]'>
+            {PLAN_NAMES[planType]}
+          </span>
+        </div>
+      </div>
+    )
   }
 
   return (

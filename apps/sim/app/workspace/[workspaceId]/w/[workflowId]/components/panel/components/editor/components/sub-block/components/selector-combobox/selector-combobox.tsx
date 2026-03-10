@@ -1,8 +1,8 @@
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
-import { Combobox as EditableCombobox } from '@/components/emcn/components'
 import { cn } from '@/lib/core/utils/cn'
+import { Button, Combobox as EditableCombobox } from '@/components/emcn/components'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { SubBlockConfig } from '@/blocks/types'
@@ -27,6 +27,7 @@ interface SelectorComboboxProps {
   allowSearch?: boolean
   /** When true, show a clear (X) button when a value is selected */
   clearable?: boolean
+  missingOptionLabel?: string
 }
 
 export function SelectorCombobox({
@@ -42,6 +43,7 @@ export function SelectorCombobox({
   onOptionChange,
   allowSearch = true,
   clearable = false,
+  missingOptionLabel,
 }: SelectorComboboxProps) {
   const [storeValueRaw, setStoreValue] = useSubBlockValue<string | null | undefined>(
     blockId,
@@ -65,7 +67,16 @@ export function SelectorCombobox({
     detailId: activeValue,
   })
   const optionMap = useSelectorOptionMap(options, detailOption ?? undefined)
-  const selectedLabel = activeValue ? (optionMap.get(activeValue)?.label ?? activeValue) : ''
+  const hasMissingOption =
+    Boolean(activeValue) &&
+    Boolean(missingOptionLabel) &&
+    !isLoading &&
+    !optionMap.get(activeValue!)
+  const selectedLabel = activeValue
+    ? hasMissingOption
+      ? missingOptionLabel
+      : (optionMap.get(activeValue)?.label ?? activeValue)
+    : ''
   const [inputValue, setInputValue] = useState(selectedLabel)
   const previousActiveValue = useRef<string | undefined>(activeValue)
 
@@ -107,15 +118,15 @@ export function SelectorCombobox({
       e.preventDefault()
       e.stopPropagation()
       if (readOnly || disabled) return
+      setStoreValue(null)
       setInputValue('')
-      setIsEditing(false)
-      setStoreValue('')
       onOptionChange?.('')
+      setIsEditing(false)
     },
-    [readOnly, disabled, setStoreValue, onOptionChange]
+    [setStoreValue, onOptionChange, readOnly, disabled]
   )
 
-  const showClearButton = clearable && Boolean(activeValue) && !readOnly && !disabled && !isPreview
+  const showClearButton = Boolean(activeValue) && !disabled && !readOnly
 
   return (
     <div className='relative w-full'>
@@ -128,7 +139,7 @@ export function SelectorCombobox({
         isPreview={isPreview}
       >
         {({ ref, onDrop, onDragOver }) => (
-          <div className={cn(showClearButton && 'pr-9')}>
+          <div className='relative w-full'>
             <EditableCombobox
               options={comboboxOptions}
               value={allowSearch ? inputValue : selectedLabel}
@@ -155,10 +166,21 @@ export function SelectorCombobox({
               inputProps={{
                 onDrop: onDrop as (e: React.DragEvent<HTMLInputElement>) => void,
                 onDragOver: onDragOver as (e: React.DragEvent<HTMLInputElement>) => void,
+                className: showClearButton ? 'pr-[60px]' : undefined,
               }}
               isLoading={isLoading}
               error={error instanceof Error ? error.message : null}
             />
+            {showClearButton && (
+              <Button
+                type='button'
+                variant='ghost'
+                className='-translate-y-1/2 absolute top-1/2 right-[28px] z-10 h-6 w-6 p-0'
+                onClick={handleClear}
+              >
+                <X className='h-4 w-4 opacity-50 hover:opacity-100' />
+              </Button>
+            )}
           </div>
         )}
       </SubBlockInputController>

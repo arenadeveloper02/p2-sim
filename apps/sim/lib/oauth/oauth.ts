@@ -2,21 +2,28 @@ import { createLogger } from '@sim/logger'
 import {
   AirtableIcon,
   AsanaIcon,
+  AttioIcon,
+  CalComIcon,
   ConfluenceIcon,
   DropboxIcon,
   GithubIcon,
   GmailIcon,
+  GoogleBigQueryIcon,
   GoogleCalendarIcon,
+  GoogleContactsIcon,
   GoogleDocsIcon,
   GoogleDriveIcon,
   GoogleFormsIcon,
   GoogleGroupsIcon,
   GoogleIcon,
+  GoogleMeetIcon,
   GoogleSheetsIcon,
+  GoogleTasksIcon,
   HubspotIcon,
   JiraIcon,
   LinearIcon,
   LinkedInIcon,
+  MicrosoftDataverseIcon,
   MicrosoftExcelIcon,
   MicrosoftIcon,
   MicrosoftOneDriveIcon,
@@ -56,6 +63,8 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: GmailIcon,
         baseProviderIcon: GoogleIcon,
         scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
           'https://www.googleapis.com/auth/gmail.send',
           'https://www.googleapis.com/auth/gmail.modify',
           'https://www.googleapis.com/auth/gmail.labels',
@@ -68,6 +77,8 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: GoogleDriveIcon,
         baseProviderIcon: GoogleIcon,
         scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
           'https://www.googleapis.com/auth/drive.file',
           'https://www.googleapis.com/auth/drive',
         ],
@@ -79,6 +90,8 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: GoogleDocsIcon,
         baseProviderIcon: GoogleIcon,
         scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
           'https://www.googleapis.com/auth/drive.file',
           'https://www.googleapis.com/auth/drive',
         ],
@@ -90,6 +103,8 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: GoogleSheetsIcon,
         baseProviderIcon: GoogleIcon,
         scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
           'https://www.googleapis.com/auth/drive.file',
           'https://www.googleapis.com/auth/drive',
         ],
@@ -114,7 +129,47 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'google-calendar',
         icon: GoogleCalendarIcon,
         baseProviderIcon: GoogleIcon,
-        scopes: ['https://www.googleapis.com/auth/calendar'],
+        scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/calendar',
+        ],
+      },
+      'google-contacts': {
+        name: 'Google Contacts',
+        description: 'Create, read, update, and search contacts with Google Contacts.',
+        providerId: 'google-contacts',
+        icon: GoogleContactsIcon,
+        baseProviderIcon: GoogleIcon,
+        scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/contacts',
+        ],
+      },
+      'google-bigquery': {
+        name: 'Google BigQuery',
+        description: 'Query, list, and insert data in Google BigQuery.',
+        providerId: 'google-bigquery',
+        icon: GoogleBigQueryIcon,
+        baseProviderIcon: GoogleIcon,
+        scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/bigquery',
+        ],
+      },
+      'google-tasks': {
+        name: 'Google Tasks',
+        description: 'Create, manage, and organize tasks with Google Tasks.',
+        providerId: 'google-tasks',
+        icon: GoogleTasksIcon,
+        baseProviderIcon: GoogleIcon,
+        scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/tasks',
+        ],
       },
       'google-vault': {
         name: 'Google Vault',
@@ -123,6 +178,8 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: GoogleIcon,
         baseProviderIcon: GoogleIcon,
         scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
           'https://www.googleapis.com/auth/ediscovery',
           'https://www.googleapis.com/auth/devstorage.read_only',
         ],
@@ -134,8 +191,23 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: GoogleGroupsIcon,
         baseProviderIcon: GoogleIcon,
         scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
           'https://www.googleapis.com/auth/admin.directory.group',
           'https://www.googleapis.com/auth/admin.directory.group.member',
+        ],
+      },
+      'google-meet': {
+        name: 'Google Meet',
+        description: 'Create and manage Google Meet meeting spaces and conferences.',
+        providerId: 'google-meet',
+        icon: GoogleMeetIcon,
+        baseProviderIcon: GoogleIcon,
+        scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/meetings.space.created',
+          'https://www.googleapis.com/auth/meetings.space.readonly',
         ],
       },
       'vertex-ai': {
@@ -144,7 +216,11 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'vertex-ai',
         icon: VertexIcon,
         baseProviderIcon: VertexIcon,
-        scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+        scopes: [
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/cloud-platform',
+        ],
       },
     },
     defaultService: 'gmail',
@@ -153,6 +229,20 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     name: 'Microsoft',
     icon: MicrosoftIcon,
     services: {
+      'microsoft-dataverse': {
+        name: 'Microsoft Dataverse',
+        description: 'Connect to Microsoft Dataverse and manage records.',
+        providerId: 'microsoft-dataverse',
+        icon: MicrosoftDataverseIcon,
+        baseProviderIcon: MicrosoftIcon,
+        scopes: [
+          'openid',
+          'profile',
+          'email',
+          'https://dynamics.microsoft.com/user_impersonation',
+          'offline_access',
+        ],
+      },
       'microsoft-excel': {
         name: 'Microsoft Excel',
         description: 'Connect to Microsoft Excel and manage spreadsheets.',
@@ -275,7 +365,23 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'x',
         icon: xIcon,
         baseProviderIcon: xIcon,
-        scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+        scopes: [
+          'tweet.read',
+          'tweet.write',
+          'tweet.moderate.write',
+          'users.read',
+          'follows.read',
+          'follows.write',
+          'bookmark.read',
+          'bookmark.write',
+          'like.read',
+          'like.write',
+          'block.read',
+          'block.write',
+          'mute.read',
+          'mute.write',
+          'offline.access',
+        ],
       },
     },
     defaultService: 'x',
@@ -313,6 +419,21 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'search:confluence',
           'read:me',
           'offline_access',
+          'read:blogpost:confluence',
+          'write:blogpost:confluence',
+          'delete:blogpost:confluence',
+          'read:content.property:confluence',
+          'write:content.property:confluence',
+          'read:hierarchical-content:confluence',
+          'read:content.metadata:confluence',
+          'read:user:confluence',
+          'read:task:confluence',
+          'write:task:confluence',
+          'write:space:confluence',
+          'delete:space:confluence',
+          'read:space.property:confluence',
+          'write:space.property:confluence',
+          'read:space.permission:confluence',
         ],
       },
     },
@@ -411,7 +532,13 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'airtable',
         icon: AirtableIcon,
         baseProviderIcon: AirtableIcon,
-        scopes: ['data.records:read', 'data.records:write', 'user.email:read', 'webhook:manage'],
+        scopes: [
+          'data.records:read',
+          'data.records:write',
+          'schema.bases:read',
+          'user.email:read',
+          'webhook:manage',
+        ],
       },
     },
     defaultService: 'airtable',
@@ -580,7 +707,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'webflow',
         icon: WebflowIcon,
         baseProviderIcon: WebflowIcon,
-        scopes: ['cms:read', 'cms:write', 'sites:read', 'sites:write'],
+        scopes: ['cms:read', 'cms:write', 'sites:read', 'sites:write', 'forms:read'],
       },
     },
     defaultService: 'webflow',
@@ -614,6 +741,46 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
       },
     },
     defaultService: 'asana',
+  },
+  attio: {
+    name: 'Attio',
+    icon: AttioIcon,
+    services: {
+      attio: {
+        name: 'Attio',
+        description: 'Manage records, notes, tasks, lists, comments, and more in Attio CRM.',
+        providerId: 'attio',
+        icon: AttioIcon,
+        baseProviderIcon: AttioIcon,
+        scopes: [
+          'record_permission:read-write',
+          'object_configuration:read-write',
+          'list_configuration:read-write',
+          'list_entry:read-write',
+          'note:read-write',
+          'task:read-write',
+          'comment:read-write',
+          'user_management:read',
+          'webhook:read-write',
+        ],
+      },
+    },
+    defaultService: 'attio',
+  },
+  calcom: {
+    name: 'Cal.com',
+    icon: CalComIcon,
+    services: {
+      calcom: {
+        name: 'Cal.com',
+        description: 'Manage Cal.com bookings, event types, and schedules.',
+        providerId: 'calcom',
+        icon: CalComIcon,
+        baseProviderIcon: CalComIcon,
+        scopes: [],
+      },
+    },
+    defaultService: 'calcom',
   },
   pipedrive: {
     name: 'Pipedrive',
@@ -649,6 +816,148 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: HubspotIcon,
         baseProviderIcon: HubspotIcon,
         scopes: [
+          'crm.objects.contacts.read',
+        'crm.objects.contacts.write',
+        'crm.objects.companies.read',
+        'crm.objects.companies.write',
+        'crm.objects.deals.read',
+        'crm.objects.deals.write',
+        'crm.objects.owners.read',
+        'crm.objects.users.read',
+        'crm.objects.users.write',
+        'crm.objects.marketing_events.read',
+        'crm.objects.marketing_events.write',
+        'crm.objects.line_items.read',
+        'crm.objects.line_items.write',
+        'crm.objects.quotes.read',
+        'crm.objects.quotes.write',
+        'crm.objects.appointments.read',
+        'crm.objects.appointments.write',
+        'crm.objects.carts.read',
+        'crm.objects.carts.write',
+        'crm.import',
+        'crm.lists.read',
+        'crm.lists.write',
+        'tickets',
+        'crm.objects.subscriptions.write',
+        'crm.schemas.subscriptions.write',
+        'crm.schemas.invoices.write',
+        'content',
+        'tax_rates.read',
+        'social',
+        'crm.objects.goals.write',
+        'automation',
+        'actions',
+        'timeline',
+        'business-intelligence',
+        'forms',
+        'files',
+        'record_images.signed_urls.read',
+        'crm.objects.products.read',
+        'integration-sync',
+        'crm.objects.products.write',
+        'e-commerce',
+        'accounting',
+        'sales-email-read',
+        'crm.objects.commercepayments.write',
+        'crm.objects.projects.write',
+        'crm.schemas.commercepayments.write',
+        'crm.objects.projects.read',
+        'forms-uploaded-files',
+        'communication_preferences.read_write',
+        'crm.objects.partner-services.read',
+        'crm.objects.partner-services.write',
+        'crm.schemas.projects.read',
+        'crm.extensions_calling_transcripts.read',
+        'crm.extensions_calling_transcripts.write',
+        'crm.schemas.projects.write',
+        'communication_preferences.read',
+        'communication_preferences.write',
+        'settings.users.write',
+        'conversations.visitor_identification.tokens.create',
+        'files.ui_hidden.read',
+        'crm.schemas.custom.read',
+        'crm.objects.custom.read',
+        'crm.objects.custom.write',
+        'settings.users.read',
+        'crm.schemas.contacts.read',
+        'cms.domains.read',
+        'cms.domains.write',
+        'media_bridge.read',
+        'media_bridge.write',
+        'settings.billing.write',
+        'crm.objects.feedback_submissions.read',
+        'crm.schemas.companies.read',
+        'crm.schemas.companies.write',
+        'crm.schemas.contacts.write',
+        'crm.schemas.deals.read',
+        'crm.schemas.deals.write',
+        'cms.knowledge_base.articles.publish',
+        'cms.knowledge_base.articles.write',
+        'cms.knowledge_base.articles.read',
+        'cms.knowledge_base.settings.read',
+        'cms.knowledge_base.settings.write',
+        'settings.users.teams.write',
+        'settings.users.teams.read',
+        'conversations.read',
+        'conversations.write',
+        'crm.schemas.quotes.read',
+        'crm.schemas.line_items.read',
+        'account-info.security.read',
+        'crm.export',
+        'integrations.zoom-app.playbooks.read',
+        'settings.currencies.read',
+        'settings.currencies.write',
+        'external_integrations.forms.access',
+        'crm.objects.goals.read',
+        'ctas.read',
+        'crm.objects.subscriptions.read',
+        'crm.schemas.subscriptions.read',
+        'crm.schemas.commercepayments.read',
+        'crm.objects.commercepayments.read',
+        'crm.objects.invoices.read',
+        'crm.schemas.invoices.read',
+        'settings.security.security_health.read',
+        'crm.schemas.carts.write',
+        'crm.schemas.carts.read',
+        'crm.pipelines.orders.write',
+        'crm.pipelines.orders.read',
+        'crm.schemas.orders.write',
+        'crm.schemas.orders.read',
+        'crm.objects.orders.write',
+        'crm.objects.orders.read',
+        'conversations.custom_channels.read',
+        'conversations.custom_channels.write',
+        'crm.objects.leads.read',
+        'crm.objects.leads.write',
+        'crm.objects.partner-clients.read',
+        'crm.objects.partner-clients.write',
+        'marketing.campaigns.read',
+        'marketing.campaigns.write',
+        'marketing.campaigns.revenue.read',
+        'automation.sequences.enrollments.write',
+        'automation.sequences.read',
+        'cms.membership.access_groups.read',
+        'cms.membership.access_groups.write',
+        'crm.objects.courses.read',
+        'crm.objects.courses.write',
+        'crm.objects.listings.read',
+        'crm.objects.listings.write',
+        'crm.objects.services.read',
+        'crm.objects.services.write',
+        'scheduler.meetings.meeting-link.read',
+        'crm.objects.invoices.write',
+        'crm.schemas.services.read',
+        'crm.schemas.services.write',
+        'crm.schemas.courses.read',
+        'crm.schemas.courses.write',
+        'crm.schemas.listings.read',
+        'crm.schemas.listings.write',
+        'crm.schemas.appointments.read',
+        'crm.schemas.appointments.write',
+
+          // need to look ..below are the changes done by sim
+
           'crm.objects.contacts.read',
           'crm.objects.contacts.write',
           'crm.objects.companies.read',
@@ -834,6 +1143,22 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: ZoomIcon,
         baseProviderIcon: ZoomIcon,
         scopes: [
+
+        'user:read:user',
+        'meeting:write:meeting',
+        'meeting:read:meeting',
+        'meeting:read:list_meetings',
+        'meeting:update:meeting',
+        'meeting:delete:meeting',
+        'meeting:read:invitation',
+        'meeting:read:list_past_participants',
+        'cloud_recording:read:list_user_recordings',
+        'recording:read:list_account_recordings',
+        'recording:read:admin',
+        'cloud_recording:read:list_recording_files',
+        'cloud_recording:delete:recording_file',
+
+          // need to verify ..below are the changes done by sim
           'user:read:user:admin',
           'user:read:list_users:admin',
           'user:read:list_assistants:admin',
@@ -917,6 +1242,11 @@ interface ProviderAuthConfig {
   useBasicAuth: boolean
   additionalHeaders?: Record<string, string>
   supportsRefreshTokenRotation?: boolean
+  /**
+   * If true, the refresh token is sent in the Authorization header as Bearer token
+   * instead of in the request body. Used by Cal.com.
+   */
+  refreshTokenInAuthHeader?: boolean
 }
 
 /**
@@ -989,6 +1319,21 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         supportsRefreshTokenRotation: true,
       }
     }
+    case 'calcom': {
+      const clientId = env.CALCOM_CLIENT_ID
+      if (!clientId) {
+        throw new Error('Missing CALCOM_CLIENT_ID')
+      }
+      return {
+        tokenEndpoint: 'https://app.cal.com/api/auth/oauth/refreshToken',
+        clientId,
+        clientSecret: '',
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
+        // Cal.com requires refresh token in Authorization header, not body
+        refreshTokenInAuthHeader: true,
+      }
+    }
     case 'airtable': {
       const { clientId, clientSecret } = getCredentials(
         env.AIRTABLE_CLIENT_ID,
@@ -1041,6 +1386,18 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientSecret,
         useBasicAuth: true,
         supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'attio': {
+      const { clientId, clientSecret } = getCredentials(
+        env.ATTIO_CLIENT_ID,
+        env.ATTIO_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://app.attio.com/oauth/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
       }
     }
     case 'dropbox': {
@@ -1255,7 +1612,15 @@ function buildAuthRequest(
 
   const bodyParams: Record<string, string> = {
     grant_type: 'refresh_token',
-    refresh_token: refreshToken,
+  }
+
+  // Handle refresh token placement
+  if (config.refreshTokenInAuthHeader) {
+    // Cal.com style: refresh token in Authorization header as Bearer token
+    headers.Authorization = `Bearer ${refreshToken}`
+  } else {
+    // Standard OAuth: refresh token in request body
+    bodyParams.refresh_token = refreshToken
   }
 
   if (config.useBasicAuth) {
@@ -1265,7 +1630,9 @@ function buildAuthRequest(
   } else {
     // Use body credentials - include client credentials in request body
     bodyParams.client_id = config.clientId
-    bodyParams.client_secret = config.clientSecret
+    if (config.clientSecret) {
+      bodyParams.client_secret = config.clientSecret
+    }
   }
 
   return { headers, bodyParams }

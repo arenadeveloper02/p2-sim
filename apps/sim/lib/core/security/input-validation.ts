@@ -91,9 +91,9 @@ export function validatePathSegment(
   const pathTraversalPatterns = [
     '..',
     './',
-    '.\\.', // Windows path traversal
-    '%2e%2e', // URL encoded ..
-    '%252e%252e', // Double URL encoded ..
+    '.\\.',
+    '%2e%2e',
+    '%252e%252e',
     '..%2f',
     '..%5c',
     '%2e%2e%2f',
@@ -393,7 +393,6 @@ export function validateHostname(
 
   const lowerHostname = hostname.toLowerCase()
 
-  // Block localhost
   if (lowerHostname === 'localhost') {
     logger.warn('Hostname is localhost', { paramName })
     return {
@@ -402,7 +401,6 @@ export function validateHostname(
     }
   }
 
-  // Use ipaddr.js to check if hostname is an IP and if it's private/reserved
   if (ipaddr.isValid(lowerHostname)) {
     if (isPrivateOrReservedIP(lowerHostname)) {
       logger.warn('Hostname matches blocked IP range', {
@@ -416,7 +414,6 @@ export function validateHostname(
     }
   }
 
-  // Basic hostname format validation
   const hostnamePattern =
     /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i
 
@@ -462,10 +459,7 @@ export function validateFileExtension(
     }
   }
 
-  // Remove leading dot if present
   const ext = extension.startsWith('.') ? extension.slice(1) : extension
-
-  // Normalize to lowercase
   const normalizedExt = ext.toLowerCase()
 
   if (!allowedExtensions.map((e) => e.toLowerCase()).includes(normalizedExt)) {
@@ -517,7 +511,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Check for path traversal patterns (../)
   const pathTraversalPatterns = [
     '../',
     '..\\',
@@ -527,7 +520,7 @@ export function validateMicrosoftGraphId(
     '%2e%2e%5c',
     '%2e%2e\\',
     '..%5c',
-    '%252e%252e%252f', // double encoded
+    '%252e%252e%252f',
   ]
 
   const lowerValue = value.toLowerCase()
@@ -544,7 +537,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Check for control characters and null bytes
   if (/[\x00-\x1f\x7f]/.test(value) || value.includes('%00')) {
     logger.warn('Control characters in Microsoft Graph ID', { paramName })
     return {
@@ -553,7 +545,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Check for newlines (which could be used for header injection)
   if (value.includes('\n') || value.includes('\r')) {
     return {
       isValid: false,
@@ -561,8 +552,51 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Microsoft Graph IDs can contain many characters, but not suspicious patterns
-  // We've blocked path traversal, so allow the rest
+  return { isValid: true, sanitized: value }
+}
+
+/**
+ * Validates SharePoint site IDs used in Microsoft Graph API.
+ *
+ * Site IDs are compound identifiers: `hostname,spsite-guid,spweb-guid`
+ * (e.g. `contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE`).
+ * The API also accepts partial forms like a single GUID or just a hostname.
+ *
+ * Allowed characters: alphanumeric, periods, hyphens, and commas.
+ *
+ * @param value - The SharePoint site ID to validate
+ * @param paramName - Name of the parameter for error messages
+ * @returns ValidationResult
+ */
+export function validateSharePointSiteId(
+  value: string | null | undefined,
+  paramName = 'siteId'
+): ValidationResult {
+  if (value === null || value === undefined || value === '') {
+    return {
+      isValid: false,
+      error: `${paramName} is required`,
+    }
+  }
+
+  if (value.length > 512) {
+    return {
+      isValid: false,
+      error: `${paramName} exceeds maximum length`,
+    }
+  }
+
+  if (!/^[a-zA-Z0-9.\-,]+$/.test(value)) {
+    logger.warn('Invalid characters in SharePoint site ID', {
+      paramName,
+      value: value.substring(0, 100),
+    })
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid characters`,
+    }
+  }
+
   return { isValid: true, sanitized: value }
 }
 
@@ -585,7 +619,6 @@ export function validateJiraCloudId(
   value: string | null | undefined,
   paramName = 'cloudId'
 ): ValidationResult {
-  // Jira cloud IDs are alphanumeric with hyphens (UUID-like)
   return validatePathSegment(value, {
     paramName,
     allowHyphens: true,
@@ -614,7 +647,6 @@ export function validateJiraIssueKey(
   value: string | null | undefined,
   paramName = 'issueKey'
 ): ValidationResult {
-  // Jira issue keys: letters, numbers, hyphens (PROJECT-123 format)
   return validatePathSegment(value, {
     paramName,
     allowHyphens: true,
@@ -655,7 +687,6 @@ export function validateExternalUrl(
     }
   }
 
-  // Must be a valid URL
   let parsedUrl: URL
   try {
     parsedUrl = new URL(url)
@@ -666,28 +697,29 @@ export function validateExternalUrl(
     }
   }
 
-  // Only allow https protocol
-  if (parsedUrl.protocol !== 'https:') {
+  const protocol = parsedUrl.protocol
+  const hostname = parsedUrl.hostname.toLowerCase()
+
+  const cleanHostname =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
+
+  let isLocalhost = cleanHostname === 'localhost'
+  if (ipaddr.isValid(cleanHostname)) {
+    const processedIP = ipaddr.process(cleanHostname).toString()
+    if (processedIP === '127.0.0.1' || processedIP === '::1') {
+      isLocalhost = true
+    }
+  }
+
+  if (protocol !== 'https:' && !(protocol === 'http:' && isLocalhost)) {
     return {
       isValid: false,
       error: `${paramName} must use https:// protocol`,
     }
   }
 
-  // Block private IP ranges and localhost
-  const hostname = parsedUrl.hostname.toLowerCase()
-
-  // Block localhost
-  if (hostname === 'localhost') {
-    return {
-      isValid: false,
-      error: `${paramName} cannot point to localhost`,
-    }
-  }
-
-  // Use ipaddr.js to check if hostname is an IP and if it's private/reserved
-  if (ipaddr.isValid(hostname)) {
-    if (isPrivateOrReservedIP(hostname)) {
+  if (!isLocalhost && ipaddr.isValid(cleanHostname)) {
+    if (isPrivateOrReservedIP(cleanHostname)) {
       return {
         isValid: false,
         error: `${paramName} cannot point to private IP addresses`,
@@ -1318,6 +1350,77 @@ export function validateGoogleCalendarId(
     return {
       isValid: false,
       error: `${paramName} exceeds maximum length of 255 characters`,
+    }
+  }
+
+  return { isValid: true, sanitized: value }
+}
+
+/**
+ * Validates a pagination cursor token
+ *
+ * Pagination cursors are opaque tokens returned by APIs (e.g., Confluence, Jira)
+ * and passed back to get the next page. They are typically base64-encoded or
+ * URL-safe strings. This validator ensures the cursor cannot contain characters
+ * that could alter URL structure.
+ *
+ * @param value - The cursor token to validate
+ * @param paramName - Name of the parameter for error messages
+ * @param maxLength - Maximum length (default: 1024)
+ * @returns ValidationResult
+ *
+ * @example
+ * ```typescript
+ * if (cursor) {
+ *   const result = validatePaginationCursor(cursor, 'cursor')
+ *   if (!result.isValid) {
+ *     return NextResponse.json({ error: result.error }, { status: 400 })
+ *   }
+ * }
+ * ```
+ */
+export function validatePaginationCursor(
+  value: string | null | undefined,
+  paramName = 'cursor',
+  maxLength = 1024
+): ValidationResult {
+  if (value === null || value === undefined || value === '') {
+    return {
+      isValid: false,
+      error: `${paramName} is required`,
+    }
+  }
+
+  if (value.length > maxLength) {
+    logger.warn('Pagination cursor exceeds maximum length', {
+      paramName,
+      length: value.length,
+      maxLength,
+    })
+    return {
+      isValid: false,
+      error: `${paramName} exceeds maximum length of ${maxLength} characters`,
+    }
+  }
+
+  if (/[\x00-\x1f\x7f]/.test(value) || value.includes('%00')) {
+    logger.warn('Pagination cursor contains control characters', { paramName })
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid characters`,
+    }
+  }
+
+  // Allow alphanumeric, base64 chars (+, /, =), and URL-safe chars (-, _, ., ~, %)
+  const cursorPattern = /^[A-Za-z0-9+/=\-_.~%]+$/
+  if (!cursorPattern.test(value)) {
+    logger.warn('Pagination cursor contains disallowed characters', {
+      paramName,
+      value: value.substring(0, 100),
+    })
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid characters`,
     }
   }
 

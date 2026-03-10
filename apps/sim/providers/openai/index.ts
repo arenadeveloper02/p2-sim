@@ -1,25 +1,11 @@
 import { createLogger } from '@sim/logger'
-import OpenAI from 'openai'
-import type { ChatCompletionCreateParamsStreaming } from 'openai/resources/chat/completions'
 import type { StreamingExecution } from '@/executor/types'
-import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
-import { createReadableStreamFromOpenAIStream } from '@/providers/openai/utils'
-import type {
-  ProviderConfig,
-  ProviderRequest,
-  ProviderResponse,
-  TimeSegment,
-} from '@/providers/types'
-import {
-  calculateCost,
-  prepareToolExecution,
-  prepareToolsWithUsageControl,
-  trackForcedToolUsage,
-} from '@/providers/utils'
-import { executeTool } from '@/tools'
+import type { ProviderConfig, ProviderRequest, ProviderResponse } from '@/providers/types'
+import { executeResponsesProviderRequest } from './core'
 
 const logger = createLogger('OpenAIProvider')
+const responsesEndpoint = 'https://api.openai.com/v1/responses'
 
 export const openaiProvider: ProviderConfig = {
   id: 'openai',
@@ -32,15 +18,23 @@ export const openaiProvider: ProviderConfig = {
   executeRequest: async (
     request: ProviderRequest
   ): Promise<ProviderResponse | StreamingExecution> => {
-    logger.info('Preparing OpenAI request', {
-      model: request.model,
-      hasSystemPrompt: !!request.systemPrompt,
-      hasMessages: !!request.messages?.length,
-      hasTools: !!request.tools?.length,
-      toolCount: request.tools?.length || 0,
-      hasResponseFormat: !!request.responseFormat,
-      stream: !!request.stream,
+    if (!request.apiKey) {
+      throw new Error('API key is required for OpenAI')
+    }
+
+    return executeResponsesProviderRequest(request, {
+      providerId: 'openai',
+      providerLabel: 'OpenAI',
+      modelName: request.model,
+      endpoint: responsesEndpoint,
+      headers: {
+        Authorization: `Bearer ${request.apiKey}`,
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'responses=v1',
+      },
+      logger,
     })
+<<<<<<< HEAD
 
     const openai = new OpenAI({ apiKey: request.apiKey })
 
@@ -583,5 +577,7 @@ export const openaiProvider: ProviderConfig = {
 
       throw enhancedError
     }
+=======
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
   },
 }

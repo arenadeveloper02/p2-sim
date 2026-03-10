@@ -9,6 +9,7 @@ import {
   isSubBlockFeatureEnabled,
   isSubBlockVisibleForMode,
 } from '@/lib/workflows/subblocks/visibility'
+import { DELETED_WORKFLOW_LABEL } from '@/app/workspace/[workspaceId]/logs/utils'
 import { getDisplayValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/workflow-block'
 import { getBlock } from '@/blocks'
 import { SELECTOR_TYPES_HYDRATION_REQUIRED, type SubBlockConfig } from '@/blocks/types'
@@ -112,7 +113,7 @@ function resolveWorkflowName(
   if (!rawValue || typeof rawValue !== 'string') return null
 
   const workflowMap = useWorkflowRegistry.getState().workflows
-  return workflowMap[rawValue]?.name ?? null
+  return workflowMap[rawValue]?.name ?? DELETED_WORKFLOW_LABEL
 }
 
 /**
@@ -222,7 +223,12 @@ function resolveToolsDisplay(
  * - Resolves tool names from block registry
  * - Shows '-' for other selector types that need hydration
  */
-function SubBlockRow({ title, value, subBlock, rawValue }: SubBlockRowProps) {
+const SubBlockRow = memo(function SubBlockRow({
+  title,
+  value,
+  subBlock,
+  rawValue,
+}: SubBlockRowProps) {
   const isPasswordField = subBlock?.password === true
   const maskedValue = isPasswordField && value && value !== '-' ? '•••' : null
 
@@ -254,7 +260,7 @@ function SubBlockRow({ title, value, subBlock, rawValue }: SubBlockRowProps) {
       )}
     </div>
   )
-}
+})
 
 /**
  * Preview block component for workflow visualization.
@@ -411,8 +417,9 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
 
   const IconComponent = blockConfig.icon
   const isStarterOrTrigger = blockConfig.category === 'triggers' || type === 'starter' || isTrigger
+  const isNoteBlock = type === 'note'
 
-  const shouldShowDefaultHandles = !isStarterOrTrigger
+  const shouldShowDefaultHandles = !isStarterOrTrigger && !isNoteBlock
   const hasSubBlocks = visibleSubBlocks.length > 0
   const hasContentBelowHeader =
     type === 'condition'
@@ -459,12 +466,14 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
         className={`flex items-center justify-between p-[8px] ${hasContentBelowHeader ? 'border-[var(--border-1)] border-b' : ''}`}
       >
         <div className='relative z-10 flex min-w-0 flex-1 items-center gap-[10px]'>
-          <div
-            className='flex h-[24px] w-[24px] flex-shrink-0 items-center justify-center rounded-[6px]'
-            style={{ background: enabled ? blockConfig.bgColor : 'gray' }}
-          >
-            <IconComponent className='h-[16px] w-[16px] text-white' />
-          </div>
+          {!isNoteBlock && (
+            <div
+              className='flex h-[24px] w-[24px] flex-shrink-0 items-center justify-center rounded-[6px]'
+              style={{ background: enabled ? blockConfig.bgColor : 'gray' }}
+            >
+              <IconComponent className='h-[16px] w-[16px] text-white' />
+            </div>
+          )}
           <span
             className={`truncate font-medium text-[16px] ${!enabled ? 'text-[var(--text-muted)]' : ''}`}
             title={name}
@@ -574,8 +583,8 @@ function WorkflowPreviewBlockInner({ data }: NodeProps<WorkflowPreviewBlockData>
         </>
       )}
 
-      {/* Source and error handles for non-condition/router blocks */}
-      {type !== 'condition' && type !== 'router_v2' && type !== 'response' && (
+      {/* Source and error handles for non-condition/router/note blocks */}
+      {type !== 'condition' && type !== 'router_v2' && type !== 'response' && !isNoteBlock && (
         <>
           <Handle
             type='source'

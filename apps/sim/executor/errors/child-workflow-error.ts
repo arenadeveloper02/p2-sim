@@ -6,6 +6,8 @@ interface ChildWorkflowErrorOptions {
   childWorkflowName: string
   childTraceSpans?: TraceSpan[]
   executionResult?: ExecutionResult
+  childWorkflowSnapshotId?: string
+  childWorkflowInstanceId?: string
   cause?: Error
 }
 
@@ -16,6 +18,9 @@ export class ChildWorkflowError extends Error {
   readonly childTraceSpans: TraceSpan[]
   readonly childWorkflowName: string
   readonly executionResult?: ExecutionResult
+  readonly childWorkflowSnapshotId?: string
+  /** Per-invocation unique ID used to correlate child block events with this workflow block. */
+  readonly childWorkflowInstanceId?: string
 
   constructor(options: ChildWorkflowErrorOptions) {
     super(options.message, { cause: options.cause })
@@ -23,6 +28,8 @@ export class ChildWorkflowError extends Error {
     this.childWorkflowName = options.childWorkflowName
     this.childTraceSpans = options.childTraceSpans ?? []
     this.executionResult = options.executionResult
+    this.childWorkflowSnapshotId = options.childWorkflowSnapshotId
+    this.childWorkflowInstanceId = options.childWorkflowInstanceId
   }
 
   static isChildWorkflowError(error: unknown): error is ChildWorkflowError {

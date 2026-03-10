@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
 import {
   extractBlockIdFromOutputId,
   extractPathFromOutputId,
@@ -32,8 +33,12 @@ export interface StreamingConfig {
   workflowTriggerType?: 'api' | 'chat'
   includeFileBase64?: boolean
   base64MaxBytes?: number
+<<<<<<< HEAD
   /** When set (e.g. deployed chat with logged-in user), Arena tools use this user's token from DB. */
   sessionUserId?: string | null
+=======
+  timeoutMs?: number
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
 }
 
 export interface StreamingResponseOptions {
@@ -52,9 +57,17 @@ export interface StreamingResponseOptions {
 }
 
 interface StreamingState {
-  streamedContent: Map<string, string>
+  streamedChunks: Map<string, string[]>
   processedOutputs: Set<string>
   streamCompletionTimes: Map<string, number>
+}
+
+function resolveStreamedContent(state: StreamingState): Map<string, string> {
+  const result = new Map<string, string>()
+  for (const [blockId, chunks] of state.streamedChunks) {
+    result.set(blockId, chunks.join(''))
+  }
+  return result
 }
 
 function extractOutputValue(output: unknown, path: string): unknown {
@@ -222,17 +235,21 @@ async function buildMinimalResult(
   return minimalResult
 }
 
-function updateLogsWithStreamedContent(logs: BlockLog[], state: StreamingState): BlockLog[] {
+function updateLogsWithStreamedContent(
+  logs: BlockLog[],
+  streamedContent: Map<string, string>,
+  streamCompletionTimes: Map<string, number>
+): BlockLog[] {
   return logs.map((log: BlockLog) => {
-    if (!state.streamedContent.has(log.blockId)) {
+    if (!streamedContent.has(log.blockId)) {
       return log
     }
 
-    const content = state.streamedContent.get(log.blockId)
+    const content = streamedContent.get(log.blockId)
     const updatedLog = { ...log }
 
-    if (state.streamCompletionTimes.has(log.blockId)) {
-      const completionTime = state.streamCompletionTimes.get(log.blockId)!
+    if (streamCompletionTimes.has(log.blockId)) {
+      const completionTime = streamCompletionTimes.get(log.blockId)!
       const startTime = new Date(log.startedAt).getTime()
       updatedLog.endedAt = new Date(completionTime).toISOString()
       updatedLog.durationMs = completionTime - startTime
@@ -284,11 +301,12 @@ export async function createStreamingResponse(
   options: StreamingResponseOptions
 ): Promise<ReadableStream> {
   const { requestId, workflow, input, executingUserId, streamConfig, executionId } = options
+  const timeoutController = createTimeoutAbortController(streamConfig.timeoutMs)
 
   return new ReadableStream({
     async start(controller) {
       const state: StreamingState = {
-        streamedContent: new Map(),
+        streamedChunks: new Map(),
         processedOutputs: new Set(),
         streamCompletionTimes: new Map(),
       }
@@ -322,10 +340,10 @@ export async function createStreamingResponse(
             }
 
             const textChunk = decoder.decode(value, { stream: true })
-            state.streamedContent.set(
-              blockId,
-              (state.streamedContent.get(blockId) || '') + textChunk
-            )
+            if (!state.streamedChunks.has(blockId)) {
+              state.streamedChunks.set(blockId, [])
+            }
+            state.streamedChunks.get(blockId)!.push(textChunk)
 
             if (isFirstChunk) {
               sendChunk(blockId, textChunk)
@@ -354,7 +372,7 @@ export async function createStreamingResponse(
           return
         }
 
-        if (state.streamedContent.has(blockId)) {
+        if (state.streamedChunks.has(blockId)) {
           return
         }
 
@@ -402,11 +420,16 @@ export async function createStreamingResponse(
             skipLoggingComplete: true,
             includeFileBase64: streamConfig.includeFileBase64,
             base64MaxBytes: streamConfig.base64MaxBytes,
+<<<<<<< HEAD
             sessionUserId: streamConfig.sessionUserId,
+=======
+            abortSignal: timeoutController.signal,
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
           },
           executionId
         )
 
+<<<<<<< HEAD
         // Handle skipped workflows - stream the skip response immediately
         // Mark it as streamed so it won't be included in final result
         if (result.status === 'skipped' && result.output && typeof result.output === 'object') {
@@ -439,10 +462,37 @@ export async function createStreamingResponse(
         if (result.logs && state.streamedContent.size > 0) {
           result.logs = updateLogsWithStreamedContent(result.logs, state)
           processStreamingBlockLogs(result.logs, state.streamedContent)
+=======
+        const streamedContent =
+          state.streamedChunks.size > 0 ? resolveStreamedContent(state) : new Map<string, string>()
+
+        if (result.logs && streamedContent.size > 0) {
+          result.logs = updateLogsWithStreamedContent(
+            result.logs,
+            streamedContent,
+            state.streamCompletionTimes
+          )
+          processStreamingBlockLogs(result.logs, streamedContent)
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
         }
 
-        await completeLoggingSession(result)
+        if (
+          result.status === 'cancelled' &&
+          timeoutController.isTimedOut() &&
+          timeoutController.timeoutMs
+        ) {
+          const timeoutErrorMessage = getTimeoutErrorMessage(null, timeoutController.timeoutMs)
+          logger.info(`[${requestId}] Streaming execution timed out`, {
+            timeoutMs: timeoutController.timeoutMs,
+          })
+          if (result._streamingMetadata?.loggingSession) {
+            await result._streamingMetadata.loggingSession.markAsFailed(timeoutErrorMessage)
+          }
+          controller.enqueue(encodeSSE({ event: 'error', error: timeoutErrorMessage }))
+        } else {
+          await completeLoggingSession(result)
 
+<<<<<<< HEAD
         const minimalResult = await buildMinimalResult(
           result,
           streamConfig.selectedOutputs,
@@ -452,8 +502,20 @@ export async function createStreamingResponse(
           streamConfig.includeFileBase64 ?? true,
           streamConfig.base64MaxBytes
         )
+=======
+          const minimalResult = await buildMinimalResult(
+            result,
+            streamConfig.selectedOutputs,
+            streamedContent,
+            requestId,
+            streamConfig.includeFileBase64 ?? true,
+            streamConfig.base64MaxBytes
+          )
 
-        controller.enqueue(encodeSSE({ event: 'final', data: minimalResult }))
+          controller.enqueue(encodeSSE({ event: 'final', data: minimalResult }))
+        }
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
+
         controller.enqueue(encodeSSE('[DONE]'))
 
         if (executionId) {
@@ -472,6 +534,20 @@ export async function createStreamingResponse(
         }
 
         controller.close()
+      } finally {
+        timeoutController.cleanup()
+      }
+    },
+    async cancel(reason) {
+      logger.info(`[${requestId}] Streaming response cancelled`, { reason })
+      timeoutController.abort()
+      timeoutController.cleanup()
+      if (executionId) {
+        try {
+          await cleanupExecutionBase64Cache(executionId)
+        } catch (error) {
+          logger.error(`[${requestId}] Failed to cleanup base64 cache`, { error })
+        }
       }
     },
   })

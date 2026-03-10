@@ -1,6 +1,7 @@
 import { S3Icon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import type { S3Response } from '@/tools/s3/types'
 
 export const S3Block: BlockConfig<S3Response> = {
@@ -58,6 +59,16 @@ export const S3Block: BlockConfig<S3Response> = {
       required: true,
     },
     {
+      id: 'getObjectRegion',
+      title: 'AWS Region',
+      type: 'short-input',
+      placeholder: 'Used when S3 URL does not include region',
+      condition: {
+        field: 'operation',
+        value: ['get_object'],
+      },
+    },
+    {
       id: 'bucketName',
       title: 'Bucket Name',
       type: 'short-input',
@@ -86,7 +97,7 @@ export const S3Block: BlockConfig<S3Response> = {
       multiple: false,
     },
     {
-      id: 'file',
+      id: 'fileReference',
       title: 'File Reference',
       type: 'short-input',
       canonicalParamId: 'file',
@@ -215,7 +226,6 @@ export const S3Block: BlockConfig<S3Response> = {
       placeholder: 'Select ACL for copied object (default: private)',
       condition: { field: 'operation', value: 'copy_object' },
       mode: 'advanced',
-      canonicalParamId: 'acl',
     },
   ],
   tools: {
@@ -270,8 +280,9 @@ export const S3Block: BlockConfig<S3Response> = {
             if (!params.objectKey) {
               throw new Error('Object Key is required for upload')
             }
-            // Use file from uploadFile if in basic mode, otherwise use file reference
-            const fileParam = params.uploadFile || params.file
+            // file is the canonical param from uploadFile (basic) or fileReference (advanced)
+            // normalizeFileInput handles JSON stringified values from advanced mode
+            const fileParam = normalizeFileInput(params.file, { single: true })
 
             return {
               accessKeyId: params.accessKeyId,
@@ -290,34 +301,11 @@ export const S3Block: BlockConfig<S3Response> = {
             if (!params.s3Uri) {
               throw new Error('S3 Object URL is required')
             }
-
-            // Parse S3 URI for get_object
-            try {
-              const url = new URL(params.s3Uri)
-              const hostname = url.hostname
-              const bucketName = hostname.split('.')[0]
-              const regionMatch = hostname.match(/s3[.-]([^.]+)\.amazonaws\.com/)
-              const region = regionMatch ? regionMatch[1] : params.region
-              const objectKey = url.pathname.startsWith('/')
-                ? url.pathname.substring(1)
-                : url.pathname
-
-              if (!bucketName || !objectKey) {
-                throw new Error('Could not parse S3 URL')
-              }
-
-              return {
-                accessKeyId: params.accessKeyId,
-                secretAccessKey: params.secretAccessKey,
-                region,
-                bucketName,
-                objectKey,
-                s3Uri: params.s3Uri,
-              }
-            } catch (_error) {
-              throw new Error(
-                'Invalid S3 Object URL format. Expected: https://bucket-name.s3.region.amazonaws.com/path/to/file'
-              )
+            return {
+              accessKeyId: params.accessKeyId,
+              secretAccessKey: params.secretAccessKey,
+              region: params.getObjectRegion || params.region,
+              s3Uri: params.s3Uri,
             }
           }
 
@@ -394,13 +382,13 @@ export const S3Block: BlockConfig<S3Response> = {
     bucketName: { type: 'string', description: 'S3 bucket name' },
     // Upload inputs
     objectKey: { type: 'string', description: 'Object key/path in S3' },
-    uploadFile: { type: 'json', description: 'File to upload (UI)' },
-    file: { type: 'json', description: 'File to upload (reference)' },
+    file: { type: 'json', description: 'File to upload (canonical param)' },
     content: { type: 'string', description: 'Text content to upload' },
     contentType: { type: 'string', description: 'Content-Type header' },
     acl: { type: 'string', description: 'Access control list' },
     // Download inputs
     s3Uri: { type: 'string', description: 'S3 object URL' },
+    getObjectRegion: { type: 'string', description: 'Optional AWS region override for downloads' },
     // List inputs
     prefix: { type: 'string', description: 'Prefix filter' },
     maxKeys: { type: 'number', description: 'Maximum results' },
@@ -418,6 +406,7 @@ export const S3Block: BlockConfig<S3Response> = {
       type: 'string',
       description: 'S3 URI (s3://bucket/key) for use with other AWS services',
     },
+    file: { type: 'file', description: 'Downloaded file stored in execution files' },
     objects: { type: 'json', description: 'List of objects (for list operation)' },
     deleted: { type: 'boolean', description: 'Deletion status' },
     metadata: { type: 'json', description: 'Operation metadata' },

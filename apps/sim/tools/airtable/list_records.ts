@@ -22,20 +22,20 @@ export const airtableListRecordsTool: ToolConfig<AirtableListParams, AirtableLis
     baseId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID of the Airtable base',
+      visibility: 'user-or-llm',
+      description: 'Airtable base ID (starts with "app", e.g., "appXXXXXXXXXXXXXX")',
     },
     tableId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID of the table',
+      visibility: 'user-or-llm',
+      description: 'Table ID (starts with "tbl") or table name',
     },
     maxRecords: {
       type: 'number',
       required: false,
-      visibility: 'user-only',
-      description: 'Maximum number of records to return',
+      visibility: 'user-or-llm',
+      description: 'Maximum number of records to return (default: all records)',
     },
     filterFormula: {
       type: 'string',
@@ -47,14 +47,10 @@ export const airtableListRecordsTool: ToolConfig<AirtableListParams, AirtableLis
 
   request: {
     url: (params) => {
-      const url = `https://api.airtable.com/v0/${params.baseId}/${params.tableId}`
+      const url = `https://api.airtable.com/v0/${params.baseId?.trim()}/${params.tableId?.trim()}`
       const queryParams = new URLSearchParams()
       if (params.maxRecords) queryParams.append('maxRecords', Number(params.maxRecords).toString())
       if (params.filterFormula) {
-        // Airtable formulas often contain characters needing encoding,
-        // but standard encodeURIComponent might over-encode.
-        // Simple replacement for single quotes is often sufficient.
-        // More complex formulas might need careful encoding.
         const encodedFormula = params.filterFormula.replace(/'/g, "'")
         queryParams.append('filterByFormula', encodedFormula)
       }
@@ -74,10 +70,10 @@ export const airtableListRecordsTool: ToolConfig<AirtableListParams, AirtableLis
     return {
       success: true,
       output: {
-        records: data.records || [],
+        records: data.records ?? [],
         metadata: {
-          offset: data.offset,
-          totalRecords: (data.records || []).length,
+          offset: data.offset ?? null,
+          totalRecords: (data.records ?? []).length,
         },
       },
     }
@@ -85,20 +81,24 @@ export const airtableListRecordsTool: ToolConfig<AirtableListParams, AirtableLis
 
   outputs: {
     records: {
-      type: 'json',
+      type: 'array',
       description: 'Array of retrieved Airtable records',
       items: {
         type: 'object',
         properties: {
-          id: { type: 'string' },
-          createdTime: { type: 'string' },
-          fields: { type: 'object' },
+          id: { type: 'string', description: 'Record ID' },
+          createdTime: { type: 'string', description: 'Record creation timestamp' },
+          fields: { type: 'json', description: 'Record field values' },
         },
       },
     },
     metadata: {
       type: 'json',
       description: 'Operation metadata including pagination offset and total records count',
+      properties: {
+        offset: { type: 'string', description: 'Pagination offset for next page' },
+        totalRecords: { type: 'number', description: 'Number of records returned' },
+      },
     },
   },
 }

@@ -10,6 +10,7 @@ export const SYSTEM_SUBBLOCK_IDS: string[] = [
   'webhookUrlDisplay', // Webhook URL display
   'samplePayload', // Example payload display
   'setupScript', // Setup script code (e.g., Apps Script)
+  'scheduleInfo', // Schedule status display (next run, last run)
 ]
 
 /**
@@ -22,7 +23,12 @@ export const SYSTEM_SUBBLOCK_IDS: string[] = [
  * with default values from the trigger definition on load, which aren't present in
  * the deployed state, causing false positive change detection.
  */
-export const TRIGGER_RUNTIME_SUBBLOCK_IDS: string[] = ['webhookId', 'triggerPath', 'triggerConfig']
+export const TRIGGER_RUNTIME_SUBBLOCK_IDS: string[] = [
+  'webhookId',
+  'triggerPath',
+  'triggerConfig',
+  'triggerId',
+]
 
 /**
  * Maximum number of consecutive failures before a trigger (schedule/webhook) is auto-disabled.

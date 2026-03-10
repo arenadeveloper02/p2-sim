@@ -231,9 +231,9 @@ async function processMessage(
           if (execContext && typeof window === 'undefined') {
             try {
               // Dynamic import to avoid client-side bundling of server-only modules
-              const { uploadExecutionFile } = await import(
-                '@/lib/uploads/contexts/execution/execution-file-manager'
-              )
+              const uploadModulePath =
+                '@' + '/lib/uploads/contexts/execution/execution-file-manager'
+              const { uploadExecutionFile } = await import(uploadModulePath)
               userFile = await uploadExecutionFile(
                 execContext,
                 buffer,

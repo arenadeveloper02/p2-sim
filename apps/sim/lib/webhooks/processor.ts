@@ -1,18 +1,20 @@
 import { db, webhook, workflow, workflowDeploymentVersion } from '@sim/db'
-import { credentialSet, subscription } from '@sim/db/schema'
+import { account, credentialSet, subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { tasks } from '@trigger.dev/sdk'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { checkEnterprisePlan, checkTeamPlan } from '@/lib/billing/subscriptions/utils'
-import { isProd, isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
+import { getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
+import { isProd } from '@/lib/core/config/feature-flags'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { convertSquareBracketsToTwiML } from '@/lib/webhooks/utils'
 import {
   handleSlackChallenge,
   handleWhatsAppVerification,
+  validateAttioSignature,
+  validateCalcomSignature,
   validateCirclebackSignature,
   validateFirefliesSignature,
   validateGitHubSignature,
@@ -23,8 +25,11 @@ import {
   validateTypeformSignature,
   verifyProviderWebhook,
 } from '@/lib/webhooks/utils.server'
+import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
+import { resolveOAuthAccountId } from '@/app/api/auth/oauth/utils'
 import { executeWebhookJob } from '@/background/webhook-execution'
 import { resolveEnvVarReferences } from '@/executor/utils/reference-validation'
+import { isConfluencePayloadMatch } from '@/triggers/confluence/utils'
 import { isGitHubEventMatch } from '@/triggers/github/utils'
 import { isHubSpotContactEventMatch } from '@/triggers/hubspot/utils'
 import { isJiraEventMatch } from '@/triggers/jira/utils'
@@ -103,7 +108,6 @@ export async function parseWebhookBody(
 
     // Allow empty body - some webhooks send empty payloads
     if (!rawBody || rawBody.length === 0) {
-      logger.debug(`[${requestId}] Received request with empty body, treating as empty object`)
       return { body: {}, rawBody: '' }
     }
   } catch (bodyError) {
@@ -123,19 +127,15 @@ export async function parseWebhookBody(
 
       if (payloadString) {
         body = JSON.parse(payloadString)
-        logger.debug(`[${requestId}] Parsed form-encoded GitHub webhook payload`)
       } else {
         body = Object.fromEntries(formData.entries())
-        logger.debug(`[${requestId}] Parsed form-encoded webhook data (direct fields)`)
       }
     } else {
       body = JSON.parse(rawBody)
-      logger.debug(`[${requestId}] Parsed JSON webhook payload`)
     }
 
     // Allow empty JSON objects - some webhooks send empty payloads
     if (Object.keys(body).length === 0) {
-      logger.debug(`[${requestId}] Received empty JSON object`)
     }
   } catch (parseError) {
     logger.error(`[${requestId}] Failed to parse webhook body`, {
@@ -495,8 +495,6 @@ export async function verifyProviderAuth(
         logger.warn(`[${requestId}] Microsoft Teams HMAC signature verification failed`)
         return new NextResponse('Unauthorized - Invalid HMAC signature', { status: 401 })
       }
-
-      logger.debug(`[${requestId}] Microsoft Teams HMAC signature verified successfully`)
     }
   }
 
@@ -574,8 +572,6 @@ export async function verifyProviderAuth(
         })
         return new NextResponse('Unauthorized - Invalid Twilio signature', { status: 401 })
       }
-
-      logger.debug(`[${requestId}] Twilio Voice signature verified successfully`)
     }
   }
 
@@ -599,13 +595,38 @@ export async function verifyProviderAuth(
         })
         return new NextResponse('Unauthorized - Invalid Typeform signature', { status: 401 })
       }
+    }
+  }
 
-      logger.debug(`[${requestId}] Typeform signature verified successfully`)
+  if (foundWebhook.provider === 'attio') {
+    const secret = providerConfig.webhookSecret as string | undefined
+
+    if (!secret) {
+      logger.debug(
+        `[${requestId}] Attio webhook ${foundWebhook.id} has no signing secret, skipping signature verification`
+      )
+    } else {
+      const signature = request.headers.get('Attio-Signature')
+
+      if (!signature) {
+        logger.warn(`[${requestId}] Attio webhook missing signature header`)
+        return new NextResponse('Unauthorized - Missing Attio signature', { status: 401 })
+      }
+
+      const isValidSignature = validateAttioSignature(secret, signature, rawBody)
+
+      if (!isValidSignature) {
+        logger.warn(`[${requestId}] Attio signature verification failed`, {
+          signatureLength: signature.length,
+          secretLength: secret.length,
+        })
+        return new NextResponse('Unauthorized - Invalid Attio signature', { status: 401 })
+      }
     }
   }
 
   if (foundWebhook.provider === 'linear') {
-    const secret = providerConfig.secret as string | undefined
+    const secret = providerConfig.webhookSecret as string | undefined
 
     if (secret) {
       const signature = request.headers.get('Linear-Signature')
@@ -624,8 +645,6 @@ export async function verifyProviderAuth(
         })
         return new NextResponse('Unauthorized - Invalid Linear signature', { status: 401 })
       }
-
-      logger.debug(`[${requestId}] Linear signature verified successfully`)
     }
   }
 
@@ -649,13 +668,34 @@ export async function verifyProviderAuth(
         })
         return new NextResponse('Unauthorized - Invalid Circleback signature', { status: 401 })
       }
+    }
+  }
 
-      logger.debug(`[${requestId}] Circleback signature verified successfully`)
+  if (foundWebhook.provider === 'calcom') {
+    const secret = providerConfig.webhookSecret as string | undefined
+
+    if (secret) {
+      const signature = request.headers.get('X-Cal-Signature-256')
+
+      if (!signature) {
+        logger.warn(`[${requestId}] Cal.com webhook missing signature header`)
+        return new NextResponse('Unauthorized - Missing Cal.com signature', { status: 401 })
+      }
+
+      const isValidSignature = validateCalcomSignature(secret, signature, rawBody)
+
+      if (!isValidSignature) {
+        logger.warn(`[${requestId}] Cal.com signature verification failed`, {
+          signatureLength: signature.length,
+          secretLength: secret.length,
+        })
+        return new NextResponse('Unauthorized - Invalid Cal.com signature', { status: 401 })
+      }
     }
   }
 
   if (foundWebhook.provider === 'jira') {
-    const secret = providerConfig.secret as string | undefined
+    const secret = providerConfig.webhookSecret as string | undefined
 
     if (secret) {
       const signature = request.headers.get('X-Hub-Signature')
@@ -674,13 +714,34 @@ export async function verifyProviderAuth(
         })
         return new NextResponse('Unauthorized - Invalid Jira signature', { status: 401 })
       }
+    }
+  }
 
-      logger.debug(`[${requestId}] Jira signature verified successfully`)
+  if (foundWebhook.provider === 'confluence') {
+    const secret = providerConfig.webhookSecret as string | undefined
+
+    if (secret) {
+      const signature = request.headers.get('X-Hub-Signature')
+
+      if (!signature) {
+        logger.warn(`[${requestId}] Confluence webhook missing signature header`)
+        return new NextResponse('Unauthorized - Missing Confluence signature', { status: 401 })
+      }
+
+      const isValidSignature = validateJiraSignature(secret, signature, rawBody)
+
+      if (!isValidSignature) {
+        logger.warn(`[${requestId}] Confluence signature verification failed`, {
+          signatureLength: signature.length,
+          secretLength: secret.length,
+        })
+        return new NextResponse('Unauthorized - Invalid Confluence signature', { status: 401 })
+      }
     }
   }
 
   if (foundWebhook.provider === 'github') {
-    const secret = providerConfig.secret as string | undefined
+    const secret = providerConfig.webhookSecret as string | undefined
 
     if (secret) {
       // GitHub supports both SHA-256 (preferred) and SHA-1 (legacy)
@@ -703,10 +764,6 @@ export async function verifyProviderAuth(
         })
         return new NextResponse('Unauthorized - Invalid GitHub signature', { status: 401 })
       }
-
-      logger.debug(`[${requestId}] GitHub signature verified successfully`, {
-        usingSha256: !!signature256,
-      })
     }
   }
 
@@ -730,8 +787,6 @@ export async function verifyProviderAuth(
         })
         return new NextResponse('Unauthorized - Invalid Fireflies signature', { status: 401 })
       }
-
-      logger.debug(`[${requestId}] Fireflies signature verified successfully`)
     }
   }
 
@@ -816,10 +871,6 @@ export async function checkWebhookPreprocessing(
       return NextResponse.json({ error: error.message }, { status: error.statusCode })
     }
 
-    logger.debug(`[${requestId}] Webhook preprocessing passed`, {
-      provider: foundWebhook.provider,
-    })
-
     return null
   } catch (preprocessError) {
     logger.error(`[${requestId}] Error during webhook preprocessing:`, preprocessError)
@@ -902,6 +953,51 @@ export async function queueWebhookExecution(
       }
     }
 
+    if (foundWebhook.provider === 'confluence') {
+      const providerConfig = (foundWebhook.providerConfig as Record<string, any>) || {}
+      const triggerId = providerConfig.triggerId as string | undefined
+
+      if (triggerId && !isConfluencePayloadMatch(triggerId, body)) {
+        logger.debug(
+          `[${options.requestId}] Confluence payload mismatch for trigger ${triggerId}. Skipping execution.`,
+          {
+            webhookId: foundWebhook.id,
+            workflowId: foundWorkflow.id,
+            triggerId,
+            bodyKeys: Object.keys(body),
+          }
+        )
+
+        return NextResponse.json({
+          message: 'Payload does not match trigger configuration. Ignoring.',
+        })
+      }
+    }
+
+    if (foundWebhook.provider === 'attio') {
+      const providerConfig = (foundWebhook.providerConfig as Record<string, any>) || {}
+      const triggerId = providerConfig.triggerId as string | undefined
+
+      if (triggerId && triggerId !== 'attio_webhook') {
+        const { isAttioPayloadMatch, getAttioEvent } = await import('@/triggers/attio/utils')
+        if (!isAttioPayloadMatch(triggerId, body)) {
+          const event = getAttioEvent(body)
+          const eventType = event?.event_type as string | undefined
+          logger.debug(
+            `[${options.requestId}] Attio event mismatch for trigger ${triggerId}. Event: ${eventType}. Skipping execution.`,
+            {
+              webhookId: foundWebhook.id,
+              workflowId: foundWorkflow.id,
+              triggerId,
+              receivedEvent: eventType,
+              bodyKeys: Object.keys(body),
+            }
+          )
+          return NextResponse.json({ status: 'skipped', reason: 'event_type_mismatch' })
+        }
+      }
+    }
+
     if (foundWebhook.provider === 'hubspot') {
       const providerConfig = (foundWebhook.providerConfig as Record<string, any>) || {}
       const triggerId = providerConfig.triggerId as string | undefined
@@ -963,6 +1059,22 @@ export async function queueWebhookExecution(
     // Note: Each webhook now has its own credentialId (credential sets are fanned out at save time)
     const providerConfig = (foundWebhook.providerConfig as Record<string, any>) || {}
     const credentialId = providerConfig.credentialId as string | undefined
+    let credentialAccountUserId: string | undefined
+    if (credentialId) {
+      const resolved = await resolveOAuthAccountId(credentialId)
+      if (!resolved) {
+        logger.error(
+          `[${options.requestId}] Failed to resolve OAuth account for credential ${credentialId}`
+        )
+        return formatProviderErrorResponse(foundWebhook, 'Failed to resolve credential', 500)
+      }
+      const [credentialRecord] = await db
+        .select({ userId: account.userId })
+        .from(account)
+        .where(eq(account.id, resolved.accountId))
+        .limit(1)
+      credentialAccountUserId = credentialRecord?.userId
+    }
     // credentialSetId is a direct field on webhook table, not in providerConfig
     const credentialSetId = foundWebhook.credentialSetId as string | undefined
 
@@ -977,30 +1089,65 @@ export async function queueWebhookExecution(
       }
     }
 
+    if (!foundWorkflow.workspaceId) {
+      logger.error(`[${options.requestId}] Workflow ${foundWorkflow.id} has no workspaceId`)
+      return NextResponse.json({ error: 'Workflow has no associated workspace' }, { status: 500 })
+    }
+
+    const actorUserId = await getWorkspaceBilledAccountUserId(foundWorkflow.workspaceId)
+    if (!actorUserId) {
+      logger.error(
+        `[${options.requestId}] No billing account for workspace ${foundWorkflow.workspaceId}`
+      )
+      return NextResponse.json({ error: 'Unable to resolve billing account' }, { status: 500 })
+    }
+
     const payload = {
       webhookId: foundWebhook.id,
       workflowId: foundWorkflow.id,
-      userId: foundWorkflow.userId,
+      userId: actorUserId,
       provider: foundWebhook.provider,
       body,
       headers,
       path: options.path || foundWebhook.path,
       blockId: foundWebhook.blockId,
       ...(credentialId ? { credentialId } : {}),
+      ...(credentialAccountUserId ? { credentialAccountUserId } : {}),
     }
 
-    if (isTriggerDevEnabled) {
-      const handle = await tasks.trigger('webhook-execution', payload)
-      logger.info(
-        `[${options.requestId}] Queued webhook execution task ${handle.id} for ${foundWebhook.provider} webhook`
-      )
-    } else {
-      void executeWebhookJob(payload).catch((error) => {
-        logger.error(`[${options.requestId}] Direct webhook execution failed`, error)
-      })
-      logger.info(
-        `[${options.requestId}] Queued direct webhook execution for ${foundWebhook.provider} webhook (Trigger.dev disabled)`
-      )
+    const jobQueue = await getJobQueue()
+    const jobId = await jobQueue.enqueue('webhook-execution', payload, {
+      metadata: { workflowId: foundWorkflow.id, userId: actorUserId },
+    })
+    logger.info(
+      `[${options.requestId}] Queued webhook execution task ${jobId} for ${foundWebhook.provider} webhook`
+    )
+
+    if (shouldExecuteInline()) {
+      void (async () => {
+        try {
+          await jobQueue.startJob(jobId)
+          const output = await executeWebhookJob(payload)
+          await jobQueue.completeJob(jobId, output)
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          logger.error(`[${options.requestId}] Webhook execution failed`, {
+            jobId,
+            error: errorMessage,
+          })
+          try {
+            await jobQueue.markJobFailed(jobId, errorMessage)
+          } catch (markFailedError) {
+            logger.error(`[${options.requestId}] Failed to mark job as failed`, {
+              jobId,
+              error:
+                markFailedError instanceof Error
+                  ? markFailedError.message
+                  : String(markFailedError),
+            })
+          }
+        }
+      })()
     }
 
     if (foundWebhook.provider === 'microsoft-teams') {

@@ -3,8 +3,11 @@ import { workflow, workflowMcpServer, workflowMcpTool } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { mcpPubSub } from '@/lib/mcp/pubsub'
 import { createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
+import { generateParameterSchemaForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
 import { sanitizeToolName } from '@/lib/mcp/workflow-tool-schema'
 import { hasValidStartBlock } from '@/lib/workflows/triggers/trigger-utils.server'
 
@@ -74,7 +77,11 @@ export const GET = withMcpAuth<RouteParams>('read')(
  * POST - Add a workflow as a tool to an MCP server
  */
 export const POST = withMcpAuth<RouteParams>('write')(
-  async (request: NextRequest, { userId, workspaceId, requestId }, { params }) => {
+  async (
+    request: NextRequest,
+    { userId, userName, userEmail, workspaceId, requestId },
+    { params }
+  ) => {
     try {
       const { id: serverId } = await params
       const body = getParsedBody(request) || (await request.json())
@@ -169,6 +176,11 @@ export const POST = withMcpAuth<RouteParams>('write')(
         workflowRecord.description ||
         `Execute ${workflowRecord.name} workflow`
 
+      const parameterSchema =
+        body.parameterSchema && Object.keys(body.parameterSchema).length > 0
+          ? body.parameterSchema
+          : await generateParameterSchemaForWorkflow(body.workflowId)
+
       const toolId = crypto.randomUUID()
       const [tool] = await db
         .insert(workflowMcpTool)
@@ -178,7 +190,7 @@ export const POST = withMcpAuth<RouteParams>('write')(
           workflowId: body.workflowId,
           toolName,
           toolDescription,
-          parameterSchema: body.parameterSchema || {},
+          parameterSchema,
           createdAt: new Date(),
           updatedAt: new Date(),
         })
@@ -187,6 +199,21 @@ export const POST = withMcpAuth<RouteParams>('write')(
       logger.info(
         `[${requestId}] Successfully added tool ${toolName} (workflow: ${body.workflowId}) to server ${serverId}`
       )
+
+      mcpPubSub?.publishWorkflowToolsChanged({ serverId, workspaceId })
+
+      recordAudit({
+        workspaceId,
+        actorId: userId,
+        actorName: userName,
+        actorEmail: userEmail,
+        action: AuditAction.MCP_SERVER_UPDATED,
+        resourceType: AuditResourceType.MCP_SERVER,
+        resourceId: serverId,
+        description: `Added tool "${toolName}" to MCP server`,
+        metadata: { toolId, toolName, workflowId: body.workflowId },
+        request,
+      })
 
       return createMcpSuccessResponse({ tool }, 201)
     } catch (error) {

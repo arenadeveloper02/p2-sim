@@ -553,28 +553,23 @@ export class Memory {
     blockId?: string,
     lastUserMessage?: Message | null
   ): ReadableStream<Uint8Array> {
-    let accumulatedContent = ''
+    const chunks: string[] = []
     const decoder = new TextDecoder()
 
     const transformStream = new TransformStream<Uint8Array, Uint8Array>({
       transform: (chunk, controller) => {
         controller.enqueue(chunk)
         const decoded = decoder.decode(chunk, { stream: true })
-        accumulatedContent += decoded
+        chunks.push(decoded)
       },
 
       flush: () => {
-        if (accumulatedContent.trim()) {
-          this.appendToMemory(
-            ctx,
-            inputs,
-            {
-              role: 'assistant',
-              content: accumulatedContent,
-            },
-            blockId,
-            lastUserMessage || null
-          ).catch((error) => logger.error('Failed to persist streaming response:', error))
+        const content = chunks.join('')
+        if (content.trim()) {
+          this.appendToMemory(ctx, inputs, {
+            role: 'assistant',
+            content,
+          }).catch((error) => logger.error('Failed to persist streaming response:', error))
         }
       },
     })

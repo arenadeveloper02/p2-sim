@@ -6,11 +6,13 @@ import type { StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import type {
+  Message,
   ProviderConfig,
   ProviderRequest,
   ProviderResponse,
   TimeSegment,
 } from '@/providers/types'
+import { ProviderError } from '@/providers/types'
 import {
   calculateCost,
   prepareToolExecution,
@@ -55,6 +57,7 @@ export const vllmProvider: ProviderConfig = {
 
       const response = await fetch(`${baseUrl}/v1/models`, { headers })
       if (!response.ok) {
+        await response.text().catch(() => {})
         useProvidersStore.getState().setProviderModels('vllm', [])
         logger.warn('vLLM service is not available. The provider will be disabled.')
         return
@@ -98,7 +101,7 @@ export const vllmProvider: ProviderConfig = {
       baseURL: `${baseUrl}/v1`,
     })
 
-    const allMessages = [] as any[]
+    const allMessages: Message[] = []
 
     if (request.systemPrompt) {
       allMessages.push({
@@ -135,7 +138,7 @@ export const vllmProvider: ProviderConfig = {
     }
 
     if (request.temperature !== undefined) payload.temperature = request.temperature
-    if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+    if (request.maxTokens != null) payload.max_completion_tokens = request.maxTokens
 
     if (request.responseFormat) {
       payload.response_format = {
@@ -187,7 +190,10 @@ export const vllmProvider: ProviderConfig = {
           stream: true,
           stream_options: { include_usage: true },
         }
-        const streamResponse = await vllm.chat.completions.create(streamingParams)
+        const streamResponse = await vllm.chat.completions.create(
+          streamingParams,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const streamingResult = {
           stream: createReadableStreamFromVLLMStream(streamResponse, (content, usage) => {
@@ -291,7 +297,10 @@ export const vllmProvider: ProviderConfig = {
         }
       }
 
-      let currentResponse = await vllm.chat.completions.create(payload)
+      let currentResponse = await vllm.chat.completions.create(
+        payload,
+        request.abortSignal ? { signal: request.abortSignal } : undefined
+      )
       const firstResponseTime = Date.now() - initialCallTime
 
       let content = currentResponse.choices[0]?.message?.content || ''
@@ -472,7 +481,10 @@ export const vllmProvider: ProviderConfig = {
 
         const nextModelStartTime = Date.now()
 
-        currentResponse = await vllm.chat.completions.create(nextPayload)
+        currentResponse = await vllm.chat.completions.create(
+          nextPayload,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         checkForForcedToolUsage(currentResponse, nextPayload.tool_choice)
 
@@ -517,7 +529,10 @@ export const vllmProvider: ProviderConfig = {
           stream: true,
           stream_options: { include_usage: true },
         }
-        const streamResponse = await vllm.chat.completions.create(streamingParams)
+        const streamResponse = await vllm.chat.completions.create(
+          streamingParams,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const streamingResult = {
           stream: createReadableStreamFromVLLMStream(streamResponse, (content, usage) => {
@@ -635,23 +650,11 @@ export const vllmProvider: ProviderConfig = {
         duration: totalDuration,
       })
 
-      const enhancedError = new Error(errorMessage)
-      // @ts-ignore
-      enhancedError.timing = {
+      throw new ProviderError(errorMessage, {
         startTime: providerStartTimeISO,
         endTime: providerEndTimeISO,
         duration: totalDuration,
-      }
-      if (errorType) {
-        // @ts-ignore
-        enhancedError.vllmErrorType = errorType
-      }
-      if (errorCode) {
-        // @ts-ignore
-        enhancedError.vllmErrorCode = errorCode
-      }
-
-      throw enhancedError
+      })
     }
   },
 }

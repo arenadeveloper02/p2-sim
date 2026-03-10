@@ -18,6 +18,7 @@ const UpdateCostSchema = z.object({
   model: z.string().min(1, 'Model is required'),
   inputTokens: z.number().min(0).default(0),
   outputTokens: z.number().min(0).default(0),
+  source: z.enum(['copilot', 'mcp_copilot']).default('copilot'),
 })
 
 /**
@@ -32,7 +33,6 @@ export async function POST(req: NextRequest) {
     logger.info(`[${requestId}] Update cost request started`)
 
     if (!isBillingEnabled) {
-      logger.debug(`[${requestId}] Billing is disabled, skipping cost update`)
       return NextResponse.json({
         success: true,
         message: 'Billing disabled, cost update skipped',
@@ -75,12 +75,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { userId, cost, model, inputTokens, outputTokens } = validation.data
+    const { userId, cost, model, inputTokens, outputTokens, source } = validation.data
+    const isMcp = source === 'mcp_copilot'
 
     logger.info(`[${requestId}] Processing cost update`, {
       userId,
       cost,
       model,
+      source,
     })
 
     // Check if user stats record exists (same as ExecutionLogger)
@@ -96,7 +98,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User stats record not found' }, { status: 500 })
     }
 
-    const updateFields = {
+    const updateFields: Record<string, unknown> = {
       totalCost: sql`total_cost + ${cost}`,
       currentPeriodCost: sql`current_period_cost + ${cost}`,
       totalCopilotCost: sql`total_copilot_cost + ${cost}`,
@@ -105,17 +107,24 @@ export async function POST(req: NextRequest) {
       lastActive: new Date(),
     }
 
+    // Also increment MCP-specific counters when source is mcp_copilot
+    if (isMcp) {
+      updateFields.totalMcpCopilotCost = sql`total_mcp_copilot_cost + ${cost}`
+      updateFields.currentPeriodMcpCopilotCost = sql`current_period_mcp_copilot_cost + ${cost}`
+    }
+
     await db.update(userStats).set(updateFields).where(eq(userStats.userId, userId))
 
     logger.info(`[${requestId}] Updated user stats record`, {
       userId,
       addedCost: cost,
+      source,
     })
 
     // Log usage for complete audit trail
     await logModelUsage({
       userId,
-      source: 'copilot',
+      source: isMcp ? 'mcp_copilot' : 'copilot',
       model,
       inputTokens,
       outputTokens,

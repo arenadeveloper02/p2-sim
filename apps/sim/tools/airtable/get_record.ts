@@ -22,26 +22,26 @@ export const airtableGetRecordTool: ToolConfig<AirtableGetParams, AirtableGetRes
     baseId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID of the Airtable base',
+      visibility: 'user-or-llm',
+      description: 'Airtable base ID (starts with "app", e.g., "appXXXXXXXXXXXXXX")',
     },
     tableId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID or name of the table',
+      visibility: 'user-or-llm',
+      description: 'Table ID (starts with "tbl") or table name',
     },
     recordId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID of the record to retrieve',
+      visibility: 'user-or-llm',
+      description: 'Record ID to retrieve (starts with "rec", e.g., "recXXXXXXXXXXXXXX")',
     },
   },
 
   request: {
     url: (params) =>
-      `https://api.airtable.com/v0/${params.baseId}/${params.tableId}/${params.recordId}`,
+      `https://api.airtable.com/v0/${params.baseId?.trim()}/${params.tableId?.trim()}/${params.recordId?.trim()}`,
     method: 'GET',
     headers: (params) => ({
       Authorization: `Bearer ${params.accessToken}`,
@@ -65,11 +65,19 @@ export const airtableGetRecordTool: ToolConfig<AirtableGetParams, AirtableGetRes
   outputs: {
     record: {
       type: 'json',
-      description: 'Retrieved Airtable record with id, createdTime, and fields',
+      description: 'Retrieved Airtable record',
+      properties: {
+        id: { type: 'string', description: 'Record ID' },
+        createdTime: { type: 'string', description: 'Record creation timestamp' },
+        fields: { type: 'json', description: 'Record field values' },
+      },
     },
     metadata: {
       type: 'json',
-      description: 'Operation metadata including record count',
+      description: 'Operation metadata',
+      properties: {
+        recordCount: { type: 'number', description: 'Number of records returned (always 1)' },
+      },
     },
   },
 }

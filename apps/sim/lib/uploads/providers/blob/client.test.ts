@@ -3,17 +3,29 @@
  *
  * @vitest-environment node
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockUpload = vi.fn()
-const mockDownload = vi.fn()
-const mockDelete = vi.fn()
-const mockGetBlockBlobClient = vi.fn()
-const mockGetContainerClient = vi.fn()
-const mockFromConnectionString = vi.fn()
-const mockBlobServiceClient = vi.fn()
-const mockStorageSharedKeyCredential = vi.fn()
-const mockGenerateBlobSASQueryParameters = vi.fn()
+const {
+  mockUpload,
+  mockDownload,
+  mockDelete,
+  mockGetBlockBlobClient,
+  mockGetContainerClient,
+  mockFromConnectionString,
+  mockStorageSharedKeyCredential,
+  mockGenerateBlobSASQueryParameters,
+  mockBlobSASPermissionsParse,
+} = vi.hoisted(() => ({
+  mockUpload: vi.fn(),
+  mockDownload: vi.fn(),
+  mockDelete: vi.fn(),
+  mockGetBlockBlobClient: vi.fn(),
+  mockGetContainerClient: vi.fn(),
+  mockFromConnectionString: vi.fn(),
+  mockStorageSharedKeyCredential: vi.fn(),
+  mockGenerateBlobSASQueryParameters: vi.fn(),
+  mockBlobSASPermissionsParse: vi.fn(),
+}))
 
 vi.mock('@azure/storage-blob', () => ({
   BlobServiceClient: {
@@ -22,14 +34,33 @@ vi.mock('@azure/storage-blob', () => ({
   StorageSharedKeyCredential: mockStorageSharedKeyCredential,
   generateBlobSASQueryParameters: mockGenerateBlobSASQueryParameters,
   BlobSASPermissions: {
-    parse: vi.fn().mockReturnValue('r'),
+    parse: mockBlobSASPermissionsParse,
   },
 }))
 
+vi.mock('@/lib/uploads/config', () => ({
+  BLOB_CONFIG: {
+    accountName: 'testaccount',
+    accountKey: 'testkey',
+    connectionString:
+      'DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net',
+    containerName: 'testcontainer',
+  },
+}))
+
+import {
+  deleteFromBlob,
+  downloadFromBlob,
+  getPresignedUrl,
+  uploadToBlob,
+} from '@/lib/uploads/providers/blob/client'
+import { sanitizeFilenameForMetadata } from '@/lib/uploads/utils/file-utils'
+
 describe('Azure Blob Storage Client', () => {
   beforeEach(() => {
-    vi.resetAllMocks()
-    vi.resetModules()
+    vi.clearAllMocks()
+
+    mockBlobSASPermissionsParse.mockReturnValue('r')
 
     mockGetBlockBlobClient.mockReturnValue({
       upload: mockUpload,
@@ -43,10 +74,6 @@ describe('Azure Blob Storage Client', () => {
     })
 
     mockFromConnectionString.mockReturnValue({
-      getContainerClient: mockGetContainerClient,
-    })
-
-    mockBlobServiceClient.mockReturnValue({
       getContainerClient: mockGetContainerClient,
     })
 
@@ -82,8 +109,6 @@ describe('Azure Blob Storage Client', () => {
 
   describe('uploadToBlob', () => {
     it('should upload a file to Azure Blob Storage', async () => {
-      const { uploadToBlob } = await import('@/lib/uploads/providers/blob/client')
-
       const testBuffer = Buffer.from('test file content')
       const fileName = 'test-file.txt'
       const contentType = 'text/plain'
@@ -112,8 +137,6 @@ describe('Azure Blob Storage Client', () => {
     })
 
     it('should handle custom blob configuration', async () => {
-      const { uploadToBlob } = await import('@/lib/uploads/providers/blob/client')
-
       const testBuffer = Buffer.from('test file content')
       const fileName = 'test-file.txt'
       const contentType = 'text/plain'
@@ -135,8 +158,6 @@ describe('Azure Blob Storage Client', () => {
 
   describe('downloadFromBlob', () => {
     it('should download a file from Azure Blob Storage', async () => {
-      const { downloadFromBlob } = await import('@/lib/uploads/providers/blob/client')
-
       const testKey = 'test-file-key'
       const testContent = Buffer.from('downloaded content')
 
@@ -164,8 +185,6 @@ describe('Azure Blob Storage Client', () => {
 
   describe('deleteFromBlob', () => {
     it('should delete a file from Azure Blob Storage', async () => {
-      const { deleteFromBlob } = await import('@/lib/uploads/providers/blob/client')
-
       const testKey = 'test-file-key'
 
       mockDelete.mockResolvedValueOnce({})
@@ -179,8 +198,6 @@ describe('Azure Blob Storage Client', () => {
 
   describe('getPresignedUrl', () => {
     it('should generate a presigned URL for Azure Blob Storage', async () => {
-      const { getPresignedUrl } = await import('@/lib/uploads/providers/blob/client')
-
       const testKey = 'test-file-key'
       const expiresIn = 3600
 
@@ -202,8 +219,7 @@ describe('Azure Blob Storage Client', () => {
       { input: '', expected: 'file' },
     ]
 
-    it.each(testCases)('should sanitize "$input" to "$expected"', async ({ input, expected }) => {
-      const { sanitizeFilenameForMetadata } = await import('@/lib/uploads/utils/file-utils')
+    it.each(testCases)('should sanitize "$input" to "$expected"', ({ input, expected }) => {
       expect(sanitizeFilenameForMetadata(input)).toBe(expected)
     })
   })

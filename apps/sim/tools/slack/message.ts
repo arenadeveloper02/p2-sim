@@ -1,4 +1,5 @@
 import type { SlackMessageParams, SlackMessageResponse } from '@/tools/slack/types'
+import { MESSAGE_OUTPUT_PROPERTIES } from '@/tools/slack/types'
 import type { ToolConfig } from '@/tools/types'
 
 export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageResponse> = {
@@ -23,7 +24,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
     destinationType: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'Destination type: channel or dm',
     },
     botToken: {
@@ -41,14 +42,14 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
     channel: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Target Slack channel (e.g., #general)',
+      visibility: 'user-or-llm',
+      description: 'Slack channel ID (e.g., C1234567890)',
     },
     dmUserId: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Target Slack user for direct messages',
+      visibility: 'user-or-llm',
+      description: 'Slack user ID for direct messages (e.g., U1234567890)',
     },
     text: {
       type: 'string',
@@ -56,11 +57,18 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       visibility: 'user-or-llm',
       description: 'Message text to send (supports Slack mrkdwn formatting)',
     },
-    thread_ts: {
+    threadTs: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
       description: 'Thread timestamp to reply to (creates thread reply)',
+    },
+    blocks: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Block Kit layout blocks as a JSON array. When provided, text becomes the fallback notification text.',
     },
     files: {
       type: 'file[]',
@@ -88,7 +96,11 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
         // Enable unfurling of links
         unfurl_links: true,
         unfurl_media: true,
-        thread_ts: params.thread_ts || undefined,
+        thread_ts: params.threadTs || undefined,
+        blocks:
+          typeof params.blocks === 'string'
+            ? JSON.parse(params.blocks)
+            : params.blocks || undefined,
         files: params.files || null,
       }
     },
@@ -109,6 +121,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
     message: {
       type: 'object',
       description: 'Complete message object with all properties returned by Slack',
+      properties: MESSAGE_OUTPUT_PROPERTIES,
     },
     // Legacy properties for backward compatibility
     ts: { type: 'string', description: 'Message timestamp' },
@@ -117,5 +130,6 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       type: 'number',
       description: 'Number of files uploaded (when files are attached)',
     },
+    files: { type: 'file[]', description: 'Files attached to the message' },
   },
 }

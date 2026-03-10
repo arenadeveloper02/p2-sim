@@ -12,12 +12,14 @@ interface WorkspaceSummary {
   role?: string
   createdAt?: string
 }
+import { useReferralAttribution } from '@/hooks/use-referral-attribution'
 
 const logger = createLogger('WorkspacePage')
 
 export default function WorkspacePage() {
   const router = useRouter()
   const { data: session, isPending } = useSession()
+  useReferralAttribution()
 
   useEffect(() => {
     fetchUserProfileSetPeopleMP()

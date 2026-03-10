@@ -7,9 +7,13 @@ export type OAuthProvider =
   | 'google-docs'
   | 'google-sheets'
   | 'google-calendar'
+  | 'google-contacts'
+  | 'google-bigquery'
+  | 'google-tasks'
   | 'google-vault'
   | 'google-forms'
   | 'google-groups'
+  | 'google-meet'
   | 'vertex-ai'
   | 'github'
   | 'github-repo'
@@ -20,6 +24,7 @@ export type OAuthProvider =
   | 'jira'
   | 'dropbox'
   | 'microsoft'
+  | 'microsoft-dataverse'
   | 'microsoft-excel'
   | 'microsoft-planner'
   | 'microsoft-teams'
@@ -33,6 +38,7 @@ export type OAuthProvider =
   | 'wealthbox'
   | 'webflow'
   | 'asana'
+  | 'attio'
   | 'pipedrive'
   | 'hubspot'
   | 'salesforce'
@@ -41,6 +47,7 @@ export type OAuthProvider =
   | 'zoom'
   | 'wordpress'
   | 'spotify'
+  | 'calcom'
 
 export type OAuthService =
   | 'google'
@@ -49,9 +56,13 @@ export type OAuthService =
   | 'google-docs'
   | 'google-sheets'
   | 'google-calendar'
+  | 'google-contacts'
+  | 'google-bigquery'
+  | 'google-tasks'
   | 'google-vault'
   | 'google-forms'
   | 'google-groups'
+  | 'google-meet'
   | 'vertex-ai'
   | 'github'
   | 'x'
@@ -60,6 +71,7 @@ export type OAuthService =
   | 'notion'
   | 'jira'
   | 'dropbox'
+  | 'microsoft-dataverse'
   | 'microsoft-excel'
   | 'microsoft-teams'
   | 'microsoft-planner'
@@ -73,6 +85,7 @@ export type OAuthService =
   | 'webflow'
   | 'trello'
   | 'asana'
+  | 'attio'
   | 'pipedrive'
   | 'hubspot'
   | 'salesforce'
@@ -81,6 +94,7 @@ export type OAuthService =
   | 'zoom'
   | 'wordpress'
   | 'spotify'
+  | 'calcom'
 
 export interface OAuthProviderConfig {
   name: string
@@ -108,14 +122,6 @@ export interface OAuthServiceMetadata {
   baseProvider: string
 }
 
-export interface ScopeEvaluation {
-  canonicalScopes: string[]
-  grantedScopes: string[]
-  missingScopes: string[]
-  extraScopes: string[]
-  requiresReauthorization: boolean
-}
-
 export interface Credential {
   id: string
   name: string
@@ -124,10 +130,6 @@ export interface Credential {
   lastUsed?: string
   isDefault?: boolean
   scopes?: string[]
-  canonicalScopes?: string[]
-  missingScopes?: string[]
-  extraScopes?: string[]
-  requiresReauthorization?: boolean
 }
 
 export interface ProviderConfig {

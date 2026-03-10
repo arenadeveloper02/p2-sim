@@ -239,6 +239,7 @@ export async function downloadAttachments(
       )
 
       if (!attachmentResponse.ok) {
+        await attachmentResponse.body?.cancel().catch(() => {})
         continue
       }
 
@@ -251,7 +252,7 @@ export async function downloadAttachments(
 
       downloadedAttachments.push({
         name: attachment.filename,
-        data: buffer,
+        data: buffer.toString('base64'),
         mimeType: attachment.mimeType,
         size: attachment.size,
       })

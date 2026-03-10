@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getCredential, getOAuthToken, refreshTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
@@ -71,6 +71,22 @@ export async function POST(request: NextRequest) {
         providerId,
       })
 
+      const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+      if (!auth.success || auth.authType !== 'session' || !auth.userId) {
+        logger.warn(`[${requestId}] Unauthorized request for credentialAccountUserId path`, {
+          success: auth.success,
+          authType: auth.authType,
+        })
+        return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
+      }
+
+      if (auth.userId !== credentialAccountUserId) {
+        logger.warn(
+          `[${requestId}] User ${auth.userId} attempted to access credentials for ${credentialAccountUserId}`
+        )
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      }
+
       try {
         const accessToken = await getOAuthToken(credentialAccountUserId, providerId)
         if (!accessToken) {
@@ -94,23 +110,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Credential ID is required' }, { status: 400 })
     }
 
+    const callerUserId = new URL(request.url).searchParams.get('userId') || undefined
+
     const authz = await authorizeCredentialUse(request, {
       credentialId,
       workflowId: workflowId ?? undefined,
       requireWorkflowIdForInternal: false,
+      callerUserId,
     })
     if (!authz.ok || !authz.credentialOwnerUserId) {
       return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
     }
 
-    const credential = await getCredential(requestId, credentialId, authz.credentialOwnerUserId)
+    const resolvedCredentialId = authz.resolvedCredentialId || credentialId
+    const credential = await getCredential(
+      requestId,
+      resolvedCredentialId,
+      authz.credentialOwnerUserId
+    )
 
     if (!credential) {
       return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
     }
 
     try {
-      const { accessToken } = await refreshTokenIfNeeded(requestId, credential, credentialId)
+      const { accessToken } = await refreshTokenIfNeeded(
+        requestId,
+        credential,
+        resolvedCredentialId
+      )
 
       let instanceUrl: string | undefined
       if (credential.providerId === 'salesforce' && credential.scope) {
@@ -170,13 +198,20 @@ export async function GET(request: NextRequest) {
 
     const { credentialId } = parseResult.data
 
-    // For GET requests, we only support session-based authentication
-    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
-    if (!auth.success || auth.authType !== 'session' || !auth.userId) {
-      return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
+    const authz = await authorizeCredentialUse(request, {
+      credentialId,
+      requireWorkflowIdForInternal: false,
+    })
+    if (!authz.ok || authz.authType !== 'session' || !authz.credentialOwnerUserId) {
+      return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
     }
 
-    const credential = await getCredential(requestId, credentialId, auth.userId)
+    const resolvedCredentialId = authz.resolvedCredentialId || credentialId
+    const credential = await getCredential(
+      requestId,
+      resolvedCredentialId,
+      authz.credentialOwnerUserId
+    )
 
     if (!credential) {
       return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
@@ -188,7 +223,11 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const { accessToken } = await refreshTokenIfNeeded(requestId, credential, credentialId)
+      const { accessToken } = await refreshTokenIfNeeded(
+        requestId,
+        credential,
+        resolvedCredentialId
+      )
 
       // For Salesforce, extract instanceUrl from the scope field
       let instanceUrl: string | undefined

@@ -74,7 +74,7 @@ const safeStorageAdapter: PersistStorage<ConsoleStore> = {
 /**
  * Updates a NormalizedBlockOutput with new content
  */
-const MAX_ENTRIES_PER_WORKFLOW = 1000
+const MAX_ENTRIES_PER_WORKFLOW = 5000
 
 const updateBlockOutput = (
   existingOutput: NormalizedBlockOutput | undefined,
@@ -118,6 +118,84 @@ const shouldSkipEntry = (output: any): boolean => {
   }
 
   return false
+}
+
+const matchesEntryForUpdate = (
+  entry: ConsoleEntry,
+  blockId: string,
+  executionId: string | undefined,
+  update: string | ConsoleUpdate
+): boolean => {
+  if (entry.blockId !== blockId || entry.executionId !== executionId) {
+    return false
+  }
+
+  if (typeof update !== 'object') {
+    return true
+  }
+
+  if (update.executionOrder !== undefined && entry.executionOrder !== update.executionOrder) {
+    return false
+  }
+
+  if (update.iterationCurrent !== undefined && entry.iterationCurrent !== update.iterationCurrent) {
+    return false
+  }
+
+  if (
+    update.iterationContainerId !== undefined &&
+    entry.iterationContainerId !== update.iterationContainerId
+  ) {
+    return false
+  }
+
+  if (
+    update.childWorkflowBlockId !== undefined &&
+    entry.childWorkflowBlockId !== update.childWorkflowBlockId
+  ) {
+    return false
+  }
+
+  return true
+}
+
+interface NotifyBlockErrorParams {
+  error: unknown
+  blockName: string
+  workflowId?: string
+  logContext: Record<string, unknown>
+}
+
+/**
+ * Sends an error notification for a block failure if error notifications are enabled.
+ */
+const notifyBlockError = ({ error, blockName, workflowId, logContext }: NotifyBlockErrorParams) => {
+  const settings = getQueryClient().getQueryData<GeneralSettings>(generalSettingsKeys.settings())
+  const isErrorNotificationsEnabled = settings?.errorNotificationsEnabled ?? true
+
+  if (!isErrorNotificationsEnabled) return
+
+  try {
+    const errorMessage = String(error)
+    const displayName = blockName || 'Unknown Block'
+    const displayMessage = `${displayName}: ${errorMessage}`
+    const copilotMessage = `${errorMessage}\n\nError in ${displayName}.\n\nPlease fix this.`
+
+    useNotificationStore.getState().addNotification({
+      level: 'error',
+      message: displayMessage,
+      workflowId,
+      action: {
+        type: 'copilot',
+        message: copilotMessage,
+      },
+    })
+  } catch (notificationError) {
+    logger.error('Failed to create block error notification', {
+      ...logContext,
+      error: notificationError,
+    })
+  }
 }
 
 export const useTerminalConsoleStore = create<ConsoleStore>()(
@@ -220,36 +298,13 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
 
           const newEntry = get().entries[0]
 
-          if (newEntry?.error) {
-            const settings = getQueryClient().getQueryData<GeneralSettings>(
-              generalSettingsKeys.settings()
-            )
-            const isErrorNotificationsEnabled = settings?.errorNotificationsEnabled ?? true
-
-            if (isErrorNotificationsEnabled) {
-              try {
-                const errorMessage = String(newEntry.error)
-                const blockName = newEntry.blockName || 'Unknown Block'
-                const displayMessage = `${blockName}: ${errorMessage}`
-
-                const copilotMessage = `${errorMessage}\n\nError in ${blockName}.\n\nPlease fix this.`
-
-                useNotificationStore.getState().addNotification({
-                  level: 'error',
-                  message: displayMessage,
-                  workflowId: entry.workflowId,
-                  action: {
-                    type: 'copilot',
-                    message: copilotMessage,
-                  },
-                })
-              } catch (notificationError) {
-                logger.error('Failed to create block error notification', {
-                  entryId: newEntry.id,
-                  error: notificationError,
-                })
-              }
-            }
+          if (newEntry?.error && newEntry.blockType !== 'cancelled') {
+            notifyBlockError({
+              error: newEntry.error,
+              blockName: newEntry.blockName || 'Unknown Block',
+              workflowId: entry.workflowId,
+              logContext: { entryId: newEntry.id },
+            })
           }
 
           return newEntry
@@ -259,8 +314,13 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
           set((state) => ({
             entries: state.entries.filter((entry) => entry.workflowId !== workflowId),
           }))
-          useExecutionStore.getState().clearRunPath()
+          useExecutionStore.getState().clearRunPath(workflowId)
         },
+
+        clearExecutionEntries: (executionId: string) =>
+          set((state) => ({
+            entries: state.entries.filter((e) => e.executionId !== executionId),
+          })),
 
         exportConsoleCSV: (workflowId: string) => {
           const entries = get().entries.filter((entry) => entry.workflowId === workflowId)
@@ -350,7 +410,7 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
         updateConsole: (blockId: string, update: string | ConsoleUpdate, executionId?: string) => {
           set((state) => {
             const updatedEntries = state.entries.map((entry) => {
-              if (entry.blockId !== blockId || entry.executionId !== executionId) {
+              if (!matchesEntryForUpdate(entry, blockId, executionId, update)) {
                 return entry
               }
 
@@ -391,6 +451,10 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
                 updatedEntry.success = update.success
               }
 
+              if (update.startedAt !== undefined) {
+                updatedEntry.startedAt = update.startedAt
+              }
+
               if (update.endedAt !== undefined) {
                 updatedEntry.endedAt = update.endedAt
               }
@@ -403,9 +467,83 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
                 updatedEntry.input = truncateLargeBase64Data(update.input)
               }
 
+              if (update.isRunning !== undefined) {
+                updatedEntry.isRunning = update.isRunning
+              }
+
+              if (update.isCanceled !== undefined) {
+                updatedEntry.isCanceled = update.isCanceled
+              }
+
+              if (update.iterationCurrent !== undefined) {
+                updatedEntry.iterationCurrent = update.iterationCurrent
+              }
+
+              if (update.iterationTotal !== undefined) {
+                updatedEntry.iterationTotal = update.iterationTotal
+              }
+
+              if (update.iterationType !== undefined) {
+                updatedEntry.iterationType = update.iterationType
+              }
+
+              if (update.iterationContainerId !== undefined) {
+                updatedEntry.iterationContainerId = update.iterationContainerId
+              }
+
+              if (update.parentIterations !== undefined) {
+                updatedEntry.parentIterations = update.parentIterations
+              }
+
+              if (update.childWorkflowBlockId !== undefined) {
+                updatedEntry.childWorkflowBlockId = update.childWorkflowBlockId
+              }
+
+              if (update.childWorkflowName !== undefined) {
+                updatedEntry.childWorkflowName = update.childWorkflowName
+              }
+
+              if (update.childWorkflowInstanceId !== undefined) {
+                updatedEntry.childWorkflowInstanceId = update.childWorkflowInstanceId
+              }
+
               return updatedEntry
             })
 
+            return { entries: updatedEntries }
+          })
+
+          if (typeof update === 'object' && update.error) {
+            const matchingEntry = get().entries.find(
+              (e) => e.blockId === blockId && e.executionId === executionId
+            )
+            notifyBlockError({
+              error: update.error,
+              blockName: matchingEntry?.blockName || 'Unknown Block',
+              workflowId: matchingEntry?.workflowId,
+              logContext: { blockId },
+            })
+          }
+        },
+
+        cancelRunningEntries: (workflowId: string) => {
+          set((state) => {
+            const now = new Date()
+            const updatedEntries = state.entries.map((entry) => {
+              if (entry.workflowId === workflowId && entry.isRunning) {
+                const durationMs = entry.startedAt
+                  ? now.getTime() - new Date(entry.startedAt).getTime()
+                  : entry.durationMs
+                return {
+                  ...entry,
+                  isRunning: false,
+                  isCanceled: true,
+                  endedAt: now.toISOString(),
+                  durationMs,
+                }
+              }
+              return entry
+            })
             return { entries: updatedEntries }
           })
         },
@@ -424,9 +562,27 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
         },
         merge: (persistedState, currentState) => {
           const persisted = persistedState as Partial<ConsoleStore> | undefined
+          const rawEntries = persisted?.entries ?? currentState.entries
+          const oneHourAgo = Date.now() - 60 * 60 * 1000
+
+          const entries = rawEntries.map((entry, index) => {
+            let updated = entry
+            if (entry.executionOrder === undefined) {
+              updated = { ...updated, executionOrder: index + 1 }
+            }
+            if (
+              entry.isRunning &&
+              entry.startedAt &&
+              new Date(entry.startedAt).getTime() < oneHourAgo
+            ) {
+              updated = { ...updated, isRunning: false }
+            }
+            return updated
+          })
+
           return {
             ...currentState,
-            entries: persisted?.entries ?? currentState.entries,
+            entries,
             isOpen: persisted?.isOpen ?? currentState.isOpen,
           }
         },

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createLogger } from '@sim/logger'
-import { isEqual } from 'lodash'
+import isEqual from 'lodash/isEqual'
 import { useParams } from 'next/navigation'
 import { Handle, type NodeProps, Position, useUpdateNodeInternals } from 'reactflow'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
@@ -9,6 +9,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createMcpToolId } from '@/lib/mcp/shared'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
+import type { FilterRule, SortRule } from '@/lib/table/types'
 import { BLOCK_DIMENSIONS, HANDLE_POSITIONS } from '@/lib/workflows/blocks/block-dimensions'
 import {
   buildCanonicalIndex,
@@ -40,6 +41,8 @@ import { useCustomTools } from '@/hooks/queries/custom-tools'
 import { useMcpServers, useMcpToolsQuery } from '@/hooks/queries/mcp'
 import { useCredentialName } from '@/hooks/queries/oauth-credentials'
 import { useReactivateSchedule, useScheduleInfo } from '@/hooks/queries/schedules'
+import { useSkills } from '@/hooks/queries/skills'
+import { useTablesList } from '@/hooks/queries/tables'
 import { useDeployChildWorkflow } from '@/hooks/queries/workflows'
 import { useSelectorDisplayName } from '@/hooks/use-selector-display-name'
 import { useVariablesStore } from '@/stores/panel'
@@ -54,9 +57,9 @@ const logger = createLogger('WorkflowBlock')
 const EMPTY_SUBBLOCK_VALUES = {} as Record<string, any>
 
 /**
- * Type guard for table row structure
+ * Type guard for workflow table row structure (sub-block table inputs)
  */
-interface TableRow {
+interface WorkflowTableRow {
   id: string
   cells: Record<string, string>
 }
@@ -75,7 +78,7 @@ interface FieldFormat {
 /**
  * Checks if a value is a table row array
  */
-const isTableRowArray = (value: unknown): value is TableRow[] => {
+const isTableRowArray = (value: unknown): value is WorkflowTableRow[] => {
   if (!Array.isArray(value) || value.length === 0) return false
   const firstItem = value[0]
   return (
@@ -94,7 +97,11 @@ const isFieldFormatArray = (value: unknown): value is FieldFormat[] => {
   if (!Array.isArray(value) || value.length === 0) return false
   const firstItem = value[0]
   return (
-    typeof firstItem === 'object' && firstItem !== null && 'id' in firstItem && 'name' in firstItem
+    typeof firstItem === 'object' &&
+    firstItem !== null &&
+    'id' in firstItem &&
+    'name' in firstItem &&
+    typeof firstItem.name === 'string'
   )
 }
 
@@ -160,7 +167,8 @@ const isTagFilterArray = (value: unknown): value is TagFilterItem[] => {
     typeof firstItem === 'object' &&
     firstItem !== null &&
     'tagName' in firstItem &&
-    'tagValue' in firstItem
+    'tagValue' in firstItem &&
+    typeof firstItem.tagName === 'string'
   )
 }
 
@@ -182,7 +190,40 @@ const isDocumentTagArray = (value: unknown): value is DocumentTagItem[] => {
     firstItem !== null &&
     'tagName' in firstItem &&
     'value' in firstItem &&
-    !('tagValue' in firstItem) // Distinguish from tag filters
+    !('tagValue' in firstItem) && // Distinguish from tag filters
+    typeof firstItem.tagName === 'string'
+  )
+}
+
+/**
+ * Type guard for filter condition array (used in table block filter builder)
+ */
+const isFilterConditionArray = (value: unknown): value is FilterRule[] => {
+  if (!Array.isArray(value) || value.length === 0) return false
+  const firstItem = value[0]
+  return (
+    typeof firstItem === 'object' &&
+    firstItem !== null &&
+    'column' in firstItem &&
+    'operator' in firstItem &&
+    'logicalOperator' in firstItem &&
+    typeof firstItem.column === 'string'
+  )
+}
+
+/**
+ * Type guard for sort condition array (used in table block sort builder)
+ */
+const isSortConditionArray = (value: unknown): value is SortRule[] => {
+  if (!Array.isArray(value) || value.length === 0) return false
+  const firstItem = value[0]
+  return (
+    typeof firstItem === 'object' &&
+    firstItem !== null &&
+    'column' in firstItem &&
+    'direction' in firstItem &&
+    typeof firstItem.column === 'string' &&
+    (firstItem.direction === 'asc' || firstItem.direction === 'desc')
   )
 }
 
@@ -230,7 +271,9 @@ export const getDisplayValue = (value: unknown): string => {
   }
 
   if (isTagFilterArray(parsedValue)) {
-    const validFilters = parsedValue.filter((f) => f.tagName?.trim())
+    const validFilters = parsedValue.filter(
+      (f) => typeof f.tagName === 'string' && f.tagName.trim() !== ''
+    )
     if (validFilters.length === 0) return '-'
     if (validFilters.length === 1) return validFilters[0].tagName
     if (validFilters.length === 2) return `${validFilters[0].tagName}, ${validFilters[1].tagName}`
@@ -238,11 +281,52 @@ export const getDisplayValue = (value: unknown): string => {
   }
 
   if (isDocumentTagArray(parsedValue)) {
-    const validTags = parsedValue.filter((t) => t.tagName?.trim())
+    const validTags = parsedValue.filter(
+      (t) => typeof t.tagName === 'string' && t.tagName.trim() !== ''
+    )
     if (validTags.length === 0) return '-'
     if (validTags.length === 1) return validTags[0].tagName
     if (validTags.length === 2) return `${validTags[0].tagName}, ${validTags[1].tagName}`
     return `${validTags[0].tagName}, ${validTags[1].tagName} +${validTags.length - 2}`
+  }
+
+  if (isFilterConditionArray(parsedValue)) {
+    const validConditions = parsedValue.filter(
+      (c) => typeof c.column === 'string' && c.column.trim() !== ''
+    )
+    if (validConditions.length === 0) return '-'
+    const formatCondition = (c: FilterRule) => {
+      const opLabels: Record<string, string> = {
+        eq: '=',
+        ne: '≠',
+        gt: '>',
+        gte: '≥',
+        lt: '<',
+        lte: '≤',
+        contains: '~',
+        in: 'in',
+      }
+      const op = opLabels[c.operator] || c.operator
+      return `${c.column} ${op} ${c.value || '?'}`
+    }
+    if (validConditions.length === 1) return formatCondition(validConditions[0])
+    if (validConditions.length === 2) {
+      return `${formatCondition(validConditions[0])}, ${formatCondition(validConditions[1])}`
+    }
+    return `${formatCondition(validConditions[0])}, ${formatCondition(validConditions[1])} +${validConditions.length - 2}`
+  }
+
+  if (isSortConditionArray(parsedValue)) {
+    const validConditions = parsedValue.filter(
+      (c) => typeof c.column === 'string' && c.column.trim() !== ''
+    )
+    if (validConditions.length === 0) return '-'
+    const formatSort = (c: SortRule) => `${c.column} ${c.direction === 'desc' ? '↓' : '↑'}`
+    if (validConditions.length === 1) return formatSort(validConditions[0])
+    if (validConditions.length === 2) {
+      return `${formatSort(validConditions[0])}, ${formatSort(validConditions[1])}`
+    }
+    return `${formatSort(validConditions[0])}, ${formatSort(validConditions[1])} +${validConditions.length - 2}`
   }
 
   if (isTableRowArray(parsedValue)) {
@@ -266,7 +350,9 @@ export const getDisplayValue = (value: unknown): string => {
   }
 
   if (isFieldFormatArray(parsedValue)) {
-    const namedFields = parsedValue.filter((field) => field.name && field.name.trim() !== '')
+    const namedFields = parsedValue.filter(
+      (field) => typeof field.name === 'string' && field.name.trim() !== ''
+    )
     if (namedFields.length === 0) return '-'
     if (namedFields.length === 1) return namedFields[0].name
     if (namedFields.length === 2) return `${namedFields[0].name}, ${namedFields[1].name}`
@@ -444,7 +530,8 @@ const SubBlockRow = memo(function SubBlockRow({
   const { displayName: credentialName } = useCredentialName(
     credentialSourceId,
     credentialProviderId,
-    workflowId
+    workflowId,
+    workspaceId
   )
 
   const credentialId = dependencyValues.credential
@@ -465,21 +552,48 @@ const SubBlockRow = memo(function SubBlockRow({
     return typeof option === 'string' ? option : option.label
   }, [subBlock, rawValue])
 
-  const domainValue = getStringValue('domain')
-  const teamIdValue = getStringValue('teamId')
-  const projectIdValue = getStringValue('projectId')
-  const planIdValue = getStringValue('planId')
+  const resolveContextValue = useCallback(
+    (key: string): string | undefined => {
+      const resolved = resolveDependencyValue(
+        key,
+        rawValues,
+        canonicalIndex || buildCanonicalIndex([]),
+        canonicalModeOverrides
+      )
+      return typeof resolved === 'string' && resolved.length > 0 ? resolved : undefined
+    },
+    [rawValues, canonicalIndex, canonicalModeOverrides]
+  )
+
+  const domainValue = resolveContextValue('domain')
+  const teamIdValue = resolveContextValue('teamId')
+  const projectIdValue = resolveContextValue('projectId')
+  const planIdValue = resolveContextValue('planId')
+  const baseIdValue = resolveContextValue('baseId')
+  const datasetIdValue = resolveContextValue('datasetId')
+  const serviceDeskIdValue = resolveContextValue('serviceDeskId')
+  const siteIdValue = resolveContextValue('siteId')
+  const collectionIdValue = resolveContextValue('collectionId')
+  const spreadsheetIdValue = resolveContextValue('spreadsheetId')
+  const fileIdValue = resolveContextValue('fileId')
 
   const { displayName: selectorDisplayName } = useSelectorDisplayName({
     subBlock,
     value: rawValue,
     workflowId,
-    credentialId: typeof credentialId === 'string' ? credentialId : undefined,
+    oauthCredential: typeof credentialId === 'string' ? credentialId : undefined,
     knowledgeBaseId: typeof knowledgeBaseId === 'string' ? knowledgeBaseId : undefined,
     domain: domainValue,
     teamId: teamIdValue,
     projectId: projectIdValue,
     planId: planIdValue,
+    baseId: baseIdValue,
+    datasetId: datasetIdValue,
+    serviceDeskId: serviceDeskIdValue,
+    siteId: siteIdValue,
+    collectionId: collectionIdValue,
+    spreadsheetId: spreadsheetIdValue,
+    fileId: fileIdValue,
   })
 
   const { knowledgeBase: kbForDisplayName } = useKnowledgeBase(
@@ -514,6 +628,15 @@ const SubBlockRow = memo(function SubBlockRow({
     })
     return tool?.name ?? null
   }, [subBlock?.type, rawValue, mcpToolsData])
+
+  const { data: tables = [] } = useTablesList(workspaceId || '')
+  const tableDisplayName = useMemo(() => {
+    if (subBlock?.id !== 'tableId' || typeof rawValue !== 'string') {
+      return null
+    }
+    const table = tables.find((t) => t.id === rawValue)
+    return table?.name ?? null
+  }, [subBlock?.id, rawValue, tables])
 
   const webhookUrlDisplayValue = useMemo(() => {
     if (subBlock?.id !== 'webhookUrlDisplay' || !blockId) {
@@ -621,19 +744,86 @@ const SubBlockRow = memo(function SubBlockRow({
     return `${toolNames[0]}, ${toolNames[1]} +${toolNames.length - 2}`
   }, [subBlock?.type, rawValue, customTools, workspaceId])
 
+  const filterDisplayValue = useMemo(() => {
+    const isFilterField =
+      subBlock?.id === 'filter' || subBlock?.id === 'filterCriteria' || subBlock?.id === 'sort'
+
+    if (!isFilterField || !rawValue) return null
+
+    const parsedValue = tryParseJson(rawValue)
+
+    if (isPlainObject(parsedValue) || Array.isArray(parsedValue)) {
+      try {
+        const jsonStr = JSON.stringify(parsedValue, null, 0)
+        if (jsonStr.length <= 35) return jsonStr
+        return `${jsonStr.slice(0, 32)}...`
+      } catch {
+        return null
+      }
+    }
+
+    return null
+  }, [subBlock?.id, rawValue])
+
+  /**
+   * Hydrates skill references to display names.
+   * Resolves skill IDs to their current names from the skills query.
+   */
+  const { data: workspaceSkills = [] } = useSkills(workspaceId || '')
+
+  const skillsDisplayValue = useMemo(() => {
+    if (subBlock?.type !== 'skill-input' || !Array.isArray(rawValue) || rawValue.length === 0) {
+      return null
+    }
+
+    interface StoredSkill {
+      skillId: string
+      name?: string
+    }
+
+    const skillNames = rawValue
+      .map((skill: StoredSkill) => {
+        if (!skill || typeof skill !== 'object') return null
+
+        // Priority 1: Resolve skill name from the skills query (fresh data)
+        if (skill.skillId) {
+          const foundSkill = workspaceSkills.find((s) => s.id === skill.skillId)
+          if (foundSkill?.name) return foundSkill.name
+        }
+
+        // Priority 2: Fall back to stored name (for deleted skills)
+        if (skill.name && typeof skill.name === 'string') return skill.name
+
+        // Priority 3: Use skillId as last resort
+        if (skill.skillId) return skill.skillId
+
+        return null
+      })
+      .filter((name): name is string => !!name)
+
+    if (skillNames.length === 0) return null
+    if (skillNames.length === 1) return skillNames[0]
+    if (skillNames.length === 2) return `${skillNames[0]}, ${skillNames[1]}`
+    return `${skillNames[0]}, ${skillNames[1]} +${skillNames.length - 2}`
+  }, [subBlock?.type, rawValue, workspaceSkills])
+
   const isPasswordField = subBlock?.password === true
   const maskedValue = isPasswordField && value && value !== '-' ? '•••' : null
+  const isMonospaceField = Boolean(filterDisplayValue)
 
   const isSelectorType = subBlock?.type && SELECTOR_TYPES_HYDRATION_REQUIRED.includes(subBlock.type)
   const hydratedName =
     credentialName ||
     dropdownLabel ||
     variablesDisplayValue ||
+    filterDisplayValue ||
     toolsDisplayValue ||
+    skillsDisplayValue ||
     knowledgeBaseDisplayName ||
     workflowSelectionName ||
     mcpServerDisplayName ||
     mcpToolDisplayName ||
+    tableDisplayName ||
     webhookUrlDisplayValue ||
     selectorDisplayName
   const displayValue = maskedValue || hydratedName || (isSelectorType && value ? '-' : value)
@@ -648,7 +838,10 @@ const SubBlockRow = memo(function SubBlockRow({
       </span>
       {displayValue !== undefined && (
         <span
-          className='flex-1 truncate text-right font-semibold text-[14px] text-[var(--text-primary)] dark:text-[var(--white)]'
+          className={cn(
+            'flex-1 truncate text-right text-[14px] text-[var(--text-primary)]',
+            isMonospaceField && 'font-mono'
+          )}
           title={displayValue}
         >
           {displayValue}
@@ -675,6 +868,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     currentWorkflow,
     activeWorkflowId,
     isEnabled,
+    isLocked,
     handleClick,
     hasRing,
     ringStyles,
@@ -1103,7 +1297,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
               {name}
             </span>
           </div>
-          <div className='relative z-10 flex flex-shrink-0 items-center gap-2'>
+          <div className='relative z-10 flex flex-shrink-0 items-center gap-1'>
             {isWorkflowSelector &&
               childWorkflowId &&
               typeof childIsDeployed === 'boolean' &&
@@ -1135,7 +1329,8 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                   </Tooltip.Content>
                 </Tooltip.Root>
               )}
-            {!isEnabled && <Badge variant='gray-secondary'>disabled</Badge>}
+            {!isEnabled && !isLocked && <Badge variant='gray-secondary'>disabled</Badge>}
+            {isLocked && <Badge variant='gray-secondary'>locked</Badge>}
 
             {type === 'schedule' && shouldShowScheduleBadge && scheduleInfo?.isDisabled && (
               <Tooltip.Root>

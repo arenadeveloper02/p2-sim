@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import type { BaseImageRequestBody } from '@/tools/openai/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -77,7 +78,6 @@ export const imageTool: ToolConfig = {
         n: params.n ? Number(params.n) : 1,
       }
 
-      // Add model-specific parameters
       if (params.model === 'dall-e-3') {
         if (params.quality) body.quality = params.quality
         if (params.style) body.style = params.style
@@ -140,11 +140,28 @@ export const imageTool: ToolConfig = {
 
       if (imageUrl && !base64Image) {
         try {
-          logger.info('Downloading image from DALL-E URL for storage...', {
-            imageUrl: imageUrl.substring(0, 100),
-          })
-          // Fetch the image directly
-          const imageResponse = await fetch(imageUrl, {
+          logger.info('Fetching image from URL via proxy...')
+          const baseUrl = getInternalApiBaseUrl()
+          const proxyUrl = new URL('/api/tools/image', baseUrl)
+          proxyUrl.searchParams.append('url', imageUrl)
+
+          const headers: Record<string, string> = {
+            Accept: 'image/*, */*',
+          }
+
+          if (typeof window === 'undefined') {
+            const { generateInternalToken } = await import('@/lib/auth/internal')
+            try {
+              const token = await generateInternalToken()
+              headers.Authorization = `Bearer ${token}`
+              logger.info('Added internal auth token for image proxy request')
+            } catch (error) {
+              logger.error('Failed to generate internal token for image proxy:', error)
+            }
+          }
+
+          const imageResponse = await fetch(proxyUrl.toString(), {
+            headers,
             cache: 'no-store',
             headers: {
               Accept: 'image/*',

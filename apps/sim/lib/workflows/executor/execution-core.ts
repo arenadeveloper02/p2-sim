@@ -14,19 +14,22 @@ import {
   loadDeployedWorkflowState,
   loadWorkflowFromNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
+import { mergeSubblockStateWithValues } from '@/lib/workflows/subblocks'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { updateWorkflowRunCounts } from '@/lib/workflows/utils'
 import { Executor } from '@/executor'
 import type { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type {
+  ChildWorkflowContext,
   ContextExtensions,
   ExecutionCallbacks,
   IterationContext,
+  SerializableExecutionState,
 } from '@/executor/execution/types'
 import type { ExecutionResult, NormalizedBlockOutput } from '@/executor/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
+import { buildParallelSentinelEndId, buildSentinelEndId } from '@/executor/utils/subflow-utils'
 import { Serializer } from '@/serializer'
-import { mergeSubblockState } from '@/stores/workflows/server-utils'
 
 const logger = createLogger('ExecutionCore')
 
@@ -40,6 +43,12 @@ export interface ExecuteWorkflowCoreOptions {
   abortSignal?: AbortSignal
   includeFileBase64?: boolean
   base64MaxBytes?: number
+  stopAfterBlockId?: string
+  /** Run-from-block mode: execute starting from a specific block using cached upstream outputs */
+  runFromBlock?: {
+    startBlockId: string
+    sourceSnapshot: SerializableExecutionState
+  }
 }
 
 function parseVariableValueByType(value: unknown, type: string): unknown {
@@ -114,11 +123,13 @@ export async function executeWorkflowCore(
     abortSignal,
     includeFileBase64,
     base64MaxBytes,
+    stopAfterBlockId,
+    runFromBlock,
   } = options
   const { metadata, workflow, input, workflowVariables, selectedOutputs } = snapshot
   const { requestId, workflowId, userId, triggerType, executionId, triggerBlockId, useDraftState } =
     metadata
-  const { onBlockStart, onBlockComplete, onStream } = callbacks
+  const { onBlockStart, onBlockComplete, onStream, onChildWorkflowInstanceReady } = callbacks
 
   const providedWorkspaceId = metadata.workspaceId
   if (!providedWorkspaceId) {
@@ -172,16 +183,12 @@ export async function executeWorkflowCore(
       logger.info(`[${requestId}] Using deployed workflow state (deployed execution)`)
     }
 
-    // Merge block states
-    const mergedStates = mergeSubblockState(blocks)
+    const mergedStates = mergeSubblockStateWithValues(blocks)
 
-    const personalEnvUserId =
-      metadata.isClientSession && metadata.sessionUserId
-        ? metadata.sessionUserId
-        : metadata.workflowUserId
+    const personalEnvUserId = metadata.sessionUserId || metadata.userId
 
     if (!personalEnvUserId) {
-      throw new Error('Missing workflowUserId in execution metadata')
+      throw new Error('Missing execution actor for environment resolution')
     }
 
     const { personalEncrypted, workspaceEncrypted, personalDecrypted, workspaceDecrypted } =
@@ -346,6 +353,16 @@ export async function executeWorkflowCore(
 
     processedInput = input || {}
 
+    // Resolve stopAfterBlockId for loop/parallel containers to their sentinel-end IDs
+    let resolvedStopAfterBlockId = stopAfterBlockId
+    if (stopAfterBlockId) {
+      if (serializedWorkflow.loops?.[stopAfterBlockId]) {
+        resolvedStopAfterBlockId = buildSentinelEndId(stopAfterBlockId)
+      } else if (serializedWorkflow.parallels?.[stopAfterBlockId]) {
+        resolvedStopAfterBlockId = buildParallelSentinelEndId(stopAfterBlockId)
+      }
+    }
+
     // Create and execute workflow with callbacks
     if (resumeFromSnapshot) {
       logger.info(`[${requestId}] Resume execution detected`, {
@@ -363,12 +380,26 @@ export async function executeWorkflowCore(
       blockId: string,
       blockName: string,
       blockType: string,
-      output: { input?: unknown; output: NormalizedBlockOutput; executionTime: number },
-      iterationContext?: IterationContext
+      output: {
+        input?: unknown
+        output: NormalizedBlockOutput
+        executionTime: number
+        startedAt: string
+        endedAt: string
+      },
+      iterationContext?: IterationContext,
+      childWorkflowContext?: ChildWorkflowContext
     ) => {
       await loggingSession.onBlockComplete(blockId, blockName, blockType, output)
       if (onBlockComplete) {
-        await onBlockComplete(blockId, blockName, blockType, output, iterationContext)
+        await onBlockComplete(
+          blockId,
+          blockName,
+          blockType,
+          output,
+          iterationContext,
+          childWorkflowContext
+        )
       }
     }
 
@@ -379,6 +410,7 @@ export async function executeWorkflowCore(
       workspaceId: providedWorkspaceId,
       userId,
       isDeployedContext: !metadata.isClientSession,
+      enforceCredentialAccess: metadata.enforceCredentialAccess ?? false,
       onBlockStart,
       onBlockComplete: wrappedOnBlockComplete,
       onStream,
@@ -396,6 +428,9 @@ export async function executeWorkflowCore(
       abortSignal,
       includeFileBase64,
       base64MaxBytes,
+      stopAfterBlockId: resolvedStopAfterBlockId,
+      onChildWorkflowInstanceReady,
+      callChain: metadata.callChain,
     }
 
     const executorInstance = new Executor({
@@ -405,8 +440,6 @@ export async function executeWorkflowCore(
       workflowVariables,
       contextExtensions,
     })
-
-    loggingSession.setupExecutor(executorInstance)
 
     // Convert initial workflow variables to their native types
     if (workflowVariables) {
@@ -418,14 +451,20 @@ export async function executeWorkflowCore(
       }
     }
 
-    const result = (await executorInstance.execute(
-      workflowId,
-      resolvedTriggerBlockId
-    )) as ExecutionResult
+    const result = runFromBlock
+      ? ((await executorInstance.executeFromBlock(
+          workflowId,
+          runFromBlock.startBlockId,
+          runFromBlock.sourceSnapshot
+        )) as ExecutionResult)
+      : ((await executorInstance.execute(workflowId, resolvedTriggerBlockId)) as ExecutionResult)
 
-    // Build trace spans for logging from the full execution result
-    const { traceSpans, totalDuration } = buildTraceSpans(result)
+    // Fire-and-forget: post-execution logging, billing, and cleanup
+    void (async () => {
+      try {
+        const { traceSpans, totalDuration } = buildTraceSpans(result)
 
+<<<<<<< HEAD
     // Detect skipped workflow (intent analyzer decided to skip)
     const isSkippedExecution =
       result.success &&
@@ -590,9 +629,49 @@ export async function executeWorkflowCore(
     })
 
     await clearExecutionCancellation(executionId)
+=======
+        if (result.success && result.status !== 'paused') {
+          try {
+            await updateWorkflowRunCounts(workflowId)
+          } catch (runCountError) {
+            logger.error(`[${requestId}] Failed to update run counts`, { error: runCountError })
+          }
+        }
+
+        if (result.status === 'cancelled') {
+          await loggingSession.safeCompleteWithCancellation({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            traceSpans: traceSpans || [],
+          })
+        } else if (result.status === 'paused') {
+          await loggingSession.safeCompleteWithPause({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            traceSpans: traceSpans || [],
+            workflowInput: processedInput,
+          })
+        } else {
+          await loggingSession.safeComplete({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            finalOutput: result.output || {},
+            traceSpans: traceSpans || [],
+            workflowInput: processedInput,
+            executionState: result.executionState,
+          })
+        }
+
+        await clearExecutionCancellation(executionId)
+      } catch (postExecError) {
+        logger.error(`[${requestId}] Post-execution logging failed`, { error: postExecError })
+      }
+    })()
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
 
     logger.info(`[${requestId}] Workflow execution completed`, {
       success: result.success,
+      status: result.status,
       duration: result.metadata?.duration,
     })
 
@@ -600,20 +679,31 @@ export async function executeWorkflowCore(
   } catch (error: unknown) {
     logger.error(`[${requestId}] Execution failed:`, error)
 
-    const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
-    const { traceSpans } = executionResult ? buildTraceSpans(executionResult) : { traceSpans: [] }
+    // Fire-and-forget: error logging and cleanup
+    void (async () => {
+      try {
+        const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
+        const { traceSpans } = executionResult
+          ? buildTraceSpans(executionResult)
+          : { traceSpans: [] }
 
-    await loggingSession.safeCompleteWithError({
-      endedAt: new Date().toISOString(),
-      totalDurationMs: executionResult?.metadata?.duration || 0,
-      error: {
-        message: error instanceof Error ? error.message : 'Execution failed',
-        stackTrace: error instanceof Error ? error.stack : undefined,
-      },
-      traceSpans,
-    })
+        await loggingSession.safeCompleteWithError({
+          endedAt: new Date().toISOString(),
+          totalDurationMs: executionResult?.metadata?.duration || 0,
+          error: {
+            message: error instanceof Error ? error.message : 'Execution failed',
+            stackTrace: error instanceof Error ? error.stack : undefined,
+          },
+          traceSpans,
+        })
 
-    await clearExecutionCancellation(executionId)
+        await clearExecutionCancellation(executionId)
+      } catch (postExecError) {
+        logger.error(`[${requestId}] Post-execution error logging failed`, {
+          error: postExecError,
+        })
+      }
+    })()
 
     throw error
   }

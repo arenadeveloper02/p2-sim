@@ -167,27 +167,51 @@ Import from `@/components/emcn`, never from subpaths (except CSS files). Use CVA
 
 ## Testing
 
-Use Vitest. Test files: `feature.ts` → `feature.test.ts`
+Use Vitest. Test files: `feature.ts` → `feature.test.ts`. See `.cursor/rules/sim-testing.mdc` for full details.
+
+### Global Mocks (vitest.setup.ts)
+
+`@sim/db`, `drizzle-orm`, `@sim/logger`, `@/blocks/registry`, `@trigger.dev/sdk`, and store mocks are provided globally. Do NOT re-mock them unless overriding behavior.
+
+### Standard Test Pattern
 
 ```typescript
 /**
  * @vitest-environment node
  */
-import { databaseMock, loggerMock } from '@sim/testing'
-import { describe, expect, it, vi } from 'vitest'
+import { createMockRequest } from '@sim/testing'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@sim/db', () => databaseMock)
-vi.mock('@sim/logger', () => loggerMock)
+const { mockGetSession } = vi.hoisted(() => ({
+  mockGetSession: vi.fn(),
+}))
 
-import { myFunction } from '@/lib/feature'
+vi.mock('@/lib/auth', () => ({
+  auth: { api: { getSession: vi.fn() } },
+  getSession: mockGetSession,
+}))
 
-describe('feature', () => {
-  beforeEach(() => vi.clearAllMocks())
-  it.concurrent('runs in parallel', () => { ... })
+import { GET } from '@/app/api/my-route/route'
+
+describe('my route', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
+  })
+  it('returns data', async () => { ... })
 })
 ```
 
-Use `@sim/testing` mocks/factories over local test data. See `.cursor/rules/sim-testing.mdc` for details.
+### Performance Rules
+
+- **NEVER** use `vi.resetModules()` + `vi.doMock()` + `await import()` — use `vi.hoisted()` + `vi.mock()` + static imports
+- **NEVER** use `vi.importActual()` — mock everything explicitly
+- **NEVER** use `mockAuth()`, `mockConsoleLogger()`, `setupCommonApiMocks()` from `@sim/testing` — they use `vi.doMock()` internally
+- **Mock heavy deps** (`@/blocks`, `@/tools/registry`, `@/triggers`) in tests that don't need them
+- **Use `@vitest-environment node`** unless DOM APIs are needed (`window`, `document`, `FormData`)
+- **Avoid real timers** — use 1ms delays or `vi.useFakeTimers()`
+
+Use `@sim/testing` mocks/factories over local test data.
 
 ## Utils Rules
 
@@ -238,13 +262,15 @@ export const ServiceBlock: BlockConfig = {
   bgColor: '#hexcolor',
   icon: ServiceIcon,
   subBlocks: [ /* see SubBlock Properties */ ],
-  tools: { access: ['service_action'], config: { tool: (p) => `service_${p.operation}` } },
+  tools: { access: ['service_action'], config: { tool: (p) => `service_${p.operation}`, params: (p) => ({ /* type coercions here */ }) } },
   inputs: { /* ... */ },
   outputs: { /* ... */ },
 }
 ```
 
 Register in `blocks/registry.ts` (alphabetically).
+
+**Important:** `tools.config.tool` runs during serialization (before variable resolution). Never do `Number()` or other type coercions there — dynamic references like `<Block.output>` will be destroyed. Use `tools.config.params` for type coercions (it runs during execution, after variables are resolved).
 
 **SubBlock Properties:**
 ```typescript
@@ -264,6 +290,23 @@ Register in `blocks/registry.ts` (alphabetically).
 - `{ field: 'op', value: 'x', not: true, and: { field: 'type', value: 'dm', not: true } }` - complex
 
 **dependsOn:** `['field']` or `{ all: ['a'], any: ['b', 'c'] }`
+
+**File Input Pattern (basic/advanced mode):**
+```typescript
+// Basic: file-upload UI
+{ id: 'uploadFile', type: 'file-upload', canonicalParamId: 'file', mode: 'basic' },
+// Advanced: reference from other blocks
+{ id: 'fileRef', type: 'short-input', canonicalParamId: 'file', mode: 'advanced' },
+```
+
+In `tools.config.tool`, normalize with:
+```typescript
+import { normalizeFileInput } from '@/blocks/utils'
+const file = normalizeFileInput(params.uploadFile || params.fileRef, { single: true })
+if (file) params.file = file
+```
+
+For file uploads, create an internal API route (`/api/tools/{service}/upload`) that uses `downloadFileFromStorage` to get file content from `UserFile` objects.
 
 ### 3. Icon (`components/icons.tsx`)
 
@@ -293,3 +336,5 @@ Register in `triggers/registry.ts`.
 - [ ] Create block in `blocks/blocks/{service}.ts`
 - [ ] Register block in `blocks/registry.ts`
 - [ ] (Optional) Create and register triggers
+- [ ] (If file uploads) Create internal API route with `downloadFileFromStorage`
+- [ ] (If file uploads) Use `normalizeFileInput` in block config

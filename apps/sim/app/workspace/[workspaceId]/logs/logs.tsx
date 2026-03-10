@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { cn } from '@/lib/core/utils/cn'
@@ -10,14 +11,26 @@ import {
   hasActiveFilters,
 } from '@/lib/logs/filters'
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
+<<<<<<< HEAD
 import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+=======
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
 import { useFolders } from '@/hooks/queries/folders'
-import { useDashboardStats, useLogDetail, useLogsList } from '@/hooks/queries/logs'
+import {
+  prefetchLogDetail,
+  useDashboardStats,
+  useLogDetail,
+  useLogsList,
+} from '@/hooks/queries/logs'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useFilterStore } from '@/stores/logs/filters/store'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
+<<<<<<< HEAD
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useUserPermissionsContext } from '../providers/workspace-permissions-provider'
+=======
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
 import {
   Dashboard,
   ExecutionSnapshot,
@@ -31,6 +44,38 @@ import { LOG_COLUMN_ORDER, LOG_COLUMNS } from './utils'
 
 const LOGS_PER_PAGE = 50 as const
 const REFRESH_SPINNER_DURATION_MS = 1000 as const
+
+interface LogSelectionState {
+  selectedLogId: string | null
+  isSidebarOpen: boolean
+}
+
+type LogSelectionAction =
+  | { type: 'TOGGLE_LOG'; logId: string }
+  | { type: 'SELECT_LOG'; logId: string }
+  | { type: 'CLOSE_SIDEBAR' }
+  | { type: 'TOGGLE_SIDEBAR' }
+
+function logSelectionReducer(
+  state: LogSelectionState,
+  action: LogSelectionAction
+): LogSelectionState {
+  switch (action.type) {
+    case 'TOGGLE_LOG':
+      if (state.selectedLogId === action.logId && state.isSidebarOpen) {
+        return { selectedLogId: null, isSidebarOpen: false }
+      }
+      return { selectedLogId: action.logId, isSidebarOpen: true }
+    case 'SELECT_LOG':
+      return { ...state, selectedLogId: action.logId }
+    case 'CLOSE_SIDEBAR':
+      return { selectedLogId: null, isSidebarOpen: false }
+    case 'TOGGLE_SIDEBAR':
+      return state.selectedLogId ? { ...state, isSidebarOpen: !state.isSidebarOpen } : state
+    default:
+      return state
+  }
+}
 
 /**
  * Logs page component displaying workflow execution history.
@@ -62,11 +107,13 @@ export default function Logs() {
     setWorkspaceId(workspaceId)
   }, [workspaceId, setWorkspaceId])
 
-  const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [{ selectedLogId, isSidebarOpen }, dispatch] = useReducer(logSelectionReducer, {
+    selectedLogId: null,
+    isSidebarOpen: false,
+  })
   const selectedRowRef = useRef<HTMLTableRowElement | null>(null)
   const loaderRef = useRef<HTMLDivElement>(null)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
   const isInitialized = useRef<boolean>(false)
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -80,10 +127,17 @@ export default function Logs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const [isLive, setIsLive] = useState(false)
+  const [isLive, setIsLive] = useState(true)
   const [isVisuallyRefreshing, setIsVisuallyRefreshing] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const isSearchOpenRef = useRef<boolean>(false)
+  const refreshTimersRef = useRef(new Set<number>())
+  const logsRef = useRef<WorkflowLog[]>([])
+  const selectedLogIndexRef = useRef(-1)
+  const selectedLogIdRef = useRef<string | null>(null)
+  const logsRefetchRef = useRef<() => void>(() => {})
+  const activeLogRefetchRef = useRef<() => void>(() => {})
+  const logsQueryRef = useRef({ isFetching: false, hasNextPage: false, fetchNextPage: () => {} })
   const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false)
   const userPermissions = useUserPermissionsContext()
   const workflows = useWorkflowRegistry((state) => state.workflows)
@@ -97,8 +151,19 @@ export default function Logs() {
   const [previewLogId, setPreviewLogId] = useState<string | null>(null)
 
   const activeLogId = isPreviewOpen ? previewLogId : selectedLogId
+  const queryClient = useQueryClient()
+
+  const detailRefetchInterval = useCallback(
+    (query: { state: { data?: WorkflowLog } }) => {
+      if (!isLive) return false
+      const status = query.state.data?.status
+      return status === 'running' || status === 'pending' ? 3000 : false
+    },
+    [isLive]
+  )
+
   const activeLogQuery = useLogDetail(activeLogId ?? undefined, {
-    refetchInterval: isLive ? 3000 : false,
+    refetchInterval: detailRefetchInterval,
   })
 
   const logFilters = useMemo(
@@ -153,11 +218,50 @@ export default function Logs() {
 
   const selectedLog = useMemo(() => {
     if (!selectedLogFromList) return null
-    if (!activeLogQuery.data || isPreviewOpen) return selectedLogFromList
+    if (!activeLogQuery.data || isPreviewOpen || activeLogQuery.isPlaceholderData)
+      return selectedLogFromList
     return { ...selectedLogFromList, ...activeLogQuery.data }
-  }, [selectedLogFromList, activeLogQuery.data, isPreviewOpen])
+  }, [selectedLogFromList, activeLogQuery.data, activeLogQuery.isPlaceholderData, isPreviewOpen])
+
+  const handleLogHover = useCallback(
+    (log: WorkflowLog) => {
+      prefetchLogDetail(queryClient, log.id)
+    },
+    [queryClient]
+  )
 
   useFolders(workspaceId)
+
+  useEffect(() => {
+    logsRef.current = logs
+  }, [logs])
+  useEffect(() => {
+    selectedLogIndexRef.current = selectedLogIndex
+  }, [selectedLogIndex])
+  useEffect(() => {
+    selectedLogIdRef.current = selectedLogId
+  }, [selectedLogId])
+  useEffect(() => {
+    logsRefetchRef.current = logsQuery.refetch
+  }, [logsQuery.refetch])
+  useEffect(() => {
+    activeLogRefetchRef.current = activeLogQuery.refetch
+  }, [activeLogQuery.refetch])
+  useEffect(() => {
+    logsQueryRef.current = {
+      isFetching: logsQuery.isFetching,
+      hasNextPage: logsQuery.hasNextPage ?? false,
+      fetchNextPage: logsQuery.fetchNextPage,
+    }
+  }, [logsQuery.isFetching, logsQuery.hasNextPage, logsQuery.fetchNextPage])
+
+  useEffect(() => {
+    const timers = refreshTimersRef.current
+    return () => {
+      timers.forEach((id) => window.clearTimeout(id))
+      timers.clear()
+    }
+  }, [])
 
   useEffect(() => {
     if (isInitialized.current) {
@@ -165,6 +269,7 @@ export default function Logs() {
     }
   }, [debouncedSearchQuery, setStoreSearchQuery])
 
+<<<<<<< HEAD
   // Track search event when search query is applied (after debounce or enter)
   const prevSearchQueryRef = useRef<string>('')
   useEffect(() => {
@@ -225,22 +330,29 @@ export default function Logs() {
     },
     [selectedLogId, isSidebarOpen]
   )
+=======
+  const handleLogClick = useCallback((log: WorkflowLog) => {
+    dispatch({ type: 'TOGGLE_LOG', logId: log.id })
+  }, [])
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
 
   const handleNavigateNext = useCallback(() => {
-    if (selectedLogIndex < logs.length - 1) {
-      setSelectedLogId(logs[selectedLogIndex + 1].id)
+    const idx = selectedLogIndexRef.current
+    const currentLogs = logsRef.current
+    if (idx < currentLogs.length - 1) {
+      dispatch({ type: 'SELECT_LOG', logId: currentLogs[idx + 1].id })
     }
-  }, [selectedLogIndex, logs])
+  }, [])
 
   const handleNavigatePrev = useCallback(() => {
-    if (selectedLogIndex > 0) {
-      setSelectedLogId(logs[selectedLogIndex - 1].id)
+    const idx = selectedLogIndexRef.current
+    if (idx > 0) {
+      dispatch({ type: 'SELECT_LOG', logId: logsRef.current[idx - 1].id })
     }
-  }, [selectedLogIndex, logs])
+  }, [])
 
   const handleCloseSidebar = useCallback(() => {
-    setIsSidebarOpen(false)
-    setSelectedLogId(null)
+    dispatch({ type: 'CLOSE_SIDEBAR' })
   }, [])
 
   const handleLogContextMenu = useCallback((e: React.MouseEvent, log: WorkflowLog) => {
@@ -311,26 +423,34 @@ export default function Logs() {
 
   const handleRefresh = useCallback(() => {
     setIsVisuallyRefreshing(true)
-    setTimeout(() => setIsVisuallyRefreshing(false), REFRESH_SPINNER_DURATION_MS)
-    logsQuery.refetch()
-    if (selectedLogId) {
-      activeLogQuery.refetch()
+    const timerId = window.setTimeout(() => {
+      setIsVisuallyRefreshing(false)
+      refreshTimersRef.current.delete(timerId)
+    }, REFRESH_SPINNER_DURATION_MS)
+    refreshTimersRef.current.add(timerId)
+    logsRefetchRef.current()
+    if (selectedLogIdRef.current) {
+      activeLogRefetchRef.current()
     }
-  }, [logsQuery, activeLogQuery, selectedLogId])
+  }, [])
 
   const handleToggleLive = useCallback(() => {
-    const newIsLive = !isLive
-    setIsLive(newIsLive)
-
-    if (newIsLive) {
-      setIsVisuallyRefreshing(true)
-      setTimeout(() => setIsVisuallyRefreshing(false), REFRESH_SPINNER_DURATION_MS)
-      logsQuery.refetch()
-      if (selectedLogId) {
-        activeLogQuery.refetch()
+    setIsLive((prev) => {
+      if (!prev) {
+        setIsVisuallyRefreshing(true)
+        const timerId = window.setTimeout(() => {
+          setIsVisuallyRefreshing(false)
+          refreshTimersRef.current.delete(timerId)
+        }, REFRESH_SPINNER_DURATION_MS)
+        refreshTimersRef.current.add(timerId)
+        logsRefetchRef.current()
+        if (selectedLogIdRef.current) {
+          activeLogRefetchRef.current()
+        }
       }
-    }
-  }, [isLive, logsQuery, activeLogQuery, selectedLogId])
+      return !prev
+    })
+  }, [])
 
   const prevIsFetchingRef = useRef(logsQuery.isFetching)
   useEffect(() => {
@@ -340,11 +460,15 @@ export default function Logs() {
 
     if (isLive && !wasFetching && isFetching) {
       setIsVisuallyRefreshing(true)
-      setTimeout(() => setIsVisuallyRefreshing(false), REFRESH_SPINNER_DURATION_MS)
+      const timerId = window.setTimeout(() => {
+        setIsVisuallyRefreshing(false)
+        refreshTimersRef.current.delete(timerId)
+      }, REFRESH_SPINNER_DURATION_MS)
+      refreshTimersRef.current.add(timerId)
     }
   }, [logsQuery.isFetching, isLive])
 
-  const handleExport = async () => {
+  const handleExport = useCallback(async () => {
     setIsExporting(true)
     try {
       const params = new URLSearchParams()
@@ -378,7 +502,17 @@ export default function Logs() {
     } finally {
       setIsExporting(false)
     }
-  }
+  }, [
+    workspaceId,
+    level,
+    triggers,
+    workflowIds,
+    folderIds,
+    timeRange,
+    startDate,
+    endDate,
+    debouncedSearchQuery,
+  ])
 
   useEffect(() => {
     if (!isInitialized.current) {
@@ -399,41 +533,59 @@ export default function Logs() {
   }, [initializeFromURL])
 
   const loadMoreLogs = useCallback(() => {
-    if (!logsQuery.isFetching && logsQuery.hasNextPage) {
-      logsQuery.fetchNextPage()
+    const { isFetching, hasNextPage, fetchNextPage } = logsQueryRef.current
+    if (!isFetching && hasNextPage) {
+      fetchNextPage()
     }
-  }, [logsQuery])
+  }, [])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isSearchOpenRef.current) return
-      if (logs.length === 0) return
+      const currentLogs = logsRef.current
+      const currentIndex = selectedLogIndexRef.current
+      if (currentLogs.length === 0) return
 
-      if (selectedLogIndex === -1 && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      if (currentIndex === -1 && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault()
-        setSelectedLogId(logs[0].id)
+        dispatch({ type: 'SELECT_LOG', logId: currentLogs[0].id })
         return
       }
 
-      if (e.key === 'ArrowUp' && !e.metaKey && !e.ctrlKey && selectedLogIndex > 0) {
+      if (e.key === 'ArrowUp' && !e.metaKey && !e.ctrlKey && currentIndex > 0) {
         e.preventDefault()
         handleNavigatePrev()
       }
 
-      if (e.key === 'ArrowDown' && !e.metaKey && !e.ctrlKey && selectedLogIndex < logs.length - 1) {
+      if (
+        e.key === 'ArrowDown' &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        currentIndex < currentLogs.length - 1
+      ) {
         e.preventDefault()
         handleNavigateNext()
       }
 
-      if (e.key === 'Enter' && selectedLogId) {
+      if (e.key === 'Enter' && selectedLogIdRef.current) {
         e.preventDefault()
-        setIsSidebarOpen(!isSidebarOpen)
+        dispatch({ type: 'TOGGLE_SIDEBAR' })
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [logs, selectedLogIndex, isSidebarOpen, selectedLogId, handleNavigateNext, handleNavigatePrev])
+  }, [handleNavigateNext, handleNavigatePrev])
+
+  const handleCloseContextMenu = useCallback(() => setContextMenuOpen(false), [])
+  const handleOpenNotificationSettings = useCallback(() => setIsNotificationSettingsOpen(true), [])
+  const handleSearchOpenChange = useCallback((open: boolean) => {
+    isSearchOpenRef.current = open
+  }, [])
+  const handleClosePreview = useCallback(() => {
+    setIsPreviewOpen(false)
+    setPreviewLogId(null)
+  }, [])
 
   const isDashboardView = viewMode === 'dashboard'
 
@@ -453,12 +605,10 @@ export default function Logs() {
               onExport={handleExport}
               canEdit={userPermissions.canEdit}
               hasLogs={logs.length > 0}
-              onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
+              onOpenNotificationSettings={handleOpenNotificationSettings}
               searchQuery={searchQuery}
               onSearchQueryChange={setSearchQuery}
-              onSearchOpenChange={(open: boolean) => {
-                isSearchOpenRef.current = open
-              }}
+              onSearchOpenChange={handleSearchOpenChange}
             />
           </div>
 
@@ -500,7 +650,7 @@ export default function Logs() {
               </div>
 
               {/* Table body - virtualized */}
-              <div className='min-h-0 flex-1 overflow-hidden' ref={scrollContainerRef}>
+              <div className='min-h-0 flex-1 overflow-hidden'>
                 {logsQuery.isLoading && !logsQuery.data ? (
                   <div className='flex h-full items-center justify-center'>
                     <div className='flex items-center gap-[8px] text-[var(--text-secondary)]'>
@@ -527,6 +677,7 @@ export default function Logs() {
                     logs={logs}
                     selectedLogId={selectedLogId}
                     onLogClick={handleLogClick}
+                    onLogHover={handleLogHover}
                     onLogContextMenu={handleLogContextMenu}
                     selectedRowRef={selectedRowRef}
                     hasNextPage={logsQuery.hasNextPage ?? false}
@@ -562,7 +713,7 @@ export default function Logs() {
         isOpen={contextMenuOpen}
         position={contextMenuPosition}
         menuRef={contextMenuRef}
-        onClose={() => setContextMenuOpen(false)}
+        onClose={handleCloseContextMenu}
         log={contextMenuLog}
         onCopyExecutionId={handleCopyExecutionId}
         onOpenWorkflow={handleOpenWorkflow}
@@ -573,16 +724,13 @@ export default function Logs() {
         hasActiveFilters={filtersActive}
       />
 
-      {isPreviewOpen && activeLogQuery.data?.executionId && (
+      {isPreviewOpen && !activeLogQuery.isPlaceholderData && activeLogQuery.data?.executionId && (
         <ExecutionSnapshot
           executionId={activeLogQuery.data.executionId}
           traceSpans={activeLogQuery.data.executionData?.traceSpans}
           isModal
           isOpen={isPreviewOpen}
-          onClose={() => {
-            setIsPreviewOpen(false)
-            setPreviewLogId(null)
-          }}
+          onClose={handleClosePreview}
         />
       )}
     </div>

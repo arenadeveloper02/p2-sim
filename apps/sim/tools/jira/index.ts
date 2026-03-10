@@ -1,3 +1,4 @@
+import { jiraAddAttachmentTool } from '@/tools/jira/add_attachment'
 import { jiraAddCommentTool } from '@/tools/jira/add_comment'
 import { jiraAddWatcherTool } from '@/tools/jira/add_watcher'
 import { jiraAddWorklogTool } from '@/tools/jira/add_worklog'
@@ -16,6 +17,7 @@ import { jiraGetWorklogsTool } from '@/tools/jira/get_worklogs'
 import { jiraRemoveWatcherTool } from '@/tools/jira/remove_watcher'
 import { jiraRetrieveTool } from '@/tools/jira/retrieve'
 import { jiraSearchIssuesTool } from '@/tools/jira/search_issues'
+import { jiraSearchUsersTool } from '@/tools/jira/search_users'
 import { jiraTransitionIssueTool } from '@/tools/jira/transition_issue'
 import { jiraUpdateTool } from '@/tools/jira/update'
 import { jiraUpdateCommentTool } from '@/tools/jira/update_comment'
@@ -32,6 +34,7 @@ export {
   jiraTransitionIssueTool,
   jiraSearchIssuesTool,
   jiraAddCommentTool,
+  jiraAddAttachmentTool,
   jiraGetCommentsTool,
   jiraUpdateCommentTool,
   jiraDeleteCommentTool,
@@ -46,4 +49,5 @@ export {
   jiraAddWatcherTool,
   jiraRemoveWatcherTool,
   jiraGetUsersTool,
+  jiraSearchUsersTool,
 }

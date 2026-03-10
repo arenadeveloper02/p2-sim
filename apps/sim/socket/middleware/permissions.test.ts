@@ -13,7 +13,13 @@ import {
   ROLE_ALLOWED_OPERATIONS,
   SOCKET_OPERATIONS,
 } from '@sim/testing'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/auth', () => ({
+  auth: { api: { getSession: vi.fn() } },
+  getSession: vi.fn(),
+}))
+
 import { checkRolePermission } from '@/socket/middleware/permissions'
 
 describe('checkRolePermission', () => {
@@ -214,6 +220,12 @@ describe('checkRolePermission', () => {
         readAllowed: false,
       },
       { operation: 'toggle-handles', adminAllowed: true, writeAllowed: true, readAllowed: false },
+      {
+        operation: 'batch-toggle-locked',
+        adminAllowed: true,
+        writeAllowed: false, // Admin-only operation
+        readAllowed: false,
+      },
       {
         operation: 'batch-update-positions',
         adminAllowed: true,

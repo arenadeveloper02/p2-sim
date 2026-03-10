@@ -1,13 +1,24 @@
 import { db } from '@sim/db'
-import { account, mcpServers } from '@sim/db/schema'
+import { mcpServers } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { createMcpToolId } from '@/lib/mcp/utils'
-import { refreshTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
+import {
+  validateBlockType,
+  validateCustomToolsAllowed,
+  validateMcpToolsAllowed,
+  validateModelProvider,
+  validateSkillsAllowed,
+} from '@/ee/access-control/utils/permission-check'
 import { AGENT, BlockType, DEFAULTS, REFERENCE, stripCustomToolPrefix } from '@/executor/constants'
 import { memoryService } from '@/executor/handlers/agent/memory'
+import {
+  buildLoadSkillTool,
+  buildSkillsSystemPromptSection,
+  resolveSkillMetadata,
+} from '@/executor/handlers/agent/skills-resolver'
 import type {
   AgentInputs,
   Message,
@@ -23,16 +34,10 @@ import {
   type LatestConversation,
 } from '@/executor/utils/intent-analyzer'
 import { stringifyJSON } from '@/executor/utils/json'
-import {
-  validateBlockType,
-  validateCustomToolsAllowed,
-  validateMcpToolsAllowed,
-  validateModelProvider,
-} from '@/executor/utils/permission-check'
+import { resolveVertexCredential } from '@/executor/utils/vertex-credential'
 import { executeProviderRequest } from '@/providers'
 import { getProviderFromModel, transformBlockTool } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
-import { executeTool } from '@/tools'
 import { getTool, getToolAsync } from '@/tools/utils'
 
 const logger = createLogger('AgentBlockHandler')
@@ -127,8 +132,25 @@ export class AgentBlockHandler implements BlockHandler {
     await validateModelProvider(ctx.userId, model, ctx)
 
     const providerId = getProviderFromModel(model)
-    const formattedTools = await this.formatTools(ctx, filteredInputs.tools || [])
+    const formattedTools = await this.formatTools(
+      ctx,
+      filteredInputs.tools || [],
+      block.canonicalModes
+    )
+
+    const skillInputs = filteredInputs.skills ?? []
+    let skillMetadata: Array<{ name: string; description: string }> = []
+    if (skillInputs.length > 0 && ctx.workspaceId) {
+      await validateSkillsAllowed(ctx.userId, ctx)
+      skillMetadata = await resolveSkillMetadata(skillInputs, ctx.workspaceId)
+      if (skillMetadata.length > 0) {
+        const skillNames = skillMetadata.map((s) => s.name)
+        formattedTools.push(buildLoadSkillTool(skillNames))
+      }
+    }
+
     const streamingConfig = this.getStreamingConfig(ctx, block)
+<<<<<<< HEAD
 
     // Log initial systemPrompt and userPrompt
     logger.debug('Agent block execution started')
@@ -338,6 +360,9 @@ export class AgentBlockHandler implements BlockHandler {
     const lastUserMessage: Message | null = originalUserPrompt
       ? { role: 'user', content: originalUserPrompt }
       : messages?.filter((m) => m.role === 'user').slice(-1)[0] || null
+=======
+    const messages = await this.buildMessages(ctx, filteredInputs, skillMetadata)
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
 
     const providerRequest = this.buildProviderRequest({
       ctx,
@@ -550,7 +575,11 @@ export class AgentBlockHandler implements BlockHandler {
     })
   }
 
-  private async formatTools(ctx: ExecutionContext, inputTools: ToolInput[]): Promise<any[]> {
+  private async formatTools(
+    ctx: ExecutionContext,
+    inputTools: ToolInput[],
+    canonicalModes?: Record<string, 'basic' | 'advanced'>
+  ): Promise<any[]> {
     if (!Array.isArray(inputTools)) return []
 
     const filtered = inputTools.filter((tool) => {
@@ -572,13 +601,13 @@ export class AgentBlockHandler implements BlockHandler {
     const otherResults = await Promise.all(
       otherTools.map(async (tool) => {
         try {
-          if (tool.type && tool.type !== 'custom-tool' && tool.type !== 'mcp') {
+          if (tool.type && tool.type !== 'custom-tool') {
             await validateBlockType(ctx.userId, tool.type, ctx)
           }
           if (tool.type === 'custom-tool' && (tool.schema || tool.customToolId)) {
             return await this.createCustomTool(ctx, tool)
           }
-          return this.transformBlockTool(ctx, tool)
+          return this.transformBlockTool(ctx, tool, canonicalModes)
         } catch (error) {
           logger.error(`[AgentHandler] Error creating tool:`, { tool, error })
           return null
@@ -598,18 +627,17 @@ export class AgentBlockHandler implements BlockHandler {
     const userProvidedParams = tool.params || {}
 
     let schema = tool.schema
-    let code = tool.code
     let title = tool.title
 
-    if (tool.customToolId && !schema) {
+    if (tool.customToolId) {
       const resolved = await this.fetchCustomToolById(ctx, tool.customToolId)
-      if (!resolved) {
+      if (resolved) {
+        schema = resolved.schema
+        title = resolved.title
+      } else if (!schema) {
         logger.error(`Custom tool not found: ${tool.customToolId}`)
         return null
       }
-      schema = resolved.schema
-      code = resolved.code
-      title = resolved.title
     }
 
     if (!schema?.function) {
@@ -617,7 +645,7 @@ export class AgentBlockHandler implements BlockHandler {
       return null
     }
 
-    const { filterSchemaForLLM, mergeToolParameters } = await import('@/tools/params')
+    const { filterSchemaForLLM } = await import('@/tools/params')
 
     const filteredSchema = filterSchemaForLLM(schema.function.parameters, userProvidedParams)
 
@@ -634,6 +662,7 @@ export class AgentBlockHandler implements BlockHandler {
       usageControl: tool.usageControl || 'auto',
     }
 
+<<<<<<< HEAD
     if (code) {
       base.executeFunction = async (callParams: Record<string, any>) => {
         const mergedParams = mergeToolParameters(userProvidedParams, callParams)
@@ -673,6 +702,8 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
+=======
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
     return base
   }
 
@@ -682,7 +713,7 @@ export class AgentBlockHandler implements BlockHandler {
   private async fetchCustomToolById(
     ctx: ExecutionContext,
     customToolId: string
-  ): Promise<{ schema: any; code: string; title: string } | null> {
+  ): Promise<{ schema: any; title: string } | null> {
     if (typeof window !== 'undefined') {
       try {
         const { getCustomTool } = await import('@/hooks/queries/custom-tools')
@@ -690,7 +721,6 @@ export class AgentBlockHandler implements BlockHandler {
         if (tool) {
           return {
             schema: tool.schema,
-            code: tool.code || '',
             title: tool.title,
           }
         }
@@ -710,6 +740,9 @@ export class AgentBlockHandler implements BlockHandler {
       if (ctx.workflowId) {
         params.workflowId = ctx.workflowId
       }
+      if (ctx.userId) {
+        params.userId = ctx.userId
+      }
 
       const url = buildAPIUrl('/api/tools/custom', params)
       const response = await fetch(url.toString(), {
@@ -718,6 +751,7 @@ export class AgentBlockHandler implements BlockHandler {
       })
 
       if (!response.ok) {
+        await response.text().catch(() => {})
         logger.error(`Failed to fetch custom tools: ${response.status}`)
         return null
       }
@@ -736,7 +770,6 @@ export class AgentBlockHandler implements BlockHandler {
 
       return {
         schema: tool.schema,
-        code: tool.code || '',
         title: tool.title,
       }
     } catch (error) {
@@ -801,63 +834,15 @@ export class AgentBlockHandler implements BlockHandler {
     tool: ToolInput
   ): Promise<any> {
     const { serverId, toolName, serverName, ...userProvidedParams } = tool.params || {}
-
-    const { filterSchemaForLLM } = await import('@/tools/params')
-    const filteredSchema = filterSchemaForLLM(
-      tool.schema || { type: 'object', properties: {} },
-      userProvidedParams
-    )
-
-    const toolId = createMcpToolId(serverId, toolName)
-
-    return {
-      id: toolId,
-      name: toolName,
+    return this.buildMcpTool({
+      serverId,
+      toolName,
       description:
         tool.schema?.description || `MCP tool ${toolName} from ${serverName || serverId}`,
-      parameters: filteredSchema,
-      params: userProvidedParams,
-      usageControl: tool.usageControl || 'auto',
-      executeFunction: async (callParams: Record<string, any>) => {
-        const headers = await buildAuthHeaders()
-        const execUrl = buildAPIUrl('/api/mcp/tools/execute')
-
-        const execResponse = await fetch(execUrl.toString(), {
-          method: 'POST',
-          headers,
-          body: stringifyJSON({
-            serverId,
-            toolName,
-            arguments: callParams,
-            workspaceId: ctx.workspaceId,
-            workflowId: ctx.workflowId,
-            toolSchema: tool.schema,
-          }),
-        })
-
-        if (!execResponse.ok) {
-          throw new Error(
-            `MCP tool execution failed: ${execResponse.status} ${execResponse.statusText}`
-          )
-        }
-
-        const result = await execResponse.json()
-        if (!result.success) {
-          throw new Error(result.error || 'MCP tool execution failed')
-        }
-
-        return {
-          success: true,
-          output: result.data.output || {},
-          metadata: {
-            source: 'mcp',
-            serverId,
-            serverName: serverName || serverId,
-            toolName,
-          },
-        }
-      },
-    }
+      schema: tool.schema || { type: 'object', properties: {} },
+      userProvidedParams,
+      usageControl: tool.usageControl,
+    })
   }
 
   /**
@@ -929,6 +914,7 @@ export class AgentBlockHandler implements BlockHandler {
       serverId,
       workspaceId: ctx.workspaceId,
       workflowId: ctx.workflowId,
+      ...(ctx.userId ? { userId: ctx.userId } : {}),
     })
 
     const maxAttempts = 2
@@ -985,70 +971,52 @@ export class AgentBlockHandler implements BlockHandler {
     serverId: string
   ): Promise<any> {
     const { toolName, ...userProvidedParams } = tool.params || {}
+    return this.buildMcpTool({
+      serverId,
+      toolName,
+      description: mcpTool.description || `MCP tool ${toolName} from ${mcpTool.serverName}`,
+      schema: mcpTool.inputSchema || { type: 'object', properties: {} },
+      userProvidedParams,
+      usageControl: tool.usageControl,
+    })
+  }
 
+  private async buildMcpTool(config: {
+    serverId: string
+    toolName: string
+    description: string
+    schema: Record<string, unknown>
+    userProvidedParams: Record<string, unknown>
+    usageControl?: 'auto' | 'force' | 'none'
+  }) {
     const { filterSchemaForLLM } = await import('@/tools/params')
     const filteredSchema = filterSchemaForLLM(
-      mcpTool.inputSchema || { type: 'object', properties: {} },
-      userProvidedParams
+      config.schema as unknown as Parameters<typeof filterSchemaForLLM>[0],
+      config.userProvidedParams as Record<string, unknown>
     )
-
-    const toolId = createMcpToolId(serverId, toolName)
+    const toolId = createMcpToolId(config.serverId, config.toolName)
 
     return {
       id: toolId,
-      name: toolName,
-      description: mcpTool.description || `MCP tool ${toolName} from ${mcpTool.serverName}`,
+      name: config.toolName,
+      description: config.description,
       parameters: filteredSchema,
-      params: userProvidedParams,
-      usageControl: tool.usageControl || 'auto',
-      executeFunction: async (callParams: Record<string, any>) => {
-        const headers = await buildAuthHeaders()
-        const execUrl = buildAPIUrl('/api/mcp/tools/execute')
-
-        const execResponse = await fetch(execUrl.toString(), {
-          method: 'POST',
-          headers,
-          body: stringifyJSON({
-            serverId,
-            toolName,
-            arguments: callParams,
-            workspaceId: ctx.workspaceId,
-            workflowId: ctx.workflowId,
-            toolSchema: mcpTool.inputSchema,
-          }),
-        })
-
-        if (!execResponse.ok) {
-          throw new Error(
-            `MCP tool execution failed: ${execResponse.status} ${execResponse.statusText}`
-          )
-        }
-
-        const result = await execResponse.json()
-        if (!result.success) {
-          throw new Error(result.error || 'MCP tool execution failed')
-        }
-
-        return {
-          success: true,
-          output: result.data.output || {},
-          metadata: {
-            source: 'mcp',
-            serverId,
-            serverName: mcpTool.serverName,
-            toolName,
-          },
-        }
-      },
+      params: config.userProvidedParams,
+      usageControl: config.usageControl || 'auto',
     }
   }
 
-  private async transformBlockTool(ctx: ExecutionContext, tool: ToolInput) {
+  private async transformBlockTool(
+    ctx: ExecutionContext,
+    tool: ToolInput,
+    canonicalModes?: Record<string, 'basic' | 'advanced'>
+  ) {
     const transformedTool = await transformBlockTool(tool, {
       selectedOperation: tool.operation,
       getAllBlocks,
       getToolAsync: (toolId: string) => getToolAsync(toolId, ctx.workflowId),
       getTool,
+      canonicalModes,
     })
 
     if (transformedTool) {
@@ -1076,9 +1044,13 @@ export class AgentBlockHandler implements BlockHandler {
   private async buildMessages(
     ctx: ExecutionContext,
     inputs: AgentInputs,
+<<<<<<< HEAD
     blockId: string,
     preSearchedResults?: Message[],
     lastConversation?: LatestConversation | null
+=======
+    skillMetadata: Array<{ name: string; description: string }> = []
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
     const memoryEnabled = !!inputs.memoryType
@@ -1285,6 +1257,7 @@ export class AgentBlockHandler implements BlockHandler {
       )
     }
 
+<<<<<<< HEAD
     logger.debug('Final messages array built', {
       blockId,
       totalMessages: messages.length,
@@ -1292,6 +1265,21 @@ export class AgentBlockHandler implements BlockHandler {
       userMessages: messages.filter((m) => m.role === 'user').length,
       assistantMessages: messages.filter((m) => m.role === 'assistant').length,
     })
+=======
+    // 8. Inject skill metadata into the system message (progressive disclosure)
+    if (skillMetadata.length > 0) {
+      const skillSection = buildSkillsSystemPromptSection(skillMetadata)
+      const systemIdx = messages.findIndex((m) => m.role === 'system')
+      if (systemIdx >= 0) {
+        messages[systemIdx] = {
+          ...messages[systemIdx],
+          content: messages[systemIdx].content + skillSection,
+        }
+      } else {
+        messages.unshift({ role: 'system', content: skillSection.trim() })
+      }
+    }
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
 
     return messages.length > 0 ? messages : undefined
   }
@@ -1362,24 +1350,17 @@ export class AgentBlockHandler implements BlockHandler {
       }
     }
 
-    // Find first system message
     const firstSystemIndex = messages.findIndex((msg) => msg.role === 'system')
 
     if (firstSystemIndex === -1) {
-      // No system message exists - add at position 0
       messages.unshift({ role: 'system', content })
     } else if (firstSystemIndex === 0) {
-      // System message already at position 0 - replace it
-      // Explicit systemPrompt parameter takes precedence over memory/messages
       messages[0] = { role: 'system', content }
     } else {
-      // System message exists but not at position 0 - move it to position 0
-      // and update with new content
       messages.splice(firstSystemIndex, 1)
       messages.unshift({ role: 'system', content })
     }
 
-    // Remove any additional system messages (keep only the first one)
     for (let i = messages.length - 1; i >= 1; i--) {
       if (messages[i].role === 'system') {
         messages.splice(i, 1)
@@ -1434,8 +1415,17 @@ export class AgentBlockHandler implements BlockHandler {
       systemPrompt: validMessages ? undefined : inputs.systemPrompt,
       context: validMessages ? undefined : stringifyJSON(messages),
       tools: formattedTools,
+<<<<<<< HEAD
       temperature: inputs.temperature,
       maxTokens: normalizedMaxTokens,
+=======
+      temperature:
+        inputs.temperature != null && inputs.temperature !== ''
+          ? Number(inputs.temperature)
+          : undefined,
+      maxTokens:
+        inputs.maxTokens != null && inputs.maxTokens !== '' ? Number(inputs.maxTokens) : undefined,
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
       apiKey: inputs.apiKey,
       azureEndpoint: inputs.azureEndpoint,
       azureApiVersion: inputs.azureApiVersion,
@@ -1448,16 +1438,24 @@ export class AgentBlockHandler implements BlockHandler {
       responseFormat,
       workflowId: ctx.workflowId,
       workspaceId: ctx.workspaceId,
+      userId: ctx.userId,
       stream: streaming,
-      messages,
+      messages: messages?.map(({ executionId, ...msg }) => msg),
       environmentVariables: ctx.environmentVariables || {},
       workflowVariables: ctx.workflowVariables || {},
       blockData,
       blockNameMapping,
+<<<<<<< HEAD
       // Normalize advanced model controls so we never send empty strings
       // Some providers (e.g. OpenAI GPT-5.x) 400 on reasoning_effort: ''
       reasoningEffort: inputs.reasoningEffort || undefined,
       verbosity: inputs.verbosity || undefined,
+=======
+      reasoningEffort: inputs.reasoningEffort,
+      verbosity: inputs.verbosity,
+      thinkingLevel: inputs.thinkingLevel,
+      previousInteractionId: inputs.previousInteractionId,
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
     }
   }
 
@@ -1491,9 +1489,9 @@ export class AgentBlockHandler implements BlockHandler {
       let finalApiKey: string | undefined = providerRequest.apiKey
 
       if (providerId === 'vertex' && providerRequest.vertexCredential) {
-        finalApiKey = await this.resolveVertexCredential(
+        finalApiKey = await resolveVertexCredential(
           providerRequest.vertexCredential,
-          ctx.workflowId
+          'vertex-agent'
         )
       }
 
@@ -1517,6 +1515,7 @@ export class AgentBlockHandler implements BlockHandler {
         responseFormat: providerRequest.responseFormat,
         workflowId: providerRequest.workflowId,
         workspaceId: ctx.workspaceId,
+        userId: ctx.userId,
         stream: providerRequest.stream,
         messages: 'messages' in providerRequest ? providerRequest.messages : undefined,
         environmentVariables: ctx.environmentVariables || {},
@@ -1524,8 +1523,12 @@ export class AgentBlockHandler implements BlockHandler {
         blockData,
         blockNameMapping,
         isDeployedContext: ctx.isDeployedContext,
+        callChain: ctx.callChain,
         reasoningEffort: providerRequest.reasoningEffort,
         verbosity: providerRequest.verbosity,
+        thinkingLevel: providerRequest.thinkingLevel,
+        previousInteractionId: providerRequest.previousInteractionId,
+        abortSignal: ctx.abortSignal,
       })
 
       return this.processProviderResponse(response, block, responseFormat)
@@ -1533,35 +1536,6 @@ export class AgentBlockHandler implements BlockHandler {
       this.handleExecutionError(error, providerStartTime, providerId, model, ctx, block)
       throw error
     }
-  }
-
-  /**
-   * Resolves a Vertex AI OAuth credential to an access token
-   */
-  private async resolveVertexCredential(credentialId: string, workflowId: string): Promise<string> {
-    const requestId = `vertex-${Date.now()}`
-
-    logger.info(`[${requestId}] Resolving Vertex AI credential: ${credentialId}`)
-
-    // Get the credential - we need to find the owner
-    // Since we're in a workflow context, we can query the credential directly
-    const credential = await db.query.account.findFirst({
-      where: eq(account.id, credentialId),
-    })
-
-    if (!credential) {
-      throw new Error(`Vertex AI credential not found: ${credentialId}`)
-    }
-
-    // Refresh the token if needed
-    const { accessToken } = await refreshTokenIfNeeded(requestId, credential, credentialId)
-
-    if (!accessToken) {
-      throw new Error('Failed to get Vertex AI access token')
-    }
-
-    logger.info(`[${requestId}] Successfully resolved Vertex AI credential`)
-    return accessToken
   }
 
   private handleExecutionError(
@@ -1834,6 +1808,7 @@ export class AgentBlockHandler implements BlockHandler {
       content: result.content,
       model: result.model,
       ...this.createResponseMetadata(result),
+      ...(result.interactionId && { interactionId: result.interactionId }),
     }
   }
 
@@ -1851,7 +1826,7 @@ export class AgentBlockHandler implements BlockHandler {
       },
       toolCalls: {
         list: result.toolCalls?.map(this.formatToolCall.bind(this)) || [],
-        count: result.toolCalls?.length || DEFAULTS.EXECUTION_TIME,
+        count: result.toolCalls?.length ?? 0,
       },
       providerTiming: result.timing,
       cost: result.cost,

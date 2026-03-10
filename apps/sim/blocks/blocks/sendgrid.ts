@@ -1,5 +1,6 @@
 import { SendgridIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import type { SendMailResult } from '@/tools/sendgrid/types'
 
 export const SendGridBlock: BlockConfig<SendMailResult> = {
@@ -65,6 +66,7 @@ export const SendGridBlock: BlockConfig<SendMailResult> = {
       type: 'short-input',
       placeholder: 'Sender Name',
       condition: { field: 'operation', value: 'send_mail' },
+      mode: 'advanced',
     },
     {
       id: 'to',
@@ -80,6 +82,7 @@ export const SendGridBlock: BlockConfig<SendMailResult> = {
       type: 'short-input',
       placeholder: 'Recipient Name',
       condition: { field: 'operation', value: 'send_mail' },
+      mode: 'advanced',
     },
     {
       id: 'mailSubject',
@@ -112,6 +115,7 @@ export const SendGridBlock: BlockConfig<SendMailResult> = {
       type: 'short-input',
       placeholder: 'cc@example.com',
       condition: { field: 'operation', value: 'send_mail' },
+      mode: 'advanced',
     },
     {
       id: 'bcc',
@@ -119,6 +123,7 @@ export const SendGridBlock: BlockConfig<SendMailResult> = {
       type: 'short-input',
       placeholder: 'bcc@example.com',
       condition: { field: 'operation', value: 'send_mail' },
+      mode: 'advanced',
     },
     {
       id: 'replyTo',
@@ -126,6 +131,7 @@ export const SendGridBlock: BlockConfig<SendMailResult> = {
       type: 'short-input',
       placeholder: 'replyto@example.com',
       condition: { field: 'operation', value: 'send_mail' },
+      mode: 'advanced',
     },
     {
       id: 'replyToName',
@@ -133,6 +139,7 @@ export const SendGridBlock: BlockConfig<SendMailResult> = {
       type: 'short-input',
       placeholder: 'Reply To Name',
       condition: { field: 'operation', value: 'send_mail' },
+      mode: 'advanced',
     },
     {
       id: 'mailTemplateId',
@@ -140,6 +147,7 @@ export const SendGridBlock: BlockConfig<SendMailResult> = {
       type: 'short-input',
       placeholder: 'SendGrid template ID',
       condition: { field: 'operation', value: 'send_mail' },
+      mode: 'advanced',
     },
     {
       id: 'dynamicTemplateData',
@@ -147,6 +155,7 @@ export const SendGridBlock: BlockConfig<SendMailResult> = {
       type: 'code',
       placeholder: '{"name": "John", "order_id": "12345"}',
       condition: { field: 'operation', value: 'send_mail' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate SendGrid dynamic template data JSON based on the user's description.
@@ -231,6 +240,7 @@ Return ONLY the JSON object.`,
       type: 'code',
       placeholder: '{"custom_field_1": "value1"}',
       condition: { field: 'operation', value: ['add_contact'] },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate SendGrid custom fields JSON based on the user's description.
@@ -263,6 +273,7 @@ Return ONLY the JSON object.`,
       type: 'short-input',
       placeholder: 'Comma-separated list IDs',
       condition: { field: 'operation', value: ['add_contact'] },
+      mode: 'advanced',
     },
     {
       id: 'contactId',
@@ -372,6 +383,7 @@ Return ONLY the JSON array.`,
       type: 'short-input',
       placeholder: '100',
       condition: { field: 'operation', value: 'list_all_lists' },
+      mode: 'advanced',
     },
     // Template fields
     {
@@ -410,6 +422,7 @@ Return ONLY the JSON array.`,
       type: 'short-input',
       placeholder: 'legacy, dynamic, or both',
       condition: { field: 'operation', value: 'list_templates' },
+      mode: 'advanced',
     },
     {
       id: 'templatePageSize',
@@ -417,6 +430,7 @@ Return ONLY the JSON array.`,
       type: 'short-input',
       placeholder: '20',
       condition: { field: 'operation', value: 'list_templates' },
+      mode: 'advanced',
     },
     {
       id: 'versionName',
@@ -513,6 +527,7 @@ Return ONLY the HTML content.`,
       type: 'long-input',
       placeholder: 'Plain text content',
       condition: { field: 'operation', value: 'create_template_version' },
+      mode: 'advanced',
     },
     {
       id: 'active',
@@ -524,6 +539,7 @@ Return ONLY the HTML content.`,
       ],
       value: () => 'true',
       condition: { field: 'operation', value: 'create_template_version' },
+      mode: 'advanced',
     },
   ],
 
@@ -561,8 +577,12 @@ Return ONLY the HTML content.`,
           templateGenerations,
           listPageSize,
           templatePageSize,
+          attachments,
           ...rest
         } = params
+
+        // Normalize attachments for send_mail operation
+        const normalizedAttachments = normalizeFileInput(attachments)
 
         // Map renamed fields back to tool parameter names
         return {
@@ -577,6 +597,7 @@ Return ONLY the HTML content.`,
           ...(templateGenerations && { generations: templateGenerations }),
           ...(listPageSize && { pageSize: listPageSize }),
           ...(templatePageSize && { pageSize: templatePageSize }),
+          ...(normalizedAttachments && { attachments: normalizedAttachments }),
         }
       },
     },
@@ -599,8 +620,7 @@ Return ONLY the HTML content.`,
     replyToName: { type: 'string', description: 'Reply-to name' },
     mailTemplateId: { type: 'string', description: 'Template ID for sending mail' },
     dynamicTemplateData: { type: 'json', description: 'Dynamic template data' },
-    attachmentFiles: { type: 'json', description: 'Files to attach (UI upload)' },
-    attachments: { type: 'array', description: 'Files to attach (UserFile array)' },
+    attachments: { type: 'array', description: 'Files to attach (canonical param)' },
     // Contact inputs
     email: { type: 'string', description: 'Contact email' },
     firstName: { type: 'string', description: 'Contact first name' },

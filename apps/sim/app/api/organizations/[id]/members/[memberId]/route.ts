@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { getUserUsageData } from '@/lib/billing/core/usage'
 import { removeUserFromOrganization } from '@/lib/billing/organizations/membership'
@@ -172,8 +173,15 @@ export async function PUT(
     }
 
     const targetMember = await db
-      .select()
+      .select({
+        id: member.id,
+        role: member.role,
+        userId: member.userId,
+        email: user.email,
+        name: user.name,
+      })
       .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
       .where(and(eq(member.organizationId, organizationId), eq(member.userId, memberId)))
       .limit(1)
 
@@ -211,6 +219,24 @@ export async function PUT(
       memberId,
       newRole: role,
       updatedBy: session.user.id,
+    })
+
+    recordAudit({
+      workspaceId: null,
+      actorId: session.user.id,
+      action: AuditAction.ORG_MEMBER_ROLE_CHANGED,
+      resourceType: AuditResourceType.ORGANIZATION,
+      resourceId: organizationId,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      description: `Changed role for member ${memberId} to ${role}`,
+      metadata: {
+        targetUserId: memberId,
+        targetEmail: targetMember[0].email ?? undefined,
+        targetName: targetMember[0].name ?? undefined,
+        changes: [{ field: 'role', from: targetMember[0].role, to: role }],
+      },
+      request,
     })
 
     return NextResponse.json({
@@ -272,8 +298,9 @@ export async function DELETE(
     }
 
     const targetMember = await db
-      .select({ id: member.id, role: member.role })
+      .select({ id: member.id, role: member.role, email: user.email, name: user.name })
       .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
       .where(and(eq(member.organizationId, organizationId), eq(member.userId, targetUserId)))
       .limit(1)
 
@@ -303,6 +330,27 @@ export async function DELETE(
       removedBy: session.user.id,
       wasSelfRemoval: session.user.id === targetUserId,
       billingActions: result.billingActions,
+    })
+
+    recordAudit({
+      workspaceId: null,
+      actorId: session.user.id,
+      action: AuditAction.ORG_MEMBER_REMOVED,
+      resourceType: AuditResourceType.ORGANIZATION,
+      resourceId: organizationId,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      description:
+        session.user.id === targetUserId
+          ? 'Left the organization'
+          : `Removed member ${targetUserId} from organization`,
+      metadata: {
+        targetUserId,
+        targetEmail: targetMember[0].email ?? undefined,
+        targetName: targetMember[0].name ?? undefined,
+        wasSelfRemoval: session.user.id === targetUserId,
+      },
+      request,
     })
 
     return NextResponse.json({

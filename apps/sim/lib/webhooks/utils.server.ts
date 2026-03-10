@@ -1,19 +1,23 @@
+import crypto from 'crypto'
 import { db, workflowDeploymentVersion } from '@sim/db'
 import { account, webhook } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { type NextRequest, NextResponse } from 'next/server'
+import { safeCompare } from '@/lib/core/security/encryption'
 import {
   type SecureFetchResponse,
   secureFetchWithPinnedIP,
   validateUrlWithDNS,
 } from '@/lib/core/security/input-validation.server'
+import { sanitizeUrlForLog } from '@/lib/core/utils/logging'
 import type { DbOrTx } from '@/lib/db/types'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
 import {
   getCredentialsForCredentialSet,
   refreshAccessTokenIfNeeded,
+  resolveOAuthAccountId,
 } from '@/app/api/auth/oauth/utils'
 
 const logger = createLogger('WebhookUtils')
@@ -63,7 +67,6 @@ export async function handleWhatsAppVerification(
       const verificationToken = providerConfig.verificationToken
 
       if (!verificationToken) {
-        logger.debug(`[${requestId}] Webhook ${wh.id} has no verification token, skipping`)
         continue
       }
 
@@ -112,7 +115,7 @@ async function fetchWithDNSPinning(
     const urlValidation = await validateUrlWithDNS(url, 'contentUrl')
     if (!urlValidation.isValid) {
       logger.warn(`[${requestId}] Invalid content URL: ${urlValidation.error}`, {
-        url: url.substring(0, 100),
+        url,
       })
       return null
     }
@@ -131,7 +134,7 @@ async function fetchWithDNSPinning(
   } catch (error) {
     logger.error(`[${requestId}] Error fetching URL with DNS pinning`, {
       error: error instanceof Error ? error.message : String(error),
-      url: url.substring(0, 100),
+      url: sanitizeUrlForLog(url),
     })
     return null
   }
@@ -225,16 +228,25 @@ async function formatTeamsGraphNotification(
     })
   } else {
     try {
-      const rows = await db.select().from(account).where(eq(account.id, credentialId)).limit(1)
-      if (rows.length === 0) {
-        logger.error('Teams credential not found', { credentialId, chatId: resolvedChatId })
+      const resolved = await resolveOAuthAccountId(credentialId)
+      if (!resolved) {
+        logger.error('Teams credential could not be resolved', { credentialId })
       } else {
-        const effectiveUserId = rows[0].userId
-        accessToken = await refreshAccessTokenIfNeeded(
-          credentialId,
-          effectiveUserId,
-          'teams-graph-notification'
-        )
+        const rows = await db
+          .select()
+          .from(account)
+          .where(eq(account.id, resolved.accountId))
+          .limit(1)
+        if (rows.length === 0) {
+          logger.error('Teams credential not found', { credentialId, chatId: resolvedChatId })
+        } else {
+          const effectiveUserId = rows[0].userId
+          accessToken = await refreshAccessTokenIfNeeded(
+            resolved.accountId,
+            effectiveUserId,
+            'teams-graph-notification'
+          )
+        }
       }
 
       if (accessToken) {
@@ -517,19 +529,211 @@ export async function validateTwilioSignature(
       match: signatureBase64 === signature,
     })
 
-    if (signatureBase64.length !== signature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < signatureBase64.length; i++) {
-      result |= signatureBase64.charCodeAt(i) ^ signature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(signatureBase64, signature)
   } catch (error) {
     logger.error('Error validating Twilio signature:', error)
     return false
+  }
+}
+
+const SLACK_MAX_FILE_SIZE = 50 * 1024 * 1024 // 50 MB
+const SLACK_MAX_FILES = 15
+
+/**
+ * Resolves the full file object from the Slack API when the event payload
+ * only contains a partial file (e.g. missing url_private due to file_access restrictions).
+ * @see https://docs.slack.dev/reference/methods/files.info
+ */
+async function resolveSlackFileInfo(
+  fileId: string,
+  botToken: string
+): Promise<{ url_private?: string; name?: string; mimetype?: string; size?: number } | null> {
+  try {
+    const response = await fetch(
+      `https://slack.com/api/files.info?file=${encodeURIComponent(fileId)}`,
+      {
+        headers: { Authorization: `Bearer ${botToken}` },
+      }
+    )
+
+    const data = (await response.json()) as {
+      ok: boolean
+      error?: string
+      file?: Record<string, any>
+    }
+
+    if (!data.ok || !data.file) {
+      logger.warn('Slack files.info failed', { fileId, error: data.error })
+      return null
+    }
+
+    return {
+      url_private: data.file.url_private,
+      name: data.file.name,
+      mimetype: data.file.mimetype,
+      size: data.file.size,
+    }
+  } catch (error) {
+    logger.error('Error calling Slack files.info', {
+      fileId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
+}
+
+/**
+ * Downloads file attachments from Slack using the bot token.
+ * Returns files in the format expected by WebhookAttachmentProcessor:
+ * { name, data (base64 string), mimeType, size }
+ *
+ * When the event payload contains partial file objects (missing url_private),
+ * falls back to the Slack files.info API to resolve the full file metadata.
+ *
+ * Security:
+ * - Uses validateUrlWithDNS + secureFetchWithPinnedIP to prevent SSRF
+ * - Enforces per-file size limit and max file count
+ */
+async function downloadSlackFiles(
+  rawFiles: any[],
+  botToken: string
+): Promise<Array<{ name: string; data: string; mimeType: string; size: number }>> {
+  const filesToProcess = rawFiles.slice(0, SLACK_MAX_FILES)
+  const downloaded: Array<{ name: string; data: string; mimeType: string; size: number }> = []
+
+  for (const file of filesToProcess) {
+    let urlPrivate = file.url_private as string | undefined
+    let fileName = file.name as string | undefined
+    let fileMimeType = file.mimetype as string | undefined
+    let fileSize = file.size as number | undefined
+
+    // If url_private is missing, resolve via files.info API
+    if (!urlPrivate && file.id) {
+      const resolved = await resolveSlackFileInfo(file.id, botToken)
+      if (resolved?.url_private) {
+        urlPrivate = resolved.url_private
+        fileName = fileName || resolved.name
+        fileMimeType = fileMimeType || resolved.mimetype
+        fileSize = fileSize ?? resolved.size
+      }
+    }
+
+    if (!urlPrivate) {
+      logger.warn('Slack file has no url_private and could not be resolved, skipping', {
+        fileId: file.id,
+      })
+      continue
+    }
+
+    // Skip files that exceed the size limit
+    const reportedSize = Number(fileSize) || 0
+    if (reportedSize > SLACK_MAX_FILE_SIZE) {
+      logger.warn('Slack file exceeds size limit, skipping', {
+        fileId: file.id,
+        size: reportedSize,
+        limit: SLACK_MAX_FILE_SIZE,
+      })
+      continue
+    }
+
+    try {
+      const urlValidation = await validateUrlWithDNS(urlPrivate, 'url_private')
+      if (!urlValidation.isValid) {
+        logger.warn('Slack file url_private failed DNS validation, skipping', {
+          fileId: file.id,
+          error: urlValidation.error,
+        })
+        continue
+      }
+
+      const response = await secureFetchWithPinnedIP(urlPrivate, urlValidation.resolvedIP!, {
+        headers: { Authorization: `Bearer ${botToken}` },
+      })
+
+      if (!response.ok) {
+        logger.warn('Failed to download Slack file, skipping', {
+          fileId: file.id,
+          status: response.status,
+        })
+        continue
+      }
+
+      const arrayBuffer = await response.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+
+      // Verify the actual downloaded size doesn't exceed our limit
+      if (buffer.length > SLACK_MAX_FILE_SIZE) {
+        logger.warn('Downloaded Slack file exceeds size limit, skipping', {
+          fileId: file.id,
+          actualSize: buffer.length,
+          limit: SLACK_MAX_FILE_SIZE,
+        })
+        continue
+      }
+
+      downloaded.push({
+        name: fileName || 'download',
+        data: buffer.toString('base64'),
+        mimeType: fileMimeType || 'application/octet-stream',
+        size: buffer.length,
+      })
+    } catch (error) {
+      logger.error('Error downloading Slack file, skipping', {
+        fileId: file.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return downloaded
+}
+
+const SLACK_REACTION_EVENTS = new Set(['reaction_added', 'reaction_removed'])
+
+/**
+ * Fetches the text of a reacted-to message from Slack using the reactions.get API.
+ * Unlike conversations.history, reactions.get works for both top-level messages and
+ * thread replies, since it looks up the item directly by channel + timestamp.
+ * Requires the bot token to have the reactions:read scope.
+ */
+async function fetchSlackMessageText(
+  channel: string,
+  messageTs: string,
+  botToken: string
+): Promise<string> {
+  try {
+    const params = new URLSearchParams({
+      channel,
+      timestamp: messageTs,
+    })
+    const response = await fetch(`https://slack.com/api/reactions.get?${params}`, {
+      headers: { Authorization: `Bearer ${botToken}` },
+    })
+
+    const data = (await response.json()) as {
+      ok: boolean
+      error?: string
+      type?: string
+      message?: { text?: string }
+    }
+
+    if (!data.ok) {
+      logger.warn('Slack reactions.get failed — message text unavailable', {
+        channel,
+        messageTs,
+        error: data.error,
+      })
+      return ''
+    }
+
+    return data.message?.text ?? ''
+  } catch (error) {
+    logger.warn('Error fetching Slack message text', {
+      channel,
+      messageTs,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return ''
   }
 }
 
@@ -793,43 +997,63 @@ export async function formatWebhookInput(
   }
 
   if (foundWebhook.provider === 'slack') {
-    const event = body?.event
+    const providerConfig = (foundWebhook.providerConfig as Record<string, any>) || {}
+    const botToken = providerConfig.botToken as string | undefined
+    const includeFiles = Boolean(providerConfig.includeFiles)
 
-    if (event && body?.type === 'event_callback') {
-      return {
-        event: {
-          event_type: event.type || '',
-          channel: event.channel || '',
-          channel_name: '',
-          user: event.user || '',
-          user_name: '',
-          text: event.text || '',
-          timestamp: event.ts || event.event_ts || '',
-          thread_ts: event.thread_ts || '',
-          team_id: body.team_id || event.team || '',
-          event_id: body.event_id || '',
-        },
-      }
+    const rawEvent = body?.event
+
+    if (!rawEvent) {
+      logger.warn('Unknown Slack event type', {
+        type: body?.type,
+        hasEvent: false,
+        bodyKeys: Object.keys(body || {}),
+      })
     }
 
-    logger.warn('Unknown Slack event type', {
-      type: body?.type,
-      hasEvent: !!body?.event,
-      bodyKeys: Object.keys(body || {}),
-    })
+    const eventType: string = rawEvent?.type || body?.type || 'unknown'
+    const isReactionEvent = SLACK_REACTION_EVENTS.has(eventType)
+
+    // Reaction events nest channel/ts inside event.item
+    const channel: string = isReactionEvent
+      ? rawEvent?.item?.channel || ''
+      : rawEvent?.channel || ''
+    const messageTs: string = isReactionEvent
+      ? rawEvent?.item?.ts || ''
+      : rawEvent?.ts || rawEvent?.event_ts || ''
+
+    // For reaction events, attempt to fetch the original message text
+    let text: string = rawEvent?.text || ''
+    if (isReactionEvent && channel && messageTs && botToken) {
+      text = await fetchSlackMessageText(channel, messageTs, botToken)
+    }
+
+    const rawFiles: any[] = rawEvent?.files ?? []
+    const hasFiles = rawFiles.length > 0
+
+    let files: any[] = []
+    if (hasFiles && includeFiles && botToken) {
+      files = await downloadSlackFiles(rawFiles, botToken)
+    } else if (hasFiles && includeFiles && !botToken) {
+      logger.warn('Slack message has files and includeFiles is enabled, but no bot token provided')
+    }
 
     return {
       event: {
-        event_type: body?.event?.type || body?.type || 'unknown',
-        channel: body?.event?.channel || '',
+        event_type: eventType,
+        channel,
         channel_name: '',
-        user: body?.event?.user || '',
+        user: rawEvent?.user || '',
         user_name: '',
-        text: body?.event?.text || '',
-        timestamp: body?.event?.ts || '',
-        thread_ts: body?.event?.thread_ts || '',
-        team_id: body?.team_id || '',
+        text,
+        timestamp: messageTs,
+        thread_ts: rawEvent?.thread_ts || '',
+        team_id: body?.team_id || rawEvent?.team || '',
         event_id: body?.event_id || '',
+        reaction: rawEvent?.reaction || '',
+        item_user: rawEvent?.item_user || '',
+        hasFiles,
+        files,
       },
     }
   }
@@ -972,6 +1196,53 @@ export async function formatWebhookInput(
     return extractIssueData(body)
   }
 
+  if (foundWebhook.provider === 'confluence') {
+    const {
+      extractPageData,
+      extractCommentData,
+      extractBlogData,
+      extractAttachmentData,
+      extractSpaceData,
+      extractLabelData,
+    } = await import('@/triggers/confluence/utils')
+
+    const providerConfig = (foundWebhook.providerConfig as Record<string, any>) || {}
+    const triggerId = providerConfig.triggerId as string | undefined
+
+    if (triggerId?.startsWith('confluence_comment_')) {
+      return extractCommentData(body)
+    }
+    if (triggerId?.startsWith('confluence_blog_')) {
+      return extractBlogData(body)
+    }
+    if (triggerId?.startsWith('confluence_attachment_')) {
+      return extractAttachmentData(body)
+    }
+    if (triggerId?.startsWith('confluence_space_')) {
+      return extractSpaceData(body)
+    }
+    if (triggerId?.startsWith('confluence_label_')) {
+      return extractLabelData(body)
+    }
+    // Generic webhook — preserve all entity fields since event type varies
+    if (triggerId === 'confluence_webhook') {
+      return {
+        timestamp: body.timestamp,
+        userAccountId: body.userAccountId,
+        accountType: body.accountType,
+        page: body.page || null,
+        comment: body.comment || null,
+        blog: body.blog || body.blogpost || null,
+        attachment: body.attachment || null,
+        space: body.space || null,
+        label: body.label || null,
+        content: body.content || null,
+      }
+    }
+    // Default: page events
+    return extractPageData(body)
+  }
+
   if (foundWebhook.provider === 'stripe') {
     return body
   }
@@ -1020,6 +1291,49 @@ export async function formatWebhookInput(
     }
   }
 
+  if (foundWebhook.provider === 'attio') {
+    const {
+      extractAttioRecordData,
+      extractAttioRecordUpdatedData,
+      extractAttioRecordMergedData,
+      extractAttioNoteData,
+      extractAttioTaskData,
+      extractAttioCommentData,
+      extractAttioListEntryData,
+      extractAttioListEntryUpdatedData,
+      extractAttioGenericData,
+    } = await import('@/triggers/attio/utils')
+
+    const providerConfig = (foundWebhook.providerConfig as Record<string, any>) || {}
+    const triggerId = providerConfig.triggerId as string | undefined
+
+    if (triggerId === 'attio_record_updated') {
+      return extractAttioRecordUpdatedData(body)
+    }
+    if (triggerId === 'attio_record_merged') {
+      return extractAttioRecordMergedData(body)
+    }
+    if (triggerId === 'attio_record_created' || triggerId === 'attio_record_deleted') {
+      return extractAttioRecordData(body)
+    }
+    if (triggerId?.startsWith('attio_note_')) {
+      return extractAttioNoteData(body)
+    }
+    if (triggerId?.startsWith('attio_task_')) {
+      return extractAttioTaskData(body)
+    }
+    if (triggerId?.startsWith('attio_comment_')) {
+      return extractAttioCommentData(body)
+    }
+    if (triggerId === 'attio_list_entry_updated') {
+      return extractAttioListEntryUpdatedData(body)
+    }
+    if (triggerId === 'attio_list_entry_created' || triggerId === 'attio_list_entry_deleted') {
+      return extractAttioListEntryData(body)
+    }
+    return extractAttioGenericData(body)
+  }
+
   return body
 }
 
@@ -1046,21 +1360,11 @@ export function validateMicrosoftTeamsSignature(
 
     const providedSignature = signature.substring(5)
 
-    const crypto = require('crypto')
     const secretBytes = Buffer.from(hmacSecret, 'base64')
     const bodyBytes = Buffer.from(body, 'utf8')
     const computedHash = crypto.createHmac('sha256', secretBytes).update(bodyBytes).digest('base64')
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating Microsoft Teams signature:', error)
     return false
@@ -1090,19 +1394,9 @@ export function validateTypeformSignature(
 
     const providedSignature = signature.substring(7)
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('base64')
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating Typeform signature:', error)
     return false
@@ -1127,7 +1421,6 @@ export function validateLinearSignature(secret: string, signature: string, body:
       return false
     }
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
 
     logger.debug('Linear signature comparison', {
@@ -1138,18 +1431,44 @@ export function validateLinearSignature(secret: string, signature: string, body:
       match: computedHash === signature,
     })
 
-    if (computedHash.length !== signature.length) {
+    return safeCompare(computedHash, signature)
+  } catch (error) {
+    logger.error('Error validating Linear signature:', error)
+    return false
+  }
+}
+
+/**
+ * Validates an Attio webhook request signature using HMAC SHA-256
+ * @param secret - Attio webhook signing secret (plain text)
+ * @param signature - Attio-Signature header value (hex-encoded HMAC SHA-256 signature)
+ * @param body - Raw request body string
+ * @returns Whether the signature is valid
+ */
+export function validateAttioSignature(secret: string, signature: string, body: string): boolean {
+  try {
+    if (!secret || !signature || !body) {
+      logger.warn('Attio signature validation missing required fields', {
+        hasSecret: !!secret,
+        hasSignature: !!signature,
+        hasBody: !!body,
+      })
       return false
     }
 
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ signature.charCodeAt(i)
-    }
+    const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
 
-    return result === 0
+    logger.debug('Attio signature comparison', {
+      computedSignature: `${computedHash.substring(0, 10)}...`,
+      providedSignature: `${signature.substring(0, 10)}...`,
+      computedLength: computedHash.length,
+      providedLength: signature.length,
+      match: computedHash === signature,
+    })
+
+    return safeCompare(computedHash, signature)
   } catch (error) {
-    logger.error('Error validating Linear signature:', error)
+    logger.error('Error validating Attio signature:', error)
     return false
   }
 }
@@ -1176,7 +1495,6 @@ export function validateCirclebackSignature(
       return false
     }
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
 
     logger.debug('Circleback signature comparison', {
@@ -1187,16 +1505,7 @@ export function validateCirclebackSignature(
       match: computedHash === signature,
     })
 
-    if (computedHash.length !== signature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ signature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, signature)
   } catch (error) {
     logger.error('Error validating Circleback signature:', error)
     return false
@@ -1230,7 +1539,6 @@ export function validateJiraSignature(secret: string, signature: string, body: s
 
     const providedSignature = signature.substring(7)
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
 
     logger.debug('Jira signature comparison', {
@@ -1241,16 +1549,7 @@ export function validateJiraSignature(secret: string, signature: string, body: s
       match: computedHash === providedSignature,
     })
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating Jira signature:', error)
     return false
@@ -1288,7 +1587,6 @@ export function validateFirefliesSignature(
 
     const providedSignature = signature.substring(7)
 
-    const crypto = require('crypto')
     const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
 
     logger.debug('Fireflies signature comparison', {
@@ -1299,16 +1597,7 @@ export function validateFirefliesSignature(
       match: computedHash === providedSignature,
     })
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating Fireflies signature:', error)
     return false
@@ -1333,7 +1622,6 @@ export function validateGitHubSignature(secret: string, signature: string, body:
       return false
     }
 
-    const crypto = require('crypto')
     let algorithm: 'sha256' | 'sha1'
     let providedSignature: string
 
@@ -1361,16 +1649,7 @@ export function validateGitHubSignature(secret: string, signature: string, body:
       match: computedHash === providedSignature,
     })
 
-    if (computedHash.length !== providedSignature.length) {
-      return false
-    }
-
-    let result = 0
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ providedSignature.charCodeAt(i)
-    }
-
-    return result === 0
+    return safeCompare(computedHash, providedSignature)
   } catch (error) {
     logger.error('Error validating GitHub signature:', error)
     return false
@@ -1397,7 +1676,6 @@ export function verifyProviderWebhook(
     case 'telegram': {
       // Check User-Agent to ensure it's not blocked by middleware
       const userAgent = request.headers.get('user-agent') || ''
-      logger.debug(`[${requestId}] Telegram webhook request received with User-Agent: ${userAgent}`)
 
       if (!userAgent) {
         logger.warn(
@@ -1410,8 +1688,6 @@ export function verifyProviderWebhook(
         request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
         request.headers.get('x-real-ip') ||
         'unknown'
-
-      logger.debug(`[${requestId}] Telegram webhook request from IP: ${clientIp}`)
 
       break
     }
@@ -1512,9 +1788,21 @@ export async function fetchAndProcessAirtablePayloads(
       return
     }
 
+    const resolvedAirtable = await resolveOAuthAccountId(credentialId)
+    if (!resolvedAirtable) {
+      logger.error(
+        `[${requestId}] Could not resolve credential ${credentialId} for Airtable webhook`
+      )
+      return
+    }
+
     let ownerUserId: string | null = null
     try {
-      const rows = await db.select().from(account).where(eq(account.id, credentialId)).limit(1)
+      const rows = await db
+        .select()
+        .from(account)
+        .where(eq(account.id, resolvedAirtable.accountId))
+        .limit(1)
       ownerUserId = rows.length ? rows[0].userId : null
     } catch (_e) {
       ownerUserId = null
@@ -1560,27 +1848,23 @@ export async function fetchAndProcessAirtablePayloads(
 
     if (storedCursor && typeof storedCursor === 'number') {
       currentCursor = storedCursor
-      logger.debug(
-        `[${requestId}] Using stored cursor: ${currentCursor} for webhook ${webhookData.id}`
-      )
     } else {
       currentCursor = null
-      logger.debug(
-        `[${requestId}] No valid stored cursor for webhook ${webhookData.id}, starting from beginning`
-      )
     }
 
     let accessToken: string | null = null
     try {
-      accessToken = await refreshAccessTokenIfNeeded(credentialId, ownerUserId, requestId)
+      accessToken = await refreshAccessTokenIfNeeded(
+        resolvedAirtable.accountId,
+        ownerUserId,
+        requestId
+      )
       if (!accessToken) {
         logger.error(
           `[${requestId}] Failed to obtain valid Airtable access token via credential ${credentialId}.`
         )
         throw new Error('Airtable access token not found.')
       }
-
-      logger.info(`[${requestId}] Successfully obtained Airtable access token`)
     } catch (tokenError: any) {
       logger.error(
         `[${requestId}] Failed to get Airtable OAuth token for credential ${credentialId}`,
@@ -1600,10 +1884,6 @@ export async function fetchAndProcessAirtablePayloads(
       apiCallCount++
       // Safety break
       if (apiCallCount > 10) {
-        logger.warn(`[${requestId}] Reached maximum polling limit (10 calls)`, {
-          webhookId: webhookData.id,
-          consolidatedCount: consolidatedChangesMap.size,
-        })
         mightHaveMore = false
         break
       }
@@ -1615,11 +1895,6 @@ export async function fetchAndProcessAirtablePayloads(
       }
       const fullUrl = `${apiUrl}?${queryParams.toString()}`
 
-      logger.debug(`[${requestId}] Fetching Airtable payloads (call ${apiCallCount})`, {
-        url: fullUrl,
-        webhookId: webhookData.id,
-      })
-
       try {
         const fetchStartTime = Date.now()
         const response = await fetch(fullUrl, {
@@ -1628,14 +1903,6 @@ export async function fetchAndProcessAirtablePayloads(
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
-        })
-
-        // DEBUG: Log API response time
-        logger.debug(`[${requestId}] TRACE: Airtable API response received`, {
-          status: response.status,
-          duration: `${Date.now() - fetchStartTime}ms`,
-          hasBody: true,
-          apiCall: apiCallCount,
         })
 
         const responseBody = await response.json()
@@ -1659,9 +1926,6 @@ export async function fetchAndProcessAirtablePayloads(
         }
 
         const receivedPayloads = responseBody.payloads || []
-        logger.debug(
-          `[${requestId}] Received ${receivedPayloads.length} payloads from Airtable (call ${apiCallCount})`
-        )
 
         // --- Process and Consolidate Changes ---
         if (receivedPayloads.length > 0) {
@@ -1673,13 +1937,6 @@ export async function fetchAndProcessAirtablePayloads(
           let changeCount = 0
           for (const payload of receivedPayloads) {
             if (payload.changedTablesById) {
-              // DEBUG: Log tables being processed
-              const tableIds = Object.keys(payload.changedTablesById)
-              logger.debug(`[${requestId}] TRACE: Processing changes for tables`, {
-                tables: tableIds,
-                payloadTimestamp: payload.timestamp,
-              })
-
               for (const [tableId, tableChangesUntyped] of Object.entries(
                 payload.changedTablesById
               )) {
@@ -1689,10 +1946,6 @@ export async function fetchAndProcessAirtablePayloads(
                 if (tableChanges.createdRecordsById) {
                   const createdCount = Object.keys(tableChanges.createdRecordsById).length
                   changeCount += createdCount
-                  // DEBUG: Log created records count
-                  logger.debug(
-                    `[${requestId}] TRACE: Processing ${createdCount} created records for table ${tableId}`
-                  )
 
                   for (const [recordId, recordDataUntyped] of Object.entries(
                     tableChanges.createdRecordsById
@@ -1722,10 +1975,6 @@ export async function fetchAndProcessAirtablePayloads(
                 if (tableChanges.changedRecordsById) {
                   const updatedCount = Object.keys(tableChanges.changedRecordsById).length
                   changeCount += updatedCount
-                  // DEBUG: Log updated records count
-                  logger.debug(
-                    `[${requestId}] TRACE: Processing ${updatedCount} updated records for table ${tableId}`
-                  )
 
                   for (const [recordId, recordDataUntyped] of Object.entries(
                     tableChanges.changedRecordsById
@@ -1762,21 +2011,12 @@ export async function fetchAndProcessAirtablePayloads(
               }
             }
           }
-
-          // DEBUG: Log totals for this batch
-          logger.debug(
-            `[${requestId}] TRACE: Processed ${changeCount} changes in API call ${apiCallCount})`,
-            {
-              currentMapSize: consolidatedChangesMap.size,
-            }
-          )
         }
 
         const nextCursor = responseBody.cursor
         mightHaveMore = responseBody.mightHaveMore || false
 
         if (nextCursor && typeof nextCursor === 'number' && nextCursor !== currentCursor) {
-          logger.debug(`[${requestId}] Updating cursor from ${currentCursor} to ${nextCursor}`)
           currentCursor = nextCursor
 
           // Follow exactly the old implementation - use awaited update instead of parallel
@@ -1813,7 +2053,6 @@ export async function fetchAndProcessAirtablePayloads(
           })
           mightHaveMore = false
         } else if (nextCursor === currentCursor) {
-          logger.debug(`[${requestId}] Cursor hasn't changed (${currentCursor}), stopping poll`)
           mightHaveMore = false // Explicitly stop if cursor hasn't changed
         }
       } catch (fetchError: any) {
@@ -1905,14 +2144,6 @@ export async function fetchAndProcessAirtablePayloads(
     )
     // Error logging handled by logging session
   }
-
-  // DEBUG: Log function completion
-  logger.debug(`[${requestId}] TRACE: fetchAndProcessAirtablePayloads completed`, {
-    totalFetched: payloadsFetched,
-    totalApiCalls: apiCallCount,
-    totalChanges: consolidatedChangesMap.size,
-    timestamp: new Date().toISOString(),
-  })
 }
 
 // Define an interface for AirtableChange
@@ -2298,8 +2529,19 @@ export async function configureGmailPolling(webhookData: any, requestId: string)
       return false
     }
 
-    // Verify credential exists and get userId
-    const rows = await db.select().from(account).where(eq(account.id, credentialId)).limit(1)
+    const resolvedGmail = await resolveOAuthAccountId(credentialId)
+    if (!resolvedGmail) {
+      logger.error(
+        `[${requestId}] Could not resolve credential ${credentialId} for Gmail webhook ${webhookData.id}`
+      )
+      return false
+    }
+
+    const rows = await db
+      .select()
+      .from(account)
+      .where(eq(account.id, resolvedGmail.accountId))
+      .limit(1)
     if (rows.length === 0) {
       logger.error(
         `[${requestId}] Credential ${credentialId} not found for Gmail webhook ${webhookData.id}`
@@ -2309,8 +2551,11 @@ export async function configureGmailPolling(webhookData: any, requestId: string)
 
     const effectiveUserId = rows[0].userId
 
-    // Verify token can be refreshed
-    const accessToken = await refreshAccessTokenIfNeeded(credentialId, effectiveUserId, requestId)
+    const accessToken = await refreshAccessTokenIfNeeded(
+      resolvedGmail.accountId,
+      effectiveUserId,
+      requestId
+    )
     if (!accessToken) {
       logger.error(
         `[${requestId}] Failed to refresh/access Gmail token for credential ${credentialId}`
@@ -2384,8 +2629,19 @@ export async function configureOutlookPolling(
       return false
     }
 
-    // Verify credential exists and get userId
-    const rows = await db.select().from(account).where(eq(account.id, credentialId)).limit(1)
+    const resolvedOutlook = await resolveOAuthAccountId(credentialId)
+    if (!resolvedOutlook) {
+      logger.error(
+        `[${requestId}] Could not resolve credential ${credentialId} for Outlook webhook ${webhookData.id}`
+      )
+      return false
+    }
+
+    const rows = await db
+      .select()
+      .from(account)
+      .where(eq(account.id, resolvedOutlook.accountId))
+      .limit(1)
     if (rows.length === 0) {
       logger.error(
         `[${requestId}] Credential ${credentialId} not found for Outlook webhook ${webhookData.id}`
@@ -2395,8 +2651,11 @@ export async function configureOutlookPolling(
 
     const effectiveUserId = rows[0].userId
 
-    // Verify token can be refreshed
-    const accessToken = await refreshAccessTokenIfNeeded(credentialId, effectiveUserId, requestId)
+    const accessToken = await refreshAccessTokenIfNeeded(
+      resolvedOutlook.accountId,
+      effectiveUserId,
+      requestId
+    )
     if (!accessToken) {
       logger.error(
         `[${requestId}] Failed to refresh/access Outlook token for credential ${credentialId}`
@@ -2536,4 +2795,49 @@ export function convertSquareBracketsToTwiML(twiml: string | undefined): string 
 
   // Replace [Tag] with <Tag> and [/Tag] with </Tag>
   return twiml.replace(/\[(\/?[^\]]+)\]/g, '<$1>')
+}
+
+/**
+ * Validates a Cal.com webhook request signature using HMAC SHA-256
+ * @param secret - Cal.com webhook secret (plain text)
+ * @param signature - X-Cal-Signature-256 header value (hex-encoded HMAC SHA-256 signature)
+ * @param body - Raw request body string
+ * @returns Whether the signature is valid
+ */
+export function validateCalcomSignature(secret: string, signature: string, body: string): boolean {
+  try {
+    if (!secret || !signature || !body) {
+      logger.warn('Cal.com signature validation missing required fields', {
+        hasSecret: !!secret,
+        hasSignature: !!signature,
+        hasBody: !!body,
+      })
+      return false
+    }
+
+    // Cal.com sends signature in format: sha256=<hex>
+    // We need to strip the prefix before comparing
+    let providedSignature: string
+    if (signature.startsWith('sha256=')) {
+      providedSignature = signature.substring(7)
+    } else {
+      // If no prefix, use as-is (for backwards compatibility)
+      providedSignature = signature
+    }
+
+    const computedHash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex')
+
+    logger.debug('Cal.com signature comparison', {
+      computedSignature: `${computedHash.substring(0, 10)}...`,
+      providedSignature: `${providedSignature.substring(0, 10)}...`,
+      computedLength: computedHash.length,
+      providedLength: providedSignature.length,
+      match: computedHash === providedSignature,
+    })
+
+    return safeCompare(computedHash, providedSignature)
+  } catch (error) {
+    logger.error('Error validating Cal.com signature:', error)
+    return false
+  }
 }

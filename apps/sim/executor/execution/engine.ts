@@ -4,6 +4,7 @@ import { BlockType, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
 import { serializePauseSnapshot } from '@/executor/execution/snapshot-serializer'
+import type { SerializableExecutionState } from '@/executor/execution/types'
 import type { NodeExecutionOrchestrator } from '@/executor/orchestrators/node'
 import type {
   ExecutionContext,
@@ -27,6 +28,7 @@ export class ExecutionEngine {
   private allowResumeTriggers: boolean
   private cancelledFlag = false
   private errorFlag = false
+  private stoppedEarlyFlag = false
   private executionError: Error | null = null
   private skippedFlag = false // Track if workflow was skipped
   private lastCancellationCheck = 0
@@ -102,12 +104,12 @@ export class ExecutionEngine {
   }
 
   async run(triggerBlockId?: string): Promise<ExecutionResult> {
-    const startTime = Date.now()
+    const startTime = performance.now()
     try {
       this.initializeQueue(triggerBlockId)
 
       while (this.hasWork()) {
-        if ((await this.checkCancellation()) || this.errorFlag || this.skippedFlag) {
+        if ((await this.checkCancellation()) || this.errorFlag || this.stoppedEarlyFlag || this.skippedFlag) {
           break
         }
         await this.processQueue()
@@ -126,15 +128,17 @@ export class ExecutionEngine {
         return this.buildPausedResult(startTime)
       }
 
-      const endTime = Date.now()
-      this.context.metadata.endTime = new Date(endTime).toISOString()
+      const endTime = performance.now()
+      this.context.metadata.endTime = new Date().toISOString()
       this.context.metadata.duration = endTime - startTime
 
       if (this.cancelledFlag) {
+        this.finalizeIncompleteLogs()
         return {
           success: false,
           output: this.finalOutput,
           logs: this.context.blockLogs,
+          executionState: this.getSerializableExecutionState(),
           metadata: this.context.metadata,
           status: 'cancelled',
         }
@@ -144,22 +148,27 @@ export class ExecutionEngine {
         success: true,
         output: this.finalOutput,
         logs: this.context.blockLogs,
+        executionState: this.getSerializableExecutionState(),
         metadata: this.context.metadata,
       }
     } catch (error) {
-      const endTime = Date.now()
-      this.context.metadata.endTime = new Date(endTime).toISOString()
+      const endTime = performance.now()
+      this.context.metadata.endTime = new Date().toISOString()
       this.context.metadata.duration = endTime - startTime
 
       if (this.cancelledFlag) {
+        this.finalizeIncompleteLogs()
         return {
           success: false,
           output: this.finalOutput,
           logs: this.context.blockLogs,
+          executionState: this.getSerializableExecutionState(),
           metadata: this.context.metadata,
           status: 'cancelled',
         }
       }
+
+      this.finalizeIncompleteLogs()
 
       const errorMessage = normalizeError(error)
       logger.error('Execution failed', { error: errorMessage })
@@ -261,6 +270,16 @@ export class ExecutionEngine {
   }
 
   private initializeQueue(triggerBlockId?: string): void {
+    if (this.context.runFromBlockContext) {
+      const { startBlockId } = this.context.runFromBlockContext
+      logger.info('Initializing queue for run-from-block mode', {
+        startBlockId,
+        dirtySetSize: this.context.runFromBlockContext.dirtySet.size,
+      })
+      this.addToQueue(startBlockId)
+      return
+    }
+
     const pendingBlocks = this.context.metadata.pendingBlocks
     const remainingEdges = (this.context.metadata as any).remainingEdges
 
@@ -438,6 +457,7 @@ export class ExecutionEngine {
       this.finalOutput = output
     }
 
+<<<<<<< HEAD
     // Check if this is a terminal block (Response blocks or blocks with no outgoing edges)
     // Terminal blocks outside loops should stop the workflow, but inside loops they should allow continuation
     const blockType = node.block.metadata?.id
@@ -457,10 +477,20 @@ export class ExecutionEngine {
         this.readyQueue = []
         // Set final output to the Response block output
         this.finalOutput = output
+=======
+    if (this.context.stopAfterBlockId === nodeId) {
+      // For loop/parallel sentinels, only stop if the subflow has fully exited (all iterations done)
+      // shouldContinue: true means more iterations, shouldExit: true means loop is done
+      const shouldContinueLoop = output.shouldContinue === true
+      if (!shouldContinueLoop) {
+        logger.info('Stopping execution after target block', { nodeId })
+        this.stoppedEarlyFlag = true
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
         return
       }
     }
 
+<<<<<<< HEAD
     // When a loop sentinel start exits early (e.g., empty forEach collection),
     // the loop body is skipped but we must still trigger the sentinel end so its
     // LOOP_EXIT edge routes execution to the block after the loop.
@@ -522,10 +552,19 @@ export class ExecutionEngine {
     // For Response blocks inside loops, process outgoing edges normally
     // Response blocks should have edges to sentinel end (they're terminal nodes)
     const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false, this.context)
+=======
+    const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false)
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
 
     logger.info('Processing outgoing edges', {
       nodeId,
       outgoingEdgesCount: node.outgoingEdges.size,
+      outgoingEdges: Array.from(node.outgoingEdges.entries()).map(([id, e]) => ({
+        id,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+      })),
+      output,
       readyNodesCount: readyNodes.length,
       isResponseBlock,
       isInsideLoop,
@@ -588,8 +627,8 @@ export class ExecutionEngine {
   }
 
   private buildPausedResult(startTime: number): ExecutionResult {
-    const endTime = Date.now()
-    this.context.metadata.endTime = new Date(endTime).toISOString()
+    const endTime = performance.now()
+    this.context.metadata.endTime = new Date().toISOString()
     this.context.metadata.duration = endTime - startTime
     this.context.metadata.status = 'paused'
 
@@ -610,6 +649,7 @@ export class ExecutionEngine {
       success: true,
       output: this.collectPauseResponses(),
       logs: this.context.blockLogs,
+      executionState: this.getSerializableExecutionState(snapshotSeed),
       metadata: this.context.metadata,
       status: 'paused',
       pausePoints,
@@ -617,6 +657,7 @@ export class ExecutionEngine {
     }
   }
 
+<<<<<<< HEAD
   /**
    * Runs intent analyzer once at workflow start if workflow has Agent blocks.
    * Stores result in context for Agent blocks to use.
@@ -751,6 +792,23 @@ export class ExecutionEngine {
         }
       )
       // Continue execution even if intent analyzer fails
+=======
+  private getSerializableExecutionState(snapshotSeed?: {
+    snapshot: string
+  }): SerializableExecutionState | undefined {
+    try {
+      const serializedSnapshot =
+        snapshotSeed?.snapshot ?? serializePauseSnapshot(this.context, [], this.dag).snapshot
+      const parsedSnapshot = JSON.parse(serializedSnapshot) as {
+        state?: SerializableExecutionState
+      }
+      return parsedSnapshot.state
+    } catch (error) {
+      logger.warn('Failed to serialize execution state', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
     }
   }
 
@@ -764,6 +822,22 @@ export class ExecutionEngine {
     return {
       pausedBlocks: responses,
       pauseCount: responses.length,
+    }
+  }
+
+  /**
+   * Finalizes any block logs that were still running when execution was cancelled.
+   * Sets their endedAt to now and calculates the actual elapsed duration.
+   */
+  private finalizeIncompleteLogs(): void {
+    const now = new Date()
+    const nowIso = now.toISOString()
+
+    for (const log of this.context.blockLogs) {
+      if (!log.endedAt) {
+        log.endedAt = nowIso
+        log.durationMs = now.getTime() - new Date(log.startedAt).getTime()
+      }
     }
   }
 }

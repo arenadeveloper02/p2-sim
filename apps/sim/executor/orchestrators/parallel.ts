@@ -3,11 +3,17 @@ import { DEFAULTS } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { ParallelScope } from '@/executor/execution/state'
 import type { BlockStateWriter, ContextExtensions } from '@/executor/execution/types'
-import type { ExecutionContext, NormalizedBlockOutput } from '@/executor/types'
+import {
+  type ExecutionContext,
+  getNextExecutionOrder,
+  type NormalizedBlockOutput,
+} from '@/executor/types'
 import type { ParallelConfigWithNodes } from '@/executor/types/parallel'
+import { buildContainerIterationContext } from '@/executor/utils/iteration-context'
 import { ParallelExpander } from '@/executor/utils/parallel-expansion'
 import {
   addSubflowErrorLog,
+  emitEmptySubflowEvents,
   extractBranchIndex,
   resolveArrayInput,
   validateMaxCount,
@@ -32,22 +38,14 @@ export interface ParallelAggregationResult {
 }
 
 export class ParallelOrchestrator {
-  private resolver: VariableResolver | null = null
-  private contextExtensions: ContextExtensions | null = null
   private expander = new ParallelExpander()
 
   constructor(
     private dag: DAG,
-    private state: BlockStateWriter
+    private state: BlockStateWriter,
+    private resolver: VariableResolver | null = null,
+    private contextExtensions: ContextExtensions | null = null
   ) {}
-
-  setResolver(resolver: VariableResolver): void {
-    this.resolver = resolver
-  }
-
-  setContextExtensions(contextExtensions: ContextExtensions): void {
-    this.contextExtensions = contextExtensions
-  }
 
   initializeParallelScope(
     ctx: ExecutionContext,
@@ -61,11 +59,13 @@ export class ParallelOrchestrator {
 
     let items: any[] | undefined
     let branchCount: number
+    let isEmpty = false
 
     try {
-      const resolved = this.resolveBranchCount(ctx, parallelConfig)
+      const resolved = this.resolveBranchCount(ctx, parallelConfig, parallelId)
       branchCount = resolved.branchCount
       items = resolved.items
+      isEmpty = resolved.isEmpty ?? false
     } catch (error) {
       const errorMessage = `Parallel Items did not resolve: ${error instanceof Error ? error.message : String(error)}`
       logger.error(errorMessage, { parallelId, distribution: parallelConfig.distribution })
@@ -91,7 +91,84 @@ export class ParallelOrchestrator {
       throw new Error(branchError)
     }
 
-    const { entryNodes } = this.expander.expandParallel(this.dag, parallelId, branchCount, items)
+    if (isEmpty || branchCount === 0) {
+      const scope: ParallelScope = {
+        parallelId,
+        totalBranches: 0,
+        branchOutputs: new Map(),
+        completedCount: 0,
+        totalExpectedNodes: 0,
+        items: [],
+        isEmpty: true,
+      }
+
+      if (!ctx.parallelExecutions) {
+        ctx.parallelExecutions = new Map()
+      }
+      ctx.parallelExecutions.set(parallelId, scope)
+
+      this.state.setBlockOutput(parallelId, { results: [] })
+
+      emitEmptySubflowEvents(ctx, parallelId, 'parallel', this.contextExtensions)
+
+      logger.info('Parallel scope initialized with empty distribution, skipping body', {
+        parallelId,
+        branchCount: 0,
+      })
+
+      return scope
+    }
+
+    const { entryNodes, clonedSubflows } = this.expander.expandParallel(
+      this.dag,
+      parallelId,
+      branchCount,
+      items
+    )
+
+    // Register cloned subflows in the parent map so iteration context resolves correctly.
+    // Build a per-branch clone map so nested clones point to the cloned parent, not the original.
+    if (clonedSubflows.length > 0 && ctx.subflowParentMap) {
+      const branchCloneMaps = new Map<number, Map<string, string>>()
+      for (const clone of clonedSubflows) {
+        let map = branchCloneMaps.get(clone.outerBranchIndex)
+        if (!map) {
+          map = new Map()
+          branchCloneMaps.set(clone.outerBranchIndex, map)
+        }
+        map.set(clone.originalId, clone.clonedId)
+      }
+
+      for (const clone of clonedSubflows) {
+        const originalEntry = ctx.subflowParentMap.get(clone.originalId)
+        if (originalEntry) {
+          const cloneMap = branchCloneMaps.get(clone.outerBranchIndex)
+          const clonedParentId = cloneMap?.get(originalEntry.parentId)
+          if (clonedParentId) {
+            // Parent was also cloned — this is the original (branch 0) inside the cloned parent
+            ctx.subflowParentMap.set(clone.clonedId, {
+              parentId: clonedParentId,
+              parentType: originalEntry.parentType,
+              branchIndex: 0,
+            })
+          } else {
+            // Parent was not cloned — direct child of the expanding parallel
+            ctx.subflowParentMap.set(clone.clonedId, {
+              parentId: parallelId,
+              parentType: 'parallel',
+              branchIndex: clone.outerBranchIndex,
+            })
+          }
+        } else {
+          // Not in parent map — direct child of the expanding parallel
+          ctx.subflowParentMap.set(clone.clonedId, {
+            parentId: parallelId,
+            parentType: 'parallel',
+            branchIndex: clone.outerBranchIndex,
+          })
+        }
+      }
+    }
 
     const scope: ParallelScope = {
       parallelId,
@@ -127,15 +204,17 @@ export class ParallelOrchestrator {
 
   private resolveBranchCount(
     ctx: ExecutionContext,
-    config: SerializedParallel
-  ): { branchCount: number; items?: any[] } {
+    config: SerializedParallel,
+    parallelId: string
+  ): { branchCount: number; items?: any[]; isEmpty?: boolean } {
     if (config.parallelType === 'count') {
       return { branchCount: config.count ?? 1 }
     }
 
     const items = this.resolveDistributionItems(ctx, config)
     if (items.length === 0) {
-      return { branchCount: config.count ?? 1 }
+      logger.info('Parallel has empty distribution, skipping parallel body', { parallelId })
+      return { branchCount: 0, items: [], isEmpty: true }
     }
 
     return { branchCount: items.length, items }
@@ -174,10 +253,6 @@ export class ParallelOrchestrator {
   }
 
   private resolveDistributionItems(ctx: ExecutionContext, config: SerializedParallel): any[] {
-    if (config.parallelType === 'count') {
-      return []
-    }
-
     if (
       config.distribution === undefined ||
       config.distribution === null ||
@@ -225,12 +300,37 @@ export class ParallelOrchestrator {
 
     const results: NormalizedBlockOutput[][] = []
     for (let i = 0; i < scope.totalBranches; i++) {
-      const branchOutputs = scope.branchOutputs.get(i) || []
-      results.push(branchOutputs)
+      const branchOutputs = scope.branchOutputs.get(i)
+      if (!branchOutputs) {
+        logger.warn('Missing branch output during parallel aggregation', { parallelId, branch: i })
+      }
+      results.push(branchOutputs ?? [])
     }
-    this.state.setBlockOutput(parallelId, {
-      results,
-    })
+    const output = { results }
+    this.state.setBlockOutput(parallelId, output)
+
+    // Emit onBlockComplete for the parallel container so the UI can track it.
+    // When this parallel is nested inside a parent subflow (parallel or loop), emit
+    // iteration context so the terminal can group this event under the parent container.
+    if (this.contextExtensions?.onBlockComplete) {
+      const now = new Date().toISOString()
+      const iterationContext = buildContainerIterationContext(ctx, parallelId)
+
+      this.contextExtensions.onBlockComplete(
+        parallelId,
+        'Parallel',
+        'parallel',
+        {
+          output,
+          executionTime: 0,
+          startedAt: now,
+          executionOrder: getNextExecutionOrder(ctx),
+          endedAt: now,
+        },
+        iterationContext
+      )
+    }
+
     return {
       allBranchesComplete: true,
       results,

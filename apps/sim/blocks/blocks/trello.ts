@@ -1,4 +1,5 @@
 import { TrelloIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
@@ -42,32 +43,67 @@ export const TrelloBlock: BlockConfig<ToolResponse> = {
       title: 'Trello Account',
       type: 'oauth-input',
       serviceId: 'trello',
-      requiredScopes: ['read', 'write'],
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
+      requiredScopes: getScopesForService('trello'),
       placeholder: 'Select Trello account',
+      required: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'Trello Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
     },
 
     {
-      id: 'boardId',
+      id: 'boardSelector',
       title: 'Board',
-      type: 'short-input',
-      placeholder: 'Enter board ID',
+      type: 'project-selector',
+      canonicalParamId: 'boardId',
+      serviceId: 'trello',
+      selectorKey: 'trello.boards',
+      selectorAllowSearch: false,
+      placeholder: 'Select Trello board',
+      dependsOn: ['credential'],
+      mode: 'basic',
       condition: {
         field: 'operation',
-        value: 'trello_list_lists',
+        value: [
+          'trello_list_lists',
+          'trello_list_cards',
+          'trello_create_card',
+          'trello_get_actions',
+        ],
       },
-      required: true,
+      required: {
+        field: 'operation',
+        value: ['trello_list_lists', 'trello_list_cards', 'trello_create_card'],
+      },
     },
     {
       id: 'boardId',
-      title: 'Board',
+      title: 'Board ID',
       type: 'short-input',
-      placeholder: 'Enter board ID or search for a board',
+      canonicalParamId: 'boardId',
+      placeholder: 'Enter board ID',
+      mode: 'advanced',
       condition: {
         field: 'operation',
-        value: 'trello_list_cards',
+        value: [
+          'trello_list_lists',
+          'trello_list_cards',
+          'trello_create_card',
+          'trello_get_actions',
+        ],
       },
-      required: true,
+      required: {
+        field: 'operation',
+        value: ['trello_list_lists', 'trello_list_cards', 'trello_create_card'],
+      },
     },
     {
       id: 'listId',
@@ -78,17 +114,6 @@ export const TrelloBlock: BlockConfig<ToolResponse> = {
         field: 'operation',
         value: 'trello_list_cards',
       },
-    },
-    {
-      id: 'boardId',
-      title: 'Board',
-      type: 'short-input',
-      placeholder: 'Enter board ID or search for a board',
-      condition: {
-        field: 'operation',
-        value: 'trello_create_card',
-      },
-      required: true,
     },
     {
       id: 'listId',
@@ -268,16 +293,6 @@ Return ONLY the date/timestamp string - no explanations, no quotes, no extra tex
     },
 
     {
-      id: 'boardId',
-      title: 'Board ID',
-      type: 'short-input',
-      placeholder: 'Enter board ID to get board actions',
-      condition: {
-        field: 'operation',
-        value: 'trello_get_actions',
-      },
-    },
-    {
       id: 'cardId',
       title: 'Card ID',
       type: 'short-input',
@@ -394,7 +409,7 @@ Return ONLY the date/timestamp string - no explanations, no quotes, no extra tex
   },
   inputs: {
     operation: { type: 'string', description: 'Trello operation to perform' },
-    credential: { type: 'string', description: 'Trello OAuth credential' },
+    oauthCredential: { type: 'string', description: 'Trello OAuth credential' },
     boardId: { type: 'string', description: 'Board ID' },
     listId: { type: 'string', description: 'List ID' },
     cardId: { type: 'string', description: 'Card ID' },

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { isDev } from '@/lib/core/config/feature-flags'
 import { encryptSecret } from '@/lib/core/security/encryption'
@@ -45,6 +46,7 @@ const chatSchema = z.object({
     .default([]),
 })
 
+<<<<<<< HEAD
 const sanitizeGoldenQueries = (queries?: string[]) => {
   if (!Array.isArray(queries)) return []
   return queries.map((query) => query.trim()).filter((query) => query.length > 0)
@@ -77,6 +79,9 @@ async function replaceWorkflowQueries({
 }
 
 export async function GET(request: NextRequest) {
+=======
+export async function GET(_request: NextRequest) {
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
   try {
     const session = await getSession()
 
@@ -199,6 +204,7 @@ export async function POST(request: NextRequest) {
       }
       const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
 
+<<<<<<< HEAD
       // Determine chat ID - use existing if updating, generate new if creating
       let chatId: string
 
@@ -278,6 +284,24 @@ export async function POST(request: NextRequest) {
           queries: goldenQueries,
         })
       }
+=======
+      await db.insert(chat).values({
+        id,
+        workflowId,
+        userId: session.user.id,
+        identifier,
+        title,
+        description: description || null,
+        customizations: mergedCustomizations,
+        isActive: true,
+        authType,
+        password: encryptedPassword,
+        allowedEmails: authType === 'email' || authType === 'sso' ? allowedEmails : [],
+        outputConfigs,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+>>>>>>> 078dbda24ffd21ed264551c76e1a5ca5b2c2d5a6
 
       // Return successful response with chat URL
       // Generate chat URL using path-based routing instead of subdomains
@@ -317,6 +341,20 @@ export async function POST(request: NextRequest) {
       } catch (_e) {
         // Silently fail
       }
+
+      recordAudit({
+        workspaceId: workflowRecord.workspaceId || null,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        actorEmail: session.user.email,
+        action: AuditAction.CHAT_DEPLOYED,
+        resourceType: AuditResourceType.CHAT,
+        resourceId: id,
+        resourceName: title,
+        description: `Deployed chat "${title}"`,
+        metadata: { workflowId, identifier, authType },
+        request,
+      })
 
       return createSuccessResponse({
         id: chatId,

@@ -1,6 +1,8 @@
 import type { Logger } from '@sim/logger'
+import { secureFetchWithValidation } from '@/lib/core/security/input-validation.server'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import type { ToolFileData } from '@/tools/types'
 
 /**
  * Sends a message to a Slack channel using chat.postMessage
@@ -12,7 +14,8 @@ export async function postSlackMessage(
   threadTs?: string | null,
   link_names?: boolean,
   unfurl_links?: boolean,
-  unfurl_media?: boolean
+  unfurl_media?: boolean,
+  blocks?: unknown[] | null
 ): Promise<{ ok: boolean; ts?: string; channel?: string; message?: any; error?: string }> {
   const response = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
@@ -27,6 +30,7 @@ export async function postSlackMessage(
       ...(link_names && { link_names: link_names }),
       ...(unfurl_links && { unfurl_links: unfurl_links }),
       ...(unfurl_media && { unfurl_media: unfurl_media }),
+      ...(blocks && blocks.length > 0 && { blocks }),
     }),
   })
 
@@ -76,9 +80,10 @@ export async function uploadFilesToSlack(
   accessToken: string,
   requestId: string,
   logger: Logger
-): Promise<string[]> {
+): Promise<{ fileIds: string[]; files: ToolFileData[] }> {
   const userFiles = processFilesToUserFiles(files, requestId, logger)
   const uploadedFileIds: string[] = []
+  const uploadedFiles: ToolFileData[] = []
 
   for (const userFile of userFiles) {
     logger.info(`[${requestId}] Uploading file: ${userFile.name}`)
@@ -106,10 +111,14 @@ export async function uploadFilesToSlack(
 
     logger.info(`[${requestId}] Got upload URL for ${userFile.name}, file_id: ${urlData.file_id}`)
 
-    const uploadResponse = await fetch(urlData.upload_url, {
-      method: 'POST',
-      body: new Uint8Array(buffer),
-    })
+    const uploadResponse = await secureFetchWithValidation(
+      urlData.upload_url,
+      {
+        method: 'POST',
+        body: buffer,
+      },
+      'uploadUrl'
+    )
 
     if (!uploadResponse.ok) {
       logger.error(`[${requestId}] Failed to upload file data: ${uploadResponse.status}`)
@@ -118,9 +127,16 @@ export async function uploadFilesToSlack(
 
     logger.info(`[${requestId}] File data uploaded successfully`)
     uploadedFileIds.push(urlData.file_id)
+    // Only add to uploadedFiles after successful upload to keep arrays in sync
+    uploadedFiles.push({
+      name: userFile.name,
+      mimeType: userFile.type || 'application/octet-stream',
+      data: buffer.toString('base64'),
+      size: buffer.length,
+    })
   }
 
-  return uploadedFileIds
+  return { fileIds: uploadedFileIds, files: uploadedFiles }
 }
 
 /**
@@ -130,7 +146,8 @@ export async function completeSlackFileUpload(
   uploadedFileIds: string[],
   channel: string,
   text: string,
-  accessToken: string
+  accessToken: string,
+  threadTs?: string | null
 ): Promise<{ ok: boolean; files?: any[]; error?: string }> {
   const response = await fetch('https://slack.com/api/files.completeUploadExternal', {
     method: 'POST',
@@ -142,6 +159,7 @@ export async function completeSlackFileUpload(
       files: uploadedFileIds.map((id) => ({ id })),
       channel_id: channel,
       initial_comment: text,
+      ...(threadTs && { thread_ts: threadTs }),
     }),
   })
 
@@ -210,6 +228,7 @@ export interface SlackMessageParams {
   userId?: string
   text: string
   threadTs?: string | null
+  blocks?: unknown[] | null
   files?: any[] | null
   link_names?: boolean
   unfurl_links?: boolean
@@ -226,10 +245,16 @@ export async function sendSlackMessage(
   logger: Logger
 ): Promise<{
   success: boolean
-  output?: { message: any; ts: string; channel: string; fileCount?: number }
+  output?: {
+    message: any
+    ts: string
+    channel: string
+    fileCount?: number
+    files?: ToolFileData[]
+  }
   error?: string
 }> {
-  const { accessToken, text, threadTs, files, link_names, unfurl_links, unfurl_media } = params
+  const { accessToken, text, threadTs, blocks, files, link_names, unfurl_links, unfurl_media } = params
   let { channel } = params
 
   if (!channel && params.userId) {
@@ -252,7 +277,8 @@ export async function sendSlackMessage(
       threadTs,
       link_names,
       unfurl_links,
-      unfurl_media
+      unfurl_media,
+      blocks
     )
 
     if (!data.ok) {
@@ -266,10 +292,15 @@ export async function sendSlackMessage(
 
   // Process files
   logger.info(`[${requestId}] Processing ${files.length} file(s)`)
-  const uploadedFileIds = await uploadFilesToSlack(files, accessToken, requestId, logger)
+  const { fileIds, files: uploadedFiles } = await uploadFilesToSlack(
+    files,
+    accessToken,
+    requestId,
+    logger
+  )
 
   // No valid files uploaded - send text-only
-  if (uploadedFileIds.length === 0) {
+  if (fileIds.length === 0) {
     logger.warn(`[${requestId}] No valid files to upload, sending text-only message`)
 
     const data = await postSlackMessage(
@@ -279,7 +310,8 @@ export async function sendSlackMessage(
       threadTs,
       link_names,
       unfurl_links,
-      unfurl_media
+      unfurl_media,
+      blocks
     )
 
     if (!data.ok) {
@@ -289,8 +321,8 @@ export async function sendSlackMessage(
     return { success: true, output: formatMessageSuccessResponse(data, text) }
   }
 
-  // Complete file upload
-  const completeData = await completeSlackFileUpload(uploadedFileIds, channel, text, accessToken)
+  // Complete file upload with thread support
+  const completeData = await completeSlackFileUpload(fileIds, channel, text, accessToken, threadTs)
 
   if (!completeData.ok) {
     logger.error(`[${requestId}] Failed to complete upload:`, completeData.error)
@@ -307,7 +339,8 @@ export async function sendSlackMessage(
       message: fileMessage,
       ts: fileMessage.ts,
       channel,
-      fileCount: uploadedFileIds.length,
+      fileCount: fileIds.length,
+      files: uploadedFiles,
     },
   }
 }

@@ -7,7 +7,11 @@ import { v4 as uuidv4 } from 'uuid'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { regenerateWorkflowStateIds } from '@/lib/workflows/persistence/utils'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
+import {
+  type RegenerateStateInput,
+  regenerateWorkflowStateIds,
+} from '@/lib/workflows/persistence/utils'
 
 const logger = createLogger('TemplateUseAPI')
 
@@ -137,7 +141,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               : Date.now()
           : Date.now(),
     }
-    const stateResponse = await fetch(`${getBaseUrl()}/api/workflows/${newWorkflowId}/state`, {
+    const stateResponse = await fetch(`${getInternalApiBaseUrl()}/api/workflows/${newWorkflowId}/state`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

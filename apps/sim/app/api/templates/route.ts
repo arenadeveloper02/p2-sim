@@ -11,6 +11,7 @@ import { and, desc, eq, ilike, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { verifyEffectiveSuperUser } from '@/lib/templates/permissions'
@@ -66,8 +67,6 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const params = QueryParamsSchema.parse(Object.fromEntries(searchParams.entries()))
-
-    logger.debug(`[${requestId}] Fetching templates with params:`, params)
 
     // Check if user is a super user
     const { effectiveSuperUser } = await verifyEffectiveSuperUser(session.user.id)
@@ -186,11 +185,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = CreateTemplateSchema.parse(body)
 
-    logger.debug(`[${requestId}] Creating template:`, {
-      name: data.name,
-      workflowId: data.workflowId,
-    })
-
     // Verify the workflow exists and belongs to the user
     const workflowExists = await db
       .select({ id: workflow.id })
@@ -284,6 +278,18 @@ export async function POST(request: NextRequest) {
     await db.insert(templates).values(newTemplate)
 
     logger.info(`[${requestId}] Successfully created template: ${templateId}`)
+
+    recordAudit({
+      actorId: session.user.id,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
+      action: AuditAction.TEMPLATE_CREATED,
+      resourceType: AuditResourceType.TEMPLATE,
+      resourceId: templateId,
+      resourceName: data.name,
+      description: `Created template "${data.name}"`,
+      request,
+    })
 
     return NextResponse.json(
       {

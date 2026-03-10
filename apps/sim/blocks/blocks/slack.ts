@@ -1,6 +1,8 @@
 import { SlackIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import type { SlackResponse } from '@/tools/slack/types'
 import { getTrigger } from '@/triggers'
 
@@ -8,10 +10,10 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
   type: 'slack',
   name: 'Slack',
   description:
-    'Send, update, delete messages, add reactions in Slack or trigger workflows from Slack events',
+    'Send, update, delete messages, manage views and modals, add or remove reactions, manage canvases, get channel info and user presence in Slack',
   authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Slack into the workflow. Can send, update, and delete messages, create canvases, read messages, and add reactions. Requires Bot Token instead of OAuth in advanced mode. Can be used in trigger mode to trigger a workflow when a message is sent to a channel.',
+    'Integrate Slack into the workflow. Can send, update, and delete messages, send ephemeral messages visible only to a specific user, open/update/push modal views, publish Home tab views, create canvases, read messages, and add or remove reactions. Requires Bot Token instead of OAuth in advanced mode. Can be used in trigger mode to trigger a workflow when a message is sent to a channel.',
   docsLink: 'https://docs.sim.ai/tools/slack',
   category: 'tools',
   bgColor: '#611f69',
@@ -24,6 +26,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'dropdown',
       options: [
         { label: 'Send Message', id: 'send' },
+        { label: 'Send Ephemeral Message', id: 'ephemeral' },
         { label: 'Create Canvas', id: 'canvas' },
         { label: 'Read Messages', id: 'read' },
         { label: 'Get Message', id: 'get_message' },
@@ -36,7 +39,15 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Update Message', id: 'update' },
         { label: 'Delete Message', id: 'delete' },
         { label: 'Add Reaction', id: 'react' },
-        { label: 'Search All', id: 'search_all' },
+        { label: 'Remove Reaction', id: 'unreact' },
+        { label: 'Get Channel Info', id: 'get_channel_info' },
+        { label: 'Get User Presence', id: 'get_user_presence' },
+        { label: 'Edit Canvas', id: 'edit_canvas' },
+        { label: 'Create Channel Canvas', id: 'create_channel_canvas' },
+        { label: 'Open View', id: 'open_view' },
+        { label: 'Update View', id: 'update_view' },
+        { label: 'Push View', id: 'push_view' },
+        { label: 'Publish View', id: 'publish_view' },
       ],
       value: () => 'send',
     },
@@ -69,29 +80,31 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'credential',
       title: 'Slack Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       serviceId: 'slack',
-      requiredScopes: [
-        'channels:read',
-        'channels:history',
-        'groups:read',
-        'groups:history',
-        'chat:write',
-        'chat:write.public',
-        'im:write',
-        'im:history',
-        'im:read',
-        'users:read',
-        'files:write',
-        'files:read',
-        'canvases:write',
-        'reactions:write',
-      ],
+      requiredScopes: getScopesForService('slack'),
       placeholder: 'Select Slack workspace',
       dependsOn: ['authMethod'],
       condition: {
         field: 'authMethod',
         value: 'oauth',
       },
+      required: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'Slack Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      dependsOn: ['authMethod'],
+      condition: {
+        field: 'authMethod',
+        value: 'oauth',
+      },
+      required: true,
     },
     {
       id: 'botToken',
@@ -104,6 +117,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         field: 'authMethod',
         value: 'bot_token',
       },
+      required: true,
     },
     {
       id: 'channel',
@@ -111,19 +125,37 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'channel-selector',
       canonicalParamId: 'channel',
       serviceId: 'slack',
+      selectorKey: 'slack.channels',
       placeholder: 'Select Slack channel',
       mode: 'basic',
       dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
-      condition: {
-        field: 'operation',
-        value: ['list_channels', 'list_users', 'get_user', 'search_all'],
-        not: true,
-        and: {
-          field: 'destinationType',
-          value: 'dm',
+      condition: (values?: Record<string, unknown>) => {
+        const op = values?.operation as string
+        if (op === 'ephemeral') {
+          return { field: 'operation', value: 'ephemeral' }
+        }
+        return {
+          field: 'operation',
+          value: [
+            'list_channels',
+            'list_users',
+            'get_user',
+            'get_user_presence',
+            'edit_canvas',
+            'open_view',
+            'update_view',
+            'push_view',
+            'publish_view',
+          ],
           not: true,
-        },
+          and: {
+            field: 'destinationType',
+            value: 'dm',
+            not: true,
+          },
+        }
       },
+      required: true,
     },
     {
       id: 'manualChannel',
@@ -132,16 +164,33 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       canonicalParamId: 'channel',
       placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
       mode: 'advanced',
-      condition: {
-        field: 'operation',
-        value: ['list_channels', 'list_users', 'get_user', 'search_all'],
-        not: true,
-        and: {
-          field: 'destinationType',
-          value: 'dm',
+      condition: (values?: Record<string, unknown>) => {
+        const op = values?.operation as string
+        if (op === 'ephemeral') {
+          return { field: 'operation', value: 'ephemeral' }
+        }
+        return {
+          field: 'operation',
+          value: [
+            'list_channels',
+            'list_users',
+            'get_user',
+            'get_user_presence',
+            'edit_canvas',
+            'open_view',
+            'update_view',
+            'push_view',
+            'publish_view',
+          ],
           not: true,
-        },
+          and: {
+            field: 'destinationType',
+            value: 'dm',
+            not: true,
+          },
+        }
       },
+      required: true,
     },
     {
       id: 'dmUserId',
@@ -149,6 +198,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'user-selector',
       canonicalParamId: 'dmUserId',
       serviceId: 'slack',
+      selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
       dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
@@ -156,6 +206,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         field: 'destinationType',
         value: 'dm',
       },
+      required: true,
     },
     {
       id: 'manualDmUserId',
@@ -168,6 +219,50 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         field: 'destinationType',
         value: 'dm',
       },
+      required: true,
+    },
+    {
+      id: 'ephemeralUser',
+      title: 'Target User',
+      type: 'user-selector',
+      canonicalParamId: 'ephemeralUser',
+      serviceId: 'slack',
+      selectorKey: 'slack.users',
+      placeholder: 'Select Slack user',
+      mode: 'basic',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      condition: {
+        field: 'operation',
+        value: 'ephemeral',
+      },
+      required: true,
+    },
+    {
+      id: 'manualEphemeralUser',
+      title: 'Target User ID',
+      type: 'short-input',
+      canonicalParamId: 'ephemeralUser',
+      placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: 'ephemeral',
+      },
+      required: true,
+    },
+    {
+      id: 'messageFormat',
+      title: 'Message Format',
+      type: 'dropdown',
+      options: [
+        { label: 'Plain Text', id: 'text' },
+        { label: 'Block Kit', id: 'blocks' },
+      ],
+      value: () => 'text',
+      condition: {
+        field: 'operation',
+        value: ['send', 'ephemeral', 'update'],
+      },
     },
     {
       id: 'text',
@@ -177,10 +272,77 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       placeholder: 'Type your message...',
       condition: {
         field: 'operation',
-        value: 'send',
+        value: ['send', 'ephemeral'],
+        and: { field: 'messageFormat', value: 'blocks', not: true },
       },
-      dependsOn: ['credential', 'authMethod'],
-      required: true,
+      required: {
+        field: 'operation',
+        value: ['send', 'ephemeral'],
+        and: { field: 'messageFormat', value: 'blocks', not: true },
+      },
+    },
+    {
+      id: 'blocks',
+      title: 'Block Kit Blocks',
+      type: 'code',
+      language: 'json',
+      placeholder: 'JSON array of Block Kit blocks',
+      condition: {
+        field: 'operation',
+        value: ['send', 'ephemeral', 'update'],
+        and: { field: 'messageFormat', value: 'blocks' },
+      },
+      required: {
+        field: 'operation',
+        value: ['send', 'ephemeral', 'update'],
+        and: { field: 'messageFormat', value: 'blocks' },
+      },
+      wandConfig: {
+        enabled: true,
+        maintainHistory: true,
+        prompt: `You are an expert at Slack Block Kit.
+Generate ONLY a valid JSON array of Block Kit blocks based on the user's request.
+The output MUST be a JSON array starting with [ and ending with ].
+
+Current blocks: {context}
+
+Available block types for messages:
+- "section": Displays text with an optional accessory element. Text uses { "type": "mrkdwn", "text": "..." } or { "type": "plain_text", "text": "..." }.
+- "header": Large text header. Text must be plain_text.
+- "divider": A horizontal rule separator. No fields needed besides type.
+- "image": Displays an image. Requires "image_url" and "alt_text".
+- "context": Contextual info with an "elements" array of image and text objects.
+- "actions": Interactive elements like buttons. Each button needs "type": "button", a "text" object, and an "action_id".
+- "rich_text": Structured rich text with "elements" array of rich_text_section objects.
+
+Example output:
+[
+  {
+    "type": "header",
+    "text": { "type": "plain_text", "text": "Order Confirmation" }
+  },
+  {
+    "type": "section",
+    "text": { "type": "mrkdwn", "text": "Your order *#1234* has been confirmed." }
+  },
+  { "type": "divider" },
+  {
+    "type": "actions",
+    "elements": [
+      {
+        "type": "button",
+        "text": { "type": "plain_text", "text": "View Order" },
+        "action_id": "view_order",
+        "url": "https://example.com/orders/1234"
+      }
+    ]
+  }
+]
+
+You can reference workflow variables using angle brackets, e.g., <blockName.output>.
+Do not include any explanations, markdown formatting, or other text outside the JSON array.`,
+        placeholder: 'Describe the Block Kit layout you want to create...',
+      },
     },
     {
       id: 'threadTs',
@@ -189,7 +351,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       placeholder: 'Reply to thread (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
-        value: 'send',
+        value: ['send', 'ephemeral'],
       },
       required: false,
     },
@@ -410,9 +572,27 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
     // Get User specific fields
     {
       id: 'userId',
+      title: 'User',
+      type: 'user-selector',
+      canonicalParamId: 'userId',
+      serviceId: 'slack',
+      selectorKey: 'slack.users',
+      placeholder: 'Select Slack user',
+      mode: 'basic',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      condition: {
+        field: 'operation',
+        value: 'get_user',
+      },
+      required: true,
+    },
+    {
+      id: 'manualUserId',
       title: 'User ID',
       type: 'short-input',
+      canonicalParamId: 'userId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'get_user',
@@ -550,8 +730,13 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       condition: {
         field: 'operation',
         value: 'update',
+        and: { field: 'messageFormat', value: 'blocks', not: true },
       },
-      required: true,
+      required: {
+        field: 'operation',
+        value: 'update',
+        and: { field: 'messageFormat', value: 'blocks', not: true },
+      },
     },
     // Delete Message specific fields
     {
@@ -573,7 +758,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'Message timestamp (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
-        value: 'react',
+        value: ['react', 'unreact'],
       },
       required: true,
     },
@@ -584,105 +769,299 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'Emoji name without colons (e.g., thumbsup, heart, eyes)',
       condition: {
         field: 'operation',
-        value: 'react',
+        value: ['react', 'unreact'],
       },
       required: true,
     },
-    // Search All specific fields
+    // Get Channel Info specific fields
     {
-      id: 'clientId',
-      title: 'Client ID',
-      type: 'slack-client-selector',
-      placeholder: 'Select client',
+      id: 'includeNumMembers',
+      title: 'Include Member Count',
+      type: 'dropdown',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
       condition: {
         field: 'operation',
-        value: 'search_all',
+        value: 'get_channel_info',
       },
-      required: false,
     },
+    // Get User Presence specific fields
     {
-      id: 'channelId',
-      title: 'Channel',
-      type: 'slack-channel-selector',
-      placeholder: 'Select channel',
-      dependsOn: ['clientId'],
+      id: 'presenceUserId',
+      title: 'User',
+      type: 'user-selector',
+      canonicalParamId: 'presenceUserId',
+      serviceId: 'slack',
+      selectorKey: 'slack.users',
+      placeholder: 'Select Slack user',
+      mode: 'basic',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       condition: {
         field: 'operation',
-        value: 'search_all',
-      },
-      required: false,
-    },
-    {
-      id: 'query',
-      title: 'Search Query',
-      type: 'short-input',
-      placeholder: 'Search terms (channel filter applied automatically from selection)',
-      description:
-        'Enter your search terms. The selected channel will be automatically included as "in:channel_name".',
-      condition: {
-        field: 'operation',
-        value: 'search_all',
+        value: 'get_user_presence',
       },
       required: true,
     },
     {
-      id: 'searchCount',
-      title: 'Result Count',
+      id: 'manualPresenceUserId',
+      title: 'User ID',
       type: 'short-input',
-      placeholder: '50',
+      canonicalParamId: 'presenceUserId',
+      placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
-        value: 'search_all',
+        value: 'get_user_presence',
       },
+      required: true,
     },
+    // Edit Canvas specific fields
     {
-      id: 'searchPage',
-      title: 'Page Number',
+      id: 'editCanvasId',
+      title: 'Canvas ID',
       type: 'short-input',
-      placeholder: '1',
+      placeholder: 'Enter canvas ID (e.g., F1234ABCD)',
       condition: {
         field: 'operation',
-        value: 'search_all',
+        value: 'edit_canvas',
       },
+      required: true,
     },
     {
-      id: 'sortBy',
-      title: 'Sort By',
+      id: 'canvasOperation',
+      title: 'Edit Operation',
       type: 'dropdown',
       options: [
-        { label: 'Timestamp', id: 'timestamp' },
-        { label: 'Score', id: 'score' },
-        { label: 'Relevance', id: 'relevance' },
+        { label: 'Insert at Start', id: 'insert_at_start' },
+        { label: 'Insert at End', id: 'insert_at_end' },
+        { label: 'Insert After Section', id: 'insert_after' },
+        { label: 'Insert Before Section', id: 'insert_before' },
+        { label: 'Replace Section', id: 'replace' },
+        { label: 'Delete Section', id: 'delete' },
+        { label: 'Rename Canvas', id: 'rename' },
       ],
-      value: () => 'timestamp',
+      value: () => 'insert_at_end',
       condition: {
         field: 'operation',
-        value: 'search_all',
+        value: 'edit_canvas',
+      },
+      required: true,
+    },
+    {
+      id: 'canvasContent',
+      title: 'Content',
+      type: 'long-input',
+      placeholder: 'Enter content in markdown format',
+      condition: {
+        field: 'operation',
+        value: 'edit_canvas',
+        and: {
+          field: 'canvasOperation',
+          value: ['delete', 'rename'],
+          not: true,
+        },
       },
     },
     {
-      id: 'sortDir',
-      title: 'Sort Direction',
-      type: 'dropdown',
-      options: [
-        { label: 'Descending', id: 'desc' },
-        { label: 'Ascending', id: 'asc' },
-      ],
-      value: () => 'desc',
+      id: 'sectionId',
+      title: 'Section ID',
+      type: 'short-input',
+      placeholder: 'Section ID to target',
       condition: {
         field: 'operation',
-        value: 'search_all',
+        value: 'edit_canvas',
+        and: {
+          field: 'canvasOperation',
+          value: ['insert_after', 'insert_before', 'replace', 'delete'],
+        },
+      },
+      required: true,
+    },
+    {
+      id: 'canvasTitle',
+      title: 'New Title',
+      type: 'short-input',
+      placeholder: 'Enter new canvas title',
+      condition: {
+        field: 'operation',
+        value: 'edit_canvas',
+        and: { field: 'canvasOperation', value: 'rename' },
+      },
+      required: true,
+    },
+    // Create Channel Canvas specific fields
+    {
+      id: 'channelCanvasTitle',
+      title: 'Canvas Title',
+      type: 'short-input',
+      placeholder: 'Enter canvas title (optional)',
+      condition: {
+        field: 'operation',
+        value: 'create_channel_canvas',
       },
     },
     {
-      id: 'highlight',
-      title: 'Highlight Results',
-      type: 'switch',
-      description: 'Highlight search terms in results',
-      defaultValue: true,
+      id: 'channelCanvasContent',
+      title: 'Canvas Content',
+      type: 'long-input',
+      placeholder: 'Enter canvas content (markdown supported)',
       condition: {
         field: 'operation',
-        value: 'search_all',
+        value: 'create_channel_canvas',
+      },
+    },
+    // Open View / Push View specific fields
+    {
+      id: 'viewTriggerId',
+      title: 'Trigger ID',
+      type: 'short-input',
+      placeholder: 'Trigger ID from interaction payload',
+      condition: {
+        field: 'operation',
+        value: ['open_view', 'push_view'],
+      },
+      required: true,
+    },
+    {
+      id: 'viewInteractivityPointer',
+      title: 'Interactivity Pointer',
+      type: 'short-input',
+      placeholder: 'Alternative to trigger_id (optional)',
+      condition: {
+        field: 'operation',
+        value: ['open_view', 'push_view'],
+      },
+      mode: 'advanced',
+    },
+    // Update View specific fields
+    {
+      id: 'viewId',
+      title: 'View ID',
+      type: 'short-input',
+      placeholder: 'Unique view identifier (either View ID or External ID required)',
+      condition: {
+        field: 'operation',
+        value: 'update_view',
+      },
+    },
+    {
+      id: 'viewExternalId',
+      title: 'External ID',
+      type: 'short-input',
+      placeholder: 'Developer-set unique identifier (max 255 chars)',
+      condition: {
+        field: 'operation',
+        value: 'update_view',
+      },
+    },
+    // Update View / Publish View hash field
+    {
+      id: 'viewHash',
+      title: 'View Hash',
+      type: 'short-input',
+      placeholder: 'View state hash for race condition protection',
+      condition: {
+        field: 'operation',
+        value: ['update_view', 'publish_view'],
+      },
+      mode: 'advanced',
+    },
+    // Publish View specific fields
+    {
+      id: 'publishUserId',
+      title: 'User',
+      type: 'user-selector',
+      canonicalParamId: 'publishUserId',
+      serviceId: 'slack',
+      selectorKey: 'slack.users',
+      placeholder: 'Select user to publish Home tab to',
+      mode: 'basic',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      condition: {
+        field: 'operation',
+        value: 'publish_view',
+      },
+      required: true,
+    },
+    {
+      id: 'manualPublishUserId',
+      title: 'User ID',
+      type: 'short-input',
+      canonicalParamId: 'publishUserId',
+      placeholder: 'Enter Slack user ID (e.g., U0BPQUNTA)',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: 'publish_view',
+      },
+      required: true,
+    },
+    // View payload (shared across all view operations)
+    {
+      id: 'viewPayload',
+      title: 'View Payload',
+      type: 'code',
+      language: 'json',
+      placeholder: 'JSON view payload with type, title, and blocks',
+      condition: {
+        field: 'operation',
+        value: ['open_view', 'update_view', 'push_view', 'publish_view'],
+      },
+      required: true,
+      wandConfig: {
+        enabled: true,
+        maintainHistory: true,
+        prompt: `You are an expert at Slack Block Kit views.
+Generate ONLY a valid JSON view payload object based on the user's request.
+The output MUST be a JSON object starting with { and ending with }.
+
+Current view: {context}
+
+The view object must include:
+- "type": "modal" (for open/update/push) or "home" (for publish)
+- "title": { "type": "plain_text", "text": "Title text", "emoji": true } (max 24 chars)
+- "blocks": Array of Block Kit blocks
+
+Optional fields:
+- "submit": { "type": "plain_text", "text": "Submit" } - Submit button text
+- "close": { "type": "plain_text", "text": "Cancel" } - Close button text
+- "private_metadata": String up to 3000 chars
+- "callback_id": String identifier for interaction handling
+- "clear_on_close": true/false
+- "notify_on_close": true/false
+- "external_id": Unique string per workspace (max 255 chars)
+
+Available block types:
+- "section": Text with optional accessory. Text uses { "type": "mrkdwn", "text": "..." } or { "type": "plain_text", "text": "..." }
+- "input": Form input with a label and element (plain_text_input, static_select, multi_static_select, datepicker, timepicker, checkboxes, radio_buttons)
+- "header": Large text header (plain_text only)
+- "divider": Horizontal rule separator
+- "image": Requires "image_url" and "alt_text"
+- "context": Contextual info with "elements" array
+- "actions": Interactive elements like buttons
+
+Example modal:
+{
+  "type": "modal",
+  "title": { "type": "plain_text", "text": "My Form" },
+  "submit": { "type": "plain_text", "text": "Submit" },
+  "close": { "type": "plain_text", "text": "Cancel" },
+  "blocks": [
+    {
+      "type": "input",
+      "block_id": "input_1",
+      "label": { "type": "plain_text", "text": "Name" },
+      "element": { "type": "plain_text_input", "action_id": "name_input" }
+    }
+  ]
+}
+
+You can reference workflow variables using angle brackets, e.g., <blockName.output>.
+Do not include any explanations, markdown formatting, or other text outside the JSON object.`,
+        placeholder: 'Describe the view/modal you want to create...',
       },
     },
     ...getTrigger('slack_webhook').subBlocks,
@@ -690,6 +1069,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
   tools: {
     access: [
       'slack_message',
+      'slack_ephemeral_message',
       'slack_canvas',
       'slack_message_reader',
       'slack_get_message',
@@ -702,13 +1082,23 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       'slack_update_message',
       'slack_delete_message',
       'slack_add_reaction',
-      'slack_search_all',
+      'slack_remove_reaction',
+      'slack_get_channel_info',
+      'slack_get_user_presence',
+      'slack_edit_canvas',
+      'slack_create_channel_canvas',
+      'slack_open_view',
+      'slack_update_view',
+      'slack_push_view',
+      'slack_publish_view',
     ],
     config: {
       tool: (params) => {
         switch (params.operation) {
           case 'send':
             return 'slack_message'
+          case 'ephemeral':
+            return 'slack_ephemeral_message'
           case 'canvas':
             return 'slack_canvas'
           case 'read':
@@ -733,39 +1123,47 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
             return 'slack_delete_message'
           case 'react':
             return 'slack_add_reaction'
-          case 'search_all':
-            return 'slack_search_all'
+          case 'unreact':
+            return 'slack_remove_reaction'
+          case 'get_channel_info':
+            return 'slack_get_channel_info'
+          case 'get_user_presence':
+            return 'slack_get_user_presence'
+          case 'edit_canvas':
+            return 'slack_edit_canvas'
+          case 'create_channel_canvas':
+            return 'slack_create_channel_canvas'
+          case 'open_view':
+            return 'slack_open_view'
+          case 'update_view':
+            return 'slack_update_view'
+          case 'push_view':
+            return 'slack_push_view'
+          case 'publish_view':
+            return 'slack_publish_view'
           default:
             throw new Error(`Invalid Slack operation: ${params.operation}`)
         }
       },
       params: (params) => {
         const {
-          credential,
+          oauthCredential,
           authMethod,
           botToken,
           operation,
           destinationType,
           channel,
-          manualChannel,
           dmUserId,
-          manualDmUserId,
+          messageFormat,
           text,
           title,
           content,
           limit,
           oldest,
-          fromDate,
-          toDate,
-          dateRange,
-          cursor,
-          autoPaginate,
-          includeThreads,
-          maxThreads,
-          maxRepliesPerThread,
-          attachmentFiles,
           files,
+          blocks,
           threadTs,
+          ephemeralUser,
           updateTimestamp,
           updateText,
           deleteTimestamp,
@@ -788,6 +1186,22 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
           getMessageTimestamp,
           getThreadTimestamp,
           threadLimit,
+          includeNumMembers,
+          presenceUserId,
+          editCanvasId,
+          canvasOperation,
+          canvasContent,
+          sectionId,
+          canvasTitle,
+          channelCanvasTitle,
+          channelCanvasContent,
+          viewTriggerId,
+          viewInteractivityPointer,
+          viewId,
+          viewExternalId,
+          viewHash,
+          publishUserId,
+          viewPayload,
           ...rest
         } = params
 
@@ -809,21 +1223,10 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
           typeof channelId === 'object' && channelId?.channel_id ? channelId.channel_id : channelId
 
         const isDM = destinationType === 'dm'
-        const channelFromObject =
-          typeof channelId === 'object' && channelId?.channel_id ? channelId.channel_id : ''
-        const effectiveChannel = (channel || manualChannel || channelFromObject || '').trim()
-        const effectiveUserId = (dmUserId || manualDmUserId || '').trim()
+        const effectiveChannel = channel ? String(channel).trim() : ''
+        const effectiveUserId = dmUserId ? String(dmUserId).trim() : ''
 
-        const noChannelOperations = ['list_channels', 'list_users', 'get_user']
         const dmSupportedOperations = ['send', 'read']
-
-        if (isDM && dmSupportedOperations.includes(operation)) {
-          if (!effectiveUserId) {
-            throw new Error('User is required for DM operations.')
-          }
-        } else if (!effectiveChannel && !noChannelOperations.includes(operation)) {
-          throw new Error('Channel is required.')
-        }
 
         const baseParams: Record<string, any> = {}
 
@@ -835,40 +1238,42 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
 
         // Handle authentication based on method
         if (authMethod === 'bot_token') {
-          if (!botToken) {
-            throw new Error('Bot token is required when using bot token authentication')
-          }
           baseParams.accessToken = botToken
         } else {
           // Default to OAuth
-          if (!credential) {
-            throw new Error('Slack account credential is required when using Sim Bot')
-          }
-          baseParams.credential = credential
+          baseParams.credential = oauthCredential
         }
 
         switch (operation) {
           case 'send': {
-            if (!text || text.trim() === '') {
-              throw new Error('Message text is required for send operation')
-            }
-
-            // Text already contains mentions in <@USER_ID> format from mention-input
-            baseParams.text = text
+            baseParams.text = messageFormat === 'blocks' && !text ? ' ' : text
             if (threadTs) {
-              baseParams.thread_ts = threadTs
+              baseParams.threadTs = threadTs
             }
-            const fileParam = attachmentFiles || files
-            if (fileParam) {
-              baseParams.files = fileParam
+            if (blocks) {
+              baseParams.blocks = blocks
+            }
+            // files is the canonical param from attachmentFiles (basic) or files (advanced)
+            const normalizedFiles = normalizeFileInput(files)
+            if (normalizedFiles) {
+              baseParams.files = normalizedFiles
+            }
+            break
+          }
+
+          case 'ephemeral': {
+            baseParams.text = messageFormat === 'blocks' && !text ? ' ' : text
+            baseParams.user = ephemeralUser ? String(ephemeralUser).trim() : ''
+            if (threadTs) {
+              baseParams.threadTs = threadTs
+            }
+            if (blocks) {
+              baseParams.blocks = blocks
             }
             break
           }
 
           case 'canvas':
-            if (!title || !content) {
-              throw new Error('Title and content are required for canvas operation')
-            }
             baseParams.title = title
             baseParams.content = content
             break
@@ -1006,16 +1411,10 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
           }
 
           case 'get_message':
-            if (!getMessageTimestamp) {
-              throw new Error('Message timestamp is required for get message operation')
-            }
             baseParams.timestamp = getMessageTimestamp
             break
 
           case 'get_thread': {
-            if (!getThreadTimestamp) {
-              throw new Error('Thread timestamp is required for get thread operation')
-            }
             baseParams.threadTs = getThreadTimestamp
             if (threadLimit) {
               const parsedLimit = Number.parseInt(threadLimit, 10)
@@ -1045,122 +1444,104 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
           }
 
           case 'get_user':
-            if (!userId) {
-              throw new Error('User ID is required for get user operation')
-            }
             baseParams.userId = userId
             break
 
           case 'download': {
             const fileId = (rest as any).fileId
-            const downloadFileName = (rest as any).downloadFileName
-            if (!fileId) {
-              throw new Error('File ID is required for download operation')
-            }
+            const fileName = (rest as any).fileName
             baseParams.fileId = fileId
-            if (downloadFileName) {
-              baseParams.fileName = downloadFileName
+            if (fileName) {
+              baseParams.fileName = fileName
             }
             break
           }
 
           case 'update':
-            if (!updateTimestamp || !updateText) {
-              throw new Error('Timestamp and text are required for update operation')
-            }
             baseParams.timestamp = updateTimestamp
-            baseParams.text = updateText
+            baseParams.text = messageFormat === 'blocks' && !updateText ? ' ' : updateText
+            if (blocks) {
+              baseParams.blocks = blocks
+            }
             break
 
           case 'delete':
-            if (!deleteTimestamp) {
-              throw new Error('Timestamp is required for delete operation')
-            }
             baseParams.timestamp = deleteTimestamp
             break
 
           case 'react':
-            if (!reactionTimestamp || !emojiName) {
-              throw new Error('Timestamp and emoji name are required for reaction operation')
-            }
+          case 'unreact':
             baseParams.timestamp = reactionTimestamp
             baseParams.name = emojiName
             break
 
-          case 'search_all': {
-            console.log('[Slack Block] ENTERED search_all case:', {
-              operation: params.operation,
-              query,
-              channelId,
-              channelName,
-            })
-
-            if (!query || query.trim() === '') {
-              throw new Error('Search query is required for search all operation')
-            }
-
-            // Build query with channel filter if channel is selected
-            let finalQuery = query
-            console.log('[Slack Block] Before query building:', {
-              originalQuery: query,
-              channelName,
-              channelNameTruthy: !!channelName,
-              channelNameLength: channelName?.length || 0,
-            })
-
-            if (channelName) {
-              finalQuery = `in:${channelName} ${query}`
-              console.log('[Slack Block] Applied channel filter:', {
-                channelName,
-                finalQuery,
-              })
-            } else {
-              console.log('[Slack Block] No channel filter applied - channelName is empty')
-            }
-
-            console.log('[Slack Block] Final query result:', {
-              originalQuery: query,
-              finalQuery,
-              queryLength: finalQuery.length,
-            })
-
-            baseParams.query = finalQuery
-            console.log('[Slack Block] SET baseParams.query to:', baseParams.query)
-            if (searchCount) {
-              const parsedCount = Number.parseInt(searchCount, 10)
-              if (Number.isNaN(parsedCount) || parsedCount < 1 || parsedCount > 100) {
-                throw new Error('Search count must be between 1 and 100')
-              }
-              baseParams.count = parsedCount
-            } else {
-              baseParams.count = 50 // default
-            }
-            if (searchPage) {
-              const parsedPage = Number.parseInt(searchPage, 10)
-              if (Number.isNaN(parsedPage) || parsedPage < 1) {
-                throw new Error('Search page must be 1 or greater')
-              }
-              baseParams.page = parsedPage
-            } else {
-              baseParams.page = 1 // default
-            }
-
-            // Handle sort parameters
-            baseParams.sort = sortBy || 'timestamp'
-            baseParams.sort_dir = sortDir || 'desc'
-            baseParams.highlight = highlight !== 'false' // default to true
-            // For search_all, use user token instead of bot token
-            if (authMethod === 'bot_token') {
-              throw new Error('Search All operation requires OAuth authentication with user token')
-            }
-            // Use credential for OAuth, but we'll need to get user token from idToken
-            if (!credential) {
-              throw new Error('Slack account credential is required for Search All operation')
-            }
-            baseParams.credential = credential
-            baseParams.useUserToken = true // Flag to indicate user token should be used
+          case 'get_channel_info':
+            baseParams.includeNumMembers = includeNumMembers !== 'false'
             break
-          }
+
+          case 'get_user_presence':
+            baseParams.userId = presenceUserId
+            break
+
+          case 'edit_canvas':
+            baseParams.canvasId = editCanvasId
+            baseParams.operation = canvasOperation
+            if (canvasContent) {
+              baseParams.content = canvasContent
+            }
+            if (sectionId) {
+              baseParams.sectionId = sectionId
+            }
+            if (canvasTitle) {
+              baseParams.title = canvasTitle
+            }
+            break
+
+          case 'create_channel_canvas':
+            if (channelCanvasTitle) {
+              baseParams.title = channelCanvasTitle
+            }
+            if (channelCanvasContent) {
+              baseParams.content = channelCanvasContent
+            }
+            break
+
+          case 'open_view':
+            baseParams.triggerId = viewTriggerId
+            if (viewInteractivityPointer) {
+              baseParams.interactivityPointer = viewInteractivityPointer
+            }
+            baseParams.view = viewPayload
+            break
+
+          case 'update_view':
+            if (viewId) {
+              baseParams.viewId = viewId
+            }
+            if (viewExternalId) {
+              baseParams.externalId = viewExternalId
+            }
+            if (viewHash) {
+              baseParams.hash = viewHash
+            }
+            baseParams.view = viewPayload
+            break
+
+          case 'push_view':
+            baseParams.triggerId = viewTriggerId
+            if (viewInteractivityPointer) {
+              baseParams.interactivityPointer = viewInteractivityPointer
+            }
+            baseParams.view = viewPayload
+            break
+
+          case 'publish_view':
+            baseParams.userId = publishUserId
+            if (viewHash) {
+              baseParams.hash = viewHash
+            }
+            baseParams.view = viewPayload
+            break
         }
 
         return baseParams
@@ -1169,15 +1550,15 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
+    messageFormat: { type: 'string', description: 'Message format: text or blocks' },
     authMethod: { type: 'string', description: 'Authentication method' },
     destinationType: { type: 'string', description: 'Destination type (channel or dm)' },
-    credential: { type: 'string', description: 'Slack access token' },
+    oauthCredential: { type: 'string', description: 'Slack access token' },
     botToken: { type: 'string', description: 'Bot token' },
-    channel: { type: 'string', description: 'Channel identifier' },
-    manualChannel: { type: 'string', description: 'Manual channel identifier' },
-    dmUserId: { type: 'string', description: 'User ID for DM recipient (selector)' },
-    manualDmUserId: { type: 'string', description: 'User ID for DM recipient (manual input)' },
+    channel: { type: 'string', description: 'Channel identifier (canonical param)' },
+    dmUserId: { type: 'string', description: 'User ID for DM recipient (canonical param)' },
     text: { type: 'string', description: 'Message text' },
+    files: { type: 'array', description: 'Files to attach (canonical param)' },
     title: { type: 'string', description: 'Canvas title' },
     content: { type: 'string', description: 'Canvas content' },
     limit: { type: 'string', description: 'Message limit' },
@@ -1200,7 +1581,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       description: 'Maximum number of replies to fetch per thread',
     },
     fileId: { type: 'string', description: 'File ID to download' },
-    downloadFileName: { type: 'string', description: 'File name override for download' },
+    fileName: { type: 'string', description: 'File name override for download (canonical param)' },
     // Update/Delete/React operation inputs
     updateTimestamp: { type: 'string', description: 'Message timestamp for update' },
     updateText: { type: 'string', description: 'New text for update' },
@@ -1228,6 +1609,9 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
     // List Users inputs
     includeDeleted: { type: 'string', description: 'Include deactivated users (true/false)' },
     userLimit: { type: 'string', description: 'Maximum number of users to return' },
+    // Ephemeral message inputs
+    ephemeralUser: { type: 'string', description: 'User ID who will see the ephemeral message' },
+    blocks: { type: 'json', description: 'Block Kit layout blocks as a JSON array' },
     // Get User inputs
     userId: { type: 'string', description: 'User ID to look up' },
     // Get Message inputs
@@ -1238,6 +1622,36 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'string',
       description: 'Maximum number of messages to return from thread',
     },
+    // Get Channel Info inputs
+    includeNumMembers: { type: 'string', description: 'Include member count (true/false)' },
+    // Get User Presence inputs
+    presenceUserId: { type: 'string', description: 'User ID to check presence for' },
+    // Edit Canvas inputs
+    editCanvasId: { type: 'string', description: 'Canvas ID to edit' },
+    canvasOperation: { type: 'string', description: 'Canvas edit operation' },
+    canvasContent: { type: 'string', description: 'Markdown content for canvas edit' },
+    sectionId: { type: 'string', description: 'Canvas section ID to target' },
+    canvasTitle: { type: 'string', description: 'New canvas title for rename' },
+    // Create Channel Canvas inputs
+    channelCanvasTitle: { type: 'string', description: 'Title for channel canvas' },
+    channelCanvasContent: { type: 'string', description: 'Content for channel canvas' },
+    // View operation inputs
+    viewTriggerId: { type: 'string', description: 'Trigger ID from interaction payload' },
+    viewInteractivityPointer: {
+      type: 'string',
+      description: 'Alternative to trigger_id for posting to user',
+    },
+    viewId: { type: 'string', description: 'Unique view identifier for update' },
+    viewExternalId: {
+      type: 'string',
+      description: 'Developer-set unique identifier for update (max 255 chars)',
+    },
+    viewHash: { type: 'string', description: 'View state hash for race condition protection' },
+    publishUserId: {
+      type: 'string',
+      description: 'User ID to publish Home tab view to',
+    },
+    viewPayload: { type: 'json', description: 'View payload object with type, title, and blocks' },
   },
   outputs: {
     // slack_message outputs (send operation)
@@ -1252,6 +1666,13 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
     fileCount: {
       type: 'number',
       description: 'Number of files uploaded (when files are attached)',
+    },
+    files: { type: 'file[]', description: 'Files attached to the message' },
+
+    // slack_ephemeral_message outputs (ephemeral operation)
+    messageTs: {
+      type: 'string',
+      description: 'Timestamp of the ephemeral message (cannot be used to update or delete)',
     },
 
     // slack_canvas outputs
@@ -1352,7 +1773,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
 
     // slack_download outputs
     file: {
-      type: 'json',
+      type: 'file',
       description: 'Downloaded file stored in execution files',
     },
 
@@ -1361,6 +1782,50 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
     metadata: {
       type: 'json',
       description: 'Updated message metadata (legacy, use message object instead)',
+    },
+
+    // slack_get_channel_info outputs (get_channel_info operation)
+    channelInfo: {
+      type: 'json',
+      description:
+        'Detailed channel object with properties: id, name, is_private, is_archived, is_member, num_members, topic, purpose, created, creator',
+    },
+
+    // slack_get_user_presence outputs (get_user_presence operation)
+    presence: {
+      type: 'string',
+      description: 'User presence status: "active" or "away"',
+    },
+    online: {
+      type: 'boolean',
+      description:
+        'Whether user has an active client connection (only available when checking own presence)',
+    },
+    autoAway: {
+      type: 'boolean',
+      description:
+        'Whether user was automatically set to away (only available when checking own presence)',
+    },
+    manualAway: {
+      type: 'boolean',
+      description:
+        'Whether user manually set themselves as away (only available when checking own presence)',
+    },
+    connectionCount: {
+      type: 'number',
+      description: 'Total number of active connections (only available when checking own presence)',
+    },
+    lastActivity: {
+      type: 'number',
+      description:
+        'Unix timestamp of last detected activity (only available when checking own presence)',
+    },
+
+    // View operation outputs (open_view, update_view, push_view, publish_view)
+    view: {
+      type: 'json',
+      description:
+        'View object with properties: id, team_id, type, title, submit, close, blocks, private_metadata, callback_id, external_id, state, hash, clear_on_close, notify_on_close, root_view_id, previous_view_id, app_id, bot_id',
     },
 
     // Trigger outputs (when used as webhook trigger)

@@ -5,8 +5,12 @@ import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import Parser from 'rss-parser'
 import { pollingIdempotency } from '@/lib/core/idempotency/service'
-import { secureFetchWithPinnedIP, validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import {
+  secureFetchWithPinnedIP,
+  validateUrlWithDNS,
+} from '@/lib/core/security/input-validation.server'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
 
 const logger = createLogger('RssPollingService')
@@ -260,8 +264,6 @@ async function fetchNewRssItems(
   requestId: string
 ): Promise<{ feed: RssFeed; items: RssItem[] }> {
   try {
-    logger.debug(`[${requestId}] Fetching RSS feed: ${config.feedUrl}`)
-
     const urlValidation = await validateUrlWithDNS(config.feedUrl, 'feedUrl')
     if (!urlValidation.isValid) {
       logger.error(`[${requestId}] Invalid RSS feed URL: ${urlValidation.error}`)
@@ -277,6 +279,7 @@ async function fetchNewRssItems(
     })
 
     if (!response.ok) {
+      await response.text().catch(() => {})
       throw new Error(`Failed to fetch RSS feed: ${response.status} ${response.statusText}`)
     }
 
@@ -285,7 +288,6 @@ async function fetchNewRssItems(
     const feed = await parser.parseString(xmlContent)
 
     if (!feed.items || !feed.items.length) {
-      logger.debug(`[${requestId}] No items in feed`)
       return { feed: feed as RssFeed, items: [] }
     }
 
@@ -373,7 +375,7 @@ async function processRssItems(
             timestamp: new Date().toISOString(),
           }
 
-          const webhookUrl = `${getBaseUrl()}/api/webhooks/trigger/${webhookData.path}`
+          const webhookUrl = `${getInternalApiBaseUrl()}/api/webhooks/trigger/${webhookData.path}`
 
           const response = await fetch(webhookUrl, {
             method: 'POST',

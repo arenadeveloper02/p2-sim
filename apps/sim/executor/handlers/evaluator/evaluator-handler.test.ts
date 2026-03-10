@@ -1,6 +1,16 @@
 import '@sim/testing/mocks/executor'
 
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+
+vi.mock('@/app/api/auth/oauth/utils', () => ({
+  resolveOAuthAccountId: vi
+    .fn()
+    .mockResolvedValue({ accountId: 'test-vertex-credential-id', usedCredentialTable: false }),
+  refreshTokenIfNeeded: vi
+    .fn()
+    .mockResolvedValue({ accessToken: 'mock-access-token', refreshed: false }),
+}))
+
 import { BlockType } from '@/executor/constants'
 import { EvaluatorBlockHandler } from '@/executor/handlers/evaluator/evaluator-handler'
 import type { ExecutionContext } from '@/executor/types'
@@ -408,6 +418,7 @@ describe('EvaluatorBlockHandler', () => {
       refreshToken: 'mock-refresh-token',
       expiresAt: new Date(Date.now() + 3600000), // 1 hour from now
     }
+    ;(mockDb.db.query as any).account = { findFirst: vi.fn() }
     vi.spyOn(mockDb.db.query.account, 'findFirst').mockResolvedValue(mockAccount as any)
 
     mockFetch.mockImplementationOnce(() => {

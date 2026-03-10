@@ -13,6 +13,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { WorkspaceInvitationEmail } from '@/components/emails'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -21,7 +22,7 @@ import { getFromEmailAddress } from '@/lib/messaging/email/utils'
 import {
   InvitationsNotAllowedError,
   validateInvitationsAllowed,
-} from '@/executor/utils/permission-check'
+} from '@/ee/access-control/utils/permission-check'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +39,6 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Get all workspaces where the user has permissions
     const userWorkspaces = await db
       .select({ id: workspace.id })
       .from(workspace)
@@ -55,10 +55,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ invitations: [] })
     }
 
-    // Get all workspaceIds where the user is a member
     const workspaceIds = userWorkspaces.map((w) => w.id)
 
-    // Find all invitations for those workspaces
     const invitations = await db
       .select()
       .from(workspaceInvitation)
@@ -229,6 +227,20 @@ export async function POST(req: NextRequest) {
       workspaceName: workspaceDetails.name,
       invitationId: invitationData.id,
       token: token,
+    })
+
+    recordAudit({
+      workspaceId,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
+      action: AuditAction.MEMBER_INVITED,
+      resourceType: AuditResourceType.WORKSPACE,
+      resourceId: workspaceId,
+      resourceName: email,
+      description: `Invited ${email} as ${permission}`,
+      metadata: { targetEmail: email, targetRole: permission },
+      request: req,
     })
 
     return NextResponse.json({ success: true, invitation: invitationData })

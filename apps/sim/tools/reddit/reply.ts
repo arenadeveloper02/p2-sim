@@ -23,13 +23,20 @@ export const replyTool: ToolConfig<RedditReplyParams, RedditWriteResponse> = {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Thing fullname to reply to (e.g., t3_xxxxx for post, t1_xxxxx for comment)',
+      description:
+        'Thing fullname to reply to (e.g., "t3_abc123" for post, "t1_def456" for comment)',
     },
     text: {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Comment text in markdown format',
+      description: 'Comment text in markdown format (e.g., "Great post! Here is my **reply**")',
+    },
+    return_rtjson: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Return response in Rich Text JSON format',
     },
   },
 
@@ -54,12 +61,26 @@ export const replyTool: ToolConfig<RedditReplyParams, RedditWriteResponse> = {
         api_type: 'json',
       })
 
+      if (params.return_rtjson !== undefined)
+        formData.append('return_rtjson', params.return_rtjson.toString())
+
       return formData.toString() as unknown as Record<string, any>
     },
   },
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
+
+    if (!response.ok) {
+      const errorMsg = data?.message || `HTTP error ${response.status}`
+      return {
+        success: false,
+        output: {
+          success: false,
+          message: `Failed to post reply: ${errorMsg}`,
+        },
+      }
+    }
 
     // Reddit API returns errors in json.errors array
     if (data.json?.errors && data.json.errors.length > 0) {
@@ -104,6 +125,12 @@ export const replyTool: ToolConfig<RedditReplyParams, RedditWriteResponse> = {
     data: {
       type: 'object',
       description: 'Comment data including ID, name, permalink, and body',
+      properties: {
+        id: { type: 'string', description: 'New comment ID' },
+        name: { type: 'string', description: 'Thing fullname (t1_xxxxx)' },
+        permalink: { type: 'string', description: 'Comment permalink' },
+        body: { type: 'string', description: 'Comment body text' },
+      },
     },
   },
 }

@@ -1,4 +1,5 @@
 import { GoogleGroupsIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 
@@ -42,13 +43,21 @@ export const GoogleGroupsBlock: BlockConfig = {
       id: 'credential',
       title: 'Google Groups Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       required: true,
       serviceId: 'google-groups',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/admin.directory.group',
-        'https://www.googleapis.com/auth/admin.directory.group.member',
-      ],
+      requiredScopes: getScopesForService('google-groups'),
       placeholder: 'Select Google Workspace account',
+    },
+    {
+      id: 'manualCredential',
+      title: 'Google Groups Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
 
     {
@@ -311,12 +320,12 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
         }
       },
       params: (params) => {
-        const { credential, operation, ...rest } = params
+        const { oauthCredential, operation, ...rest } = params
 
         switch (operation) {
           case 'list_groups':
             return {
-              credential,
+              oauthCredential,
               customer: rest.customer,
               domain: rest.domain,
               query: rest.query,
@@ -325,19 +334,19 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
           case 'get_group':
           case 'delete_group':
             return {
-              credential,
+              credential: oauthCredential,
               groupKey: rest.groupKey,
             }
           case 'create_group':
             return {
-              credential,
+              credential: oauthCredential,
               email: rest.email,
               name: rest.name,
               description: rest.description,
             }
           case 'update_group':
             return {
-              credential,
+              credential: oauthCredential,
               groupKey: rest.groupKey,
               name: rest.newName,
               email: rest.newEmail,
@@ -345,7 +354,7 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
             }
           case 'list_members':
             return {
-              credential,
+              credential: oauthCredential,
               groupKey: rest.groupKey,
               maxResults: rest.maxResults ? Number(rest.maxResults) : undefined,
               roles: rest.roles,
@@ -353,66 +362,66 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
           case 'get_member':
           case 'remove_member':
             return {
-              credential,
+              credential: oauthCredential,
               groupKey: rest.groupKey,
               memberKey: rest.memberKey,
             }
           case 'add_member':
             return {
-              credential,
+              credential: oauthCredential,
               groupKey: rest.groupKey,
               email: rest.memberEmail,
               role: rest.role,
             }
           case 'update_member':
             return {
-              credential,
+              credential: oauthCredential,
               groupKey: rest.groupKey,
               memberKey: rest.memberKey,
               role: rest.role,
             }
           case 'has_member':
             return {
-              credential,
+              credential: oauthCredential,
               groupKey: rest.groupKey,
               memberKey: rest.memberKey,
             }
           case 'list_aliases':
             return {
-              credential,
+              credential: oauthCredential,
               groupKey: rest.groupKey,
             }
           case 'add_alias':
             return {
-              credential,
+              credential: oauthCredential,
               groupKey: rest.groupKey,
               alias: rest.alias,
             }
           case 'remove_alias':
             return {
-              credential,
+              oauthCredential,
               groupKey: rest.groupKey,
               alias: rest.alias,
             }
           case 'get_settings':
             return {
-              credential,
+              oauthCredential,
               groupEmail: rest.groupEmail,
             }
           case 'update_settings':
             return {
-              credential,
+              oauthCredential,
               groupEmail: rest.groupEmail,
             }
           default:
-            return { credential, ...rest }
+            return { oauthCredential, ...rest }
         }
       },
     },
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Google Workspace OAuth credential' },
+    oauthCredential: { type: 'string', description: 'Google Workspace OAuth credential' },
     customer: { type: 'string', description: 'Customer ID for listing groups' },
     domain: { type: 'string', description: 'Domain filter for listing groups' },
     query: { type: 'string', description: 'Search query for filtering groups' },

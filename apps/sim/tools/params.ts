@@ -1,13 +1,17 @@
 import { createLogger } from '@sim/logger'
 import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
 import {
+  buildCanonicalIndex,
+  type CanonicalModeOverrides,
   evaluateSubBlockCondition,
+  isCanonicalPair,
+  resolveCanonicalMode,
   type SubBlockCondition,
 } from '@/lib/workflows/subblocks/visibility'
-import type { SubBlockConfig as BlockSubBlockConfig } from '@/blocks/types'
+import type { SubBlockConfig as BlockSubBlockConfig, GenerationType } from '@/blocks/types'
 import { safeAssign } from '@/tools/safe-assign'
 import { isEmptyTagValue } from '@/tools/shared/tags'
-import type { ParameterVisibility, ToolConfig } from '@/tools/types'
+import type { OAuthConfig, ParameterVisibility, ToolConfig } from '@/tools/types'
 import { getTool } from '@/tools/utils'
 
 const logger = createLogger('ToolsParams')
@@ -64,6 +68,14 @@ export interface UIComponentConfig {
   mode?: 'basic' | 'advanced' | 'both' | 'trigger'
   /** The actual subblock ID this config was derived from */
   actualSubBlockId?: string
+  /** Wand configuration for AI assistance */
+  wandConfig?: {
+    enabled: boolean
+    prompt: string
+    generationType?: GenerationType
+    placeholder?: string
+    maintainHistory?: boolean
+  }
 }
 
 export interface SubBlockConfig {
@@ -108,6 +120,11 @@ export interface ToolSchema {
   type: 'object'
   properties: Record<string, SchemaProperty>
   required: string[]
+}
+
+export interface LLMToolSchemaResult {
+  schema: ToolSchema
+  enrichedDescription?: string
 }
 
 export interface ValidationResult {
@@ -327,6 +344,7 @@ export function getToolParametersConfig(
               canonicalParamId: subBlock.canonicalParamId,
               mode: subBlock.mode,
               actualSubBlockId: subBlock.id,
+              wandConfig: subBlock.wandConfig,
             }
           }
         }
@@ -401,6 +419,7 @@ export function createUserToolSchema(toolConfig: ToolConfig): ToolSchema {
   }
 
   for (const [paramId, param] of Object.entries(toolConfig.params)) {
+    if (!param) continue
     const visibility = param.visibility ?? 'user-or-llm'
     if (visibility === 'hidden') {
       continue
@@ -420,14 +439,13 @@ export function createUserToolSchema(toolConfig: ToolConfig): ToolSchema {
 export async function createLLMToolSchema(
   toolConfig: ToolConfig,
   userProvidedParams: Record<string, unknown>
-): Promise<ToolSchema> {
+): Promise<LLMToolSchemaResult> {
   const schema: ToolSchema = {
     type: 'object',
     properties: {},
     required: [],
   }
 
-  // Only include parameters that the LLM should/can provide
   for (const [paramId, param] of Object.entries(toolConfig.params)) {
     const paramValue = userProvidedParams[paramId]
 
@@ -440,15 +458,9 @@ export async function createLLMToolSchema(
     // Check if this param has schema enrichment config
     const enrichmentConfig = toolConfig.schemaEnrichment?.[paramId]
 
-    // Special handling for workflow_executor's inputMapping parameter
-    // Always include in LLM schema so LLM can provide dynamic input values
-    // even if user has configured empty/partial inputMapping in the UI
     const isWorkflowInputMapping =
       toolConfig.id === 'workflow_executor' && paramId === 'inputMapping'
 
-    // Parameters with enrichment config are treated specially:
-    // - Include them if dependency value is available (even if normally hidden)
-    // - Skip them if dependency value is not available
     if (enrichmentConfig) {
       const dependencyValue = userProvidedParams[enrichmentConfig.dependsOn] as string
       if (!dependencyValue) {
@@ -470,26 +482,21 @@ export async function createLLMToolSchema(
     }
 
     if (!isWorkflowInputMapping) {
-      // Skip parameters that user has already provided
       if (isNonEmpty(userProvidedParams[paramId])) {
         continue
       }
 
-      // Skip parameters that are user-only (never shown to LLM)
       if (param.visibility === 'user-only') {
         continue
       }
 
-      // Skip hidden parameters
       if (param.visibility === 'hidden') {
         continue
       }
     }
 
-    // Add parameter to LLM schema
     const propertySchema = buildParameterSchema(toolConfig.id, paramId, param)
 
-    // Apply dynamic schema enrichment for workflow_executor's inputMapping
     if (isWorkflowInputMapping) {
       const workflowId = userProvidedParams.workflowId as string
       if (workflowId) {
@@ -499,13 +506,29 @@ export async function createLLMToolSchema(
 
     schema.properties[paramId] = propertySchema
 
-    // Add to required if LLM must provide it and it's originally required
     if ((param.visibility === 'user-or-llm' || param.visibility === 'llm-only') && param.required) {
       schema.required.push(paramId)
     }
   }
 
-  return schema
+  if (toolConfig.toolEnrichment) {
+    const dependencyValue = userProvidedParams[toolConfig.toolEnrichment.dependsOn] as string
+    if (dependencyValue) {
+      const enriched = await toolConfig.toolEnrichment.enrichTool(
+        dependencyValue,
+        schema,
+        toolConfig.description
+      )
+      if (enriched) {
+        return {
+          schema: enriched.parameters as ToolSchema,
+          enrichedDescription: enriched.description,
+        }
+      }
+    }
+  }
+
+  return { schema }
 }
 
 /**
@@ -833,4 +856,198 @@ export function formatParameterLabel(paramId: string): string {
 
   // Simple case - just capitalize first letter
   return paramId.charAt(0).toUpperCase() + paramId.slice(1)
+}
+
+/**
+ * SubBlock IDs that control tool routing, not user-facing parameters.
+ * Excluded from tool-input rendering unless they have an explicit paramVisibility set.
+ */
+const STRUCTURAL_SUBBLOCK_IDS = new Set(['operation'])
+
+/**
+ * SubBlock types that represent auth/credential inputs handled separately
+ * by the tool-input OAuth credential selector.
+ */
+const AUTH_SUBBLOCK_TYPES = new Set(['oauth-input'])
+
+/**
+ * SubBlock types that should never appear in tool-input context.
+ */
+const EXCLUDED_SUBBLOCK_TYPES = new Set([
+  'tool-input',
+  'skill-input',
+  'condition-input',
+  'eval-input',
+  'webhook-config',
+  'schedule-info',
+  'trigger-save',
+  'input-format',
+  'response-format',
+  'mcp-server-selector',
+  'mcp-tool-selector',
+  'mcp-dynamic-args',
+  'input-mapping',
+  'variables-input',
+  'messages-input',
+  'router-input',
+  'text',
+])
+
+export interface SubBlocksForToolInput {
+  toolConfig: ToolConfig
+  subBlocks: BlockSubBlockConfig[]
+  oauthConfig?: OAuthConfig
+}
+
+/**
+ * Returns filtered SubBlockConfig[] for rendering in tool-input context.
+ * Uses subblock definitions as the primary source of UI metadata,
+ * getting all features (wandConfig, rich conditions, dependsOn, etc.) for free.
+ *
+ * For blocks without paramVisibility annotations, falls back to inferring
+ * visibility from the tool's param definitions.
+ */
+export function getSubBlocksForToolInput(
+  toolId: string,
+  blockType: string,
+  currentValues?: Record<string, unknown>,
+  canonicalModeOverrides?: CanonicalModeOverrides
+): SubBlocksForToolInput | null {
+  try {
+    const toolConfig = getTool(toolId)
+    if (!toolConfig) {
+      logger.warn(`Tool not found: ${toolId}`)
+      return null
+    }
+
+    const blockConfigs = getBlockConfigurations()
+    const blockConfig = blockConfigs[blockType]
+    if (!blockConfig?.subBlocks?.length) {
+      return null
+    }
+
+    const allSubBlocks = blockConfig.subBlocks as BlockSubBlockConfig[]
+    const canonicalIndex = buildCanonicalIndex(allSubBlocks)
+
+    // Build values for condition evaluation
+    const values = currentValues || {}
+    const valuesWithOperation = { ...values }
+    if (valuesWithOperation.operation === undefined) {
+      const parts = toolId.split('_')
+      valuesWithOperation.operation =
+        parts.length >= 3 ? parts.slice(2).join('_') : parts[parts.length - 1]
+    }
+
+    // Build a map of tool param IDs to their resolved visibility
+    const toolParamVisibility: Record<string, ParameterVisibility> = {}
+    for (const [paramId, param] of Object.entries(toolConfig.params || {})) {
+      toolParamVisibility[paramId] =
+        param.visibility ?? (param.required ? 'user-or-llm' : 'user-only')
+    }
+
+    // Track which canonical groups we've already included (to avoid duplicates)
+    const includedCanonicalIds = new Set<string>()
+
+    const filtered: BlockSubBlockConfig[] = []
+
+    for (const sb of allSubBlocks) {
+      // Skip excluded types
+      if (EXCLUDED_SUBBLOCK_TYPES.has(sb.type)) continue
+
+      // Skip trigger-mode-only subblocks
+      if (sb.mode === 'trigger') continue
+
+      // Determine the effective param ID (canonical or subblock id)
+      const effectiveParamId = sb.canonicalParamId || sb.id
+
+      // Resolve paramVisibility: explicit > inferred from tool params > skip
+      let visibility = sb.paramVisibility
+      if (!visibility) {
+        // Infer from structural checks
+        if (STRUCTURAL_SUBBLOCK_IDS.has(sb.id)) {
+          visibility = 'hidden'
+        } else if (AUTH_SUBBLOCK_TYPES.has(sb.type) && sb.canonicalParamId !== 'oauthCredential') {
+          visibility = 'hidden'
+        } else if (sb.canonicalParamId === 'oauthCredential') {
+          visibility = 'user-only'
+        } else if (
+          sb.password &&
+          (sb.id === 'botToken' || sb.id === 'accessToken' || sb.id === 'apiKey')
+        ) {
+          // Auth tokens without explicit paramVisibility are hidden
+          // (they're handled by the OAuth credential selector or structurally)
+          // But only if they don't have a matching tool param
+          if (!(sb.id in toolParamVisibility)) {
+            visibility = 'hidden'
+          } else {
+            visibility = toolParamVisibility[sb.id] || 'user-or-llm'
+          }
+        } else if (effectiveParamId in toolParamVisibility) {
+          // Fallback: infer from tool param visibility
+          visibility = toolParamVisibility[effectiveParamId]
+        } else if (sb.id in toolParamVisibility) {
+          visibility = toolParamVisibility[sb.id]
+        } else if (sb.canonicalParamId) {
+          visibility = 'user-or-llm'
+        } else {
+          continue
+        }
+      }
+
+      // Filter by visibility: exclude hidden and llm-only
+      if (visibility === 'hidden' || visibility === 'llm-only') continue
+
+      // Evaluate condition against current values
+      if (sb.condition) {
+        const conditionMet = evaluateSubBlockCondition(
+          sb.condition as SubBlockCondition,
+          valuesWithOperation
+        )
+        if (!conditionMet) continue
+      }
+
+      // Handle canonical pairs: only include the active mode variant
+      const canonicalId = canonicalIndex.canonicalIdBySubBlockId[sb.id]
+      if (canonicalId) {
+        const group = canonicalIndex.groupsById[canonicalId]
+        if (group && isCanonicalPair(group)) {
+          if (includedCanonicalIds.has(canonicalId)) continue
+          includedCanonicalIds.add(canonicalId)
+
+          // Determine active mode
+          const mode = resolveCanonicalMode(group, valuesWithOperation, canonicalModeOverrides)
+          if (mode === 'advanced') {
+            // Find the advanced variant
+            const advancedSb = allSubBlocks.find((s) => group.advancedIds.includes(s.id))
+            if (advancedSb) {
+              filtered.push({ ...advancedSb, paramVisibility: visibility })
+            }
+          } else {
+            // Include basic variant (current sb if it's the basic one)
+            if (group.basicId === sb.id) {
+              filtered.push({ ...sb, paramVisibility: visibility })
+            } else {
+              const basicSb = allSubBlocks.find((s) => s.id === group.basicId)
+              if (basicSb) {
+                filtered.push({ ...basicSb, paramVisibility: visibility })
+              }
+            }
+          }
+          continue
+        }
+      }
+
+      // Non-canonical, non-hidden, condition-passing subblock
+      filtered.push({ ...sb, paramVisibility: visibility })
+    }
+
+    return {
+      toolConfig,
+      subBlocks: filtered,
+      oauthConfig: toolConfig.oauth,
+    }
+  } catch (error) {
+    logger.error('Error getting subblocks for tool input:', error)
+    return null
+  }
 }
