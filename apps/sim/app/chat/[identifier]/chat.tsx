@@ -3,7 +3,6 @@
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
-import { Send } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 import { Combobox } from '@/components/emcn'
@@ -168,6 +167,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isInputModalOpen, setIsInputModalOpen] = useState(false)
   const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
   const [fixedInputSetSelections, setFixedInputSetSelections] = useState<Record<string, string>>({})
+  const fixedInputSetSelectionsRef = useRef(fixedInputSetSelections)
+  fixedInputSetSelectionsRef.current = fixedInputSetSelections
   const hasShownModalRef = useRef<boolean>(false)
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
@@ -520,11 +521,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
     let userMessageId: string | null = null
     const displayContent =
-      messageToSend.trim() ||
-      (files && files.length > 0 ? `Sent ${files.length} file(s)` : '') ||
-      (canSendWithFixedSet
-        ? `Selected: ${Object.values(fixedInputSetSelections).filter(Boolean).join(', ')}`
-        : '')
+      messageToSend.trim() || (files && files.length > 0 ? `Sent ${files.length} file(s)` : '')
     if (displayContent) {
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
@@ -780,9 +777,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const next = { ...prev }
       let changed = false
       for (const field of fields) {
+        const fieldName = field.name?.trim()
+        if (!fieldName) continue
         const first = field.options[0]
-        if (first && next[field.name] !== first) {
-          next[field.name] = first
+        if (first && next[fieldName] === undefined) {
+          next[fieldName] = first
           changed = true
         }
       }
@@ -1087,60 +1086,62 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
       />
 
-      {/* Input area: fixed-input-set = dropdown(s) only; otherwise full chat input */}
+      {/* Input area: fixed-input-set = dropdown(s) alongside chat input; both enabled, value = dropdown + text */}
       <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
         <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-          {fixedInputSetFields.length > 0 ? (
-            <div className='flex flex-wrap items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm md:rounded-3xl md:p-4'>
-              {fixedInputSetFields.map((field) => (
-                <div
-                  key={field.name}
-                  className='flex min-w-0 flex-1 items-center gap-2 md:min-w-[180px]'
-                >
-                  <span className='shrink-0 text-gray-600 text-sm dark:text-gray-400'>
-                    {field.name.replace(/_/g, ' ')}:
-                  </span>
-                  <Combobox
-                    options={field.options.map((opt) => ({ label: opt, value: opt }))}
-                    value={fixedInputSetSelections[field.name] ?? field.options[0] ?? ''}
-                    onChange={(value) =>
-                      setFixedInputSetSelections((prev) => ({
-                        ...prev,
-                        [field.name]: value,
-                      }))
-                    }
-                    placeholder={`Select ${field.name.replace(/_/g, ' ')}`}
-                    disabled={isLoading || isStreamingResponse}
-                    className='min-w-0 flex-1'
-                  />
+          <ChatInput
+            prefixContent={
+              fixedInputSetFields.length > 0 ? (
+                <div className='flex shrink-0 items-center gap-2 border-gray-200 border-r pr-2 md:pr-3'>
+                  {fixedInputSetFields.map((field) => {
+                    const fieldName = field.name?.trim() || ''
+                    return (
+                      <div
+                        key={fieldName}
+                        className='flex min-w-0 items-center gap-1.5 md:min-w-[140px] md:gap-2'
+                      >
+                        <span className='shrink-0 text-gray-600 text-xs md:text-sm dark:text-gray-400'>
+                          {field.name.replace(/_/g, ' ')}:
+                        </span>
+                        <Combobox
+                          options={field.options.map((opt) => ({ label: opt, value: opt }))}
+                          value={fixedInputSetSelections[fieldName] ?? field.options[0] ?? ''}
+                          onChange={(value) =>
+                            setFixedInputSetSelections((prev) => ({
+                              ...prev,
+                              [fieldName]: value,
+                            }))
+                          }
+                          placeholder={`Select ${field.name.replace(/_/g, ' ')}`}
+                          disabled={isLoading || isStreamingResponse}
+                          searchable
+                          searchPlaceholder='Search options...'
+                          className='min-w-0 flex-1'
+                        />
+                      </div>
+                    )
+                  })}
                 </div>
-              ))}
-              <button
-                type='button'
-                onClick={() =>
-                  void handleSendMessage('', false, undefined, true, fixedInputSetSelections)
-                }
-                disabled={
-                  isLoading ||
-                  isStreamingResponse ||
-                  !Object.keys(fixedInputSetSelections).some((k) => fixedInputSetSelections[k])
-                }
-                className='flex shrink-0 items-center justify-center rounded-full bg-black p-2 text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:hover:bg-gray-400'
-                title='Send'
-              >
-                <Send size={18} />
-              </button>
-            </div>
-          ) : (
-            <ChatInput
-              onSubmit={(value, isVoiceInput, files) => {
-                void handleSendMessage(value, isVoiceInput, files)
-              }}
-              isStreaming={isStreamingResponse}
-              onStopStreaming={() => stopStreaming(setMessages)}
-              onVoiceStart={handleVoiceStart}
-            />
-          )}
+              ) : undefined
+            }
+            showAttachment={fixedInputSetFields.length === 0}
+            embedInFlow={fixedInputSetFields.length > 0}
+            onSubmit={(value, isVoiceInput, files) => {
+              const selections = fixedInputSetSelectionsRef.current
+              const effectiveInput = [
+                ...fixedInputSetFields
+                  .map((f) => selections[f.name?.trim() ?? ''])
+                  .filter(Boolean),
+                value.trim(),
+              ]
+                .filter(Boolean)
+                .join(' ')
+              void handleSendMessage(effectiveInput || value, isVoiceInput, files)
+            }}
+            isStreaming={isStreamingResponse}
+            onStopStreaming={() => stopStreaming(setMessages)}
+            onVoiceStart={handleVoiceStart}
+          />
         </div>
       </div>
 

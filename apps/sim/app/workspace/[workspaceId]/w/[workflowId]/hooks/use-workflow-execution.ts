@@ -863,6 +863,24 @@ export function useWorkflowExecution() {
       hasWorkflowInput: !!workflowInput,
     })
 
+    // For chat: extract Start Block inputs (fixed-input-set, custom fields) for server-side merge
+    const chatStartBlockInputs =
+      isExecutingFromChat &&
+      finalWorkflowInput &&
+      typeof finalWorkflowInput === 'object' &&
+      !Array.isArray(finalWorkflowInput)
+        ? (() => {
+            const reserved = new Set(['input', 'conversationId', 'files', 'onUploadError'])
+            const extracted: Record<string, unknown> = {}
+            for (const [key, value] of Object.entries(finalWorkflowInput)) {
+              if (!reserved.has(key) && value !== undefined && value !== null) {
+                extracted[key] = value
+              }
+            }
+            return Object.keys(extracted).length > 0 ? extracted : undefined
+          })()
+        : undefined
+
     // SERVER-SIDE EXECUTION (always)
     if (activeWorkflowId) {
       logger.info('Using server-side executor')
@@ -882,6 +900,7 @@ export function useWorkflowExecution() {
         await executionStream.execute({
           workflowId: activeWorkflowId,
           input: finalWorkflowInput,
+          ...(chatStartBlockInputs && { startBlockInputs: chatStartBlockInputs }),
           startBlockId,
           selectedOutputs,
           triggerType: overrideTriggerType || 'manual',

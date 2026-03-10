@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { AlertCircle, Paperclip, Send, Square, X } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
+import { cn } from '@/lib/core/utils/cn'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
 const logger = createLogger('ChatInput')
@@ -31,7 +32,22 @@ export const ChatInput: React.FC<{
   onStopStreaming?: () => void
   onVoiceStart?: () => void
   voiceOnly?: boolean
-}> = ({ onSubmit, isStreaming = false, onStopStreaming, onVoiceStart, voiceOnly = false }) => {
+  /** Renders before the text input (e.g. dropdowns); keeps input bar in document flow when set */
+  prefixContent?: React.ReactNode
+  /** Hide file attachment button and drag-drop; use when prefixContent provides alternative input */
+  showAttachment?: boolean
+  /** When true, bar stays in document flow instead of fixed; use with prefixContent to avoid overlap */
+  embedInFlow?: boolean
+}> = ({
+  onSubmit,
+  isStreaming = false,
+  onStopStreaming,
+  onVoiceStart,
+  voiceOnly = false,
+  prefixContent,
+  showAttachment = true,
+  embedInFlow = false,
+}) => {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null) // Ref for the textarea
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -168,7 +184,7 @@ export const ChatInput: React.FC<{
 
   const handleSubmit = () => {
     if (isStreaming) return
-    if (!inputValue.trim() && attachedFiles.length === 0) return
+    if (!inputValue.trim() && attachedFiles.length === 0 && !prefixContent) return
     onSubmit?.(inputValue.trim(), false, attachedFiles) // false = not voice input
     setInputValue('')
     setAttachedFiles([])
@@ -212,9 +228,16 @@ export const ChatInput: React.FC<{
     )
   }
 
+  const canSubmit = inputValue.trim() || attachedFiles.length > 0 || !!prefixContent
+
   return (
     <Tooltip.Provider>
-      <div className='fixed right-0 bottom-0 left-0 ml-[118px] flex w-full items-center justify-center bg-gradient-to-t from-white to-transparent px-4 pb-4 text-black md:px-0 md:pb-4'>
+      <div
+        className={cn(
+          'flex w-full items-center justify-center bg-gradient-to-t from-white to-transparent px-4 pb-4 text-black md:px-0 md:pb-4',
+          embedInFlow ? 'relative' : 'fixed right-0 bottom-0 left-0 ml-[118px]'
+        )}
+      >
         <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
           {/* Error Messages */}
           {uploadErrors.length > 0 && (
@@ -242,7 +265,7 @@ export const ChatInput: React.FC<{
           {/* Text Input Area with Controls */}
           <motion.div
             className={`rounded-2xl border shadow-sm transition-all duration-200 md:rounded-3xl ${
-              isDragOver
+              showAttachment && isDragOver
                 ? 'border-purple-500 bg-purple-50/50 dark:border-purple-500 dark:bg-purple-950/20'
                 : 'border-gray-200 bg-white'
             }`}
@@ -250,36 +273,32 @@ export const ChatInput: React.FC<{
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
-            onDragEnter={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              if (!isStreaming) {
-                setDragCounter((prev) => prev + 1)
-              }
-            }}
-            onDragOver={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              if (!isStreaming) {
-                e.dataTransfer.dropEffect = 'copy'
-              }
-            }}
-            onDragLeave={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setDragCounter((prev) => Math.max(0, prev - 1))
-            }}
-            onDrop={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              setDragCounter(0)
-              if (!isStreaming) {
-                handleFileSelect(e.dataTransfer.files)
-              }
-            }}
+            {...(showAttachment && {
+              onDragEnter: (e: React.DragEvent) => {
+                e.preventDefault()
+                e.stopPropagation()
+                if (!isStreaming) setDragCounter((prev) => prev + 1)
+              },
+              onDragOver: (e: React.DragEvent) => {
+                e.preventDefault()
+                e.stopPropagation()
+                if (!isStreaming) e.dataTransfer.dropEffect = 'copy'
+              },
+              onDragLeave: (e: React.DragEvent) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setDragCounter((prev) => Math.max(0, prev - 1))
+              },
+              onDrop: (e: React.DragEvent) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setDragCounter(0)
+                if (!isStreaming) handleFileSelect(e.dataTransfer.files)
+              },
+            })}
           >
             {/* File Previews */}
-            {attachedFiles.length > 0 && (
+            {showAttachment && attachedFiles.length > 0 && (
               <div className='mb-2 flex flex-wrap gap-2 px-3 pt-3 md:px-4'>
                 {attachedFiles.map((file) => {
                   const formatFileSize = (bytes: number) => {
@@ -338,38 +357,43 @@ export const ChatInput: React.FC<{
             )}
 
             <div className='flex items-center gap-2 p-3 md:p-4'>
-              {/* Paperclip Button */}
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <button
-                    type='button'
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isStreaming || attachedFiles.length >= 15}
-                    className='flex items-center justify-center rounded-full p-1.5 text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 md:p-2'
-                  >
-                    <Paperclip size={16} className='md:h-5 md:w-5' />
-                  </button>
-                </Tooltip.Trigger>
-                <Tooltip.Content side='top'>
-                  <p>Attach files</p>
-                </Tooltip.Content>
-              </Tooltip.Root>
+              {/* Prefix content (e.g. dropdowns) - renders first, attached to input */}
+              {prefixContent}
 
-              {/* Hidden file input */}
-              <input
-                ref={fileInputRef}
-                type='file'
-                multiple
-                accept='.pdf,.csv,.doc,.docx,.txt,.md,.xlsx,.xls,.html,.htm,.pptx,.ppt,.json,.xml,.rtf,image/*'
-                onChange={(e) => {
-                  handleFileSelect(e.target.files)
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = ''
-                  }
-                }}
-                className='hidden'
-                disabled={isStreaming}
-              />
+              {/* Paperclip Button - hidden when showAttachment is false */}
+              {showAttachment && (
+                <>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <button
+                        type='button'
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isStreaming || attachedFiles.length >= 15}
+                        className='flex items-center justify-center rounded-full p-1.5 text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 md:p-2'
+                      >
+                        <Paperclip size={16} className='md:h-5 md:w-5' />
+                      </button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content side='top'>
+                      <p>Attach files</p>
+                    </Tooltip.Content>
+                  </Tooltip.Root>
+                  <input
+                    ref={fileInputRef}
+                    type='file'
+                    multiple
+                    accept='.pdf,.csv,.doc,.docx,.txt,.md,.xlsx,.xls,.html,.htm,.pptx,.ppt,.json,.xml,.rtf,image/*'
+                    onChange={(e) => {
+                      handleFileSelect(e.target.files)
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = ''
+                      }
+                    }}
+                    className='hidden'
+                    disabled={isStreaming}
+                  />
+                </>
+              )}
 
               {/* Text Input Container */}
               <div className='relative flex-1'>
@@ -434,7 +458,7 @@ export const ChatInput: React.FC<{
               {/* Send Button */}
               <button
                 className={`flex items-center justify-center rounded-full p-1.5 text-white transition-colors md:p-2 ${
-                  inputValue.trim() || attachedFiles.length > 0
+                  canSubmit
                     ? 'bg-black hover:bg-zinc-700'
                     : 'cursor-default bg-gray-300 hover:bg-gray-400'
                 }`}

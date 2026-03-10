@@ -467,6 +467,19 @@ export function Chat() {
     [startBlockInputFormat]
   )
 
+  /**
+   * Effective user input for chat workflow: selected fixed-input-set value(s) concatenated with any typed text.
+   * Used as the single user input string passed to the workflow and shown in the chat bubble.
+   */
+  const effectiveUserInput = useMemo(() => {
+    const selectedParts = fixedInputSetFields
+      .map((f) => fixedInputSetSelections[f.name?.trim() ?? ''])
+      .filter(Boolean)
+    const typed = chatMessage.trim()
+    const combined = [...selectedParts, typed].filter(Boolean).join(' ')
+    return combined.trim()
+  }, [fixedInputSetFields, fixedInputSetSelections, chatMessage])
+
   useEffect(() => {
     const fields = getFixedInputSetFields(startBlockInputFormat as InputFormatField[])
     if (fields.length === 0) return
@@ -474,9 +487,11 @@ export function Chat() {
       const next = { ...prev }
       let changed = false
       for (const field of fields) {
+        const fieldName = field.name?.trim()
+        if (!fieldName) continue
         const first = field.options[0]
-        if (first && next[field.name] !== first) {
-          next[field.name] = first
+        if (first && next[fieldName] === undefined) {
+          next[fieldName] = first
           changed = true
         }
       }
@@ -902,7 +917,7 @@ export function Chat() {
    * Reads values from Start Block inputFormat field values naturally, ensuring all fields
    * are present with empty values when not provided
    *
-   * @param userInput - The user's typed message (empty string when submitting form)
+   * @param userInput - The user message for the workflow (for chat with fixed-input-set: selected value(s) + typed text concatenated)
    * @param conversationId - The conversation ID
    * @param files - Optional array of uploaded files
    * @param overrideValues - Optional values to override temporarily (e.g., from modal form submission before values are persisted)
@@ -938,7 +953,20 @@ export function Chat() {
         }
       }
 
-      completeInput.input = userInput
+      // When user sends without typing, pass selected fixed-input-set value as start.input
+      if (userInput.trim()) {
+        completeInput.input = userInput
+      } else if (
+        fixedInputSetOverrides &&
+        Object.keys(fixedInputSetOverrides).length > 0
+      ) {
+        const firstSelected = Object.values(fixedInputSetOverrides).find(
+          (v) => v != null && v !== ''
+        )
+        completeInput.input = firstSelected ?? ''
+      } else {
+        completeInput.input = ''
+      }
       completeInput.conversationId = conversationId
 
       if (files && files.length > 0) {
@@ -956,20 +984,11 @@ export function Chat() {
    * and triggers workflow execution with the message as input
    */
   const handleSendMessage = useCallback(async () => {
-    const canSendWithFixedSet =
-      fixedInputSetFields.length > 0 &&
-      Object.keys(fixedInputSetSelections).some((k) => fixedInputSetSelections[k] != null)
-    if (
-      (!chatMessage.trim() && chatFiles.length === 0 && !canSendWithFixedSet) ||
-      !activeWorkflowId ||
-      isExecuting
-    )
-      return
+    if (!effectiveUserInput.trim() && chatFiles.length === 0) return
+    if (!activeWorkflowId || isExecuting) return
 
-    const sentMessage = chatMessage.trim()
-
-    if (sentMessage && promptHistory[promptHistory.length - 1] !== sentMessage) {
-      setPromptHistory((prev) => [...prev, sentMessage])
+    if (effectiveUserInput && promptHistory[promptHistory.length - 1] !== effectiveUserInput) {
+      setPromptHistory((prev) => [...prev, effectiveUserInput])
     }
     setHistoryIndex(-1)
 
@@ -977,11 +996,11 @@ export function Chat() {
 
     try {
       workflowChatMsgSentEvent({
-        'Message Content': sentMessage,
+        'Message Content': effectiveUserInput,
         'Message Type':
-          chatFiles?.length > 0 && sentMessage
+          chatFiles?.length > 0 && effectiveUserInput
             ? 'Text + Attachment'
-            : chatFiles?.length > 0 && !sentMessage
+            : chatFiles?.length > 0 && !effectiveUserInput
               ? 'Attachment'
               : 'Text',
         'Message ID': conversationId,
@@ -992,7 +1011,7 @@ export function Chat() {
       const attachmentsWithData = await processFileAttachments(chatFiles)
 
       const messageContent =
-        sentMessage || (chatFiles.length > 0 ? `Uploaded ${chatFiles.length} file(s)` : '')
+        effectiveUserInput || (chatFiles.length > 0 ? `Uploaded ${chatFiles.length} file(s)` : '')
       addMessage({
         content: messageContent,
         workflowId: activeWorkflowId,
@@ -1004,16 +1023,16 @@ export function Chat() {
       const fileArray =
         chatFiles.length > 0
           ? chatFiles.map((chatFile) => ({
-              name: chatFile.name,
-              size: chatFile.size,
-              type: chatFile.type,
-              file: chatFile.file,
-            }))
+            name: chatFile.name,
+            size: chatFile.size,
+            type: chatFile.type,
+            file: chatFile.file,
+          }))
           : undefined
 
-      // Build complete workflow input with all Start Block fields (include fixed-input-set selections)
+      // Build complete workflow input: effectiveUserInput (dropdown + typed text) is the user input string
       const workflowInput = buildCompleteWorkflowInput(
-        sentMessage,
+        effectiveUserInput,
         conversationId,
         fileArray,
         undefined,
@@ -1040,7 +1059,7 @@ export function Chat() {
 
     focusInput(100)
   }, [
-    chatMessage,
+    effectiveUserInput,
     chatFiles,
     activeWorkflowId,
     isExecuting,
@@ -1054,7 +1073,6 @@ export function Chat() {
     clearErrors,
     buildCompleteWorkflowInput,
     fixedInputSetSelections,
-    fixedInputSetFields.length,
   ])
 
   /**
@@ -1077,8 +1095,12 @@ export function Chat() {
         const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
         updatedFields = normalizedFields.map((field) => {
           const fieldName = field.name?.trim()
-          if (fieldName && fieldName in values) {
-            // Update the field's value with the form value
+          if (
+            fieldName &&
+            fieldName in values &&
+            field.type !== 'fixed-input-set'
+          ) {
+            // Persist form value; fixed-input-set keeps options in field.value
             return {
               ...field,
               value: values[fieldName] ?? '',
@@ -1120,17 +1142,32 @@ export function Chat() {
 
       // Build input from updated fields (read from field.value)
       const completeInput: Record<string, unknown> = {}
+      const reserved = new Set(['input', 'conversationId', 'files'])
       for (const field of updatedFields) {
         const fieldName = field.name?.trim()
         if (fieldName) {
-          // Use the value from Start Block inputFormat field (persisted value)
+          // Use form values when present, else persisted field value
           completeInput[fieldName] =
-            field.value !== undefined && field.value !== null ? field.value : ''
+            fieldName in values
+              ? values[fieldName] ?? ''
+              : field.value !== undefined && field.value !== null
+                ? field.value
+                : ''
         }
       }
 
-      // Override with actual values for reserved fields
-      completeInput.input = ''
+      // Use message from form if present; otherwise pass first fixed-input-set/custom value as start.input
+      const textInput = values.input
+      const textStr =
+        textInput !== undefined && textInput !== null ? String(textInput).trim() : ''
+      if (textStr) {
+        completeInput.input = textStr
+      } else {
+        const firstCustom = Object.entries(values).find(
+          ([k, v]) => !reserved.has(k) && v != null && v !== ''
+        )
+        completeInput.input = firstCustom ? String(firstCustom[1]) : ''
+      }
       completeInput.conversationId = conversationId
 
       const workflowInput = completeInput
@@ -1467,9 +1504,8 @@ export function Chat() {
 
           {/* Combined input container */}
           <div
-            className={`rounded-[4px] border bg-[var(--surface-5)] py-0 pr-[6px] pl-[4px] transition-colors ${
-              isDragOver ? 'border-[var(--brand-secondary)]' : 'border-[var(--border-1)]'
-            }`}
+            className={`rounded-[4px] border bg-[var(--surface-5)] py-0 pr-[6px] pl-[4px] transition-colors ${isDragOver ? 'border-[var(--brand-secondary)]' : 'border-[var(--border-1)]'
+              }`}
           >
             {/* File thumbnails */}
             {chatFiles.length > 0 && (
@@ -1545,22 +1581,27 @@ export function Chat() {
 
               {/* Fixed-input-set dropdown(s) and action buttons on the right */}
               <div className='-translate-y-1/2 absolute top-1/2 right-[2px] flex items-center gap-[10px]'>
-                {fixedInputSetFields.map((field) => (
-                  <Combobox
-                    key={field.name}
-                    options={field.options.map((opt) => ({ label: opt, value: opt }))}
-                    value={fixedInputSetSelections[field.name] ?? field.options[0] ?? ''}
-                    onChange={(value) =>
-                      setFixedInputSetSelections((prev) => ({
-                        ...prev,
-                        [field.name]: value,
-                      }))
-                    }
-                    placeholder={field.name.replace(/_/g, ' ')}
-                    disabled={!activeWorkflowId || isExecuting}
-                    className='w-[140px] shrink-0'
-                  />
-                ))}
+                {fixedInputSetFields.map((field) => {
+                  const fieldName = field.name?.trim() || ''
+                  return (
+                    <Combobox
+                      key={fieldName}
+                      options={field.options.map((opt) => ({ label: opt, value: opt }))}
+                      value={fixedInputSetSelections[fieldName] ?? field.options[0] ?? ''}
+                      onChange={(value) =>
+                        setFixedInputSetSelections((prev) => ({
+                          ...prev,
+                          [fieldName]: value,
+                        }))
+                      }
+                      placeholder={field.name.replace(/_/g, ' ')}
+                      disabled={!activeWorkflowId || isExecuting}
+                      searchable
+                      searchPlaceholder='Search options...'
+                      className='w-[140px] shrink-0'
+                    />
+                  )
+                })}
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
                     <Badge
@@ -1568,7 +1609,7 @@ export function Chat() {
                       className={cn(
                         '!bg-transparent !border-0 cursor-pointer rounded-[6px] p-[0px]',
                         (!activeWorkflowId || isExecuting || chatFiles.length >= 15) &&
-                          'cursor-not-allowed opacity-50'
+                        'cursor-not-allowed opacity-50'
                       )}
                     >
                       <Paperclip className='!h-3.5 !w-3.5' />
@@ -1588,16 +1629,14 @@ export function Chat() {
                   <Button
                     onClick={handleSendMessage}
                     disabled={
-                      (!chatMessage.trim() &&
-                        chatFiles.length === 0 &&
-                        fixedInputSetFields.length === 0) ||
+                      (!effectiveUserInput.trim() && chatFiles.length === 0) ||
                       !activeWorkflowId ||
                       isExecuting ||
                       isStreaming
                     }
                     className={cn(
                       'h-[22px] w-[22px] rounded-full p-0 transition-colors',
-                      chatMessage.trim() || chatFiles.length > 0
+                      effectiveUserInput.trim() || chatFiles.length > 0
                         ? '!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)]'
                         : '!bg-[var(--c-C0C0C0)]'
                     )}
