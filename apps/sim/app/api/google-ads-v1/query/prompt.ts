@@ -120,7 +120,7 @@ Calculation: Monday of current week to yesterday
 
 **Ad Performance (last month):**
 User: "ad performance last month"
-/Users/dhruv.b/Desktop/Sim AI /p2-sim/apps/sim/app/api/google-ads-v1/query/prompt.tsQuery: SELECT campaign.id, campaign.name, ad_group_ad.ad.id, metrics.clicks, metrics.impressions, metrics.cost_micros FROM ad_group_ad WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
+Query: SELECT campaign.id, campaign.name, ad_group_ad.ad.id, metrics.clicks, metrics.impressions, metrics.cost_micros FROM ad_group_ad WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
 Calculation: First and last day of previous month
 
 ## OUTPUT FORMAT
