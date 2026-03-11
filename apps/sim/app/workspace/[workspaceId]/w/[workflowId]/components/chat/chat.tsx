@@ -514,20 +514,22 @@ export function Chat() {
     }
   }, [isChatOpen])
 
-  // Show modal on load if no history and there are custom fields
-  // Only check once when chat opens to prevent infinite loops
+  // Show modal on load if no history and there are custom fields that are not only fixed-input-set.
+  // When workflow has only fixed-input-set, the dropdown in chat is the only input; no modal.
   useEffect(() => {
-    // Only check once per chat session when chat opens
     if (isChatOpen && !hasCheckedModalRef.current && workflowMessages.length === 0) {
       hasCheckedModalRef.current = true
 
-      // Check if we have custom fields (check once, don't depend on it)
-      if (customFields.length > 0 && !hasShownModalRef.current) {
+      const showModal =
+        customFields.length > 0 &&
+        !hasShownModalRef.current &&
+        (fixedInputSetFields.length === 0 || customFields.length > fixedInputSetFields.length)
+      if (showModal) {
         hasShownModalRef.current = true
         setIsInputModalOpen(true)
       }
     }
-  }, [isChatOpen, workflowMessages.length])
+  }, [isChatOpen, workflowMessages.length, customFields.length, fixedInputSetFields.length])
 
   // Map chat messages to copilot message format (type -> role) for scroll hook
   const messagesForScrollHook = useMemo(() => {
@@ -1085,6 +1087,26 @@ export function Chat() {
       setStartBlockInputs(values)
       setIsInputModalOpen(false)
 
+      // Keep chat dropdown in sync when modal included fixed-input-set selections
+      const fixedFields = getFixedInputSetFields(startBlockInputFormat as InputFormatField[])
+      if (fixedFields.length > 0) {
+        setFixedInputSetSelections((prev) => {
+          const next = { ...prev }
+          let changed = false
+          for (const field of fixedFields) {
+            const name = field.name?.trim()
+            if (!name || !(name in values)) continue
+            const v = values[name]
+            const str = v != null && v !== '' ? String(v) : ''
+            if (str && next[name] !== str) {
+              next[name] = str
+              changed = true
+            }
+          }
+          return changed ? next : prev
+        })
+      }
+
       // Update Start Block inputFormat field values with form values
       // This ensures values persist and are used naturally in execution flow
       let updatedFields: InputFormatField[] = []
@@ -1571,7 +1593,7 @@ export function Chat() {
                         disabled={!activeWorkflowId || isExecuting}
                         searchable
                         searchPlaceholder='Search options...'
-                        className='w-[140px] shrink-0'
+                        className='w-[140px] shrink-0 bg-white'
                       />
                     )
                   })}

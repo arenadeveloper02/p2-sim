@@ -1444,28 +1444,24 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               <ChatInput
                 prefixContent={
                   fixedInputSetFields.length > 0 ? (
-                    <div className='flex shrink-0 items-center gap-2 border-gray-200 border-r pr-2 md:pr-3'>
+                    <div className='flex shrink-0 items-center gap-2 border-[var(--border-1)] border-r pr-2 md:pr-3'>
                       {fixedInputSetFields.map((field) => (
-                        <div
+                        <Combobox
                           key={field.name}
-                          className='flex min-w-0 items-center gap-1.5 md:min-w-[140px] md:gap-2'
-                        >
-                          <Combobox
-                            options={field.options.map((opt) => ({ label: opt, value: opt }))}
-                            value={fixedInputSetSelections[field.name] ?? field.options[0] ?? ''}
-                            onChange={(value) =>
-                              setFixedInputSetSelections((prev) => ({
-                                ...prev,
-                                [field.name]: value,
-                              }))
-                            }
-                            placeholder={`Select ${field.name.replace(/_/g, ' ')}`}
-                            disabled={isLoading || isStreamingResponse}
-                            searchable
-                            searchPlaceholder='Search options...'
-                            className='min-w-0 flex-1'
-                          />
-                        </div>
+                          options={field.options.map((opt) => ({ label: opt, value: opt }))}
+                          value={fixedInputSetSelections[field.name] ?? field.options[0] ?? ''}
+                          onChange={(value) =>
+                            setFixedInputSetSelections((prev) => ({
+                              ...prev,
+                              [field.name]: value,
+                            }))
+                          }
+                          placeholder={`Select ${field.name.replace(/_/g, ' ')}`}
+                          disabled={isLoading || isStreamingResponse}
+                          searchable
+                          searchPlaceholder='Search options...'
+                          className='w-[140px] shrink-0 bg-white'
+                        />
                       ))}
                     </div>
                   ) : undefined

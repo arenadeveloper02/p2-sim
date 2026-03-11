@@ -1100,33 +1100,26 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           <ChatInput
             prefixContent={
               fixedInputSetFields.length > 0 ? (
-                <div className='flex shrink-0 items-center gap-2 border-gray-200 border-r pr-2 md:pr-3'>
+                <div className='flex shrink-0 items-center gap-2 border-[var(--border-1)] border-r pr-2 md:pr-3'>
                   {fixedInputSetFields.map((field) => {
                     const fieldName = field.name?.trim() || ''
                     return (
-                      <div
+                      <Combobox
                         key={fieldName}
-                        className='flex min-w-0 items-center gap-1.5 md:min-w-[140px] md:gap-2'
-                      >
-                        <span className='shrink-0 text-gray-600 text-xs md:text-sm dark:text-gray-400'>
-                          {field.name.replace(/_/g, ' ')}:
-                        </span>
-                        <Combobox
-                          options={field.options.map((opt) => ({ label: opt, value: opt }))}
-                          value={fixedInputSetSelections[fieldName] ?? field.options[0] ?? ''}
-                          onChange={(value) =>
-                            setFixedInputSetSelections((prev) => ({
-                              ...prev,
-                              [fieldName]: value,
-                            }))
-                          }
-                          placeholder={`Select ${field.name.replace(/_/g, ' ')}`}
-                          disabled={isLoading || isStreamingResponse}
-                          searchable
-                          searchPlaceholder='Search options...'
-                          className='min-w-0 flex-1'
-                        />
-                      </div>
+                        options={field.options.map((opt) => ({ label: opt, value: opt }))}
+                        value={fixedInputSetSelections[fieldName] ?? field.options[0] ?? ''}
+                        onChange={(value) =>
+                          setFixedInputSetSelections((prev) => ({
+                            ...prev,
+                            [fieldName]: value,
+                          }))
+                        }
+                        placeholder={`Select ${field.name.replace(/_/g, ' ')}`}
+                        disabled={isLoading || isStreamingResponse}
+                        searchable
+                        searchPlaceholder='Search options...'
+                        className='w-[140px] shrink-0 bg-white'
+                      />
                     )
                   })}
                 </div>
