@@ -626,6 +626,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         signal: abortController.signal,
       })
 
+      // Clear timeout immediately once we get a response - the SSE stream will continue
+      // until completion regardless of how long it takes
       clearTimeout(timeoutId)
 
       if (!response.ok) {

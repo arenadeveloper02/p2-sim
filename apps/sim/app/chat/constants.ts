@@ -10,6 +10,8 @@ export const CHAT_ERROR_MESSAGES = {
   USAGE_LIMIT_EXCEEDED: 'Usage limit exceeded. Please upgrade your plan to continue using chat.',
 } as const
 
-export const CHAT_REQUEST_TIMEOUT_MS = 300000 // 5 minutes (same as in chat.tsx)
+// Timeout for initial connection - once SSE stream starts, it continues until completion
+// Increased to 30 minutes to accommodate long-running workflows (some can take 15+ minutes)
+export const CHAT_REQUEST_TIMEOUT_MS = 1800000 // 30 minutes
 
 export type ChatErrorType = keyof typeof CHAT_ERROR_MESSAGES
