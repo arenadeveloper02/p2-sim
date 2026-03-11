@@ -190,6 +190,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
   const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
   const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
+  const [askInChatText, setAskInChatText] = useState('')
   const [userName, setUserName] = useState<string | null>(null)
 
   const scrollToBottom = useCallback(() => {
@@ -1378,12 +1379,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             chatConfig={chatConfig}
             setMessages={setMessages}
             workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
+            onAskInChat={(text) => setAskInChatText(text)}
           />
 
           {/* Input area (free-standing at the bottom) */}
           <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
             <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
               <ChatInput
+                insertText={askInChatText}
+                onInsertConsumed={() => setAskInChatText('')}
                 onSubmit={(
                   value: string,
                   isVoiceInput?: boolean,
