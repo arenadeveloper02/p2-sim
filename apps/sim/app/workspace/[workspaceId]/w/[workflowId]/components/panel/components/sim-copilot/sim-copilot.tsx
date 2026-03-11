@@ -2,6 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { useParams } from 'next/navigation'
+import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useTerminalConsoleStore } from '@/stores/terminal'
 import {
   Sparkles,
   Send,
@@ -338,6 +341,7 @@ function ModelSelector() {
 export function SimCopilotPanel() {
   const params = useParams()
   const workflowId = params?.workflowId as string
+  const currentWorkflow = useCurrentWorkflow()
 
   const isOpen = useSimCopilotStore((s) => s.isOpen)
   const messages = useSimCopilotStore((s) => s.messages)
@@ -353,6 +357,30 @@ export function SimCopilotPanel() {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // @ mention state
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [mentionSearch, setMentionSearch] = useState('')
+  const [attachedLogs, setAttachedLogs] = useState<any[]>([])
+  const allWorkflows = useWorkflowRegistry((s) => s.workflows)
+  const consoleEntries = useTerminalConsoleStore((s) => s.entries)
+
+  // Get unique blocks from latest run for this workflow
+  const workflowLogs = consoleEntries.filter((e) => e.workflowId === workflowId)
+  const latestRunId = workflowLogs.length > 0 ? workflowLogs[workflowLogs.length - 1].executionId : null
+  const latestRunEntries = latestRunId
+    ? workflowLogs.filter((e) => e.executionId === latestRunId)
+    : []
+
+  // Filter mentions based on search
+  const searchLower = mentionSearch.toLowerCase()
+  const filteredWorkflows = Object.values(allWorkflows).filter((w) =>
+    w.name.toLowerCase().includes(searchLower)
+  )
+  const filteredBlocks = latestRunEntries.filter((e) =>
+    e.blockName?.toLowerCase().includes(searchLower) ||
+    e.blockType?.toLowerCase().includes(searchLower)
+  )
 
   const visibleMessages = messages.filter(
     (m) => m.role === 'user' || m.role === 'assistant'
@@ -373,19 +401,94 @@ export function SimCopilotPanel() {
       const msg = (text ?? input).trim()
       if (!msg || isStreaming) return
       setInput('')
-      await sendMessage(msg, { workflowId })
+      
+      // Check if message mentions another workflow via @
+      const mentionMatch = msg.match(/@(\S+)/)
+      const mentionedName = mentionMatch?.[1]
+      const mentionedWorkflow = mentionedName
+        ? Object.values(allWorkflows).find((w) =>
+            w.name.toLowerCase() === mentionedName.toLowerCase()
+          )
+        : null
+
+      // Pass full workflow state so AI knows which workflow it's operating on
+      const workflowState = {
+        workflowId: mentionedWorkflow?.id || workflowId,
+        name: mentionedWorkflow?.name ||
+          currentWorkflow?.workflowState?.metadata?.name ||
+          'Untitled Workflow',
+        blocks: Object.values(currentWorkflow?.blocks || {}),
+        edges: currentWorkflow?.edges || [],
+        // Attach log context if user selected block logs
+        logContext: attachedLogs.length > 0 ? attachedLogs.map((entry) => ({
+          blockName: entry.blockName,
+          blockType: entry.blockType,
+          runId: entry.executionId,
+          success: entry.success,
+          durationMs: entry.durationMs,
+          error: entry.error ? String(entry.error) : undefined,
+          input: entry.input ? JSON.stringify(entry.input).slice(0, 2000) : undefined,
+          output: entry.output ? JSON.stringify(entry.output).slice(0, 2000) : undefined,
+        })) : undefined,
+      }
+
+      // Clear attached logs after sending
+      setAttachedLogs([])
+      
+      await sendMessage(msg, workflowState)
     },
-    [input, isStreaming, sendMessage, workflowId]
+    [input, isStreaming, sendMessage, workflowId, currentWorkflow, allWorkflows]
+  )
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const val = e.target.value
+      setInput(val)
+      // Detect @ mention
+      const atIndex = val.lastIndexOf('@')
+      if (atIndex !== -1 && (atIndex === 0 || val[atIndex - 1] === ' ')) {
+        setMentionSearch(val.slice(atIndex + 1))
+        setMentionOpen(true)
+      } else {
+        setMentionOpen(false)
+      }
+    },
+    []
+  )
+
+  const handleSelectMention = useCallback(
+    (label: string, logEntry?: any) => {
+      const atIndex = input.lastIndexOf('@')
+      const newInput = input.slice(0, atIndex) + '@' + label + ' '
+      setInput(newInput)
+      setMentionOpen(false)
+      if (logEntry) {
+        setAttachedLogs((prev) => [...prev, logEntry])
+      }
+      inputRef.current?.focus()
+    },
+    [input]
   )
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Escape') {
+        setMentionOpen(false)
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        handleSend()
+        if (mentionOpen) {
+          if (filteredBlocks.length > 0) {
+            handleSelectMention(filteredBlocks[0].blockName, filteredBlocks[0])
+          } else if (filteredWorkflows.length > 0) {
+            handleSelectMention(filteredWorkflows[0].name)
+          }
+        } else {
+          handleSend()
+        }
       }
     },
-    [handleSend]
+    [handleSend, mentionOpen, filteredWorkflows, handleSelectMention]
   )
 
   if (!isOpen) return null
@@ -478,11 +581,77 @@ export function SimCopilotPanel() {
 
       {/* Input */}
       <div className='border-t border-border px-3 py-3 shrink-0'>
+        {/* @ mention dropdown */}
+        {mentionOpen && (filteredWorkflows.length > 0 || filteredBlocks.length > 0) && (
+          <div className='mb-2 rounded-xl border border-border bg-card shadow-lg overflow-hidden max-h-[240px] overflow-y-auto'>
+            {/* Block logs from latest run */}
+            {filteredBlocks.length > 0 && (
+              <>
+                <div className='px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide border-b border-border bg-secondary/30'>
+                  Block Logs (Run {latestRunId?.slice(0, 8)})
+                </div>
+                {filteredBlocks.slice(0, 5).map((entry, i) => (
+                  <button
+                    key={`${entry.blockId}-${i}`}
+                    onMouseDown={(e) => { e.preventDefault(); handleSelectMention(entry.blockName, entry) }}
+                    className='w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-secondary transition-colors'
+                  >
+                    <div className={`h-2 w-2 rounded-full shrink-0 ${entry.success === false ? 'bg-red-500' : entry.success ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    <span className='font-medium text-foreground'>{entry.blockName}</span>
+                    <span className='text-muted-foreground text-[10px]'>{entry.blockType}</span>
+                    {entry.durationMs !== undefined && (
+                      <span className='text-muted-foreground ml-auto text-[10px]'>{entry.durationMs}ms</span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
+            {/* Workflows */}
+            {filteredWorkflows.length > 0 && (
+              <>
+                <div className='px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide border-b border-border bg-secondary/30'>
+                  Workflows
+                </div>
+                {filteredWorkflows.slice(0, 5).map((w) => (
+                  <button
+                    key={w.id}
+                    onMouseDown={(e) => { e.preventDefault(); handleSelectMention(w.name) }}
+                    className='w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-secondary transition-colors'
+                  >
+                    <Sparkles className='h-3 w-3 text-violet-500 shrink-0' />
+                    <span className='font-medium text-foreground'>{w.name}</span>
+                    <span className='text-muted-foreground ml-auto text-[10px]'>{w.id.slice(0, 8)}</span>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+        {/* Attached log badges */}
+        {attachedLogs.length > 0 && (
+          <div className='mb-2 flex flex-wrap gap-1'>
+            {attachedLogs.map((log, i) => (
+              <span
+                key={i}
+                className='inline-flex items-center gap-1 rounded-md bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-400'
+              >
+                <div className={`h-1.5 w-1.5 rounded-full ${log.success === false ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                {log.blockName}
+                <button
+                  onClick={() => setAttachedLogs((prev) => prev.filter((_, idx) => idx !== i))}
+                  className='ml-0.5 hover:text-red-400'
+                >
+                  <X className='h-2.5 w-2.5' />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className='flex items-end gap-2'>
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             placeholder={
               pendingEdit

@@ -18,6 +18,7 @@ import {
   analyzeTaskComplexity,
   type AIMessage,
   type AIProviderConfig,
+  type WorkflowContext,
 } from '@/lib/sim-copilot'
 
 const logger = createLogger('SimCopilotChat')
@@ -102,8 +103,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No AI provider configured' }, { status: 500 })
     }
 
+    // Build workflow context from workflowState so AI knows which workflow it's operating on
+    const workflowContext: WorkflowContext = {
+      workflowId,
+      workflowName: workflowState?.name || workflowState?.title || undefined,
+      blockCount: workflowState?.blocks?.length ?? undefined,
+      blockTypes: workflowState?.blocks?.map((b: any) => b.type).filter(Boolean) ?? undefined,
+      logContext: workflowState?.logContext || undefined,
+    }
+
     // Build messages array - sanitize and limit conversation history
-    const systemPrompt = generateSystemPrompt()
+    const systemPrompt = generateSystemPrompt(workflowContext)
     
     // Sanitize conversation history for Anthropic's strict tool_use/tool_result requirements
     // Each tool_use MUST have a corresponding tool_result immediately after

@@ -82,6 +82,7 @@ import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { getUniqueBlockName, prepareBlockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 /** Lazy-loaded components for non-critical UI that can load after initial render */
@@ -1805,6 +1806,17 @@ const WorkflowContent = React.memo(() => {
         collaborativeBatchRemoveBlocks([realId])
       } else if (op.action === 'remove_connection' && op.connection_id) {
         collaborativeBatchRemoveEdges([op.connection_id])
+      } else if (op.action === 'update_block' && op.block_id && op.values) {
+        // Find the block by ID or by type
+        const blocks = useWorkflowStore.getState().blocks
+        const realId = idMap[op.block_id] ||
+          Object.entries(blocks).find(([, b]) => b.type === op.block_id || b.id === op.block_id)?.[0] ||
+          op.block_id
+        const subBlockStore = useSubBlockStore.getState()
+        for (const [subBlockId, value] of Object.entries(op.values)) {
+          subBlockStore.setValue(realId, subBlockId, value)
+        }
+        logger.info('Updated block sub-block values', { blockId: realId, values: op.values })
       }
     })
 

@@ -3,14 +3,64 @@
  * Token-efficient prompts for scalable context management
  */
 
+export interface WorkflowContext {
+  workflowId: string
+  workflowName?: string
+  blockCount?: number
+  blockTypes?: string[]
+  description?: string
+  logContext?: Array<{
+    blockName: string
+    blockType: string
+    runId?: string
+    success?: boolean
+    durationMs?: number
+    error?: string
+    input?: string
+    output?: string
+  }>
+}
+
 /**
  * Generate the system prompt for the copilot
+ * Accepts optional workflow context so the AI knows which workflow it's operating on
  * NOTE: Block list is NOT included - use get_available_blocks tool instead
- * This keeps the system prompt small and scalable
  */
-export function generateSystemPrompt(): string {
-  return `You are Sim Copilot, an autonomous AI workflow automation expert with access to 160+ blocks and multiple AI models.
+export function generateSystemPrompt(workflowContext?: WorkflowContext): string {
+  const workflowSection = workflowContext
+    ? `
+## 🗂️ ACTIVE WORKFLOW CONTEXT
+You are currently operating on this specific workflow:
+- **Workflow ID**: ${workflowContext.workflowId}
+- **Workflow Name**: ${workflowContext.workflowName || 'Untitled Workflow'}
+${workflowContext.blockCount !== undefined ? `- **Current Blocks**: ${workflowContext.blockCount} block(s) on canvas` : ''}
+${workflowContext.blockTypes?.length ? `- **Block Types Present**: ${workflowContext.blockTypes.join(', ')}` : ''}
+${workflowContext.description ? `- **Description**: ${workflowContext.description}` : ''}
 
+⚠️ IMPORTANT: When the user says "this workflow", "my workflow", "the workflow", or asks any question about blocks/data — they are ALWAYS referring to this specific workflow (ID: ${workflowContext.workflowId}). Always call get_workflow to see its current state before making any changes.
+`
+    : ''
+
+  const logSection = workflowContext?.logContext?.length
+    ? `
+## 📋 ATTACHED EXECUTION LOGS
+The user has attached block execution logs for debugging. Analyze these carefully:
+${workflowContext.logContext.map((log) => `
+### Block: ${log.blockName} (${log.blockType})
+- **Status**: ${log.success === false ? '❌ FAILED' : log.success ? '✅ Success' : '⏳ Unknown'}
+- **Duration**: ${log.durationMs !== undefined ? `${log.durationMs}ms` : 'N/A'}
+${log.runId ? `- **Run ID**: ${log.runId}` : ''}
+${log.error ? `- **Error**: ${log.error}` : ''}
+${log.input ? `- **Input** (truncated):\n\`\`\`json\n${log.input}\n\`\`\`` : ''}
+${log.output ? `- **Output** (truncated):\n\`\`\`json\n${log.output}\n\`\`\`` : ''}
+`).join('')}
+Use this data to diagnose issues, explain errors, and suggest fixes.
+`
+    : ''
+
+  return `You are Sim Copilot, an autonomous AI workflow automation expert with access to 160+ blocks and multiple AI models.
+${workflowSection}
+${logSection}
 ## 🚀 AUTONOMOUS EXECUTION
 You are an agent - please keep going until the user's workflow request is COMPLETELY RESOLVED before ending your turn. Only terminate when the workflow is fully built, configured, connected, and ready to execute.
 
