@@ -956,10 +956,7 @@ export function Chat() {
       // When user sends without typing, pass selected fixed-input-set value as start.input
       if (userInput.trim()) {
         completeInput.input = userInput
-      } else if (
-        fixedInputSetOverrides &&
-        Object.keys(fixedInputSetOverrides).length > 0
-      ) {
+      } else if (fixedInputSetOverrides && Object.keys(fixedInputSetOverrides).length > 0) {
         const firstSelected = Object.values(fixedInputSetOverrides).find(
           (v) => v != null && v !== ''
         )
@@ -1023,11 +1020,11 @@ export function Chat() {
       const fileArray =
         chatFiles.length > 0
           ? chatFiles.map((chatFile) => ({
-            name: chatFile.name,
-            size: chatFile.size,
-            type: chatFile.type,
-            file: chatFile.file,
-          }))
+              name: chatFile.name,
+              size: chatFile.size,
+              type: chatFile.type,
+              file: chatFile.file,
+            }))
           : undefined
 
       // Build complete workflow input: effectiveUserInput (dropdown + typed text) is the user input string
@@ -1095,11 +1092,7 @@ export function Chat() {
         const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
         updatedFields = normalizedFields.map((field) => {
           const fieldName = field.name?.trim()
-          if (
-            fieldName &&
-            fieldName in values &&
-            field.type !== 'fixed-input-set'
-          ) {
+          if (fieldName && fieldName in values && field.type !== 'fixed-input-set') {
             // Persist form value; fixed-input-set keeps options in field.value
             return {
               ...field,
@@ -1149,7 +1142,7 @@ export function Chat() {
           // Use form values when present, else persisted field value
           completeInput[fieldName] =
             fieldName in values
-              ? values[fieldName] ?? ''
+              ? (values[fieldName] ?? '')
               : field.value !== undefined && field.value !== null
                 ? field.value
                 : ''
@@ -1158,8 +1151,7 @@ export function Chat() {
 
       // Use message from form if present; otherwise pass first fixed-input-set/custom value as start.input
       const textInput = values.input
-      const textStr =
-        textInput !== undefined && textInput !== null ? String(textInput).trim() : ''
+      const textStr = textInput !== undefined && textInput !== null ? String(textInput).trim() : ''
       if (textStr) {
         completeInput.input = textStr
       } else {
@@ -1504,8 +1496,9 @@ export function Chat() {
 
           {/* Combined input container */}
           <div
-            className={`rounded-[4px] border bg-[var(--surface-5)] py-0 pr-[6px] pl-[4px] transition-colors ${isDragOver ? 'border-[var(--brand-secondary)]' : 'border-[var(--border-1)]'
-              }`}
+            className={`rounded-[4px] border bg-[var(--surface-5)] py-0 pr-[6px] pl-[4px] transition-colors ${
+              isDragOver ? 'border-[var(--brand-secondary)]' : 'border-[var(--border-1)]'
+            }`}
           >
             {/* File thumbnails */}
             {chatFiles.length > 0 && (
@@ -1556,94 +1549,95 @@ export function Chat() {
               </div>
             )}
 
-            {/* Input field with inline buttons */}
-            <div className='relative'>
-              <Input
-                ref={inputRef}
-                value={chatMessage}
-                onChange={(e) => {
-                  setChatMessage(e.target.value)
-                  setHistoryIndex(-1)
-                }}
-                onKeyDown={handleKeyPress}
-                placeholder={isDragOver ? 'Drop files here...' : 'Type a message...'}
-                className={cn(
-                  'w-full border-0 bg-transparent pl-[4px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
-                  fixedInputSetFields.length === 0 && 'pr-[56px]'
-                )}
-                style={
-                  fixedInputSetFields.length > 0
-                    ? { paddingRight: `${56 + fixedInputSetFields.length * 148}px` }
-                    : undefined
-                }
-                disabled={!activeWorkflowId}
-              />
+            {/* Input field: dropdown(s) on left, text input next to it, action buttons on right (like deployed chat) */}
+            <div className={cn('flex items-stretch', fixedInputSetFields.length > 0 && 'gap-2')}>
+              {/* Fixed-input-set dropdown(s) on the left */}
+              {fixedInputSetFields.length > 0 && (
+                <div className='flex shrink-0 items-center gap-2 border-[var(--border-1)] border-r pr-2'>
+                  {fixedInputSetFields.map((field) => {
+                    const fieldName = field.name?.trim() || ''
+                    return (
+                      <Combobox
+                        key={fieldName}
+                        options={field.options.map((opt) => ({ label: opt, value: opt }))}
+                        value={fixedInputSetSelections[fieldName] ?? field.options[0] ?? ''}
+                        onChange={(value) =>
+                          setFixedInputSetSelections((prev) => ({
+                            ...prev,
+                            [fieldName]: value,
+                          }))
+                        }
+                        placeholder={field.name.replace(/_/g, ' ')}
+                        disabled={!activeWorkflowId || isExecuting}
+                        searchable
+                        searchPlaceholder='Search options...'
+                        className='w-[140px] shrink-0'
+                      />
+                    )
+                  })}
+                </div>
+              )}
 
-              {/* Fixed-input-set dropdown(s) and action buttons on the right */}
-              <div className='-translate-y-1/2 absolute top-1/2 right-[2px] flex items-center gap-[10px]'>
-                {fixedInputSetFields.map((field) => {
-                  const fieldName = field.name?.trim() || ''
-                  return (
-                    <Combobox
-                      key={fieldName}
-                      options={field.options.map((opt) => ({ label: opt, value: opt }))}
-                      value={fixedInputSetSelections[fieldName] ?? field.options[0] ?? ''}
-                      onChange={(value) =>
-                        setFixedInputSetSelections((prev) => ({
-                          ...prev,
-                          [fieldName]: value,
-                        }))
+              {/* Chat input and action buttons on the right */}
+              <div className='relative min-w-0 flex-1'>
+                <Input
+                  ref={inputRef}
+                  value={chatMessage}
+                  onChange={(e) => {
+                    setChatMessage(e.target.value)
+                    setHistoryIndex(-1)
+                  }}
+                  onKeyDown={handleKeyPress}
+                  placeholder={isDragOver ? 'Drop files here...' : 'Type a message...'}
+                  className='w-full border-0 bg-transparent pr-[56px] pl-[4px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
+                  disabled={!activeWorkflowId}
+                />
+
+                {/* Action buttons on the right (paperclip, stop/send) */}
+                <div className='-translate-y-1/2 absolute top-1/2 right-[2px] flex items-center gap-[10px]'>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <Badge
+                        onClick={() => document.getElementById('floating-chat-file-input')?.click()}
+                        className={cn(
+                          '!bg-transparent !border-0 cursor-pointer rounded-[6px] p-[0px]',
+                          (!activeWorkflowId || isExecuting || chatFiles.length >= 15) &&
+                            'cursor-not-allowed opacity-50'
+                        )}
+                      >
+                        <Paperclip className='!h-3.5 !w-3.5' />
+                      </Badge>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content>Attach file</Tooltip.Content>
+                  </Tooltip.Root>
+
+                  {isStreaming ? (
+                    <Button
+                      onClick={handleStopStreaming}
+                      className='!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)] h-[22px] w-[22px] rounded-full p-0 transition-colors'
+                    >
+                      <Square className='h-2.5 w-2.5 fill-black text-black' />
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={handleSendMessage}
+                      disabled={
+                        (!effectiveUserInput.trim() && chatFiles.length === 0) ||
+                        !activeWorkflowId ||
+                        isExecuting ||
+                        isStreaming
                       }
-                      placeholder={field.name.replace(/_/g, ' ')}
-                      disabled={!activeWorkflowId || isExecuting}
-                      searchable
-                      searchPlaceholder='Search options...'
-                      className='w-[140px] shrink-0'
-                    />
-                  )
-                })}
-                <Tooltip.Root>
-                  <Tooltip.Trigger asChild>
-                    <Badge
-                      onClick={() => document.getElementById('floating-chat-file-input')?.click()}
                       className={cn(
-                        '!bg-transparent !border-0 cursor-pointer rounded-[6px] p-[0px]',
-                        (!activeWorkflowId || isExecuting || chatFiles.length >= 15) &&
-                        'cursor-not-allowed opacity-50'
+                        'h-[22px] w-[22px] rounded-full p-0 transition-colors',
+                        effectiveUserInput.trim() || chatFiles.length > 0
+                          ? '!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)]'
+                          : '!bg-[var(--c-C0C0C0)]'
                       )}
                     >
-                      <Paperclip className='!h-3.5 !w-3.5' />
-                    </Badge>
-                  </Tooltip.Trigger>
-                  <Tooltip.Content>Attach file</Tooltip.Content>
-                </Tooltip.Root>
-
-                {isStreaming ? (
-                  <Button
-                    onClick={handleStopStreaming}
-                    className='!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)] h-[22px] w-[22px] rounded-full p-0 transition-colors'
-                  >
-                    <Square className='h-2.5 w-2.5 fill-black text-black' />
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleSendMessage}
-                    disabled={
-                      (!effectiveUserInput.trim() && chatFiles.length === 0) ||
-                      !activeWorkflowId ||
-                      isExecuting ||
-                      isStreaming
-                    }
-                    className={cn(
-                      'h-[22px] w-[22px] rounded-full p-0 transition-colors',
-                      effectiveUserInput.trim() || chatFiles.length > 0
-                        ? '!bg-[var(--c-C0C0C0)] hover:!bg-[var(--c-D0D0D0)]'
-                        : '!bg-[var(--c-C0C0C0)]'
-                    )}
-                  >
-                    <ArrowUp className='h-3.5 w-3.5 text-black' strokeWidth={2.25} />
-                  </Button>
-                )}
+                      <ArrowUp className='h-3.5 w-3.5 text-black' strokeWidth={2.25} />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
