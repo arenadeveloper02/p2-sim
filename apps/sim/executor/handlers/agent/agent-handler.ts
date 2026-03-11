@@ -3,11 +3,13 @@ import { account, mcpServers } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { createMcpToolId } from '@/lib/mcp/utils'
+import { getAccurateTokenCount } from '@/lib/tokenization/estimators'
 import { refreshTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
 import { AGENT, BlockType, DEFAULTS, REFERENCE, stripCustomToolPrefix } from '@/executor/constants'
 import { memoryService } from '@/executor/handlers/agent/memory'
+import { getMemoryTokenLimit } from '@/executor/handlers/agent/memory-utils'
 import type {
   AgentInputs,
   Message,
@@ -300,28 +302,59 @@ export class AgentBlockHandler implements BlockHandler {
       })
     }
 
-    // Format fact memories and add to system prompt if memory is enabled
-    if (filteredInputs.memoryType && factMemories.length > 0) {
-      // Format fact memories and add to system prompt
-      if (factMemories && factMemories.length > 0) {
-        const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
+    // Add conversation context to system prompt if memory is enabled
+    // This includes last conversation, previous conversation (semantic search), and user facts
+    let finalPreSearchedResults = preSearchedResults
+    if (filteredInputs.memoryType && userPrompt) {
+      // Fetch search results if not already available from intent analyzer
+      if (!finalPreSearchedResults && filteredInputs.conversationId) {
+        finalPreSearchedResults = await combineAndSortSearchResults(
+          ctx,
+          filteredInputs,
+          block.id,
+          userPrompt,
+          filteredInputs.model
+        )
+      }
 
-        const factMemoriesPrompt = `\n\=== USER FACTS (A User Facts are an explicitly stated, long-term, and reusable detail about who the user is, how they typically work, or what they consistently prefer, used only to personalize responses) : ===\n${factMemoriesText}`
+      // Add conversation details if we have lastConversation, search results, or fact memories
+      if (
+        lastConversation ||
+        (finalPreSearchedResults && finalPreSearchedResults.length > 0) ||
+        (factMemories && factMemories.length > 0)
+      ) {
+        // Calculate base system prompt and user prompt token counts for accurate limit calculation
+        const baseSystemPrompt = filteredInputs.systemPrompt || ''
+        const baseSystemPromptTokens = getAccurateTokenCount(baseSystemPrompt, filteredInputs.model)
+        const userPromptTokens = getAccurateTokenCount(userPrompt || '', filteredInputs.model)
 
-        // Append to existing system prompt or create new one
-        if (filteredInputs.systemPrompt) {
-          filteredInputs.systemPrompt = `${filteredInputs.systemPrompt}${factMemoriesPrompt}`
-        } else {
-          filteredInputs.systemPrompt = `=== USER FACTS : ===\n${factMemoriesText}`
+        const conversationDetailsPrompt = this.formatConversationDetailsForSystemPrompt(
+          lastConversation,
+          finalPreSearchedResults,
+          factMemories,
+          filteredInputs.model,
+          baseSystemPromptTokens,
+          userPromptTokens
+        )
+
+        if (conversationDetailsPrompt) {
+          // Append to existing system prompt or create new one
+          if (filteredInputs.systemPrompt) {
+            filteredInputs.systemPrompt = `${filteredInputs.systemPrompt}\n\n${conversationDetailsPrompt}`
+          } else {
+            filteredInputs.systemPrompt = conversationDetailsPrompt
+          }
+
+          // Update system message in inputs.messages to keep them in sync
+          this.updateSystemMessageInInputs(filteredInputs)
+
+          logger.debug('Added conversation details to system prompt', {
+            blockId: block.id,
+            hasLastConversation: !!lastConversation,
+            totalSemanticMemories: finalPreSearchedResults?.length || 0,
+            factMemoryCount: factMemories.length,
+          })
         }
-
-        // Update system message in inputs.messages to keep them in sync
-        this.updateSystemMessageInInputs(filteredInputs)
-
-        logger.debug('Added fact memories to system prompt', {
-          blockId: block.id,
-          factMemoryCount: factMemories.length,
-        })
       }
     }
 
@@ -329,7 +362,7 @@ export class AgentBlockHandler implements BlockHandler {
       ctx,
       filteredInputs,
       block.id,
-      preSearchedResults,
+      finalPreSearchedResults,
       lastConversation
     )
 
@@ -395,6 +428,124 @@ export class AgentBlockHandler implements BlockHandler {
         inputs.messages.unshift({ role: 'system', content: inputs.systemPrompt })
       }
     }
+  }
+
+  /**
+   * Formats conversation details for the system prompt.
+   * Includes last conversation, previous conversation (semantic search), and user facts.
+   *
+   * Note: Knowledge Base tool results are NOT added here - they are passed as tool results
+   * in the messages array (role: 'tool' or 'user' with tool_result content) when the tool is executed.
+   *
+   * @param baseSystemPromptTokens - Token count of the base system prompt (before adding conversation details)
+   * @param userPromptTokens - Token count of the user prompt (to ensure we don't exceed total context)
+   */
+  private formatConversationDetailsForSystemPrompt(
+    lastConversation: LatestConversation | null | undefined,
+    preSearchedResults: Message[] | undefined,
+    factMemories: Message[],
+    model?: string,
+    baseSystemPromptTokens = 0,
+    userPromptTokens = 0
+  ): string {
+    const tokenLimit = getMemoryTokenLimit(model)
+
+    // Reserve tokens for base system prompt, user prompt, and response generation
+    // Calculate available tokens by subtracting base system prompt and user prompt sizes
+    let availableTokens = tokenLimit
+
+    // Subtract base system prompt tokens
+    availableTokens -= baseSystemPromptTokens
+
+    // Subtract user prompt tokens (to ensure total context doesn't exceed limit)
+    availableTokens -= userPromptTokens
+
+    // Ensure we don't go negative - if user prompt is too large, use at least 10% of limit
+    const minAvailableTokens = Math.floor(tokenLimit * 0.1)
+    availableTokens = Math.max(availableTokens, minAvailableTokens)
+
+    let currentTokenCount = 0
+    const parts: string[] = []
+
+    // Header
+    const header =
+      "=== USER CONVERSATION DETAILS (This can be used as context while figuring out response, don't include directly it in the response, understand the question and answer it accordingly) === :\n"
+    const headerTokens = getAccurateTokenCount(header, model)
+    if (headerTokens <= availableTokens) {
+      parts.push(header)
+      currentTokenCount += headerTokens
+    }
+
+    // Format last conversation
+    if (lastConversation) {
+      let lastConvText = 'LAST CONVERSATION: '
+      const lastConvParts: string[] = []
+
+      if (lastConversation.initialInput) {
+        lastConvParts.push(`User: ${lastConversation.initialInput}`)
+      }
+      if (lastConversation.finalChatOutput) {
+        lastConvParts.push(`Assistant: ${lastConversation.finalChatOutput}`)
+      }
+
+      if (lastConvParts.length > 0) {
+        lastConvText += lastConvParts.join('\n')
+        const lastConvTokens = getAccurateTokenCount(lastConvText, model)
+        if (currentTokenCount + lastConvTokens <= tokenLimit) {
+          parts.push(lastConvText)
+          currentTokenCount += lastConvTokens
+        }
+      }
+    }
+
+    // Format user facts
+    if (factMemories && factMemories.length > 0) {
+      const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
+      const userFactsText = `USER FACTS:\n${factMemoriesText}`
+      const userFactsTokens = getAccurateTokenCount(userFactsText, model)
+
+      if (currentTokenCount + userFactsTokens <= availableTokens) {
+        parts.push(userFactsText)
+        currentTokenCount += userFactsTokens
+      }
+    }
+
+    // Format previous conversation (semantic search)
+    if (preSearchedResults && preSearchedResults.length > 0) {
+      let prevConvText = 'PREVIOUS CONVERSATION (SEMANTIC SEARCH): '
+      const prevConvParts: string[] = []
+
+      for (const memory of preSearchedResults) {
+        const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
+        const memoryTokens = getAccurateTokenCount(memoryText, model)
+        const prevConvTextWithMemory =
+          prevConvText + (prevConvParts.length > 0 ? '\n' : '') + memoryText
+        const prevConvTokensWithMemory = getAccurateTokenCount(prevConvTextWithMemory, model)
+
+        if (currentTokenCount + prevConvTokensWithMemory <= availableTokens) {
+          prevConvParts.push(memoryText)
+          prevConvText = prevConvTextWithMemory
+        } else {
+          logger.debug('Stopped adding semantic search memories due to token limit', {
+            tokenLimit,
+            availableTokens,
+            baseSystemPromptTokens,
+            userPromptTokens,
+            currentTokens: currentTokenCount,
+            memoryTokens,
+            totalMemories: preSearchedResults.length,
+          })
+          break
+        }
+      }
+
+      if (prevConvParts.length > 0) {
+        parts.push(prevConvText)
+        currentTokenCount += getAccurateTokenCount(prevConvText, model)
+      }
+    }
+
+    return parts.length > 0 ? parts.join('\n\n') : ''
   }
 
   /**
@@ -1118,116 +1269,14 @@ export class AgentBlockHandler implements BlockHandler {
         }
       }
 
-      // Use pre-fetched results from intent analyzer or fetch new ones with combined, deduplicated, and sorted logic
-      const searchResults: Message[] = preSearchedResults
-        ? preSearchedResults
-        : await combineAndSortSearchResults(ctx, inputs, blockId, userPrompt, inputs.model)
-
-      // Add search results to user prompt incrementally with token checking
-      // Priority: lastConversation first (most recent), then semantic search results
-      if ((lastConversation || (searchResults && searchResults.length > 0)) && userPrompt) {
-        const { getMemoryTokenLimit } = await import('@/executor/handlers/agent/memory-utils')
-        const { getAccurateTokenCount } = await import('@/lib/tokenization/estimators')
-
-        const tokenLimit = getMemoryTokenLimit(inputs.model)
-        const baseUserPromptTokens = getAccurateTokenCount(userPrompt, inputs.model)
-        let currentTokenCount = baseUserPromptTokens
-        let memoryContext = ''
-
-        // Priority 1: Add last conversation first (highest priority, most recent)
-        if (lastConversation) {
-          const lastConvHeader =
-            '\n=== LAST CONVERSATION (This conversation is the most recent one and cab be used to answer the current user question, if the user question is a follow up question to the last conversation) === :\n'
-          const lastConvHeaderTokens = getAccurateTokenCount(lastConvHeader, inputs.model)
-
-          if (currentTokenCount + lastConvHeaderTokens <= tokenLimit) {
-            memoryContext += lastConvHeader
-            currentTokenCount += lastConvHeaderTokens
-
-            if (lastConversation.initialInput) {
-              const userMsg = `User: ${lastConversation.initialInput}`
-              const userMsgTokens = getAccurateTokenCount(userMsg, inputs.model)
-              if (currentTokenCount + userMsgTokens <= tokenLimit) {
-                memoryContext += userMsg
-                currentTokenCount += userMsgTokens
-              }
-            }
-
-            if (lastConversation.finalChatOutput) {
-              const assistantMsg = `Assistant: ${lastConversation.finalChatOutput}`
-              const assistantMsgTokens = getAccurateTokenCount(assistantMsg, inputs.model)
-              if (currentTokenCount + assistantMsgTokens <= tokenLimit) {
-                memoryContext += assistantMsg
-                currentTokenCount += assistantMsgTokens
-              }
-            }
-          }
-        }
-
-        // Priority 2: Add semantic search results (secondary priority)
-        if (searchResults && searchResults.length > 0) {
-          const searchHeader =
-            '\n=== PREVIOUS CONVERSATION (SEMANTIC SEARCH) === : (DO NOT ANSWER ANY QUESTIONS FROM HERE JUST USE AS CONTEXT)\n'
-          const searchHeaderTokens = getAccurateTokenCount(searchHeader, inputs.model)
-
-          if (currentTokenCount + searchHeaderTokens <= tokenLimit) {
-            memoryContext += searchHeader
-            currentTokenCount += searchHeaderTokens
-
-            for (const memory of searchResults) {
-              const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
-              const memoryTokens = getAccurateTokenCount(memoryText, inputs.model)
-
-              if (currentTokenCount + memoryTokens <= tokenLimit) {
-                memoryContext += memoryText
-                currentTokenCount += memoryTokens
-              } else {
-                logger.debug('Stopped adding semantic search memories due to token limit', {
-                  blockId,
-                  tokenLimit,
-                  currentTokens: currentTokenCount,
-                  memoryTokens,
-                  totalMemories: searchResults.length,
-                })
-                break
-              }
-            }
-          }
-        }
-
-        // Append memory context to user prompt with "User Input: " prefix
-        if (memoryContext) {
-          if (inputs.userPrompt) {
-            const userPromptStr =
-              typeof inputs.userPrompt === 'string'
-                ? inputs.userPrompt
-                : JSON.stringify(inputs.userPrompt)
-            inputs.userPrompt = `=== CURRENT USER INPUT === (ANSWER THIS ONLY) : ${userPromptStr} \n DO NOT ANSWER QUESTIONS FROM HERE :${memoryContext}`
-          } else if (conversationMessages.length > 0) {
-            const userMsg = conversationMessages.find((m) => m.role === 'user')
-            if (userMsg) {
-              userMsg.content = `=== CURRENT USER INPUT === : ${userMsg.content} \n DO NOT ANSWER QUESTIONS FROM HERE : ${memoryContext}`
-            }
-          } else if (inputs.messages && Array.isArray(inputs.messages)) {
-            const userMsgIndex = inputs.messages.findIndex((m) => m.role === 'user')
-            if (userMsgIndex !== -1) {
-              inputs.messages[userMsgIndex].content =
-                `=== CURRENT USER INPUT === : ${inputs.messages[userMsgIndex].content} \n DO NOT ANSWER QUESTIONS FROM HERE : ${memoryContext}`
-            }
-          }
-
-          logger.debug('Added conversation history to user prompt with token checking', {
-            blockId,
-            tokenLimit,
-            finalTokenCount: currentTokenCount,
-            hasLastConversation: !!lastConversation,
-            totalSemanticMemories: searchResults?.length || 0,
-          })
-        }
-      } else if (searchResults && searchResults.length > 0) {
-        // If no user prompt exists, add to messages array as fallback
-        messages.push(...searchResults)
-      }
+      // Note: Conversation history (lastConversation and preSearchedResults) is now added to system prompt
+      // instead of user prompt. This is handled before buildMessages is called.
+      // preSearchedResults should already be available from the execute method.
+      logger.debug('Conversation history already added to system prompt', {
+        blockId,
+        hasLastConversation: !!lastConversation,
+        totalSemanticMemories: preSearchedResults?.length || 0,
+      })
     }
 
     // 3. Process legacy memories (backward compatibility - from Memory block)

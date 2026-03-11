@@ -93,8 +93,8 @@ export class Memory {
 
       // Filter results by score threshold
       // 1. Ignore results where score = 0
-      // 2. Ignore results where score > 0.80 (threshold)
-      const SCORE_THRESHOLD = 0.8
+      // 2. Ignore results where score > 0.50 (threshold)
+      const SCORE_THRESHOLD = 0.5
 
       // Extract original count for logging
       let originalCount = 0
@@ -291,12 +291,13 @@ export class Memory {
    * Call Mem0 API to store memories in external service
    * This is an add-on feature that doesn't block main memory operations
    * Calls the API twice: once for conversation memory, once for fact memory
-   * Only sends the current turn (last user message + assistant message), not the full history
+   * - Conversation memory: sends the current turn (last user message + assistant message)
+   * - Fact memory: sends only the user message (no assistant response)
    * @param ctx - Execution context
    * @param inputs - Agent inputs containing conversationId
    * @param assistantMessage - The assistant message that was just persisted
    * @param blockId - Block ID for metadata
-   * @param memoryKey - Memory key to fetch the last user message (typically conversationId)
+   * @param lastUserMessage - The last user message (used for fact memory)
    */
   async callMem0API(
     ctx: ExecutionContext,
@@ -336,9 +337,10 @@ export class Memory {
     }
 
     try {
-      // Only send the current turn: last user message + assistant message
+      // For conversation memory: send the current turn (last user message + assistant message)
       const currentTurnMessages: Message[] = [userMessage, assistantMessage]
 
+      // For fact memory: only send the user message (no assistant response)
       const currentTurnFactMessages: Message[] = [userMessage]
 
       // Convert Message[] to the format expected by callMemoryAPI
@@ -347,7 +349,7 @@ export class Memory {
         content: msg.content,
       }))
 
-      // Convert Message[] to the format expected by callMemoryAPI
+      // Convert fact messages to the format expected by callMemoryAPI (only user message)
       const factMessagesForAPI = currentTurnFactMessages.map((msg) => ({
         role: msg.role,
         content: msg.content,
@@ -363,6 +365,7 @@ export class Memory {
       const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
 
       // Call 1: Store as fact memory (infer: true)
+      // Only user message is sent for fact memory, not assistant response
       try {
         await callMemoryAPI(
           requestId,
@@ -381,7 +384,7 @@ export class Memory {
           workflowId: ctx.workflowId,
           conversationId: inputs.conversationId,
           blockId,
-          messageCount: messagesForAPI.length,
+          messageCount: factMessagesForAPI.length,
         })
       } catch (error) {
         logger.warn('Failed to call Mem0 API for fact memory (non-blocking)', {
