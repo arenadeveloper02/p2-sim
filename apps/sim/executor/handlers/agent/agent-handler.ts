@@ -323,11 +323,18 @@ export class AgentBlockHandler implements BlockHandler {
         (finalPreSearchedResults && finalPreSearchedResults.length > 0) ||
         (factMemories && factMemories.length > 0)
       ) {
+        // Calculate base system prompt and user prompt token counts for accurate limit calculation
+        const baseSystemPrompt = filteredInputs.systemPrompt || ''
+        const baseSystemPromptTokens = getAccurateTokenCount(baseSystemPrompt, filteredInputs.model)
+        const userPromptTokens = getAccurateTokenCount(userPrompt || '', filteredInputs.model)
+
         const conversationDetailsPrompt = this.formatConversationDetailsForSystemPrompt(
           lastConversation,
           finalPreSearchedResults,
           factMemories,
-          filteredInputs.model
+          filteredInputs.model,
+          baseSystemPromptTokens,
+          userPromptTokens
         )
 
         if (conversationDetailsPrompt) {
@@ -426,14 +433,37 @@ export class AgentBlockHandler implements BlockHandler {
   /**
    * Formats conversation details for the system prompt.
    * Includes last conversation, previous conversation (semantic search), and user facts.
+   *
+   * Note: Knowledge Base tool results are NOT added here - they are passed as tool results
+   * in the messages array (role: 'tool' or 'user' with tool_result content) when the tool is executed.
+   *
+   * @param baseSystemPromptTokens - Token count of the base system prompt (before adding conversation details)
+   * @param userPromptTokens - Token count of the user prompt (to ensure we don't exceed total context)
    */
   private formatConversationDetailsForSystemPrompt(
     lastConversation: LatestConversation | null | undefined,
     preSearchedResults: Message[] | undefined,
     factMemories: Message[],
-    model?: string
+    model?: string,
+    baseSystemPromptTokens = 0,
+    userPromptTokens = 0
   ): string {
     const tokenLimit = getMemoryTokenLimit(model)
+
+    // Reserve tokens for base system prompt, user prompt, and response generation
+    // Calculate available tokens by subtracting base system prompt and user prompt sizes
+    let availableTokens = tokenLimit
+
+    // Subtract base system prompt tokens
+    availableTokens -= baseSystemPromptTokens
+
+    // Subtract user prompt tokens (to ensure total context doesn't exceed limit)
+    availableTokens -= userPromptTokens
+
+    // Ensure we don't go negative - if user prompt is too large, use at least 10% of limit
+    const minAvailableTokens = Math.floor(tokenLimit * 0.1)
+    availableTokens = Math.max(availableTokens, minAvailableTokens)
+
     let currentTokenCount = 0
     const parts: string[] = []
 
@@ -441,41 +471,42 @@ export class AgentBlockHandler implements BlockHandler {
     const header =
       "=== USER CONVERSATION DETAILS (This can be used as context while figuring out response, don't include directly it in the response, understand the question and answer it accordingly) === :\n"
     const headerTokens = getAccurateTokenCount(header, model)
-    if (headerTokens <= tokenLimit) {
+    if (headerTokens <= availableTokens) {
       parts.push(header)
       currentTokenCount += headerTokens
     }
 
     // Format last conversation
-    // if (lastConversation) {
-    //   let lastConvText = 'LAST CONVERSATION: '
-    //   const lastConvParts: string[] = []
+    if (lastConversation) {
+      let lastConvText = 'LAST CONVERSATION: '
+      const lastConvParts: string[] = []
 
-    //   if (lastConversation.initialInput) {
-    //     lastConvParts.push(`User: ${lastConversation.initialInput}`)
-    //   }
-    //   if (lastConversation.finalChatOutput) {
-    //     lastConvParts.push(`Assistant: ${lastConversation.finalChatOutput}`)
-    //   }
+      if (lastConversation.initialInput) {
+        lastConvParts.push(`User: ${lastConversation.initialInput}`)
+      }
+      if (lastConversation.finalChatOutput) {
+        lastConvParts.push(`Assistant: ${lastConversation.finalChatOutput}`)
+      }
 
-    //   if (lastConvParts.length > 0) {
-    //     lastConvText += lastConvParts.join('\n')
-    //     const lastConvTokens = getAccurateTokenCount(lastConvText, model)
-    //     if (currentTokenCount + lastConvTokens <= tokenLimit) {
-    //       parts.push(lastConvText)
-    //       currentTokenCount += lastConvTokens
-    //     }
-    //   }
-    // }
+      if (lastConvParts.length > 0) {
+        lastConvText += lastConvParts.join('\n')
+        const lastConvTokens = getAccurateTokenCount(lastConvText, model)
+        if (currentTokenCount + lastConvTokens <= tokenLimit) {
+          parts.push(lastConvText)
+          currentTokenCount += lastConvTokens
+        }
+      }
+    }
 
     // Format user facts
     if (factMemories && factMemories.length > 0) {
       const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
-      const userFactsText = `USER_FACTS:\n${factMemoriesText}`
+      const userFactsText = `USER FACTS:\n${factMemoriesText}`
       const userFactsTokens = getAccurateTokenCount(userFactsText, model)
 
-      if (currentTokenCount + userFactsTokens <= tokenLimit) {
+      if (currentTokenCount + userFactsTokens <= availableTokens) {
         parts.push(userFactsText)
+        currentTokenCount += userFactsTokens
       }
     }
 
@@ -491,12 +522,15 @@ export class AgentBlockHandler implements BlockHandler {
           prevConvText + (prevConvParts.length > 0 ? '\n' : '') + memoryText
         const prevConvTokensWithMemory = getAccurateTokenCount(prevConvTextWithMemory, model)
 
-        if (currentTokenCount + prevConvTokensWithMemory <= tokenLimit) {
+        if (currentTokenCount + prevConvTokensWithMemory <= availableTokens) {
           prevConvParts.push(memoryText)
           prevConvText = prevConvTextWithMemory
         } else {
           logger.debug('Stopped adding semantic search memories due to token limit', {
             tokenLimit,
+            availableTokens,
+            baseSystemPromptTokens,
+            userPromptTokens,
             currentTokens: currentTokenCount,
             memoryTokens,
             totalMemories: preSearchedResults.length,
