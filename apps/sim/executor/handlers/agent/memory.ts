@@ -94,7 +94,7 @@ export class Memory {
       // Filter results by score threshold
       // 1. Ignore results where score = 0
       // 2. Ignore results where score > 0.80 (threshold)
-      const SCORE_THRESHOLD = 0.8
+      const SCORE_THRESHOLD = 0.6
 
       // Extract original count for logging
       let originalCount = 0
