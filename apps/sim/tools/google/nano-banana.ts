@@ -129,9 +129,10 @@ const nanoBananaTool: ToolConfig = {
 
       logger.info('Successfully received Nano Banana image, length:', base64Image.length)
 
-      // Get workflowId and userId from params context
+      // Use session user for path when present so path reflects who triggered the run
       const workflowId = params?._context?.workflowId || 'unknown'
-      const userId = params?._context?.userId || 'unknown'
+      const userId =
+        params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
 
       let finalImageUrl: string | null = null
       let s3UploadFailed: boolean | undefined

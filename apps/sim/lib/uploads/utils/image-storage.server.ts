@@ -70,13 +70,14 @@ export interface SaveGeneratedImageResult {
 }
 
 /**
- * Save a generated image to storage (S3 first, then local if S3 fails).
- * Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
+ * Save a generated image to storage.
+ * When S3_AGENT_GENERATED_IMAGES_BUCKET_NAME and S3_AGENT_GENERATED_IMAGES_REGION are set, uses S3 only (no local fallback).
+ * Otherwise uses local disk. Path structure: agent-generated-images/[workflow_id]/[user_id]/[image]
  * @param base64Image - Base64 encoded image data
  * @param workflowId - Workflow ID
- * @param userId - User ID
+ * @param userId - User ID (used in path; typically session or actor)
  * @param mimeType - MIME type of the image (default: image/png)
- * @returns URL and optional flag when S3 upload failed and local was used
+ * @returns URL and optional s3UploadFailed when S3 was attempted but failed (only when agent S3 not configured)
  */
 export async function saveGeneratedImage(
   base64Image: string,
@@ -142,8 +143,8 @@ export async function saveGeneratedImage(
       }
     }
 
-    // Local storage fallback when S3 not configured
-    logger.info(`Saving generated image to local storage: ${key}`)
+    // Local storage only when agent S3 bucket is not configured
+    logger.info(`Saving generated image to local storage (agent S3 not configured): ${key}`)
 
     // Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
     const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR, safeWorkflowId, safeUserId)
