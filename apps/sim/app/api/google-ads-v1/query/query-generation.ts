@@ -107,12 +107,49 @@ function parseAIResponse(aiResponse: any): GAQLResponse {
 }
 
 /**
+ * Tables that do not support segments.date filtering
+ */
+const TABLES_WITHOUT_DATE_SUPPORT = ['campaign_criterion', 'geo_target_constant']
+
+/**
  * Validates and fixes GAQL query date filtering
  *
  * @param response - Parsed GAQL response
  * @returns Response with validated/fixed date filtering
  */
 function validateDateFiltering(response: GAQLResponse): GAQLResponse {
+  // Check if query uses a table that doesn't support date filtering
+  // More precise check - ensure it's actually FROM these tables, not just mentioned
+  const queryLower = response.gaql_query.toLowerCase()
+  const usesNoDateTable = TABLES_WITHOUT_DATE_SUPPORT.some(
+    (table) => {
+      // Match "FROM table_name" (with word boundaries to avoid false positives)
+      const fromPattern = new RegExp(`\\bfrom\\s+${table}\\b`, 'gi')
+      return fromPattern.test(queryLower)
+    }
+  )
+
+  if (usesNoDateTable) {
+    // Remove any date filtering that was incorrectly added
+    let cleanedQuery = response.gaql_query
+      .replace(/\s+AND\s+segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'/gi, '')
+      .replace(/segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'\s+AND\s+/gi, '')
+      .replace(/WHERE\s+segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'\s*/gi, 'WHERE ')
+      .replace(/WHERE\s+$/gi, '')
+
+    if (cleanedQuery !== response.gaql_query) {
+      logger.info('Removed date filtering from query (table does not support segments.date)', {
+        originalQuery: response.gaql_query,
+        cleanedQuery,
+      })
+    }
+
+    return {
+      ...response,
+      gaql_query: cleanedQuery,
+    }
+  }
+
   const hasDateFilter =
     response.gaql_query.includes('segments.date') && response.gaql_query.includes('BETWEEN')
 
