@@ -73,7 +73,6 @@ describe('Azure Blob Storage Client', () => {
         error: vi.fn(),
       }),
     }))
-
   })
 
   afterEach(() => {

@@ -555,7 +555,9 @@ function SubBlockComponent({
                 placeholder={config.placeholder}
                 isPreview={isPreview}
                 previewValue={
-                  Array.isArray(previewValue) ? (previewValue[0] as string | undefined) : (previewValue ?? undefined)
+                  Array.isArray(previewValue)
+                    ? (previewValue[0] as string | undefined)
+                    : (previewValue ?? undefined)
                 }
                 disabled={isDisabled}
               />
@@ -573,7 +575,7 @@ function SubBlockComponent({
                   typeof config.value === 'function'
                     ? config.value(subBlockValues || {})
                     : config.value
-                const v = Array.isArray(raw) ? (raw[0] as string | undefined) ?? undefined : raw
+                const v = Array.isArray(raw) ? ((raw[0] as string | undefined) ?? undefined) : raw
                 return v === null ? undefined : v
               })()}
               placeholder={config.placeholder}

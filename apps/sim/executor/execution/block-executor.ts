@@ -17,6 +17,7 @@ import {
 import type { DAGNode } from '@/executor/dag/builder'
 import { ChildWorkflowError } from '@/executor/errors/child-workflow-error'
 import type { BlockStateWriter, ContextExtensions } from '@/executor/execution/types'
+import type { Message } from '@/executor/handlers/agent/types'
 import {
   generatePauseContextId,
   mapNodeMetadataToPauseScopes,
@@ -33,7 +34,6 @@ import { buildBlockExecutionError, normalizeError } from '@/executor/utils/error
 import { validateBlockType } from '@/executor/utils/permission-check'
 import type { VariableResolver } from '@/executor/variables/resolver'
 import type { SerializedBlock } from '@/serializer/types'
-import type { Message } from '@/executor/handlers/agent/types'
 import type { SubflowType } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('BlockExecutor')
