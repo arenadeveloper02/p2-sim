@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Check, ChevronDown, User, X } from 'lucide-react'
-import { Label } from '@/components/emcn'
-import { Badge } from '@/components/emcn'
+import { Badge, Label } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import {
   Command,

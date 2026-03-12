@@ -145,10 +145,7 @@ export function isStorageContextConfigured(context: StorageContext): boolean {
   }
 
   if (context === 'agent-generated-images') {
-    return !!(
-      S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
-      S3_AGENT_GENERATED_IMAGES_CONFIG.region
-    )
+    return !!(S3_AGENT_GENERATED_IMAGES_CONFIG.bucket && S3_AGENT_GENERATED_IMAGES_CONFIG.region)
   }
 
   return false

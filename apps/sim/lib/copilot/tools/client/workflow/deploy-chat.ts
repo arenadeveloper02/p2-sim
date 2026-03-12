@@ -224,7 +224,7 @@ export class DeployChatClientTool extends BaseClientTool {
         existingDeployment?.customizations?.welcomeMessage !== undefined &&
         existingDeployment?.customizations?.welcomeMessage !== null
           ? existingDeployment.customizations.welcomeMessage
-          : 'Hi there! How can I help you today?'
+          : "How can I help you today? I'm here to answer your questions and assist you with anything you need."
       const basePrimaryColor =
         existingDeployment?.customizations?.primaryColor || 'var(--brand-primary-hover-hex)'
       const baseAllowedEmails = Array.isArray(existingDeployment?.allowedEmails)
