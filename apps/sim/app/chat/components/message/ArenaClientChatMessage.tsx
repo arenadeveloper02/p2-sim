@@ -78,9 +78,20 @@ function hasFencedCodeBlock(str: string): boolean {
   return /```/.test(str)
 }
 
+/** Total character length of a node's text content (recursive). */
+function getNodeTextLength(node: Node): number {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent?.length ?? 0
+  let len = 0
+  for (let i = 0; i < node.childNodes.length; i++) {
+    len += getNodeTextLength(node.childNodes[i])
+  }
+  return len
+}
+
 /**
  * Returns the character offset of (targetNode, targetOffset) within container's text content.
- * Walks container's subtree in document order and sums text lengths until the target is reached.
+ * Walks container's subtree in document order. For a text node, targetOffset is a character index;
+ * for an element node (e.g. container or button), Range API gives child index, so we sum preceding siblings' text lengths.
  */
 function getCharacterOffset(
   container: Node,
@@ -90,7 +101,13 @@ function getCharacterOffset(
   let offset = 0
   function walk(node: Node): boolean {
     if (node === targetNode) {
-      offset += targetOffset
+      if (node.nodeType === Node.TEXT_NODE) {
+        offset += targetOffset
+      } else {
+        for (let i = 0; i < targetOffset && i < node.childNodes.length; i++) {
+          offset += getNodeTextLength(node.childNodes[i])
+        }
+      }
       return true
     }
     if (node.nodeType === Node.TEXT_NODE) {
