@@ -558,6 +558,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           workflowTriggerType: triggerType === 'chat' ? 'chat' : 'api',
           includeFileBase64,
           base64MaxBytes,
+          sessionUserId: auth.authType === 'session' ? userId : undefined,
         },
         executionId,
       })

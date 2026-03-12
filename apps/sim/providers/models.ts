@@ -602,7 +602,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     id: 'anthropic',
     name: 'Anthropic',
     description: "Anthropic's Claude models",
-    defaultModel: 'claude-sonnet-4-5',
+    defaultModel: 'claude-sonnet-4-0',
     modelPatterns: [/^claude/],
     icon: AnthropicIcon,
     capabilities: {
@@ -686,36 +686,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {
           temperature: { min: 0, max: 1 },
           maxOutputTokens: { max: 64000, default: 8192 },
-        },
-        contextWindow: 200000,
-      },
-      {
-        id: 'claude-3-7-sonnet-latest',
-        pricing: {
-          input: 3.0,
-          cachedInput: 1.5,
-          output: 15.0,
-          updatedAt: '2025-06-17',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          computerUse: true,
-          maxOutputTokens: { max: 8192, default: 8192 },
-        },
-        contextWindow: 200000,
-      },
-      {
-        id: 'claude-3-5-sonnet-latest',
-        pricing: {
-          input: 3.0,
-          cachedInput: 1.5,
-          output: 15.0,
-          updatedAt: '2025-06-17',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          computerUse: true,
-          maxOutputTokens: { max: 8192, default: 8192 },
         },
         contextWindow: 200000,
       },

@@ -286,7 +286,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             if (userName) {
               initialMessages.push({
                 id: 'greeting',
-                content: `Hi ${userName}, how can I help you?`,
+                content: `Hi ${userName}, welcome to the chat!`,
                 type: 'assistant',
                 timestamp: new Date(),
                 isInitialMessage: true,
@@ -480,7 +480,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         if (userName) {
           messages.push({
             id: 'greeting',
-            content: `Hi ${userName}, how can I help you?`,
+            content: `Hi ${userName}, welcome to the chat!`,
             type: 'assistant',
             timestamp: new Date(),
             isInitialMessage: true,
@@ -502,7 +502,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         setMessages([
           {
             id: 'greeting',
-            content: `Hi ${userName}, how can I help you?`,
+            content: `Hi ${userName}, welcome to the chat!`,
             type: 'assistant',
             timestamp: new Date(),
             isInitialMessage: true,
@@ -550,7 +550,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const newMessages: ChatMessage[] = [
         {
           id: 'greeting',
-          content: `Hi ${userName}, how can I help you?`,
+          content: `Hi ${userName}, welcome to the chat!`,
           type: 'assistant',
           timestamp: new Date(),
           isInitialMessage: true,
@@ -1154,10 +1154,35 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setShowScrollButton(false)
     const id = uuidv4()
     setCurrentChatId(id)
-    // Clear messages except welcome
+    // Clear messages except initial messages (greeting + welcome)
     setMessages((prev) => {
-      const welcome = prev.find((m) => (m as any).isInitialMessage)
-      return welcome ? [welcome] : []
+      const initialMessages = prev.filter((m) => (m as any).isInitialMessage)
+      // If no initial messages exist but we have chatConfig, ensure they're added
+      if (initialMessages.length === 0 && chatConfig) {
+        const newInitialMessages: ChatMessage[] = []
+        // Add greeting if user name is available
+        if (userName) {
+          newInitialMessages.push({
+            id: 'greeting',
+            content: `Hi ${userName}, welcome to the chat!`,
+            type: 'assistant',
+            timestamp: new Date(),
+            isInitialMessage: true,
+          })
+        }
+        // Add welcome message if it exists
+        if (chatConfig?.customizations?.welcomeMessage) {
+          newInitialMessages.push({
+            id: 'welcome',
+            content: chatConfig.customizations.welcomeMessage,
+            type: 'assistant',
+            timestamp: new Date(),
+            isInitialMessage: true,
+          })
+        }
+        return newInitialMessages
+      }
+      return initialMessages
     })
     updateUrlChatId(id)
     // Clear form input values for new chat
@@ -1174,7 +1199,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       'Agent ID': identifier,
       'Conversation(chat) ID': id,
     })
-  }, [updateUrlChatId, chatConfig?.inputFormat])
+  }, [updateUrlChatId, chatConfig, userName, chatDepartment, identifier])
 
   const fetchFeedbackPage = useCallback(
     async (page: number) => {
