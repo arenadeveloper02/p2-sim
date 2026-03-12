@@ -166,8 +166,7 @@ export function findLocalFile(filename: string): string | null {
       }
       const appAllowedDir = resolve(process.cwd(), 'agent-generated-images')
       const appPath = resolve(process.cwd(), filename)
-      const isWithinAppDir =
-        appPath.startsWith(appAllowedDir + sep) && appPath !== appAllowedDir
+      const isWithinAppDir = appPath.startsWith(appAllowedDir + sep) && appPath !== appAllowedDir
 
       if (isWithinAppDir && existsSync(appPath)) {
         return appPath

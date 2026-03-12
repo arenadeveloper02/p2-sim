@@ -620,12 +620,11 @@ export function hasBase64Images(content: any): boolean {
 export function isImageUrlString(s: string): boolean {
   if (!s || typeof s !== 'string') return false
   const trimmed = s.trim()
-  const urlPrefix =
-    trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
+  const urlPrefix = trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
   return (
     !!urlPrefix &&
-    ((/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(trimmed) ||
-      trimmed.includes('agent-generated-images')))
+    (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(trimmed) ||
+      trimmed.includes('agent-generated-images'))
   )
 }
 

@@ -88,7 +88,10 @@ export function ArenaClientsSelector({
   }, [])
 
   const selectedClient =
-    Array.isArray(clients) && selectedValue && typeof selectedValue === 'object' && 'clientId' in selectedValue
+    Array.isArray(clients) &&
+    selectedValue &&
+    typeof selectedValue === 'object' &&
+    'clientId' in selectedValue
       ? clients.find((cl) => cl.clientId === (selectedValue as Client).clientId)
       : undefined
   const selectedLabel = selectedClient?.name ?? 'Select client...'

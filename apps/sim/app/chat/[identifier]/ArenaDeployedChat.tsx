@@ -285,7 +285,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             if (userName) {
               initialMessages.push({
                 id: 'greeting',
-                content: `Hi ${userName}, how can I help you?`,
+                content: `Hi ${userName}, welcome to the chat!`,
                 type: 'assistant',
                 timestamp: new Date(),
                 isInitialMessage: true,
@@ -479,7 +479,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         if (userName) {
           messages.push({
             id: 'greeting',
-            content: `Hi ${userName}, how can I help you?`,
+            content: `Hi ${userName}, welcome to the chat!`,
             type: 'assistant',
             timestamp: new Date(),
             isInitialMessage: true,
@@ -501,7 +501,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         setMessages([
           {
             id: 'greeting',
-            content: `Hi ${userName}, how can I help you?`,
+            content: `Hi ${userName}, welcome to the chat!`,
             type: 'assistant',
             timestamp: new Date(),
             isInitialMessage: true,
@@ -549,7 +549,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const newMessages: ChatMessage[] = [
         {
           id: 'greeting',
-          content: `Hi ${userName}, how can I help you?`,
+          content: `Hi ${userName}, welcome to the chat!`,
           type: 'assistant',
           timestamp: new Date(),
           isInitialMessage: true,
@@ -1163,7 +1163,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         if (userName) {
           newInitialMessages.push({
             id: 'greeting',
-            content: `Hi ${userName}, how can I help you?`,
+            content: `Hi ${userName}, welcome to the chat!`,
             type: 'assistant',
             timestamp: new Date(),
             isInitialMessage: true,

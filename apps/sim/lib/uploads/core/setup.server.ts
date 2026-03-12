@@ -69,7 +69,9 @@ if (typeof process !== 'undefined') {
       if (success) {
         logger.info('Agent-generated-images directory initialized')
       } else {
-        logger.error('Failed to initialize agent-generated-images directory - check write permissions')
+        logger.error(
+          'Failed to initialize agent-generated-images directory - check write permissions'
+        )
       }
     })
   }

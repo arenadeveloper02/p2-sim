@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
         welcomeMessage:
           customizations?.welcomeMessage !== undefined && customizations?.welcomeMessage !== null
             ? customizations.welcomeMessage
-            : "I'm here to help answer your questions and assist you with anything you need.",
+            : "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
       }
       const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
 

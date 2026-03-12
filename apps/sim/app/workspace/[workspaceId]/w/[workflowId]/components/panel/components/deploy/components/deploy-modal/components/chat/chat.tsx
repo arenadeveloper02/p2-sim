@@ -107,7 +107,8 @@ const initialFormData: ChatFormData = {
   authType: 'email',
   password: '',
   emails: [],
-  welcomeMessage: "I'm here to help answer your questions and assist you with anything you need.",
+  welcomeMessage:
+    "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
   goldenQueries: [],
   selectedOutputBlocks: [],
 }
@@ -258,7 +259,7 @@ export function ChatDeploy({
           existingChat.customizations?.welcomeMessage !== undefined &&
           existingChat.customizations?.welcomeMessage !== null
             ? existingChat.customizations.welcomeMessage
-            : "I'm here to help answer your questions and assist you with anything you need.",
+            : "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
         goldenQueries: existingChat.customizations?.goldenQueries ?? [],
         selectedOutputBlocks: Array.isArray(existingChat.outputConfigs)
           ? existingChat.outputConfigs.map(

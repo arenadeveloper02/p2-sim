@@ -34,7 +34,8 @@ const initialFormData: ChatFormData = {
   authType: 'email',
   password: '',
   emails: [],
-  welcomeMessage: "I'm here to help answer your questions and assist you with anything you need.",
+  welcomeMessage:
+    "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
   selectedOutputBlocks: [],
   approvalStatus: true, // Default to approved
 }
