@@ -208,7 +208,8 @@ export const imagenTool: ToolConfig = {
         logger.warn('Falling back to base64 image data URL due to storage error')
       }
 
-      const imageUrlToReturn = finalImageUrl || (base64Image ? `data:image/png;base64,${base64Image}` : '')
+      const imageUrlToReturn =
+        finalImageUrl || (base64Image ? `data:image/png;base64,${base64Image}` : '')
 
       return {
         success: true,

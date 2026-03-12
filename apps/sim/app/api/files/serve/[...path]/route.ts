@@ -3,11 +3,7 @@ import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
-import {
-  CopilotFiles,
-  isUsingCloudStorage,
-  isStorageContextConfigured,
-} from '@/lib/uploads'
+import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
@@ -73,10 +69,13 @@ export async function GET(
         pathSegments[3]
 
       if (!hasValidStructure) {
-        logger.warn('Agent-generated-image path must be agent-generated-images/[workflow_id]/[user_id]/[image]', {
-          fullPath,
-          segmentCount: pathSegments.length,
-        })
+        logger.warn(
+          'Agent-generated-image path must be agent-generated-images/[workflow_id]/[user_id]/[image]',
+          {
+            fullPath,
+            segmentCount: pathSegments.length,
+          }
+        )
         return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
@@ -318,7 +317,7 @@ async function handleAgentGeneratedImageLocal(
       const { join, resolve } = await import('path')
       const directPath = resolve(process.cwd(), filename)
       const { existsSync } = await import('fs')
-      
+
       logger.warn('File not found via findLocalFile, trying direct path:', {
         filename,
         filePath,

@@ -121,17 +121,15 @@ function validateDateFiltering(response: GAQLResponse): GAQLResponse {
   // Check if query uses a table that doesn't support date filtering
   // More precise check - ensure it's actually FROM these tables, not just mentioned
   const queryLower = response.gaql_query.toLowerCase()
-  const usesNoDateTable = TABLES_WITHOUT_DATE_SUPPORT.some(
-    (table) => {
-      // Match "FROM table_name" (with word boundaries to avoid false positives)
-      const fromPattern = new RegExp(`\\bfrom\\s+${table}\\b`, 'gi')
-      return fromPattern.test(queryLower)
-    }
-  )
+  const usesNoDateTable = TABLES_WITHOUT_DATE_SUPPORT.some((table) => {
+    // Match "FROM table_name" (with word boundaries to avoid false positives)
+    const fromPattern = new RegExp(`\\bfrom\\s+${table}\\b`, 'gi')
+    return fromPattern.test(queryLower)
+  })
 
   if (usesNoDateTable) {
     // Remove any date filtering that was incorrectly added
-    let cleanedQuery = response.gaql_query
+    const cleanedQuery = response.gaql_query
       .replace(/\s+AND\s+segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'/gi, '')
       .replace(/segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'\s+AND\s+/gi, '')
       .replace(/WHERE\s+segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'\s*/gi, 'WHERE ')

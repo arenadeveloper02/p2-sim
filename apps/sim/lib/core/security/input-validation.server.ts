@@ -4,12 +4,12 @@ import type { AgentOptions, RequestOptions } from 'http'
 import type { LookupFunction } from 'net'
 import { createLogger } from '@sim/logger'
 import {
-  validateExternalUrl,
-  isPrivateOrReservedIP,
   type AsyncValidationResult,
+  isPrivateOrReservedIP,
   SecureFetchHeaders,
   type SecureFetchOptions,
   type SecureFetchResponse,
+  validateExternalUrl,
 } from '@/lib/core/security/input-validation'
 
 const logger = createLogger('InputValidation')

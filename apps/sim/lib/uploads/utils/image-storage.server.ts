@@ -1,15 +1,10 @@
 'use server'
-
-import { createLogger } from '@sim/logger'
-import { existsSync } from 'fs'
-import { promises as fs } from 'fs'
+import { existsSync, promises as fs } from 'fs'
 import { join } from 'path'
-import { uploadFile } from '@/lib/uploads/core/storage-service'
-import {
-  S3_AGENT_GENERATED_IMAGES_CONFIG,
-  USE_S3_STORAGE,
-} from '@/lib/uploads/config'
+import { createLogger } from '@sim/logger'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { S3_AGENT_GENERATED_IMAGES_CONFIG, USE_S3_STORAGE } from '@/lib/uploads/config'
+import { uploadFile } from '@/lib/uploads/core/storage-service'
 
 const logger = createLogger('ImageStorage')
 
@@ -18,7 +13,10 @@ const LOCAL_STORAGE_DIR = 'agent-generated-images'
 
 /** Sanitise segment for use in storage path (no slashes, no parent refs, no empty). */
 function sanitisePathSegment(value: string): string {
-  const s = value.replace(/[/\\\0]/g, '').replace(/\.\./g, '').trim()
+  const s = value
+    .replace(/[/\\\0]/g, '')
+    .replace(/\.\./g, '')
+    .trim()
   return s || 'unknown'
 }
 
@@ -29,8 +27,7 @@ function sanitisePathSegment(value: string): string {
 export async function ensureAgentGeneratedImagesDirectory(): Promise<boolean> {
   const useCloudForAgentImages =
     USE_S3_STORAGE ||
-    (!!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
-      !!S3_AGENT_GENERATED_IMAGES_CONFIG.region)
+    (!!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket && !!S3_AGENT_GENERATED_IMAGES_CONFIG.region)
   if (useCloudForAgentImages) {
     return true
   }
@@ -38,7 +35,7 @@ export async function ensureAgentGeneratedImagesDirectory(): Promise<boolean> {
   try {
     // Store at /apps/sim/agent-generated-images
     const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR)
-    
+
     if (!existsSync(baseDir)) {
       await fs.mkdir(baseDir, { recursive: true })
       logger.info(`Created agent-generated-images directory at ${baseDir}`)
@@ -104,8 +101,7 @@ export async function saveGeneratedImage(
 
     const useCloudStorage =
       USE_S3_STORAGE ||
-      (!!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
-        !!S3_AGENT_GENERATED_IMAGES_CONFIG.region)
+      (!!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket && !!S3_AGENT_GENERATED_IMAGES_CONFIG.region)
 
     if (useCloudStorage) {
       logger.info('S3 upload started for agent-generated image', {
@@ -150,7 +146,9 @@ export async function saveGeneratedImage(
     if (!existsSync(join(process.cwd(), LOCAL_STORAGE_DIR))) {
       const success = await ensureAgentGeneratedImagesDirectory()
       if (!success) {
-        throw new Error('Failed to create agent-generated-images directory. Check write permissions.')
+        throw new Error(
+          'Failed to create agent-generated-images directory. Check write permissions.'
+        )
       }
     }
 
@@ -172,6 +170,8 @@ export async function saveGeneratedImage(
     return { url: `${baseUrl}/api/files/serve/${servePath}` }
   } catch (error) {
     logger.error('Error saving generated image:', error)
-    throw new Error(`Failed to save generated image: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(
+      `Failed to save generated image: ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }

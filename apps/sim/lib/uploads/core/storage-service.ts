@@ -72,11 +72,17 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
 
   const keyToUse = customKey || fileName
 
-  if (context === 'agent-generated-images' && (!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket || !S3_AGENT_GENERATED_IMAGES_CONFIG.region)) {
-    logger.warn('Agent-generated image will use local storage: S3_AGENT_GENERATED_IMAGES_BUCKET_NAME or S3_AGENT_GENERATED_IMAGES_REGION not set', {
-      hasBucket: !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket,
-      hasRegion: !!S3_AGENT_GENERATED_IMAGES_CONFIG.region,
-    })
+  if (
+    context === 'agent-generated-images' &&
+    (!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket || !S3_AGENT_GENERATED_IMAGES_CONFIG.region)
+  ) {
+    logger.warn(
+      'Agent-generated image will use local storage: S3_AGENT_GENERATED_IMAGES_BUCKET_NAME or S3_AGENT_GENERATED_IMAGES_REGION not set',
+      {
+        hasBucket: !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket,
+        hasRegion: !!S3_AGENT_GENERATED_IMAGES_CONFIG.region,
+      }
+    )
   }
 
   if (
@@ -157,8 +163,7 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
   const config = getStorageConfig(context)
 
   const useS3ForThisUpload =
-    USE_S3_STORAGE ||
-    (context === 'agent-generated-images' && !!config.bucket && !!config.region)
+    USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
 
   if (useS3ForThisUpload && config.bucket && config.region) {
     logger.info('Uploading to S3', {
@@ -253,8 +258,7 @@ export async function downloadFile(options: DownloadFileOptions): Promise<Buffer
     const config = getStorageConfig(context)
 
     const useS3ForThisDownload =
-      USE_S3_STORAGE ||
-      (context === 'agent-generated-images' && !!config.bucket && !!config.region)
+      USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
 
     if (useS3ForThisDownload && config.bucket && config.region) {
       const { downloadFromS3 } = await import('@/lib/uploads/providers/s3/client')
@@ -295,8 +299,7 @@ export async function deleteFile(options: DeleteFileOptions): Promise<void> {
     const config = getStorageConfig(context)
 
     const useS3ForThisDelete =
-      USE_S3_STORAGE ||
-      (context === 'agent-generated-images' && !!config.bucket && !!config.region)
+      USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
 
     if (useS3ForThisDelete && config.bucket && config.region) {
       const { deleteFromS3 } = await import('@/lib/uploads/providers/s3/client')
@@ -392,9 +395,7 @@ async function generateS3PresignedUrl(
   })
 
   const s3Client =
-    config.region !== S3_CONFIG.region
-      ? getS3ClientForRegion(config.region)
-      : getS3Client()
+    config.region !== S3_CONFIG.region ? getS3ClientForRegion(config.region) : getS3Client()
   const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: expirationSeconds })
 
   return {

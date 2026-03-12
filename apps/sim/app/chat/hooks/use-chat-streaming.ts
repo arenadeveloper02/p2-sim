@@ -412,13 +412,15 @@ export function useChatStreaming() {
                   }
                 }
 
-                let contentToSet: string | Record<string, unknown> | undefined = finalContent ?? undefined
+                let contentToSet: string | Record<string, unknown> | undefined =
+                  finalContent ?? undefined
 
                 const isImageUrlString = (s: unknown): boolean =>
                   typeof s === 'string' &&
                   s.length > 0 &&
                   (s.startsWith('http') || s.startsWith('/api/files/serve/')) &&
-                  (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(s.trim()) || s.includes('agent-generated-images'))
+                  (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(s.trim()) ||
+                    s.includes('agent-generated-images'))
 
                 const imageUrlFromOutput = (obj: any): string | null => {
                   if (!obj || typeof obj !== 'object') return null
@@ -426,7 +428,10 @@ export function useChatStreaming() {
                     obj.output?.image ??
                     obj.image ??
                     (isImageUrlString(obj.content) ? obj.content : null)
-                  if (typeof url === 'string' && (url.startsWith('http') || url.startsWith('/api/files/serve/'))) {
+                  if (
+                    typeof url === 'string' &&
+                    (url.startsWith('http') || url.startsWith('/api/files/serve/'))
+                  ) {
                     return url
                   }
                   return null
