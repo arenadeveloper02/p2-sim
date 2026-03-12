@@ -99,65 +99,32 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
       region: s3Config.region,
       key: keyToUse,
     })
-    try {
-      const { uploadToS3 } = await import('@/lib/uploads/providers/s3/client')
-      const uploadResult = await uploadToS3(
-        file,
-        keyToUse,
+    const { uploadToS3 } = await import('@/lib/uploads/providers/s3/client')
+    const uploadResult = await uploadToS3(
+      file,
+      keyToUse,
+      contentType,
+      s3Config,
+      file.length,
+      preserveKey,
+      metadata
+    )
+    if (metadata) {
+      await insertFileMetadataHelper(
+        uploadResult.key,
+        metadata,
+        context,
+        fileName,
         contentType,
-        s3Config,
-        file.length,
-        preserveKey,
-        metadata
+        file.length
       )
-      if (metadata) {
-        await insertFileMetadataHelper(
-          uploadResult.key,
-          metadata,
-          context,
-          fileName,
-          contentType,
-          file.length
-        )
-      }
-      logger.info('S3 upload completed for agent-generated image', {
-        bucket: s3Config.bucket,
-        s3Key: uploadResult.key,
-        servePath: uploadResult.path,
-      })
-      return uploadResult
-    } catch (s3Error) {
-      logger.warn('S3 upload failed for agent-generated image, falling back to local storage', {
-        bucket: s3Config.bucket,
-        key: keyToUse,
-        error: s3Error instanceof Error ? s3Error.message : String(s3Error),
-      })
-      const { writeFile, mkdir } = await import('fs/promises')
-      const { join, dirname } = await import('path')
-      const { UPLOAD_DIR_SERVER } = await import('./setup.server')
-      const safeKey = sanitizeFileKey(keyToUse)
-      const filesystemPath = join(UPLOAD_DIR_SERVER, safeKey)
-      await mkdir(dirname(filesystemPath), { recursive: true })
-      await writeFile(filesystemPath, file)
-      if (metadata) {
-        await insertFileMetadataHelper(
-          keyToUse,
-          metadata,
-          context,
-          fileName,
-          contentType,
-          file.length
-        )
-      }
-      return {
-        path: `/api/files/serve/${keyToUse}`,
-        key: keyToUse,
-        name: fileName,
-        size: file.length,
-        type: contentType,
-        s3UploadFailed: true,
-      }
     }
+    logger.info('S3 upload completed for agent-generated image', {
+      bucket: s3Config.bucket,
+      s3Key: uploadResult.key,
+      servePath: uploadResult.path,
+    })
+    return uploadResult
   }
 
   const config = getStorageConfig(context)

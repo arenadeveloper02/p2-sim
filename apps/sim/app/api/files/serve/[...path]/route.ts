@@ -79,16 +79,7 @@ export async function GET(
         return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
-      const fileUserId = pathSegments[2]
-      if (fileUserId !== userId) {
-        logger.warn('User ID mismatch for agent-generated-image', {
-          fileUserId,
-          authenticatedUserId: userId,
-          fullPath,
-        })
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-      }
-
+      // Any authenticated user may view agent-generated images
       // Serve agent-generated-images file (cloud if context configured, else local)
       const agentImagesInCloud = isStorageContextConfigured('agent-generated-images')
       logger.info('Agent-generated-image serve: storage mode', {
