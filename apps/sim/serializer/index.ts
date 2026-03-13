@@ -1,13 +1,15 @@
 import { createLogger } from '@sim/logger'
 import type { Edge } from 'reactflow'
-import { BlockPathCalculator } from '@/lib/workflows/blocks/block-path-calculator'
+import type { CanonicalModeOverrides } from '@/lib/workflows/subblocks/visibility'
 import {
   buildCanonicalIndex,
   buildSubBlockValues,
   evaluateSubBlockCondition,
   getCanonicalValues,
+  isCanonicalPair,
   isNonEmptyValue,
   isSubBlockFeatureEnabled,
+  resolveCanonicalMode,
 } from '@/lib/workflows/subblocks/visibility'
 import { getBlock } from '@/blocks'
 import type { SubBlockConfig } from '@/blocks/types'
@@ -42,7 +44,8 @@ function shouldSerializeSubBlock(
   displayAdvancedOptions: boolean,
   isTriggerContext: boolean,
   isTriggerCategory: boolean,
-  canonicalIndex: ReturnType<typeof buildCanonicalIndex>
+  canonicalIndex: ReturnType<typeof buildCanonicalIndex>,
+  canonicalModeOverrides?: CanonicalModeOverrides
 ): boolean {
   if (!isSubBlockFeatureEnabled(subBlockConfig)) return false
 
@@ -54,6 +57,19 @@ function shouldSerializeSubBlock(
 
   const isCanonicalMember = Boolean(canonicalIndex.canonicalIdBySubBlockId[subBlockConfig.id])
   if (isCanonicalMember) {
+    const canonicalId = canonicalIndex.canonicalIdBySubBlockId[subBlockConfig.id]
+    const group = canonicalId ? canonicalIndex.groupsById[canonicalId] : undefined
+    if (group && isCanonicalPair(group)) {
+      const mode =
+        canonicalModeOverrides?.[group.canonicalId] != null || !displayAdvancedOptions
+          ? resolveCanonicalMode(group, values, canonicalModeOverrides)
+          : 'advanced'
+      const matchesMode =
+        mode === 'advanced'
+          ? group.advancedIds.includes(subBlockConfig.id)
+          : group.basicId === subBlockConfig.id
+      return matchesMode && evaluateSubBlockCondition(subBlockConfig.condition, values)
+    }
     return evaluateSubBlockCondition(subBlockConfig.condition, values)
   }
 
@@ -137,13 +153,6 @@ export class Serializer {
     const safeLoops = Object.keys(canonicalLoops).length > 0 ? canonicalLoops : loops || {}
     const safeParallels =
       Object.keys(canonicalParallels).length > 0 ? canonicalParallels : parallels || {}
-    const accessibleBlocksMap = this.computeAccessibleBlockIds(
-      blocks,
-      edges,
-      safeLoops,
-      safeParallels
-    )
-
     if (validateRequired) {
       this.validateSubflowsBeforeExecution(blocks, safeLoops, safeParallels)
     }
@@ -154,7 +163,6 @@ export class Serializer {
         this.serializeBlock(block, {
           validateRequired,
           allBlocks: blocks,
-          accessibleBlocksMap,
         })
       ),
       connections: edges.map((edge) => ({
@@ -185,7 +193,6 @@ export class Serializer {
     options: {
       validateRequired: boolean
       allBlocks: Record<string, BlockState>
-      accessibleBlocksMap: Map<string, Set<string>>
     }
   ): SerializedBlock {
     // Special handling for subflow blocks (loops, parallels, etc.)
@@ -264,7 +271,7 @@ export class Serializer {
       })
     }
 
-    return {
+    const serialized: SerializedBlock = {
       id: block.id,
       position: block.position,
       config: {
@@ -284,6 +291,12 @@ export class Serializer {
       },
       enabled: block.enabled,
     }
+
+    if (block.data?.canonicalModes) {
+      serialized.canonicalModes = block.data.canonicalModes as Record<string, 'basic' | 'advanced'>
+    }
+
+    return serialized
   }
 
   private extractParams(block: BlockState): Record<string, any> {
@@ -327,7 +340,8 @@ export class Serializer {
             legacyAdvancedMode,
             isTriggerContext,
             isTriggerCategory,
-            canonicalIndex
+            canonicalIndex,
+            canonicalModeOverrides
           )
         )
 
@@ -351,7 +365,8 @@ export class Serializer {
           legacyAdvancedMode,
           isTriggerContext,
           isTriggerCategory,
-          canonicalIndex
+          canonicalIndex,
+          canonicalModeOverrides
         )
       ) {
         params[id] = subBlockConfig.value(params)
@@ -360,14 +375,15 @@ export class Serializer {
 
     Object.values(canonicalIndex.groupsById).forEach((group) => {
       const { basicValue, advancedValue } = getCanonicalValues(group, params)
+      const hasExplicitOverride = canonicalModeOverrides?.[group.canonicalId] != null
       const pairMode =
-        canonicalModeOverrides?.[group.canonicalId] ?? (legacyAdvancedMode ? 'advanced' : 'basic')
+        hasExplicitOverride || !legacyAdvancedMode
+          ? resolveCanonicalMode(group, allValues, canonicalModeOverrides)
+          : 'advanced'
       const chosen = pairMode === 'advanced' ? advancedValue : basicValue
 
       const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
-      sourceIds.forEach((id) => {
-        if (id !== group.canonicalId) delete params[id]
-      })
+      sourceIds.forEach((id) => delete params[id])
 
       if (chosen !== undefined) {
         params[group.canonicalId] = chosen
@@ -400,74 +416,115 @@ export class Serializer {
       return
     }
 
-    // Get the tool configuration to check parameter visibility
-    const toolAccess = blockConfig.tools?.access
-    if (!toolAccess || toolAccess.length === 0) {
-      return // No tools to validate against
-    }
-
-    // Determine the current tool ID using the same logic as the serializer
-    const currentToolId = this.selectToolId(blockConfig, params)
-
-    // Get the specific tool to validate against
-    const currentTool = getTool(currentToolId)
-    if (!currentTool) {
-      return // Tool not found, skip validation
-    }
-
     const missingFields: string[] = []
     const displayAdvancedOptions = block.advancedMode ?? false
     const isTriggerContext = block.triggerMode ?? false
     const isTriggerCategory = blockConfig.category === 'triggers'
     const canonicalIndex = buildCanonicalIndex(blockConfig.subBlocks || [])
+    const canonicalModeOverrides = block.data?.canonicalModes
+    const allValues = buildSubBlockValues(block.subBlocks)
 
-    // Iterate through the tool's parameters, not the block's subBlocks
-    Object.entries(currentTool.params || {}).forEach(([paramId, paramConfig]) => {
-      if (paramConfig.required && paramConfig.visibility === 'user-only') {
-        const matchingConfigs = blockConfig.subBlocks?.filter((sb: any) => sb.id === paramId) || []
+    // Get the tool configuration to check parameter visibility
+    const toolAccess = blockConfig.tools?.access
+    const currentToolId = toolAccess?.length > 0 ? this.selectToolId(blockConfig, params) : null
+    const currentTool = currentToolId ? getTool(currentToolId) : null
 
-        let shouldValidateParam = true
+    // Validate tool parameters (for blocks with tools)
+    if (currentTool) {
+      Object.entries(currentTool.params || {}).forEach(([paramId, paramConfig]) => {
+        if (paramConfig.required && paramConfig.visibility === 'user-only') {
+          const matchingConfigs =
+            blockConfig.subBlocks?.filter((sb: any) => sb.id === paramId) || []
 
-        if (matchingConfigs.length > 0) {
-          shouldValidateParam = matchingConfigs.some((subBlockConfig: any) => {
-            const includedByMode = shouldSerializeSubBlock(
-              subBlockConfig,
-              params,
-              displayAdvancedOptions,
-              isTriggerContext,
-              isTriggerCategory,
-              canonicalIndex
+          let shouldValidateParam = true
+
+          if (matchingConfigs.length > 0) {
+            shouldValidateParam = matchingConfigs.some((subBlockConfig: any) => {
+              const includedByMode = shouldSerializeSubBlock(
+                subBlockConfig,
+                allValues,
+                displayAdvancedOptions,
+                isTriggerContext,
+                isTriggerCategory,
+                canonicalIndex,
+                canonicalModeOverrides
+              )
+
+              const isRequired = (() => {
+                if (!subBlockConfig.required) return false
+                if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
+                return evaluateSubBlockCondition(subBlockConfig.required, params)
+              })()
+
+              return includedByMode && isRequired
+            })
+          }
+
+          if (!shouldValidateParam) {
+            return
+          }
+
+          const fieldValue = params[paramId]
+          if (fieldValue === undefined || fieldValue === null || fieldValue === '') {
+            const activeConfig = matchingConfigs.find((config: any) =>
+              shouldSerializeSubBlock(
+                config,
+                allValues,
+                displayAdvancedOptions,
+                isTriggerContext,
+                isTriggerCategory,
+                canonicalIndex,
+                canonicalModeOverrides
+              )
             )
-
-            const isRequired = (() => {
-              if (!subBlockConfig.required) return false
-              if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
-              return evaluateSubBlockCondition(subBlockConfig.required, params)
-            })()
-
-            return includedByMode && isRequired
-          })
+            const displayName = activeConfig?.title || paramId
+            missingFields.push(displayName)
+          }
         }
+      })
+    }
 
-        if (!shouldValidateParam) {
-          return
-        }
+    // Validate required subBlocks not covered by tool params (e.g., blocks with empty tools.access)
+    const validatedByTool = new Set(currentTool ? Object.keys(currentTool.params || {}) : [])
 
-        const fieldValue = params[paramId]
-        if (fieldValue === undefined || fieldValue === null || fieldValue === '') {
-          const activeConfig = matchingConfigs.find((config: any) =>
-            shouldSerializeSubBlock(
-              config,
-              params,
-              displayAdvancedOptions,
-              isTriggerContext,
-              isTriggerCategory,
-              canonicalIndex
-            )
-          )
-          const displayName = activeConfig?.title || paramId
-          missingFields.push(displayName)
-        }
+    blockConfig.subBlocks?.forEach((subBlockConfig: SubBlockConfig) => {
+      // Skip if already validated via tool params
+      if (validatedByTool.has(subBlockConfig.id)) {
+        return
+      }
+
+      // Check if subBlock is visible
+      const isVisible = shouldSerializeSubBlock(
+        subBlockConfig,
+        allValues,
+        displayAdvancedOptions,
+        isTriggerContext,
+        isTriggerCategory,
+        canonicalIndex,
+        canonicalModeOverrides
+      )
+
+      if (!isVisible) {
+        return
+      }
+
+      // Check if subBlock is required
+      const isRequired = (() => {
+        if (!subBlockConfig.required) return false
+        if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
+        return evaluateSubBlockCondition(subBlockConfig.required, params)
+      })()
+
+      if (!isRequired) {
+        return
+      }
+
+      // Check if value is missing
+      // For canonical subBlocks, look up the canonical param value (original IDs were deleted)
+      const canonicalId = canonicalIndex.canonicalIdBySubBlockId[subBlockConfig.id]
+      const fieldValue = canonicalId ? params[canonicalId] : params[subBlockConfig.id]
+      if (fieldValue === undefined || fieldValue === null || fieldValue === '') {
+        missingFields.push(subBlockConfig.title || subBlockConfig.id)
       }
     })
 
@@ -475,46 +532,6 @@ export class Serializer {
       const blockName = block.name || blockConfig.name || 'Block'
       throw new Error(`${blockName} is missing required fields: ${missingFields.join(', ')}`)
     }
-  }
-
-  private computeAccessibleBlockIds(
-    blocks: Record<string, BlockState>,
-    edges: Edge[],
-    loops: Record<string, Loop>,
-    parallels: Record<string, Parallel>
-  ): Map<string, Set<string>> {
-    const accessibleMap = new Map<string, Set<string>>()
-    const simplifiedEdges = edges.map((edge) => ({ source: edge.source, target: edge.target }))
-
-    const starterBlock = Object.values(blocks).find((block) => block.type === 'starter')
-
-    Object.keys(blocks).forEach((blockId) => {
-      const ancestorIds = BlockPathCalculator.findAllPathNodes(simplifiedEdges, blockId)
-      const accessibleIds = new Set<string>(ancestorIds)
-      accessibleIds.add(blockId)
-
-      if (starterBlock && ancestorIds.includes(starterBlock.id)) {
-        accessibleIds.add(starterBlock.id)
-      }
-
-      Object.values(loops).forEach((loop) => {
-        if (!loop?.nodes) return
-        if (loop.nodes.includes(blockId)) {
-          loop.nodes.forEach((nodeId) => accessibleIds.add(nodeId))
-        }
-      })
-
-      Object.values(parallels).forEach((parallel) => {
-        if (!parallel?.nodes) return
-        if (parallel.nodes.includes(blockId)) {
-          parallel.nodes.forEach((nodeId) => accessibleIds.add(nodeId))
-        }
-      })
-
-      accessibleMap.set(blockId, accessibleIds)
-    })
-
-    return accessibleMap
   }
 
   private selectToolId(blockConfig: any, params: Record<string, any>): string {

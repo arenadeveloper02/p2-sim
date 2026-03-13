@@ -111,6 +111,16 @@ function isFieldRequired(
 }
 
 function resolveTriggerId(block: BlockState): string | undefined {
+  const blockConfig = getBlock(block.type)
+
+  if (blockConfig?.category === 'triggers' && isTriggerValid(block.type)) {
+    return block.type
+  }
+
+  if (!block.triggerMode) {
+    return undefined
+  }
+
   const selectedTriggerId = getSubBlockValue(block, 'selectedTriggerId')
   if (typeof selectedTriggerId === 'string' && isTriggerValid(selectedTriggerId)) {
     return selectedTriggerId
@@ -121,12 +131,7 @@ function resolveTriggerId(block: BlockState): string | undefined {
     return storedTriggerId
   }
 
-  const blockConfig = getBlock(block.type)
-  if (blockConfig?.category === 'triggers' && isTriggerValid(block.type)) {
-    return block.type
-  }
-
-  if (block.triggerMode && blockConfig?.triggers?.enabled) {
+  if (blockConfig?.triggers?.enabled) {
     const configuredTriggerId =
       typeof selectedTriggerId === 'string' ? selectedTriggerId : undefined
     if (configuredTriggerId && isTriggerValid(configuredTriggerId)) {
@@ -766,7 +771,6 @@ export async function cleanupWebhooksForWorkflow(
     )
 
   if (existingWebhooks.length === 0) {
-    logger.debug(`[${requestId}] No webhooks to clean up for workflow ${workflowId}`)
     return
   }
 
@@ -828,7 +832,6 @@ export async function restorePreviousVersionWebhooks(params: {
     .where(eq(webhook.deploymentVersionId, previousVersionId))
 
   if (previousWebhooks.length === 0) {
-    logger.debug(`[${requestId}] No previous webhooks to restore for version ${previousVersionId}`)
     return
   }
 

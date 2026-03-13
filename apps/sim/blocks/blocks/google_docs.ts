@@ -1,4 +1,5 @@
 import { GoogleDocsIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { GoogleDocsResponse } from '@/tools/google_docs/types'
@@ -32,13 +33,21 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       id: 'credential',
       title: 'Google Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       required: true,
       serviceId: 'google-docs',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive',
-      ],
+      requiredScopes: getScopesForService('google-docs'),
       placeholder: 'Select Google account',
+    },
+    {
+      id: 'manualCredential',
+      title: 'Google Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
     // Document selector (basic mode)
     {
@@ -47,6 +56,7 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
       type: 'file-selector',
       canonicalParamId: 'documentId',
       serviceId: 'google-docs',
+      selectorKey: 'google.drive',
       requiredScopes: [],
       mimeType: 'application/vnd.google-apps.document',
       placeholder: 'Select a document',
@@ -89,6 +99,7 @@ Return ONLY the document title - no explanations, no extra text.`,
       type: 'file-selector',
       canonicalParamId: 'folderId',
       serviceId: 'google-docs',
+      selectorKey: 'google.drive',
       requiredScopes: [],
       mimeType: 'application/vnd.google-apps.folder',
       placeholder: 'Select a parent folder',
@@ -141,29 +152,26 @@ Return ONLY the document content - no explanations, no extra text.`,
         }
       },
       params: (params) => {
-        const { credential, documentId, manualDocumentId, folderSelector, folderId, ...rest } =
-          params
+        const { oauthCredential, documentId, folderId, ...rest } = params
 
-        const effectiveDocumentId = (documentId || manualDocumentId || '').trim()
-        const effectiveFolderId = (folderSelector || folderId || '').trim()
+        const effectiveDocumentId = documentId ? String(documentId).trim() : ''
+        const effectiveFolderId = folderId ? String(folderId).trim() : ''
 
         return {
           ...rest,
           documentId: effectiveDocumentId || undefined,
           folderId: effectiveFolderId || undefined,
-          credential,
+          oauthCredential,
         }
       },
     },
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Google Docs access token' },
-    documentId: { type: 'string', description: 'Document identifier' },
-    manualDocumentId: { type: 'string', description: 'Manual document identifier' },
+    oauthCredential: { type: 'string', description: 'Google Docs access token' },
+    documentId: { type: 'string', description: 'Document identifier (canonical param)' },
     title: { type: 'string', description: 'Document title' },
-    folderSelector: { type: 'string', description: 'Selected folder' },
-    folderId: { type: 'string', description: 'Folder identifier' },
+    folderId: { type: 'string', description: 'Parent folder identifier (canonical param)' },
     content: { type: 'string', description: 'Document content' },
   },
   outputs: {

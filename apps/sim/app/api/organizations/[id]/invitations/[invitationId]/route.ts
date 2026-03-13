@@ -11,6 +11,7 @@ import {
   user,
   userStats,
   type WorkspaceInvitationStatus,
+  workspaceEnvironment,
   workspaceInvitation,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -18,10 +19,13 @@ import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getEmailSubject, renderInvitationEmail } from '@/components/emails'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { hasAccessControlAccess } from '@/lib/billing'
+import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
 import { requireStripeClient } from '@/lib/billing/stripe-client'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 
 const logger = createLogger('OrganizationInvitation')
@@ -445,15 +449,46 @@ export async function PUT(
             })
             .where(eq(workspaceInvitation.id, wsInvitation.id))
 
-          await tx.insert(permissions).values({
-            id: randomUUID(),
-            entityType: 'workspace',
-            entityId: wsInvitation.workspaceId,
-            userId: session.user.id,
-            permissionType: wsInvitation.permissions || 'read',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          })
+          const existingPermission = await tx
+            .select({ id: permissions.id, permissionType: permissions.permissionType })
+            .from(permissions)
+            .where(
+              and(
+                eq(permissions.entityId, wsInvitation.workspaceId),
+                eq(permissions.entityType, 'workspace'),
+                eq(permissions.userId, session.user.id)
+              )
+            )
+            .then((rows) => rows[0])
+
+          if (existingPermission) {
+            const PERMISSION_RANK = { read: 0, write: 1, admin: 2 } as const
+            type PermissionLevel = keyof typeof PERMISSION_RANK
+            const existingRank =
+              PERMISSION_RANK[existingPermission.permissionType as PermissionLevel] ?? 0
+            const newPermission = (wsInvitation.permissions || 'read') as PermissionLevel
+            const newRank = PERMISSION_RANK[newPermission] ?? 0
+
+            if (newRank > existingRank) {
+              await tx
+                .update(permissions)
+                .set({
+                  permissionType: newPermission,
+                  updatedAt: new Date(),
+                })
+                .where(eq(permissions.id, existingPermission.id))
+            }
+          } else {
+            await tx.insert(permissions).values({
+              id: randomUUID(),
+              entityType: 'workspace',
+              entityId: wsInvitation.workspaceId,
+              userId: session.user.id,
+              permissionType: wsInvitation.permissions || 'read',
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            })
+          }
         }
       } else if (status === 'cancelled') {
         await tx
@@ -462,6 +497,34 @@ export async function PUT(
           .where(eq(workspaceInvitation.orgInvitationId, invitationId))
       }
     })
+
+    if (status === 'accepted') {
+      const acceptedWsInvitations = await db
+        .select({ workspaceId: workspaceInvitation.workspaceId })
+        .from(workspaceInvitation)
+        .where(
+          and(
+            eq(workspaceInvitation.orgInvitationId, invitationId),
+            eq(workspaceInvitation.status, 'accepted' as WorkspaceInvitationStatus)
+          )
+        )
+
+      for (const wsInv of acceptedWsInvitations) {
+        const [wsEnvRow] = await db
+          .select({ variables: workspaceEnvironment.variables })
+          .from(workspaceEnvironment)
+          .where(eq(workspaceEnvironment.workspaceId, wsInv.workspaceId))
+          .limit(1)
+        const wsEnvKeys = Object.keys((wsEnvRow?.variables as Record<string, string>) || {})
+        if (wsEnvKeys.length > 0) {
+          await syncWorkspaceEnvCredentials({
+            workspaceId: wsInv.workspaceId,
+            envKeys: wsEnvKeys,
+            actingUserId: session.user.id,
+          })
+        }
+      }
+    }
 
     // Handle Pro subscription cancellation after transaction commits
     if (personalProToCancel) {
@@ -501,11 +564,47 @@ export async function PUT(
       }
     }
 
+    if (status === 'accepted') {
+      try {
+        await syncUsageLimitsFromSubscription(session.user.id)
+      } catch (syncError) {
+        logger.error('Failed to sync usage limits after joining org', {
+          userId: session.user.id,
+          organizationId,
+          error: syncError,
+        })
+      }
+    }
+
     logger.info(`Organization invitation ${status}`, {
       organizationId,
       invitationId,
       userId: session.user.id,
       email: orgInvitation.email,
+    })
+
+    const auditActionMap = {
+      accepted: AuditAction.ORG_INVITATION_ACCEPTED,
+      rejected: AuditAction.ORG_INVITATION_REJECTED,
+      cancelled: AuditAction.ORG_INVITATION_CANCELLED,
+    } as const
+
+    recordAudit({
+      workspaceId: null,
+      actorId: session.user.id,
+      action: auditActionMap[status],
+      resourceType: AuditResourceType.ORGANIZATION,
+      resourceId: organizationId,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      description: `Organization invitation ${status} for ${orgInvitation.email}`,
+      metadata: {
+        invitationId,
+        targetEmail: orgInvitation.email,
+        targetRole: orgInvitation.role,
+        status,
+      },
+      request: req,
     })
 
     return NextResponse.json({

@@ -1,4 +1,5 @@
 import { AsanaIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { AsanaResponse } from '@/tools/asana/types'
@@ -32,18 +33,47 @@ export const AsanaBlock: BlockConfig<AsanaResponse> = {
       id: 'credential',
       title: 'Asana Account',
       type: 'oauth-input',
-
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       required: true,
       serviceId: 'asana',
-      requiredScopes: ['default'],
+      requiredScopes: getScopesForService('asana'),
       placeholder: 'Select Asana account',
+    },
+    {
+      id: 'manualCredential',
+      title: 'Asana Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
+    },
+    {
+      id: 'workspaceSelector',
+      title: 'Workspace',
+      type: 'project-selector',
+      canonicalParamId: 'workspace',
+      serviceId: 'asana',
+      selectorKey: 'asana.workspaces',
+      selectorAllowSearch: false,
+      placeholder: 'Select Asana workspace',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      condition: {
+        field: 'operation',
+        value: ['create_task', 'get_projects', 'search_tasks'],
+      },
+      required: true,
     },
     {
       id: 'workspace',
       title: 'Workspace GID',
       type: 'short-input',
+      canonicalParamId: 'workspace',
       required: true,
       placeholder: 'Enter Asana workspace GID',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['create_task', 'get_projects', 'search_tasks'],
@@ -72,10 +102,28 @@ export const AsanaBlock: BlockConfig<AsanaResponse> = {
       },
     },
     {
+      id: 'getTasksWorkspaceSelector',
+      title: 'Workspace',
+      type: 'project-selector',
+      canonicalParamId: 'getTasks_workspace',
+      serviceId: 'asana',
+      selectorKey: 'asana.workspaces',
+      selectorAllowSearch: false,
+      placeholder: 'Select Asana workspace',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      condition: {
+        field: 'operation',
+        value: ['get_task'],
+      },
+    },
+    {
       id: 'getTasks_workspace',
       title: 'Workspace GID',
       type: 'short-input',
+      canonicalParamId: 'getTasks_workspace',
       placeholder: 'Enter workspace GID',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['get_task'],
@@ -215,7 +263,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
         }
       },
       params: (params) => {
-        const { credential, operation } = params
+        const { oauthCredential, operation } = params
 
         const projectsArray = params.projects
           ? params.projects
@@ -225,7 +273,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
           : undefined
 
         const baseParams = {
-          accessToken: credential?.accessToken,
+          accessToken: oauthCredential?.accessToken,
         }
 
         switch (operation) {
@@ -284,6 +332,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
+    oauthCredential: { type: 'string', description: 'Asana OAuth credential' },
     workspace: { type: 'string', description: 'Workspace GID' },
     taskGid: { type: 'string', description: 'Task GID' },
     getTasks_workspace: { type: 'string', description: 'Workspace GID for getting tasks' },

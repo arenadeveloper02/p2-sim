@@ -2,12 +2,8 @@ import { readFile } from 'fs/promises'
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
-import {
-  CopilotFiles,
-  isUsingCloudStorage,
-  isStorageContextConfigured,
-} from '@/lib/uploads'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { CopilotFiles, isUsingCloudStorage, isStorageContextConfigured } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
@@ -45,7 +41,7 @@ export async function GET(
     // Handle agent-generated-images paths specially
     if (fullPath.startsWith('agent-generated-images/')) {
       logger.info('Agent-generated-image serve: checking auth', { fullPath })
-      const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
+      const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
 
       if (!authResult.success || !authResult.userId) {
         logger.warn('Unauthorized agent-generated-image access attempt', {
@@ -114,7 +110,7 @@ export async function GET(
       return await handleLocalFilePublic(fullPath)
     }
 
-    const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
+    const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
 
     if (!authResult.success || !authResult.userId) {
       logger.warn('Unauthorized file access attempt', {

@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { ArrowUp, Square, Zap } from 'lucide-react'
+import { ArrowUp, Lock, Square, Unlock, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
@@ -49,16 +49,21 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/hooks'
 import { Variables } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/variables/variables'
 import { useAutoLayout } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-auto-layout'
+import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-current-workflow'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
+import { getWorkflowLockToggleIds } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
+import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useChatStore } from '@/stores/chat/store'
+import { useNotificationStore } from '@/stores/notifications/store'
 import type { PanelTab } from '@/stores/panel'
 import { usePanelStore, useVariablesStore as usePanelVariablesStore } from '@/stores/panel'
 import { useVariablesStore } from '@/stores/variables/store'
 import { getWorkflowWithValues } from '@/stores/workflows'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('Panel')
 
@@ -201,6 +206,20 @@ export const Panel = memo(function Panel() {
   const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
   const { handleAutoLayout: autoLayoutWithFitView } = useAutoLayout(activeWorkflowId || null)
 
+  // Check for locked blocks (disables auto-layout)
+  const hasLockedBlocks = useWorkflowStore((state) =>
+    Object.values(state.blocks).some((block) => block.locked)
+  )
+
+  const allBlocksLocked = useWorkflowStore((state) => {
+    const blockList = Object.values(state.blocks)
+    return blockList.length > 0 && blockList.every((block) => block.locked)
+  })
+
+  const hasBlocks = useWorkflowStore((state) => Object.keys(state.blocks).length > 0)
+
+  const { collaborativeBatchToggleLocked } = useCollaborativeWorkflow()
+
   // Delete workflow hook
   const { isDeleting, handleDeleteWorkflow } = useDeleteWorkflow({
     workspaceId,
@@ -271,6 +290,7 @@ export const Panel = memo(function Panel() {
   )
 
   const currentWorkflow = activeWorkflowId ? workflows[activeWorkflowId] : null
+  const { isSnapshotView } = useCurrentWorkflow()
 
   /**
    * Mark hydration as complete on mount
@@ -319,14 +339,27 @@ export const Panel = memo(function Panel() {
 
     setIsAutoLayouting(true)
     try {
-      await autoLayoutWithFitView()
+      const result = await autoLayoutWithFitView()
+      if (!result.success && result.error) {
+        useNotificationStore.getState().addNotification({
+          level: 'info',
+          message: result.error,
+          workflowId: activeWorkflowId || undefined,
+        })
+      }
     } finally {
       setIsAutoLayouting(false)
       workflowClickMoreOptionsEvent({
         Options: 'Auto Layout',
       })
     }
-  }, [isExecuting, userPermissions.canEdit, isAutoLayouting, autoLayoutWithFitView])
+  }, [
+    isExecuting,
+    userPermissions.canEdit,
+    isAutoLayouting,
+    autoLayoutWithFitView,
+    activeWorkflowId,
+  ])
 
   /**
    * Handles exporting workflow as JSON
@@ -407,6 +440,17 @@ export const Panel = memo(function Panel() {
     workspaceId,
   ])
 
+  /**
+   * Toggles the locked state of all blocks in the workflow
+   */
+  const handleToggleWorkflowLock = useCallback(() => {
+    const blocks = useWorkflowStore.getState().blocks
+    const allLocked = Object.values(blocks).every((b) => b.locked)
+    const ids = getWorkflowLockToggleIds(blocks, !allLocked)
+    if (ids.length > 0) collaborativeBatchToggleLocked(ids)
+    setIsMenuOpen(false)
+  }, [collaborativeBatchToggleLocked])
+
   // Compute run button state
   const canRun = userPermissions.canRead // Running only requires read permissions
   const isLoadingPermissions = userPermissions.isLoading
@@ -418,13 +462,7 @@ export const Panel = memo(function Panel() {
    * Register global keyboard shortcuts using the central commands registry.
    *
    * - Mod+Enter: Run / cancel workflow (matches the Run button behavior)
-   * - C: Focus Copilot tab
-   * - T: Focus Toolbar tab
-   * - E: Focus Editor tab
    * - Mod+F: Focus Toolbar tab and search input
-   *
-   * The tab-switching commands are disabled inside editable elements so typing
-   * in inputs or textareas is not interrupted.
    */
   useRegisterGlobalCommands(() =>
     createCommands([
@@ -436,33 +474,6 @@ export const Panel = memo(function Panel() {
           } else {
             void runWorkflow()
           }
-        },
-        overrides: {
-          allowInEditable: false,
-        },
-      },
-      {
-        id: 'focus-copilot-tab',
-        handler: () => {
-          setActiveTab('copilot')
-        },
-        overrides: {
-          allowInEditable: false,
-        },
-      },
-      {
-        id: 'focus-toolbar-tab',
-        handler: () => {
-          setActiveTab('toolbar')
-        },
-        overrides: {
-          allowInEditable: false,
-        },
-      },
-      {
-        id: 'focus-editor-tab',
-        handler: () => {
-          setActiveTab('editor')
         },
         overrides: {
           allowInEditable: false,
@@ -502,7 +513,10 @@ export const Panel = memo(function Panel() {
                 <PopoverContent align='start' side='bottom' sideOffset={8}>
                   <PopoverItem
                     onClick={handleAutoLayout}
-                    disabled={isExecuting || !userPermissions.canEdit || isAutoLayouting}
+                    disabled={
+                      isExecuting || !userPermissions.canEdit || isAutoLayouting || hasLockedBlocks
+                    }
+                    title={hasLockedBlocks ? 'Unlock blocks to use auto-layout' : undefined}
                   >
                     <Layout className='h-3 w-3' animate={isAutoLayouting} variant='clockwise' />
                     <span>Auto layout</span>
@@ -520,6 +534,16 @@ export const Panel = memo(function Panel() {
                       <span>Variables</span>
                     </PopoverItem>
                   }
+                  {userPermissions.canAdmin && !isSnapshotView && (
+                    <PopoverItem onClick={handleToggleWorkflowLock} disabled={!hasBlocks}>
+                      {allBlocksLocked ? (
+                        <Unlock className='h-3 w-3' />
+                      ) : (
+                        <Lock className='h-3 w-3' />
+                      )}
+                      <span>{allBlocksLocked ? 'Unlock workflow' : 'Lock workflow'}</span>
+                    </PopoverItem>
+                  )}
                   {/* <PopoverItem>
                     <Bug className='h-3 w-3' />
                     <span>Debug</span>

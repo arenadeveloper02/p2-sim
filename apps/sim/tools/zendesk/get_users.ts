@@ -1,8 +1,13 @@
-import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
-import { buildZendeskUrl, handleZendeskError } from './types'
-
-const logger = createLogger('ZendeskGetUsers')
+import {
+  appendCursorPaginationParams,
+  buildZendeskUrl,
+  extractCursorPagingInfo,
+  handleZendeskError,
+  METADATA_OUTPUT,
+  PAGING_OUTPUT,
+  USERS_ARRAY_OUTPUT,
+} from '@/tools/zendesk/types'
 
 export interface ZendeskGetUsersParams {
   email: string
@@ -11,7 +16,7 @@ export interface ZendeskGetUsersParams {
   role?: string
   permissionSet?: string
   perPage?: string
-  page?: string
+  pageAfter?: string
 }
 
 export interface ZendeskGetUsersResponse {
@@ -19,9 +24,8 @@ export interface ZendeskGetUsersResponse {
   output: {
     users: any[]
     paging?: {
-      next_page?: string | null
-      previous_page?: string | null
-      count: number
+      after_cursor: string | null
+      has_more: boolean
     }
     metadata: {
       total_returned: number
@@ -59,26 +63,26 @@ export const zendeskGetUsersTool: ToolConfig<ZendeskGetUsersParams, ZendeskGetUs
     role: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Filter by role (end-user, agent, admin)',
+      visibility: 'user-or-llm',
+      description: 'Filter by role: "end-user", "agent", or "admin"',
     },
     permissionSet: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Filter by permission set ID',
+      visibility: 'user-or-llm',
+      description: 'Filter by permission set ID as a numeric string (e.g., "12345")',
     },
     perPage: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Results per page (default: 100, max: 100)',
+      visibility: 'user-or-llm',
+      description: 'Results per page as a number string (default: "100", max: "100")',
     },
-    page: {
+    pageAfter: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Page number',
+      visibility: 'user-or-llm',
+      description: 'Cursor from a previous response to fetch the next page of results',
     },
   },
 
@@ -87,8 +91,7 @@ export const zendeskGetUsersTool: ToolConfig<ZendeskGetUsersParams, ZendeskGetUs
       const queryParams = new URLSearchParams()
       if (params.role) queryParams.append('role', params.role)
       if (params.permissionSet) queryParams.append('permission_set', params.permissionSet)
-      if (params.page) queryParams.append('page', params.page)
-      if (params.perPage) queryParams.append('per_page', params.perPage)
+      appendCursorPaginationParams(queryParams, params)
 
       const query = queryParams.toString()
       const url = buildZendeskUrl(params.subdomain, '/users')
@@ -113,19 +116,16 @@ export const zendeskGetUsersTool: ToolConfig<ZendeskGetUsersParams, ZendeskGetUs
 
     const data = await response.json()
     const users = data.users || []
+    const paging = extractCursorPagingInfo(data)
 
     return {
       success: true,
       output: {
         users,
-        paging: {
-          next_page: data.next_page ?? null,
-          previous_page: data.previous_page ?? null,
-          count: data.count || users.length,
-        },
+        paging,
         metadata: {
           total_returned: users.length,
-          has_more: !!data.next_page,
+          has_more: paging.has_more,
         },
         success: true,
       },
@@ -133,30 +133,8 @@ export const zendeskGetUsersTool: ToolConfig<ZendeskGetUsersParams, ZendeskGetUs
   },
 
   outputs: {
-    users: { type: 'array', description: 'Array of user objects' },
-    paging: {
-      type: 'object',
-      description: 'Pagination information',
-      properties: {
-        next_page: { type: 'string', description: 'URL for next page of results', optional: true },
-        previous_page: {
-          type: 'string',
-          description: 'URL for previous page of results',
-          optional: true,
-        },
-        count: { type: 'number', description: 'Total count of users' },
-      },
-    },
-    metadata: {
-      type: 'object',
-      description: 'Response metadata',
-      properties: {
-        total_returned: {
-          type: 'number',
-          description: 'Number of users returned in this response',
-        },
-        has_more: { type: 'boolean', description: 'Whether more users are available' },
-      },
-    },
+    users: USERS_ARRAY_OUTPUT,
+    paging: PAGING_OUTPUT,
+    metadata: METADATA_OUTPUT,
   },
 }

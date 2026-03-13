@@ -4,150 +4,93 @@
  * @vitest-environment node
  */
 
-import { createMockLogger } from '@sim/testing'
 import { NextRequest } from 'next/server'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockCheckSessionOrInternalAuth, mockLogger } = vi.hoisted(() => {
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+    fatal: vi.fn(),
+    child: vi.fn(),
+  }
+  return {
+    mockCheckSessionOrInternalAuth: vi.fn(),
+    mockLogger: logger,
+  }
+})
+
+vi.mock('@/lib/auth/hybrid', () => ({
+  checkSessionOrInternalAuth: mockCheckSessionOrInternalAuth,
+}))
+
+vi.mock('@/lib/core/utils/request', () => ({
+  generateRequestId: vi.fn().mockReturnValue('mock-request-id'),
+}))
+
+vi.mock('@/lib/credentials/oauth', () => ({
+  syncWorkspaceOAuthCredentialsForUser: vi.fn(),
+}))
+
+vi.mock('@/lib/workflows/utils', () => ({
+  authorizeWorkflowByWorkspacePermission: vi.fn(),
+}))
+
+vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  checkWorkspaceAccess: vi.fn(),
+}))
+
+vi.mock('@sim/db/schema', () => ({
+  account: {
+    userId: 'userId',
+    providerId: 'providerId',
+    id: 'id',
+    scope: 'scope',
+    updatedAt: 'updatedAt',
+  },
+  credential: {
+    id: 'id',
+    workspaceId: 'workspaceId',
+    type: 'type',
+    displayName: 'displayName',
+    providerId: 'providerId',
+    accountId: 'accountId',
+  },
+  credentialMember: {
+    id: 'id',
+    credentialId: 'credentialId',
+    userId: 'userId',
+    status: 'status',
+  },
+  user: { email: 'email', id: 'id' },
+}))
+
+vi.mock('@sim/logger', () => ({
+  createLogger: vi.fn().mockReturnValue(mockLogger),
+}))
+
+import { GET } from '@/app/api/auth/oauth/credentials/route'
 
 describe('OAuth Credentials API Route', () => {
-  const mockGetSession = vi.fn()
-  const mockParseProvider = vi.fn()
-  const mockEvaluateScopeCoverage = vi.fn()
-  const mockDb = {
-    select: vi.fn().mockReturnThis(),
-    from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
-    limit: vi.fn(),
-  }
-  const mockLogger = createMockLogger()
-
-  const mockUUID = 'mock-uuid-12345678-90ab-cdef-1234-567890abcdef'
-
   function createMockRequestWithQuery(method = 'GET', queryParams = ''): NextRequest {
     const url = `http://localhost:3000/api/auth/oauth/credentials${queryParams}`
     return new NextRequest(new URL(url), { method })
   }
 
   beforeEach(() => {
-    vi.resetModules()
-
-    vi.stubGlobal('crypto', {
-      randomUUID: vi.fn().mockReturnValue(mockUUID),
-    })
-
-    vi.doMock('@/lib/auth', () => ({
-      getSession: mockGetSession,
-    }))
-
-    vi.doMock('@/lib/oauth/utils', () => ({
-      parseProvider: mockParseProvider,
-      evaluateScopeCoverage: mockEvaluateScopeCoverage,
-    }))
-
-    vi.doMock('@sim/db', () => ({
-      db: mockDb,
-    }))
-
-    vi.doMock('@sim/db/schema', () => ({
-      account: { userId: 'userId', providerId: 'providerId' },
-      user: { email: 'email', id: 'id' },
-    }))
-
-    vi.doMock('drizzle-orm', () => ({
-      and: vi.fn((...conditions) => ({ conditions, type: 'and' })),
-      eq: vi.fn((field, value) => ({ field, value, type: 'eq' })),
-    }))
-
-    vi.doMock('jwt-decode', () => ({
-      jwtDecode: vi.fn(),
-    }))
-
-    vi.doMock('@sim/logger', () => ({
-      createLogger: vi.fn().mockReturnValue(mockLogger),
-    }))
-
-    mockParseProvider.mockImplementation((providerId: string) => ({
-      baseProvider: providerId.split('-')[0] || providerId,
-    }))
-
-    mockEvaluateScopeCoverage.mockImplementation(
-      (_providerId: string, grantedScopes: string[]) => ({
-        canonicalScopes: grantedScopes,
-        grantedScopes,
-        missingScopes: [],
-        extraScopes: [],
-        requiresReauthorization: false,
-      })
-    )
-  })
-
-  afterEach(() => {
     vi.clearAllMocks()
   })
 
-  it('should return credentials successfully', async () => {
-    mockGetSession.mockResolvedValueOnce({
-      user: { id: 'user-123' },
-    })
-
-    mockParseProvider.mockReturnValueOnce({
-      baseProvider: 'google',
-    })
-
-    const mockAccounts = [
-      {
-        id: 'credential-1',
-        userId: 'user-123',
-        providerId: 'google-email',
-        accountId: 'test@example.com',
-        updatedAt: new Date('2024-01-01'),
-        idToken: null,
-      },
-      {
-        id: 'credential-2',
-        userId: 'user-123',
-        providerId: 'google-default',
-        accountId: 'user-id',
-        updatedAt: new Date('2024-01-02'),
-        idToken: null,
-      },
-    ]
-
-    mockDb.select.mockReturnValueOnce(mockDb)
-    mockDb.from.mockReturnValueOnce(mockDb)
-    mockDb.where.mockResolvedValueOnce(mockAccounts)
-
-    mockDb.select.mockReturnValueOnce(mockDb)
-    mockDb.from.mockReturnValueOnce(mockDb)
-    mockDb.where.mockReturnValueOnce(mockDb)
-    mockDb.limit.mockResolvedValueOnce([{ email: 'user@example.com' }])
-
-    const req = createMockRequestWithQuery('GET', '?provider=google-email')
-
-    const { GET } = await import('@/app/api/auth/oauth/credentials/route')
-
-    const response = await GET(req)
-    const data = await response.json()
-
-    expect(response.status).toBe(200)
-    expect(data.credentials).toHaveLength(2)
-    expect(data.credentials[0]).toMatchObject({
-      id: 'credential-1',
-      provider: 'google-email',
-      isDefault: false,
-    })
-    expect(data.credentials[1]).toMatchObject({
-      id: 'credential-2',
-      provider: 'google-default',
-      isDefault: true,
-    })
-  })
-
   it('should handle unauthenticated user', async () => {
-    mockGetSession.mockResolvedValueOnce(null)
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: false,
+      error: 'Authentication required',
+    })
 
     const req = createMockRequestWithQuery('GET', '?provider=google')
-
-    const { GET } = await import('@/app/api/auth/oauth/credentials/route')
 
     const response = await GET(req)
     const data = await response.json()
@@ -158,13 +101,13 @@ describe('OAuth Credentials API Route', () => {
   })
 
   it('should handle missing provider parameter', async () => {
-    mockGetSession.mockResolvedValueOnce({
-      user: { id: 'user-123' },
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-123',
+      authType: 'session',
     })
 
     const req = createMockRequestWithQuery('GET')
-
-    const { GET } = await import('@/app/api/auth/oauth/credentials/route')
 
     const response = await GET(req)
     const data = await response.json()
@@ -175,21 +118,13 @@ describe('OAuth Credentials API Route', () => {
   })
 
   it('should handle no credentials found', async () => {
-    mockGetSession.mockResolvedValueOnce({
-      user: { id: 'user-123' },
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-123',
+      authType: 'session',
     })
-
-    mockParseProvider.mockReturnValueOnce({
-      baseProvider: 'github',
-    })
-
-    mockDb.select.mockReturnValueOnce(mockDb)
-    mockDb.from.mockReturnValueOnce(mockDb)
-    mockDb.where.mockResolvedValueOnce([])
 
     const req = createMockRequestWithQuery('GET', '?provider=github')
-
-    const { GET } = await import('@/app/api/auth/oauth/credentials/route')
 
     const response = await GET(req)
     const data = await response.json()
@@ -198,71 +133,19 @@ describe('OAuth Credentials API Route', () => {
     expect(data.credentials).toHaveLength(0)
   })
 
-  it('should decode ID token for display name', async () => {
-    const { jwtDecode } = await import('jwt-decode')
-    const mockJwtDecode = jwtDecode as any
-
-    mockGetSession.mockResolvedValueOnce({
-      user: { id: 'user-123' },
+  it('should return empty credentials when no workspace context', async () => {
+    mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+      success: true,
+      userId: 'user-123',
+      authType: 'session',
     })
 
-    mockParseProvider.mockReturnValueOnce({
-      baseProvider: 'google',
-    })
-
-    const mockAccounts = [
-      {
-        id: 'credential-1',
-        userId: 'user-123',
-        providerId: 'google-default',
-        accountId: 'google-user-id',
-        updatedAt: new Date('2024-01-01'),
-        idToken: 'mock-jwt-token',
-      },
-    ]
-
-    mockJwtDecode.mockReturnValueOnce({
-      email: 'decoded@example.com',
-      name: 'Decoded User',
-    })
-
-    mockDb.select.mockReturnValueOnce(mockDb)
-    mockDb.from.mockReturnValueOnce(mockDb)
-    mockDb.where.mockResolvedValueOnce(mockAccounts)
-
-    const req = createMockRequestWithQuery('GET', '?provider=google')
-
-    const { GET } = await import('@/app/api/auth/oauth/credentials/route')
+    const req = createMockRequestWithQuery('GET', '?provider=google-email')
 
     const response = await GET(req)
     const data = await response.json()
 
     expect(response.status).toBe(200)
-    expect(data.credentials[0].name).toBe('decoded@example.com')
-  })
-
-  it('should handle database error', async () => {
-    mockGetSession.mockResolvedValueOnce({
-      user: { id: 'user-123' },
-    })
-
-    mockParseProvider.mockReturnValueOnce({
-      baseProvider: 'google',
-    })
-
-    mockDb.select.mockReturnValueOnce(mockDb)
-    mockDb.from.mockReturnValueOnce(mockDb)
-    mockDb.where.mockRejectedValueOnce(new Error('Database error'))
-
-    const req = createMockRequestWithQuery('GET', '?provider=google')
-
-    const { GET } = await import('@/app/api/auth/oauth/credentials/route')
-
-    const response = await GET(req)
-    const data = await response.json()
-
-    expect(response.status).toBe(500)
-    expect(data.error).toBe('Internal server error')
-    expect(mockLogger.error).toHaveBeenCalled()
+    expect(data.credentials).toHaveLength(0)
   })
 })

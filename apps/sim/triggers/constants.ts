@@ -10,6 +10,7 @@ export const SYSTEM_SUBBLOCK_IDS: string[] = [
   'webhookUrlDisplay', // Webhook URL display
   'samplePayload', // Example payload display
   'setupScript', // Setup script code (e.g., Apps Script)
+  'scheduleInfo', // Schedule status display (next run, last run)
 ]
 
 /**
@@ -22,10 +23,27 @@ export const SYSTEM_SUBBLOCK_IDS: string[] = [
  * with default values from the trigger definition on load, which aren't present in
  * the deployed state, causing false positive change detection.
  */
-export const TRIGGER_RUNTIME_SUBBLOCK_IDS: string[] = ['webhookId', 'triggerPath', 'triggerConfig']
+export const TRIGGER_RUNTIME_SUBBLOCK_IDS: string[] = [
+  'webhookId',
+  'triggerPath',
+  'triggerConfig',
+  'triggerId',
+]
 
 /**
  * Maximum number of consecutive failures before a trigger (schedule/webhook) is auto-disabled.
  * This prevents runaway errors from continuously executing failing workflows.
  */
 export const MAX_CONSECUTIVE_FAILURES = 100
+
+/**
+ * Set of webhook provider names that use polling-based triggers.
+ * Mirrors the `polling: true` flag on TriggerConfig entries.
+ * Used to route execution: polling providers use the full job queue
+ * (Trigger.dev), non-polling providers execute inline.
+ */
+export const POLLING_PROVIDERS = new Set(['gmail', 'outlook', 'rss', 'imap'])
+
+export function isPollingWebhookProvider(provider: string): boolean {
+  return POLLING_PROVIDERS.has(provider)
+}

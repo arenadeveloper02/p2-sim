@@ -7,6 +7,7 @@ import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/
 import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { resolvePreviewContextValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/utils'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useWorkflowState } from '@/hooks/queries/workflows'
 
@@ -37,6 +38,8 @@ interface InputMappingProps {
   isPreview?: boolean
   previewValue?: Record<string, unknown>
   disabled?: boolean
+  /** Sub-block values from the preview context for resolving sibling sub-block values */
+  previewContextValues?: Record<string, unknown>
 }
 
 /**
@@ -50,9 +53,13 @@ export function InputMapping({
   isPreview = false,
   previewValue,
   disabled = false,
+  previewContextValues,
 }: InputMappingProps) {
   const [mapping, setMapping] = useSubBlockValue(blockId, subBlockId)
-  const [selectedWorkflowId] = useSubBlockValue(blockId, 'workflowId')
+  const [storeWorkflowId] = useSubBlockValue(blockId, 'workflowId')
+  const selectedWorkflowId = previewContextValues
+    ? resolvePreviewContextValue(previewContextValues.workflowId)
+    : storeWorkflowId
 
   const inputController = useSubBlockInput({
     blockId,
@@ -223,12 +230,16 @@ function InputMappingField({
           <span className='block truncate font-medium text-[14px] text-[var(--text-tertiary)]'>
             {fieldName}
           </span>
-          {fieldType && <Badge size='sm'>{fieldType}</Badge>}
+          {fieldType && (
+            <Badge variant='type' size='sm'>
+              {fieldType}
+            </Badge>
+          )}
         </div>
       </div>
 
       {!collapsed && (
-        <div className='flex flex-col gap-[8px] border-[var(--border-1)] border-t px-[10px] pt-[6px] pb-[10px]'>
+        <div className='flex flex-col gap-[8px] rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-[10px] pt-[6px] pb-[10px]'>
           <div className='flex flex-col gap-[6px]'>
             <Label className='text-[13px]'>Value</Label>
             <div className='relative'>
@@ -262,7 +273,10 @@ function InputMappingField({
                 ref={(el) => {
                   if (el) overlayRefs.current.set(fieldId, el)
                 }}
-                className='pointer-events-none absolute inset-0 flex items-center overflow-x-auto bg-transparent px-[8px] py-[6px] font-medium font-sans text-sm'
+                className={cn(
+                  'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-[8px] py-[6px] font-medium font-sans text-sm',
+                  !disabled && 'pointer-events-none'
+                )}
                 style={{ overflowX: 'auto' }}
               >
                 <div

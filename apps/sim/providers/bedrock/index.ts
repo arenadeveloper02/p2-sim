@@ -20,17 +20,15 @@ import {
   generateToolUseId,
   getBedrockInferenceProfileId,
 } from '@/providers/bedrock/utils'
-import {
-  getMaxOutputTokensForModel,
-  getProviderDefaultModel,
-  getProviderModels,
-} from '@/providers/models'
+import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import type {
+  FunctionCallResponse,
   ProviderConfig,
   ProviderRequest,
   ProviderResponse,
   TimeSegment,
 } from '@/providers/types'
+import { ProviderError } from '@/providers/types'
 import {
   calculateCost,
   prepareToolExecution,
@@ -201,6 +199,9 @@ export const bedrockProvider: ProviderConfig = {
             } else if (tc.type === 'function' && tc.function?.name) {
               toolChoice = { tool: { name: tc.function.name } }
               logger.info(`Using Bedrock tool_choice format: force tool "${tc.function.name}"`)
+            } else if (tc.type === 'any') {
+              toolChoice = { any: {} }
+              logger.info('Using Bedrock tool_choice format: any tool')
             } else {
               toolChoice = { auto: {} }
             }
@@ -261,11 +262,11 @@ export const bedrockProvider: ProviderConfig = {
 
     const systemPromptWithSchema = systemContent
 
-    const inferenceConfig = {
+    const inferenceConfig: { temperature: number; maxTokens?: number } = {
       temperature: Number.parseFloat(String(request.temperature ?? 0.7)),
-      maxTokens:
-        Number.parseInt(String(request.maxTokens)) ||
-        getMaxOutputTokensForModel(request.model, request.stream ?? false),
+    }
+    if (request.maxTokens != null) {
+      inferenceConfig.maxTokens = Number.parseInt(String(request.maxTokens))
     }
 
     const shouldStreamToolCalls = request.streamToolCalls ?? false
@@ -283,7 +284,10 @@ export const bedrockProvider: ProviderConfig = {
         inferenceConfig,
       })
 
-      const streamResponse = await client.send(command)
+      const streamResponse = await client.send(
+        command,
+        request.abortSignal ? { abortSignal: request.abortSignal } : undefined
+      )
 
       if (!streamResponse.stream) {
         throw new Error('No stream returned from Bedrock')
@@ -378,7 +382,10 @@ export const bedrockProvider: ProviderConfig = {
         toolConfig,
       })
 
-      let currentResponse = await client.send(command)
+      let currentResponse = await client.send(
+        command,
+        request.abortSignal ? { abortSignal: request.abortSignal } : undefined
+      )
       const firstResponseTime = Date.now() - initialCallTime
 
       let content = ''
@@ -417,10 +424,11 @@ export const bedrockProvider: ProviderConfig = {
         input: initialCost.input,
         output: initialCost.output,
         total: initialCost.total,
+        pricing: initialCost.pricing,
       }
 
-      const toolCalls: any[] = []
-      const toolResults: any[] = []
+      const toolCalls: FunctionCallResponse[] = []
+      const toolResults: Record<string, unknown>[] = []
       const currentMessages = [...messages]
       let iterationCount = 0
       let hasUsedForcedTool = false
@@ -561,7 +569,7 @@ export const bedrockProvider: ProviderConfig = {
 
           let resultContent: any
           if (result.success) {
-            toolResults.push(result.output)
+            toolResults.push(result.output!)
             resultContent = result.output
           } else {
             resultContent = {
@@ -626,7 +634,10 @@ export const bedrockProvider: ProviderConfig = {
             : undefined,
         })
 
-        currentResponse = await client.send(nextCommand)
+        currentResponse = await client.send(
+          nextCommand,
+          request.abortSignal ? { abortSignal: request.abortSignal } : undefined
+        )
 
         const nextToolUseContentBlocks = (currentResponse.output?.message?.content || []).filter(
           (block): block is ContentBlock & { toolUse: ToolUseBlock } => 'toolUse' in block
@@ -694,7 +705,10 @@ export const bedrockProvider: ProviderConfig = {
           },
         })
 
-        const structuredResponse = await client.send(structuredOutputCommand)
+        const structuredResponse = await client.send(
+          structuredOutputCommand,
+          request.abortSignal ? { abortSignal: request.abortSignal } : undefined
+        )
         const structuredOutputEndTime = Date.now()
 
         timeSegments.push({
@@ -780,7 +794,10 @@ export const bedrockProvider: ProviderConfig = {
           toolConfig: streamToolConfig,
         })
 
-        const streamResponse = await client.send(streamCommand)
+        const streamResponse = await client.send(
+          streamCommand,
+          request.abortSignal ? { abortSignal: request.abortSignal } : undefined
+        )
 
         if (!streamResponse.stream) {
           throw new Error('No stream returned from Bedrock')
@@ -864,6 +881,12 @@ export const bedrockProvider: ProviderConfig = {
         content,
         model: request.model,
         tokens,
+        cost: {
+          input: cost.input,
+          output: cost.output,
+          total: cost.total,
+          pricing: cost.pricing,
+        },
         toolCalls:
           toolCalls.length > 0
             ? toolCalls.map((tc) => ({
@@ -897,15 +920,11 @@ export const bedrockProvider: ProviderConfig = {
         duration: totalDuration,
       })
 
-      const enhancedError = new Error(error instanceof Error ? error.message : String(error))
-      // @ts-ignore
-      enhancedError.timing = {
+      throw new ProviderError(error instanceof Error ? error.message : String(error), {
         startTime: providerStartTimeISO,
         endTime: providerEndTimeISO,
         duration: totalDuration,
-      }
-
-      throw enhancedError
+      })
     }
   },
 }

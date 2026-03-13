@@ -58,7 +58,7 @@ import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useChatStore } from '@/stores/chat/store'
 import { getChatPosition } from '@/stores/chat/utils'
-import { useExecutionStore } from '@/stores/execution'
+import { useCurrentWorkflowExecution } from '@/stores/execution'
 import { useOperationQueue } from '@/stores/operation-queue/store'
 import { useTerminalConsoleStore } from '@/stores/terminal'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -268,7 +268,7 @@ export function Chat() {
   const hasConsoleHydrated = useTerminalConsoleStore((state) => state._hasHydrated)
   const entriesFromStore = useTerminalConsoleStore((state) => state.entries)
   const entries = hasConsoleHydrated ? entriesFromStore : []
-  const { isExecuting } = useExecutionStore()
+  const { isExecuting } = useCurrentWorkflowExecution()
   const { handleRunWorkflow, handleCancelExecution } = useWorkflowExecution()
   const { data: session } = useSession()
   const { addToQueue } = useOperationQueue()
@@ -553,26 +553,6 @@ export function Chat() {
       streamReaderRef.current?.cancel()
     }
   }, [])
-
-  // React to execution cancellation from run button
-  // Only cancel if execution was explicitly cancelled, not just because isExecuting became false
-  // (streaming might still be in progress even if execution state changed)
-  useEffect(() => {
-    // Only cancel if execution was explicitly stopped AND we have a streaming message
-    // Don't cancel just because isExecuting became false - the stream might still be active
-    const lastMessage = workflowMessages[workflowMessages.length - 1]
-    if (lastMessage?.isStreaming && streamReaderRef.current) {
-      // Check if this is an explicit cancellation (user clicked stop)
-      // We'll rely on handleStopStreaming for explicit cancellations
-      // This effect should only handle cleanup when execution truly ends
-      logger.debug('Execution state changed during streaming', {
-        isExecuting,
-        isStreaming,
-        hasStreamReader: !!streamReaderRef.current,
-        messageId: lastMessage.id,
-      })
-    }
-  }, [isExecuting, isStreaming, workflowMessages])
 
   const handleStopStreaming = useCallback(() => {
     streamReaderRef.current?.cancel()
@@ -1195,7 +1175,7 @@ export function Chat() {
 
       const newReservedFields: StartInputFormatField[] = missingStartReservedFields.map(
         (fieldName) => {
-          const defaultType = fieldName === 'files' ? 'files' : 'string'
+          const defaultType = fieldName === 'files' ? 'file[]' : 'string'
 
           return {
             id: crypto.randomUUID(),

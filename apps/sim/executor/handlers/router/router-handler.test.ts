@@ -1,6 +1,16 @@
 import '@sim/testing/mocks/executor'
 
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
+
+vi.mock('@/app/api/auth/oauth/utils', () => ({
+  resolveOAuthAccountId: vi
+    .fn()
+    .mockResolvedValue({ accountId: 'test-vertex-credential-id', usedCredentialTable: false }),
+  refreshTokenIfNeeded: vi
+    .fn()
+    .mockResolvedValue({ accessToken: 'mock-access-token', refreshed: false }),
+}))
+
 import { generateRouterPrompt, generateRouterV2Prompt } from '@/blocks/blocks/router'
 import { BlockType } from '@/executor/constants'
 import { RouterBlockHandler } from '@/executor/handlers/router/router-handler'
@@ -277,6 +287,7 @@ describe('RouterBlockHandler', () => {
       refreshToken: 'mock-refresh-token',
       expiresAt: new Date(Date.now() + 3600000),
     }
+    ;(mockDb.db.query as any).account = { findFirst: vi.fn() }
     vi.spyOn(mockDb.db.query.account, 'findFirst').mockResolvedValue(mockAccount as any)
 
     await handler.execute(mockContext, mockBlock, inputs)

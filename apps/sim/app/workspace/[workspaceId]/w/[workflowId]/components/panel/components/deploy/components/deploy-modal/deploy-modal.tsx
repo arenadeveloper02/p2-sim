@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -25,6 +25,7 @@ import {
   workflowDeployTabSwitchEvent,
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { runPreDeployChecks } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/use-predeploy-checks'
 import { CreateApiKeyModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/settings-modal/components/api-keys/components'
 import { startsWithUuid } from '@/executor/constants'
 import { useA2AAgentByWorkflow } from '@/hooks/queries/a2a/agents'
@@ -44,6 +45,7 @@ import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsModalStore } from '@/stores/modals/settings/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { mergeSubblockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 import { A2aDeploy } from './components/a2a/a2a'
@@ -74,6 +76,7 @@ interface WorkflowDeploymentInfoUI {
   endpoint: string
   exampleCommand: string
   needsRedeployment: boolean
+  isPublicApi: boolean
 }
 
 type TabView = 'general' | 'api' | 'chat' | 'template' | 'mcp' | 'form' | 'a2a'
@@ -103,8 +106,8 @@ export function DeployModal({
   const workspaceName: string = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
   const [activeTab, setActiveTab] = useState<TabView>('general')
   const [chatSubmitting, setChatSubmitting] = useState(false)
-  const [apiDeployError, setApiDeployError] = useState<string | null>(null)
-  const [apiDeployWarnings, setApiDeployWarnings] = useState<string[]>([])
+  const [deployError, setDeployError] = useState<string | null>(null)
+  const [deployWarnings, setDeployWarnings] = useState<string[]>([])
   const [isChatFormValid, setIsChatFormValid] = useState(false)
   const [selectedStreamingOutputs, setSelectedStreamingOutputs] = useState<string[]>([])
 
@@ -119,12 +122,13 @@ export function DeployModal({
   const [showA2aDeleteConfirm, setShowA2aDeleteConfirm] = useState(false)
 
   const [chatSuccess, setChatSuccess] = useState(false)
+  const chatSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [isCreateKeyModalOpen, setIsCreateKeyModalOpen] = useState(false)
   const [isApiInfoModalOpen, setIsApiInfoModalOpen] = useState(false)
   const userPermissions = useUserPermissionsContext()
   const canManageWorkspaceKeys = userPermissions.canAdmin
-  const { config: permissionConfig } = usePermissionConfig()
+  const { config: permissionConfig, isPublicApiDisabled } = usePermissionConfig()
   const { data: apiKeysData, isLoading: isLoadingKeys } = useApiKeys(workflowWorkspaceId || '')
   const { data: workspaceSettingsData, isLoading: isLoadingSettings } = useWorkspaceSettings(
     workflowWorkspaceId || ''
@@ -144,11 +148,9 @@ export function DeployModal({
     refetch: refetchDeploymentInfo,
   } = useDeploymentInfo(workflowId, { enabled: open && isDeployed })
 
-  const {
-    data: versionsData,
-    isLoading: versionsLoading,
-    refetch: refetchVersions,
-  } = useDeploymentVersions(workflowId, { enabled: open })
+  const { data: versionsData, isLoading: versionsLoading } = useDeploymentVersions(workflowId, {
+    enabled: open,
+  })
 
   const {
     isLoading: isLoadingChat,
@@ -223,9 +225,11 @@ export function DeployModal({
       endpoint,
       exampleCommand: `curl -X POST -H "X-API-Key: ${placeholderKey}" -H "Content-Type: application/json"${inputFormatExample} ${endpoint}`,
       needsRedeployment: deploymentInfoData.needsRedeployment,
+      isPublicApi: isPublicApiDisabled ? false : (deploymentInfoData.isPublicApi ?? false),
     }
   }, [
     deploymentInfoData,
+    isPublicApiDisabled,
     workflowId,
     selectedStreamingOutputs,
     getInputFormatExample,
@@ -236,8 +240,14 @@ export function DeployModal({
   useEffect(() => {
     if (open && workflowId) {
       setActiveTab('general')
-      setApiDeployError(null)
-      setApiDeployWarnings([])
+      setDeployError(null)
+      setDeployWarnings([])
+      setChatSuccess(false)
+    }
+    return () => {
+      if (chatSuccessTimeoutRef.current) {
+        clearTimeout(chatSuccessTimeoutRef.current)
+      }
     }
   }, [open, workflowId])
 
@@ -292,19 +302,19 @@ export function DeployModal({
   const onDeploy = useCallback(async () => {
     if (!workflowId) return
 
-    setApiDeployError(null)
-    setApiDeployWarnings([])
+    setDeployError(null)
+    setDeployWarnings([])
 
     try {
       const result = await deployMutation.mutateAsync({ workflowId, deployChatEnabled: false })
       if (result.warnings && result.warnings.length > 0) {
-        setApiDeployWarnings(result.warnings)
+        setDeployWarnings(result.warnings)
       }
       await refetchDeployedState()
     } catch (error: unknown) {
       logger.error('Error deploying workflow:', { error })
       const errorMessage = error instanceof Error ? error.message : 'Failed to deploy workflow'
-      setApiDeployError(errorMessage)
+      setDeployError(errorMessage)
     }
   }, [workflowId, deployMutation, refetchDeployedState])
 
@@ -312,12 +322,12 @@ export function DeployModal({
     async (version: number) => {
       if (!workflowId) return
 
-      setApiDeployWarnings([])
+      setDeployWarnings([])
 
       try {
         const result = await activateVersionMutation.mutateAsync({ workflowId, version })
         if (result.warnings && result.warnings.length > 0) {
-          setApiDeployWarnings(result.warnings)
+          setDeployWarnings(result.warnings)
         }
         await refetchDeployedState()
       } catch (error) {
@@ -348,41 +358,56 @@ export function DeployModal({
   const handleRedeploy = useCallback(async () => {
     if (!workflowId) return
 
-    setApiDeployError(null)
-    setApiDeployWarnings([])
+    setDeployError(null)
+    setDeployWarnings([])
+
+    const { blocks, edges, loops, parallels } = useWorkflowStore.getState()
+    const liveBlocks = mergeSubblockState(blocks, workflowId)
+    const checkResult = runPreDeployChecks({
+      blocks: liveBlocks,
+      edges,
+      loops,
+      parallels,
+      workflowId,
+    })
+    if (!checkResult.passed) {
+      setDeployError(checkResult.error || 'Pre-deploy validation failed')
+      return
+    }
 
     try {
       const result = await deployMutation.mutateAsync({ workflowId, deployChatEnabled: false })
       if (result.warnings && result.warnings.length > 0) {
-        setApiDeployWarnings(result.warnings)
+        setDeployWarnings(result.warnings)
       }
       await refetchDeployedState()
     } catch (error: unknown) {
       logger.error('Error redeploying workflow:', { error })
       const errorMessage = error instanceof Error ? error.message : 'Failed to redeploy workflow'
-      setApiDeployError(errorMessage)
+      setDeployError(errorMessage)
     }
   }, [workflowId, deployMutation, refetchDeployedState])
 
   const handleCloseModal = useCallback(() => {
     setChatSubmitting(false)
-    setApiDeployError(null)
-    setApiDeployWarnings([])
+    setDeployError(null)
+    setDeployWarnings([])
     onOpenChange(false)
   }, [onOpenChange])
 
   const handleChatDeployed = useCallback(async () => {
     if (!workflowId) return
 
-    queryClient.invalidateQueries({ queryKey: deploymentKeys.info(workflowId) })
     queryClient.invalidateQueries({ queryKey: deploymentKeys.versions(workflowId) })
-    queryClient.invalidateQueries({ queryKey: deploymentKeys.chatStatus(workflowId) })
 
     await refetchDeployedState()
     useWorkflowRegistry.getState().setWorkflowNeedsRedeployment(workflowId, false)
 
+    if (chatSuccessTimeoutRef.current) {
+      clearTimeout(chatSuccessTimeoutRef.current)
+    }
     setChatSuccess(true)
-    setTimeout(() => setChatSuccess(false), 2000)
+    chatSuccessTimeoutRef.current = setTimeout(() => setChatSuccess(false), 2000)
   }, [workflowId, queryClient, refetchDeployedState])
 
   const handleRefetchChat = useCallback(async () => {
@@ -399,14 +424,15 @@ export function DeployModal({
       'Workflow Name': workflowMetadata?.name || '',
       'Workflow ID': workflowId || '',
     })
-    if (form) {
-      const updateTrigger = form.querySelector('[data-update-trigger]') as HTMLButtonElement
-      if (updateTrigger) {
-        updateTrigger.click()
-      } else {
-        form.requestSubmit()
-      }
-    }
+    // if (form) {
+    //   const updateTrigger = form.querySelector('[data-update-trigger]') as HTMLButtonElement
+    //   if (updateTrigger) {
+    //     updateTrigger.click()
+    //   } else {
+    //     form.requestSubmit()
+    //   }
+    // }
+    form?.requestSubmit()
   }, [])
 
   const handleChatDelete = useCallback(() => {
@@ -486,10 +512,6 @@ export function DeployModal({
     deleteTrigger?.click()
   }, [])
 
-  const handleFetchVersions = useCallback(async () => {
-    await refetchVersions()
-  }, [refetchVersions])
-
   const isSubmitting = deployMutation.isPending
   const isUndeploying = undeployMutation.isPending
 
@@ -530,17 +552,23 @@ export function DeployModal({
             </ModalTabsList>
 
             <ModalBody className='min-h-0 flex-1'>
-              {apiDeployError && (
-                <div className='mb-3 rounded-[4px] border border-destructive/30 bg-destructive/10 p-3 text-destructive text-sm'>
-                  <div className='font-semibold'>Deployment Error</div>
-                  <div>{apiDeployError}</div>
-                </div>
-              )}
-              {apiDeployWarnings.length > 0 && (
-                <div className='mb-3 rounded-[4px] border border-amber-500/30 bg-amber-500/10 p-3 text-amber-700 text-sm dark:text-amber-400'>
-                  <div className='font-semibold'>Deployment Warning</div>
-                  {apiDeployWarnings.map((warning, index) => (
-                    <div key={index}>{warning}</div>
+              {(deployError || deployWarnings.length > 0) && (
+                <div className='mb-3 flex flex-col gap-2'>
+                  {deployError && (
+                    <Badge variant='red' size='lg' dot className='max-w-full truncate'>
+                      {deployError}
+                    </Badge>
+                  )}
+                  {deployWarnings.map((warning, index) => (
+                    <Badge
+                      key={index}
+                      variant='amber'
+                      size='lg'
+                      dot
+                      className='max-w-full truncate'
+                    >
+                      {warning}
+                    </Badge>
                   ))}
                 </div>
               )}
@@ -553,7 +581,6 @@ export function DeployModal({
                   versionsLoading={versionsLoading}
                   onPromoteToLive={handlePromoteToLive}
                   onLoadDeploymentComplete={handleCloseModal}
-                  fetchVersions={handleFetchVersions}
                 />
               </ModalTabsContent>
 
@@ -563,7 +590,6 @@ export function DeployModal({
                   deploymentInfo={deploymentInfo}
                   isLoading={isLoadingDeploymentInfo}
                   needsRedeployment={needsRedeployment}
-                  apiDeployError={apiDeployError}
                   getInputFormatExample={getInputFormatExample}
                   selectedStreamingOutputs={selectedStreamingOutputs}
                   onSelectedStreamingOutputsChange={setSelectedStreamingOutputs}

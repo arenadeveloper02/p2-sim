@@ -70,23 +70,38 @@ export class EdgeManager {
       }
     }
 
+    const isDeadEnd = activatedTargets.length === 0
+    const isRoutedDeadEnd = isDeadEnd && !!(output.selectedOption || output.selectedRoute)
+
     for (const targetId of cascadeTargets) {
       if (!readyNodes.includes(targetId) && !activatedTargets.includes(targetId)) {
-        if (this.isTargetReady(targetId)) {
+        if (!isDeadEnd || !this.isTargetReady(targetId)) continue
+
+        if (isRoutedDeadEnd) {
+          // A condition/router deliberately selected a dead-end path.
+          // Only queue the sentinel if it belongs to the SAME subflow as the
+          // current node (the condition is inside the loop/parallel and the
+          // loop still needs to continue/exit). Downstream subflow sentinels
+          // should NOT fire.
+          if (this.isEnclosingSentinel(node, targetId)) {
+            readyNodes.push(targetId)
+          }
+        } else {
           readyNodes.push(targetId)
         }
       }
     }
 
-    // Check if any deactivation targets that previously received an activated edge are now ready
-    for (const { target } of edgesToDeactivate) {
-      if (
-        !readyNodes.includes(target) &&
-        !activatedTargets.includes(target) &&
-        this.nodesWithActivatedEdge.has(target) &&
-        this.isTargetReady(target)
-      ) {
-        readyNodes.push(target)
+    if (output.selectedRoute !== EDGE.LOOP_EXIT && output.selectedRoute !== EDGE.PARALLEL_EXIT) {
+      for (const { target } of edgesToDeactivate) {
+        if (
+          !readyNodes.includes(target) &&
+          !activatedTargets.includes(target) &&
+          this.nodesWithActivatedEdge.has(target) &&
+          this.isTargetReady(target)
+        ) {
+          readyNodes.push(target)
+        }
       }
     }
 
@@ -176,6 +191,26 @@ export class EdgeManager {
 
     // All incoming connections are deactivated
     return true
+  }
+  /**
+   * Checks if the cascade target sentinel belongs to the same subflow as the source node.
+   * A condition inside a loop that hits a dead-end should still allow the enclosing
+   * loop's sentinel to fire so the loop can continue or exit.
+   */
+  private isEnclosingSentinel(sourceNode: DAGNode, sentinelId: string): boolean {
+    const sentinel = this.dag.nodes.get(sentinelId)
+    if (!sentinel?.metadata.isSentinel) return false
+
+    const sourceLoopId = sourceNode.metadata.loopId
+    const sourceParallelId = sourceNode.metadata.parallelId
+    const sentinelLoopId = sentinel.metadata.loopId
+    const sentinelParallelId = sentinel.metadata.parallelId
+
+    if (sourceLoopId && sentinelLoopId && sourceLoopId === sentinelLoopId) return true
+    if (sourceParallelId && sentinelParallelId && sourceParallelId === sentinelParallelId)
+      return true
+
+    return false
   }
 
   private isLoopEdge(handle?: string): boolean {
@@ -318,7 +353,7 @@ export class EdgeManager {
     }
 
     for (const [, outgoingEdge] of targetNode.outgoingEdges) {
-      if (!this.isControlEdge(outgoingEdge.sourceHandle)) {
+      if (!this.isBackwardsEdge(outgoingEdge.sourceHandle)) {
         this.deactivateEdgeAndDescendants(
           targetId,
           outgoingEdge.target,

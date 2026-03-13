@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { isDev } from '@/lib/core/config/feature-flags'
 import { encryptSecret } from '@/lib/core/security/encryption'
@@ -321,6 +322,20 @@ export async function POST(request: NextRequest) {
       } catch (_e) {
         // Silently fail
       }
+
+      recordAudit({
+        workspaceId: workflowRecord.workspaceId || null,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        actorEmail: session.user.email,
+        action: AuditAction.CHAT_DEPLOYED,
+        resourceType: AuditResourceType.CHAT,
+        resourceId: chatId,
+        resourceName: title,
+        description: `Deployed chat "${title}"`,
+        metadata: { workflowId, identifier, authType },
+        request,
+      })
 
       return createSuccessResponse({
         id: chatId,

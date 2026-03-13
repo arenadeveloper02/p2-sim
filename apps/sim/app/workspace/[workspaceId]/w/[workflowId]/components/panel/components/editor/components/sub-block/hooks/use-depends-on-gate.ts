@@ -178,5 +178,6 @@ export function useDependsOnGate(
     blocked,
     finalDisabled,
     dependencyValues: dependencyValuesMap,
+    canonicalIndex,
   }
 }

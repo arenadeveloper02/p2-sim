@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
           workflowDeploymentVersion,
           eq(workflowDeploymentVersion.id, workflowExecutionLogs.deploymentVersionId)
         )
-        .innerJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
+        .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
         .innerJoin(
           permissions,
           and(
@@ -192,7 +192,7 @@ export async function GET(request: NextRequest) {
           pausedExecutions,
           eq(pausedExecutions.executionId, workflowExecutionLogs.executionId)
         )
-        .innerJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
+        .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
         .innerJoin(
           permissions,
           and(
@@ -316,17 +316,19 @@ export async function GET(request: NextRequest) {
           } catch {}
         }
 
-        const workflowSummary = {
-          id: log.workflowId,
-          name: log.workflowName,
-          description: log.workflowDescription,
-          color: log.workflowColor,
-          folderId: log.workflowFolderId,
-          userId: log.workflowUserId,
-          workspaceId: log.workflowWorkspaceId,
-          createdAt: log.workflowCreatedAt,
-          updatedAt: log.workflowUpdatedAt,
-        }
+        const workflowSummary = log.workflowId
+          ? {
+              id: log.workflowId,
+              name: log.workflowName,
+              description: log.workflowDescription,
+              color: log.workflowColor,
+              folderId: log.workflowFolderId,
+              userId: log.workflowUserId,
+              workspaceId: log.workflowWorkspaceId,
+              createdAt: log.workflowCreatedAt,
+              updatedAt: log.workflowUpdatedAt,
+            }
+          : null
 
         return {
           id: log.id,

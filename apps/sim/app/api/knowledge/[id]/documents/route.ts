@@ -2,7 +2,9 @@ import { randomUUID } from 'crypto'
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import {
   bulkDocumentOperation,
   bulkDocumentOperationByFilter,
@@ -13,7 +15,7 @@ import {
   processDocumentsWithQueue,
 } from '@/lib/knowledge/documents/service'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
-import { getUserId } from '@/app/api/auth/oauth/utils'
+import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import { checkKnowledgeBaseAccess, checkKnowledgeBaseWriteAccess } from '@/app/api/knowledge/utils'
 
 const logger = createLogger('DocumentsAPI')
@@ -170,16 +172,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       bodyKeys: Object.keys(body),
     })
 
-    const userId = await getUserId(requestId, workflowId)
-
-    if (!userId) {
-      const errorMessage = workflowId ? 'Workflow not found' : 'Unauthorized'
-      const statusCode = workflowId ? 404 : 401
-      logger.warn(`[${requestId}] Authentication failed: ${errorMessage}`, {
+    const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
+    if (!auth.success || !auth.userId) {
+      logger.warn(`[${requestId}] Authentication failed: ${auth.error || 'Unauthorized'}`, {
         workflowId,
         hasWorkflowId: !!workflowId,
       })
-      return NextResponse.json({ error: errorMessage }, { status: statusCode })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = auth.userId
+
+    if (workflowId) {
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId,
+        userId,
+        action: 'write',
+      })
+      if (!authorization.allowed) {
+        return NextResponse.json(
+          { error: authorization.message || 'Access denied' },
+          { status: authorization.status }
+        )
+      }
     }
 
     const accessCheck = await checkKnowledgeBaseWriteAccess(knowledgeBaseId, userId)
@@ -231,6 +245,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           logger.error(`[${requestId}] Critical error in document processing pipeline:`, error)
         })
 
+        recordAudit({
+          workspaceId: accessCheck.knowledgeBase?.workspaceId ?? null,
+          actorId: userId,
+          actorName: auth.userName,
+          actorEmail: auth.userEmail,
+          action: AuditAction.DOCUMENT_UPLOADED,
+          resourceType: AuditResourceType.DOCUMENT,
+          resourceId: knowledgeBaseId,
+          resourceName: `${createdDocuments.length} document(s)`,
+          description: `Uploaded ${createdDocuments.length} document(s) to knowledge base "${knowledgeBaseId}"`,
+          metadata: {
+            fileCount: createdDocuments.length,
+            fileNames: createdDocuments.map((doc) => doc.filename),
+          },
+          request: req,
+        })
+
         return NextResponse.json({
           success: true,
           data: {
@@ -278,6 +309,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         } catch (_e) {
           // Silently fail
         }
+
+        recordAudit({
+          workspaceId: accessCheck.knowledgeBase?.workspaceId ?? null,
+          actorId: userId,
+          actorName: auth.userName,
+          actorEmail: auth.userEmail,
+          action: AuditAction.DOCUMENT_UPLOADED,
+          resourceType: AuditResourceType.DOCUMENT,
+          resourceId: knowledgeBaseId,
+          resourceName: validatedData.filename,
+          description: `Uploaded document "${validatedData.filename}" to knowledge base "${knowledgeBaseId}"`,
+          metadata: {
+            fileName: validatedData.filename,
+            fileType: validatedData.mimeType,
+            fileSize: validatedData.fileSize,
+          },
+          request: req,
+        })
 
         return NextResponse.json({
           success: true,

@@ -7,10 +7,10 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { GithubIcon } from '@/components/icons'
-import { useBrandConfig } from '@/lib/branding/branding'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { soehne } from '@/app/_styles/fonts/soehne/soehne'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
+import { useBrandConfig } from '@/ee/whitelabeling'
 import { useBrandedButtonClass } from '@/hooks/use-branded-button-class'
 
 const logger = createLogger('nav')
@@ -91,12 +91,14 @@ export default function Nav({ hideAuthButtons = false, variant = 'landing' }: Na
         </button>
       </li>
       <li>
-        <Link
-          href='/careers'
+        <a
+          href='https://jobs.ashbyhq.com/sim'
+          target='_blank'
+          rel='noopener noreferrer'
           className='text-[16px] text-muted-foreground transition-colors hover:text-foreground'
         >
           Careers
-        </Link>
+        </a>
       </li>
       <li>
         <a

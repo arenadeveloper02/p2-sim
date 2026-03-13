@@ -2,7 +2,30 @@ import { createLogger } from '@sim/logger'
 import { create } from 'zustand'
 import type { OperationQueueState, QueuedOperation } from './types'
 
+function isBlockStillPresent(blockId: string | undefined): boolean {
+  if (!blockId) return true
+  try {
+    const { useWorkflowStore } = require('@/stores/workflows/workflow/store')
+    return Boolean(useWorkflowStore.getState().blocks[blockId])
+  } catch {
+    return true
+  }
+}
+
 const logger = createLogger('OperationQueue')
+
+/** Timeout for subblock/variable operations before considering them failed */
+const SUBBLOCK_VARIABLE_TIMEOUT_MS = 15000
+/** Timeout for structural operations before considering them failed */
+const STRUCTURAL_TIMEOUT_MS = 5000
+/** Maximum retry attempts for subblock/variable operations */
+const SUBBLOCK_VARIABLE_MAX_RETRIES = 5
+/** Maximum retry attempts for structural operations */
+const STRUCTURAL_MAX_RETRIES = 3
+/** Maximum retry delay cap for subblock/variable operations */
+const SUBBLOCK_VARIABLE_MAX_RETRY_DELAY_MS = 3000
+/** Base retry delay multiplier (1s, 2s, 3s for linear) */
+const RETRY_DELAY_BASE_MS = 1000
 
 const retryTimeouts = new Map<string, NodeJS.Timeout>()
 const operationTimeouts = new Map<string, NodeJS.Timeout>()
@@ -11,16 +34,40 @@ let emitWorkflowOperation:
   | ((operation: string, target: string, payload: any, operationId?: string) => void)
   | null = null
 let emitSubblockUpdate:
-  | ((blockId: string, subblockId: string, value: any, operationId?: string) => void)
+  | ((
+      blockId: string,
+      subblockId: string,
+      value: any,
+      operationId: string | undefined,
+      workflowId: string
+    ) => void)
   | null = null
 let emitVariableUpdate:
-  | ((variableId: string, field: string, value: any, operationId?: string) => void)
+  | ((
+      variableId: string,
+      field: string,
+      value: any,
+      operationId: string | undefined,
+      workflowId: string
+    ) => void)
   | null = null
 
 export function registerEmitFunctions(
   workflowEmit: (operation: string, target: string, payload: any, operationId?: string) => void,
-  subblockEmit: (blockId: string, subblockId: string, value: any, operationId?: string) => void,
-  variableEmit: (variableId: string, field: string, value: any, operationId?: string) => void,
+  subblockEmit: (
+    blockId: string,
+    subblockId: string,
+    value: any,
+    operationId: string | undefined,
+    workflowId: string
+  ) => void,
+  variableEmit: (
+    variableId: string,
+    field: string,
+    value: any,
+    operationId: string | undefined,
+    workflowId: string
+  ) => void,
   workflowId: string | null
 ) {
   emitWorkflowOperation = workflowEmit
@@ -183,14 +230,30 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
     }
 
     if (!retryable) {
-      logger.debug('Operation marked as non-retryable, removing from queue', { operationId })
+      const targetBlockId = operation.operation.payload?.blockId || operation.operation.payload?.id
+      if (targetBlockId && !isBlockStillPresent(targetBlockId)) {
+        logger.debug('Dropping failed operation for deleted block', {
+          operationId,
+          blockId: targetBlockId,
+        })
+        set((s) => ({
+          operations: s.operations.filter((op) => op.id !== operationId),
+          isProcessing: false,
+        }))
+        get().processNextOperation()
+        return
+      }
 
-      set((state) => ({
-        operations: state.operations.filter((op) => op.id !== operationId),
-        isProcessing: false,
-      }))
+      logger.error(
+        'Operation failed with non-retryable error - state out of sync, triggering offline mode',
+        {
+          operationId,
+          operation: operation.operation.operation,
+          target: operation.operation.target,
+        }
+      )
 
-      get().processNextOperation()
+      get().triggerOfflineMode()
       return
     }
 
@@ -200,14 +263,14 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
       (operation.operation.operation === 'variable-update' &&
         operation.operation.target === 'variable')
 
-    const maxRetries = isSubblockOrVariable ? 5 : 3 // 5 retries for text, 3 for structural
+    const maxRetries = isSubblockOrVariable ? SUBBLOCK_VARIABLE_MAX_RETRIES : STRUCTURAL_MAX_RETRIES
 
     if (operation.retryCount < maxRetries) {
       const newRetryCount = operation.retryCount + 1
       // Faster retries for subblock/variable, exponential for structural
       const delay = isSubblockOrVariable
-        ? Math.min(1000 * newRetryCount, 3000) // 1s, 2s, 3s, 3s, 3s (cap at 3s)
-        : 2 ** newRetryCount * 1000 // 2s, 4s, 8s (exponential for structural)
+        ? Math.min(RETRY_DELAY_BASE_MS * newRetryCount, SUBBLOCK_VARIABLE_MAX_RETRY_DELAY_MS)
+        : 2 ** newRetryCount * RETRY_DELAY_BASE_MS
 
       logger.warn(
         `Operation failed, retrying in ${delay}ms (attempt ${newRetryCount}/${maxRetries})`,
@@ -292,11 +355,23 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
     const { operation: op, target, payload } = nextOperation.operation
     if (op === 'subblock-update' && target === 'subblock') {
       if (emitSubblockUpdate) {
-        emitSubblockUpdate(payload.blockId, payload.subblockId, payload.value, nextOperation.id)
+        emitSubblockUpdate(
+          payload.blockId,
+          payload.subblockId,
+          payload.value,
+          nextOperation.id,
+          nextOperation.workflowId
+        )
       }
     } else if (op === 'variable-update' && target === 'variable') {
       if (emitVariableUpdate) {
-        emitVariableUpdate(payload.variableId, payload.field, payload.value, nextOperation.id)
+        emitVariableUpdate(
+          payload.variableId,
+          payload.field,
+          payload.value,
+          nextOperation.id,
+          nextOperation.workflowId
+        )
       }
     } else {
       if (emitWorkflowOperation) {
@@ -309,7 +384,9 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
         nextOperation.operation.target === 'subblock') ||
       (nextOperation.operation.operation === 'variable-update' &&
         nextOperation.operation.target === 'variable')
-    const timeoutDuration = isSubblockOrVariable ? 15000 : 5000 // 15s for text edits, 5s for structural ops
+    const timeoutDuration = isSubblockOrVariable
+      ? SUBBLOCK_VARIABLE_TIMEOUT_MS
+      : STRUCTURAL_TIMEOUT_MS
 
     const timeoutId = setTimeout(() => {
       logger.warn(`Operation timeout - no server response after ${timeoutDuration}ms`, {

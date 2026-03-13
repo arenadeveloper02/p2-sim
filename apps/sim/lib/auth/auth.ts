@@ -11,10 +11,12 @@ import {
   customSession,
   emailOTP,
   genericOAuth,
+  jwt,
+  oidcProvider,
   oneTimeToken,
   organization,
 } from 'better-auth/plugins'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import Stripe from 'stripe'
 import {
@@ -23,6 +25,12 @@ import {
   renderPasswordResetEmail,
   renderWelcomeEmail,
 } from '@/components/emails'
+import {
+  evictCachedMetadata,
+  isMetadataUrl,
+  resolveClientMetadata,
+  upsertCimdClient,
+} from '@/lib/auth/cimd'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
 import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
 import { handleNewUser } from '@/lib/billing/core/usage'
@@ -30,7 +38,7 @@ import {
   ensureOrganizationForTeamSubscription,
   syncSubscriptionUsageLimits,
 } from '@/lib/billing/organization'
-import { getPlans } from '@/lib/billing/plans'
+import { getPlans, resolvePlanFromStripeSubscription } from '@/lib/billing/plans'
 import { syncSeatsFromStripeQuantity } from '@/lib/billing/validation/seat-management'
 import { handleChargeDispute, handleDisputeClosed } from '@/lib/billing/webhooks/disputes'
 import { handleManualEnterpriseSubscription } from '@/lib/billing/webhooks/enterprise'
@@ -55,16 +63,21 @@ import {
 } from '@/lib/core/config/feature-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import {
+  handleCreateCredentialFromDraft,
+  handleReconnectCredential,
+} from '@/lib/credentials/draft-hooks'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
+import { SSO_TRUSTED_PROVIDERS } from '@/ee/sso/constants'
 import { createAnonymousSession, ensureAnonymousUserExists } from './anonymous'
-import { SSO_TRUSTED_PROVIDERS } from './sso/constants'
 
 const logger = createLogger('Auth')
 
 import { getMicrosoftRefreshTokenExpiry, isMicrosoftProvider } from '@/lib/oauth/microsoft'
+import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
 
 const validStripeKey = env.STRIPE_SECRET_KEY
 
@@ -80,6 +93,8 @@ export const auth = betterAuth({
   trustedOrigins: [
     getBaseUrl(),
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
+    'https://claude.ai',
+    'https://claude.com',
   ].filter(Boolean),
   database: drizzleAdapter(db, {
     provider: 'pg',
@@ -150,112 +165,150 @@ export const auth = betterAuth({
     account: {
       create: {
         before: async (account) => {
-          // Only one credential per (userId, providerId) is allowed
-          // If user reconnects (even with a different external account), replace the existing one
-          const existing = await db.query.account.findFirst({
-            where: and(
-              eq(schema.account.userId, account.userId),
-              eq(schema.account.providerId, account.providerId)
-            ),
-          })
+          const modifiedAccount = { ...account }
 
-          if (existing) {
-            let scopeToStore = account.scope
-
-            if (account.providerId === 'salesforce' && account.accessToken) {
-              try {
-                const response = await fetch(
-                  'https://login.salesforce.com/services/oauth2/userinfo',
-                  {
-                    headers: {
-                      Authorization: `Bearer ${account.accessToken}`,
-                    },
-                  }
-                )
-
-                if (response.ok) {
-                  const data = await response.json()
-
-                  if (data.profile) {
-                    const match = data.profile.match(/^(https:\/\/[^/]+)/)
-                    if (match && match[1] !== 'https://login.salesforce.com') {
-                      const instanceUrl = match[1]
-                      scopeToStore = `__sf_instance__:${instanceUrl} ${account.scope}`
-                    }
-                  }
+          if (account.providerId === 'salesforce' && account.accessToken) {
+            try {
+              const response = await fetch(
+                'https://login.salesforce.com/services/oauth2/userinfo',
+                {
+                  headers: {
+                    Authorization: `Bearer ${account.accessToken}`,
+                  },
                 }
-              } catch (error) {
-                logger.error('Failed to fetch Salesforce instance URL', { error })
-              }
-            }
-
-            const refreshTokenExpiresAt = isMicrosoftProvider(account.providerId)
-              ? getMicrosoftRefreshTokenExpiry()
-              : account.refreshTokenExpiresAt
-
-            await db
-              .update(schema.account)
-              .set({
-                accountId: account.accountId,
-                accessToken: account.accessToken,
-                refreshToken: account.refreshToken,
-                idToken: account.idToken,
-                accessTokenExpiresAt: account.accessTokenExpiresAt,
-                refreshTokenExpiresAt,
-                scope: scopeToStore,
-                updatedAt: new Date(),
-              })
-              .where(eq(schema.account.id, existing.id))
-
-            // Sync webhooks for credential sets after reconnecting
-            const requestId = crypto.randomUUID().slice(0, 8)
-            const userMemberships = await db
-              .select({
-                credentialSetId: schema.credentialSetMember.credentialSetId,
-                providerId: schema.credentialSet.providerId,
-              })
-              .from(schema.credentialSetMember)
-              .innerJoin(
-                schema.credentialSet,
-                eq(schema.credentialSetMember.credentialSetId, schema.credentialSet.id)
-              )
-              .where(
-                and(
-                  eq(schema.credentialSetMember.userId, account.userId),
-                  eq(schema.credentialSetMember.status, 'active')
-                )
               )
 
-            for (const membership of userMemberships) {
-              if (membership.providerId === account.providerId) {
-                try {
-                  await syncAllWebhooksForCredentialSet(membership.credentialSetId, requestId)
-                  logger.info(
-                    '[account.create.before] Synced webhooks after credential reconnect',
-                    {
-                      credentialSetId: membership.credentialSetId,
-                      providerId: account.providerId,
-                    }
-                  )
-                } catch (error) {
-                  logger.error(
-                    '[account.create.before] Failed to sync webhooks after credential reconnect',
-                    {
-                      credentialSetId: membership.credentialSetId,
-                      providerId: account.providerId,
-                      error,
-                    }
-                  )
+              if (response.ok) {
+                const data = await response.json()
+
+                if (data.profile) {
+                  const match = data.profile.match(/^(https:\/\/[^/]+)/)
+                  if (match && match[1] !== 'https://login.salesforce.com') {
+                    const instanceUrl = match[1]
+                    modifiedAccount.scope = `__sf_instance__:${instanceUrl} ${account.scope}`
+                  }
                 }
               }
+            } catch (error) {
+              logger.error('Failed to fetch Salesforce instance URL', { error })
             }
-
-            return false
           }
 
-          return { data: account }
+          if (isMicrosoftProvider(account.providerId)) {
+            modifiedAccount.refreshTokenExpiresAt = getMicrosoftRefreshTokenExpiry()
+          }
+
+          return { data: modifiedAccount }
         },
         after: async (account) => {
+          /**
+           * Migrate credentials from stale account rows to the newly created one.
+           *
+           * Each getUserInfo appends a random UUID to the stable external ID so
+           * that Better Auth never blocks cross-user connections. This means
+           * re-connecting the same external identity creates a new row. We detect
+           * the stale siblings here by comparing the stable prefix (everything
+           * before the trailing UUID), migrate any credential FKs to the new row,
+           * then delete the stale rows.
+           */
+          try {
+            const UUID_SUFFIX_RE = /-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+            const stablePrefix = account.accountId.replace(UUID_SUFFIX_RE, '')
+
+            if (stablePrefix && stablePrefix !== account.accountId) {
+              const siblings = await db
+                .select({ id: schema.account.id, accountId: schema.account.accountId })
+                .from(schema.account)
+                .where(
+                  and(
+                    eq(schema.account.userId, account.userId),
+                    eq(schema.account.providerId, account.providerId),
+                    sql`${schema.account.id} != ${account.id}`
+                  )
+                )
+
+              const staleRows = siblings.filter(
+                (row) => row.accountId.replace(UUID_SUFFIX_RE, '') === stablePrefix
+              )
+
+              if (staleRows.length > 0) {
+                const staleIds = staleRows.map((row) => row.id)
+
+                await db
+                  .update(schema.credential)
+                  .set({ accountId: account.id })
+                  .where(inArray(schema.credential.accountId, staleIds))
+
+                await db.delete(schema.account).where(inArray(schema.account.id, staleIds))
+
+                logger.info('[account.create.after] Migrated credentials from stale accounts', {
+                  userId: account.userId,
+                  providerId: account.providerId,
+                  newAccountId: account.id,
+                  migratedFrom: staleIds,
+                })
+              }
+            }
+          } catch (error) {
+            logger.error('[account.create.after] Failed to clean up stale accounts', {
+              userId: account.userId,
+              providerId: account.providerId,
+              error,
+            })
+          }
+
+          /**
+           * If a pending credential draft exists for this (userId, providerId),
+           * either create a new credential or reconnect an existing one.
+           *
+           * - draft.credentialId is null: create a new credential (normal connect flow)
+           * - draft.credentialId is set: update existing credential's accountId (reconnect flow)
+           */
+          try {
+            const [draft] = await db
+              .select()
+              .from(schema.pendingCredentialDraft)
+              .where(
+                and(
+                  eq(schema.pendingCredentialDraft.userId, account.userId),
+                  eq(schema.pendingCredentialDraft.providerId, account.providerId),
+                  sql`${schema.pendingCredentialDraft.expiresAt} > NOW()`
+                )
+              )
+              .limit(1)
+
+            if (draft) {
+              const now = new Date()
+
+              if (draft.credentialId) {
+                await handleReconnectCredential({
+                  draft,
+                  newAccountId: account.id,
+                  workspaceId: draft.workspaceId,
+                  now,
+                })
+              } else {
+                await handleCreateCredentialFromDraft({
+                  draft,
+                  accountId: account.id,
+                  providerId: account.providerId,
+                  userId: account.userId,
+                  now,
+                })
+              }
+
+              await db
+                .delete(schema.pendingCredentialDraft)
+                .where(eq(schema.pendingCredentialDraft.id, draft.id))
+            }
+          } catch (error) {
+            logger.error('[account.create.after] Failed to process credential draft', {
+              userId: account.userId,
+              providerId: account.providerId,
+              error,
+            })
+          }
+
           try {
             const { ensureUserStatsExists } = await import('@/lib/billing/core/usage')
             await ensureUserStatsExists(account.userId)
@@ -428,14 +481,19 @@ export const auth = betterAuth({
         'spotify',
         'google-email',
         'google-calendar',
+        'google-contacts',
         'google-drive',
         'google-docs',
         'google-sheets',
         'google-forms',
+        'google-bigquery',
         'google-vault',
         'google-groups',
+        'google-meet',
+        'google-tasks',
         'vertex-ai',
         'github-repo',
+        'microsoft-dataverse',
         'microsoft-teams',
         'microsoft-excel',
         'microsoft-planner',
@@ -450,8 +508,10 @@ export const auth = betterAuth({
         'zoom',
         'wordpress',
         'linear',
+        'attio',
         'shopify',
         'trello',
+        'calcom',
         ...SSO_TRUSTED_PROVIDERS,
       ],
     },
@@ -523,6 +583,17 @@ export const auth = betterAuth({
         throw new Error(`Failed to send reset password email: ${result.message}`)
       }
     },
+    onPasswordReset: async ({ user: resetUser }) => {
+      const { AuditAction, AuditResourceType, recordAudit } = await import('@/lib/audit/log')
+      recordAudit({
+        actorId: resetUser.id,
+        actorName: resetUser.name,
+        actorEmail: resetUser.email,
+        action: AuditAction.PASSWORD_RESET,
+        resourceType: AuditResourceType.PASSWORD,
+        description: 'Password reset completed',
+      })
+    },
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
@@ -565,11 +636,51 @@ export const auth = betterAuth({
         }
       }
 
+      if (ctx.path === '/oauth2/authorize' || ctx.path === '/oauth2/token') {
+        const clientId = (ctx.query?.client_id ?? ctx.body?.client_id) as string | undefined
+        if (clientId && isMetadataUrl(clientId)) {
+          try {
+            const { metadata, fromCache } = await resolveClientMetadata(clientId)
+            if (!fromCache) {
+              try {
+                await upsertCimdClient(metadata)
+              } catch (upsertErr) {
+                evictCachedMetadata(clientId)
+                throw upsertErr
+              }
+            }
+          } catch (err) {
+            logger.warn('CIMD resolution failed', {
+              clientId,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }
+      }
+
       return
     }),
   },
   plugins: [
     nextCookies(),
+    jwt({
+      jwks: {
+        keyPairConfig: { alg: 'RS256' },
+      },
+      disableSettingJwtHeader: true,
+    }),
+    oidcProvider({
+      loginPage: '/login',
+      consentPage: '/oauth/consent',
+      requirePKCE: true,
+      allowPlainCodeChallengeMethod: false,
+      allowDynamicClientRegistration: true,
+      useJWTPlugin: true,
+      scopes: ['openid', 'profile', 'email', 'offline_access', 'mcp:tools'],
+      metadata: {
+        client_id_metadata_document_supported: true,
+      } as Record<string, unknown>,
+    }),
     oneTimeToken({
       expiresIn: 24 * 60 * 60, // 24 hours - Socket.IO handles connection persistence with heartbeats
     }),
@@ -652,7 +763,7 @@ export const auth = betterAuth({
           prompt: 'consent',
           tokenUrl: 'https://github.com/login/oauth/access_token',
           userInfoUrl: 'https://api.github.com/user',
-          scopes: ['user:email', 'repo', 'read:user', 'workflow'],
+          scopes: getCanonicalScopesForProvider('github-repo'),
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/github-repo`,
           getUserInfo: async (tokens) => {
             try {
@@ -664,6 +775,7 @@ export const auth = betterAuth({
               })
 
               if (!profileResponse.ok) {
+                await profileResponse.text().catch(() => {})
                 logger.error('Failed to fetch GitHub profile', {
                   status: profileResponse.status,
                   statusText: profileResponse.statusText,
@@ -726,13 +838,7 @@ export const auth = betterAuth({
           clientSecret: env.GOOGLE_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/gmail.send',
-            'https://www.googleapis.com/auth/gmail.modify',
-            'https://www.googleapis.com/auth/gmail.labels',
-          ],
+          scopes: getCanonicalScopesForProvider('google-email'),
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-email`,
           getUserInfo: async (tokens) => {
@@ -741,6 +847,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Google user info', { status: response.status })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
@@ -767,11 +874,7 @@ export const auth = betterAuth({
           clientSecret: env.GOOGLE_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/calendar',
-          ],
+          scopes: getCanonicalScopesForProvider('google-calendar'),
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-calendar`,
           getUserInfo: async (tokens) => {
@@ -780,6 +883,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Google user info', { status: response.status })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
@@ -806,12 +910,7 @@ export const auth = betterAuth({
           clientSecret: env.GOOGLE_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/drive.file',
-            'https://www.googleapis.com/auth/drive',
-          ],
+          scopes: getCanonicalScopesForProvider('google-drive'),
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-drive`,
           getUserInfo: async (tokens) => {
@@ -820,6 +919,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Google user info', { status: response.status })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
@@ -846,12 +946,7 @@ export const auth = betterAuth({
           clientSecret: env.GOOGLE_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/drive.file',
-            'https://www.googleapis.com/auth/drive',
-          ],
+          scopes: getCanonicalScopesForProvider('google-docs'),
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-docs`,
           getUserInfo: async (tokens) => {
@@ -860,6 +955,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Google user info', { status: response.status })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
@@ -886,12 +982,7 @@ export const auth = betterAuth({
           clientSecret: env.GOOGLE_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/drive.file',
-            'https://www.googleapis.com/auth/drive',
-          ],
+          scopes: getCanonicalScopesForProvider('google-sheets'),
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-sheets`,
           getUserInfo: async (tokens) => {
@@ -900,6 +991,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Google user info', { status: response.status })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
@@ -922,26 +1014,21 @@ export const auth = betterAuth({
         },
 
         {
-          providerId: 'google-forms',
+          providerId: 'google-contacts',
           clientId: env.GOOGLE_CLIENT_ID as string,
           clientSecret: env.GOOGLE_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/drive',
-            'https://www.googleapis.com/auth/forms.body',
-            'https://www.googleapis.com/auth/forms.responses.readonly',
-          ],
+          scopes: getCanonicalScopesForProvider('google-contacts'),
           prompt: 'consent',
-          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-forms`,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-contacts`,
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Google user info', { status: response.status })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
@@ -963,17 +1050,85 @@ export const auth = betterAuth({
           },
         },
         {
+          providerId: 'google-forms',
+          clientId: env.GOOGLE_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
+          accessType: 'offline',
+          scopes: getCanonicalScopesForProvider('google-forms'),
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-forms`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+                headers: { Authorization: `Bearer ${tokens.accessToken}` },
+              })
+              if (!response.ok) {
+                await response.text().catch(() => {})
+                logger.error('Failed to fetch Google user info', { status: response.status })
+                throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
+              }
+              const profile = await response.json()
+              const now = new Date()
+              return {
+                id: `${profile.sub}-${crypto.randomUUID()}`,
+                name: profile.name || 'Google User',
+                email: profile.email,
+                image: profile.picture || undefined,
+                emailVerified: profile.email_verified || false,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Google getUserInfo', { error })
+              throw error
+            }
+          },
+        },
+        {
+          providerId: 'google-bigquery',
+          clientId: env.GOOGLE_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
+          accessType: 'offline',
+          scopes: getCanonicalScopesForProvider('google-bigquery'),
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-bigquery`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+                headers: { Authorization: `Bearer ${tokens.accessToken}` },
+              })
+              if (!response.ok) {
+                await response.text().catch(() => {})
+                logger.error('Failed to fetch Google user info', { status: response.status })
+                throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
+              }
+              const profile = await response.json()
+              const now = new Date()
+              return {
+                id: `${profile.sub}-${crypto.randomUUID()}`,
+                name: profile.name || 'Google User',
+                email: profile.email,
+                image: profile.picture || undefined,
+                emailVerified: profile.email_verified || false,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Google getUserInfo', { error })
+              throw error
+            }
+          },
+        },
+
+        {
           providerId: 'google-vault',
           clientId: env.GOOGLE_CLIENT_ID as string,
           clientSecret: env.GOOGLE_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/ediscovery',
-            'https://www.googleapis.com/auth/devstorage.read_only',
-          ],
+          scopes: getCanonicalScopesForProvider('google-vault'),
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-vault`,
           getUserInfo: async (tokens) => {
@@ -982,6 +1137,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Google user info', { status: response.status })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
@@ -1009,12 +1165,7 @@ export const auth = betterAuth({
           clientSecret: env.GOOGLE_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/admin.directory.group',
-            'https://www.googleapis.com/auth/admin.directory.group.member',
-          ],
+          scopes: getCanonicalScopesForProvider('google-groups'),
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-groups`,
           getUserInfo: async (tokens) => {
@@ -1023,6 +1174,80 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
+                logger.error('Failed to fetch Google user info', { status: response.status })
+                throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
+              }
+              const profile = await response.json()
+              const now = new Date()
+              return {
+                id: `${profile.sub}-${crypto.randomUUID()}`,
+                name: profile.name || 'Google User',
+                email: profile.email,
+                image: profile.picture || undefined,
+                emailVerified: profile.email_verified || false,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Google getUserInfo', { error })
+              throw error
+            }
+          },
+        },
+
+        {
+          providerId: 'google-meet',
+          clientId: env.GOOGLE_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
+          accessType: 'offline',
+          scopes: getCanonicalScopesForProvider('google-meet'),
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-meet`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+                headers: { Authorization: `Bearer ${tokens.accessToken}` },
+              })
+              if (!response.ok) {
+                await response.text().catch(() => {})
+                logger.error('Failed to fetch Google user info', { status: response.status })
+                throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
+              }
+              const profile = await response.json()
+              const now = new Date()
+              return {
+                id: `${profile.sub}-${crypto.randomUUID()}`,
+                name: profile.name || 'Google User',
+                email: profile.email,
+                image: profile.picture || undefined,
+                emailVerified: profile.email_verified || false,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Google getUserInfo', { error })
+              throw error
+            }
+          },
+        },
+        {
+          providerId: 'google-tasks',
+          clientId: env.GOOGLE_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
+          accessType: 'offline',
+          scopes: getCanonicalScopesForProvider('google-tasks'),
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/google-tasks`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+                headers: { Authorization: `Bearer ${tokens.accessToken}` },
+              })
+              if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Google user info', { status: response.status })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
@@ -1050,11 +1275,7 @@ export const auth = betterAuth({
           clientSecret: env.GOOGLE_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
-          scopes: [
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/cloud-platform',
-          ],
+          scopes: getCanonicalScopesForProvider('vertex-ai'),
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/vertex-ai`,
           getUserInfo: async (tokens) => {
@@ -1063,6 +1284,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Google user info', { status: response.status })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
@@ -1091,28 +1313,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
           tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
-          scopes: [
-            'openid',
-            'profile',
-            'email',
-            'User.Read',
-            'Chat.Read',
-            'Chat.ReadWrite',
-            'Chat.ReadBasic',
-            'ChatMessage.Send',
-            'Channel.ReadBasic.All',
-            'ChannelMessage.Send',
-            'ChannelMessage.Read.All',
-            'ChannelMessage.ReadWrite',
-            'ChannelMember.Read.All',
-            'Group.Read.All',
-            'Group.ReadWrite.All',
-            'Team.ReadBasic.All',
-            'TeamMember.Read.All',
-            'offline_access',
-            'Files.Read',
-            'Sites.Read.All',
-          ],
+          scopes: getCanonicalScopesForProvider('microsoft-teams'),
           responseType: 'code',
           accessType: 'offline',
           authentication: 'basic',
@@ -1124,6 +1325,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Microsoft user info', { status: response.status })
                 throw new Error(`Failed to fetch Microsoft user info: ${response.statusText}`)
               }
@@ -1151,7 +1353,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
           tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
-          scopes: ['openid', 'profile', 'email', 'Files.Read', 'Files.ReadWrite', 'offline_access'],
+          scopes: getCanonicalScopesForProvider('microsoft-excel'),
           responseType: 'code',
           accessType: 'offline',
           authentication: 'basic',
@@ -1163,6 +1365,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Microsoft user info', { status: response.status })
                 throw new Error(`Failed to fetch Microsoft user info: ${response.statusText}`)
               }
@@ -1183,21 +1386,55 @@ export const auth = betterAuth({
           },
         },
         {
+          providerId: 'microsoft-dataverse',
+          clientId: env.MICROSOFT_CLIENT_ID as string,
+          clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
+          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
+          scopes: getCanonicalScopesForProvider('microsoft-dataverse'),
+          responseType: 'code',
+          accessType: 'offline',
+          authentication: 'basic',
+          pkce: true,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/microsoft-dataverse`,
+          getUserInfo: async (tokens) => {
+            // Dataverse access tokens target dynamics.microsoft.com, not graph.microsoft.com,
+            // so we cannot call the Graph API /me endpoint. Instead, we decode the ID token JWT
+            // which is always returned when the openid scope is requested.
+            const idToken = (tokens as Record<string, unknown>).idToken as string | undefined
+            if (!idToken) {
+              logger.error(
+                'Microsoft Dataverse OAuth: no ID token received. Ensure openid scope is requested.'
+              )
+              throw new Error('Microsoft Dataverse OAuth requires an ID token (openid scope)')
+            }
+
+            const parts = idToken.split('.')
+            if (parts.length !== 3) {
+              throw new Error('Microsoft Dataverse OAuth: malformed ID token')
+            }
+
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'))
+            const now = new Date()
+            return {
+              id: `${payload.oid || payload.sub}-${crypto.randomUUID()}`,
+              name: payload.name || 'Microsoft User',
+              email: payload.preferred_username || payload.email || payload.upn,
+              emailVerified: true,
+              createdAt: now,
+              updatedAt: now,
+            }
+          },
+        },
+        {
           providerId: 'microsoft-planner',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
           authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
           tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
-          scopes: [
-            'openid',
-            'profile',
-            'email',
-            'Group.ReadWrite.All',
-            'Group.Read.All',
-            'Tasks.ReadWrite',
-            'offline_access',
-          ],
+          scopes: getCanonicalScopesForProvider('microsoft-planner'),
           responseType: 'code',
           accessType: 'offline',
           authentication: 'basic',
@@ -1209,6 +1446,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Microsoft user info', { status: response.status })
                 throw new Error(`Failed to fetch Microsoft user info: ${response.statusText}`)
               }
@@ -1236,16 +1474,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
           tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
-          scopes: [
-            'openid',
-            'profile',
-            'email',
-            'Mail.ReadWrite',
-            'Mail.ReadBasic',
-            'Mail.Read',
-            'Mail.Send',
-            'offline_access',
-          ],
+          scopes: getCanonicalScopesForProvider('outlook'),
           responseType: 'code',
           accessType: 'offline',
           authentication: 'basic',
@@ -1257,6 +1486,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Microsoft user info', { status: response.status })
                 throw new Error(`Failed to fetch Microsoft user info: ${response.statusText}`)
               }
@@ -1284,7 +1514,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
           tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
-          scopes: ['openid', 'profile', 'email', 'Files.Read', 'Files.ReadWrite', 'offline_access'],
+          scopes: getCanonicalScopesForProvider('onedrive'),
           responseType: 'code',
           accessType: 'offline',
           authentication: 'basic',
@@ -1296,6 +1526,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Microsoft user info', { status: response.status })
                 throw new Error(`Failed to fetch Microsoft user info: ${response.statusText}`)
               }
@@ -1323,15 +1554,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
           tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
-          scopes: [
-            'openid',
-            'profile',
-            'email',
-            'Sites.Read.All',
-            'Sites.ReadWrite.All',
-            'Sites.Manage.All',
-            'offline_access',
-          ],
+          scopes: getCanonicalScopesForProvider('sharepoint'),
           responseType: 'code',
           accessType: 'offline',
           authentication: 'basic',
@@ -1343,6 +1566,7 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Microsoft user info', { status: response.status })
                 throw new Error(`Failed to fetch Microsoft user info: ${response.statusText}`)
               }
@@ -1370,7 +1594,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://app.crmworkspace.com/oauth/authorize',
           tokenUrl: 'https://app.crmworkspace.com/oauth/token',
           userInfoUrl: 'https://dummy-not-used.wealthbox.com', // Dummy URL since no user info endpoint exists
-          scopes: ['login', 'data'],
+          scopes: getCanonicalScopesForProvider('wealthbox'),
           responseType: 'code',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/wealthbox`,
           getUserInfo: async (_tokens) => {
@@ -1403,15 +1627,7 @@ export const auth = betterAuth({
           tokenUrl: 'https://oauth.pipedrive.com/oauth/token',
           userInfoUrl: 'https://api.pipedrive.com/v1/users/me',
           prompt: 'consent',
-          scopes: [
-            'base',
-            'deals:full',
-            'contacts:full',
-            'leads:full',
-            'activities:full',
-            'mail:full',
-            'projects:full',
-          ],
+          scopes: getCanonicalScopesForProvider('pipedrive'),
           responseType: 'code',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/pipedrive`,
           getUserInfo: async (tokens) => {
@@ -1425,6 +1641,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Pipedrive user info', {
                   status: response.status,
                 })
@@ -1459,147 +1676,7 @@ export const auth = betterAuth({
           tokenUrl: 'https://api.hubapi.com/oauth/v1/token',
           userInfoUrl: 'https://api.hubapi.com/oauth/v1/access-tokens',
           prompt: 'consent',
-          scopes: [
-            'crm.objects.contacts.read',
-            'crm.objects.contacts.write',
-            'crm.objects.companies.read',
-            'crm.objects.companies.write',
-            'crm.objects.deals.read',
-            'crm.objects.deals.write',
-            'crm.objects.owners.read',
-            'crm.objects.users.read',
-            'crm.objects.users.write',
-            'crm.objects.marketing_events.read',
-            'crm.objects.marketing_events.write',
-            'crm.objects.line_items.read',
-            'crm.objects.line_items.write',
-            'crm.objects.quotes.read',
-            'crm.objects.quotes.write',
-            'crm.objects.appointments.read',
-            'crm.objects.appointments.write',
-            'crm.objects.carts.read',
-            'crm.objects.carts.write',
-            'crm.import',
-            'crm.lists.read',
-            'crm.lists.write',
-            'tickets',
-            'crm.objects.subscriptions.write',
-            'crm.schemas.subscriptions.write',
-            'crm.schemas.invoices.write',
-            'content',
-            'tax_rates.read',
-            'social',
-            'crm.objects.goals.write',
-            'automation',
-            'actions',
-            'timeline',
-            'business-intelligence',
-            'forms',
-            'files',
-            'record_images.signed_urls.read',
-            'crm.objects.products.read',
-            'integration-sync',
-            'crm.objects.products.write',
-            'e-commerce',
-            'accounting',
-            'sales-email-read',
-            'crm.objects.commercepayments.write',
-            'crm.objects.projects.write',
-            'crm.schemas.commercepayments.write',
-            'crm.objects.projects.read',
-            'forms-uploaded-files',
-            'communication_preferences.read_write',
-            'crm.objects.partner-services.read',
-            'crm.objects.partner-services.write',
-            'crm.schemas.projects.read',
-            'crm.extensions_calling_transcripts.read',
-            'crm.extensions_calling_transcripts.write',
-            'crm.schemas.projects.write',
-            'communication_preferences.read',
-            'communication_preferences.write',
-            'settings.users.write',
-            'conversations.visitor_identification.tokens.create',
-            'files.ui_hidden.read',
-            'crm.schemas.custom.read',
-            'crm.objects.custom.read',
-            'crm.objects.custom.write',
-            'settings.users.read',
-            'crm.schemas.contacts.read',
-            'cms.domains.read',
-            'cms.domains.write',
-            'media_bridge.read',
-            'media_bridge.write',
-            'settings.billing.write',
-            'crm.objects.feedback_submissions.read',
-            'crm.schemas.companies.read',
-            'crm.schemas.companies.write',
-            'crm.schemas.contacts.write',
-            'crm.schemas.deals.read',
-            'crm.schemas.deals.write',
-            'cms.knowledge_base.articles.publish',
-            'cms.knowledge_base.articles.write',
-            'cms.knowledge_base.articles.read',
-            'cms.knowledge_base.settings.read',
-            'cms.knowledge_base.settings.write',
-            'settings.users.teams.write',
-            'settings.users.teams.read',
-            'conversations.read',
-            'conversations.write',
-            'crm.schemas.quotes.read',
-            'crm.schemas.line_items.read',
-            'account-info.security.read',
-            'crm.export',
-            'integrations.zoom-app.playbooks.read',
-            'settings.currencies.read',
-            'settings.currencies.write',
-            'external_integrations.forms.access',
-            'crm.objects.goals.read',
-            'ctas.read',
-            'crm.objects.subscriptions.read',
-            'crm.schemas.subscriptions.read',
-            'crm.schemas.commercepayments.read',
-            'crm.objects.commercepayments.read',
-            'crm.objects.invoices.read',
-            'crm.schemas.invoices.read',
-            'settings.security.security_health.read',
-            'crm.schemas.carts.write',
-            'crm.schemas.carts.read',
-            'crm.pipelines.orders.write',
-            'crm.pipelines.orders.read',
-            'crm.schemas.orders.write',
-            'crm.schemas.orders.read',
-            'crm.objects.orders.write',
-            'crm.objects.orders.read',
-            'conversations.custom_channels.read',
-            'conversations.custom_channels.write',
-            'crm.objects.leads.read',
-            'crm.objects.leads.write',
-            'crm.objects.partner-clients.read',
-            'crm.objects.partner-clients.write',
-            'marketing.campaigns.read',
-            'marketing.campaigns.write',
-            'marketing.campaigns.revenue.read',
-            'automation.sequences.enrollments.write',
-            'automation.sequences.read',
-            'cms.membership.access_groups.read',
-            'cms.membership.access_groups.write',
-            'crm.objects.courses.read',
-            'crm.objects.courses.write',
-            'crm.objects.listings.read',
-            'crm.objects.listings.write',
-            'crm.objects.services.read',
-            'crm.objects.services.write',
-            'scheduler.meetings.meeting-link.read',
-            'crm.objects.invoices.write',
-            'crm.schemas.services.read',
-            'crm.schemas.services.write',
-            'crm.schemas.courses.read',
-            'crm.schemas.courses.write',
-            'crm.schemas.listings.read',
-            'crm.schemas.listings.write',
-            'crm.schemas.appointments.read',
-            'crm.schemas.appointments.write',
-          ],
+          scopes: getCanonicalScopesForProvider('hubspot'),
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/hubspot`,
           getUserInfo: async (tokens) => {
             try {
@@ -1643,7 +1720,7 @@ export const auth = betterAuth({
               })
 
               return {
-                id: `${data.user_id || data.hub_id.toString()}-${crypto.randomUUID()}`,
+                id: `${(data.user_id || data.hub_id).toString()}-${crypto.randomUUID()}`,
                 name: data.user || 'HubSpot User',
                 email: data.user || `hubspot-${data.hub_id}@hubspot.com`,
                 emailVerified: true,
@@ -1671,7 +1748,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://login.salesforce.com/services/oauth2/authorize',
           tokenUrl: 'https://login.salesforce.com/services/oauth2/token',
           userInfoUrl: 'https://login.salesforce.com/services/oauth2/userinfo',
-          scopes: ['api', 'refresh_token', 'openid', 'offline_access'],
+          scopes: getCanonicalScopesForProvider('salesforce'),
           pkce: true,
           prompt: 'consent',
           accessType: 'offline',
@@ -1688,6 +1765,7 @@ export const auth = betterAuth({
               )
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Salesforce user info', {
                   status: response.status,
                 })
@@ -1697,7 +1775,7 @@ export const auth = betterAuth({
               const data = await response.json()
 
               return {
-                id: `${data.user_id || data.sub}-${crypto.randomUUID()}`,
+                id: `${(data.user_id || data.sub).toString()}-${crypto.randomUUID()}`,
                 name: data.name || 'Salesforce User',
                 email: data.email || `salesforce-${data.user_id}@salesforce.com`,
                 emailVerified: data.email_verified || true,
@@ -1721,7 +1799,7 @@ export const auth = betterAuth({
           tokenUrl: 'https://api.x.com/2/oauth2/token',
           userInfoUrl: 'https://api.x.com/2/users/me',
           accessType: 'offline',
-          scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+          scopes: getCanonicalScopesForProvider('x'),
           pkce: true,
           responseType: 'code',
           prompt: 'consent',
@@ -1739,6 +1817,7 @@ export const auth = betterAuth({
               )
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Error fetching X user info:', {
                   status: response.status,
                   statusText: response.statusText,
@@ -1756,7 +1835,7 @@ export const auth = betterAuth({
               const now = new Date()
 
               return {
-                id: `${profile.data.id}-${crypto.randomUUID()}`,
+                id: `${profile.data.id.toString()}-${crypto.randomUUID()}`,
                 name: profile.data.name || 'X User',
                 email: `${profile.data.username}@x.com`,
                 image: profile.data.profile_image_url,
@@ -1779,30 +1858,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://auth.atlassian.com/authorize',
           tokenUrl: 'https://auth.atlassian.com/oauth/token',
           userInfoUrl: 'https://api.atlassian.com/me',
-          scopes: [
-            'read:confluence-content.all',
-            'read:confluence-space.summary',
-            'read:space:confluence',
-            'read:space-details:confluence',
-            'write:confluence-content',
-            'write:confluence-space',
-            'write:confluence-file',
-            'read:page:confluence',
-            'write:page:confluence',
-            'read:comment:confluence',
-            'read:content:confluence',
-            'write:comment:confluence',
-            'delete:comment:confluence',
-            'read:attachment:confluence',
-            'write:attachment:confluence',
-            'delete:attachment:confluence',
-            'delete:page:confluence',
-            'read:label:confluence',
-            'write:label:confluence',
-            'search:confluence',
-            'read:me',
-            'offline_access',
-          ],
+          scopes: getCanonicalScopesForProvider('confluence'),
           responseType: 'code',
           pkce: true,
           accessType: 'offline',
@@ -1818,6 +1874,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Error fetching Confluence user info:', {
                   status: response.status,
                   statusText: response.statusText,
@@ -1830,7 +1887,7 @@ export const auth = betterAuth({
               const now = new Date()
 
               return {
-                id: `${profile.account_id}-${crypto.randomUUID()}`,
+                id: `${profile.account_id.toString()}-${crypto.randomUUID()}`,
                 name: profile.name || profile.display_name || 'Confluence User',
                 email: profile.email || `${profile.account_id}@atlassian.com`,
                 image: profile.picture || undefined,
@@ -1853,67 +1910,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://auth.atlassian.com/authorize',
           tokenUrl: 'https://auth.atlassian.com/oauth/token',
           userInfoUrl: 'https://api.atlassian.com/me',
-          scopes: [
-            'read:jira-user',
-            'read:jira-work',
-            'write:jira-work',
-            'write:issue:jira',
-            'read:project:jira',
-            'read:issue-type:jira',
-            'read:me',
-            'offline_access',
-            'read:issue-meta:jira',
-            'read:issue-security-level:jira',
-            'read:issue.vote:jira',
-            'read:issue.changelog:jira',
-            'read:avatar:jira',
-            'read:issue:jira',
-            'read:status:jira',
-            'read:user:jira',
-            'read:field-configuration:jira',
-            'read:issue-details:jira',
-            'read:issue-event:jira',
-            'delete:issue:jira',
-            'write:comment:jira',
-            'read:comment:jira',
-            'delete:comment:jira',
-            'read:attachment:jira',
-            'delete:attachment:jira',
-            'write:issue-worklog:jira',
-            'read:issue-worklog:jira',
-            'delete:issue-worklog:jira',
-            'write:issue-link:jira',
-            'delete:issue-link:jira',
-            // Jira Service Management scopes
-            'read:servicedesk:jira-service-management',
-            'read:requesttype:jira-service-management',
-            'read:request:jira-service-management',
-            'write:request:jira-service-management',
-            'read:request.comment:jira-service-management',
-            'write:request.comment:jira-service-management',
-            'read:customer:jira-service-management',
-            'write:customer:jira-service-management',
-            'read:servicedesk.customer:jira-service-management',
-            'write:servicedesk.customer:jira-service-management',
-            'read:organization:jira-service-management',
-            'write:organization:jira-service-management',
-            'read:servicedesk.organization:jira-service-management',
-            'write:servicedesk.organization:jira-service-management',
-            'read:organization.user:jira-service-management',
-            'write:organization.user:jira-service-management',
-            'read:organization.property:jira-service-management',
-            'write:organization.property:jira-service-management',
-            'read:organization.profile:jira-service-management',
-            'write:organization.profile:jira-service-management',
-            'read:queue:jira-service-management',
-            'read:request.sla:jira-service-management',
-            'read:request.status:jira-service-management',
-            'write:request.status:jira-service-management',
-            'read:request.participant:jira-service-management',
-            'write:request.participant:jira-service-management',
-            'read:request.approval:jira-service-management',
-            'write:request.approval:jira-service-management',
-          ],
+          scopes: getCanonicalScopesForProvider('jira'),
           responseType: 'code',
           pkce: true,
           accessType: 'offline',
@@ -1929,6 +1926,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Error fetching Jira user info:', {
                   status: response.status,
                   statusText: response.statusText,
@@ -1941,7 +1939,7 @@ export const auth = betterAuth({
               const now = new Date()
 
               return {
-                id: `${profile.account_id}-${crypto.randomUUID()}`,
+                id: `${profile.account_id.toString()}-${crypto.randomUUID()}`,
                 name: profile.name || profile.display_name || 'Jira User',
                 email: profile.email || `${profile.account_id}@atlassian.com`,
                 image: profile.picture || undefined,
@@ -1964,7 +1962,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://airtable.com/oauth2/v1/authorize',
           tokenUrl: 'https://airtable.com/oauth2/v1/token',
           userInfoUrl: 'https://api.airtable.com/v0/meta/whoami',
-          scopes: ['data.records:read', 'data.records:write', 'user.email:read', 'webhook:manage'],
+          scopes: getCanonicalScopesForProvider('airtable'),
           responseType: 'code',
           pkce: true,
           accessType: 'offline',
@@ -1980,6 +1978,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Error fetching Airtable user info:', {
                   status: response.status,
                   statusText: response.statusText,
@@ -1991,7 +1990,7 @@ export const auth = betterAuth({
               const now = new Date()
 
               return {
-                id: `${data.id}-${crypto.randomUUID()}`,
+                id: `${data.id.toString()}-${crypto.randomUUID()}`,
                 name: data.email ? data.email.split('@')[0] : 'Airtable User',
                 email: data.email || `${data.id}@airtable.user`,
                 emailVerified: !!data.email,
@@ -2029,6 +2028,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Error fetching Notion user info:', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2040,7 +2040,7 @@ export const auth = betterAuth({
               const now = new Date()
 
               return {
-                id: `${profile.bot?.owner?.user?.id || profile.id}-${crypto.randomUUID()}`,
+                id: `${(profile.bot?.owner?.user?.id || profile.id).toString()}-${crypto.randomUUID()}`,
                 name: profile.name || profile.bot?.owner?.user?.name || 'Notion User',
                 email: profile.person?.email || `${profile.id}@notion.user`,
                 emailVerified: !!profile.person?.email,
@@ -2062,24 +2062,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://www.reddit.com/api/v1/authorize?duration=permanent',
           tokenUrl: 'https://www.reddit.com/api/v1/access_token',
           userInfoUrl: 'https://oauth.reddit.com/api/v1/me',
-          scopes: [
-            'identity',
-            'read',
-            'submit',
-            'vote',
-            'save',
-            'edit',
-            'subscribe',
-            'history',
-            'privatemessages',
-            'account',
-            'mysubreddits',
-            'flair',
-            'report',
-            'modposts',
-            'modflair',
-            'modmail',
-          ],
+          scopes: getCanonicalScopesForProvider('reddit'),
           responseType: 'code',
           pkce: false,
           accessType: 'offline',
@@ -2096,6 +2079,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Error fetching Reddit user info:', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2107,7 +2091,7 @@ export const auth = betterAuth({
               const now = new Date()
 
               return {
-                id: `${data.id}-${crypto.randomUUID()}`,
+                id: `${data.id.toString()}-${crypto.randomUUID()}`,
                 name: data.name || 'Reddit User',
                 email: `${data.name}@reddit.user`,
                 image: data.icon_img || undefined,
@@ -2128,7 +2112,7 @@ export const auth = betterAuth({
           clientSecret: env.LINEAR_CLIENT_SECRET as string,
           authorizationUrl: 'https://linear.app/oauth/authorize',
           tokenUrl: 'https://api.linear.app/oauth/token',
-          scopes: ['read', 'write'],
+          scopes: getCanonicalScopesForProvider('linear'),
           responseType: 'code',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/linear`,
           pkce: true,
@@ -2179,7 +2163,7 @@ export const auth = betterAuth({
               const viewer = data.viewer
 
               return {
-                id: `${viewer.id}-${crypto.randomUUID()}`,
+                id: `${viewer.id.toString()}-${crypto.randomUUID()}`,
                 email: viewer.email,
                 name: viewer.name,
                 emailVerified: true,
@@ -2195,20 +2179,65 @@ export const auth = betterAuth({
         },
 
         {
+          providerId: 'attio',
+          clientId: env.ATTIO_CLIENT_ID as string,
+          clientSecret: env.ATTIO_CLIENT_SECRET as string,
+          authorizationUrl: 'https://app.attio.com/authorize',
+          tokenUrl: 'https://app.attio.com/oauth/token',
+          scopes: getCanonicalScopesForProvider('attio'),
+          responseType: 'code',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/attio`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://api.attio.com/v2/workspace_members', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                const errorText = await response.text()
+                logger.error('Attio API error:', {
+                  status: response.status,
+                  statusText: response.statusText,
+                  body: errorText,
+                })
+                throw new Error(`Attio API error: ${response.status} ${response.statusText}`)
+              }
+
+              const { data } = await response.json()
+
+              if (!data || data.length === 0) {
+                throw new Error('No workspace members found in Attio response')
+              }
+
+              const member = data[0]
+
+              return {
+                id: `${member.id.workspace_member_id}-${crypto.randomUUID()}`,
+                email: member.email_address,
+                name:
+                  `${member.first_name ?? ''} ${member.last_name ?? ''}`.trim() ||
+                  member.email_address,
+                emailVerified: true,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                image: member.avatar_url || undefined,
+              }
+            } catch (error) {
+              logger.error('Error in Attio getUserInfo:', error)
+              throw error
+            }
+          },
+        },
+
+        {
           providerId: 'dropbox',
           clientId: env.DROPBOX_CLIENT_ID as string,
           clientSecret: env.DROPBOX_CLIENT_SECRET as string,
           authorizationUrl: 'https://www.dropbox.com/oauth2/authorize',
           tokenUrl: 'https://api.dropboxapi.com/oauth2/token',
-          scopes: [
-            'account_info.read',
-            'files.metadata.read',
-            'files.metadata.write',
-            'files.content.read',
-            'files.content.write',
-            'sharing.read',
-            'sharing.write',
-          ],
+          scopes: getCanonicalScopesForProvider('dropbox'),
           responseType: 'code',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/dropbox`,
           pkce: true,
@@ -2242,7 +2271,7 @@ export const auth = betterAuth({
               const data = await response.json()
 
               return {
-                id: `${data.account_id}-${crypto.randomUUID()}`,
+                id: `${data.account_id.toString()}-${crypto.randomUUID()}`,
                 email: data.email,
                 name: data.name?.display_name || data.email,
                 emailVerified: data.email_verified || false,
@@ -2264,7 +2293,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://app.asana.com/-/oauth_authorize',
           tokenUrl: 'https://app.asana.com/-/oauth_token',
           userInfoUrl: 'https://app.asana.com/api/1.0/users/me',
-          scopes: ['default'],
+          scopes: getCanonicalScopesForProvider('asana'),
           responseType: 'code',
           pkce: false,
           accessType: 'offline',
@@ -2280,6 +2309,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Error fetching Asana user info:', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2293,7 +2323,7 @@ export const auth = betterAuth({
               const now = new Date()
 
               return {
-                id: `${profile.gid}-${crypto.randomUUID()}`,
+                id: `${profile.gid.toString()}-${crypto.randomUUID()}`,
                 name: profile.name || 'Asana User',
                 email: profile.email || `${profile.gid}@asana.user`,
                 image: profile.photo?.image_128x128 || undefined,
@@ -2316,26 +2346,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://slack.com/oauth/v2/authorize',
           tokenUrl: 'https://slack.com/api/oauth.v2.access',
           userInfoUrl: 'https://slack.com/api/users.identity',
-          scopes: [
-            // Bot token scopes - app acts as a bot user
-            'channels:read',
-            'channels:history',
-            'groups:read',
-            'groups:history',
-            'chat:write',
-            'chat:write.public',
-            'im:write',
-            'im:history',
-            'im:read',
-            'users:read',
-            'files:write',
-            'files:read',
-            'canvases:write',
-            'reactions:write',
-            // Note: search.all API requires user token, which is obtained from authed_user.access_token
-            // in the OAuth response. No additional scope is needed - the user token is automatically
-            // provided when the app is installed with bot scopes.
-          ],
+          scopes: getCanonicalScopesForProvider('slack'),
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
@@ -2374,6 +2385,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Slack auth.test failed', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2390,6 +2402,7 @@ export const auth = betterAuth({
 
               const teamId = data.team_id || 'unknown'
               const teamName = data.team || 'Slack Workspace'
+              const userId = data.user_id || 'unknown'
 
               const uniqueId = `slack-bot-${Date.now()}`
 
@@ -2420,7 +2433,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://webflow.com/oauth/authorize',
           tokenUrl: 'https://api.webflow.com/oauth/access_token',
           userInfoUrl: 'https://api.webflow.com/v2/token/introspect',
-          scopes: ['sites:read', 'sites:write', 'cms:read', 'cms:write', 'forms:read'],
+          scopes: getCanonicalScopesForProvider('webflow'),
           responseType: 'code',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/webflow`,
           getUserInfo: async (tokens) => {
@@ -2434,6 +2447,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Error fetching Webflow user info:', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2469,7 +2483,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://www.linkedin.com/oauth/v2/authorization',
           tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
           userInfoUrl: 'https://api.linkedin.com/v2/userinfo',
-          scopes: ['profile', 'openid', 'email', 'w_member_social'],
+          scopes: getCanonicalScopesForProvider('linkedin'),
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
@@ -2485,6 +2499,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch LinkedIn user info', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2518,29 +2533,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://zoom.us/oauth/authorize',
           tokenUrl: 'https://zoom.us/oauth/token',
           userInfoUrl: 'https://api.zoom.us/v2/users/me',
-          scopes: [
-            'user:read:user:admin',
-            'user:read:list_users:admin',
-            'user:read:list_assistants:admin',
-            'user:read:list_schedulers:admin',
-            'user:read:email:admin',
-
-            //admin Meeting registrants, polls & participants (account-wide)
-            'meeting:read:list_meetings:admin',
-            'meeting:read:meeting:admin',
-            'meeting:read:list_registrants:admin',
-            'meeting:read:registrant:admin',
-            'meeting:read:list_polls:admin',
-            'meeting:read:participant:admin',
-
-            //admin Cloud recording – advanced / account-level
-            'cloud_recording:read:list_recording_registrants:admin',
-            'cloud_recording:read:list_recording_files:admin',
-            'cloud_recording:read:list_user_recordings:admin',
-            'cloud_recording:read:recording:admin',
-            'cloud_recording:read:meeting_transcript:admin',
-            'cloud_recording:read:list_account_recordings:admin',
-          ],
+          scopes: getCanonicalScopesForProvider('zoom'),
           responseType: 'code',
           accessType: 'offline',
           authentication: 'basic',
@@ -2557,6 +2550,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Zoom user info', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2567,7 +2561,7 @@ export const auth = betterAuth({
               const profile = await response.json()
 
               return {
-                id: `${profile.id}-${crypto.randomUUID()}`,
+                id: `${profile.id.toString()}-${crypto.randomUUID()}`,
                 name:
                   `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Zoom User',
                 email: profile.email || `${profile.id}@zoom.user`,
@@ -2591,25 +2585,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://accounts.spotify.com/authorize',
           tokenUrl: 'https://accounts.spotify.com/api/token',
           userInfoUrl: 'https://api.spotify.com/v1/me',
-          scopes: [
-            'user-read-private',
-            'user-read-email',
-            'user-library-read',
-            'user-library-modify',
-            'playlist-read-private',
-            'playlist-read-collaborative',
-            'playlist-modify-public',
-            'playlist-modify-private',
-            'user-read-playback-state',
-            'user-modify-playback-state',
-            'user-read-currently-playing',
-            'user-read-recently-played',
-            'user-top-read',
-            'user-follow-read',
-            'user-follow-modify',
-            'user-read-playback-position',
-            'ugc-image-upload',
-          ],
+          scopes: getCanonicalScopesForProvider('spotify'),
           responseType: 'code',
           authentication: 'basic',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/spotify`,
@@ -2624,6 +2600,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch Spotify user info', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2634,7 +2611,7 @@ export const auth = betterAuth({
               const profile = await response.json()
 
               return {
-                id: `${profile.id}-${crypto.randomUUID()}`,
+                id: `${profile.id.toString()}-${crypto.randomUUID()}`,
                 name: profile.display_name || 'Spotify User',
                 email: profile.email || `${profile.id}@spotify.user`,
                 emailVerified: true,
@@ -2657,7 +2634,7 @@ export const auth = betterAuth({
           authorizationUrl: 'https://public-api.wordpress.com/oauth2/authorize',
           tokenUrl: 'https://public-api.wordpress.com/oauth2/token',
           userInfoUrl: 'https://public-api.wordpress.com/rest/v1.1/me',
-          scopes: ['global'],
+          scopes: getCanonicalScopesForProvider('wordpress'),
           responseType: 'code',
           prompt: 'consent',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/wordpress`,
@@ -2672,6 +2649,7 @@ export const auth = betterAuth({
               })
 
               if (!response.ok) {
+                await response.text().catch(() => {})
                 logger.error('Failed to fetch WordPress.com user info', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2692,6 +2670,56 @@ export const auth = betterAuth({
               }
             } catch (error) {
               logger.error('Error in WordPress.com getUserInfo:', { error })
+              return null
+            }
+          },
+        },
+
+        // Cal.com provider
+        {
+          providerId: 'calcom',
+          clientId: env.CALCOM_CLIENT_ID as string,
+          authorizationUrl: 'https://app.cal.com/auth/oauth2/authorize',
+          tokenUrl: 'https://app.cal.com/api/auth/oauth/token',
+          scopes: getCanonicalScopesForProvider('calcom'),
+          responseType: 'code',
+          pkce: true,
+          accessType: 'offline',
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/calcom`,
+          getUserInfo: async (tokens) => {
+            try {
+              logger.info('Fetching Cal.com user profile')
+
+              const response = await fetch('https://api.cal.com/v2/me', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                  'cal-api-version': '2024-08-13',
+                },
+              })
+
+              if (!response.ok) {
+                await response.text().catch(() => {})
+                logger.error('Failed to fetch Cal.com user info', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                throw new Error('Failed to fetch user info')
+              }
+
+              const data = await response.json()
+              const profile = data.data || data
+
+              return {
+                id: `${profile.id?.toString()}-${crypto.randomUUID()}`,
+                name: profile.name || 'Cal.com User',
+                email: profile.email || `${profile.id}@cal.com`,
+                emailVerified: true,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              }
+            } catch (error) {
+              logger.error('Error in Cal.com getUserInfo:', { error })
               return null
             }
           },
@@ -2746,29 +2774,42 @@ export const auth = betterAuth({
                 }
               },
               onSubscriptionComplete: async ({
+                stripeSubscription,
                 subscription,
               }: {
                 event: Stripe.Event
                 stripeSubscription: Stripe.Subscription
                 subscription: any
               }) => {
+                const { priceId, planFromStripe, isTeamPlan } =
+                  resolvePlanFromStripeSubscription(stripeSubscription)
+
                 logger.info('[onSubscriptionComplete] Subscription created', {
                   subscriptionId: subscription.id,
                   referenceId: subscription.referenceId,
-                  plan: subscription.plan,
+                  dbPlan: subscription.plan,
+                  planFromStripe,
+                  priceId,
                   status: subscription.status,
                 })
 
+                const subscriptionForOrgCreation = isTeamPlan
+                  ? { ...subscription, plan: 'team' }
+                  : subscription
+
                 let resolvedSubscription = subscription
                 try {
-                  resolvedSubscription = await ensureOrganizationForTeamSubscription(subscription)
+                  resolvedSubscription = await ensureOrganizationForTeamSubscription(
+                    subscriptionForOrgCreation
+                  )
                 } catch (orgError) {
                   logger.error(
                     '[onSubscriptionComplete] Failed to ensure organization for team subscription',
                     {
                       subscriptionId: subscription.id,
                       referenceId: subscription.referenceId,
-                      plan: subscription.plan,
+                      dbPlan: subscription.plan,
+                      planFromStripe,
                       error: orgError instanceof Error ? orgError.message : String(orgError),
                       stack: orgError instanceof Error ? orgError.stack : undefined,
                     }
@@ -2789,22 +2830,67 @@ export const auth = betterAuth({
                 event: Stripe.Event
                 subscription: any
               }) => {
+                const stripeSubscription = event.data.object as Stripe.Subscription
+                const { priceId, planFromStripe, isTeamPlan } =
+                  resolvePlanFromStripeSubscription(stripeSubscription)
+
+                if (priceId && !planFromStripe) {
+                  logger.warn(
+                    '[onSubscriptionUpdate] Could not determine plan from Stripe price ID',
+                    {
+                      subscriptionId: subscription.id,
+                      priceId,
+                      dbPlan: subscription.plan,
+                    }
+                  )
+                }
+
+                const isUpgradeToTeam =
+                  isTeamPlan &&
+                  subscription.plan !== 'team' &&
+                  !subscription.referenceId.startsWith('org_')
+
+                const effectivePlanForTeamFeatures = planFromStripe ?? subscription.plan
+
                 logger.info('[onSubscriptionUpdate] Subscription updated', {
                   subscriptionId: subscription.id,
                   status: subscription.status,
-                  plan: subscription.plan,
+                  dbPlan: subscription.plan,
+                  planFromStripe,
+                  isUpgradeToTeam,
+                  referenceId: subscription.referenceId,
                 })
+
+                const subscriptionForOrgCreation = isUpgradeToTeam
+                  ? { ...subscription, plan: 'team' }
+                  : subscription
 
                 let resolvedSubscription = subscription
                 try {
-                  resolvedSubscription = await ensureOrganizationForTeamSubscription(subscription)
+                  resolvedSubscription = await ensureOrganizationForTeamSubscription(
+                    subscriptionForOrgCreation
+                  )
+
+                  if (isUpgradeToTeam) {
+                    logger.info(
+                      '[onSubscriptionUpdate] Detected Pro -> Team upgrade, ensured organization creation',
+                      {
+                        subscriptionId: subscription.id,
+                        originalPlan: subscription.plan,
+                        newPlan: planFromStripe,
+                        resolvedReferenceId: resolvedSubscription.referenceId,
+                      }
+                    )
+                  }
                 } catch (orgError) {
                   logger.error(
                     '[onSubscriptionUpdate] Failed to ensure organization for team subscription',
                     {
                       subscriptionId: subscription.id,
                       referenceId: subscription.referenceId,
-                      plan: subscription.plan,
+                      dbPlan: subscription.plan,
+                      planFromStripe,
+                      isUpgradeToTeam,
                       error: orgError instanceof Error ? orgError.message : String(orgError),
                       stack: orgError instanceof Error ? orgError.stack : undefined,
                     }
@@ -2822,9 +2908,8 @@ export const auth = betterAuth({
                   })
                 }
 
-                if (resolvedSubscription.plan === 'team') {
+                if (effectivePlanForTeamFeatures === 'team') {
                   try {
-                    const stripeSubscription = event.data.object as Stripe.Subscription
                     const quantity = stripeSubscription.items?.data?.[0]?.quantity || 1
 
                     const result = await syncSeatsFromStripeQuantity(

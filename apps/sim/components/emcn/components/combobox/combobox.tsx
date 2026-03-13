@@ -9,6 +9,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -52,6 +53,10 @@ export type ComboboxOption = {
   onSelect?: () => void
   /** Whether this option is disabled */
   disabled?: boolean
+  /** When true, keep the dropdown open after selecting this option */
+  keepOpen?: boolean
+  /** Optional element rendered at the trailing end of the option (e.g. chevron for folders) */
+  suffixElement?: ReactNode
 }
 
 /**
@@ -106,6 +111,8 @@ export interface ComboboxProps
   error?: string | null
   /** Callback when popover open state changes */
   onOpenChange?: (open: boolean) => void
+  /** Callback when ArrowLeft is pressed while dropdown is open (for folder back-navigation) */
+  onArrowLeft?: () => void
   /** Enable search input in dropdown (useful for multiselect) */
   searchable?: boolean
   /** Placeholder for search input */
@@ -157,6 +164,7 @@ const Combobox = memo(
         isLoading = false,
         error = null,
         onOpenChange,
+        onArrowLeft,
         searchable = false,
         searchPlaceholder = 'Search...',
         align = 'start',
@@ -170,6 +178,7 @@ const Combobox = memo(
       },
       ref
     ) => {
+      const listboxId = useId()
       const [open, setOpen] = useState(false)
       const [highlightedIndex, setHighlightedIndex] = useState(-1)
       const [searchQuery, setSearchQuery] = useState('')
@@ -252,13 +261,16 @@ const Combobox = memo(
        * Handles selection of an option
        */
       const handleSelect = useCallback(
-        (selectedValue: string, customOnSelect?: () => void) => {
+        (selectedValue: string, customOnSelect?: () => void, keepOpen?: boolean) => {
           // If option has custom onSelect, use it instead
           if (customOnSelect) {
             customOnSelect()
-            setOpen(false)
-            setHighlightedIndex(-1)
+            // Always reset search/highlight so stale queries don't filter new options
             setSearchQuery('')
+            setHighlightedIndex(-1)
+            if (!keepOpen) {
+              setOpen(false)
+            }
             return
           }
 
@@ -270,11 +282,13 @@ const Combobox = memo(
             onMultiSelectChange(newValues)
           } else {
             onChange?.(selectedValue)
-            setOpen(false)
-            setHighlightedIndex(-1)
-            setSearchQuery('')
-            if (editable && inputRef.current) {
-              inputRef.current.blur()
+            if (!keepOpen) {
+              setOpen(false)
+              setHighlightedIndex(-1)
+              setSearchQuery('')
+              if (editable && inputRef.current) {
+                inputRef.current.blur()
+              }
             }
           }
         },
@@ -343,7 +357,7 @@ const Combobox = memo(
               e.preventDefault()
               const selectedOption = filteredOptions[highlightedIndex]
               if (selectedOption && !selectedOption.disabled) {
-                handleSelect(selectedOption.value, selectedOption.onSelect)
+                handleSelect(selectedOption.value, selectedOption.onSelect, selectedOption.keepOpen)
               }
             } else if (!editable) {
               e.preventDefault()
@@ -378,8 +392,36 @@ const Combobox = memo(
               setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : filteredOptions.length - 1))
             }
           }
+
+          if (e.key === 'ArrowRight') {
+            if (open && highlightedIndex >= 0) {
+              const highlightedOption = filteredOptions[highlightedIndex]
+              if (highlightedOption?.keepOpen && highlightedOption?.onSelect) {
+                e.preventDefault()
+                handleSelect(highlightedOption.value, highlightedOption.onSelect, true)
+              }
+            }
+          }
+
+          if (e.key === 'ArrowLeft') {
+            if (open && onArrowLeft) {
+              e.preventDefault()
+              onArrowLeft()
+              setSearchQuery('')
+              setHighlightedIndex(-1)
+            }
+          }
         },
-        [disabled, open, highlightedIndex, filteredOptions, handleSelect, editable, inputRef]
+        [
+          disabled,
+          open,
+          highlightedIndex,
+          filteredOptions,
+          handleSelect,
+          editable,
+          inputRef,
+          onArrowLeft,
+        ]
       )
 
       /**
@@ -513,6 +555,7 @@ const Combobox = memo(
                     role='combobox'
                     aria-expanded={open}
                     aria-haspopup='listbox'
+                    aria-controls={listboxId}
                     aria-disabled={disabled}
                     tabIndex={disabled ? -1 : 0}
                     className={cn(
@@ -588,9 +631,17 @@ const Combobox = memo(
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => {
                       // Forward navigation keys to main handler
+                      // Only forward ArrowLeft/ArrowRight when cursor is at the boundary
+                      // so normal text cursor movement still works in the search input
+                      const input = e.currentTarget
+                      const forwardArrowLeft = e.key === 'ArrowLeft' && input.selectionStart === 0
+                      const forwardArrowRight =
+                        e.key === 'ArrowRight' && input.selectionStart === input.value.length
                       if (
                         e.key === 'ArrowDown' ||
                         e.key === 'ArrowUp' ||
+                        forwardArrowRight ||
+                        forwardArrowLeft ||
                         e.key === 'Enter' ||
                         e.key === 'Escape'
                       ) {
@@ -616,7 +667,7 @@ const Combobox = memo(
                   }
                 }}
               >
-                <div ref={dropdownRef} role='listbox'>
+                <div ref={dropdownRef} role='listbox' id={listboxId}>
                   {isLoading ? (
                     <div className='flex items-center justify-center py-[14px]'>
                       <Loader2 className='h-[16px] w-[16px] animate-spin text-[var(--text-muted)]' />
@@ -668,7 +719,7 @@ const Combobox = memo(
                                   e.preventDefault()
                                   e.stopPropagation()
                                   if (!option.disabled) {
-                                    handleSelect(option.value, option.onSelect)
+                                    handleSelect(option.value, option.onSelect, option.keepOpen)
                                   }
                                 }}
                                 onMouseEnter={() =>
@@ -690,6 +741,7 @@ const Combobox = memo(
                                 <span className='flex-1 truncate text-[var(--text-primary)]'>
                                   {option.label}
                                 </span>
+                                {option.suffixElement}
                                 {multiSelect && isSelected && (
                                   <Check className='ml-[8px] h-[12px] w-[12px] flex-shrink-0 text-[var(--text-primary)]' />
                                 )}
@@ -743,7 +795,7 @@ const Combobox = memo(
                               e.preventDefault()
                               e.stopPropagation()
                               if (!option.disabled) {
-                                handleSelect(option.value, option.onSelect)
+                                handleSelect(option.value, option.onSelect, option.keepOpen)
                               }
                             }}
                             onMouseEnter={() => !option.disabled && setHighlightedIndex(index)}
@@ -763,6 +815,7 @@ const Combobox = memo(
                             <span className='flex-1 truncate text-[var(--text-primary)]'>
                               {option.label}
                             </span>
+                            {option.suffixElement}
                             {multiSelect && isSelected && (
                               <Check className='ml-[8px] h-[12px] w-[12px] flex-shrink-0 text-[var(--text-primary)]' />
                             )}

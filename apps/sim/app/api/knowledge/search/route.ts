@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { ALL_TAG_SLOTS } from '@/lib/knowledge/constants'
@@ -11,7 +12,7 @@ import { getDocumentTagDefinitions } from '@/lib/knowledge/tags/service'
 import { buildUndefinedTagsError, validateTagValue } from '@/lib/knowledge/tags/utils'
 import type { StructuredFilter } from '@/lib/knowledge/types'
 import { estimateTokenCount } from '@/lib/tokenization/estimators'
-import { getUserId } from '@/app/api/auth/oauth/utils'
+import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import {
   generateSearchEmbedding,
   getDocumentNamesByIds,
@@ -115,12 +116,24 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { workflowId, ...searchParams } = body
 
-    const userId = await getUserId(requestId, workflowId)
+    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+    if (!auth.success || !auth.userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const userId = auth.userId
 
-    if (!userId) {
-      const errorMessage = workflowId ? 'Workflow not found' : 'Unauthorized'
-      const statusCode = workflowId ? 404 : 401
-      return NextResponse.json({ error: errorMessage }, { status: statusCode })
+    if (workflowId) {
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId,
+        userId,
+        action: 'read',
+      })
+      if (!authorization.allowed) {
+        return NextResponse.json(
+          { error: authorization.message || 'Access denied' },
+          { status: authorization.status }
+        )
+      }
     }
 
     let knowledgeBaseIds: string[] = []
@@ -232,8 +245,6 @@ export async function POST(request: NextRequest) {
             valueTo: filter.valueTo,
           }
         })
-
-        logger.debug(`[${requestId}] Processed ${structuredFilters.length} structured filters`)
       }
 
       if (accessibleKbIds.length === 0) {
@@ -266,7 +277,6 @@ export async function POST(request: NextRequest) {
 
       if (!hasQuery && hasFilters) {
         // Tag-only search without vector similarity
-        logger.debug(`[${requestId}] Executing tag-only search with filters:`, structuredFilters)
         results = await handleTagOnlySearch({
           knowledgeBaseIds: accessibleKbIds,
           topK: validatedData.topK,
@@ -290,7 +300,6 @@ export async function POST(request: NextRequest) {
         })
       } else if (hasQuery && !hasFilters) {
         // Vector-only search
-        logger.debug(`[${requestId}] Executing vector-only search`)
         const strategy = getQueryStrategy(accessibleKbIds.length, validatedData.topK)
         const queryVector = JSON.stringify(await queryEmbeddingPromise)
 

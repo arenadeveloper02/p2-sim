@@ -1,4 +1,5 @@
 import { GoogleCalendarIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import { createVersionedToolSelector } from '@/blocks/utils'
@@ -39,10 +40,21 @@ export const GoogleCalendarBlock: BlockConfig<GoogleCalendarResponse> = {
       id: 'credential',
       title: 'Google Calendar Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       required: true,
       serviceId: 'google-calendar',
-      requiredScopes: ['https://www.googleapis.com/auth/calendar'],
+      requiredScopes: getScopesForService('google-calendar'),
       placeholder: 'Select Google Calendar account',
+    },
+    {
+      id: 'manualCredential',
+      title: 'Google Calendar Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
     // Calendar selector (basic mode) - not needed for list_calendars
     {
@@ -51,7 +63,9 @@ export const GoogleCalendarBlock: BlockConfig<GoogleCalendarResponse> = {
       type: 'file-selector',
       canonicalParamId: 'calendarId',
       serviceId: 'google-calendar',
-      requiredScopes: ['https://www.googleapis.com/auth/calendar'],
+      selectorKey: 'google.calendar',
+      selectorAllowSearch: false,
+      requiredScopes: getScopesForService('google-calendar'),
       placeholder: 'Select calendar',
       dependsOn: ['credential'],
       mode: 'basic',
@@ -315,7 +329,9 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'file-selector',
       canonicalParamId: 'destinationCalendarId',
       serviceId: 'google-calendar',
-      requiredScopes: ['https://www.googleapis.com/auth/calendar'],
+      selectorKey: 'google.calendar',
+      selectorAllowSearch: false,
+      requiredScopes: getScopesForService('google-calendar'),
       placeholder: 'Select destination calendar',
       dependsOn: ['credential'],
       condition: { field: 'operation', value: 'move' },
@@ -512,26 +528,22 @@ Return ONLY the natural language event text - no explanations.`,
       },
       params: (params) => {
         const {
-          credential,
+          oauthCredential,
           operation,
           attendees,
           replaceExisting,
           calendarId,
-          manualCalendarId,
-          destinationCalendar,
-          manualDestinationCalendarId,
+          destinationCalendarId,
           ...rest
         } = params
 
-        // Handle calendar ID (selector or manual)
-        const effectiveCalendarId = (calendarId || manualCalendarId || '').trim()
+        // Use canonical 'calendarId' param directly
+        const effectiveCalendarId = calendarId ? String(calendarId).trim() : ''
 
-        // Handle destination calendar ID for move operation (selector or manual)
-        const effectiveDestinationCalendarId = (
-          destinationCalendar ||
-          manualDestinationCalendarId ||
-          ''
-        ).trim()
+        // Use canonical 'destinationCalendarId' param directly
+        const effectiveDestinationCalendarId = destinationCalendarId
+          ? String(destinationCalendarId).trim()
+          : ''
 
         const processedParams: Record<string, any> = {
           ...rest,
@@ -580,7 +592,7 @@ Return ONLY the natural language event text - no explanations.`,
         }
 
         return {
-          credential,
+          oauthCredential,
           ...processedParams,
         }
       },
@@ -588,9 +600,8 @@ Return ONLY the natural language event text - no explanations.`,
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Google Calendar access token' },
-    calendarId: { type: 'string', description: 'Calendar identifier' },
-    manualCalendarId: { type: 'string', description: 'Manual calendar identifier' },
+    oauthCredential: { type: 'string', description: 'Google Calendar access token' },
+    calendarId: { type: 'string', description: 'Calendar identifier (canonical param)' },
 
     // Create/Update operation inputs
     summary: { type: 'string', description: 'Event title' },
@@ -609,8 +620,10 @@ Return ONLY the natural language event text - no explanations.`,
     eventId: { type: 'string', description: 'Event identifier' },
 
     // Move operation inputs
-    destinationCalendar: { type: 'string', description: 'Destination calendar selector' },
-    manualDestinationCalendarId: { type: 'string', description: 'Manual destination calendar ID' },
+    destinationCalendarId: {
+      type: 'string',
+      description: 'Destination calendar ID (canonical param)',
+    },
 
     // List Calendars operation inputs
     minAccessRole: { type: 'string', description: 'Minimum access role filter' },

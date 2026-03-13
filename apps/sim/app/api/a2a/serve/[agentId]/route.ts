@@ -13,13 +13,14 @@ import {
   isTerminalState,
   parseWorkflowSSEChunk,
 } from '@/lib/a2a/utils'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
-import { getBrandConfig } from '@/lib/branding/branding'
+import { type AuthResult, checkHybridAuth } from '@/lib/auth/hybrid'
 import { acquireLock, getRedisClient, releaseLock } from '@/lib/core/config/redis'
-import { validateExternalUrl } from '@/lib/core/security/input-validation'
+import { validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
 import { SSE_HEADERS } from '@/lib/core/utils/sse'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { markExecutionCancelled } from '@/lib/execution/cancellation'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
+import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 import {
   A2A_ERROR_CODES,
   A2A_METHODS,
@@ -35,6 +36,7 @@ import {
   type PushNotificationSetParams,
   type TaskIdParams,
 } from '@/app/api/a2a/serve/[agentId]/utils'
+import { getBrandConfig } from '@/ee/whitelabeling'
 
 const logger = createLogger('A2AServeAPI')
 
@@ -191,6 +193,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<R
 
     const authSchemes = (agent.authentication as { schemes?: string[] })?.schemes || []
     const requiresAuth = !authSchemes.includes('none')
+    let authenticatedUserId: string | null = null
+    let authenticatedAuthType: AuthResult['authType']
+    let authenticatedApiKeyType: AuthResult['apiKeyType']
 
     if (requiresAuth) {
       const auth = await checkHybridAuth(request, { requireWorkflowId: false })
@@ -198,6 +203,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<R
         return NextResponse.json(
           createError(null, A2A_ERROR_CODES.AUTHENTICATION_REQUIRED, 'Unauthorized'),
           { status: 401 }
+        )
+      }
+      authenticatedUserId = auth.userId
+      authenticatedAuthType = auth.authType
+      authenticatedApiKeyType = auth.apiKeyType
+
+      const workspaceAccess = await checkWorkspaceAccess(agent.workspaceId, authenticatedUserId)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
+        return NextResponse.json(
+          createError(null, A2A_ERROR_CODES.AUTHENTICATION_REQUIRED, 'Access denied'),
+          { status: 403 }
         )
       }
     }
@@ -225,34 +241,61 @@ export async function POST(request: NextRequest, { params }: { params: Promise<R
     }
 
     const { id, method, params: rpcParams } = body
-    const apiKey = request.headers.get('X-API-Key')
+    const requestApiKey = request.headers.get('X-API-Key')
+    const apiKey = authenticatedAuthType === 'api_key' ? requestApiKey : null
+    const isPersonalApiKeyCaller =
+      authenticatedAuthType === 'api_key' && authenticatedApiKeyType === 'personal'
+    const billedUserId = await getWorkspaceBilledAccountUserId(agent.workspaceId)
+    if (!billedUserId) {
+      logger.error('Unable to resolve workspace billed account for A2A execution', {
+        agentId: agent.id,
+        workspaceId: agent.workspaceId,
+      })
+      return NextResponse.json(
+        createError(
+          id,
+          A2A_ERROR_CODES.INTERNAL_ERROR,
+          'Unable to resolve billing account for this workspace'
+        ),
+        { status: 500 }
+      )
+    }
+    const executionUserId =
+      isPersonalApiKeyCaller && authenticatedUserId ? authenticatedUserId : billedUserId
 
     logger.info(`A2A request: ${method} for agent ${agentId}`)
 
     switch (method) {
       case A2A_METHODS.MESSAGE_SEND:
-        return handleMessageSend(id, agent, rpcParams as MessageSendParams, apiKey)
+        return handleMessageSend(id, agent, rpcParams as MessageSendParams, apiKey, executionUserId)
 
       case A2A_METHODS.MESSAGE_STREAM:
-        return handleMessageStream(request, id, agent, rpcParams as MessageSendParams, apiKey)
+        return handleMessageStream(
+          request,
+          id,
+          agent,
+          rpcParams as MessageSendParams,
+          apiKey,
+          executionUserId
+        )
 
       case A2A_METHODS.TASKS_GET:
-        return handleTaskGet(id, rpcParams as TaskIdParams)
+        return handleTaskGet(id, agent.id, rpcParams as TaskIdParams)
 
       case A2A_METHODS.TASKS_CANCEL:
-        return handleTaskCancel(id, rpcParams as TaskIdParams)
+        return handleTaskCancel(id, agent.id, rpcParams as TaskIdParams)
 
       case A2A_METHODS.TASKS_RESUBSCRIBE:
-        return handleTaskResubscribe(request, id, rpcParams as TaskIdParams)
+        return handleTaskResubscribe(request, id, agent.id, rpcParams as TaskIdParams)
 
       case A2A_METHODS.PUSH_NOTIFICATION_SET:
-        return handlePushNotificationSet(id, rpcParams as PushNotificationSetParams)
+        return handlePushNotificationSet(id, agent.id, rpcParams as PushNotificationSetParams)
 
       case A2A_METHODS.PUSH_NOTIFICATION_GET:
-        return handlePushNotificationGet(id, rpcParams as TaskIdParams)
+        return handlePushNotificationGet(id, agent.id, rpcParams as TaskIdParams)
 
       case A2A_METHODS.PUSH_NOTIFICATION_DELETE:
-        return handlePushNotificationDelete(id, rpcParams as TaskIdParams)
+        return handlePushNotificationDelete(id, agent.id, rpcParams as TaskIdParams)
 
       default:
         return NextResponse.json(
@@ -268,6 +311,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<R
   }
 }
 
+async function getTaskForAgent(taskId: string, agentId: string) {
+  const [task] = await db.select().from(a2aTask).where(eq(a2aTask.id, taskId)).limit(1)
+  if (!task || task.agentId !== agentId) {
+    return null
+  }
+  return task
+}
+
 /**
  * Handle message/send - Send a message (v0.3)
  */
@@ -280,7 +331,8 @@ async function handleMessageSend(
     workspaceId: string
   },
   params: MessageSendParams,
-  apiKey?: string | null
+  apiKey?: string | null,
+  executionUserId?: string
 ): Promise<NextResponse> {
   if (!params?.message) {
     return NextResponse.json(
@@ -312,6 +364,13 @@ async function handleMessageSend(
       existingTask = found || null
 
       if (!existingTask) {
+        return NextResponse.json(
+          createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'),
+          { status: 404 }
+        )
+      }
+
+      if (existingTask.agentId !== agent.id) {
         return NextResponse.json(
           createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'),
           { status: 404 }
@@ -363,6 +422,7 @@ async function handleMessageSend(
     } = await buildExecuteRequest({
       workflowId: agent.workflowId,
       apiKey,
+      userId: executionUserId,
     })
 
     logger.info(`Executing workflow ${agent.workflowId} for A2A task ${taskId}`)
@@ -475,7 +535,8 @@ async function handleMessageStream(
     workspaceId: string
   },
   params: MessageSendParams,
-  apiKey?: string | null
+  apiKey?: string | null,
+  executionUserId?: string
 ): Promise<NextResponse> {
   if (!params?.message) {
     return NextResponse.json(
@@ -516,6 +577,13 @@ async function handleMessageStream(
     existingTask = found || null
 
     if (!existingTask) {
+      await releaseLock(lockKey, lockValue)
+      return NextResponse.json(createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'), {
+        status: 404,
+      })
+    }
+
+    if (existingTask.agentId !== agent.id) {
       await releaseLock(lockKey, lockValue)
       return NextResponse.json(createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'), {
         status: 404,
@@ -595,6 +663,7 @@ async function handleMessageStream(
         } = await buildExecuteRequest({
           workflowId: agent.workflowId,
           apiKey,
+          userId: executionUserId,
           stream: true,
         })
 
@@ -639,7 +708,7 @@ async function handleMessageStream(
         if (response.body && isStreamingResponse) {
           const reader = response.body.getReader()
           const decoder = new TextDecoder()
-          let accumulatedContent = ''
+          const contentChunks: string[] = []
           let finalContent: string | undefined
 
           while (true) {
@@ -650,7 +719,7 @@ async function handleMessageStream(
             const parsed = parseWorkflowSSEChunk(rawChunk)
 
             if (parsed.content) {
-              accumulatedContent += parsed.content
+              contentChunks.push(parsed.content)
               sendEvent('message', {
                 kind: 'message',
                 taskId,
@@ -666,6 +735,7 @@ async function handleMessageStream(
             }
           }
 
+          const accumulatedContent = contentChunks.join('')
           const messageContent =
             (finalContent !== undefined && finalContent.length > 0
               ? finalContent
@@ -775,6 +845,7 @@ async function handleMessageStream(
         controller.close()
       }
     },
+    cancel() {},
   })
 
   return new NextResponse(stream, {
@@ -788,7 +859,11 @@ async function handleMessageStream(
 /**
  * Handle tasks/get - Query task status
  */
-async function handleTaskGet(id: string | number, params: TaskIdParams): Promise<NextResponse> {
+async function handleTaskGet(
+  id: string | number,
+  agentId: string,
+  params: TaskIdParams
+): Promise<NextResponse> {
   if (!params?.id) {
     return NextResponse.json(
       createError(id, A2A_ERROR_CODES.INVALID_PARAMS, 'Task ID is required'),
@@ -801,7 +876,7 @@ async function handleTaskGet(id: string | number, params: TaskIdParams): Promise
       ? params.historyLength
       : undefined
 
-  const [task] = await db.select().from(a2aTask).where(eq(a2aTask.id, params.id)).limit(1)
+  const task = await getTaskForAgent(params.id, agentId)
 
   if (!task) {
     return NextResponse.json(createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'), {
@@ -825,7 +900,11 @@ async function handleTaskGet(id: string | number, params: TaskIdParams): Promise
 /**
  * Handle tasks/cancel - Cancel a running task
  */
-async function handleTaskCancel(id: string | number, params: TaskIdParams): Promise<NextResponse> {
+async function handleTaskCancel(
+  id: string | number,
+  agentId: string,
+  params: TaskIdParams
+): Promise<NextResponse> {
   if (!params?.id) {
     return NextResponse.json(
       createError(id, A2A_ERROR_CODES.INVALID_PARAMS, 'Task ID is required'),
@@ -833,7 +912,7 @@ async function handleTaskCancel(id: string | number, params: TaskIdParams): Prom
     )
   }
 
-  const [task] = await db.select().from(a2aTask).where(eq(a2aTask.id, params.id)).limit(1)
+  const task = await getTaskForAgent(params.id, agentId)
 
   if (!task) {
     return NextResponse.json(createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'), {
@@ -897,6 +976,7 @@ async function handleTaskCancel(id: string | number, params: TaskIdParams): Prom
 async function handleTaskResubscribe(
   request: NextRequest,
   id: string | number,
+  agentId: string,
   params: TaskIdParams
 ): Promise<NextResponse> {
   if (!params?.id) {
@@ -906,7 +986,7 @@ async function handleTaskResubscribe(
     )
   }
 
-  const [task] = await db.select().from(a2aTask).where(eq(a2aTask.id, params.id)).limit(1)
+  const task = await getTaskForAgent(params.id, agentId)
 
   if (!task) {
     return NextResponse.json(createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'), {
@@ -938,13 +1018,25 @@ async function handleTaskResubscribe(
   let pollTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   const abortSignal = request.signal
-  abortSignal.addEventListener('abort', () => {
+  abortSignal.addEventListener(
+    'abort',
+    () => {
+      isCancelled = true
+      if (pollTimeoutId) {
+        clearTimeout(pollTimeoutId)
+        pollTimeoutId = null
+      }
+    },
+    { once: true }
+  )
+
+  const cleanup = () => {
     isCancelled = true
     if (pollTimeoutId) {
       clearTimeout(pollTimeoutId)
       pollTimeoutId = null
     }
-  })
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -960,14 +1052,6 @@ async function handleTaskResubscribe(
           logger.error('Error sending SSE event:', error)
           isCancelled = true
           return false
-        }
-      }
-
-      const cleanup = () => {
-        isCancelled = true
-        if (pollTimeoutId) {
-          clearTimeout(pollTimeoutId)
-          pollTimeoutId = null
         }
       }
 
@@ -1082,11 +1166,7 @@ async function handleTaskResubscribe(
       poll()
     },
     cancel() {
-      isCancelled = true
-      if (pollTimeoutId) {
-        clearTimeout(pollTimeoutId)
-        pollTimeoutId = null
-      }
+      cleanup()
     },
   })
 
@@ -1103,6 +1183,7 @@ async function handleTaskResubscribe(
  */
 async function handlePushNotificationSet(
   id: string | number,
+  agentId: string,
   params: PushNotificationSetParams
 ): Promise<NextResponse> {
   if (!params?.id) {
@@ -1119,7 +1200,7 @@ async function handlePushNotificationSet(
     )
   }
 
-  const urlValidation = validateExternalUrl(
+  const urlValidation = await validateUrlWithDNS(
     params.pushNotificationConfig.url,
     'Push notification URL'
   )
@@ -1130,7 +1211,7 @@ async function handlePushNotificationSet(
     )
   }
 
-  const [task] = await db.select().from(a2aTask).where(eq(a2aTask.id, params.id)).limit(1)
+  const task = await getTaskForAgent(params.id, agentId)
 
   if (!task) {
     return NextResponse.json(createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'), {
@@ -1181,6 +1262,7 @@ async function handlePushNotificationSet(
  */
 async function handlePushNotificationGet(
   id: string | number,
+  agentId: string,
   params: TaskIdParams
 ): Promise<NextResponse> {
   if (!params?.id) {
@@ -1190,7 +1272,7 @@ async function handlePushNotificationGet(
     )
   }
 
-  const [task] = await db.select().from(a2aTask).where(eq(a2aTask.id, params.id)).limit(1)
+  const task = await getTaskForAgent(params.id, agentId)
 
   if (!task) {
     return NextResponse.json(createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'), {
@@ -1224,6 +1306,7 @@ async function handlePushNotificationGet(
  */
 async function handlePushNotificationDelete(
   id: string | number,
+  agentId: string,
   params: TaskIdParams
 ): Promise<NextResponse> {
   if (!params?.id) {
@@ -1233,7 +1316,7 @@ async function handlePushNotificationDelete(
     )
   }
 
-  const [task] = await db.select().from(a2aTask).where(eq(a2aTask.id, params.id)).limit(1)
+  const task = await getTaskForAgent(params.id, agentId)
 
   if (!task) {
     return NextResponse.json(createError(id, A2A_ERROR_CODES.TASK_NOT_FOUND, 'Task not found'), {

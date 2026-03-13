@@ -1,7 +1,4 @@
-import { db } from '@sim/db'
-import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { authenticateApiKeyFromHeader, updateApiKeyLastUsed } from '@/lib/api-key/service'
 import { getSession } from '@/lib/auth'
@@ -12,36 +9,36 @@ const logger = createLogger('HybridAuth')
 export interface AuthResult {
   success: boolean
   userId?: string
+  userName?: string | null
+  userEmail?: string | null
   authType?: 'session' | 'api_key' | 'internal_jwt'
+  apiKeyType?: 'personal' | 'workspace'
   error?: string
 }
 
 /**
  * Resolves userId from a verified internal JWT token.
- * Extracts workflowId/userId from URL params or POST body, then looks up userId if needed.
+ * Extracts userId from the JWT payload, URL search params, or POST body.
  */
 async function resolveUserFromJwt(
   request: NextRequest,
   verificationUserId: string | null,
   options: { requireWorkflowId?: boolean }
 ): Promise<AuthResult> {
-  let workflowId: string | null = null
   let userId: string | null = verificationUserId
 
-  const { searchParams } = new URL(request.url)
-  workflowId = searchParams.get('workflowId')
   if (!userId) {
+    const { searchParams } = new URL(request.url)
     userId = searchParams.get('userId')
   }
 
-  if (!workflowId && !userId && request.method === 'POST') {
+  if (!userId && request.method === 'POST') {
     try {
       const clonedRequest = request.clone()
       const bodyText = await clonedRequest.text()
       if (bodyText) {
         const body = JSON.parse(bodyText)
-        workflowId = body.workflowId || body._context?.workflowId
-        userId = userId || body.userId || body._context?.userId
+        userId = body.userId || body._context?.userId || null
       }
     } catch {
       // Ignore JSON parse errors
@@ -52,22 +49,8 @@ async function resolveUserFromJwt(
     return { success: true, userId, authType: 'internal_jwt' }
   }
 
-  if (workflowId) {
-    const [workflowData] = await db
-      .select({ userId: workflow.userId })
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .limit(1)
-
-    if (!workflowData) {
-      return { success: false, error: 'Workflow not found' }
-    }
-
-    return { success: true, userId: workflowData.userId, authType: 'internal_jwt' }
-  }
-
   if (options.requireWorkflowId !== false) {
-    return { success: false, error: 'workflowId or userId required for internal JWT calls' }
+    return { success: false, error: 'userId required for internal JWT calls' }
   }
 
   return { success: true, authType: 'internal_jwt' }
@@ -161,6 +144,8 @@ export async function checkSessionOrInternalAuth(
       return {
         success: true,
         userId: session.user.id,
+        userName: session.user.name,
+        userEmail: session.user.email,
         authType: 'session',
       }
     }
@@ -208,6 +193,8 @@ export async function checkHybridAuth(
       return {
         success: true,
         userId: session.user.id,
+        userName: session.user.name,
+        userEmail: session.user.email,
         authType: 'session',
       }
     }
@@ -222,6 +209,7 @@ export async function checkHybridAuth(
           success: true,
           userId: result.userId!,
           authType: 'api_key',
+          apiKeyType: result.keyType,
         }
       }
 

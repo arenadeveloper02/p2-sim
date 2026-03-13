@@ -5,11 +5,13 @@ import type { StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import type {
+  Message,
   ProviderConfig,
   ProviderRequest,
   ProviderResponse,
   TimeSegment,
 } from '@/providers/types'
+import { ProviderError } from '@/providers/types'
 import {
   calculateCost,
   prepareToolExecution,
@@ -52,7 +54,7 @@ export const xAIProvider: ProviderConfig = {
       streaming: !!request.stream,
     })
 
-    const allMessages: any[] = []
+    const allMessages: Message[] = []
 
     if (request.systemPrompt) {
       allMessages.push({
@@ -92,12 +94,7 @@ export const xAIProvider: ProviderConfig = {
     }
 
     if (request.temperature !== undefined) basePayload.temperature = request.temperature
-    // xAI Grok models expect `max_completion_tokens`, not `max_tokens`,
-    // and the API requires a numeric value (not a string)
-    if (request.maxTokens !== undefined) {
-      const maxTokens = Number(request.maxTokens)
-      basePayload.max_completion_tokens = maxTokens
-    }
+    if (request.maxTokens != null) basePayload.max_completion_tokens = request.maxTokens
     let preparedTools: ReturnType<typeof prepareToolsWithUsageControl> | null = null
 
     if (tools?.length) {
@@ -118,7 +115,10 @@ export const xAIProvider: ProviderConfig = {
           }
         : { ...basePayload, stream: true, stream_options: { include_usage: true } }
 
-      const streamResponse = await xai.chat.completions.create(streamingParams)
+      const streamResponse = await xai.chat.completions.create(
+        streamingParams,
+        request.abortSignal ? { signal: request.abortSignal } : undefined
+      )
 
       const streamingResult = {
         stream: createReadableStreamFromXAIStream(streamResponse, (content, usage) => {
@@ -202,7 +202,10 @@ export const xAIProvider: ProviderConfig = {
         Object.assign(initialPayload, responseFormatPayload)
       }
 
-      let currentResponse = await xai.chat.completions.create(initialPayload)
+      let currentResponse = await xai.chat.completions.create(
+        initialPayload,
+        request.abortSignal ? { signal: request.abortSignal } : undefined
+      )
       const firstResponseTime = Date.now() - initialCallTime
 
       let content = currentResponse.choices[0]?.message?.content || ''
@@ -417,7 +420,10 @@ export const xAIProvider: ProviderConfig = {
 
           const nextModelStartTime = Date.now()
 
-          currentResponse = await xai.chat.completions.create(nextPayload)
+          currentResponse = await xai.chat.completions.create(
+            nextPayload,
+            request.abortSignal ? { signal: request.abortSignal } : undefined
+          )
           if (nextPayload.tool_choice && typeof nextPayload.tool_choice === 'object') {
             const result = checkForForcedToolUsage(
               currentResponse,
@@ -482,7 +488,10 @@ export const xAIProvider: ProviderConfig = {
           }
         }
 
-        const streamResponse = await xai.chat.completions.create(finalStreamingPayload as any)
+        const streamResponse = await xai.chat.completions.create(
+          finalStreamingPayload as any,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
 
@@ -592,15 +601,11 @@ export const xAIProvider: ProviderConfig = {
         hasResponseFormat: !!request.responseFormat,
       })
 
-      const enhancedError = new Error(error instanceof Error ? error.message : String(error))
-      // @ts-ignore - Adding timing property to error for debugging
-      enhancedError.timing = {
+      throw new ProviderError(error instanceof Error ? error.message : String(error), {
         startTime: providerStartTimeISO,
         endTime: providerEndTimeISO,
         duration: totalDuration,
-      }
-
-      throw enhancedError
+      })
     }
   },
 }

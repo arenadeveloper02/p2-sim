@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { BlockType, isTriggerBehavior } from '@/executor/constants'
+import { BlockType, isTriggerBehavior, isTriggerInternalKey } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
 
@@ -22,7 +22,7 @@ export class TriggerBlockHandler implements BlockHandler {
     }
 
     const existingState = ctx.blockStates.get(block.id)
-    if (existingState?.output && Object.keys(existingState.output).length > 0) {
+    if (existingState?.output) {
       return existingState.output
     }
 
@@ -33,7 +33,12 @@ export class TriggerBlockHandler implements BlockHandler {
         const starterOutput = starterState.output
 
         if (starterOutput.webhook?.data) {
-          const { webhook, workflowId, ...cleanOutput } = starterOutput
+          const cleanOutput: Record<string, unknown> = {}
+          for (const [key, value] of Object.entries(starterOutput)) {
+            if (!isTriggerInternalKey(key)) {
+              cleanOutput[key] = value
+            }
+          }
           return cleanOutput
         }
 

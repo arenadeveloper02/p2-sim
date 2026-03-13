@@ -1,13 +1,15 @@
 import { createLogger } from '@sim/logger'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
 import {
+  GetBlockConfigInput,
   type GetBlockConfigInputType,
   GetBlockConfigResult,
   type GetBlockConfigResultType,
 } from '@/lib/copilot/tools/shared/schemas'
+import { getAllowedIntegrationsFromEnv } from '@/lib/core/config/feature-flags'
 import { registry as blockRegistry, getLatestBlock } from '@/blocks/registry'
-import type { SubBlockConfig } from '@/blocks/types'
-import { getUserPermissionConfig } from '@/executor/utils/permission-check'
+import { isHiddenFromDisplay, type SubBlockConfig } from '@/blocks/types'
+import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 import { tools as toolsRegistry } from '@/tools/registry'
 import { getTrigger, isTriggerValid } from '@/triggers'
@@ -133,12 +135,13 @@ interface OutputFieldSchema {
 function matchesOperation(condition: any, operation: string): boolean {
   if (!condition) return false
 
-  const cond = typeof condition === 'function' ? condition() : condition
+  const cond = typeof condition === 'function' ? condition({ operation }) : condition
   if (!cond) return false
 
-  if (cond.field === 'operation' && !cond.not) {
+  if (cond.field === 'operation') {
     const values = Array.isArray(cond.value) ? cond.value : [cond.value]
-    return values.includes(operation)
+    const included = values.includes(operation)
+    return cond.not ? !included : included
   }
 
   return false
@@ -171,18 +174,10 @@ function extractInputsFromSubBlocks(
     // 1. Have no condition (common parameters)
     // 2. Have a condition matching the operation
     if (operation) {
-      const condition = typeof sb.condition === 'function' ? sb.condition() : sb.condition
-      if (condition) {
-        if (condition.field === 'operation' && !condition.not) {
-          // This is an operation-specific field
-          const values = Array.isArray(condition.value) ? condition.value : [condition.value]
-          if (!values.includes(operation)) {
-            continue // Skip if doesn't match our operation
-          }
-        } else if (!matchesOperation(condition, operation)) {
-          // Other condition that doesn't match
-          continue
-        }
+      const condition =
+        typeof sb.condition === 'function' ? sb.condition({ operation }) : sb.condition
+      if (condition && !matchesOperation(condition, operation)) {
+        continue
       }
     }
 
@@ -311,6 +306,7 @@ function extractTriggerOutputs(blockConfig: any): Record<string, OutputFieldSche
     const trigger = getTrigger(triggerId)
     if (trigger.outputs) {
       for (const [key, def] of Object.entries(trigger.outputs)) {
+        if (isHiddenFromDisplay(def)) continue
         outputs[key] = extractOutputField(def)
       }
     }
@@ -343,6 +339,7 @@ function extractOutputs(
         const tool = toolsRegistry[toolId]
         if (tool?.outputs) {
           for (const [key, def] of Object.entries(tool.outputs)) {
+            if (isHiddenFromDisplay(def)) continue
             outputs[key] = extractOutputField(def)
           }
           return outputs
@@ -356,6 +353,7 @@ function extractOutputs(
   // Use block-level outputs
   if (blockConfig.outputs) {
     for (const [key, def] of Object.entries(blockConfig.outputs)) {
+      if (isHiddenFromDisplay(def)) continue
       outputs[key] = extractOutputField(def)
     }
   }
@@ -368,6 +366,8 @@ export const getBlockConfigServerTool: BaseServerTool<
   GetBlockConfigResultType
 > = {
   name: 'get_block_config',
+  inputSchema: GetBlockConfigInput,
+  outputSchema: GetBlockConfigResult,
   async execute(
     { blockType, operation, trigger }: GetBlockConfigInputType,
     context?: { userId: string }
@@ -434,9 +434,10 @@ export const getBlockConfigServerTool: BaseServerTool<
     }
 
     const permissionConfig = context?.userId ? await getUserPermissionConfig(context.userId) : null
-    const allowedIntegrations = permissionConfig?.allowedIntegrations
+    const allowedIntegrations =
+      permissionConfig?.allowedIntegrations ?? getAllowedIntegrationsFromEnv()
 
-    if (allowedIntegrations != null && !allowedIntegrations.includes(blockType)) {
+    if (allowedIntegrations != null && !allowedIntegrations.includes(blockType.toLowerCase())) {
       throw new Error(`Block "${blockType}" is not available`)
     }
 

@@ -6,8 +6,10 @@
  */
 
 import type {
+  auditLog,
   member,
   organization,
+  referralCampaigns,
   subscription,
   user,
   userStats,
@@ -31,6 +33,7 @@ export type DbOrganization = InferSelectModel<typeof organization>
 export type DbSubscription = InferSelectModel<typeof subscription>
 export type DbMember = InferSelectModel<typeof member>
 export type DbUserStats = InferSelectModel<typeof userStats>
+export type DbReferralCampaign = InferSelectModel<typeof referralCampaigns>
 
 // =============================================================================
 // Pagination
@@ -645,4 +648,92 @@ export interface AdminDeployResult {
 
 export interface AdminUndeployResult {
   isDeployed: boolean
+}
+
+// =============================================================================
+// Referral Campaign Types
+// =============================================================================
+
+export interface AdminReferralCampaign {
+  id: string
+  name: string
+  code: string | null
+  utmSource: string | null
+  utmMedium: string | null
+  utmCampaign: string | null
+  utmContent: string | null
+  bonusCreditAmount: string
+  isActive: boolean
+  signupUrl: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export function toAdminReferralCampaign(
+  dbCampaign: DbReferralCampaign,
+  baseUrl: string
+): AdminReferralCampaign {
+  const utmParams = new URLSearchParams()
+  if (dbCampaign.utmSource) utmParams.set('utm_source', dbCampaign.utmSource)
+  if (dbCampaign.utmMedium) utmParams.set('utm_medium', dbCampaign.utmMedium)
+  if (dbCampaign.utmCampaign) utmParams.set('utm_campaign', dbCampaign.utmCampaign)
+  if (dbCampaign.utmContent) utmParams.set('utm_content', dbCampaign.utmContent)
+  const query = utmParams.toString()
+
+  return {
+    id: dbCampaign.id,
+    name: dbCampaign.name,
+    code: dbCampaign.code,
+    utmSource: dbCampaign.utmSource,
+    utmMedium: dbCampaign.utmMedium,
+    utmCampaign: dbCampaign.utmCampaign,
+    utmContent: dbCampaign.utmContent,
+    bonusCreditAmount: dbCampaign.bonusCreditAmount,
+    isActive: dbCampaign.isActive,
+    signupUrl: query ? `${baseUrl}/signup?${query}` : null,
+    createdAt: dbCampaign.createdAt.toISOString(),
+    updatedAt: dbCampaign.updatedAt.toISOString(),
+  }
+}
+
+// =============================================================================
+// Audit Log Types
+// =============================================================================
+
+export type DbAuditLog = InferSelectModel<typeof auditLog>
+
+export interface AdminAuditLog {
+  id: string
+  workspaceId: string | null
+  actorId: string | null
+  actorName: string | null
+  actorEmail: string | null
+  action: string
+  resourceType: string
+  resourceId: string | null
+  resourceName: string | null
+  description: string | null
+  metadata: unknown
+  ipAddress: string | null
+  userAgent: string | null
+  createdAt: string
+}
+
+export function toAdminAuditLog(dbLog: DbAuditLog): AdminAuditLog {
+  return {
+    id: dbLog.id,
+    workspaceId: dbLog.workspaceId,
+    actorId: dbLog.actorId,
+    actorName: dbLog.actorName,
+    actorEmail: dbLog.actorEmail,
+    action: dbLog.action,
+    resourceType: dbLog.resourceType,
+    resourceId: dbLog.resourceId,
+    resourceName: dbLog.resourceName,
+    description: dbLog.description,
+    metadata: dbLog.metadata,
+    ipAddress: dbLog.ipAddress,
+    userAgent: dbLog.userAgent,
+    createdAt: dbLog.createdAt.toISOString(),
+  }
 }

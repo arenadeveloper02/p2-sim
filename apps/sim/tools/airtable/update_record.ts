@@ -22,20 +22,20 @@ export const airtableUpdateRecordTool: ToolConfig<AirtableUpdateParams, Airtable
     baseId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID of the Airtable base',
+      visibility: 'user-or-llm',
+      description: 'Airtable base ID (starts with "app", e.g., "appXXXXXXXXXXXXXX")',
     },
     tableId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID or name of the table',
+      visibility: 'user-or-llm',
+      description: 'Table ID (starts with "tbl") or table name',
     },
     recordId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID of the record to update',
+      visibility: 'user-or-llm',
+      description: 'Record ID to update (starts with "rec", e.g., "recXXXXXXXXXXXXXX")',
     },
     fields: {
       type: 'json',
@@ -46,9 +46,8 @@ export const airtableUpdateRecordTool: ToolConfig<AirtableUpdateParams, Airtable
   },
 
   request: {
-    // The API endpoint uses PATCH for single record updates
     url: (params) =>
-      `https://api.airtable.com/v0/${params.baseId}/${params.tableId}/${params.recordId}`,
+      `https://api.airtable.com/v0/${params.baseId?.trim()}/${params.tableId?.trim()}/${params.recordId?.trim()}`,
     method: 'PATCH',
     headers: (params) => ({
       Authorization: `Bearer ${params.accessToken}`,
@@ -62,10 +61,10 @@ export const airtableUpdateRecordTool: ToolConfig<AirtableUpdateParams, Airtable
     return {
       success: true,
       output: {
-        record: data, // API returns the single updated record object
+        record: data,
         metadata: {
           recordCount: 1,
-          updatedFields: Object.keys(data.fields || {}),
+          updatedFields: Object.keys(data.fields ?? {}),
         },
       },
     }
@@ -74,11 +73,20 @@ export const airtableUpdateRecordTool: ToolConfig<AirtableUpdateParams, Airtable
   outputs: {
     record: {
       type: 'json',
-      description: 'Updated Airtable record with id, createdTime, and fields',
+      description: 'Updated Airtable record',
+      properties: {
+        id: { type: 'string', description: 'Record ID' },
+        createdTime: { type: 'string', description: 'Record creation timestamp' },
+        fields: { type: 'json', description: 'Record field values' },
+      },
     },
     metadata: {
       type: 'json',
-      description: 'Operation metadata including record count and updated field names',
+      description: 'Operation metadata',
+      properties: {
+        recordCount: { type: 'number', description: 'Number of records updated (always 1)' },
+        updatedFields: { type: 'array', description: 'List of field names that were updated' },
+      },
     },
   },
 }

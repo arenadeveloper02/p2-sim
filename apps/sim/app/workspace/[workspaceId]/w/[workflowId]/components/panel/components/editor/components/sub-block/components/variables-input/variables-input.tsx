@@ -345,7 +345,11 @@ export function VariablesInput({
                     <span className='block truncate font-medium text-[14px] text-[var(--text-tertiary)]'>
                       {assignment.variableName || `Variable ${index + 1}`}
                     </span>
-                    {assignment.variableName && <Badge size='sm'>{assignment.type}</Badge>}
+                    {assignment.variableName && (
+                      <Badge variant='type' size='sm'>
+                        {assignment.type}
+                      </Badge>
+                    )}
                   </div>
                   <div
                     className='flex items-center gap-[8px] pl-[8px]'
@@ -373,7 +377,7 @@ export function VariablesInput({
                 </div>
 
                 {!collapsed && (
-                  <div className='flex flex-col gap-[8px] border-[var(--border-1)] border-t px-[10px] pt-[6px] pb-[10px]'>
+                  <div className='flex flex-col gap-[8px] rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-[10px] pt-[6px] pb-[10px]'>
                     <div className='flex flex-col gap-[6px]'>
                       <Label className='text-[13px]'>Variable</Label>
                       <Combobox
@@ -448,7 +452,10 @@ export function VariablesInput({
                             ref={(el) => {
                               if (el) overlayRefs.current[assignment.id] = el
                             }}
-                            className='pointer-events-none absolute inset-0 flex items-start overflow-auto bg-transparent px-3 py-2 font-mono text-sm'
+                            className={cn(
+                              'absolute inset-0 flex items-start overflow-auto bg-transparent px-3 py-2 font-mono text-sm',
+                              !isReadOnly && 'pointer-events-none'
+                            )}
                             style={{ scrollbarWidth: 'none' }}
                           >
                             <div className='w-full whitespace-pre-wrap break-words'>
@@ -510,7 +517,10 @@ export function VariablesInput({
                             ref={(el) => {
                               if (el) overlayRefs.current[assignment.id] = el
                             }}
-                            className='pointer-events-none absolute inset-0 flex items-center overflow-x-auto bg-transparent px-[8px] py-[6px] font-medium font-sans text-sm'
+                            className={cn(
+                              'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-[8px] py-[6px] font-medium font-sans text-sm',
+                              !isReadOnly && 'pointer-events-none'
+                            )}
                             style={{ scrollbarWidth: 'none' }}
                           >
                             <div

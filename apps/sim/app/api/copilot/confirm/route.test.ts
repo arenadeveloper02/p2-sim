@@ -3,19 +3,29 @@
  *
  * @vitest-environment node
  */
-import { createMockRequest, mockAuth, mockCryptoUuid, setupCommonApiMocks } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-describe('Copilot Confirm API Route', () => {
-  const mockRedisExists = vi.fn()
-  const mockRedisSet = vi.fn()
-  const mockGetRedisClient = vi.fn()
+const { mockGetSession, mockRedisExists, mockRedisSet, mockGetRedisClient } = vi.hoisted(() => ({
+  mockGetSession: vi.fn(),
+  mockRedisExists: vi.fn(),
+  mockRedisSet: vi.fn(),
+  mockGetRedisClient: vi.fn(),
+}))
 
+vi.mock('@/lib/auth', () => ({
+  getSession: mockGetSession,
+}))
+
+vi.mock('@/lib/core/config/redis', () => ({
+  getRedisClient: mockGetRedisClient,
+}))
+
+import { POST } from '@/app/api/copilot/confirm/route'
+
+describe('Copilot Confirm API Route', () => {
   beforeEach(() => {
-    vi.resetModules()
-    setupCommonApiMocks()
-    mockCryptoUuid()
+    vi.clearAllMocks()
 
     const mockRedisClient = {
       exists: mockRedisExists,
@@ -26,15 +36,11 @@ describe('Copilot Confirm API Route', () => {
     mockRedisExists.mockResolvedValue(1)
     mockRedisSet.mockResolvedValue('OK')
 
-    vi.doMock('@/lib/core/config/redis', () => ({
-      getRedisClient: mockGetRedisClient,
-    }))
-
     vi.spyOn(global, 'setTimeout').mockImplementation((callback, _delay) => {
       if (typeof callback === 'function') {
         setImmediate(callback)
       }
-      return setTimeout(() => {}, 0) as any
+      return setTimeout(() => {}, 0) as unknown as NodeJS.Timeout
     })
 
     let mockTime = 1640995200000
@@ -45,21 +51,36 @@ describe('Copilot Confirm API Route', () => {
   })
 
   afterEach(() => {
-    vi.clearAllMocks()
     vi.restoreAllMocks()
   })
 
+  function createMockPostRequest(body: Record<string, unknown>): NextRequest {
+    return new NextRequest('http://localhost:3000/api/copilot/confirm', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  function setAuthenticated() {
+    mockGetSession.mockResolvedValue({
+      user: { id: 'test-user-id', email: 'test@example.com', name: 'Test User' },
+    })
+  }
+
+  function setUnauthenticated() {
+    mockGetSession.mockResolvedValue(null)
+  }
+
   describe('POST', () => {
     it('should return 401 when user is not authenticated', async () => {
-      const authMocks = mockAuth()
-      authMocks.setUnauthenticated()
+      setUnauthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-123',
         status: 'success',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(401)
@@ -68,14 +89,12 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should return 400 for invalid request body - missing toolCallId', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         status: 'success',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
@@ -84,15 +103,12 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should return 400 for invalid request body - missing status', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-123',
-        // Missing status
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
@@ -101,15 +117,13 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should return 400 for invalid status value', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-123',
         status: 'invalid-status',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
@@ -118,16 +132,14 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should successfully confirm tool call with success status', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-123',
         status: 'success',
         message: 'Tool executed successfully',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(200)
@@ -139,21 +151,18 @@ describe('Copilot Confirm API Route', () => {
         status: 'success',
       })
 
-      expect(mockRedisExists).toHaveBeenCalled()
       expect(mockRedisSet).toHaveBeenCalled()
     })
 
     it('should successfully confirm tool call with error status', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-456',
         status: 'error',
         message: 'Tool execution failed',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(200)
@@ -169,15 +178,13 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should successfully confirm tool call with accepted status', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-789',
         status: 'accepted',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(200)
@@ -193,15 +200,13 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should successfully confirm tool call with rejected status', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-101',
         status: 'rejected',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(200)
@@ -215,16 +220,14 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should successfully confirm tool call with background status', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-bg',
         status: 'background',
         message: 'Moved to background execution',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(200)
@@ -238,17 +241,15 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should return 400 when Redis client is not available', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
       mockGetRedisClient.mockReturnValue(null)
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-123',
         status: 'success',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
@@ -256,37 +257,33 @@ describe('Copilot Confirm API Route', () => {
       expect(responseData.error).toBe('Failed to update tool call status or tool call not found')
     })
 
-    it('should return 400 when tool call is not found in Redis', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+    it('should return 400 when Redis set fails', async () => {
+      setAuthenticated()
 
-      mockRedisExists.mockResolvedValue(0)
+      mockRedisSet.mockRejectedValueOnce(new Error('Redis set failed'))
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'non-existent-tool',
         status: 'success',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
       const responseData = await response.json()
       expect(responseData.error).toBe('Failed to update tool call status or tool call not found')
-    }, 10000) // 10 second timeout for this specific test
+    }, 10000)
 
     it('should handle Redis errors gracefully', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      mockRedisExists.mockRejectedValue(new Error('Redis connection failed'))
+      mockRedisSet.mockRejectedValueOnce(new Error('Redis connection failed'))
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-123',
         status: 'success',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
@@ -295,18 +292,16 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should handle Redis set operation failure', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
       mockRedisExists.mockResolvedValue(1)
       mockRedisSet.mockRejectedValue(new Error('Redis set failed'))
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: 'tool-call-123',
         status: 'success',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
@@ -315,8 +310,7 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should handle JSON parsing errors in request body', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
       const req = new NextRequest('http://localhost:3000/api/copilot/confirm', {
         method: 'POST',
@@ -326,7 +320,6 @@ describe('Copilot Confirm API Route', () => {
         },
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(500)
@@ -335,15 +328,13 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should validate empty toolCallId', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
-      const req = createMockRequest('POST', {
+      const req = createMockPostRequest({
         toolCallId: '',
         status: 'success',
       })
 
-      const { POST } = await import('@/app/api/copilot/confirm/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
@@ -352,18 +343,16 @@ describe('Copilot Confirm API Route', () => {
     })
 
     it('should handle all valid status types', async () => {
-      const authMocks = mockAuth()
-      authMocks.setAuthenticated()
+      setAuthenticated()
 
       const validStatuses = ['success', 'error', 'accepted', 'rejected', 'background']
 
       for (const status of validStatuses) {
-        const req = createMockRequest('POST', {
+        const req = createMockPostRequest({
           toolCallId: `tool-call-${status}`,
           status,
         })
 
-        const { POST } = await import('@/app/api/copilot/confirm/route')
         const response = await POST(req)
 
         expect(response.status).toBe(200)

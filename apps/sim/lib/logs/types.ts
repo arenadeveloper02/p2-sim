@@ -1,4 +1,5 @@
 import type { Edge } from 'reactflow'
+import type { ParentIteration, SerializableExecutionState } from '@/executor/execution/types'
 import type { BlockLog, NormalizedBlockOutput } from '@/executor/types'
 import type { DeploymentStatus } from '@/stores/workflows/registry/types'
 import type { Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
@@ -69,7 +70,7 @@ export interface ExecutionStatus {
 
 export interface WorkflowExecutionSnapshot {
   id: string
-  workflowId: string
+  workflowId: string | null
   stateHash: string
   stateData: WorkflowState
   createdAt: string
@@ -80,7 +81,7 @@ export type WorkflowExecutionSnapshotSelect = WorkflowExecutionSnapshot
 
 export interface WorkflowExecutionLog {
   id: string
-  workflowId: string
+  workflowId: string | null
   executionId: string
   stateSnapshotId: string
   level: 'info' | 'error'
@@ -111,6 +112,7 @@ export interface WorkflowExecutionLog {
         tokens?: { input?: number; output?: number; total?: number }
       }
     >
+    executionState?: SerializableExecutionState
     finalOutput?: any
     errorDetails?: {
       blockId: string
@@ -173,11 +175,15 @@ export interface TraceSpan {
   children?: TraceSpan[]
   toolCalls?: ToolCall[]
   status?: 'success' | 'error'
+  /** Whether this block's error was handled by an error handler path */
+  errorHandled?: boolean
   tokens?: number | TokenInfo
   relativeStartMs?: number
   blockId?: string
   input?: Record<string, unknown>
   output?: Record<string, unknown>
+  childWorkflowSnapshotId?: string
+  childWorkflowId?: string
   model?: string
   cost?: {
     input?: number
@@ -188,6 +194,7 @@ export interface TraceSpan {
   loopId?: string
   parallelId?: string
   iterationIndex?: number
+  parentIterations?: ParentIteration[]
 }
 
 export interface WorkflowExecutionSummary {
@@ -331,7 +338,6 @@ export interface BatchInsertResult<T> {
 export interface SnapshotService {
   createSnapshot(workflowId: string, state: WorkflowState): Promise<WorkflowExecutionSnapshot>
   getSnapshot(id: string): Promise<WorkflowExecutionSnapshot | null>
-  getSnapshotByHash(workflowId: string, hash: string): Promise<WorkflowExecutionSnapshot | null>
   computeStateHash(state: WorkflowState): string
   cleanupOrphanedSnapshots(olderThanDays: number): Promise<number>
 }
@@ -358,18 +364,32 @@ export interface ExecutionLoggerService {
     executionId: string
     endedAt: string
     totalDurationMs: number
-
     costSummary: {
       totalCost: number
       totalInputCost: number
       totalOutputCost: number
       totalTokens: number
+      totalPromptTokens: number
+      totalCompletionTokens: number
+      baseExecutionCharge: number
+      modelCost: number
+      models: Record<
+        string,
+        {
+          input: number
+          output: number
+          total: number
+          tokens: { input: number; output: number; total: number }
+        }
+      >
     }
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
     workflowInput?: any
+    finalChatOutput?: string
+    executionState?: SerializableExecutionState
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
   }): Promise<WorkflowExecutionLog>
 }

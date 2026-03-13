@@ -4,7 +4,7 @@ import postgres from 'postgres'
 import * as schema from './schema'
 
 export * from './schema'
-export { sql }
+export * from './triggers'
 
 const connectionString = process.env.DATABASE_URL!
 if (!connectionString) {

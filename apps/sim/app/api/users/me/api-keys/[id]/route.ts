@@ -3,6 +3,7 @@ import { apiKey } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 
@@ -17,7 +18,6 @@ export async function DELETE(
   const { id } = await params
 
   try {
-    logger.debug(`[${requestId}] Deleting API key: ${id}`)
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -34,11 +34,26 @@ export async function DELETE(
     const result = await db
       .delete(apiKey)
       .where(and(eq(apiKey.id, keyId), eq(apiKey.userId, userId)))
-      .returning({ id: apiKey.id })
+      .returning({ id: apiKey.id, name: apiKey.name })
 
     if (!result.length) {
       return NextResponse.json({ error: 'API key not found' }, { status: 404 })
     }
+
+    const deletedKey = result[0]
+
+    recordAudit({
+      workspaceId: null,
+      actorId: userId,
+      action: AuditAction.PERSONAL_API_KEY_REVOKED,
+      resourceType: AuditResourceType.API_KEY,
+      resourceId: keyId,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      resourceName: deletedKey.name,
+      description: `Revoked personal API key: ${deletedKey.name}`,
+      request,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

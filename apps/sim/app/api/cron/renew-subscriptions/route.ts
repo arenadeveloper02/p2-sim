@@ -1,12 +1,31 @@
 import { db } from '@sim/db'
-import { webhook as webhookTable, workflow as workflowTable } from '@sim/db/schema'
+import { account, webhook as webhookTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
-import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
+import { refreshAccessTokenIfNeeded, resolveOAuthAccountId } from '@/app/api/auth/oauth/utils'
 
 const logger = createLogger('TeamsSubscriptionRenewal')
+
+async function getCredentialOwner(
+  credentialId: string
+): Promise<{ userId: string; accountId: string } | null> {
+  const resolved = await resolveOAuthAccountId(credentialId)
+  if (!resolved) {
+    logger.error(`Failed to resolve OAuth account for credential ${credentialId}`)
+    return null
+  }
+  const [credentialRecord] = await db
+    .select({ userId: account.userId })
+    .from(account)
+    .where(eq(account.id, resolved.accountId))
+    .limit(1)
+
+  return credentialRecord
+    ? { userId: credentialRecord.userId, accountId: resolved.accountId }
+    : null
+}
 
 /**
  * Cron endpoint to renew Microsoft Teams chat subscriptions before they expire
@@ -27,14 +46,12 @@ export async function GET(request: NextRequest) {
     let totalFailed = 0
     let totalChecked = 0
 
-    // Get all active Microsoft Teams webhooks with their workflows
+    // Get all active Microsoft Teams webhooks
     const webhooksWithWorkflows = await db
       .select({
         webhook: webhookTable,
-        workflow: workflowTable,
       })
       .from(webhookTable)
-      .innerJoin(workflowTable, eq(webhookTable.workflowId, workflowTable.id))
       .where(
         and(
           eq(webhookTable.isActive, true),
@@ -52,7 +69,7 @@ export async function GET(request: NextRequest) {
     // Renewal threshold: 48 hours before expiration
     const renewalThreshold = new Date(Date.now() + 48 * 60 * 60 * 1000)
 
-    for (const { webhook, workflow } of webhooksWithWorkflows) {
+    for (const { webhook } of webhooksWithWorkflows) {
       const config = (webhook.providerConfig as Record<string, any>) || {}
 
       // Check if this is a Teams chat subscription that needs renewal
@@ -80,10 +97,17 @@ export async function GET(request: NextRequest) {
           continue
         }
 
+        const credentialOwner = await getCredentialOwner(credentialId)
+        if (!credentialOwner) {
+          logger.error(`Credential owner not found for credential ${credentialId}`)
+          totalFailed++
+          continue
+        }
+
         // Get fresh access token
         const accessToken = await refreshAccessTokenIfNeeded(
-          credentialId,
-          workflow.userId,
+          credentialOwner.accountId,
+          credentialOwner.userId,
           `renewal-${webhook.id}`
         )
 

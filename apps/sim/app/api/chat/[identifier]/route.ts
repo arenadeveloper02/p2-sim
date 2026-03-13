@@ -158,9 +158,6 @@ export async function POST(
   const requestId = generateRequestId()
 
   try {
-    logger.debug(`[${requestId}] Processing chat request for identifier: ${identifier}`)
-    logger.debug(`[${requestId}] Request body:`, request.body)
-
     let parsedBody
     try {
       const rawBody = await request.json()
@@ -1031,8 +1028,6 @@ export async function GET(
   const requestId = generateRequestId()
 
   try {
-    logger.debug(`[${requestId}] Fetching chat info for identifier: ${identifier}`)
-
     const deploymentResult = await db
       .select({
         id: chat.id,

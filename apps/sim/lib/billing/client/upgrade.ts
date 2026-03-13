@@ -25,9 +25,11 @@ export function useSubscriptionUpgrade() {
       }
 
       let currentSubscriptionId: string | undefined
+      let allSubscriptions: any[] = []
       try {
         const listResult = await client.subscription.list()
-        const activePersonalSub = listResult.data?.find(
+        allSubscriptions = listResult.data || []
+        const activePersonalSub = allSubscriptions.find(
           (sub: any) => sub.status === 'active' && sub.referenceId === userId
         )
         currentSubscriptionId = activePersonalSub?.id
@@ -41,6 +43,7 @@ export function useSubscriptionUpgrade() {
         try {
           const orgsResponse = await fetch('/api/organizations')
           if (!orgsResponse.ok) {
+            await orgsResponse.text().catch(() => {})
             throw new Error('Failed to check organization status')
           }
 
@@ -50,6 +53,25 @@ export function useSubscriptionUpgrade() {
           )
 
           if (existingOrg) {
+            // Check if this org already has an active team subscription
+            const existingTeamSub = allSubscriptions.find(
+              (sub: any) =>
+                sub.status === 'active' &&
+                sub.referenceId === existingOrg.id &&
+                (sub.plan === 'team' || sub.plan === 'enterprise')
+            )
+
+            if (existingTeamSub) {
+              logger.warn('Organization already has an active team subscription', {
+                userId,
+                organizationId: existingOrg.id,
+                existingSubscriptionId: existingTeamSub.id,
+              })
+              throw new Error(
+                'This organization already has an active team subscription. Please manage it from the billing settings.'
+              )
+            }
+
             logger.info('Using existing organization for team plan upgrade', {
               userId,
               organizationId: existingOrg.id,

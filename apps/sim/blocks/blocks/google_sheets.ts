@@ -1,6 +1,8 @@
 import { GoogleSheetsIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
+import { createVersionedToolSelector } from '@/blocks/utils'
 import type { GoogleSheetsResponse, GoogleSheetsV2Response } from '@/tools/google_sheets/types'
 
 // Legacy block - hidden from toolbar
@@ -35,13 +37,21 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       id: 'credential',
       title: 'Google Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       required: true,
       serviceId: 'google-sheets',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive',
-      ],
+      requiredScopes: getScopesForService('google-sheets'),
       placeholder: 'Select Google account',
+    },
+    {
+      id: 'manualCredential',
+      title: 'Google Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
     // Spreadsheet Selector
     {
@@ -50,10 +60,8 @@ export const GoogleSheetsBlock: BlockConfig<GoogleSheetsResponse> = {
       type: 'file-selector',
       canonicalParamId: 'spreadsheetId',
       serviceId: 'google-sheets',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive',
-      ],
+      selectorKey: 'google.drive',
+      requiredScopes: getScopesForService('google-sheets'),
       mimeType: 'application/vnd.google-apps.spreadsheet',
       placeholder: 'Select a spreadsheet',
       dependsOn: ['credential'],
@@ -245,7 +253,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
         }
       },
       params: (params) => {
-        const { credential, values, spreadsheetId, manualSpreadsheetId, ...rest } = params
+        const { oauthCredential, values, spreadsheetId, ...rest } = params
 
         // Handle values consistently for write / update / append:
         // - If it's already an array/object (e.g. passed from another block), use as-is
@@ -267,7 +275,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           }
         }
 
-        const effectiveSpreadsheetId = (spreadsheetId || manualSpreadsheetId || '').trim()
+        const effectiveSpreadsheetId = spreadsheetId ? String(spreadsheetId).trim() : ''
 
         if (!effectiveSpreadsheetId) {
           throw new Error('Spreadsheet ID is required.')
@@ -277,16 +285,15 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           ...rest,
           spreadsheetId: effectiveSpreadsheetId,
           values: parsedValues,
-          credential,
+          oauthCredential,
         }
       },
     },
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Google Sheets access token' },
-    spreadsheetId: { type: 'string', description: 'Spreadsheet identifier' },
-    manualSpreadsheetId: { type: 'string', description: 'Manual spreadsheet identifier' },
+    oauthCredential: { type: 'string', description: 'Google Sheets access token' },
+    spreadsheetId: { type: 'string', description: 'Spreadsheet identifier (canonical param)' },
     range: { type: 'string', description: 'Cell range' },
     values: { type: 'string', description: 'Cell values data' },
     valueInputOption: { type: 'string', description: 'Value input option' },
@@ -341,13 +348,21 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
       id: 'credential',
       title: 'Google Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       required: true,
       serviceId: 'google-sheets',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive',
-      ],
+      requiredScopes: getScopesForService('google-sheets'),
       placeholder: 'Select Google account',
+    },
+    {
+      id: 'manualCredential',
+      title: 'Google Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
     // Spreadsheet Selector (basic mode) - not for create operation
     {
@@ -356,10 +371,8 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
       type: 'file-selector',
       canonicalParamId: 'spreadsheetId',
       serviceId: 'google-sheets',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive',
-      ],
+      selectorKey: 'google.drive',
+      requiredScopes: getScopesForService('google-sheets'),
       mimeType: 'application/vnd.google-apps.spreadsheet',
       placeholder: 'Select a spreadsheet',
       dependsOn: ['credential'],
@@ -384,6 +397,8 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
       type: 'sheet-selector',
       canonicalParamId: 'sheetName',
       serviceId: 'google-sheets',
+      selectorKey: 'google.sheets',
+      selectorAllowSearch: false,
       placeholder: 'Select a sheet',
       required: true,
       dependsOn: { all: ['credential'], any: ['spreadsheetId', 'manualSpreadsheetId'] },
@@ -441,6 +456,36 @@ export const GoogleSheetsV2Block: BlockConfig<GoogleSheetsV2Response> = {
 Return ONLY the range string - no sheet name, no explanations, no quotes.`,
         placeholder: 'Describe the range (e.g., "first 50 rows" or "column A")...',
       },
+    },
+    // Read Filter Fields (advanced mode only)
+    {
+      id: 'filterColumn',
+      title: 'Filter Column',
+      type: 'short-input',
+      placeholder: 'Column header name to filter on (e.g., Email, Status)',
+      condition: { field: 'operation', value: 'read' },
+      mode: 'advanced',
+    },
+    {
+      id: 'filterValue',
+      title: 'Filter Value',
+      type: 'short-input',
+      placeholder: 'Value to match against',
+      condition: { field: 'operation', value: 'read' },
+      mode: 'advanced',
+    },
+    {
+      id: 'filterMatchType',
+      title: 'Match Type',
+      type: 'dropdown',
+      options: [
+        { label: 'Contains', id: 'contains' },
+        { label: 'Exact Match', id: 'exact' },
+        { label: 'Starts With', id: 'starts_with' },
+        { label: 'Ends With', id: 'ends_with' },
+      ],
+      condition: { field: 'operation', value: 'read' },
+      mode: 'advanced',
     },
     // Write-specific Fields
     {
@@ -720,42 +765,44 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
       'google_sheets_copy_sheet_v2',
     ],
     config: {
-      tool: (params) => {
-        switch (params.operation) {
-          case 'read':
-            return 'google_sheets_read_v2'
-          case 'write':
-            return 'google_sheets_write_v2'
-          case 'update':
-            return 'google_sheets_update_v2'
-          case 'append':
-            return 'google_sheets_append_v2'
-          case 'clear':
-            return 'google_sheets_clear_v2'
-          case 'get_info':
-            return 'google_sheets_get_spreadsheet_v2'
-          case 'create':
-            return 'google_sheets_create_spreadsheet_v2'
-          case 'batch_get':
-            return 'google_sheets_batch_get_v2'
-          case 'batch_update':
-            return 'google_sheets_batch_update_v2'
-          case 'batch_clear':
-            return 'google_sheets_batch_clear_v2'
-          case 'copy_sheet':
-            return 'google_sheets_copy_sheet_v2'
-          default:
-            throw new Error(`Invalid Google Sheets V2 operation: ${params.operation}`)
-        }
-      },
+      tool: createVersionedToolSelector({
+        baseToolSelector: (params) => {
+          switch (params.operation) {
+            case 'read':
+              return 'google_sheets_read'
+            case 'write':
+              return 'google_sheets_write'
+            case 'update':
+              return 'google_sheets_update'
+            case 'append':
+              return 'google_sheets_append'
+            case 'clear':
+              return 'google_sheets_clear'
+            case 'get_info':
+              return 'google_sheets_get_spreadsheet'
+            case 'create':
+              return 'google_sheets_create_spreadsheet'
+            case 'batch_get':
+              return 'google_sheets_batch_get'
+            case 'batch_update':
+              return 'google_sheets_batch_update'
+            case 'batch_clear':
+              return 'google_sheets_batch_clear'
+            case 'copy_sheet':
+              return 'google_sheets_copy_sheet'
+            default:
+              throw new Error(`Invalid Google Sheets operation: ${params.operation}`)
+          }
+        },
+        suffix: '_v2',
+        fallbackToolId: 'google_sheets_read_v2',
+      }),
       params: (params) => {
         const {
-          credential,
+          oauthCredential,
           values,
           spreadsheetId,
-          manualSpreadsheetId,
           sheetName,
-          manualSheetName,
           cellRange,
           title,
           sheetTitles,
@@ -763,6 +810,9 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           batchData,
           sheetId,
           destinationSpreadsheetId,
+          filterColumn,
+          filterValue,
+          filterMatchType,
           ...rest
         } = params
 
@@ -778,13 +828,11 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
             title: (title as string)?.trim(),
             sheetTitles: sheetTitlesArray,
             parentFolderId: folderId || undefined,
-            credential,
+            oauthCredential,
           }
         }
 
-        const effectiveSpreadsheetId = (
-          (spreadsheetId || manualSpreadsheetId || '') as string
-        ).trim()
+        const effectiveSpreadsheetId = spreadsheetId ? String(spreadsheetId).trim() : ''
 
         if (!effectiveSpreadsheetId) {
           throw new Error('Spreadsheet ID is required.')
@@ -794,7 +842,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
         if (operation === 'get_info') {
           return {
             spreadsheetId: effectiveSpreadsheetId,
-            credential,
+            oauthCredential,
           }
         }
 
@@ -804,7 +852,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           return {
             spreadsheetId: effectiveSpreadsheetId,
             ranges: parsedRanges,
-            credential,
+            oauthCredential,
           }
         }
 
@@ -815,7 +863,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
             ...rest,
             spreadsheetId: effectiveSpreadsheetId,
             data: parsedData,
-            credential,
+            oauthCredential,
           }
         }
 
@@ -825,7 +873,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           return {
             spreadsheetId: effectiveSpreadsheetId,
             ranges: parsedRanges,
-            credential,
+            oauthCredential,
           }
         }
 
@@ -835,12 +883,12 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
             sourceSpreadsheetId: effectiveSpreadsheetId,
             sheetId: Number.parseInt(sheetId as string, 10),
             destinationSpreadsheetId: (destinationSpreadsheetId as string)?.trim(),
-            credential,
+            oauthCredential,
           }
         }
 
         // Handle read/write/update/append/clear operations (require sheet name)
-        const effectiveSheetName = ((sheetName || manualSheetName || '') as string).trim()
+        const effectiveSheetName = sheetName ? String(sheetName).trim() : ''
 
         if (!effectiveSheetName) {
           throw new Error('Sheet name is required. Please select or enter a sheet name.')
@@ -854,18 +902,21 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           sheetName: effectiveSheetName,
           cellRange: cellRange ? (cellRange as string).trim() : undefined,
           values: parsedValues,
-          credential,
+          oauthCredential,
+          ...(filterColumn ? { filterColumn: (filterColumn as string).trim() } : {}),
+          ...(filterValue !== undefined && filterValue !== ''
+            ? { filterValue: filterValue as string }
+            : {}),
+          ...(filterMatchType ? { filterMatchType: filterMatchType as string } : {}),
         }
       },
     },
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Google Sheets access token' },
-    spreadsheetId: { type: 'string', description: 'Spreadsheet identifier' },
-    manualSpreadsheetId: { type: 'string', description: 'Manual spreadsheet identifier' },
-    sheetName: { type: 'string', description: 'Name of the sheet/tab' },
-    manualSheetName: { type: 'string', description: 'Manual sheet name entry' },
+    oauthCredential: { type: 'string', description: 'Google Sheets access token' },
+    spreadsheetId: { type: 'string', description: 'Spreadsheet identifier (canonical param)' },
+    sheetName: { type: 'string', description: 'Name of the sheet/tab (canonical param)' },
     cellRange: { type: 'string', description: 'Cell range (e.g., A1:D10)' },
     values: { type: 'string', description: 'Cell values data' },
     valueInputOption: { type: 'string', description: 'Value input option' },
@@ -878,6 +929,12 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
     destinationSpreadsheetId: {
       type: 'string',
       description: 'Destination spreadsheet ID for copy',
+    },
+    filterColumn: { type: 'string', description: 'Column header name to filter on' },
+    filterValue: { type: 'string', description: 'Value to match against the filter column' },
+    filterMatchType: {
+      type: 'string',
+      description: 'Match type: contains, exact, starts_with, or ends_with',
     },
   },
   outputs: {

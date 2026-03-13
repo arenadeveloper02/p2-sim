@@ -1,5 +1,9 @@
+import {
+  INCIDENTIO_PAGINATION_OUTPUT_PROPERTIES,
+  type IncidentioUsersListParams,
+  type IncidentioUsersListResponse,
+} from '@/tools/incidentio/types'
 import type { ToolConfig } from '@/tools/types'
-import type { IncidentioUsersListParams, IncidentioUsersListResponse } from './types'
 
 export const usersListTool: ToolConfig<IncidentioUsersListParams, IncidentioUsersListResponse> = {
   id: 'incidentio_users_list',
@@ -18,18 +22,30 @@ export const usersListTool: ToolConfig<IncidentioUsersListParams, IncidentioUser
     page_size: {
       type: 'number',
       required: false,
-      visibility: 'user-only',
-      description: 'Number of results to return per page (default: 25)',
+      visibility: 'user-or-llm',
+      description: 'Number of results to return per page (e.g., 10, 25, 50). Default: 25',
+    },
+    after: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Pagination cursor to fetch the next page of results',
     },
   },
 
   request: {
     url: (params) => {
-      const baseUrl = 'https://api.incident.io/v2/users'
+      const url = new URL('https://api.incident.io/v2/users')
+
       if (params.page_size) {
-        return `${baseUrl}?page_size=${params.page_size}`
+        url.searchParams.append('page_size', params.page_size.toString())
       }
-      return baseUrl
+
+      if (params.after) {
+        url.searchParams.append('after', params.after)
+      }
+
+      return url.toString()
     },
     method: 'GET',
     headers: (params) => ({
@@ -50,6 +66,13 @@ export const usersListTool: ToolConfig<IncidentioUsersListParams, IncidentioUser
           email: user.email,
           role: user.role,
         })),
+        pagination_meta: data.pagination_meta
+          ? {
+              after: data.pagination_meta.after,
+              page_size: data.pagination_meta.page_size,
+              total_record_count: data.pagination_meta.total_record_count,
+            }
+          : undefined,
       },
     }
   },
@@ -67,6 +90,12 @@ export const usersListTool: ToolConfig<IncidentioUsersListParams, IncidentioUser
           role: { type: 'string', description: 'Role of the user in the workspace' },
         },
       },
+    },
+    pagination_meta: {
+      type: 'object',
+      description: 'Pagination metadata',
+      optional: true,
+      properties: INCIDENTIO_PAGINATION_OUTPUT_PROPERTIES,
     },
   },
 }

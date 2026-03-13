@@ -19,10 +19,13 @@ import { checkUsageStatus } from '@/lib/billing/calculations/usage-monitor'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { RateLimiter } from '@/lib/core/rate-limiter'
 import { decryptSecret } from '@/lib/core/security/encryption'
+import { secureFetchWithValidation } from '@/lib/core/security/input-validation.server'
+import { formatDuration } from '@/lib/core/utils/formatting'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import type { TraceSpan, WorkflowExecutionLog } from '@/lib/logs/types'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import type { AlertConfig } from '@/lib/notifications/alert-rules'
+import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 
 const logger = createLogger('WorkspaceNotificationDelivery')
 
@@ -66,16 +69,25 @@ function generateSignature(secret: string, timestamp: number, body: string): str
 async function buildPayload(
   log: WorkflowExecutionLog,
   subscription: typeof workspaceNotificationSubscription.$inferSelect
-): Promise<NotificationPayload> {
+): Promise<NotificationPayload | null> {
+  // Skip notifications for deleted workflows
+  if (!log.workflowId) return null
+
   const workflowData = await db
-    .select({ name: workflowTable.name, userId: workflowTable.userId })
+    .select({
+      name: workflowTable.name,
+      workspaceId: workflowTable.workspaceId,
+    })
     .from(workflowTable)
     .where(eq(workflowTable.id, log.workflowId))
     .limit(1)
 
   const timestamp = Date.now()
   const executionData = (log.executionData || {}) as Record<string, unknown>
-  const userId = workflowData[0]?.userId
+  const workflowRecord = workflowData[0]
+  const userId = workflowRecord?.workspaceId
+    ? await getWorkspaceBilledAccountUserId(workflowRecord.workspaceId)
+    : null
 
   const payload: NotificationPayload = {
     id: `evt_${uuidv4()}`,
@@ -196,18 +208,18 @@ async function deliverWebhook(
     headers['sim-signature'] = `t=${payload.timestamp},v1=${signature}`
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 30000)
-
   try {
-    const response = await fetch(webhookConfig.url, {
-      method: 'POST',
-      headers,
-      body,
-      signal: controller.signal,
-    })
-
-    clearTimeout(timeoutId)
+    const response = await secureFetchWithValidation(
+      webhookConfig.url,
+      {
+        method: 'POST',
+        headers,
+        body,
+        timeout: 30000,
+        allowHttp: true,
+      },
+      'webhookUrl'
+    )
 
     return {
       success: response.ok,
@@ -215,19 +227,15 @@ async function deliverWebhook(
       error: response.ok ? undefined : `HTTP ${response.status}`,
     }
   } catch (error: unknown) {
-    clearTimeout(timeoutId)
-    const err = error as Error & { name?: string }
+    logger.warn('Webhook delivery failed', {
+      error: error instanceof Error ? error.message : String(error),
+      webhookUrl: webhookConfig.url,
+    })
     return {
       success: false,
-      error: err.name === 'AbortError' ? 'Request timeout' : err.message,
+      error: 'Failed to deliver webhook',
     }
   }
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  return `${(ms / 60000).toFixed(1)}m`
 }
 
 function formatCost(cost?: Record<string, unknown>): string {
@@ -299,7 +307,7 @@ async function deliverEmail(
     workflowName: payload.data.workflowName || 'Unknown Workflow',
     status: payload.data.status,
     trigger: payload.data.trigger,
-    duration: formatDuration(payload.data.totalDurationMs),
+    duration: formatDuration(payload.data.totalDurationMs, { precision: 1 }) ?? '-',
     cost: formatCost(payload.data.cost),
     logUrl,
     alertReason,
@@ -312,7 +320,7 @@ async function deliverEmail(
     to: subscription.emailRecipients,
     subject,
     html,
-    text: `${subject}\n${alertReason ? `\nReason: ${alertReason}\n` : ''}\nWorkflow: ${payload.data.workflowName}\nStatus: ${statusText}\nTrigger: ${payload.data.trigger}\nDuration: ${formatDuration(payload.data.totalDurationMs)}\nCost: ${formatCost(payload.data.cost)}\n\nView Log: ${logUrl}${includedDataText}`,
+    text: `${subject}\n${alertReason ? `\nReason: ${alertReason}\n` : ''}\nWorkflow: ${payload.data.workflowName}\nStatus: ${statusText}\nTrigger: ${payload.data.trigger}\nDuration: ${formatDuration(payload.data.totalDurationMs, { precision: 1 }) ?? '-'}\nCost: ${formatCost(payload.data.cost)}\n\nView Log: ${logUrl}${includedDataText}`,
     emailType: 'notifications',
   })
 
@@ -370,7 +378,10 @@ async function deliverSlack(
       fields: [
         { type: 'mrkdwn', text: `*Status:*\n${payload.data.status}` },
         { type: 'mrkdwn', text: `*Trigger:*\n${payload.data.trigger}` },
-        { type: 'mrkdwn', text: `*Duration:*\n${formatDuration(payload.data.totalDurationMs)}` },
+        {
+          type: 'mrkdwn',
+          text: `*Duration:*\n${formatDuration(payload.data.totalDurationMs, { precision: 1 }) ?? '-'}`,
+        },
         { type: 'mrkdwn', text: `*Cost:*\n${formatCost(payload.data.cost)}` },
       ],
     },
@@ -525,6 +536,13 @@ export async function executeNotificationDelivery(params: NotificationDeliveryPa
 
     const attempts = claimed[0].attempts
     const payload = await buildPayload(log, subscription)
+
+    // Skip delivery for deleted workflows
+    if (!payload) {
+      await updateDeliveryStatus(deliveryId, 'failed', 'Workflow was deleted')
+      logger.info(`Skipping delivery ${deliveryId} - workflow was deleted`)
+      return
+    }
 
     let result: { success: boolean; status?: number; error?: string }
 

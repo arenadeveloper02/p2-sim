@@ -91,9 +91,9 @@ export function validatePathSegment(
   const pathTraversalPatterns = [
     '..',
     './',
-    '.\\.', // Windows path traversal
-    '%2e%2e', // URL encoded ..
-    '%252e%252e', // Double URL encoded ..
+    '.\\.',
+    '%2e%2e',
+    '%252e%252e',
     '..%2f',
     '..%5c',
     '%2e%2e%2f',
@@ -393,7 +393,6 @@ export function validateHostname(
 
   const lowerHostname = hostname.toLowerCase()
 
-  // Block localhost
   if (lowerHostname === 'localhost') {
     logger.warn('Hostname is localhost', { paramName })
     return {
@@ -402,7 +401,6 @@ export function validateHostname(
     }
   }
 
-  // Use ipaddr.js to check if hostname is an IP and if it's private/reserved
   if (ipaddr.isValid(lowerHostname)) {
     if (isPrivateOrReservedIP(lowerHostname)) {
       logger.warn('Hostname matches blocked IP range', {
@@ -416,7 +414,6 @@ export function validateHostname(
     }
   }
 
-  // Basic hostname format validation
   const hostnamePattern =
     /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i
 
@@ -462,10 +459,7 @@ export function validateFileExtension(
     }
   }
 
-  // Remove leading dot if present
   const ext = extension.startsWith('.') ? extension.slice(1) : extension
-
-  // Normalize to lowercase
   const normalizedExt = ext.toLowerCase()
 
   if (!allowedExtensions.map((e) => e.toLowerCase()).includes(normalizedExt)) {
@@ -517,7 +511,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Check for path traversal patterns (../)
   const pathTraversalPatterns = [
     '../',
     '..\\',
@@ -527,7 +520,7 @@ export function validateMicrosoftGraphId(
     '%2e%2e%5c',
     '%2e%2e\\',
     '..%5c',
-    '%252e%252e%252f', // double encoded
+    '%252e%252e%252f',
   ]
 
   const lowerValue = value.toLowerCase()
@@ -544,7 +537,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Check for control characters and null bytes
   if (/[\x00-\x1f\x7f]/.test(value) || value.includes('%00')) {
     logger.warn('Control characters in Microsoft Graph ID', { paramName })
     return {
@@ -553,7 +545,6 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Check for newlines (which could be used for header injection)
   if (value.includes('\n') || value.includes('\r')) {
     return {
       isValid: false,
@@ -561,8 +552,51 @@ export function validateMicrosoftGraphId(
     }
   }
 
-  // Microsoft Graph IDs can contain many characters, but not suspicious patterns
-  // We've blocked path traversal, so allow the rest
+  return { isValid: true, sanitized: value }
+}
+
+/**
+ * Validates SharePoint site IDs used in Microsoft Graph API.
+ *
+ * Site IDs are compound identifiers: `hostname,spsite-guid,spweb-guid`
+ * (e.g. `contoso.sharepoint.com,2C712604-1370-44E7-A1F5-426573FDA80A,2D2244C3-251A-49EA-93A8-39E1C3A060FE`).
+ * The API also accepts partial forms like a single GUID or just a hostname.
+ *
+ * Allowed characters: alphanumeric, periods, hyphens, and commas.
+ *
+ * @param value - The SharePoint site ID to validate
+ * @param paramName - Name of the parameter for error messages
+ * @returns ValidationResult
+ */
+export function validateSharePointSiteId(
+  value: string | null | undefined,
+  paramName = 'siteId'
+): ValidationResult {
+  if (value === null || value === undefined || value === '') {
+    return {
+      isValid: false,
+      error: `${paramName} is required`,
+    }
+  }
+
+  if (value.length > 512) {
+    return {
+      isValid: false,
+      error: `${paramName} exceeds maximum length`,
+    }
+  }
+
+  if (!/^[a-zA-Z0-9.\-,]+$/.test(value)) {
+    logger.warn('Invalid characters in SharePoint site ID', {
+      paramName,
+      value: value.substring(0, 100),
+    })
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid characters`,
+    }
+  }
+
   return { isValid: true, sanitized: value }
 }
 
@@ -585,7 +619,6 @@ export function validateJiraCloudId(
   value: string | null | undefined,
   paramName = 'cloudId'
 ): ValidationResult {
-  // Jira cloud IDs are alphanumeric with hyphens (UUID-like)
   return validatePathSegment(value, {
     paramName,
     allowHyphens: true,
@@ -614,7 +647,6 @@ export function validateJiraIssueKey(
   value: string | null | undefined,
   paramName = 'issueKey'
 ): ValidationResult {
-  // Jira issue keys: letters, numbers, hyphens (PROJECT-123 format)
   return validatePathSegment(value, {
     paramName,
     allowHyphens: true,
@@ -646,7 +678,8 @@ export function validateJiraIssueKey(
  */
 export function validateExternalUrl(
   url: string | null | undefined,
-  paramName = 'url'
+  paramName = 'url',
+  options: { allowHttp?: boolean } = {}
 ): ValidationResult {
   if (!url || typeof url !== 'string') {
     return {
@@ -655,7 +688,6 @@ export function validateExternalUrl(
     }
   }
 
-  // Must be a valid URL
   let parsedUrl: URL
   try {
     parsedUrl = new URL(url)
@@ -666,28 +698,42 @@ export function validateExternalUrl(
     }
   }
 
-  // Only allow https protocol
-  if (parsedUrl.protocol !== 'https:') {
+  const protocol = parsedUrl.protocol
+  const hostname = parsedUrl.hostname.toLowerCase()
+
+  const cleanHostname =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname
+
+  let isLocalhost = cleanHostname === 'localhost'
+  if (ipaddr.isValid(cleanHostname)) {
+    const processedIP = ipaddr.process(cleanHostname).toString()
+    if (processedIP === '127.0.0.1' || processedIP === '::1') {
+      isLocalhost = true
+    }
+  }
+
+  if (options.allowHttp) {
+    if (protocol !== 'https:' && protocol !== 'http:') {
+      return {
+        isValid: false,
+        error: `${paramName} must use http:// or https:// protocol`,
+      }
+    }
+    if (isLocalhost) {
+      return {
+        isValid: false,
+        error: `${paramName} cannot point to localhost`,
+      }
+    }
+  } else if (protocol !== 'https:' && !(protocol === 'http:' && isLocalhost)) {
     return {
       isValid: false,
       error: `${paramName} must use https:// protocol`,
     }
   }
 
-  // Block private IP ranges and localhost
-  const hostname = parsedUrl.hostname.toLowerCase()
-
-  // Block localhost
-  if (hostname === 'localhost') {
-    return {
-      isValid: false,
-      error: `${paramName} cannot point to localhost`,
-    }
-  }
-
-  // Use ipaddr.js to check if hostname is an IP and if it's private/reserved
-  if (ipaddr.isValid(hostname)) {
-    if (isPrivateOrReservedIP(hostname)) {
+  if (!isLocalhost && ipaddr.isValid(cleanHostname)) {
+    if (isPrivateOrReservedIP(cleanHostname)) {
       return {
         isValid: false,
         error: `${paramName} cannot point to private IP addresses`,
@@ -761,275 +807,6 @@ export function isPrivateOrReservedIP(ip: string): boolean {
   } catch {
     return true
   }
-}
-
-/**
- * Result type for async URL validation with resolved IP
- */
-export interface AsyncValidationResult extends ValidationResult {
-  resolvedIP?: string
-  originalHostname?: string
-}
-
-/**
- * Validates a URL and resolves its DNS to prevent SSRF via DNS rebinding
- *
- * This function:
- * 1. Performs basic URL validation (protocol, format)
- * 2. Resolves the hostname to an IP address
- * 3. Validates the resolved IP is not private/reserved
- * 4. Returns the resolved IP for use in the actual request
- *
- * @param url - The URL to validate
- * @param paramName - Name of the parameter for error messages
- * @returns AsyncValidationResult with resolved IP for DNS pinning
- */
-export async function validateUrlWithDNS(
-  url: string | null | undefined,
-  paramName = 'url'
-): Promise<AsyncValidationResult> {
-  const basicValidation = validateExternalUrl(url, paramName)
-  if (!basicValidation.isValid) {
-    return basicValidation
-  }
-
-  const parsedUrl = new URL(url!)
-  const hostname = parsedUrl.hostname
-
-  try {
-    // Dynamic import — webpackIgnore prevents bundler from resolving this Node.js built-in
-    const dns = await import(/* webpackIgnore: true */ 'dns/promises')
-    const { address } = await dns.lookup(hostname)
-
-    if (isPrivateOrReservedIP(address)) {
-      logger.warn('URL resolves to blocked IP address', {
-        paramName,
-        hostname,
-        resolvedIP: address,
-      })
-      return {
-        isValid: false,
-        error: `${paramName} resolves to a blocked IP address`,
-      }
-    }
-
-    return {
-      isValid: true,
-      resolvedIP: address,
-      originalHostname: hostname,
-    }
-  } catch (error) {
-    logger.warn('DNS lookup failed for URL', {
-      paramName,
-      hostname,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    return {
-      isValid: false,
-      error: `${paramName} hostname could not be resolved`,
-    }
-  }
-}
-
-export interface SecureFetchOptions {
-  method?: string
-  headers?: Record<string, string>
-  body?: string
-  timeout?: number
-  maxRedirects?: number
-}
-
-export class SecureFetchHeaders {
-  private headers: Map<string, string>
-
-  constructor(headers: Record<string, string>) {
-    this.headers = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
-  }
-
-  get(name: string): string | null {
-    return this.headers.get(name.toLowerCase()) ?? null
-  }
-
-  toRecord(): Record<string, string> {
-    const record: Record<string, string> = {}
-    for (const [key, value] of this.headers) {
-      record[key] = value
-    }
-    return record
-  }
-
-  [Symbol.iterator]() {
-    return this.headers.entries()
-  }
-}
-
-export interface SecureFetchResponse {
-  ok: boolean
-  status: number
-  statusText: string
-  headers: SecureFetchHeaders
-  text: () => Promise<string>
-  json: () => Promise<unknown>
-  arrayBuffer: () => Promise<ArrayBuffer>
-}
-
-const DEFAULT_MAX_REDIRECTS = 5
-
-function isRedirectStatus(status: number): boolean {
-  return status >= 300 && status < 400 && status !== 304
-}
-
-function resolveRedirectUrl(baseUrl: string, location: string): string {
-  try {
-    return new URL(location, baseUrl).toString()
-  } catch {
-    throw new Error(`Invalid redirect location: ${location}`)
-  }
-}
-
-/**
- * Performs a fetch with IP pinning to prevent DNS rebinding attacks.
- * Uses the pre-resolved IP address while preserving the original hostname for TLS SNI.
- * Follows redirects securely by validating each redirect target.
- */
-export async function secureFetchWithPinnedIP(
-  url: string,
-  resolvedIP: string,
-  options: SecureFetchOptions = {},
-  redirectCount = 0
-): Promise<SecureFetchResponse> {
-  const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS
-
-  // Dynamic imports — webpackIgnore prevents bundler from resolving these Node.js built-ins
-  const [httpModule, httpsModule] = await Promise.all([
-    import(/* webpackIgnore: true */ 'http'),
-    import(/* webpackIgnore: true */ 'https'),
-  ])
-  // Type assertions for Node.js built-in modules
-  const http = httpModule as unknown as typeof import('http')
-  const https = httpsModule as unknown as typeof import('https')
-
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url)
-    const isHttps = parsed.protocol === 'https:'
-    const defaultPort = isHttps ? 443 : 80
-    const port = parsed.port ? Number.parseInt(parsed.port, 10) : defaultPort
-
-    const isIPv6 = resolvedIP.includes(':')
-    const family = isIPv6 ? 6 : 4
-
-    const lookup: LookupFunction = (_hostname, opts, callback) => {
-      if (opts?.all) {
-        callback(null, [{ address: resolvedIP, family }])
-      } else {
-        callback(null, resolvedIP, family)
-      }
-    }
-
-    const agentOptions: AgentOptions = { lookup }
-
-    const agent = isHttps ? new https.Agent(agentOptions) : new http.Agent(agentOptions)
-
-    // Remove accept-encoding since Node.js http/https doesn't auto-decompress
-    // Headers are lowercase due to Web Headers API normalization in executeToolRequest
-    const { 'accept-encoding': _, ...sanitizedHeaders } = options.headers ?? {}
-
-    const requestOptions: RequestOptions = {
-      hostname: parsed.hostname,
-      port,
-      path: parsed.pathname + parsed.search,
-      method: options.method || 'GET',
-      headers: sanitizedHeaders,
-      agent,
-      timeout: options.timeout || 30000,
-    }
-
-    const protocol = isHttps ? https : http
-    const req = protocol.request(requestOptions, (res) => {
-      const statusCode = res.statusCode || 0
-      const location = res.headers.location
-
-      if (isRedirectStatus(statusCode) && location && redirectCount < maxRedirects) {
-        res.resume()
-        const redirectUrl = resolveRedirectUrl(url, location)
-
-        validateUrlWithDNS(redirectUrl, 'redirectUrl')
-          .then((validation) => {
-            if (!validation.isValid) {
-              reject(new Error(`Redirect blocked: ${validation.error}`))
-              return
-            }
-            return secureFetchWithPinnedIP(
-              redirectUrl,
-              validation.resolvedIP!,
-              options,
-              redirectCount + 1
-            )
-          })
-          .then((response) => {
-            if (response) resolve(response)
-          })
-          .catch(reject)
-        return
-      }
-
-      if (isRedirectStatus(statusCode) && location && redirectCount >= maxRedirects) {
-        res.resume()
-        reject(new Error(`Too many redirects (max: ${maxRedirects})`))
-        return
-      }
-
-      const chunks: Buffer[] = []
-
-      res.on('data', (chunk: Buffer) => chunks.push(chunk))
-
-      res.on('error', (error) => {
-        reject(error)
-      })
-
-      res.on('end', () => {
-        const bodyBuffer = Buffer.concat(chunks)
-        const body = bodyBuffer.toString('utf-8')
-        const headersRecord: Record<string, string> = {}
-        for (const [key, value] of Object.entries(res.headers)) {
-          if (typeof value === 'string') {
-            headersRecord[key.toLowerCase()] = value
-          } else if (Array.isArray(value)) {
-            headersRecord[key.toLowerCase()] = value.join(', ')
-          }
-        }
-
-        resolve({
-          ok: statusCode >= 200 && statusCode < 300,
-          status: statusCode,
-          statusText: res.statusMessage || '',
-          headers: new SecureFetchHeaders(headersRecord),
-          text: async () => body,
-          json: async () => JSON.parse(body),
-          arrayBuffer: async () =>
-            bodyBuffer.buffer.slice(
-              bodyBuffer.byteOffset,
-              bodyBuffer.byteOffset + bodyBuffer.byteLength
-            ),
-        })
-      })
-    })
-
-    req.on('error', (error) => {
-      reject(error)
-    })
-
-    req.on('timeout', () => {
-      req.destroy()
-      reject(new Error('Request timeout'))
-    })
-
-    if (options.body) {
-      req.write(options.body)
-    }
-
-    req.end()
-  })
 }
 
 /**
@@ -1318,6 +1095,77 @@ export function validateGoogleCalendarId(
     return {
       isValid: false,
       error: `${paramName} exceeds maximum length of 255 characters`,
+    }
+  }
+
+  return { isValid: true, sanitized: value }
+}
+
+/**
+ * Validates a pagination cursor token
+ *
+ * Pagination cursors are opaque tokens returned by APIs (e.g., Confluence, Jira)
+ * and passed back to get the next page. They are typically base64-encoded or
+ * URL-safe strings. This validator ensures the cursor cannot contain characters
+ * that could alter URL structure.
+ *
+ * @param value - The cursor token to validate
+ * @param paramName - Name of the parameter for error messages
+ * @param maxLength - Maximum length (default: 1024)
+ * @returns ValidationResult
+ *
+ * @example
+ * ```typescript
+ * if (cursor) {
+ *   const result = validatePaginationCursor(cursor, 'cursor')
+ *   if (!result.isValid) {
+ *     return NextResponse.json({ error: result.error }, { status: 400 })
+ *   }
+ * }
+ * ```
+ */
+export function validatePaginationCursor(
+  value: string | null | undefined,
+  paramName = 'cursor',
+  maxLength = 1024
+): ValidationResult {
+  if (value === null || value === undefined || value === '') {
+    return {
+      isValid: false,
+      error: `${paramName} is required`,
+    }
+  }
+
+  if (value.length > maxLength) {
+    logger.warn('Pagination cursor exceeds maximum length', {
+      paramName,
+      length: value.length,
+      maxLength,
+    })
+    return {
+      isValid: false,
+      error: `${paramName} exceeds maximum length of ${maxLength} characters`,
+    }
+  }
+
+  if (/[\x00-\x1f\x7f]/.test(value) || value.includes('%00')) {
+    logger.warn('Pagination cursor contains control characters', { paramName })
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid characters`,
+    }
+  }
+
+  // Allow alphanumeric, base64 chars (+, /, =), and URL-safe chars (-, _, ., ~, %)
+  const cursorPattern = /^[A-Za-z0-9+/=\-_.~%]+$/
+  if (!cursorPattern.test(value)) {
+    logger.warn('Pagination cursor contains disallowed characters', {
+      paramName,
+      value: value.substring(0, 100),
+    })
+    return {
+      isValid: false,
+      error: `${paramName} contains invalid characters`,
     }
   }
 

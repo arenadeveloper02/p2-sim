@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import type { BaseImageRequestBody } from '@/tools/openai/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -77,7 +78,6 @@ export const imageTool: ToolConfig = {
         n: params.n ? Number(params.n) : 1,
       }
 
-      // Add model-specific parameters
       if (params.model === 'dall-e-3') {
         if (params.quality) body.quality = params.quality
         if (params.style) body.style = params.style
@@ -108,13 +108,8 @@ export const imageTool: ToolConfig = {
 
       if (data.data?.[0]?.url) {
         imageUrl = data.data[0].url
-        logger.info('Found image URL in response for DALL-E 3', { imageUrl: imageUrl.substring(0, 100) })
       } else if (data.data?.[0]?.b64_json) {
         base64Image = data.data[0].b64_json
-        logger.info(
-          'Found base64 encoded image in response for GPT-Image-1',
-          `length: ${base64Image.length}`
-        )
       } else {
         logger.error('No image data found in API response:', data)
         throw new Error('No image data found in response')

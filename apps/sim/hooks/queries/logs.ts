@@ -1,4 +1,9 @@
-import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  type QueryClient,
+  useInfiniteQuery,
+  useQuery,
+} from '@tanstack/react-query'
 import { getEndDateFromTimeRange, getStartDateFromTimeRange } from '@/lib/logs/filters'
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import type {
@@ -146,7 +151,10 @@ export function useLogsList(
 
 interface UseLogDetailOptions {
   enabled?: boolean
-  refetchInterval?: number | false
+  refetchInterval?:
+    | number
+    | false
+    | ((query: { state: { data?: WorkflowLog } }) => number | false | undefined)
 }
 
 export function useLogDetail(logId: string | undefined, options?: UseLogDetailOptions) {
@@ -157,6 +165,17 @@ export function useLogDetail(logId: string | undefined, options?: UseLogDetailOp
     refetchInterval: options?.refetchInterval ?? false,
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+  })
+}
+
+/**
+ * Prefetches log detail data on hover for instant panel rendering on click.
+ */
+export function prefetchLogDetail(queryClient: QueryClient, logId: string) {
+  queryClient.prefetchQuery({
+    queryKey: logKeys.detail(logId),
+    queryFn: () => fetchLogDetail(logId),
+    staleTime: 30 * 1000,
   })
 }
 
@@ -210,6 +229,7 @@ export interface ExecutionSnapshotData {
   executionId: string
   workflowId: string
   workflowState: Record<string, unknown>
+  childWorkflowSnapshots?: Record<string, Record<string, unknown>>
   executionMetadata: {
     trigger: string
     startedAt: string

@@ -1,10 +1,11 @@
 import { db } from '@sim/db'
-import { workflow } from '@sim/db/schema'
+import { permissions, workflow, workflowFolder } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, asc, eq, isNull, min } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, min } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getUserEntityPermissions, workspaceExists } from '@/lib/workspaces/permissions/utils'
 import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
@@ -21,20 +22,19 @@ const CreateWorkflowSchema = z.object({
 })
 
 // GET /api/workflows - Get workflows for user (optionally filtered by workspaceId)
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const requestId = generateRequestId()
   const startTime = Date.now()
   const url = new URL(request.url)
   const workspaceId = url.searchParams.get('workspaceId')
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+    if (!auth.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized workflow access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const userId = session.user.id
+    const userId = auth.userId
 
     if (workspaceId) {
       const wsExists = await workspaceExists(workspaceId)
@@ -73,10 +73,18 @@ export async function GET(request: Request) {
         .where(eq(workflow.workspaceId, workspaceId))
         .orderBy(...orderByClause)
     } else {
+      const workspacePermissionRows = await db
+        .select({ workspaceId: permissions.entityId })
+        .from(permissions)
+        .where(and(eq(permissions.userId, userId), eq(permissions.entityType, 'workspace')))
+      const workspaceIds = workspacePermissionRows.map((row) => row.workspaceId)
+      if (workspaceIds.length === 0) {
+        return NextResponse.json({ data: [] }, { status: 200 })
+      }
       workflows = await db
         .select()
         .from(workflow)
-        .where(eq(workflow.userId, userId))
+        .where(inArray(workflow.workspaceId, workspaceIds))
         .orderBy(...orderByClause)
     }
 
@@ -91,12 +99,12 @@ export async function GET(request: Request) {
 // POST /api/workflows - Create a new workflow
 export async function POST(req: NextRequest) {
   const requestId = generateRequestId()
-  const session = await getSession()
-
-  if (!session?.user?.id) {
+  const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
+  if (!auth.success || !auth.userId) {
     logger.warn(`[${requestId}] Unauthorized workflow creation attempt`)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const userId = auth.userId
 
   try {
     const body = await req.json()
@@ -109,28 +117,33 @@ export async function POST(req: NextRequest) {
       sortOrder: providedSortOrder,
     } = CreateWorkflowSchema.parse(body)
 
-    if (workspaceId) {
-      const workspacePermission = await getUserEntityPermissions(
-        session.user.id,
-        'workspace',
-        workspaceId
+    if (!workspaceId) {
+      logger.warn(`[${requestId}] Workflow creation blocked: missing workspaceId`)
+      return NextResponse.json(
+        {
+          error:
+            'workspaceId is required. Personal workflows are deprecated and cannot be created.',
+        },
+        { status: 400 }
       )
+    }
 
-      if (!workspacePermission || workspacePermission === 'read') {
-        logger.warn(
-          `[${requestId}] User ${session.user.id} attempted to create workflow in workspace ${workspaceId} without write permissions`
-        )
-        return NextResponse.json(
-          { error: 'Write or Admin access required to create workflows in this workspace' },
-          { status: 403 }
-        )
-      }
+    const workspacePermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
+
+    if (!workspacePermission || workspacePermission === 'read') {
+      logger.warn(
+        `[${requestId}] User ${userId} attempted to create workflow in workspace ${workspaceId} without write permissions`
+      )
+      return NextResponse.json(
+        { error: 'Write or Admin access required to create workflows in this workspace' },
+        { status: 403 }
+      )
     }
 
     const workflowId = crypto.randomUUID()
     const now = new Date()
 
-    logger.info(`[${requestId}] Creating workflow ${workflowId} for user ${session.user.id}`)
+    logger.info(`[${requestId}] Creating workflow ${workflowId} for user ${userId}`)
 
     import('@/lib/core/telemetry')
       .then(({ PlatformEvents }) => {
@@ -149,22 +162,39 @@ export async function POST(req: NextRequest) {
     if (providedSortOrder !== undefined) {
       sortOrder = providedSortOrder
     } else {
-      const folderCondition = folderId ? eq(workflow.folderId, folderId) : isNull(workflow.folderId)
-      const [minResult] = await db
-        .select({ minOrder: min(workflow.sortOrder) })
-        .from(workflow)
-        .where(
-          workspaceId
-            ? and(eq(workflow.workspaceId, workspaceId), folderCondition)
-            : and(eq(workflow.userId, session.user.id), folderCondition)
-        )
-      sortOrder = (minResult?.minOrder ?? 1) - 1
+      const workflowParentCondition = folderId
+        ? eq(workflow.folderId, folderId)
+        : isNull(workflow.folderId)
+      const folderParentCondition = folderId
+        ? eq(workflowFolder.parentId, folderId)
+        : isNull(workflowFolder.parentId)
+
+      const [[workflowMinResult], [folderMinResult]] = await Promise.all([
+        db
+          .select({ minOrder: min(workflow.sortOrder) })
+          .from(workflow)
+          .where(and(eq(workflow.workspaceId, workspaceId), workflowParentCondition)),
+        db
+          .select({ minOrder: min(workflowFolder.sortOrder) })
+          .from(workflowFolder)
+          .where(and(eq(workflowFolder.workspaceId, workspaceId), folderParentCondition)),
+      ])
+
+      const minSortOrder = [workflowMinResult?.minOrder, folderMinResult?.minOrder].reduce<
+        number | null
+      >((currentMin, candidate) => {
+        if (candidate == null) return currentMin
+        if (currentMin == null) return candidate
+        return Math.min(currentMin, candidate)
+      }, null)
+
+      sortOrder = minSortOrder != null ? minSortOrder - 1 : 0
     }
 
     await db.insert(workflow).values({
       id: workflowId,
-      userId: session.user.id,
-      workspaceId: workspaceId || null,
+      userId,
+      workspaceId,
       folderId: folderId || null,
       sortOrder,
       name,
@@ -179,6 +209,20 @@ export async function POST(req: NextRequest) {
     })
 
     logger.info(`[${requestId}] Successfully created empty workflow ${workflowId}`)
+
+    recordAudit({
+      workspaceId,
+      actorId: userId,
+      actorName: auth.userName,
+      actorEmail: auth.userEmail,
+      action: AuditAction.WORKFLOW_CREATED,
+      resourceType: AuditResourceType.WORKFLOW,
+      resourceId: workflowId,
+      resourceName: name,
+      description: `Created workflow "${name}"`,
+      metadata: { name },
+      request: req,
+    })
 
     return NextResponse.json({
       id: workflowId,

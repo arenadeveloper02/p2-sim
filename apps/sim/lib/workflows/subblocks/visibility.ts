@@ -76,6 +76,23 @@ export function isCanonicalPair(group?: CanonicalGroup): boolean {
 }
 
 /**
+ * Builds default canonical mode overrides for a block's subblocks.
+ * All canonical pairs default to `'basic'`.
+ */
+export function buildDefaultCanonicalModes(
+  subBlocks: SubBlockConfig[]
+): Record<string, 'basic' | 'advanced'> {
+  const index = buildCanonicalIndex(subBlocks)
+  const modes: Record<string, 'basic' | 'advanced'> = {}
+  for (const group of Object.values(index.groupsById)) {
+    if (isCanonicalPair(group)) {
+      modes[group.canonicalId] = 'basic'
+    }
+  }
+  return modes
+}
+
+/**
  * Determine the active mode for a canonical group.
  */
 export function resolveCanonicalMode(
@@ -100,11 +117,14 @@ export function resolveCanonicalMode(
  * Evaluate a subblock condition against a map of raw values.
  */
 export function evaluateSubBlockCondition(
-  condition: SubBlockCondition | (() => SubBlockCondition) | undefined,
+  condition:
+    | SubBlockCondition
+    | ((values?: Record<string, unknown>) => SubBlockCondition)
+    | undefined,
   values: Record<string, unknown>
 ): boolean {
   if (!condition) return true
-  const actual = typeof condition === 'function' ? condition() : condition
+  const actual = typeof condition === 'function' ? condition(values) : condition
   const fieldValue = values[actual.field]
   const valueMatch = Array.isArray(actual.value)
     ? fieldValue != null &&

@@ -5,6 +5,9 @@ import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/auth/auth-client'
 import { fetchUserProfileSetPeopleMP } from '@/utilities/mixPanelTrigger'
+import { useReferralAttribution } from '@/hooks/use-referral-attribution'
+
+const logger = createLogger('WorkspacePage')
 
 interface WorkspaceSummary {
   id: string
@@ -13,11 +16,10 @@ interface WorkspaceSummary {
   createdAt?: string
 }
 
-const logger = createLogger('WorkspacePage')
-
 export default function WorkspacePage() {
   const router = useRouter()
   const { data: session, isPending } = useSession()
+  useReferralAttribution()
 
   useEffect(() => {
     fetchUserProfileSetPeopleMP()

@@ -11,7 +11,8 @@ import {
   createRequestTracker,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request-helpers'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
+import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import { isUuidV4 } from '@/executor/constants'
 
 const logger = createLogger('CheckpointRevertAPI')
@@ -58,7 +59,12 @@ export async function POST(request: NextRequest) {
       return createNotFoundResponse('Workflow not found')
     }
 
-    if (workflowData.userId !== userId) {
+    const authorization = await authorizeWorkflowByWorkspacePermission({
+      workflowId: checkpoint.workflowId,
+      userId,
+      action: 'write',
+    })
+    if (!authorization.allowed) {
       return createUnauthorizedResponse()
     }
 
@@ -93,7 +99,7 @@ export async function POST(request: NextRequest) {
     }
 
     const stateResponse = await fetch(
-      `${getBaseUrl()}/api/workflows/${checkpoint.workflowId}/state`,
+      `${getInternalApiBaseUrl()}/api/workflows/${checkpoint.workflowId}/state`,
       {
         method: 'PUT',
         headers: {

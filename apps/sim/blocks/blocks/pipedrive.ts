@@ -1,4 +1,5 @@
 import { PipedriveIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { PipedriveResponse } from '@/tools/pipedrive/types'
@@ -45,17 +46,20 @@ export const PipedriveBlock: BlockConfig<PipedriveResponse> = {
       id: 'credential',
       title: 'Pipedrive Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       serviceId: 'pipedrive',
-      requiredScopes: [
-        'base',
-        'deals:full',
-        'contacts:full',
-        'leads:full',
-        'activities:full',
-        'mail:full',
-        'projects:full',
-      ],
+      requiredScopes: getScopesForService('pipedrive'),
       placeholder: 'Select Pipedrive account',
+      required: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'Pipedrive Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
     },
     {
@@ -86,11 +90,34 @@ export const PipedriveBlock: BlockConfig<PipedriveResponse> = {
       condition: { field: 'operation', value: ['get_all_deals'] },
     },
     {
+      id: 'pipelineSelector',
+      title: 'Pipeline',
+      type: 'project-selector',
+      canonicalParamId: 'pipeline_id',
+      serviceId: 'pipedrive',
+      selectorKey: 'pipedrive.pipelines',
+      selectorAllowSearch: false,
+      placeholder: 'Select pipeline',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      condition: {
+        field: 'operation',
+        value: ['get_all_deals', 'create_deal', 'get_pipeline_deals'],
+      },
+      required: { field: 'operation', value: 'get_pipeline_deals' },
+    },
+    {
       id: 'pipeline_id',
       title: 'Pipeline ID',
       type: 'short-input',
-      placeholder: 'Filter by pipeline ID ',
-      condition: { field: 'operation', value: ['get_all_deals'] },
+      canonicalParamId: 'pipeline_id',
+      placeholder: 'Enter pipeline ID',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: ['get_all_deals', 'create_deal', 'get_pipeline_deals'],
+      },
+      required: { field: 'operation', value: 'get_pipeline_deals' },
     },
     {
       id: 'updated_since',
@@ -164,13 +191,6 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       condition: { field: 'operation', value: ['create_deal'] },
     },
     {
-      id: 'pipeline_id',
-      title: 'Pipeline ID',
-      type: 'short-input',
-      placeholder: 'Pipeline ID ',
-      condition: { field: 'operation', value: ['create_deal'] },
-    },
-    {
       id: 'stage_id',
       title: 'Stage ID',
       type: 'short-input',
@@ -216,31 +236,21 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       condition: { field: 'operation', value: ['update_deal'] },
     },
     {
-      id: 'deal_id',
-      title: 'Deal ID',
-      type: 'short-input',
-      placeholder: 'Filter by deal ID ',
-      condition: { field: 'operation', value: ['get_files'] },
-    },
-    {
-      id: 'person_id',
-      title: 'Person ID',
-      type: 'short-input',
-      placeholder: 'Filter by person ID ',
-      condition: { field: 'operation', value: ['get_files'] },
-    },
-    {
-      id: 'org_id',
-      title: 'Organization ID',
-      type: 'short-input',
-      placeholder: 'Filter by organization ID ',
+      id: 'sort',
+      title: 'Sort By',
+      type: 'dropdown',
+      options: [
+        { label: 'ID', id: 'id' },
+        { label: 'Update Time', id: 'update_time' },
+      ],
+      value: () => 'id',
       condition: { field: 'operation', value: ['get_files'] },
     },
     {
       id: 'limit',
       title: 'Limit',
       type: 'short-input',
-      placeholder: 'Number of results (default 100, max 500)',
+      placeholder: 'Number of results (default 100, max 100)',
       condition: { field: 'operation', value: ['get_files'] },
     },
     {
@@ -305,35 +315,34 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       id: 'cursor',
       title: 'Cursor',
       type: 'short-input',
-      placeholder: 'Pagination cursor (optional)',
-      condition: { field: 'operation', value: ['get_pipelines'] },
+      placeholder: 'Pagination cursor from previous response',
+      condition: {
+        field: 'operation',
+        value: ['get_all_deals', 'get_projects'],
+      },
     },
     {
-      id: 'pipeline_id',
-      title: 'Pipeline ID',
+      id: 'start',
+      title: 'Start (Offset)',
       type: 'short-input',
-      placeholder: 'Enter pipeline ID',
-      required: true,
-      condition: { field: 'operation', value: ['get_pipeline_deals'] },
+      placeholder: 'Pagination offset (e.g., 0, 100, 200)',
+      condition: {
+        field: 'operation',
+        value: [
+          'get_activities',
+          'get_leads',
+          'get_files',
+          'get_pipeline_deals',
+          'get_mail_messages',
+          'get_pipelines',
+        ],
+      },
     },
     {
       id: 'stage_id',
       title: 'Stage ID',
       type: 'short-input',
       placeholder: 'Filter by stage ID ',
-      condition: { field: 'operation', value: ['get_pipeline_deals'] },
-    },
-    {
-      id: 'status',
-      title: 'Status',
-      type: 'dropdown',
-      options: [
-        { label: 'All', id: '' },
-        { label: 'Open', id: 'open' },
-        { label: 'Won', id: 'won' },
-        { label: 'Lost', id: 'lost' },
-      ],
-      value: () => '',
       condition: { field: 'operation', value: ['get_pipeline_deals'] },
     },
     {
@@ -426,22 +435,29 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       id: 'deal_id',
       title: 'Deal ID',
       type: 'short-input',
-      placeholder: 'Filter by deal ID ',
-      condition: { field: 'operation', value: ['get_activities', 'create_activity'] },
+      placeholder: 'Associated deal ID ',
+      condition: { field: 'operation', value: ['create_activity'] },
     },
     {
       id: 'person_id',
       title: 'Person ID',
       type: 'short-input',
-      placeholder: 'Filter by person ID ',
-      condition: { field: 'operation', value: ['get_activities', 'create_activity'] },
+      placeholder: 'Associated person ID ',
+      condition: { field: 'operation', value: ['create_activity'] },
     },
     {
       id: 'org_id',
       title: 'Organization ID',
       type: 'short-input',
-      placeholder: 'Filter by organization ID ',
-      condition: { field: 'operation', value: ['get_activities', 'create_activity'] },
+      placeholder: 'Associated organization ID ',
+      condition: { field: 'operation', value: ['create_activity'] },
+    },
+    {
+      id: 'user_id',
+      title: 'User ID',
+      type: 'short-input',
+      placeholder: 'Filter by user ID',
+      condition: { field: 'operation', value: ['get_activities'] },
     },
     {
       id: 'type',
@@ -746,10 +762,10 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
         }
       },
       params: (params) => {
-        const { credential, operation, ...rest } = params
+        const { oauthCredential, operation, ...rest } = params
 
         const cleanParams: Record<string, any> = {
-          credential,
+          oauthCredential,
         }
 
         Object.entries(rest).forEach(([key, value]) => {
@@ -764,7 +780,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Pipedrive access token' },
+    oauthCredential: { type: 'string', description: 'Pipedrive access token' },
     deal_id: { type: 'string', description: 'Deal ID' },
     title: { type: 'string', description: 'Title' },
     value: { type: 'string', description: 'Monetary value' },
@@ -781,7 +797,8 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
     thread_id: { type: 'string', description: 'Mail thread ID' },
     sort_by: { type: 'string', description: 'Field to sort by' },
     sort_direction: { type: 'string', description: 'Sorting direction' },
-    cursor: { type: 'string', description: 'Pagination cursor' },
+    cursor: { type: 'string', description: 'Pagination cursor (v2 endpoints)' },
+    start: { type: 'string', description: 'Pagination start offset (v1 endpoints)' },
     project_id: { type: 'string', description: 'Project ID' },
     description: { type: 'string', description: 'Description' },
     start_date: { type: 'string', description: 'Start date' },
@@ -793,17 +810,21 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
     due_time: { type: 'string', description: 'Due time' },
     duration: { type: 'string', description: 'Duration' },
     done: { type: 'string', description: 'Completion status' },
+    user_id: { type: 'string', description: 'User ID' },
     note: { type: 'string', description: 'Notes' },
     lead_id: { type: 'string', description: 'Lead ID' },
     archived: { type: 'string', description: 'Archived status' },
     value_amount: { type: 'string', description: 'Value amount' },
     value_currency: { type: 'string', description: 'Value currency' },
     is_archived: { type: 'string', description: 'Archive status' },
+    organization_id: { type: 'string', description: 'Organization ID' },
+    owner_id: { type: 'string', description: 'Owner user ID' },
   },
   outputs: {
     deals: { type: 'json', description: 'Array of deal objects' },
     deal: { type: 'json', description: 'Single deal object' },
     files: { type: 'json', description: 'Array of file objects' },
+    downloadedFiles: { type: 'file[]', description: 'Downloaded files from Pipedrive' },
     messages: { type: 'json', description: 'Array of mail message objects' },
     pipelines: { type: 'json', description: 'Array of pipeline objects' },
     projects: { type: 'json', description: 'Array of project objects' },

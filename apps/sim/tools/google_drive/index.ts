@@ -7,6 +7,7 @@ import { getContentTool } from '@/tools/google_drive/get_content'
 import { getFileTool } from '@/tools/google_drive/get_file'
 import { listTool } from '@/tools/google_drive/list'
 import { listPermissionsTool } from '@/tools/google_drive/list_permissions'
+import { moveTool } from '@/tools/google_drive/move'
 import { searchTool } from '@/tools/google_drive/search'
 import { shareTool } from '@/tools/google_drive/share'
 import { trashTool } from '@/tools/google_drive/trash'
@@ -24,8 +25,9 @@ export const googleDriveGetAboutTool = getAboutTool
 export const googleDriveGetContentTool = getContentTool
 export const googleDriveGetFileTool = getFileTool
 export const googleDriveListTool = listTool
-export const googleDriveSearchTool = searchTool
 export const googleDriveListPermissionsTool = listPermissionsTool
+export const googleDriveMoveTool = moveTool
+export const googleDriveSearchTool = searchTool
 export const googleDriveShareTool = shareTool
 export const googleDriveTrashTool = trashTool
 export const googleDriveUnshareTool = unshareTool

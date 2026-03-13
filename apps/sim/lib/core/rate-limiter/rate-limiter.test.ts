@@ -5,6 +5,7 @@ import type { ConsumeResult, RateLimitStorageAdapter, TokenStatus } from './stor
 import { MANUAL_EXECUTION_LIMIT, RATE_LIMITS, RateLimitError } from './types'
 
 vi.mock('@sim/logger', () => loggerMock)
+vi.mock('@/lib/core/config/feature-flags', () => ({ isBillingEnabled: true }))
 
 interface MockAdapter {
   consumeTokens: Mock
@@ -171,7 +172,7 @@ describe('RateLimiter', () => {
       )
     })
 
-    it('should deny on storage error (fail closed)', async () => {
+    it('should allow on storage error (fail open)', async () => {
       mockAdapter.consumeTokens.mockRejectedValue(new Error('Storage error'))
 
       const result = await rateLimiter.checkRateLimitWithSubscription(
@@ -181,8 +182,8 @@ describe('RateLimiter', () => {
         false
       )
 
-      expect(result.allowed).toBe(false)
-      expect(result.remaining).toBe(0)
+      expect(result.allowed).toBe(true)
+      expect(result.remaining).toBe(1)
     })
 
     it('should work for all non-manual trigger types', async () => {
