@@ -1,4 +1,4 @@
-import { Container, Img, Link, Section } from '@react-email/components'
+import { Container, Section } from '@react-email/components'
 import { baseStyles, colors, spacing, typography } from '@/components/emails/_styles'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -119,7 +119,11 @@ export function EmailFooter({
               </td>
               <td style={baseStyles.footerText}>
                 {brand.name}
-                {isHosted && <>, Position<sup>2</sup>, 2880 Lakeside Drive, STE 131 Santa Clara, CA 95054, USA</>}
+                {isHosted && (
+                  <>
+                    , Position<sup>2</sup>, 2880 Lakeside Drive, STE 131 Santa Clara, CA 95054, USA
+                  </>
+                )}
               </td>
               <td style={baseStyles.gutter} width={spacing.gutter}>
                 &nbsp;

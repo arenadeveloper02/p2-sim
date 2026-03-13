@@ -791,6 +791,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           includeFileBase64,
           base64MaxBytes,
           timeoutMs: preprocessResult.executionTimeout?.sync,
+          sessionUserId: auth.authType === 'session' ? userId : undefined,
         },
         executionId,
       })

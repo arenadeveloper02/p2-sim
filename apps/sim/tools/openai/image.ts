@@ -118,9 +118,10 @@ export const imageTool: ToolConfig = {
       // Preserve the original imageUrl before any processing
       const originalImageUrl = imageUrl
 
-      // Get workflowId and userId from params context
+      // Use session user for path when present so path reflects who triggered the run
       const workflowId = params?._context?.workflowId || 'unknown'
-      const userId = params?._context?.userId || 'unknown'
+      const userId =
+        params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
 
       logger.info('Image generation context:', {
         workflowId,
@@ -153,7 +154,7 @@ export const imageTool: ToolConfig = {
 
           const arrayBuffer = await imageResponse.arrayBuffer()
           const buffer = Buffer.from(arrayBuffer)
-          
+
           if (buffer.length === 0) {
             logger.error('Empty image buffer received')
             throw new Error('Empty image received')
@@ -170,8 +171,7 @@ export const imageTool: ToolConfig = {
             originalImageUrl: originalImageUrl ? originalImageUrl.substring(0, 100) : 'null',
           })
           const agentS3Configured =
-            !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
-            !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
+            !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket && !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
           if (agentS3Configured) {
             throw new Error(
               `Failed to download image from OpenAI temporary URL for S3 storage: ${error instanceof Error ? error.message : String(error)}`
@@ -191,8 +191,7 @@ export const imageTool: ToolConfig = {
           }
 
           const agentS3Configured =
-            !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
-            !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
+            !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket && !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
           if (agentS3Configured) {
             logger.info('S3 upload started', { workflowId, userId, mimeType })
           }
@@ -216,8 +215,7 @@ export const imageTool: ToolConfig = {
         }
       } else if (imageUrl && !base64Image) {
         const agentS3Configured =
-          !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket &&
-          !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
+          !!S3_AGENT_GENERATED_IMAGES_CONFIG.bucket && !!S3_AGENT_GENERATED_IMAGES_CONFIG.region
         if (agentS3Configured) {
           throw new Error(
             'Could not download image from OpenAI temporary URL; S3 storage requires the image to be downloaded first.'
@@ -282,13 +280,19 @@ export const imageTool: ToolConfig = {
       description: 'Generated image data',
       properties: {
         content: { type: 'string', description: 'Image URL or identifier' },
-        image: { type: 'string', description: 'Image URL (stored in S3/local storage) or base64 encoded image data' },
+        image: {
+          type: 'string',
+          description: 'Image URL (stored in S3/local storage) or base64 encoded image data',
+        },
         metadata: {
           type: 'object',
           description: 'Image generation metadata',
           properties: {
             model: { type: 'string', description: 'Model used for image generation' },
-            stored: { type: 'boolean', description: 'Whether the image was stored in S3/local storage' },
+            stored: {
+              type: 'boolean',
+              description: 'Whether the image was stored in S3/local storage',
+            },
           },
         },
       },

@@ -69,23 +69,17 @@ export async function GET(
         pathSegments[3]
 
       if (!hasValidStructure) {
-        logger.warn('Agent-generated-image path must be agent-generated-images/[workflow_id]/[user_id]/[image]', {
-          fullPath,
-          segmentCount: pathSegments.length,
-        })
+        logger.warn(
+          'Agent-generated-image path must be agent-generated-images/[workflow_id]/[user_id]/[image]',
+          {
+            fullPath,
+            segmentCount: pathSegments.length,
+          }
+        )
         return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
-      const fileUserId = pathSegments[2]
-      if (fileUserId !== userId) {
-        logger.warn('User ID mismatch for agent-generated-image', {
-          fileUserId,
-          authenticatedUserId: userId,
-          fullPath,
-        })
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-      }
-
+      // Any authenticated user may view agent-generated images
       // Serve agent-generated-images file (cloud if context configured, else local)
       const agentImagesInCloud = isStorageContextConfigured('agent-generated-images')
       logger.info('Agent-generated-image serve: storage mode', {
@@ -314,7 +308,7 @@ async function handleAgentGeneratedImageLocal(
       const { join, resolve } = await import('path')
       const directPath = resolve(process.cwd(), filename)
       const { existsSync } = await import('fs')
-      
+
       logger.warn('File not found via findLocalFile, trying direct path:', {
         filename,
         filePath,

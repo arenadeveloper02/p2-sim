@@ -22,6 +22,7 @@ import type {
   ContextExtensions,
   WorkflowNodeMetadata,
 } from '@/executor/execution/types'
+import type { Message } from '@/executor/handlers/agent/types'
 import {
   generatePauseContextId,
   mapNodeMetadataToPauseScopes,
@@ -44,7 +45,6 @@ import { isJSONString } from '@/executor/utils/json'
 import { filterOutputForLog } from '@/executor/utils/output-filter'
 import type { VariableResolver } from '@/executor/variables/resolver'
 import type { SerializedBlock } from '@/serializer/types'
-import type { Message } from '@/executor/handlers/agent/types'
 import { SYSTEM_SUBBLOCK_IDS } from '@/triggers/constants'
 
 const logger = createLogger('BlockExecutor')

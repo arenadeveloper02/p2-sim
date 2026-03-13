@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { generateRequestId } from '@/lib/core/utils/request'
 import { getFacebookAdsAccounts } from '@/lib/channel-accounts'
+import { generateRequestId } from '@/lib/core/utils/request'
 import { parseQueryWithAI } from './ai-query-generation'
 import { makeFacebookAdsRequest } from './facebook-ads-api'
 import type { FacebookAdsRequest, FacebookAdsResponse } from './types'
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     // Get account ID from database
     const facebookAccounts = await getFacebookAdsAccounts()
     const accountData = facebookAccounts[account as string]
-    
+
     if (!accountData) {
       return NextResponse.json(
         {
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    
+
     const accountId = `act_${accountData.id}`
     const accountName = accountData.name
 

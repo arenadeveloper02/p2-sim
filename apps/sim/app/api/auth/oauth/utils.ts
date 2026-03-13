@@ -453,7 +453,9 @@ export async function refreshTokenIfNeeded(
         return { accessToken: credential.accessToken, refreshed: false }
       }
       // No tokens available, throw error
-      throw new Error('Credential not fully initialized: missing both access token and refresh token')
+      throw new Error(
+        'Credential not fully initialized: missing both access token and refresh token'
+      )
     }
   }
 
@@ -488,7 +490,9 @@ export async function refreshTokenIfNeeded(
       logger.info(`[${requestId}] Using existing access token without refresh capability`)
       return { accessToken: credential.accessToken, refreshed: false }
     }
-    throw new Error('Cannot refresh token: refresh token is missing and access token is not available')
+    throw new Error(
+      'Cannot refresh token: refresh token is missing and access token is not available'
+    )
   }
 
   try {

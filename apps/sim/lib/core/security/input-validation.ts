@@ -1,6 +1,6 @@
-import { createLogger } from '@sim/logger'
 import type { AgentOptions, RequestOptions } from 'http'
 import type { LookupFunction } from 'net'
+import { createLogger } from '@sim/logger'
 import * as ipaddr from 'ipaddr.js'
 
 const logger = createLogger('InputValidation')

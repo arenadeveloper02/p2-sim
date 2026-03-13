@@ -318,7 +318,13 @@ export function StartBlockInputModal({
                 {fieldType === 'boolean' ? (
                   <div className='flex items-center gap-2'>
                     <input
-                      ref={isFirstField ? (el) => { firstInputRef.current = el } : undefined}
+                      ref={
+                        isFirstField
+                          ? (el) => {
+                              firstInputRef.current = el
+                            }
+                          : undefined
+                      }
                       type='checkbox'
                       id={fieldName}
                       checked={value === true || value === 'true'}
@@ -331,7 +337,13 @@ export function StartBlockInputModal({
                   </div>
                 ) : fieldType === 'number' ? (
                   <Input
-                    ref={isFirstField ? (el) => { firstInputRef.current = el } : undefined}
+                    ref={
+                      isFirstField
+                        ? (el) => {
+                            firstInputRef.current = el
+                          }
+                        : undefined
+                    }
                     id={fieldName}
                     type='number'
                     value={
@@ -380,7 +392,13 @@ export function StartBlockInputModal({
                   />
                 ) : fieldType === 'object' || fieldType === 'array' ? (
                   <textarea
-                    ref={isFirstField ? (el) => { firstInputRef.current = el } : undefined}
+                    ref={
+                      isFirstField
+                        ? (el) => {
+                            firstInputRef.current = el
+                          }
+                        : undefined
+                    }
                     id={fieldName}
                     value={
                       typeof value === 'string'
@@ -408,7 +426,13 @@ export function StartBlockInputModal({
                   />
                 ) : (
                   <Input
-                    ref={isFirstField ? (el) => { firstInputRef.current = el } : undefined}
+                    ref={
+                      isFirstField
+                        ? (el) => {
+                            firstInputRef.current = el
+                          }
+                        : undefined
+                    }
                     id={fieldName}
                     type='text'
                     value={(() => {

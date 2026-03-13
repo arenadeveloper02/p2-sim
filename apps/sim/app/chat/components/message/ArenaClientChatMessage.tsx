@@ -101,9 +101,12 @@ export const ArenaClientChatMessage = memo(
         // If content is an object with an image field (from tool output)
         if (typeof content === 'object' && content !== null && content.image) {
           const imageValue = content.image
-          const isImageUrl = typeof imageValue === 'string' && (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
+          const isImageUrl =
+            typeof imageValue === 'string' &&
+            (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
           const isBase64Image = typeof imageValue === 'string' && isBase64(imageValue)
-          const contentStr = content.content && typeof content.content === 'string' ? content.content.trim() : ''
+          const contentStr =
+            content.content && typeof content.content === 'string' ? content.content.trim() : ''
           const contentIsImageUrl = contentStr && isImageUrlString(contentStr)
 
           return (
@@ -115,7 +118,9 @@ export const ArenaClientChatMessage = memo(
                 <div>{renderBs64Img({ isBase64: false, imageData: '', imageUrl: imageValue })}</div>
               )}
               {isBase64Image && (
-                <div>{renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}</div>
+                <div>
+                  {renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}
+                </div>
               )}
             </>
           )
@@ -133,7 +138,9 @@ export const ArenaClientChatMessage = memo(
         ) {
           return (
             <>
-              <div>{renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}</div>
+              <div>
+                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}
+              </div>
             </>
           )
         }
@@ -149,7 +156,7 @@ export const ArenaClientChatMessage = memo(
           const trimmed = content.trim()
           if (isImageUrlString(trimmed)) {
             return (
-              <div className="w-full">
+              <div className='w-full'>
                 {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
               </div>
             )

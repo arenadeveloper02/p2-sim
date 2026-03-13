@@ -4,7 +4,10 @@ import https from 'https'
 import type { LookupFunction } from 'net'
 import { createLogger } from '@sim/logger'
 import * as ipaddr from 'ipaddr.js'
-import { type ValidationResult, validateExternalUrl } from '@/lib/core/security/input-validation'
+import {
+  type ValidationResult,
+  validateExternalUrl,
+} from '@/lib/core/security/input-validation'
 
 const logger = createLogger('InputValidation')
 
