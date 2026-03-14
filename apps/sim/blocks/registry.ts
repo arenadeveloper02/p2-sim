@@ -42,6 +42,7 @@ import { EvernoteBlock } from '@/blocks/blocks/evernote'
 import { ExaBlock } from '@/blocks/blocks/exa'
 import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
 import { FigmaBlock } from '@/blocks/blocks/figma'
+import { FathomBlock } from '@/blocks/blocks/fathom'
 import { FileBlock, FileV2Block, FileV3Block } from '@/blocks/blocks/file'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
 import { FirefliesBlock, FirefliesV2Block } from '@/blocks/blocks/fireflies'
@@ -242,6 +243,7 @@ export const registry: Record<string, BlockConfig> = {
   dynamodb: DynamoDBBlock,
   elasticsearch: ElasticsearchBlock,
   elevenlabs: ElevenLabsBlock,
+  fathom: FathomBlock,
   enrich: EnrichBlock,
   evernote: EvernoteBlock,
   evaluator: EvaluatorBlock,
@@ -261,11 +263,12 @@ export const registry: Record<string, BlockConfig> = {
   github_v2: GitHubV2Block,
   gitlab: GitLabBlock,
   gmail: GmailBlock,
-  google_ads: GoogleAdsBlock,
+  // google_ads: GoogleAdsBlock,
   gmail_v2: GmailV2Block,
   google_ads_v1: GoogleAdsV1Block,
   google_calendar: GoogleCalendarBlock,
   google_calendar_v2: GoogleCalendarV2Block,
+  google_ads: GoogleAdsBlock,
   google_books: GoogleBooksBlock,
   google_contacts: GoogleContactsBlock,
   google_docs: GoogleDocsBlock,

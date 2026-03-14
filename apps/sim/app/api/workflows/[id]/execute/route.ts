@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { validate as uuidValidate, v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
 import {
   createTimeoutAbortController,
@@ -323,7 +323,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       )
     }
 
-    const defaultTriggerType = isPublicApiAccess || auth.authType === 'api_key' ? 'api' : 'manual'
+    const defaultTriggerType =
+      isPublicApiAccess || auth.authType === AuthType.API_KEY ? 'api' : 'manual'
 
     const {
       selectedOutputs,
@@ -382,7 +383,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // For API key and internal JWT auth, the entire body is the input (except for our control fields)
     // For session auth, the input is explicitly provided in the input field
     const input =
-      isPublicApiAccess || auth.authType === 'api_key' || auth.authType === 'internal_jwt'
+      isPublicApiAccess ||
+      auth.authType === AuthType.API_KEY ||
+      auth.authType === AuthType.INTERNAL_JWT
         ? (() => {
             const {
               selectedOutputs,
@@ -408,7 +411,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Public API callers always execute the deployed state, never the draft.
     const shouldUseDraftState = isPublicApiAccess
       ? false
-      : (useDraftState ?? auth.authType === 'session')
+      : (useDraftState ?? auth.authType === AuthType.SESSION)
     const streamHeader = req.headers.get('X-Stream-Response') === 'true'
     const enableSSE = streamHeader || streamParam === true
     const executionModeHeader = req.headers.get('X-Execution-Mode')
@@ -441,7 +444,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Client-side sessions and personal API keys bill/permission-check the
     // authenticated user, not the workspace billed account.
     const useAuthenticatedUserAsActor =
-      isClientSession || (auth.authType === 'api_key' && auth.apiKeyType === 'personal')
+      isClientSession || (auth.authType === AuthType.API_KEY && auth.apiKeyType === 'personal')
 
     // Authorization fetches the full workflow record and checks workspace permissions.
     // Run it first so we can pass the record to preprocessing (eliminates a duplicate DB query).
@@ -672,8 +675,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         const resultWithBase64 = { ...result, output: outputWithBase64 }
 
-        // Cleanup base64 cache for this execution
-        await cleanupExecutionBase64Cache(executionId)
 
         // Handle skipped workflows - always return the skip response content directly
         // Ignore selectedOutputs - just return the content
@@ -711,8 +712,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           }
         }
 
-        const hasResponseBlock = workflowHasResponseBlock(resultWithBase64)
-        if (hasResponseBlock) {
+        if (auth.authType !== AuthType.INTERNAL_JWT && workflowHasResponseBlock(resultWithBase64)) {
           return createHttpResponseFromBlock(resultWithBase64)
         }
 
