@@ -1,16 +1,11 @@
 import { createLogger } from '@sim/logger'
 import { generateInternalToken } from '@/lib/auth/internal'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
-import {
-  secureFetchWithPinnedIP,
-  validateUrlWithDNS,
-} from '@/lib/core/security/input-validation.server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
-import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
 import type { ExecutionContext } from '@/executor/types'
 import type { ErrorInfo } from '@/tools/error-extractors'
 import { extractErrorMessage } from '@/tools/error-extractors'
@@ -240,7 +235,7 @@ export async function executeTool(
     // Normalize tool ID to strip resource suffixes (e.g., workflow_executor_<uuid> -> workflow_executor)
     const normalizedToolId = normalizeToolId(toolId)
 
-    // Handle load_skill tool for agent skills progressive disclosure
+    // Handle load_skill tool for agent skills progressive disclosure (via API to avoid pulling @sim/db into client bundle)
     if (normalizedToolId === 'load_skill') {
       const skillName = params.skill_name
       const workspaceId = params._context?.workspaceId
@@ -251,17 +246,29 @@ export async function executeTool(
           error: 'Missing skill_name or workspace context',
         }
       }
-      const content = await resolveSkillContent(skillName, workspaceId)
-      if (!content) {
+      const loadSkillUrl = `${getInternalApiBaseUrl()}/api/tools/load-skill`
+      const headers = new Headers({ 'Content-Type': 'application/json' })
+      await addInternalAuthIfNeeded(headers, true, requestId, 'load_skill')
+      const loadSkillRes = await fetch(loadSkillUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ skillName, workspaceId }),
+      })
+      const loadSkillData = (await loadSkillRes.json()) as {
+        success: boolean
+        output?: { content: string }
+        error?: string
+      }
+      if (!loadSkillData.success || !loadSkillData.output?.content) {
         return {
           success: false,
-          output: { error: `Skill "${skillName}" not found` },
-          error: `Skill "${skillName}" not found`,
+          output: { error: loadSkillData.error || `Skill "${skillName}" not found` },
+          error: loadSkillData.error || `Skill "${skillName}" not found`,
         }
       }
       return {
         success: true,
-        output: { content },
+        output: { content: loadSkillData.output.content },
       }
     }
 
@@ -737,16 +744,18 @@ async function executeToolRequest(
     const isInternalRoute = endpointUrl.startsWith('/api/')
     const baseUrl = isInternalRoute ? getInternalApiBaseUrl() : getBaseUrl()
 
-    // Check if the URL function returned an error response
+    // Check if the URL function returned an error response (runtime shape; not in ToolConfig type)
     if (endpointUrl && typeof endpointUrl === 'object' && '_errorResponse' in endpointUrl) {
-      const errorResponse = endpointUrl._errorResponse
+      const errorResponse = (
+        endpointUrl as {
+          _errorResponse: { data?: { error?: { message?: string }; message?: string } }
+        }
+      )._errorResponse
+      const data = errorResponse.data
       return {
         success: false,
-        output: errorResponse.data || {},
-        error:
-          errorResponse.data?.error?.message ||
-          errorResponse.data?.message ||
-          'Tool execution failed',
+        output: data || {},
+        error: data?.error?.message ?? data?.message ?? 'Tool execution failed',
       }
     }
 
@@ -757,7 +766,8 @@ async function executeToolRequest(
       if (workflowId) {
         fullUrlObj.searchParams.set('workflowId', workflowId)
       }
-      const userId = params._context?.userId ?? params._context?.sessionUserId ?? params._context?.workflowUserId
+      const userId =
+        params._context?.userId ?? params._context?.sessionUserId ?? params._context?.workflowUserId
       if (userId) {
         fullUrlObj.searchParams.set('userId', userId)
       }
@@ -812,9 +822,6 @@ async function executeToolRequest(
       headersRecord[key] = value
     })
 
-
-
-
     const retryConfig = getRetryConfig(tool.request.retry, params, requestParams.method)
     const maxAttempts = retryConfig ? 1 + retryConfig.maxRetries : 1
 
@@ -849,35 +856,23 @@ async function executeToolRequest(
             clearTimeout(timeoutId)
           }
         } else {
-          const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl')
-          if (!urlValidation.isValid) {
-            throw new Error(`Invalid tool URL: ${urlValidation.error}`)
-          }
-
-          const secureResponse = await secureFetchWithPinnedIP(fullUrl, urlValidation.resolvedIP!, {
+          const proxyUrl = `${getInternalApiBaseUrl()}/api/tools/secure-fetch-proxy`
+          const proxyHeaders = new Headers({
+            'Content-Type': 'application/json',
+          })
+          await addInternalAuthIfNeeded(proxyHeaders, true, requestId, toolId)
+          const proxyBody = JSON.stringify({
+            url: fullUrl,
             method: requestParams.method,
             headers: headersRecord,
             body: requestParams.body ?? undefined,
             timeout: requestParams.timeout,
           })
-
-          const responseHeaders = new Headers(secureResponse.headers.toRecord())
-          const nullBodyStatuses = new Set([101, 204, 205, 304])
-
-          if (nullBodyStatuses.has(secureResponse.status)) {
-            response = new Response(null, {
-              status: secureResponse.status,
-              statusText: secureResponse.statusText,
-              headers: responseHeaders,
-            })
-          } else {
-            const bodyBuffer = await secureResponse.arrayBuffer()
-            response = new Response(bodyBuffer, {
-              status: secureResponse.status,
-              statusText: secureResponse.statusText,
-              headers: responseHeaders,
-            })
-          }
+          response = await fetch(proxyUrl, {
+            method: 'POST',
+            headers: proxyHeaders,
+            body: proxyBody,
+          })
         }
       } catch (error) {
         lastError = error

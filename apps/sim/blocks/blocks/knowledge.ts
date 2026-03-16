@@ -31,8 +31,6 @@ export const KnowledgeBlock: BlockConfig = {
       id: 'knowledgeBaseSelector',
       title: 'Knowledge Base',
       type: 'knowledge-base-selector',
-      canonicalParamId: 'knowledgeBaseId',
-      mode: 'basic',
       placeholder: 'Select knowledge base',
       multiSelect: false,
       required: true,

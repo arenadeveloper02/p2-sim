@@ -1,14 +1,7 @@
 import { db } from '@sim/db'
-import {
-  account,
-  accountTokens,
-  credential,
-  credentialSetMember,
-  workflow,
-} from '@sim/db/schema'
+import { account, accountTokens, credential, credentialSetMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
-import { getSession } from '@/lib/auth'
 import { refreshOAuthToken } from '@/lib/oauth'
 import {
   getMicrosoftRefreshTokenExpiry,
@@ -130,7 +123,7 @@ export async function getCredential(requestId: string, credentialId: string, use
 
   // logger.warn(`[${requestId}] Credential not found for ID or alias: ${credentialId}`)
   // return undefined
-  
+
   return {
     ...credentials[0],
     resolvedCredentialId: resolved.accountId,

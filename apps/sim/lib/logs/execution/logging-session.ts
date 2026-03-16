@@ -303,8 +303,15 @@ export class LoggingSession {
     }
     this.completing = true
 
-    const { endedAt, totalDurationMs, finalOutput, traceSpans, workflowInput, executionState, finalChatOutput } =
-      params
+    const {
+      endedAt,
+      totalDurationMs,
+      finalOutput,
+      traceSpans,
+      workflowInput,
+      executionState,
+      finalChatOutput,
+    } = params
 
     try {
       const costSummary = calculateCostSummary(traceSpans || [])

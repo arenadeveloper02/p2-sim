@@ -195,15 +195,14 @@ export function SearchModal({
     (block: SearchBlockItem, type: 'block' | 'trigger' | 'tool') => {
       selectTriggerEvent({
         'Element Name': block?.name || '',
-        'Element Type':
-          type === 'trigger' ? 'Trigger' : type === 'block' ? 'Block' : 'Tool',
+        'Element Type': type === 'trigger' ? 'Trigger' : type === 'block' ? 'Block' : 'Tool',
         Source: 'Search Modal',
       })
       const enableTriggerMode =
         type === 'trigger' && block.config ? hasTriggerCapability(block.config) : false
       window.dispatchEvent(
-          new CustomEvent('add-block-from-toolbar', {
-            detail: { type: block.type, enableTriggerMode },
+        new CustomEvent('add-block-from-toolbar', {
+          detail: { type: block.type, enableTriggerMode },
         })
       )
       onOpenChange(false)

@@ -1505,18 +1505,15 @@ export async function refreshOAuthToken(
     const { headers, bodyParams } = buildAuthRequest(config, refreshToken)
     logger.info('Token refresh request:', {
       provider,
-      config,
-      headers,
-      bodyParams,
+      tokenEndpoint: config.tokenEndpoint,
+      hasClientId: !!config.clientId,
+      hasClientSecret: !!config.clientSecret,
+      hasRefreshToken: !!refreshToken,
     })
 
     const response = await fetch(config.tokenEndpoint, {
       method: 'POST',
       headers,
-      body: new URLSearchParams(bodyParams).toString(),
-    })
-
-    logger.info('Token refresh body:', {
       body: new URLSearchParams(bodyParams).toString(),
     })
 
@@ -1559,7 +1556,9 @@ export async function refreshOAuthToken(
 
     if (!accessToken) {
       logger.warn('No access token found in refresh response', data)
-      return null
+      throw new Error(
+        'Failed to refresh token: provider returned no access token. The connection may have been revoked.'
+      )
     }
 
     logger.info('Token refreshed successfully with expiration', {
@@ -1575,6 +1574,6 @@ export async function refreshOAuthToken(
     }
   } catch (error) {
     logger.error('Error refreshing token:', { error })
-    return null
+    throw error
   }
 }

@@ -39,9 +39,9 @@ import {
   SelectorInput,
   type SelectorOverrides,
   ShortInput,
+  SkillInput,
   SlackDateInput,
   SlackDateRangeSelector,
-  SkillInput,
   SliderInput,
   SortBuilder,
   Switch,
@@ -56,6 +56,7 @@ import {
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
+import { useWebhookManagement } from '@/hooks/use-webhook-management'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
@@ -67,7 +68,6 @@ import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-s
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { SlackClientSelector } from './components/slack-client-selector'
-import { useWebhookManagement } from '@/hooks/use-webhook-management'
 
 const SLACK_OVERRIDES: SelectorOverrides = {
   transformContext: (context, deps) => {

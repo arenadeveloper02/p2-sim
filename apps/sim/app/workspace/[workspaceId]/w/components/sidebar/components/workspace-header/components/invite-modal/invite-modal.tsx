@@ -478,13 +478,7 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
         }
       )
     },
-    [
-      validEmails,
-      workspaceId,
-      userPermissions,
-      batchSendInvitations,
-      session?.user?.email,
-    ]
+    [validEmails, workspaceId, userPermissions, batchSendInvitations, session?.user?.email]
   )
 
   const resetState = useCallback(() => {

@@ -18,8 +18,6 @@ import {
 } from 'lucide-react'
 import {
   Card,
-  Connections,
-  FolderCode,
   // HexSimple,
   Key,
   SModal,
@@ -32,7 +30,6 @@ import {
   SModalSidebarItem,
   SModalSidebarSection,
   SModalSidebarSectionTitle,
-  TerminalWindow,
 } from '@/components/emcn'
 import { AgentSkillsIcon, McpIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'

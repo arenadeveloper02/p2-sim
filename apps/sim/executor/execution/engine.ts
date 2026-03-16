@@ -109,7 +109,12 @@ export class ExecutionEngine {
       this.initializeQueue(triggerBlockId)
 
       while (this.hasWork()) {
-        if ((await this.checkCancellation()) || this.errorFlag || this.stoppedEarlyFlag  || this.skippedFlag) {
+        if (
+          (await this.checkCancellation()) ||
+          this.errorFlag ||
+          this.stoppedEarlyFlag ||
+          this.skippedFlag
+        ) {
           break
         }
         await this.processQueue()

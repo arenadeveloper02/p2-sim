@@ -1,5 +1,11 @@
 import { db } from '@sim/db'
-import { account, accountTokens, credential, credentialMember, workflow as workflowTable } from '@sim/db/schema'
+import {
+  account,
+  accountTokens,
+  credential,
+  credentialMember,
+  workflow as workflowTable,
+} from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
@@ -46,7 +52,7 @@ export async function authorizeCredentialUse(
     .from(account)
     .where(eq(account.id, credentialId))
     .limit(1)
-    
+
   const actingUserId = auth.authType === AuthType.INTERNAL_JWT ? callerUserId : auth.userId
 
   const [workflowContext] = workflowId
@@ -256,7 +262,6 @@ export async function authorizeCredentialUse(
       credentialOwnerUserId,
     }
   }
-
 
   if (!legacyAccount) {
     return { ok: false, error: 'Credential not found' }

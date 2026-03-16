@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react'
-import Image, { type ImageProps } from 'next/image'
 import { useId } from 'react'
+import Image, { type ImageProps } from 'next/image'
 
 export function SearchIcon(props: SVGProps<SVGSVGElement>) {
   return (

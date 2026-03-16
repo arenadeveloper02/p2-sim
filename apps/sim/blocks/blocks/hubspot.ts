@@ -189,7 +189,7 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       canonicalParamId: 'oauthCredential',
       mode: 'basic',
       serviceId: 'hubspot',
-      hidden: true,      
+      hidden: true,
       requiredScopes: getScopesForService('hubspot'),
       placeholder: 'Select HubSpot account',
       required: true,

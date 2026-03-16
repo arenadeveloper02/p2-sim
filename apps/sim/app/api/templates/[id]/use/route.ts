@@ -7,10 +7,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
-import {
-  type RegenerateStateInput,
-  regenerateWorkflowStateIds,
-} from '@/lib/workflows/persistence/utils'
+import { regenerateWorkflowStateIds } from '@/lib/workflows/persistence/utils'
 
 const logger = createLogger('TemplateUseAPI')
 
@@ -127,8 +124,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Step 3: Save the workflow state using the existing state endpoint (like imports do)
     // Ensure variables in state are remapped for the new workflow as well
-     // Convert lastSaved to number if it exists (template state might have it as string)
-     const workflowStateWithVariables = {
+    // Convert lastSaved to number if it exists (template state might have it as string)
+    const workflowStateWithVariables = {
       ...workflowState,
       variables: remappedVariables,
       lastSaved:

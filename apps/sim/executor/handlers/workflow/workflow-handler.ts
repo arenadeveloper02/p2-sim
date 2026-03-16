@@ -7,8 +7,7 @@ import type { BlockOutput } from '@/blocks/types'
 import { Executor } from '@/executor'
 import { BlockType, DEFAULTS, HTTP } from '@/executor/constants'
 import { ChildWorkflowError } from '@/executor/errors/child-workflow-error'
-import type { ExecutionMetadata } from '@/executor/execution/types'
-import type { WorkflowNodeMetadata } from '@/executor/execution/types'
+import type { ExecutionMetadata, WorkflowNodeMetadata } from '@/executor/execution/types'
 import type {
   BlockHandler,
   ExecutionContext,

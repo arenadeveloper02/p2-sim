@@ -2,7 +2,6 @@ import { createLogger } from '@sim/logger'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
-import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import type { BaseImageRequestBody } from '@/tools/openai/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -120,8 +119,7 @@ export const imageTool: ToolConfig = {
 
       // Use session user for path when present so path reflects who triggered the run
       const workflowId = params?._context?.workflowId || 'unknown'
-      const userId =
-        params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
+      const userId = params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
 
       logger.info('Image generation context:', {
         workflowId,

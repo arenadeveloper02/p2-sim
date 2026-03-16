@@ -157,8 +157,32 @@ export async function POST(request: NextRequest) {
         { status: 200 }
       )
     } catch (error) {
+      const message =
+        (error instanceof Error ? error.message : String(error)) || 'Failed to refresh access token'
       logger.error(`[${requestId}] Failed to refresh access token:`, error)
-      return NextResponse.json({ error: 'Failed to refresh access token' }, { status: 401 })
+
+      const isMissingCredentials =
+        message.includes('Missing client credentials') || message.includes('GOOGLE_CLIENT')
+      const isTokenExpiredOrRevoked =
+        message.includes('invalid_grant') ||
+        message.includes('Token has been expired') ||
+        message.includes('revoked') ||
+        message.includes('Failed to refresh token') ||
+        message.startsWith('Failed to refresh token:')
+
+      const isGoogleCredential =
+        credential.providerId === 'google-email' || credential.providerId === 'google'
+
+      const userMessage = isMissingCredentials
+        ? 'Gmail is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.'
+        : isTokenExpiredOrRevoked && isGoogleCredential
+          ? 'Your Gmail connection has expired or was revoked. Please reconnect Gmail in workspace settings.'
+          : isTokenExpiredOrRevoked
+            ? 'Your connection has expired or was revoked. Please reconnect this account in workspace settings.'
+            : 'Failed to refresh access token'
+
+      const status = isMissingCredentials ? 503 : 401
+      return NextResponse.json({ error: userMessage }, { status })
     }
   } catch (error) {
     logger.error(`[${requestId}] Error getting access token`, error)
@@ -246,8 +270,29 @@ export async function GET(request: NextRequest) {
         },
         { status: 200 }
       )
-    } catch (_error) {
-      return NextResponse.json({ error: 'Failed to refresh access token' }, { status: 401 })
+    } catch (error) {
+      const message =
+        (error instanceof Error ? error.message : String(error)) || 'Failed to refresh access token'
+      logger.error(`[${requestId}] Failed to refresh access token (GET):`, error)
+      const isMissingCredentials =
+        message.includes('Missing client credentials') || message.includes('GOOGLE_CLIENT')
+      const isTokenExpiredOrRevoked =
+        message.includes('invalid_grant') ||
+        message.includes('Token has been expired') ||
+        message.includes('revoked') ||
+        message.includes('Failed to refresh token') ||
+        message.startsWith('Failed to refresh token:')
+      const isGoogleCredential =
+        credential.providerId === 'google-email' || credential.providerId === 'google'
+      const userMessage = isMissingCredentials
+        ? 'Gmail is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.'
+        : isTokenExpiredOrRevoked && isGoogleCredential
+          ? 'Your Gmail connection has expired or was revoked. Please reconnect Gmail in workspace settings.'
+          : isTokenExpiredOrRevoked
+            ? 'Your connection has expired or was revoked. Please reconnect this account in workspace settings.'
+            : 'Failed to refresh access token'
+      const status = isMissingCredentials ? 503 : 401
+      return NextResponse.json({ error: userMessage }, { status })
     }
   } catch (error) {
     logger.error(`[${requestId}] Error fetching access token`, error)

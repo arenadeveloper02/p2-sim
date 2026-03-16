@@ -875,7 +875,7 @@ function AuthSelector({
       )
     }
   }, [emails, invalidEmails])
-  
+
   useEffect(() => {
     if (!copySuccess) return
     const timer = setTimeout(() => setCopySuccess(false), 2000)

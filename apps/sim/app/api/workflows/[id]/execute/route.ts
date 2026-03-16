@@ -675,7 +675,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         const resultWithBase64 = { ...result, output: outputWithBase64 }
 
-
         // Handle skipped workflows - always return the skip response content directly
         // Ignore selectedOutputs - just return the content
         if (

@@ -17,7 +17,6 @@ const getThemeColors = (): ThemeColors => {
       getEnv('NEXT_PUBLIC_BRAND_ACCENT_HOVER_COLOR') || defaultBrandConfig.theme?.accentHoverColor,
     backgroundColor:
       getEnv('NEXT_PUBLIC_BRAND_BACKGROUND_COLOR') || defaultBrandConfig.theme?.backgroundColor,
-
   }
 }
 

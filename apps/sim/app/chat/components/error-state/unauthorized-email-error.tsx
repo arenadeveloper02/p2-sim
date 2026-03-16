@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { useBrandConfig } from '@/lib/branding/branding'
+import { useBrandConfig } from '@/ee/whitelabeling'
 import { inter } from '@/app/_styles/fonts/inter/inter'
 import { soehne } from '@/app/_styles/fonts/soehne/soehne'
 
@@ -82,9 +82,9 @@ export function UnauthorizedEmailError({
           <div className='flex flex-col items-center justify-center'>
             {/* Brand logo */}
             <div className='mb-6 flex items-center justify-center'>
-              {brandConfig.logoUrlBlacktext && (
+              {brandConfig.logoUrl && (
                 <Image
-                  src={brandConfig.logoUrlBlacktext}
+                  src={brandConfig.logoUrl}
                   alt={`${brandConfig.name} Logo`}
                   width={68}
                   height={70}

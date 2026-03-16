@@ -2302,7 +2302,6 @@ export const usageLog = pgTable(
   })
 )
 
-
 export const slackSummary = pgTable(
   'slack_summary',
   {
@@ -2335,7 +2334,6 @@ export const slackSummary = pgTable(
     ),
   })
 )
-
 
 export const credentialTypeEnum = pgEnum('credential_type', [
   'oauth',
@@ -2525,7 +2523,6 @@ export const clientDetails = pgTable(
     clientIdIdx: index('client_details_client_id_idx').on(table.clientId),
   })
 )
-
 
 export const credentialMemberRoleEnum = pgEnum('credential_member_role', ['admin', 'member'])
 export const credentialMemberStatusEnum = pgEnum('credential_member_status', [
@@ -2743,7 +2740,6 @@ export const promptConfig = pgTable(
     keyIdx: uniqueIndex('prompt_config_key_idx').on(table.key),
   })
 )
-
 
 /**
  * Async Jobs - Queue for background job processing (Redis/DB backends)

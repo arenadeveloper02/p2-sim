@@ -569,10 +569,16 @@ export class Memory {
       flush: () => {
         const content = chunks.join('')
         if (content.trim()) {
-          this.appendToMemory(ctx, inputs, {
-            role: 'assistant',
-            content,
-          }, blockId, lastUserMessage || null).catch((error) => logger.error('Failed to persist streaming response:', error))
+          this.appendToMemory(
+            ctx,
+            inputs,
+            {
+              role: 'assistant',
+              content,
+            },
+            blockId,
+            lastUserMessage || null
+          ).catch((error) => logger.error('Failed to persist streaming response:', error))
         }
       },
     })

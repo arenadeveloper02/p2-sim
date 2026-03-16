@@ -307,11 +307,11 @@ export interface ExecutionContext {
    * will not have their base64 content fetched.
    */
   base64MaxBytes?: number
-  
+
   /** Intent analyzer result from workflow-level analysis (runs once at start).
-  * This is used by Agent blocks to avoid re-running intent analysis.
-  **/
- intentAnalyzerResult?: import('./utils/intent-analyzer').IntentAnalyzerResult
+   * This is used by Agent blocks to avoid re-running intent analysis.
+   **/
+  intentAnalyzerResult?: import('./utils/intent-analyzer').IntentAnalyzerResult
 
   /**
    * Context for "run from block" mode. When present, only blocks in dirtySet

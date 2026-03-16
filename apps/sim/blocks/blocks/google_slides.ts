@@ -922,7 +922,13 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
         } = params
 
         const effectivePresentationId = presentationId ? String(presentationId).trim() : ''
-        const effectiveFolderId = folderId ? String(folderId).trim() : duplicateFolderSelector ? String(duplicateFolderSelector).trim() : duplicateFolderId ? String(duplicateFolderId).trim() : ''
+        const effectiveFolderId = folderId
+          ? String(folderId).trim()
+          : duplicateFolderSelector
+            ? String(duplicateFolderSelector).trim()
+            : duplicateFolderId
+              ? String(duplicateFolderId).trim()
+              : ''
         const effectiveSourcePresentationId = (
           sourcePresentationId ||
           sourcePresentationSelector ||

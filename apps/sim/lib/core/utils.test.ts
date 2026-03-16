@@ -44,8 +44,8 @@ vi.mock('@/lib/core/config/env', () =>
     GEMINI_API_KEY_1: 'test-gemini-key-1',
     GEMINI_API_KEY_2: 'test-gemini-key-2',
     GEMINI_API_KEY_3: 'test-gemini-key-3',
-  },
-))
+  })
+)
 
 afterEach(() => {
   vi.clearAllMocks()

@@ -1339,7 +1339,11 @@ Do not include any explanations, markdown formatting, or other text outside the 
         const isDM = destinationType === 'dm'
         const channelFromObject =
           typeof channelId === 'object' && channelId?.channel_id ? channelId.channel_id : ''
-        const effectiveChannel = channel ? String(channel).trim() : channelFromObject ? String(channelFromObject).trim() : ''
+        const effectiveChannel = channel
+          ? String(channel).trim()
+          : channelFromObject
+            ? String(channelFromObject).trim()
+            : ''
         const effectiveUserId = dmUserId ? String(dmUserId).trim() : ''
 
         const dmSupportedOperations = ['send', 'read']

@@ -305,7 +305,7 @@ export async function createStreamingResponse(
       const state: StreamingState = {
         streamedChunks: new Map(),
         processedOutputs: new Set(),
-        streamCompletionTimes: new Map(), 
+        streamCompletionTimes: new Map(),
         streamedContent: new Map(),
       }
 
