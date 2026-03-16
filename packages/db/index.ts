@@ -4,6 +4,7 @@ import * as schema from './schema'
 
 export * from './schema'
 export * from './triggers'
+export { sql } from 'drizzle-orm'
 
 const connectionString = process.env.DATABASE_URL!
 if (!connectionString) {
