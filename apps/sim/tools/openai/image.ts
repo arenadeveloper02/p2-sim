@@ -272,28 +272,14 @@ export const imageTool: ToolConfig = {
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Generated image data',
-      properties: {
-        content: { type: 'string', description: 'Image URL or identifier' },
-        image: {
-          type: 'string',
-          description: 'Image URL (stored in S3/local storage) or base64 encoded image data',
-        },
-        metadata: {
-          type: 'object',
-          description: 'Image generation metadata',
-          properties: {
-            model: { type: 'string', description: 'Model used for image generation' },
-            stored: {
-              type: 'boolean',
-              description: 'Whether the image was stored in S3/local storage',
-            },
-          },
-        },
-      },
+    content: { type: 'string', description: 'Image URL or identifier' },
+    image: {
+      type: 'file',
+      description: 'Generated image (URL in S3/local storage or base64)',
+    },
+    metadata: {
+      type: 'json',
+      description: 'Generation metadata (model, stored, etc.)',
     },
   },
 }

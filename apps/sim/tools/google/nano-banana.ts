@@ -173,35 +173,14 @@ const nanoBananaTool: ToolConfig = {
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Generated image data',
-      properties: {
-        content: { type: 'string', description: 'Image identifier' },
-        image: { type: 'string', description: 'Base64 encoded image data' },
-        metadata: {
-          type: 'object',
-          description: 'Image generation metadata',
-          properties: {
-            model: { type: 'string', description: 'Model used for image generation' },
-            mimeType: { type: 'string', description: 'Image MIME type' },
-            aspectRatio: { type: 'string', description: 'Image aspect ratio' },
-            imageSize: {
-              type: 'string',
-              description: 'Output resolution (1K/2K/4K) when using Nano Banana Pro',
-            },
-            hasInputImage: {
-              type: 'boolean',
-              description: 'Whether an input image was provided for editing',
-            },
-            inputImageMimeType: {
-              type: 'string',
-              description: 'MIME type of the input image (if provided)',
-            },
-          },
-        },
-      },
+    content: { type: 'string', description: 'Image URL or identifier' },
+    image: {
+      type: 'file',
+      description: 'Generated image (URL or base64)',
+    },
+    metadata: {
+      type: 'json',
+      description: 'Generation metadata (model, mimeType, aspectRatio, stored, etc.)',
     },
   },
 }
