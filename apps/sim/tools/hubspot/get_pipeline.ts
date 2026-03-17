@@ -1,8 +1,5 @@
 import { createLogger } from '@sim/logger'
-import type {
-  HubSpotGetPipelineParams,
-  HubSpotGetPipelineResponse,
-} from '@/tools/hubspot/types'
+import type { HubSpotGetPipelineParams, HubSpotGetPipelineResponse } from '@/tools/hubspot/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('HubSpotGetPipeline')

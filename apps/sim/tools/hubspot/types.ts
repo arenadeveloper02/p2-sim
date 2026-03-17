@@ -814,7 +814,13 @@ export interface HubSpotProperty {
   fieldType?: string
   groupName?: string
   description?: string
-  options?: Array<{ value: string; label: string; displayOrder?: number; hidden?: boolean; description?: string }>
+  options?: Array<{
+    value: string
+    label: string
+    displayOrder?: number
+    hidden?: boolean
+    description?: string
+  }>
   displayOrder?: number
   formField?: boolean
   hasUniqueValue?: boolean

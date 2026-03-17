@@ -1,8 +1,5 @@
 import { createLogger } from '@sim/logger'
-import type {
-  HubSpotGetPropertyParams,
-  HubSpotGetPropertyResponse,
-} from '@/tools/hubspot/types'
+import type { HubSpotGetPropertyParams, HubSpotGetPropertyResponse } from '@/tools/hubspot/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('HubSpotGetProperty')
@@ -88,7 +85,10 @@ export const hubspotGetPropertyTool: ToolConfig<
   },
 
   outputs: {
-    property: { type: 'object', description: 'Property definition with label, type, options, etc.' },
+    property: {
+      type: 'object',
+      description: 'Property definition with label, type, options, etc.',
+    },
     propertyName: { type: 'string', description: 'The property name' },
     success: { type: 'boolean', description: 'Operation success status' },
   },
