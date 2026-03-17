@@ -559,6 +559,205 @@ export interface HubSpotListEmailsResponse extends ToolResponse {
   }
 }
 
+/** Generic CRM object from HubSpot (companies, contacts, carts, appointments, etc.). */
+export interface HubSpotCrmObject {
+  id: string
+  archived?: boolean
+  createdAt: string
+  updatedAt: string
+  archivedAt?: string
+  properties: Record<string, unknown>
+  associations?: Record<string, unknown>
+  objectWriteTraceId?: string
+  propertiesWithHistory?: Record<string, unknown>
+  url?: string
+}
+
+/** List CRM objects by object type (appointments, carts, etc.). */
+export interface HubSpotListObjectsParams {
+  accessToken: string
+  objectType: string
+  limit?: string
+  after?: string
+  properties?: string
+  associations?: string
+}
+
+export interface HubSpotListObjectsResponse extends ToolResponse {
+  output: {
+    results: HubSpotCrmObject[]
+    paging?: HubSpotPaging
+    metadata: { totalReturned: number; hasMore: boolean }
+    success: boolean
+  }
+}
+
+/** Get a single CRM object by type and ID (appointments, courses 0-410, deals 0-3, discounts, custom objects). */
+export interface HubSpotGetObjectParams {
+  accessToken: string
+  objectType: string
+  objectId: string
+  idProperty?: string
+  properties?: string
+  associations?: string
+}
+
+export interface HubSpotGetObjectResponse extends ToolResponse {
+  output: {
+    object: HubSpotCrmObject
+    objectId: string
+    success: boolean
+  }
+}
+
+/** List association types between two object types. */
+export interface HubSpotListAssociationTypesParams {
+  accessToken: string
+  fromObjectType: string
+  toObjectType: string
+}
+
+export interface HubSpotAssociationType {
+  id: string
+  name: string
+}
+
+export interface HubSpotListAssociationTypesResponse extends ToolResponse {
+  output: {
+    results: HubSpotAssociationType[]
+    success: boolean
+  }
+}
+
+/** List associations for an object (v4 API). */
+export interface HubSpotListAssociationsParams {
+  accessToken: string
+  objectType: string
+  objectId: string
+  toObjectType: string
+  limit?: string
+  after?: string
+}
+
+export interface HubSpotAssociationResult {
+  associationTypes: Array<{ category: string; typeId: number; label?: string }>
+  toObjectId: string
+}
+
+export interface HubSpotListAssociationsResponse extends ToolResponse {
+  output: {
+    results: HubSpotAssociationResult[]
+    paging?: HubSpotPaging
+    metadata: { totalReturned: number; hasMore: boolean }
+    success: boolean
+  }
+}
+
+/** Carts, commerce payments, subscriptions (list + get) reuse list/get pattern. */
+export type HubSpotListCartsParams = Omit<HubSpotListObjectsParams, 'objectType'>
+export interface HubSpotListCartsResponse extends ToolResponse {
+  output: {
+    results: HubSpotCrmObject[]
+    paging?: HubSpotPaging
+    metadata: { totalReturned: number; hasMore: boolean }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetCartParams {
+  accessToken: string
+  cartId: string
+  properties?: string
+  associations?: string
+}
+
+export interface HubSpotGetCartResponse extends ToolResponse {
+  output: { cart: HubSpotCrmObject; cartId: string; success: boolean }
+}
+
+export type HubSpotListCommercePaymentsParams = HubSpotListCartsParams
+export type HubSpotListCommercePaymentsResponse = HubSpotListCartsResponse
+
+export interface HubSpotGetCommercePaymentParams {
+  accessToken: string
+  commercePaymentId: string
+  properties?: string
+  associations?: string
+}
+
+export interface HubSpotGetCommercePaymentResponse extends ToolResponse {
+  output: {
+    commercePayment: HubSpotCrmObject
+    commercePaymentId: string
+    success: boolean
+  }
+}
+
+export type HubSpotListSubscriptionsParams = HubSpotListCartsParams
+export type HubSpotListSubscriptionsResponse = HubSpotListCartsResponse
+
+export interface HubSpotGetSubscriptionParams {
+  accessToken: string
+  subscriptionId: string
+  properties?: string
+  associations?: string
+}
+
+export interface HubSpotGetSubscriptionResponse extends ToolResponse {
+  output: {
+    subscription: HubSpotCrmObject
+    subscriptionId: string
+    success: boolean
+  }
+}
+
+/** CRM Import (from /crm/v3/imports/ API). */
+export interface HubSpotImport {
+  id: string
+  createdAt: string
+  updatedAt: string
+  state: string
+  importName?: string
+  importSource?: string
+  mappedObjectTypeIds?: string[]
+  optOutImport?: boolean
+  metadata?: {
+    counters?: Record<string, unknown>
+    fileIds?: string[]
+    objectLists?: Array<{ listId: string; objectType: string }>
+  }
+  importRequestJson?: Record<string, unknown>
+  importTemplate?: { templateId: number; templateType: string }
+}
+
+export interface HubSpotListImportsParams {
+  accessToken: string
+  limit?: string
+  after?: string
+}
+
+export interface HubSpotListImportsResponse extends ToolResponse {
+  output: {
+    results: HubSpotImport[]
+    paging?: HubSpotPaging
+    metadata: { totalReturned: number; hasMore: boolean }
+    success: boolean
+  }
+}
+
+export interface HubSpotGetImportParams {
+  accessToken: string
+  importId: string
+}
+
+export interface HubSpotGetImportResponse extends ToolResponse {
+  output: {
+    import: HubSpotImport
+    importId: string
+    success: boolean
+  }
+}
+
 // Generic HubSpot response type for the block
 export type HubSpotResponse =
   | HubSpotGetUsersResponse
@@ -585,3 +784,15 @@ export type HubSpotResponse =
   | HubSpotGetEmailStatisticsHistogramResponse
   | HubSpotGetEmailResponse
   | HubSpotListEmailsResponse
+  | HubSpotListObjectsResponse
+  | HubSpotGetObjectResponse
+  | HubSpotListAssociationTypesResponse
+  | HubSpotListAssociationsResponse
+  | HubSpotListCartsResponse
+  | HubSpotGetCartResponse
+  | HubSpotListCommercePaymentsResponse
+  | HubSpotGetCommercePaymentResponse
+  | HubSpotListSubscriptionsResponse
+  | HubSpotGetSubscriptionResponse
+  | HubSpotListImportsResponse
+  | HubSpotGetImportResponse
