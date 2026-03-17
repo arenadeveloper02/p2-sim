@@ -1,6 +1,8 @@
 // file: utils/isBase64.ts
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { Expand } from 'lucide-react'
+import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 
 /**
  * Common base64-encoded image headers
@@ -127,7 +129,13 @@ function getMimeFromBase64(cleanBase64: string): string {
  * Decoding is deferred so "Loading image…" shows and the UI stays responsive.
  * Images over MAX_BASE64_DISPLAY_LENGTH (8MB base64) are not decoded to avoid freeze/OOM.
  */
-function Base64ImageWithBlobUrl({ cleanImageData }: { cleanImageData: string }) {
+function Base64ImageWithBlobUrl({
+  cleanImageData,
+  imageWrapperClass = 'my-2 w-full max-h-[70vh] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]',
+}: {
+  cleanImageData: string
+  imageWrapperClass?: string
+}) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -196,7 +204,7 @@ function Base64ImageWithBlobUrl({ cleanImageData }: { cleanImageData: string }) 
   }
 
   return (
-    <div className='my-2 w-full'>
+    <ImageWithViewFullOverlay src={objectUrl} wrapperClassName={imageWrapperClass}>
       <img
         src={objectUrl}
         alt='Generated image'
@@ -206,7 +214,7 @@ function Base64ImageWithBlobUrl({ cleanImageData }: { cleanImageData: string }) 
           console.error('Image failed to load (blob URL)', { error: e })
         }}
       />
-    </div>
+    </ImageWithViewFullOverlay>
   )
 }
 
@@ -221,6 +229,81 @@ function normalizeImageUrl(imageUrl: string | undefined): string {
   return first ?? trimmed
 }
 
+/**
+ * Returns the URL to use for img src. When the image is cross-origin:
+ * - If the path is our file-serve path (/api/files/serve/...), use same-origin so we load from
+ *   the current app (e.g. local storage when running locally) with the user's session → avoids 401.
+ * - Otherwise use the proxy so the request is same-origin and auth can be forwarded.
+ */
+function getImageDisplayUrl(url: string): string {
+  if (!url || !url.startsWith('http')) return url
+  try {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    if (!appUrl) return url
+    const app = new URL(appUrl)
+    const imageUrlParsed = new URL(url)
+    if (imageUrlParsed.host === app.host) return url
+    if (imageUrlParsed.pathname.startsWith('/api/files/serve/')) {
+      return `${app.origin}${imageUrlParsed.pathname}${imageUrlParsed.search}`
+    }
+    return `/api/files/proxy-image?url=${encodeURIComponent(url)}`
+  } catch {
+    return url
+  }
+}
+
+/**
+ * Wraps an image with a transparent overlay and a bottom-center CTA "View full image".
+ * Clicking the CTA opens a modal showing the image at full size.
+ */
+function ImageWithViewFullOverlay({
+  src,
+  wrapperClassName,
+  children,
+}: {
+  src: string
+  wrapperClassName: string
+  children: React.ReactNode
+}) {
+  const [modalOpen, setModalOpen] = useState(false)
+  const handleViewFull = useCallback(() => setModalOpen(true), [])
+  return (
+    <>
+      <div className={`relative ${wrapperClassName}`}>
+        {children}
+        <div
+          className='pointer-events-none absolute inset-0 flex items-end justify-center pt-8 pb-3'
+          aria-hidden
+        >
+          <Button
+            type='button'
+            variant='secondary'
+            size='sm'
+            className='pointer-events-auto shrink-0 gap-1.5 rounded-md border-white/20 bg-black/40 px-3 py-2 text-white shadow-sm hover:bg-black/55 hover:text-white dark:border-white/20 dark:bg-black/50 dark:hover:bg-black/65'
+            onClick={handleViewFull}
+            aria-label='preview image'
+          >
+            <Expand className='h-4 w-4' />
+            <span>Preview</span>
+          </Button>
+        </div>
+      </div>
+      <Modal open={modalOpen} onOpenChange={setModalOpen}>
+        <ModalContent size='full' className='flex max-h-[90vh] max-w-[90vw] flex-col'>
+          <ModalHeader className='shrink-0'>View full image</ModalHeader>
+          <ModalBody className='min-h-0 flex-1 overflow-auto p-4'>
+            <img
+              src={src}
+              alt='Generated image'
+              className='h-auto max-h-full w-auto max-w-full object-contain'
+            />
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+    </>
+  )
+}
+
 export const renderBs64Img = ({
   isBase64,
   imageData,
@@ -233,17 +316,19 @@ export const renderBs64Img = ({
   try {
     const cleanImageData = typeof imageData === 'string' ? imageData.replace(/\s+/g, '') : ''
     const singleImageUrl = normalizeImageUrl(imageUrl)
+    const displayUrl = singleImageUrl ? getImageDisplayUrl(singleImageUrl) : ''
 
     const imageWrapperClass =
       'my-2 w-full max-h-[70vh] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
 
     if (!isBase64 && singleImageUrl && (!cleanImageData || cleanImageData.length === 0)) {
       return (
-        <div className={imageWrapperClass}>
+        <ImageWithViewFullOverlay src={displayUrl} wrapperClassName={imageWrapperClass}>
           <img
-            src={singleImageUrl}
+            src={displayUrl}
             alt='Generated image'
             className='h-auto max-w-full rounded-lg object-contain'
+            referrerPolicy='no-referrer'
             onError={(e) => {
               console.error('Image failed to load:', {
                 error: e,
@@ -251,18 +336,19 @@ export const renderBs64Img = ({
               })
             }}
           />
-        </div>
+        </ImageWithViewFullOverlay>
       )
     }
 
     if (!cleanImageData || cleanImageData.length === 0) {
       if (singleImageUrl) {
         return (
-          <div className={imageWrapperClass}>
+          <ImageWithViewFullOverlay src={displayUrl} wrapperClassName={imageWrapperClass}>
             <img
-              src={singleImageUrl}
+              src={displayUrl}
               alt='Generated image'
               className='h-auto max-w-full rounded-lg object-contain'
+              referrerPolicy='no-referrer'
               onError={(e) => {
                 console.error('Image failed to load:', {
                   error: e,
@@ -270,7 +356,7 @@ export const renderBs64Img = ({
                 })
               }}
             />
-          </div>
+          </ImageWithViewFullOverlay>
         )
       }
       throw new Error('No image data provided')
@@ -278,27 +364,29 @@ export const renderBs64Img = ({
 
     if (isBase64 && cleanImageData.length > BLOB_URL_BASE64_LENGTH_THRESHOLD) {
       return (
-        <div className={imageWrapperClass}>
-          <Base64ImageWithBlobUrl cleanImageData={cleanImageData} />
-        </div>
+        <Base64ImageWithBlobUrl
+          cleanImageData={cleanImageData}
+          imageWrapperClass={imageWrapperClass}
+        />
       )
     }
 
     const imageSrc =
       isBase64 && cleanImageData.length > 0
         ? `data:image/${getMimeFromBase64(cleanImageData).replace('image/', '')};base64,${cleanImageData}`
-        : singleImageUrl || ''
+        : displayUrl || ''
 
     if (!imageSrc) {
       throw new Error('No valid image source provided')
     }
 
     return (
-      <div className={imageWrapperClass}>
+      <ImageWithViewFullOverlay src={imageSrc} wrapperClassName={imageWrapperClass}>
         <img
           src={imageSrc}
           alt='Generated image'
           className='h-auto max-w-full rounded-lg object-contain'
+          referrerPolicy='no-referrer'
           onError={(e) => {
             console.error('Image failed to load:', {
               error: e,
@@ -307,7 +395,7 @@ export const renderBs64Img = ({
             })
           }}
         />
-      </div>
+      </ImageWithViewFullOverlay>
     )
   } catch (error) {
     console.error('Error rendering image:', error, {
@@ -404,7 +492,7 @@ export const downloadImage = async (isBase64?: boolean, imageData?: string, imag
         }
         blob = await response.blob()
       } else {
-        const proxyUrl = `/api/proxy/image?url=${encodeURIComponent(imageUrl)}`
+        const proxyUrl = `/api/files/proxy-image?url=${encodeURIComponent(imageUrl)}`
         const response = await fetch(proxyUrl)
         if (!response.ok) {
           throw new Error(`Failed to download image: ${response.statusText}`)
