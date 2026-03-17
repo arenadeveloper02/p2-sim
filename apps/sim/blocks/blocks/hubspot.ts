@@ -176,6 +176,10 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Get Subscriptions', id: 'get_subscriptions' },
         { label: 'List Imports', id: 'list_imports' },
         { label: 'Get Import', id: 'get_import' },
+        { label: 'List Pipelines', id: 'list_pipelines' },
+        { label: 'Get Pipeline', id: 'get_pipeline' },
+        { label: 'List Properties', id: 'list_properties' },
+        { label: 'Get Property', id: 'get_property' },
       ],
       value: () => 'get_contacts',
     },
@@ -693,6 +697,45 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       placeholder: 'ID of the CRM import to retrieve',
       condition: { field: 'operation', value: 'get_import' },
       required: true,
+    },
+    {
+      id: 'objectType',
+      title: 'Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. deals, tickets',
+      condition: { field: 'operation', value: ['list_pipelines', 'get_pipeline'] },
+      required: true,
+    },
+    {
+      id: 'pipelineId',
+      title: 'Pipeline ID',
+      type: 'short-input',
+      placeholder: 'ID of the pipeline to retrieve',
+      condition: { field: 'operation', value: 'get_pipeline' },
+      required: true,
+    },
+    {
+      id: 'objectType',
+      title: 'Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. contacts, companies, deals',
+      condition: { field: 'operation', value: ['list_properties', 'get_property'] },
+      required: true,
+    },
+    {
+      id: 'propertyName',
+      title: 'Property Name',
+      type: 'short-input',
+      placeholder: 'Internal property name (e.g. email, firstname)',
+      condition: { field: 'operation', value: 'get_property' },
+      required: true,
+    },
+    {
+      id: 'dataSensitivity',
+      title: 'Data Sensitivity',
+      type: 'short-input',
+      placeholder: 'e.g. non_sensitive (optional)',
+      condition: { field: 'operation', value: ['list_properties', 'get_property'] },
     },
     {
       id: 'idProperty',
@@ -1452,6 +1495,10 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       'hubspot_get_subscription',
       'hubspot_list_imports',
       'hubspot_get_import',
+      'hubspot_list_pipelines',
+      'hubspot_get_pipeline',
+      'hubspot_list_properties',
+      'hubspot_get_property',
     ],
     config: {
       tool: (params) => {
@@ -1520,6 +1567,14 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_list_imports'
           case 'get_import':
             return 'hubspot_get_import'
+          case 'list_pipelines':
+            return 'hubspot_list_pipelines'
+          case 'get_pipeline':
+            return 'hubspot_get_pipeline'
+          case 'list_properties':
+            return 'hubspot_list_properties'
+          case 'get_property':
+            return 'hubspot_get_property'
           default:
             throw new Error(`Unknown operation: ${params.operation}`)
         }
@@ -1696,6 +1751,9 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     commercePaymentId: { type: 'string', description: 'Commerce payment ID (empty to list all)' },
     subscriptionId: { type: 'string', description: 'Subscription ID (empty to list all)' },
     importId: { type: 'string', description: 'CRM import ID for Get Import' },
+    pipelineId: { type: 'string', description: 'Pipeline ID for Get Pipeline' },
+    propertyName: { type: 'string', description: 'Property name for Get Property' },
+    dataSensitivity: { type: 'string', description: 'Data sensitivity filter for properties API' },
   },
   outputs: {
     users: { type: 'json', description: 'Array of user objects' },

@@ -758,6 +758,98 @@ export interface HubSpotGetImportResponse extends ToolResponse {
   }
 }
 
+/** Pipeline stage (from /crm/v3/pipelines/ API). */
+export interface HubSpotPipelineStage {
+  id: string
+  label: string
+  displayOrder?: number
+  archived?: boolean
+  createdAt?: string
+  updatedAt?: string
+  metadata?: Record<string, unknown>
+}
+
+/** Pipeline (from /crm/v3/pipelines/ API). */
+export interface HubSpotPipeline {
+  id: string
+  label: string
+  displayOrder?: number
+  archived?: boolean
+  createdAt?: string
+  updatedAt?: string
+  stages?: HubSpotPipelineStage[]
+}
+
+export interface HubSpotListPipelinesParams {
+  accessToken: string
+  objectType: string
+}
+
+export interface HubSpotListPipelinesResponse extends ToolResponse {
+  output: {
+    results: HubSpotPipeline[]
+    success: boolean
+  }
+}
+
+export interface HubSpotGetPipelineParams {
+  accessToken: string
+  objectType: string
+  pipelineId: string
+}
+
+export interface HubSpotGetPipelineResponse extends ToolResponse {
+  output: {
+    pipeline: HubSpotPipeline
+    pipelineId: string
+    success: boolean
+  }
+}
+
+/** Property definition (from /crm/v3/properties/ API). */
+export interface HubSpotProperty {
+  name: string
+  label?: string
+  type?: string
+  fieldType?: string
+  groupName?: string
+  description?: string
+  options?: Array<{ value: string; label: string; displayOrder?: number; hidden?: boolean; description?: string }>
+  displayOrder?: number
+  formField?: boolean
+  hasUniqueValue?: boolean
+  hidden?: boolean
+  modificationMetadata?: Record<string, unknown>
+}
+
+export interface HubSpotListPropertiesParams {
+  accessToken: string
+  objectType: string
+  dataSensitivity?: string
+}
+
+export interface HubSpotListPropertiesResponse extends ToolResponse {
+  output: {
+    results: HubSpotProperty[]
+    success: boolean
+  }
+}
+
+export interface HubSpotGetPropertyParams {
+  accessToken: string
+  objectType: string
+  propertyName: string
+  dataSensitivity?: string
+}
+
+export interface HubSpotGetPropertyResponse extends ToolResponse {
+  output: {
+    property: HubSpotProperty
+    propertyName: string
+    success: boolean
+  }
+}
+
 // Generic HubSpot response type for the block
 export type HubSpotResponse =
   | HubSpotGetUsersResponse
@@ -796,3 +888,7 @@ export type HubSpotResponse =
   | HubSpotGetSubscriptionResponse
   | HubSpotListImportsResponse
   | HubSpotGetImportResponse
+  | HubSpotListPipelinesResponse
+  | HubSpotGetPipelineResponse
+  | HubSpotListPropertiesResponse
+  | HubSpotGetPropertyResponse
