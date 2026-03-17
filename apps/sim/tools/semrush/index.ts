@@ -1,3 +1,4 @@
+import { semrushOrganicPositionsTool } from './organic-positions'
 import { semrushQueryTool } from './query'
 
-export { semrushQueryTool }
+export { semrushOrganicPositionsTool, semrushQueryTool }

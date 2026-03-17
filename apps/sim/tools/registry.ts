@@ -1298,7 +1298,7 @@ import {
   salesforceUpdateTaskTool,
 } from '@/tools/salesforce'
 import { searchTool } from '@/tools/search'
-import { semrushQueryTool } from '@/tools/semrush'
+import { semrushOrganicPositionsTool, semrushQueryTool } from '@/tools/semrush'
 import {
   sendGridAddContactsToListTool,
   sendGridAddContactTool,
@@ -3091,8 +3091,9 @@ export const tools: Record<string, ToolConfig> = {
   salesforce_create_task: salesforceCreateTaskTool,
   salesforce_update_task: salesforceUpdateTaskTool,
   salesforce_delete_task: salesforceDeleteTaskTool,
-  //semrush tool
+  // semrush tools
   semrush_query: semrushQueryTool,
+  semrush_organic_positions: semrushOrganicPositionsTool,
   salesforce_list_reports: salesforceListReportsTool,
   salesforce_get_report: salesforceGetReportTool,
   salesforce_run_report: salesforceRunReportTool,

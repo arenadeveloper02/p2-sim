@@ -127,8 +127,7 @@ export const imageTool: ToolConfig = {
 
       // Use session user for path when present so path reflects who triggered the run
       const workflowId = params?._context?.workflowId || 'unknown'
-      const userId =
-        params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
+      const userId = params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
 
       logger.info('Image generation context:', {
         workflowId,
