@@ -901,7 +901,7 @@ export const ArenaClientChatMessage = memo(
                       </Tooltip.Root>
                     </Tooltip.Provider>
                   )}
-                  {(containsBase64Images || hasImageUrl) && (
+                  {/* {(containsBase64Images || hasImageUrl) && (
                     <Tooltip.Provider>
                       <Tooltip.Root>
                         <Tooltip.Trigger asChild>
@@ -917,7 +917,7 @@ export const ArenaClientChatMessage = memo(
                         </Tooltip.Content>
                       </Tooltip.Root>
                     </Tooltip.Provider>
-                  )}
+                  )} */}
                   {cleanTextContent && message?.executionId && (
                     <>
                       {isFeedbackPending ? (
