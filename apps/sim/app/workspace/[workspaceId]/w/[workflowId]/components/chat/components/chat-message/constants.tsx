@@ -234,23 +234,57 @@ function normalizeImageUrl(imageUrl: string | undefined): string {
 }
 
 /**
- * Returns the URL to use for img src. When the image is cross-origin:
- * - If the path is our file-serve path (/api/files/serve/...), use same-origin so we load from
- *   the current app (e.g. local storage when running locally) with the user's session → avoids 401.
- * - Otherwise use the proxy so the request is same-origin and auth can be forwarded.
+ * Resolves `/api/files/serve/...` to a loadable URL. In the browser, always uses
+ * `window.location.origin` so production never rewrites to `NEXT_PUBLIC_APP_URL`
+ * when that env still points at localhost (mixed content + broken images on HTTPS).
+ */
+function sameOriginServeUrl(pathname: string, search: string): string {
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}${pathname}${search}`
+  }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (appUrl) {
+    return `${new URL(appUrl).origin}${pathname}${search}`
+  }
+  return `${pathname}${search}`
+}
+
+/**
+ * Returns the URL to use for img src.
+ * - Our file-serve paths use the current page origin in the browser (session + HTTPS-safe).
+ * - Other HTTP(S) URLs go through the proxy on the client.
  */
 function getImageDisplayUrl(url: string): string {
-  if (!url || !url.startsWith('http')) return url
+  if (!url || typeof url !== 'string') return url
+  const trimmed = url.trim()
+  if (!trimmed) return url
+
   try {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL
-    if (!appUrl) return url
-    const app = new URL(appUrl)
-    const imageUrlParsed = new URL(url)
-    if (imageUrlParsed.host === app.host) return url
-    if (imageUrlParsed.pathname.startsWith('/api/files/serve/')) {
-      return `${app.origin}${imageUrlParsed.pathname}${imageUrlParsed.search}`
+    if (trimmed.startsWith('/api/files/serve/')) {
+      const q = trimmed.indexOf('?')
+      return sameOriginServeUrl(
+        q === -1 ? trimmed : trimmed.slice(0, q),
+        q === -1 ? '' : trimmed.slice(q)
+      )
     }
-    return `/api/files/proxy-image?url=${encodeURIComponent(url)}`
+
+    if (!trimmed.startsWith('http')) return trimmed
+
+    const imageUrlParsed = new URL(trimmed)
+    if (imageUrlParsed.pathname.startsWith('/api/files/serve/')) {
+      return sameOriginServeUrl(imageUrlParsed.pathname, imageUrlParsed.search)
+    }
+
+    if (typeof window !== 'undefined') {
+      return `/api/files/proxy-image?url=${encodeURIComponent(trimmed)}`
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    if (appUrl) {
+      const app = new URL(appUrl)
+      if (imageUrlParsed.host === app.host) return trimmed
+    }
+    return `/api/files/proxy-image?url=${encodeURIComponent(trimmed)}`
   } catch {
     return url
   }
