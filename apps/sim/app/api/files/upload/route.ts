@@ -12,6 +12,10 @@ import {
   createOptionsResponse,
   InvalidRequestError,
 } from '@/app/api/files/utils'
+import {
+  IMAGE_FUSION_ALLOWED_EXTENSIONS,
+  validateImageFusionFileExtension,
+} from '@/app/api/files/validators/image-fusion'
 
 const ALLOWED_EXTENSIONS = new Set([
   // Documents
@@ -77,6 +81,7 @@ export async function POST(request: NextRequest) {
     const executionId = formData.get('executionId') as string | null
     const workspaceId = formData.get('workspaceId') as string | null
     const contextParam = formData.get('context') as string | null
+    const uploadContext = formData.get('uploadContext') as string | null
 
     // Context must be explicitly provided
     if (!contextParam) {
@@ -95,8 +100,16 @@ export async function POST(request: NextRequest) {
 
     for (const file of files) {
       const originalName = file.name
+      const isImageFusionUpload = uploadContext === 'image-fusion'
 
-      if (!validateFileExtension(originalName)) {
+      if (isImageFusionUpload) {
+        if (!validateImageFusionFileExtension(originalName)) {
+          const extension = originalName.split('.').pop()?.toLowerCase() || 'unknown'
+          throw new InvalidRequestError(
+            `File type '${extension}' is not allowed for Image Fusion. Allowed image types: ${Array.from(IMAGE_FUSION_ALLOWED_EXTENSIONS).sort().join(', ')}`
+          )
+        }
+      } else if (!validateFileExtension(originalName)) {
         const extension = originalName.split('.').pop()?.toLowerCase() || 'unknown'
         throw new InvalidRequestError(
           `File type '${extension}' is not allowed. Allowed types: ${Array.from(ALLOWED_EXTENSIONS).join(', ')}`

@@ -54,6 +54,7 @@ import { HubSpotBlock } from '@/blocks/blocks/hubspot'
 import { HuggingFaceBlock } from '@/blocks/blocks/huggingface'
 import { HumanInTheLoopBlock } from '@/blocks/blocks/human_in_the_loop'
 import { HunterBlock } from '@/blocks/blocks/hunter'
+import { ImageFusionBlock } from '@/blocks/blocks/image_fusion'
 import { ImageGeneratorBlock } from '@/blocks/blocks/image_generator'
 import { ImapBlock } from '@/blocks/blocks/imap'
 import { IncidentioBlock } from '@/blocks/blocks/incidentio'
@@ -223,6 +224,7 @@ export const registry: Record<string, BlockConfig> = {
   huggingface: HuggingFaceBlock,
   human_in_the_loop: HumanInTheLoopBlock,
   hunter: HunterBlock,
+  image_fusion: ImageFusionBlock,
   image_generator: ImageGeneratorBlock,
   imap: ImapBlock,
   incidentio: IncidentioBlock,

@@ -807,6 +807,7 @@ function SubBlockComponent({
             acceptedTypes={config.acceptedTypes || '*'}
             multiple={config.multiple === true}
             maxSize={config.maxSize}
+            uploadContext={config.uploadContext}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}

@@ -286,6 +286,8 @@ export interface SubBlockConfig {
   acceptedTypes?: string
   multiple?: boolean
   maxSize?: number
+  /** When 'image-fusion', upload API validates against all image extensions (e.g. svg, webp). */
+  uploadContext?: 'image-fusion'
   // Slider-specific properties
   step?: number
   integer?: boolean

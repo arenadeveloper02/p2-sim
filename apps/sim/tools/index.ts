@@ -670,11 +670,19 @@ async function executeToolRequest(
     let prefersTextTransform = false
 
     if (isInternalRoute) {
-      response = await fetch(fullUrl, {
-        method: requestParams.method,
-        headers: headers,
-        body: requestParams.body,
-      })
+      const requestTimeout = tool.request.timeout ?? 300000
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), requestTimeout)
+      try {
+        response = await fetch(fullUrl, {
+          method: requestParams.method,
+          headers: headers,
+          body: requestParams.body,
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(timeoutId)
+      }
     } else {
       const { validateUrlWithDNS, secureFetchWithPinnedIP } = await import(
         '@/lib/core/security/input-validation.server'

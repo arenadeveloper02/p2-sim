@@ -21,6 +21,8 @@ interface FileUploadProps {
   maxSize?: number // in MB
   acceptedTypes?: string // comma separated MIME types
   multiple?: boolean // whether to allow multiple file uploads
+  /** When 'image-fusion', API validates against all image extensions (e.g. svg, webp). */
+  uploadContext?: 'image-fusion'
   isPreview?: boolean
   previewValue?: any | null
   disabled?: boolean
@@ -46,6 +48,7 @@ export function FileUpload({
   maxSize = 10, // Default 10MB
   acceptedTypes = '*',
   multiple = false, // Default to single file for backward compatibility
+  uploadContext,
   isPreview = false,
   previewValue,
   disabled = false,
@@ -236,7 +239,9 @@ export function FileUpload({
           const formData = new FormData()
           formData.append('file', file)
           formData.append('context', 'workspace')
-
+          if (uploadContext) {
+            formData.append('uploadContext', uploadContext)
+          }
           if (workspaceId) {
             formData.append('workspaceId', workspaceId)
           }

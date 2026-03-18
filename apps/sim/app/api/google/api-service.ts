@@ -1,8 +1,27 @@
 import { createLogger } from '@sim/logger'
+import sharp from 'sharp'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { extractStorageKey } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('GoogleApiService')
+
+const SVG_MIME = 'image/svg+xml'
+
+/**
+ * Gemini image API does not support image/svg+xml. Convert SVG to PNG for API compatibility.
+ */
+async function ensureSupportedMime(
+  buffer: Buffer,
+  mimeType: string
+): Promise<{ mimeType: string; data: string }> {
+  const normalized = mimeType.toLowerCase().split(';')[0].trim()
+  if (normalized !== SVG_MIME) {
+    return { mimeType: normalized || 'image/png', data: buffer.toString('base64') }
+  }
+  logger.info('Converting SVG to PNG for Gemini API compatibility')
+  const pngBuffer = await sharp(buffer).png().toBuffer()
+  return { mimeType: 'image/png', data: pngBuffer.toString('base64') }
+}
 const GOOGLE_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 export interface NanoBananaRequestBody {
@@ -58,10 +77,9 @@ export const resolveInlineImageData = async (
   }
 
   if (typeof inputImage === 'string') {
-    return {
-      mimeType: inputImageMimeType || 'image/png',
-      data: inputImage,
-    }
+    const mimeType = inputImageMimeType || 'image/png'
+    const buffer = Buffer.from(inputImage, 'base64')
+    return ensureSupportedMime(buffer, mimeType)
   }
 
   if (typeof inputImage === 'object' && (inputImage as { path?: string }).path) {
@@ -77,18 +95,11 @@ export const resolveInlineImageData = async (
       }
 
       const fileBuffer = await downloadFile({ key: s3Key, context: 'workspace' })
-      const base64Data = fileBuffer.toString('base64')
       const mimeType = (inputImage as { type?: string }).type || inputImageMimeType || 'image/png'
 
-      logger.info('Converted image to base64 for inline data', {
-        mimeType,
-        length: base64Data.length,
-      })
+      logger.info('Resolved image for inline data', { mimeType, size: fileBuffer.length })
 
-      return {
-        mimeType,
-        data: base64Data,
-      }
+      return ensureSupportedMime(fileBuffer, mimeType)
     } catch (error) {
       logger.error('Failed to resolve inline image data', error)
       throw new Error(
@@ -101,9 +112,33 @@ export const resolveInlineImageData = async (
 }
 
 /**
+ * Resolve an array of image references to inline data for multi-image fusion.
+ *
+ * @param inputImages - Array of base64 strings or objects with path (and optional type).
+ * @returns Array of inline image data in order, or empty array if none.
+ */
+export const resolveInlineImageDataArray = async (
+  inputImages: unknown[]
+): Promise<InlineImageData[]> => {
+  const results: InlineImageData[] = []
+  for (let i = 0; i < inputImages.length; i++) {
+    const item = inputImages[i]
+    const mimeType =
+      typeof item === 'object' && item !== null && 'type' in item
+        ? (item as { type?: string }).type
+        : undefined
+    const resolved = await resolveInlineImageData(item, mimeType)
+    if (resolved) {
+      results.push(resolved)
+    }
+  }
+  return results
+}
+
+/**
  * Build the Nano Banana generateContent request payload.
  *
- * @param params - Request parameters including prompt, aspect ratio, and optional image.
+ * @param params - Request parameters including prompt, aspect ratio, optional image(s).
  * @returns Request body ready for the Google Generative Language API.
  */
 export const buildNanoBananaRequestBody = async (params: {
@@ -113,17 +148,28 @@ export const buildNanoBananaRequestBody = async (params: {
   imageSize?: string
   inputImage?: unknown
   inputImageMimeType?: string
+  /** Multiple images for fusion (Nano Banana Pro). When set, takes precedence over inputImage. */
+  inputImages?: unknown[]
 }): Promise<NanoBananaRequestBody> => {
   const parts: Array<{ text?: string; inlineData?: InlineImageData }> = [
     {
       text: params.prompt,
     },
   ]
-  const inlineImage = await resolveInlineImageData(params.inputImage, params.inputImageMimeType)
-  if (inlineImage) {
-    parts.push({
-      inlineData: inlineImage,
-    })
+
+  if (Array.isArray(params.inputImages) && params.inputImages.length > 0) {
+    const inlineImages = await resolveInlineImageDataArray(params.inputImages)
+    for (const inlineImage of inlineImages) {
+      parts.push({ inlineData: inlineImage })
+    }
+  } else {
+    const inlineImage = await resolveInlineImageData(
+      params.inputImage,
+      params.inputImageMimeType
+    )
+    if (inlineImage) {
+      parts.push({ inlineData: inlineImage })
+    }
   }
 
   const body: NanoBananaRequestBody = {
@@ -133,7 +179,7 @@ export const buildNanoBananaRequestBody = async (params: {
       },
     ],
     generationConfig: {
-      responseModalities: ['Image'],
+      responseModalities: ['IMAGE'],
     },
   }
 
