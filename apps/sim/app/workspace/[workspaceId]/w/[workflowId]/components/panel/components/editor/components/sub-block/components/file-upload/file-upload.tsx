@@ -6,6 +6,7 @@ import { X } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { Button, Combobox } from '@/components/emcn/components'
 import { Progress } from '@/components/ui/progress'
+import { START_FILES_REF } from '@/executor/constants'
 import { cn } from '@/lib/core/utils/cn'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { getExtensionFromMimeType } from '@/lib/uploads/utils/file-utils'
@@ -23,6 +24,8 @@ interface FileUploadProps {
   multiple?: boolean // whether to allow multiple file uploads
   /** When 'image-fusion', API validates against all image extensions (e.g. svg, webp). */
   uploadContext?: 'image-fusion'
+  /** When true, show option to use Start block files (e.g. chat-uploaded images) via <start.files>. */
+  allowStartFilesReference?: boolean
   isPreview?: boolean
   previewValue?: any | null
   disabled?: boolean
@@ -49,6 +52,7 @@ export function FileUpload({
   acceptedTypes = '*',
   multiple = false, // Default to single file for backward compatibility
   uploadContext,
+  allowStartFilesReference = false,
   isPreview = false,
   previewValue,
   disabled = false,
@@ -500,9 +504,16 @@ export function FileUpload({
     )
   }
 
-  const filesArray = Array.isArray(value) ? value : value ? [value] : []
+  const isUsingStartFiles = value === START_FILES_REF
+  const filesArray =
+    isUsingStartFiles ? [] : Array.isArray(value) ? value : value ? [value] : []
   const hasFiles = filesArray.length > 0
   const isUploading = uploadingFiles.length > 0
+
+  const handleSetUseStartFiles = (use: boolean) => {
+    setStoreValue(use ? START_FILES_REF : null)
+    useWorkflowStore.getState().triggerUpdate()
+  }
 
   const comboboxOptions = useMemo(
     () => [
@@ -560,11 +571,33 @@ export function FileUpload({
         data-testid='file-input-element'
       />
 
+      {allowStartFilesReference && (
+        <label className='mb-2 flex cursor-pointer items-center gap-2 text-sm'>
+          <input
+            type='checkbox'
+            checked={isUsingStartFiles}
+            onChange={(e) => handleSetUseStartFiles(e.target.checked)}
+            disabled={disabled}
+            className='h-4 w-4 rounded border-[var(--border-1)]'
+          />
+          <span className='text-[var(--text-primary)]'>
+            Use Start block files (chat uploads)
+          </span>
+        </label>
+      )}
+
+      {isUsingStartFiles && (
+        <p className='mb-2 text-[var(--text-muted)] text-xs'>
+          Files attached in deployed chat will be passed as input. Leave unchecked to upload or
+          select files here.
+        </p>
+      )}
+
       {/* Error message */}
       {uploadError && <div className='mb-2 text-red-600 text-sm'>{uploadError}</div>}
 
       {/* File list with consistent spacing */}
-      {(hasFiles || isUploading) && (
+      {!isUsingStartFiles && (hasFiles || isUploading) && (
         <div className={cn('space-y-2', multiple && 'mb-2')}>
           {/* Only show files that aren't currently uploading */}
           {filesArray.map((file) => {
@@ -592,7 +625,7 @@ export function FileUpload({
       )}
 
       {/* Add More dropdown for multiple files */}
-      {hasFiles && multiple && !isUploading && (
+      {!isUsingStartFiles && hasFiles && multiple && !isUploading && (
         <Combobox
           options={comboboxOptions}
           value={inputValue}
@@ -609,7 +642,7 @@ export function FileUpload({
       )}
 
       {/* Show dropdown selector if no files and not uploading */}
-      {!hasFiles && !isUploading && (
+      {!isUsingStartFiles && !hasFiles && !isUploading && (
         <Combobox
           options={comboboxOptions}
           value={inputValue}

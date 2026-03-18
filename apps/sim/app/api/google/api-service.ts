@@ -1,7 +1,11 @@
 import { createLogger } from '@sim/logger'
 import sharp from 'sharp'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
-import { extractStorageKey } from '@/lib/uploads/utils/file-utils'
+import {
+  extractStorageKey,
+  inferContextFromKey,
+  isInternalFileUrl,
+} from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('GoogleApiService')
 
@@ -82,9 +86,29 @@ export const resolveInlineImageData = async (
     return ensureSupportedMime(buffer, mimeType)
   }
 
-  if (typeof inputImage === 'object' && (inputImage as { path?: string }).path) {
+  const obj = inputImage as { path?: string; key?: string; url?: string; type?: string }
+  if (typeof inputImage !== 'object' || inputImage === null) {
+    throw new Error('Invalid input image format')
+  }
+
+  if (obj.key) {
     try {
-      const filePath = (inputImage as { path: string }).path
+      const context = inferContextFromKey(obj.key)
+      const fileBuffer = await downloadFile({ key: obj.key, context })
+      const mimeType = obj.type || inputImageMimeType || 'image/png'
+      logger.info('Resolved image from key for inline data', { mimeType, size: fileBuffer.length })
+      return ensureSupportedMime(fileBuffer, mimeType)
+    } catch (error) {
+      logger.error('Failed to resolve inline image data from key', error)
+      throw new Error(
+        `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    }
+  }
+
+  if (obj.path) {
+    try {
+      const filePath = obj.path
       let s3Key: string
       if (filePath.startsWith('s3://')) {
         const urlWithoutProtocol = filePath.replace('s3://', '')
@@ -95,13 +119,28 @@ export const resolveInlineImageData = async (
       }
 
       const fileBuffer = await downloadFile({ key: s3Key, context: 'workspace' })
-      const mimeType = (inputImage as { type?: string }).type || inputImageMimeType || 'image/png'
+      const mimeType = obj.type || inputImageMimeType || 'image/png'
 
       logger.info('Resolved image for inline data', { mimeType, size: fileBuffer.length })
 
       return ensureSupportedMime(fileBuffer, mimeType)
     } catch (error) {
       logger.error('Failed to resolve inline image data', error)
+      throw new Error(
+        `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    }
+  }
+
+  if (obj.url && isInternalFileUrl(obj.url)) {
+    try {
+      const s3Key = extractStorageKey(obj.url)
+      const fileBuffer = await downloadFile({ key: s3Key, context: inferContextFromKey(s3Key) })
+      const mimeType = obj.type || inputImageMimeType || 'image/png'
+      logger.info('Resolved image from URL for inline data', { mimeType, size: fileBuffer.length })
+      return ensureSupportedMime(fileBuffer, mimeType)
+    } catch (error) {
+      logger.error('Failed to resolve inline image data from URL', error)
       throw new Error(
         `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
       )

@@ -67,6 +67,7 @@ export const ImageFusionBlock: BlockConfig<DalleResponse> = {
       acceptedTypes: 'image/*',
       multiple: true,
       uploadContext: 'image-fusion',
+      allowStartFilesReference: true,
     },
   ],
   tools: {
