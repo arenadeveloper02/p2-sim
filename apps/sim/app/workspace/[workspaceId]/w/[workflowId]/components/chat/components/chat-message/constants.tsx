@@ -1,7 +1,7 @@
 // file: utils/isBase64.ts
 
 import { useCallback, useEffect, useState } from 'react'
-import { Download, Expand } from 'lucide-react'
+import { AlertTriangle, Download, Expand, X } from 'lucide-react'
 import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 
 /**
@@ -750,6 +750,111 @@ export function isImageUrlString(s: string): boolean {
   )
 }
 
+function normalizeUrlDedupeKey(u: string): string {
+  try {
+    return decodeURIComponent(u.trim())
+  } catch {
+    return u.trim()
+  }
+}
+
+/**
+ * True when a trimmed line is a file-serve or HTTP URL that should render as an image.
+ * (Handles multiline final chat output where each line is a full URL.)
+ */
+export function isImageUrlLine(s: string): boolean {
+  const t = s.trim()
+  if (!t) return false
+  if (t.startsWith('/api/files/serve/')) {
+    return t.includes('agent-generated-images') || /\.(png|jpg|jpeg|gif|webp)/i.test(t)
+  }
+  if (t.startsWith('http://') || t.startsWith('https://')) {
+    return (
+      t.includes('/api/files/serve/') ||
+      t.includes('agent-generated-images') ||
+      /\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(t)
+    )
+  }
+  return false
+}
+
+/**
+ * Resolves assistant message text into deduped image URLs and remaining markdown prose.
+ * Handles: (1) multiple outputs joined with \\n\\n (same URL twice from content+image picks),
+ * (2) JSON payloads `{ content, image, metadata }`, (3) single URL lines.
+ */
+export function resolveMessageImagesAndProse(raw: string): { urls: string[]; prose: string } {
+  if (!raw || typeof raw !== 'string') {
+    return { urls: [], prose: '' }
+  }
+
+  const pushUrl = (u: string, seen: Set<string>, urls: string[]) => {
+    const t = u.trim()
+    if (!t || !isImageUrlLine(t)) return
+    const k = normalizeUrlDedupeKey(t)
+    if (!seen.has(k)) {
+      seen.add(k)
+      urls.push(t)
+    }
+  }
+
+  const segments = raw.split(/\n\n+/).map((s) => s.trim()).filter(Boolean)
+  const urls: string[] = []
+  const seen = new Set<string>()
+  const proseParts: string[] = []
+
+  for (const seg of segments) {
+    const lines = seg.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    if (lines.length === 0) continue
+
+    if (lines.length === 1 && isImageUrlLine(lines[0])) {
+      pushUrl(lines[0], seen, urls)
+      continue
+    }
+
+    const allLinesAreImageUrls = lines.every((l) => isImageUrlLine(l))
+    if (allLinesAreImageUrls) {
+      for (const l of lines) pushUrl(l, seen, urls)
+      continue
+    }
+
+    const hasAnyImageLine = lines.some((l) => isImageUrlLine(l))
+    if (hasAnyImageLine) {
+      for (const l of lines) {
+        if (isImageUrlLine(l)) pushUrl(l, seen, urls)
+        else proseParts.push(l)
+      }
+      continue
+    }
+
+    proseParts.push(seg)
+  }
+
+  if (urls.length > 0) {
+    return { urls, prose: proseParts.join('\n\n').trim() }
+  }
+
+  const t = raw.trim()
+  if (t.startsWith('{')) {
+    try {
+      const o = JSON.parse(t) as Record<string, unknown>
+      if (o && typeof o === 'object' && !Array.isArray(o)) {
+        const jsonUrls: string[] = []
+        const jSeen = new Set<string>()
+        if (typeof o.image === 'string') pushUrl(o.image, jSeen, jsonUrls)
+        if (typeof o.content === 'string') pushUrl(o.content, jSeen, jsonUrls)
+        if (jsonUrls.length > 0) {
+          return { urls: jsonUrls, prose: '' }
+        }
+      }
+    } catch {
+      /* not JSON */
+    }
+  }
+
+  return { urls: [], prose: raw }
+}
+
 /** Characters that end a URL when scanning from the start. */
 const URL_END_CHARS = /[\s)\]"'\u00A0]/
 
@@ -1026,4 +1131,125 @@ export function sanitizeMessagesForPersistence<T extends ChatMessageWithBase64>(
 
     return sanitized
   })
+}
+
+
+
+
+
+
+export const S3_UPLOAD_FAILED_DISMISS_MS = 10_000
+
+/**
+ * Normalizes a URL for deduplication (e.g. encoded vs decoded path).
+ */
+export function normalizeImageUrlForCompare(s: string): string {
+  try {
+    return decodeURIComponent(s.trim())
+  } catch {
+    return s.trim()
+  }
+}
+
+/**
+ * True if the string is an http(s) or app file-serve URL that should render as an image.
+ */
+export function isRenderableImageUrl(s: string): boolean {
+  const t = s.trim()
+  if (!t) return false
+  if (t.startsWith('/api/files/serve/')) return true
+  if (t.startsWith('http://') || t.startsWith('https://')) {
+    return (
+      /\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(t) ||
+      t.includes('agent-generated-images') ||
+      t.includes('/api/files/serve/')
+    )
+  }
+  return false
+}
+
+/**
+ * Collects unique image URLs from workflow output shapes like
+ * `{ content, image, metadata }` so the same URL is not rendered twice.
+ */
+export function collectUniqueImageUrls(imageField: string, contentField: string): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+  const add = (u: string) => {
+    const key = normalizeImageUrlForCompare(u)
+    if (!seen.has(key)) {
+      seen.add(key)
+      urls.push(u.trim())
+    }
+  }
+  if (imageField.trim() && isRenderableImageUrl(imageField)) {
+    add(imageField)
+  }
+  if (contentField.trim() && isRenderableImageUrl(contentField)) {
+    add(contentField)
+  }
+  return urls
+}
+
+/**
+ * Merges `{ image, content }` tool payloads so the same URL is not shown as both markdown and
+ * `<img>`. Streaming often sets `content` to joined text that already includes the image URL while
+ * `image` duplicates it — this strips URL-only lines from prose and dedupes URLs.
+ */
+export function mergeToolOutputImageUrls(
+  imageField: string,
+  contentField: string
+): { uniqueUrls: string[]; prose: string } {
+  const { urls: urlsFromProse, prose } = resolveMessageImagesAndProse(contentField)
+  const fromFields = collectUniqueImageUrls(imageField, contentField)
+  const seen = new Set<string>()
+  const uniqueUrls: string[] = []
+  const add = (u: string) => {
+    const t = u.trim()
+    if (!t) return
+    const key = normalizeImageUrlForCompare(t)
+    if (seen.has(key)) return
+    seen.add(key)
+    uniqueUrls.push(t)
+  }
+  for (const u of fromFields) add(u)
+  for (const u of urlsFromProse) add(u)
+  return { uniqueUrls, prose }
+}
+
+/**
+ * Temporary alert shown when the generated image was saved to local storage because S3 upload failed.
+ * Auto-dismisses after 10s; user can dismiss manually.
+ */
+export function S3UploadFailedAlert() {
+  const [dismissed, setDismissed] = useState(false)
+  const dismiss = useCallback(() => setDismissed(true), [])
+
+  useEffect(() => {
+    const t = setTimeout(dismiss, S3_UPLOAD_FAILED_DISMISS_MS)
+    return () => clearTimeout(t)
+  }, [dismiss])
+
+  if (dismissed) return null
+
+  return (
+    <div
+      className='mb-2 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-amber-800 text-sm dark:text-amber-200'
+      role='alert'
+    >
+      <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400' />
+      <p className='flex-1'>
+        Image was saved locally because upload to the storage bucket failed. Saving to the bucket is
+        important for this workflow and user.
+      </p>
+      <button
+        type='button'
+        onClick={dismiss}
+        className='flex-shrink-0 rounded p-1 hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500'
+        aria-label='Dismiss'
+      >
+        <X className='h-4 w-4' />
+      </button>
+    </div>
+  )
 }

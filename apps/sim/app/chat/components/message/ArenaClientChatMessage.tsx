@@ -17,19 +17,26 @@ import { KnowledgeResultsModal } from '@/app/chat/components/message/components/
 import type { KnowledgeRef, KnowledgeResultChunk } from '@/app/chat/components/message/message'
 // import MarkdownRenderer from './components/markdown-renderer'
 // import { toastError, toastSuccess } from '@/components/ui'
+import { createLogger } from '@sim/logger'
 import {
   downloadImage,
+  mergeToolOutputImageUrls,
   extractAllBase64Images,
   extractBase64Image,
   getImageUrlFromContent,
   hasBase64Images,
   isBase64,
-  isImageUrlString,
+  isRenderableImageUrl,
+  normalizeImageUrlForCompare,
   renderBs64Img,
+  resolveMessageImagesAndProse,
+  S3UploadFailedAlert,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
+
+const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
 export interface ChatMessage {
   id: string
@@ -309,69 +316,86 @@ export const ArenaClientChatMessage = memo(
       [onCopySegmentToInput]
     )
 
-    const renderContent = (content: any) => {
+    const renderContent = (content: unknown) => {
       if (!content) {
         return null
       }
 
       try {
-        // If content is an object with an image field (from tool output)
-        if (typeof content === 'object' && content !== null && content.image) {
-          const imageValue = content.image
-          const isImageUrl =
-            typeof imageValue === 'string' &&
-            (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
-          const isBase64Image = typeof imageValue === 'string' && isBase64(imageValue)
-          const contentStr =
-            content.content && typeof content.content === 'string' ? content.content.trim() : ''
-          const contentIsImageUrl = contentStr && isImageUrlString(contentStr)
+        if (typeof content === 'object' && content !== null) {
+          const o = content as Record<string, unknown>
+          const imgRaw = typeof o.image === 'string' ? o.image : ''
+          const txtRaw = typeof o.content === 'string' ? o.content : ''
+
+          const imageBase64 =
+            imgRaw.trim() && isBase64(imgRaw) && !isRenderableImageUrl(imgRaw)
+              ? imgRaw.replace(/\s+/g, '')
+              : ''
+
+          const { uniqueUrls, prose: proseWithoutUrlLines } = mergeToolOutputImageUrls(
+            imgRaw,
+            txtRaw
+          )
+          const proseTrim = proseWithoutUrlLines.trim()
+          const txtTrim = txtRaw.trim()
+
+          const showS3 =
+            o.s3UploadFailed === true && (uniqueUrls.length > 0 || Boolean(imageBase64))
+
+          if (uniqueUrls.length > 0 || imageBase64) {
+            return (
+              <>
+                {proseTrim ? renderStringContent(proseTrim) : null}
+                {showS3 && <S3UploadFailedAlert />}
+                {uniqueUrls.map((url) => (
+                  <div key={normalizeImageUrlForCompare(url)} className='w-full'>
+                    {renderBs64Img({ isBase64: false, imageData: '', imageUrl: url })}
+                  </div>
+                ))}
+                {imageBase64 && (
+                  <div className='w-full'>
+                    {renderBs64Img({ isBase64: true, imageData: imageBase64 })}
+                  </div>
+                )}
+              </>
+            )
+          }
+
+          if (txtTrim) {
+            return renderStringContent(txtTrim)
+          }
 
           return (
-            <>
-              {contentStr && !contentIsImageUrl && (
-                <ArenaCopilotMarkdownRenderer content={content.content} />
-              )}
-              {isImageUrl && (
-                <div>{renderBs64Img({ isBase64: false, imageData: '', imageUrl: imageValue })}</div>
-              )}
-              {isBase64Image && (
-                <div>
-                  {renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}
-                </div>
-              )}
-            </>
+            <ArenaCopilotMarkdownRenderer
+              content={JSON.stringify(content, null, 2)}
+            />
           )
         }
 
-        // Fallback: If content is an object with a content field that's a URL (from tool output)
-        // and image field is empty, try to render the content as an image URL
-        if (
-          typeof content === 'object' &&
-          content !== null &&
-          typeof content.content === 'string' &&
-          content.content &&
-          (!content.image || content.image === '') &&
-          (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
-        ) {
-          return (
-            <>
-              <div>
-                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}
-              </div>
-            </>
-          )
+        if (typeof content === 'string') {
+          const { urls, prose } = resolveMessageImagesAndProse(content)
+          if (urls.length > 0) {
+            return (
+              <>
+                {prose ? renderStringContent(prose) : null}
+                {urls.map((url) => (
+                  <div key={normalizeImageUrlForCompare(url)} className='w-full'>
+                    {renderBs64Img({ isBase64: false, imageData: '', imageUrl: url })}
+                  </div>
+                ))}
+              </>
+            )
+          }
         }
 
-        // If content is a pure base64 image, render it directly
         if (typeof content === 'string' && isBase64(content)) {
           const cleanedContent = content.replace(/\s+/g, '')
           return renderBs64Img({ isBase64: true, imageData: cleanedContent })
         }
 
-        // If content is a string that is an image URL (e.g. from image generator), render as <img> only (no URL text)
         if (typeof content === 'string') {
           const trimmed = content.trim()
-          if (isImageUrlString(trimmed)) {
+          if (isRenderableImageUrl(trimmed)) {
             return (
               <div className='w-full'>
                 {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
@@ -380,11 +404,9 @@ export const ArenaClientChatMessage = memo(
           }
         }
 
-        // If content is a string, check for mixed content (text + base64 images)
         if (typeof content === 'string') {
           const { textParts, base64Images } = extractBase64Image(content)
 
-          // If we found base64 images, render both text and images
           if (base64Images.length > 0) {
             return (
               <>
@@ -396,14 +418,12 @@ export const ArenaClientChatMessage = memo(
             )
           }
 
-          // If no base64 images, render as markdown (with optional pipe-segment click-to-copy)
           return renderStringContent(content)
         }
 
-        // For other content types, render as markdown (with optional pipe-segment click-to-copy)
-        return renderStringContent(content)
+        return <ArenaCopilotMarkdownRenderer content={String(content)} />
       } catch (error) {
-        console.error('Error rendering message content:', error)
+        arenaChatMessageLogger.error('Error rendering message content', { error })
         return (
           <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>
             <p className='text-sm'>⚠️ Error displaying content. Please try refreshing the chat.</p>
