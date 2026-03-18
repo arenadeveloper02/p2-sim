@@ -1,7 +1,7 @@
 // file: utils/isBase64.ts
 
 import { useCallback, useEffect, useState } from 'react'
-import { Expand } from 'lucide-react'
+import { Download, Expand } from 'lucide-react'
 import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 
 /**
@@ -204,7 +204,11 @@ function Base64ImageWithBlobUrl({
   }
 
   return (
-    <ImageWithViewFullOverlay src={objectUrl} wrapperClassName={imageWrapperClass}>
+    <ImageWithViewFullOverlay
+      src={objectUrl}
+      wrapperClassName={imageWrapperClass}
+      onDownload={() => downloadImage(true, cleanImageData)}
+    >
       <img
         src={objectUrl}
         alt='Generated image'
@@ -252,18 +256,23 @@ function getImageDisplayUrl(url: string): string {
   }
 }
 
+const overlayButtonClass =
+  'pointer-events-auto shrink-0 gap-1.5 rounded-md border-white/20 bg-black/40 px-3 py-2 text-white shadow-sm hover:bg-black/55 hover:text-white dark:border-white/20 dark:bg-black/50 dark:hover:bg-black/65'
+
 /**
- * Wraps an image with a transparent overlay and a bottom-center CTA "View full image".
- * Clicking the CTA opens a modal showing the image at full size.
+ * Wraps an image with a transparent overlay and bottom-center CTAs: Preview and Download.
+ * Preview opens a modal with the full-size image; Download triggers the provided callback.
  */
 function ImageWithViewFullOverlay({
   src,
   wrapperClassName,
   children,
+  onDownload,
 }: {
   src: string
   wrapperClassName: string
   children: React.ReactNode
+  onDownload?: () => void
 }) {
   const [modalOpen, setModalOpen] = useState(false)
   const handleViewFull = useCallback(() => setModalOpen(true), [])
@@ -272,20 +281,33 @@ function ImageWithViewFullOverlay({
       <div className={`relative ${wrapperClassName}`}>
         {children}
         <div
-          className='pointer-events-none absolute inset-0 flex items-end justify-center pt-8 pb-3'
+          className='pointer-events-none absolute inset-0 flex items-end justify-center gap-2 pt-8 pb-3'
           aria-hidden
         >
           <Button
             type='button'
             variant='secondary'
             size='sm'
-            className='pointer-events-auto shrink-0 gap-1.5 rounded-md border-white/20 bg-black/40 px-3 py-2 text-white shadow-sm hover:bg-black/55 hover:text-white dark:border-white/20 dark:bg-black/50 dark:hover:bg-black/65'
+            className={overlayButtonClass}
             onClick={handleViewFull}
-            aria-label='preview image'
+            aria-label='Preview image'
           >
             <Expand className='h-4 w-4' />
             <span>Preview</span>
           </Button>
+          {onDownload && (
+            <Button
+              type='button'
+              variant='secondary'
+              size='sm'
+              className={overlayButtonClass}
+              onClick={onDownload}
+              aria-label='Download image'
+            >
+              <Download className='h-4 w-4' />
+              <span>Download</span>
+            </Button>
+          )}
         </div>
       </div>
       <Modal open={modalOpen} onOpenChange={setModalOpen}>
@@ -323,7 +345,11 @@ export const renderBs64Img = ({
 
     if (!isBase64 && singleImageUrl && (!cleanImageData || cleanImageData.length === 0)) {
       return (
-        <ImageWithViewFullOverlay src={displayUrl} wrapperClassName={imageWrapperClass}>
+        <ImageWithViewFullOverlay
+          src={displayUrl}
+          wrapperClassName={imageWrapperClass}
+          onDownload={() => downloadImage(false, undefined, singleImageUrl)}
+        >
           <img
             src={displayUrl}
             alt='Generated image'
@@ -343,7 +369,11 @@ export const renderBs64Img = ({
     if (!cleanImageData || cleanImageData.length === 0) {
       if (singleImageUrl) {
         return (
-          <ImageWithViewFullOverlay src={displayUrl} wrapperClassName={imageWrapperClass}>
+          <ImageWithViewFullOverlay
+            src={displayUrl}
+            wrapperClassName={imageWrapperClass}
+            onDownload={() => downloadImage(false, undefined, singleImageUrl)}
+          >
             <img
               src={displayUrl}
               alt='Generated image'
@@ -381,7 +411,11 @@ export const renderBs64Img = ({
     }
 
     return (
-      <ImageWithViewFullOverlay src={imageSrc} wrapperClassName={imageWrapperClass}>
+      <ImageWithViewFullOverlay
+        src={imageSrc}
+        wrapperClassName={imageWrapperClass}
+        onDownload={() => downloadImage(isBase64, cleanImageData || undefined, singleImageUrl || undefined)}
+      >
         <img
           src={imageSrc}
           alt='Generated image'
