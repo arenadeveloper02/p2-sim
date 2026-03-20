@@ -1,7 +1,11 @@
 import { ImageIcon } from '@/components/icons'
 import { AuthMode, type BlockConfig } from '@/blocks/types'
 import type { DalleResponse } from '@/tools/openai/types'
-import { parseImageUrls } from '@/lib/utils/parse-image-urls'
+import {
+  extractUrlsFromText,
+  mergeUrlsAndDeduplicate,
+  parseImageUrls,
+} from '@/lib/utils/parse-image-urls'
 
 const NANO_BANANA_PRO_MODEL = 'gemini-3-pro-image-preview'
 
@@ -93,7 +97,9 @@ export const ImageFusionBlock: BlockConfig<DalleResponse> = {
           imageSize: params.imageSize || '1K',
         }
         const files = Array.isArray(params.inputImages) ? params.inputImages : []
-        const urls = parseImageUrls(params.inputImageUrls)
+        const urlsFromField = parseImageUrls(params.inputImageUrls)
+        const urlsFromPrompt = extractUrlsFromText(params.prompt)
+        const urls = mergeUrlsAndDeduplicate(urlsFromField, urlsFromPrompt)
         const merged = [...files, ...urls]
         if (merged.length > 0) {
           base.inputImages = merged

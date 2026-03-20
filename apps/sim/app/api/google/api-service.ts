@@ -184,17 +184,47 @@ export const resolveInlineImageData = async (
 }
 
 /**
- * Resolve an array of image references to inline data for multi-image fusion.
+ * Deduplicate inputImages array before processing. First occurrence wins.
+ * Keys: URL strings by value; objects by key, url, or path (whichever present).
  *
- * @param inputImages - Array of base64 strings or objects with path (and optional type).
+ * @param inputImages - Raw array of image refs
+ * @returns Deduplicated array
+ */
+function deduplicateInputImages(inputImages: unknown[]): unknown[] {
+  const seen = new Set<string>()
+  const result: unknown[] = []
+  for (const item of inputImages) {
+    let key: string
+    if (typeof item === 'string') {
+      key = item.trim()
+    } else if (item && typeof item === 'object') {
+      const obj = item as { key?: string; url?: string; path?: string }
+      key = (obj.key || obj.url || obj.path || JSON.stringify(item)) as string
+    } else {
+      key = String(item)
+    }
+    if (key && !seen.has(key)) {
+      seen.add(key)
+      result.push(item)
+    }
+  }
+  return result
+}
+
+/**
+ * Resolve an array of image references to inline data for multi-image fusion.
+ * Deduplicates before processing.
+ *
+ * @param inputImages - Array of base64 strings, URLs, or objects with path/key/url.
  * @returns Array of inline image data in order, or empty array if none.
  */
 export const resolveInlineImageDataArray = async (
   inputImages: unknown[]
 ): Promise<InlineImageData[]> => {
+  const deduplicated = deduplicateInputImages(inputImages)
   const results: InlineImageData[] = []
-  for (let i = 0; i < inputImages.length; i++) {
-    const item = inputImages[i]
+  for (let i = 0; i < deduplicated.length; i++) {
+    const item = deduplicated[i]
     const mimeType =
       typeof item === 'object' && item !== null && 'type' in item
         ? (item as { type?: string }).type
