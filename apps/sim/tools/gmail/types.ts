@@ -29,6 +29,10 @@ export interface GmailReadParams extends BaseGmailParams {
   includeAttachments?: boolean
 }
 
+export interface GmailReadThreadParams extends BaseGmailParams {
+  threadId: string
+}
+
 // Search operation parameters
 export interface GmailSearchParams extends BaseGmailParams {
   query: string
@@ -65,6 +69,7 @@ export interface GmailLabelParams extends BaseGmailParams {
 export type GmailToolParams =
   | GmailSendParams
   | GmailReadParams
+  | GmailReadThreadParams
   | GmailSearchParams
   | GmailAdvancedSearchParams
   | GmailMoveParams
@@ -92,6 +97,7 @@ interface SearchMetadata extends BaseGmailMetadata {
     id: string
     threadId: string
   }>
+  result?: Array<Record<string, unknown>>
 }
 
 // Response format
