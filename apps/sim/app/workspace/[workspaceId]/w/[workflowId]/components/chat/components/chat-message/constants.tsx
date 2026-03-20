@@ -357,7 +357,7 @@ function ImageWithViewFullOverlay({
           <ModalHeader className='w-full'></ModalHeader>
           <ModalBody className='flex-1 overflow-auto p-4 border-t-0'>
             {isModalImageLoading ? (
-              <div className='flex items-center justify-center text-sm text-muted-foreground'>
+              <div className='flex w-[50vw] items-center justify-center text-sm text-muted-foreground'>
                 Loading image...
               </div>
             ) : null}
