@@ -309,7 +309,15 @@ function ImageWithViewFullOverlay({
   onDownload?: () => void
 }) {
   const [modalOpen, setModalOpen] = useState(false)
+  const [isModalImageLoading, setIsModalImageLoading] = useState(false)
   const handleViewFull = useCallback(() => setModalOpen(true), [])
+
+  useEffect(() => {
+    if (modalOpen) {
+      setIsModalImageLoading(true)
+    }
+  }, [modalOpen, src])
+
   return (
     <>
       <div className={`relative ${wrapperClassName}`}>
@@ -345,13 +353,22 @@ function ImageWithViewFullOverlay({
         </div>
       </div>
       <Modal open={modalOpen} onOpenChange={setModalOpen}>
-        <ModalContent size='full' className='flex max-h-[90vh] max-w-[90vw] flex-col'>
-          <ModalHeader className='shrink-0'>View full image</ModalHeader>
-          <ModalBody className='min-h-0 flex-1 overflow-auto p-4'>
+        <ModalContent size='full' className='flex max-h-[85vh] max-w-fit items-center flex-col'>
+          <ModalHeader className='w-full'></ModalHeader>
+          <ModalBody className='flex-1 overflow-auto p-4 border-t-0'>
+            {isModalImageLoading ? (
+              <div className='flex items-center justify-center text-sm text-muted-foreground'>
+                Loading image...
+              </div>
+            ) : null}
             <img
               src={src}
               alt='Generated image'
-              className='h-auto max-h-full w-auto max-w-full object-contain'
+              className={`h-auto max-h-full w-auto max-w-full object-contain ${
+                isModalImageLoading ? 'hidden' : ''
+              }`}
+              onLoad={() => setIsModalImageLoading(false)}
+              onError={() => setIsModalImageLoading(false)}
             />
           </ModalBody>
         </ModalContent>
