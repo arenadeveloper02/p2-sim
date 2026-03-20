@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, Copy, Download, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
 import ArenaCopilotMarkdownRenderer from '../../../panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
@@ -10,7 +10,12 @@ import {
   getImageUrlFromContent,
   hasBase64Images,
   isBase64,
+  isRenderableImageUrl,
+  mergeToolOutputImageUrls,
+  normalizeImageUrlForCompare,
   renderBs64Img,
+  resolveMessageImagesAndProse,
+  S3UploadFailedAlert,
 } from './constants'
 
 interface ChatAttachment {
@@ -33,45 +38,6 @@ interface ChatMessageProps {
 }
 
 const MAX_WORD_LENGTH = 25
-
-const S3_UPLOAD_FAILED_DISMISS_MS = 10_000
-
-/**
- * Temporary alert shown when the generated image was saved to local storage because S3 upload failed.
- * Auto-dismisses after 10s; user can dismiss manually.
- */
-function S3UploadFailedAlert() {
-  const [dismissed, setDismissed] = useState(false)
-  const dismiss = useCallback(() => setDismissed(true), [])
-
-  useEffect(() => {
-    const t = setTimeout(dismiss, S3_UPLOAD_FAILED_DISMISS_MS)
-    return () => clearTimeout(t)
-  }, [dismiss])
-
-  if (dismissed) return null
-
-  return (
-    <div
-      className='mb-2 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-amber-800 text-sm dark:text-amber-200'
-      role='alert'
-    >
-      <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400' />
-      <p className='flex-1'>
-        Image was saved locally because upload to the storage bucket failed. Saving to the bucket is
-        important for this workflow and user.
-      </p>
-      <button
-        type='button'
-        onClick={dismiss}
-        className='flex-shrink-0 rounded p-1 hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500'
-        aria-label='Dismiss'
-      >
-        <X className='h-4 w-4' />
-      </button>
-    </div>
-  )
-}
 
 /**
  * Formats file size in human-readable format
@@ -204,7 +170,7 @@ const RenderButtons = ({
             </Tooltip.Provider>
           )}
 
-          {(containsBase64Images || hasImageUrl) && (
+          {/* {(containsBase64Images || hasImageUrl) && (
             <Tooltip.Provider>
               <Tooltip.Root delayDuration={300}>
                 <Tooltip.Trigger asChild>
@@ -220,7 +186,7 @@ const RenderButtons = ({
                 </Tooltip.Content>
               </Tooltip.Root>
             </Tooltip.Provider>
-          )}
+          )} */}
         </div>
       )}
     </>
@@ -305,53 +271,68 @@ export function ChatMessage({ message }: ChatMessageProps) {
     )
   }
 
-  const renderContent = (content: any) => {
+  const renderContent = (content: unknown) => {
     if (!content) {
       return null
     }
 
     try {
-      if (typeof content === 'object' && content !== null && content.image) {
-        const imageValue = content.image
-        const isImageUrl =
-          typeof imageValue === 'string' &&
-          (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
-        const isBase64Image = typeof imageValue === 'string' && isBase64(imageValue)
-        const showS3UploadFailed = content.s3UploadFailed === true && (isImageUrl || isBase64Image)
+      if (typeof content === 'object' && content !== null) {
+        const o = content as Record<string, unknown>
+        const imgRaw = typeof o.image === 'string' ? o.image : ''
+        const txtRaw = typeof o.content === 'string' ? o.content : ''
 
-        return (
-          <>
-            {content.content && typeof content.content === 'string' && content.content.trim() && (
-              <ArenaCopilotMarkdownRenderer content={content.content} />
-            )}
-            {showS3UploadFailed && <S3UploadFailedAlert />}
-            {isImageUrl && (
-              <div className='w-full'>
-                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: imageValue })}
-              </div>
-            )}
-            {isBase64Image && (
-              <div className='w-full'>
-                {renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}
-              </div>
-            )}
-          </>
-        )
+        const imageBase64 =
+          imgRaw.trim() && isBase64(imgRaw) && !isRenderableImageUrl(imgRaw)
+            ? imgRaw.replace(/\s+/g, '')
+            : ''
+
+        const { uniqueUrls, prose: proseWithoutUrlLines } = mergeToolOutputImageUrls(imgRaw, txtRaw)
+        const proseTrim = proseWithoutUrlLines.trim()
+        const txtTrim = txtRaw.trim()
+
+        const showS3 = o.s3UploadFailed === true && (uniqueUrls.length > 0 || Boolean(imageBase64))
+
+        if (uniqueUrls.length > 0 || imageBase64) {
+          return (
+            <>
+              {proseTrim ? <ArenaCopilotMarkdownRenderer content={proseTrim} /> : null}
+              {showS3 && <S3UploadFailedAlert />}
+              {uniqueUrls.map((url) => (
+                <div key={normalizeImageUrlForCompare(url)} className='w-full'>
+                  {renderBs64Img({ isBase64: false, imageData: '', imageUrl: url })}
+                </div>
+              ))}
+              {imageBase64 && (
+                <div className='w-full'>
+                  {renderBs64Img({ isBase64: true, imageData: imageBase64 })}
+                </div>
+              )}
+            </>
+          )
+        }
+
+        if (txtTrim) {
+          return <ArenaCopilotMarkdownRenderer content={txtTrim} />
+        }
+
+        return <ArenaCopilotMarkdownRenderer content={JSON.stringify(content, null, 2)} />
       }
 
-      if (
-        typeof content === 'object' &&
-        content !== null &&
-        typeof content.content === 'string' &&
-        content.content &&
-        (!content.image || content.image === '') &&
-        (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
-      ) {
-        return (
-          <div className='w-full'>
-            {renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}
-          </div>
-        )
+      if (typeof content === 'string') {
+        const { urls, prose } = resolveMessageImagesAndProse(content)
+        if (urls.length > 0) {
+          return (
+            <>
+              {prose ? <ArenaCopilotMarkdownRenderer content={prose} /> : null}
+              {urls.map((url) => (
+                <div key={normalizeImageUrlForCompare(url)} className='w-full'>
+                  {renderBs64Img({ isBase64: false, imageData: '', imageUrl: url })}
+                </div>
+              ))}
+            </>
+          )
+        }
       }
 
       if (typeof content === 'string' && isBase64(content)) {
@@ -361,12 +342,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
       if (typeof content === 'string') {
         const trimmed = content.trim()
-        const urlPrefix = trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
-        const looksLikeImageUrl =
-          urlPrefix &&
-          (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(trimmed) ||
-            trimmed.includes('agent-generated-images'))
-        if (looksLikeImageUrl) {
+        if (isRenderableImageUrl(trimmed)) {
           return (
             <div className='w-full'>
               {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
@@ -394,9 +370,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
         return <ArenaCopilotMarkdownRenderer content={content} />
       }
 
-      return <ArenaCopilotMarkdownRenderer content={content} />
+      return <ArenaCopilotMarkdownRenderer content={String(content)} />
     } catch (error) {
-      console.error('Error rendering message content:', error)
       return (
         <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>
           <p className='text-sm'>⚠️ Error displaying content. Please try refreshing the chat.</p>

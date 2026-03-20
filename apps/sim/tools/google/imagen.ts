@@ -193,8 +193,7 @@ export const imagenTool: ToolConfig = {
 
       // Use session user for path when present so path reflects who triggered the run
       const workflowId = params?._context?.workflowId || 'unknown'
-      const userId =
-        params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
+      const userId = params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
 
       let finalImageUrl: string | null = null
       let s3UploadFailed: boolean | undefined
