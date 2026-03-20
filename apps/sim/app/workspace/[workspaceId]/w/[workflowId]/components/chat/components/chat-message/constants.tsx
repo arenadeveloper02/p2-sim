@@ -1,6 +1,6 @@
 // file: utils/isBase64.ts
 
-import { useCallback, useEffect, useState } from 'react'
+import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Download, Expand, X } from 'lucide-react'
 import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 
@@ -212,7 +212,7 @@ function Base64ImageWithBlobUrl({
       <img
         src={objectUrl}
         alt='Generated image'
-        className='h-auto max-w-full rounded-lg border'
+        className='h-full bg-cover max-w-full rounded-lg border'
         style={{ maxHeight: '500px', objectFit: 'contain' }}
         onError={(e) => {
           console.error('Image failed to load (blob URL)', { error: e })
@@ -310,13 +310,33 @@ function ImageWithViewFullOverlay({
 }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [isModalImageLoading, setIsModalImageLoading] = useState(false)
+  const [previewSize, setPreviewSize] = useState<{ width: number; height: number } | null>(null)
   const handleViewFull = useCallback(() => setModalOpen(true), [])
 
   useEffect(() => {
     if (modalOpen) {
       setIsModalImageLoading(true)
+      setPreviewSize(null)
     }
   }, [modalOpen, src])
+
+  const handleModalImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
+    const naturalWidth = event.currentTarget.naturalWidth
+    const naturalHeight = event.currentTarget.naturalHeight
+
+    if (naturalWidth > 0 && naturalHeight > 0 && typeof window !== 'undefined') {
+      const viewportWidth = Math.floor(window.innerWidth * 0.92)
+      const viewportHeight = Math.floor(window.innerHeight * 0.76)
+      const scale = Math.min(viewportWidth / naturalWidth, viewportHeight / naturalHeight, 1)
+
+      setPreviewSize({
+        width: Math.max(240, Math.floor(naturalWidth * scale)),
+        height: Math.max(180, Math.floor(naturalHeight * scale)),
+      })
+    }
+
+    setIsModalImageLoading(false)
+  }, [])
 
   return (
     <>
@@ -353,11 +373,24 @@ function ImageWithViewFullOverlay({
         </div>
       </div>
       <Modal open={modalOpen} onOpenChange={setModalOpen}>
-        <ModalContent size='full' className='flex max-h-[85vh] max-w-fit items-center flex-col'>
+        <ModalContent
+          size='full'
+          className='flex max-h-[95vh] w-auto min-w-[95vw] items-center flex-col'
+        >
           <ModalHeader className='w-full'></ModalHeader>
-          <ModalBody className='flex-1 overflow-auto p-4 border-t-0'>
+          <ModalBody
+            className='flex items-center justify-center overflow-auto border-t-0 p-4 pb-7'
+            style={
+              previewSize
+                ? {
+                    width: `${previewSize.width}px`,
+                    height: `${previewSize.height}px`,
+                  }
+                : undefined
+            }
+          >
             {isModalImageLoading ? (
-              <div className='flex w-[50vw] items-center justify-center text-sm text-muted-foreground'>
+              <div className='flex min-h-[180px] min-w-[240px] items-center justify-center text-sm text-muted-foreground'>
                 Loading image...
               </div>
             ) : null}
@@ -367,7 +400,7 @@ function ImageWithViewFullOverlay({
               className={`h-auto max-h-full w-auto max-w-full object-contain ${
                 isModalImageLoading ? 'hidden' : ''
               }`}
-              onLoad={() => setIsModalImageLoading(false)}
+              onLoad={handleModalImageLoad}
               onError={() => setIsModalImageLoading(false)}
             />
           </ModalBody>
@@ -392,7 +425,7 @@ export const renderBs64Img = ({
     const displayUrl = singleImageUrl ? getImageDisplayUrl(singleImageUrl) : ''
 
     const imageWrapperClass =
-      'my-2 w-full max-h-[70vh] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
+      'my-2 w-fit max-w-full h-[500px] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
 
     if (!isBase64 && singleImageUrl && (!cleanImageData || cleanImageData.length === 0)) {
       return (
@@ -404,7 +437,7 @@ export const renderBs64Img = ({
           <img
             src={displayUrl}
             alt='Generated image'
-            className='h-auto max-w-full rounded-lg object-contain'
+            className='h-full bg-cover max-w-full rounded-lg object-contain'
             referrerPolicy='no-referrer'
             onError={(e) => {
               console.error('Image failed to load:', {
@@ -428,7 +461,7 @@ export const renderBs64Img = ({
             <img
               src={displayUrl}
               alt='Generated image'
-              className='h-auto max-w-full rounded-lg object-contain'
+              className='h-full bg-cover max-w-full rounded-lg object-contain'
               referrerPolicy='no-referrer'
               onError={(e) => {
                 console.error('Image failed to load:', {
@@ -470,7 +503,7 @@ export const renderBs64Img = ({
         <img
           src={imageSrc}
           alt='Generated image'
-          className='h-auto max-w-full rounded-lg object-contain'
+          className='h-full bg-cover max-w-full rounded-lg object-contain'
           referrerPolicy='no-referrer'
           onError={(e) => {
             console.error('Image failed to load:', {
