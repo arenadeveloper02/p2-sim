@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { chat, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { isDev } from '@/lib/core/config/feature-flags'
@@ -22,6 +22,43 @@ export function setChatAuthCookie(
   encryptedPassword?: string | null
 ): void {
   setDeploymentAuthCookie(response, 'chat', chatId, type, encryptedPassword)
+}
+
+/**
+ * Whether a GET for an agent-generated image may proceed without Sim session.
+ * Deployed chat visitors use {@code chat_auth_*} cookies, not session; {@code <img>} cannot send Bearer/API key.
+ */
+export async function canAccessAgentGeneratedImageViaDeployedChat(
+  request: NextRequest,
+  workflowId: string
+): Promise<boolean> {
+  const deployments = await db
+    .select({
+      id: chat.id,
+      authType: chat.authType,
+      password: chat.password,
+    })
+    .from(chat)
+    .where(and(eq(chat.workflowId, workflowId), eq(chat.isActive, true)))
+
+  if (deployments.length === 0) {
+    return false
+  }
+
+  for (const d of deployments) {
+    if (d.authType === 'public') {
+      return true
+    }
+    const authCookie = request.cookies.get(`chat_auth_${d.id}`)
+    if (
+      authCookie?.value &&
+      validateAuthToken(authCookie.value, d.id, d.password)
+    ) {
+      return true
+    }
+  }
+
+  return false
 }
 
 /**

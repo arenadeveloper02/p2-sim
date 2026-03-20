@@ -166,6 +166,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
   const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
   const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
+  const [askInChatText, setAskInChatText] = useState('')
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -1033,6 +1034,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         scrollToMessage={scrollToMessage}
         chatConfig={chatConfig}
         workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
+        onAskInChat={(text) => setAskInChatText(text)}
       />
 
       {/* Input area (free-standing at the bottom) */}
@@ -1045,6 +1047,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             isStreaming={isStreamingResponse}
             onStopStreaming={() => stopStreaming(setMessages)}
             onVoiceStart={handleVoiceStart}
+            insertText={askInChatText}
+            onInsertConsumed={() => setAskInChatText('')}
           />
         </div>
       </div>
