@@ -10,6 +10,8 @@ import {
 const logger = createLogger('GoogleApiService')
 
 const SVG_MIME = 'image/svg+xml'
+const MAX_URL_IMAGE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
+const URL_FETCH_TIMEOUT_MS = 30_000 // 30 seconds
 
 /**
  * Gemini image API does not support image/svg+xml. Convert SVG to PNG for API compatibility.
@@ -81,6 +83,37 @@ export const resolveInlineImageData = async (
   }
 
   if (typeof inputImage === 'string') {
+    const str = inputImage.trim()
+    if (str.startsWith('http://') || str.startsWith('https://')) {
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), URL_FETCH_TIMEOUT_MS)
+        const response = await fetch(str, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Sim-Workflow/1.0' },
+        })
+        clearTimeout(timeoutId)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
+        }
+        const arrayBuffer = await response.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
+        if (buffer.length > MAX_URL_IMAGE_SIZE_BYTES) {
+          throw new Error(
+            `Image from URL exceeds 20MB limit (${(buffer.length / (1024 * 1024)).toFixed(2)}MB)`
+          )
+        }
+        const contentType = response.headers.get('content-type') || 'image/png'
+        const mimeType = contentType.split(';')[0].trim() || inputImageMimeType || 'image/png'
+        logger.info('Fetched image from URL for inline data', { mimeType, size: buffer.length })
+        return ensureSupportedMime(buffer, mimeType)
+      } catch (error) {
+        logger.error('Failed to fetch image from URL', { url: str.slice(0, 80), error })
+        throw new Error(
+          `Failed to fetch image from URL: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+      }
+    }
     const mimeType = inputImageMimeType || 'image/png'
     const buffer = Buffer.from(inputImage, 'base64')
     return ensureSupportedMime(buffer, mimeType)

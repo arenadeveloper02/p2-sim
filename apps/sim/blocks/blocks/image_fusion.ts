@@ -1,6 +1,7 @@
 import { ImageIcon } from '@/components/icons'
 import { AuthMode, type BlockConfig } from '@/blocks/types'
 import type { DalleResponse } from '@/tools/openai/types'
+import { parseImageUrls } from '@/lib/utils/parse-image-urls'
 
 const NANO_BANANA_PRO_MODEL = 'gemini-3-pro-image-preview'
 
@@ -69,6 +70,13 @@ export const ImageFusionBlock: BlockConfig<DalleResponse> = {
       uploadContext: 'image-fusion',
       allowStartFilesReference: true,
     },
+    {
+      id: 'inputImageUrls',
+      title: 'Image URLs',
+      type: 'long-input',
+      placeholder:
+        'Enter image URLs (one per line or comma-separated). Or use a reference like <agent1.urls>.',
+    },
   ],
   tools: {
     access: ['google_nano_banana'],
@@ -84,8 +92,11 @@ export const ImageFusionBlock: BlockConfig<DalleResponse> = {
           aspectRatio: params.aspectRatio || '1:1',
           imageSize: params.imageSize || '1K',
         }
-        if (Array.isArray(params.inputImages) && params.inputImages.length > 0) {
-          base.inputImages = params.inputImages
+        const files = Array.isArray(params.inputImages) ? params.inputImages : []
+        const urls = parseImageUrls(params.inputImageUrls)
+        const merged = [...files, ...urls]
+        if (merged.length > 0) {
+          base.inputImages = merged
         }
         return base
       },
@@ -99,6 +110,11 @@ export const ImageFusionBlock: BlockConfig<DalleResponse> = {
     inputImages: {
       type: 'array',
       description: 'Multiple images to fuse; array of file refs { path, type? }',
+    },
+    inputImageUrls: {
+      type: 'string',
+      description:
+        'Image URLs (newline or comma-separated, or reference like <agent1.urls>). Merged with inputImages.',
     },
   },
   outputs: {
