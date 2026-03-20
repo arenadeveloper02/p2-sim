@@ -87,8 +87,8 @@ export const ChatInput: React.FC<{
   // When parent injects text (e.g. "Ask this in chat"), set input to that text + space and focus
   useEffect(() => {
     if (!insertText || !insertText.trim()) return
-    const value = insertText.trim() + ' '
-    setInputValue((prev) => (prev ? prev.trimEnd() + ' ' + value : value))
+    const value = `${insertText.trim()} `
+    setInputValue((prev) => (prev ? `${prev.trimEnd()} ${value}` : value))
     setIsActive(true)
     onInsertConsumed?.()
     requestAnimationFrame(() => {

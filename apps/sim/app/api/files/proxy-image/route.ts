@@ -58,12 +58,12 @@ export async function GET(request: NextRequest) {
     'User-Agent': request.headers.get('user-agent') ?? 'Sim-Proxy-Image',
   }
   if (proxyToken && (targetUrl.host.endsWith('.thearena.ai') || targetUrl.host === 'thearena.ai')) {
-    headers['Authorization'] = `Bearer ${proxyToken}`
+    headers.Authorization = `Bearer ${proxyToken}`
   } else {
     const cookie = request.headers.get('cookie')
-    if (cookie) headers['Cookie'] = cookie
+    if (cookie) headers.Cookie = cookie
     const auth = request.headers.get('authorization')
-    if (auth) headers['Authorization'] = auth
+    if (auth) headers.Authorization = auth
   }
 
   try {

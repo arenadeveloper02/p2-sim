@@ -212,7 +212,7 @@ function Base64ImageWithBlobUrl({
       <img
         src={objectUrl}
         alt='Generated image'
-        className='h-full bg-cover max-w-full rounded-lg border'
+        className='h-full max-w-full rounded-lg border bg-cover'
         style={{ maxHeight: '500px', objectFit: 'contain' }}
         onError={(e) => {
           console.error('Image failed to load (blob URL)', { error: e })
@@ -375,9 +375,9 @@ function ImageWithViewFullOverlay({
       <Modal open={modalOpen} onOpenChange={setModalOpen}>
         <ModalContent
           size='full'
-          className='flex max-h-[95vh] w-auto min-w-[95vw] items-center flex-col'
+          className='flex max-h-[95vh] w-auto min-w-[95vw] flex-col items-center'
         >
-          <ModalHeader className='w-full'></ModalHeader>
+          <ModalHeader className='w-full' />
           <ModalBody
             className='flex items-center justify-center overflow-auto border-t-0 p-4 pb-7'
             style={
@@ -390,7 +390,7 @@ function ImageWithViewFullOverlay({
             }
           >
             {isModalImageLoading ? (
-              <div className='flex min-h-[180px] min-w-[240px] items-center justify-center text-sm text-muted-foreground'>
+              <div className='flex min-h-[180px] min-w-[240px] items-center justify-center text-muted-foreground text-sm'>
                 Loading image...
               </div>
             ) : null}
@@ -437,7 +437,7 @@ export const renderBs64Img = ({
           <img
             src={displayUrl}
             alt='Generated image'
-            className='h-full bg-cover max-w-full rounded-lg object-contain'
+            className='h-full max-w-full rounded-lg bg-cover object-contain'
             referrerPolicy='no-referrer'
             onError={(e) => {
               console.error('Image failed to load:', {
@@ -461,7 +461,7 @@ export const renderBs64Img = ({
             <img
               src={displayUrl}
               alt='Generated image'
-              className='h-full bg-cover max-w-full rounded-lg object-contain'
+              className='h-full max-w-full rounded-lg bg-cover object-contain'
               referrerPolicy='no-referrer'
               onError={(e) => {
                 console.error('Image failed to load:', {
@@ -498,12 +498,14 @@ export const renderBs64Img = ({
       <ImageWithViewFullOverlay
         src={imageSrc}
         wrapperClassName={imageWrapperClass}
-        onDownload={() => downloadImage(isBase64, cleanImageData || undefined, singleImageUrl || undefined)}
+        onDownload={() =>
+          downloadImage(isBase64, cleanImageData || undefined, singleImageUrl || undefined)
+        }
       >
         <img
           src={imageSrc}
           alt='Generated image'
-          className='h-full bg-cover max-w-full rounded-lg object-contain'
+          className='h-full max-w-full rounded-lg bg-cover object-contain'
           referrerPolicy='no-referrer'
           onError={(e) => {
             console.error('Image failed to load:', {
@@ -882,13 +884,19 @@ export function resolveMessageImagesAndProse(raw: string): { urls: string[]; pro
     }
   }
 
-  const segments = raw.split(/\n\n+/).map((s) => s.trim()).filter(Boolean)
+  const segments = raw
+    .split(/\n\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
   const urls: string[] = []
   const seen = new Set<string>()
   const proseParts: string[] = []
 
   for (const seg of segments) {
-    const lines = seg.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    const lines = seg
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
     if (lines.length === 0) continue
 
     if (lines.length === 1 && isImageUrlLine(lines[0])) {
@@ -1216,11 +1224,6 @@ export function sanitizeMessagesForPersistence<T extends ChatMessageWithBase64>(
     return sanitized
   })
 }
-
-
-
-
-
 
 export const S3_UPLOAD_FAILED_DISMISS_MS = 10_000
 

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, Copy, Download, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
 import ArenaCopilotMarkdownRenderer from '../../../panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
@@ -287,15 +287,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
             ? imgRaw.replace(/\s+/g, '')
             : ''
 
-        const { uniqueUrls, prose: proseWithoutUrlLines } = mergeToolOutputImageUrls(
-          imgRaw,
-          txtRaw
-        )
+        const { uniqueUrls, prose: proseWithoutUrlLines } = mergeToolOutputImageUrls(imgRaw, txtRaw)
         const proseTrim = proseWithoutUrlLines.trim()
         const txtTrim = txtRaw.trim()
 
-        const showS3 =
-          o.s3UploadFailed === true && (uniqueUrls.length > 0 || Boolean(imageBase64))
+        const showS3 = o.s3UploadFailed === true && (uniqueUrls.length > 0 || Boolean(imageBase64))
 
         if (uniqueUrls.length > 0 || imageBase64) {
           return (
@@ -320,11 +316,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           return <ArenaCopilotMarkdownRenderer content={txtTrim} />
         }
 
-        return (
-          <ArenaCopilotMarkdownRenderer
-            content={JSON.stringify(content, null, 2)}
-          />
-        )
+        return <ArenaCopilotMarkdownRenderer content={JSON.stringify(content, null, 2)} />
       }
 
       if (typeof content === 'string') {

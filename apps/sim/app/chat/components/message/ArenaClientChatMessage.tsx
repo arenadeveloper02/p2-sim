@@ -10,23 +10,23 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
+// import MarkdownRenderer from './components/markdown-renderer'
+// import { toastError, toastSuccess } from '@/components/ui'
+import { createLogger } from '@sim/logger'
+import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import type { KnowledgeRef, KnowledgeResultChunk } from '@/app/chat/components/message/message'
-// import MarkdownRenderer from './components/markdown-renderer'
-// import { toastError, toastSuccess } from '@/components/ui'
-import { createLogger } from '@sim/logger'
 import {
   downloadImage,
-  mergeToolOutputImageUrls,
   extractAllBase64Images,
   extractBase64Image,
   getImageUrlFromContent,
   hasBase64Images,
   isBase64,
   isRenderableImageUrl,
+  mergeToolOutputImageUrls,
   normalizeImageUrlForCompare,
   renderBs64Img,
   resolveMessageImagesAndProse,
@@ -68,7 +68,10 @@ function isLikelyMarkdownTable(str: string): boolean {
   if (lines.length < 2) return false
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
-    const cells = line.split('|').map((c) => c.trim()).filter(Boolean)
+    const cells = line
+      .split('|')
+      .map((c) => c.trim())
+      .filter(Boolean)
     if (cells.length === 0) continue
     const onlySeparatorChars = new RegExp('^[' + '\\-' + ':' + '\\s' + ']+$')
     const isSeparatorLine = cells.every((cell) => onlySeparatorChars.test(cell) && cell.length > 0)
@@ -100,11 +103,7 @@ function getNodeTextLength(node: Node): number {
  * Walks container's subtree in document order. For a text node, targetOffset is a character index;
  * for an element node (e.g. container or button), Range API gives child index, so we sum preceding siblings' text lengths.
  */
-function getCharacterOffset(
-  container: Node,
-  targetNode: Node,
-  targetOffset: number
-): number {
+function getCharacterOffset(container: Node, targetNode: Node, targetOffset: number): number {
   let offset = 0
   function walk(node: Node): boolean {
     if (node === targetNode) {
@@ -118,7 +117,7 @@ function getCharacterOffset(
       return true
     }
     if (node.nodeType === Node.TEXT_NODE) {
-      offset += (node.textContent?.length ?? 0)
+      offset += node.textContent?.length ?? 0
       return false
     }
     for (let i = 0; i < node.childNodes.length; i++) {
@@ -135,7 +134,10 @@ function getCharacterOffset(
  * look backward for a pipe (stop at newline/start), then forward for a pipe (stop at newline/end).
  * Returns { start, end, text } for the segment between the two pipes, or null.
  */
-function getPipeSegmentAtOffset(line: string, offset: number): { start: number; end: number; text: string } | null {
+function getPipeSegmentAtOffset(
+  line: string,
+  offset: number
+): { start: number; end: number; text: string } | null {
   if (offset < 0 || offset > line.length) return null
   let pipeBefore = -1
   for (let i = offset - 1; i >= 0; i--) {
@@ -177,7 +179,14 @@ function LineWithPipeHover({ line, onCopySegment }: LineWithPipeHoverProps) {
       const range =
         doc.caretRangeFromPoint?.(e.clientX, e.clientY) ??
         (() => {
-          const pos = (doc as Document & { caretPositionFromPoint?(x: number, y: number): { offsetNode: Node; offset: number } | null }).caretPositionFromPoint?.(e.clientX, e.clientY)
+          const pos = (
+            doc as Document & {
+              caretPositionFromPoint?(
+                x: number,
+                y: number
+              ): { offsetNode: Node; offset: number } | null
+            }
+          ).caretPositionFromPoint?.(e.clientX, e.clientY)
           if (!pos) return null
           return { startContainer: pos.offsetNode, startOffset: pos.offset }
         })()
@@ -365,11 +374,7 @@ export const ArenaClientChatMessage = memo(
             return renderStringContent(txtTrim)
           }
 
-          return (
-            <ArenaCopilotMarkdownRenderer
-              content={JSON.stringify(content, null, 2)}
-            />
-          )
+          return <ArenaCopilotMarkdownRenderer content={JSON.stringify(content, null, 2)} />
         }
 
         if (typeof content === 'string') {
