@@ -23,6 +23,7 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
         { label: 'Get Domain Organic Keywords', id: 'domain_organic' },
         { label: 'Get Organic Competitors', id: 'domain_organic_organic' },
         { label: 'Get Domain Rank', id: 'domain_rank' },
+        { label: 'Organic Positions Report (Position Tracking)', id: 'tracking_position_organic' },
       ],
       value: () => 'url_organic',
     },
@@ -48,6 +49,133 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       condition: {
         field: 'operation',
         value: ['domain_organic', 'domain_organic_organic', 'domain_rank'],
+      },
+    },
+    // Position Tracking: campaign ID
+    {
+      id: 'campaignId',
+      title: 'Campaign ID',
+      type: 'short-input',
+      placeholder: 'e.g. 103345921_15710',
+      required: true,
+      description: 'Position Tracking campaign ID from your Semrush project',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    // Position Tracking: URL(s) with mask
+    {
+      id: 'trackingUrl',
+      title: 'Tracked URL',
+      type: 'short-input',
+      placeholder: '*.example.com/* or *.apple.com/*:*.amazon.com/*',
+      required: true,
+      description: 'URL with mask; use : to separate multiple domains',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    // Position Tracking: date range
+    {
+      id: 'dateBegin',
+      title: 'Date begin',
+      type: 'short-input',
+      placeholder: 'YYYYMMDD',
+      description: 'Start date of the period',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    {
+      id: 'dateEnd',
+      title: 'Date end',
+      type: 'short-input',
+      placeholder: 'YYYYMMDD',
+      description: 'End date of the period',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    // Position Tracking: linktype filter
+    {
+      id: 'linktypeFilter',
+      title: 'Link type filter',
+      type: 'dropdown',
+      options: [
+        { label: 'Include all', id: '0' },
+        { label: 'Only local pack & hotels', id: '1' },
+        { label: 'Exclude local pack', id: '2' },
+        { label: 'Exclude hotels', id: '524288' },
+        { label: 'Exclude local pack & hotels', id: '524290' },
+        { label: 'Exclude AI Overview', id: '536870912' },
+        { label: 'Exclude local pack & AI Overview', id: '536870914' },
+        { label: 'Exclude local pack, hotels & AI Overview', id: '537395202' },
+      ],
+      value: () => '0',
+      description: 'Include or exclude local pack, hotels, AI Overview',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    // Position Tracking: display options
+    {
+      id: 'displaySort',
+      title: 'Sort',
+      type: 'dropdown',
+      options: [
+        { label: 'Position (domain 0) ascending', id: '0_pos_asc' },
+        { label: 'Position (domain 0) descending', id: '0_pos_desc' },
+        { label: 'Volume descending', id: 'nq_desc' },
+        { label: 'Volume ascending', id: 'nq_asc' },
+        { label: 'Keyword ascending', id: 'ph_asc' },
+        { label: 'Keyword descending', id: 'ph_desc' },
+        { label: 'Position change (domain 0) ascending', id: '0_diff_asc' },
+        { label: 'Position change (domain 0) descending', id: '0_diff_desc' },
+        { label: 'Visibility ascending', id: 'vi_asc' },
+        { label: 'Visibility descending', id: 'vi_desc' },
+      ],
+      value: () => '0_pos_asc',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    {
+      id: 'displayOffset',
+      title: 'Display offset',
+      type: 'short-input',
+      placeholder: '0',
+      description: 'Skip this many results',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    {
+      id: 'displayTags',
+      title: 'Display tags',
+      type: 'short-input',
+      placeholder: 'tag1|tag2 or tag1|-tag2',
+      description: 'Filter by tags (| = OR, - = exclude)',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    {
+      id: 'displayTagsCondition',
+      title: 'Display tags condition',
+      type: 'short-input',
+      placeholder: 'tag1&!tag2',
+      description: 'Newer filter: | OR, & AND, ! exclude',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
       },
     },
     // Database
@@ -114,6 +242,7 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       condition: {
         field: 'operation',
         value: [
+          'tracking_position_organic',
           'url_organic',
           'url_adwords',
           'domain_organic',
@@ -151,30 +280,44 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     },
   ],
   tools: {
-    access: ['semrush_query'],
+    access: ['semrush_query', 'semrush_organic_positions'],
     config: {
-      tool: () => 'semrush_query',
+      tool: (params: Record<string, any>) =>
+        params.operation === 'tracking_position_organic'
+          ? 'semrush_organic_positions'
+          : 'semrush_query',
       params: (params: Record<string, any>) => {
+        if (params.operation === 'tracking_position_organic') {
+          return {
+            campaignId: params.campaignId ?? '',
+            url: params.trackingUrl ?? '',
+            dateBegin: params.dateBegin || undefined,
+            dateEnd: params.dateEnd || undefined,
+            linktypeFilter: params.linktypeFilter || undefined,
+            displayTags: params.displayTags || undefined,
+            displayTagsCondition: params.displayTagsCondition || undefined,
+            displaySort: params.displaySort || undefined,
+            displayLimit: params.displayLimit || undefined,
+            displayOffset: params.displayOffset || undefined,
+            apiKey: params.apiKey || undefined,
+          }
+        }
+
         const reportType = params.operation || 'url_organic'
         const target = reportType.startsWith('url_') ? params.url || '' : params.domain || ''
 
-        // Set default export columns to Ph,Nq,Cp if not specified
-        // Ph = Phrase (Keyword), Nq = Search Volume, Cp = CPC
         const exportColumns = params.exportColumns || 'Ph,Nq,Cp'
-
-        // Set default display limit if not provided
         const displayLimit =
           params.displayLimit || (reportType === 'url_organic' ? '50' : undefined)
 
-        const toolParams = {
+        return {
           reportType,
           target,
-          database: params.database || 'us', // Default to 'us' for all operations
+          database: params.database || 'us',
           displayLimit,
           exportColumns: exportColumns || undefined,
           apiKey: params.apiKey || undefined,
         }
-        return toolParams
       },
     },
   },
@@ -185,6 +328,15 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     database: { type: 'string', description: 'Geographic database code' },
     displayLimit: { type: 'string', description: 'Number of results to return' },
     exportColumns: { type: 'string', description: 'Comma-separated column codes' },
+    campaignId: { type: 'string', description: 'Position Tracking campaign ID' },
+    trackingUrl: { type: 'string', description: 'Tracked URL(s) with mask for Position Tracking' },
+    dateBegin: { type: 'string', description: 'Start date YYYYMMDD' },
+    dateEnd: { type: 'string', description: 'End date YYYYMMDD' },
+    linktypeFilter: { type: 'string', description: 'Link type filter for Position Tracking' },
+    displaySort: { type: 'string', description: 'Sort order for Position Tracking report' },
+    displayOffset: { type: 'string', description: 'Pagination offset' },
+    displayTags: { type: 'string', description: 'Tag filter for Position Tracking' },
+    displayTagsCondition: { type: 'string', description: 'Tag condition filter' },
     apiKey: {
       type: 'string',
       description: 'Semrush API key',
