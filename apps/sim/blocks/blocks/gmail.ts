@@ -17,6 +17,8 @@ function selectGmailToolId(params: Record<string, any>): string {
       return 'gmail_advanced_search'
     case 'read_gmail':
       return 'gmail_read'
+    case 'read_thread_gmail':
+      return 'gmail_read_thread'
     case 'move_gmail':
       return 'gmail_move'
     case 'mark_read_gmail':
@@ -60,6 +62,7 @@ export const GmailBlock: BlockConfig<GmailToolResponse> = {
       options: [
         { label: 'Send Email', id: 'send_gmail' },
         { label: 'Read Email', id: 'read_gmail' },
+        { label: 'Read Thread', id: 'read_thread_gmail' },
         { label: 'Draft Email', id: 'draft_gmail' },
         { label: 'Search Email', id: 'search_gmail' },
         { label: 'Advanced Search', id: 'advanced_search_gmail' },
@@ -301,6 +304,14 @@ Return ONLY the search query - no explanations, no extra text.`,
       placeholder: 'Maximum number of results (default: 10)',
       condition: { field: 'operation', value: ['search_gmail', 'read_gmail'] },
     },
+    {
+      id: 'readThreadId',
+      title: 'Thread ID',
+      type: 'short-input',
+      placeholder: 'Gmail thread ID (conversation ID)',
+      condition: { field: 'operation', value: 'read_thread_gmail' },
+      required: true,
+    },
     // Advanced Search Fields
     {
       id: 'advancedSearchQuery',
@@ -450,6 +461,7 @@ Return ONLY the search query - no explanations, no extra text.`,
       'gmail_send',
       'gmail_draft',
       'gmail_read',
+      'gmail_read_thread',
       'gmail_search',
       'gmail_advanced_search',
       'gmail_move',
@@ -474,6 +486,8 @@ Return ONLY the search query - no explanations, no extra text.`,
             return 'gmail_advanced_search'
           case 'read_gmail':
             return 'gmail_read'
+          case 'read_thread_gmail':
+            return 'gmail_read_thread'
           case 'move_gmail':
             return 'gmail_move'
           case 'mark_read_gmail':
@@ -501,6 +515,7 @@ Return ONLY the search query - no explanations, no extra text.`,
           manualFolder,
           messageId,
           manualMessageId,
+          readThreadId,
           advancedSearchQuery,
           advancedMaxResults,
           includeAttachments,
@@ -527,6 +542,10 @@ Return ONLY the search query - no explanations, no extra text.`,
           if (effectiveMessageId) {
             rest.messageId = effectiveMessageId
           }
+        }
+
+        if (rest.operation === 'read_thread_gmail') {
+          rest.threadId = (readThreadId || '').trim()
         }
 
         // Handle advanced search operation
@@ -609,6 +628,7 @@ Return ONLY the search query - no explanations, no extra text.`,
     attachments: { type: 'array', description: 'Files to attach (UserFile array)' },
     // Read operation inputs
     folder: { type: 'string', description: 'Gmail folder' },
+    readThreadId: { type: 'string', description: 'Thread ID to read' },
     manualFolder: { type: 'string', description: 'Manual folder name' },
     messageId: { type: 'string', description: 'Message ID to read (basic mode)' },
     manualMessageId: { type: 'string', description: 'Message ID to read (advanced mode)' },
@@ -681,6 +701,7 @@ export const GmailV2Block: BlockConfig<GmailToolResponse> = {
       'gmail_send_v2',
       'gmail_draft_v2',
       'gmail_read_v2',
+      'gmail_read_thread_v2',
       'gmail_search_v2',
       'gmail_advanced_search_v2',
       'gmail_move_v2',
