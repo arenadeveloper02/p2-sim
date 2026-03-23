@@ -1,7 +1,7 @@
 // file: utils/isBase64.ts
 
-import { useCallback, useEffect, useState } from 'react'
-import { Download, Expand } from 'lucide-react'
+import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, Download, Expand, X } from 'lucide-react'
 import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 
 /**
@@ -212,7 +212,7 @@ function Base64ImageWithBlobUrl({
       <img
         src={objectUrl}
         alt='Generated image'
-        className='h-auto max-w-full rounded-lg border'
+        className='h-full max-w-full rounded-lg border bg-cover'
         style={{ maxHeight: '500px', objectFit: 'contain' }}
         onError={(e) => {
           console.error('Image failed to load (blob URL)', { error: e })
@@ -234,23 +234,57 @@ function normalizeImageUrl(imageUrl: string | undefined): string {
 }
 
 /**
- * Returns the URL to use for img src. When the image is cross-origin:
- * - If the path is our file-serve path (/api/files/serve/...), use same-origin so we load from
- *   the current app (e.g. local storage when running locally) with the user's session → avoids 401.
- * - Otherwise use the proxy so the request is same-origin and auth can be forwarded.
+ * Resolves `/api/files/serve/...` to a loadable URL. In the browser, always uses
+ * `window.location.origin` so production never rewrites to `NEXT_PUBLIC_APP_URL`
+ * when that env still points at localhost (mixed content + broken images on HTTPS).
+ */
+function sameOriginServeUrl(pathname: string, search: string): string {
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}${pathname}${search}`
+  }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (appUrl) {
+    return `${new URL(appUrl).origin}${pathname}${search}`
+  }
+  return `${pathname}${search}`
+}
+
+/**
+ * Returns the URL to use for img src.
+ * - Our file-serve paths use the current page origin in the browser (session + HTTPS-safe).
+ * - Other HTTP(S) URLs go through the proxy on the client.
  */
 function getImageDisplayUrl(url: string): string {
-  if (!url || !url.startsWith('http')) return url
+  if (!url || typeof url !== 'string') return url
+  const trimmed = url.trim()
+  if (!trimmed) return url
+
   try {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL
-    if (!appUrl) return url
-    const app = new URL(appUrl)
-    const imageUrlParsed = new URL(url)
-    if (imageUrlParsed.host === app.host) return url
-    if (imageUrlParsed.pathname.startsWith('/api/files/serve/')) {
-      return `${app.origin}${imageUrlParsed.pathname}${imageUrlParsed.search}`
+    if (trimmed.startsWith('/api/files/serve/')) {
+      const q = trimmed.indexOf('?')
+      return sameOriginServeUrl(
+        q === -1 ? trimmed : trimmed.slice(0, q),
+        q === -1 ? '' : trimmed.slice(q)
+      )
     }
-    return `/api/files/proxy-image?url=${encodeURIComponent(url)}`
+
+    if (!trimmed.startsWith('http')) return trimmed
+
+    const imageUrlParsed = new URL(trimmed)
+    if (imageUrlParsed.pathname.startsWith('/api/files/serve/')) {
+      return sameOriginServeUrl(imageUrlParsed.pathname, imageUrlParsed.search)
+    }
+
+    if (typeof window !== 'undefined') {
+      return `/api/files/proxy-image?url=${encodeURIComponent(trimmed)}`
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    if (appUrl) {
+      const app = new URL(appUrl)
+      if (imageUrlParsed.host === app.host) return trimmed
+    }
+    return `/api/files/proxy-image?url=${encodeURIComponent(trimmed)}`
   } catch {
     return url
   }
@@ -275,7 +309,35 @@ function ImageWithViewFullOverlay({
   onDownload?: () => void
 }) {
   const [modalOpen, setModalOpen] = useState(false)
+  const [isModalImageLoading, setIsModalImageLoading] = useState(false)
+  const [previewSize, setPreviewSize] = useState<{ width: number; height: number } | null>(null)
   const handleViewFull = useCallback(() => setModalOpen(true), [])
+
+  useEffect(() => {
+    if (modalOpen) {
+      setIsModalImageLoading(true)
+      setPreviewSize(null)
+    }
+  }, [modalOpen, src])
+
+  const handleModalImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
+    const naturalWidth = event.currentTarget.naturalWidth
+    const naturalHeight = event.currentTarget.naturalHeight
+
+    if (naturalWidth > 0 && naturalHeight > 0 && typeof window !== 'undefined') {
+      const viewportWidth = Math.floor(window.innerWidth * 0.92)
+      const viewportHeight = Math.floor(window.innerHeight * 0.76)
+      const scale = Math.min(viewportWidth / naturalWidth, viewportHeight / naturalHeight, 1)
+
+      setPreviewSize({
+        width: Math.max(240, Math.floor(naturalWidth * scale)),
+        height: Math.max(180, Math.floor(naturalHeight * scale)),
+      })
+    }
+
+    setIsModalImageLoading(false)
+  }, [])
+
   return (
     <>
       <div className={`relative ${wrapperClassName}`}>
@@ -311,13 +373,35 @@ function ImageWithViewFullOverlay({
         </div>
       </div>
       <Modal open={modalOpen} onOpenChange={setModalOpen}>
-        <ModalContent size='full' className='flex max-h-[90vh] max-w-[90vw] flex-col'>
-          <ModalHeader className='shrink-0'>View full image</ModalHeader>
-          <ModalBody className='min-h-0 flex-1 overflow-auto p-4'>
+        <ModalContent
+          size='full'
+          className='flex max-h-[95vh] w-auto min-w-[95vw] flex-col items-center'
+        >
+          <ModalHeader className='w-full' />
+          <ModalBody
+            className='flex items-center justify-center overflow-auto border-t-0 p-4 pb-7'
+            style={
+              previewSize
+                ? {
+                    width: `${previewSize.width}px`,
+                    height: `${previewSize.height}px`,
+                  }
+                : undefined
+            }
+          >
+            {isModalImageLoading ? (
+              <div className='flex min-h-[180px] min-w-[240px] items-center justify-center text-muted-foreground text-sm'>
+                Loading image...
+              </div>
+            ) : null}
             <img
               src={src}
               alt='Generated image'
-              className='h-auto max-h-full w-auto max-w-full object-contain'
+              className={`h-auto max-h-full w-auto max-w-full object-contain ${
+                isModalImageLoading ? 'hidden' : ''
+              }`}
+              onLoad={handleModalImageLoad}
+              onError={() => setIsModalImageLoading(false)}
             />
           </ModalBody>
         </ModalContent>
@@ -341,7 +425,7 @@ export const renderBs64Img = ({
     const displayUrl = singleImageUrl ? getImageDisplayUrl(singleImageUrl) : ''
 
     const imageWrapperClass =
-      'my-2 w-full max-h-[70vh] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
+      'my-2 w-fit max-w-full h-[500px] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
 
     if (!isBase64 && singleImageUrl && (!cleanImageData || cleanImageData.length === 0)) {
       return (
@@ -353,7 +437,7 @@ export const renderBs64Img = ({
           <img
             src={displayUrl}
             alt='Generated image'
-            className='h-auto max-w-full rounded-lg object-contain'
+            className='h-full max-w-full rounded-lg bg-cover object-contain'
             referrerPolicy='no-referrer'
             onError={(e) => {
               console.error('Image failed to load:', {
@@ -377,7 +461,7 @@ export const renderBs64Img = ({
             <img
               src={displayUrl}
               alt='Generated image'
-              className='h-auto max-w-full rounded-lg object-contain'
+              className='h-full max-w-full rounded-lg bg-cover object-contain'
               referrerPolicy='no-referrer'
               onError={(e) => {
                 console.error('Image failed to load:', {
@@ -414,12 +498,14 @@ export const renderBs64Img = ({
       <ImageWithViewFullOverlay
         src={imageSrc}
         wrapperClassName={imageWrapperClass}
-        onDownload={() => downloadImage(isBase64, cleanImageData || undefined, singleImageUrl || undefined)}
+        onDownload={() =>
+          downloadImage(isBase64, cleanImageData || undefined, singleImageUrl || undefined)
+        }
       >
         <img
           src={imageSrc}
           alt='Generated image'
-          className='h-auto max-w-full rounded-lg object-contain'
+          className='h-full max-w-full rounded-lg bg-cover object-contain'
           referrerPolicy='no-referrer'
           onError={(e) => {
             console.error('Image failed to load:', {
@@ -750,6 +836,117 @@ export function isImageUrlString(s: string): boolean {
   )
 }
 
+function normalizeUrlDedupeKey(u: string): string {
+  try {
+    return decodeURIComponent(u.trim())
+  } catch {
+    return u.trim()
+  }
+}
+
+/**
+ * True when a trimmed line is a file-serve or HTTP URL that should render as an image.
+ * (Handles multiline final chat output where each line is a full URL.)
+ */
+export function isImageUrlLine(s: string): boolean {
+  const t = s.trim()
+  if (!t) return false
+  if (t.startsWith('/api/files/serve/')) {
+    return t.includes('agent-generated-images') || /\.(png|jpg|jpeg|gif|webp)/i.test(t)
+  }
+  if (t.startsWith('http://') || t.startsWith('https://')) {
+    return (
+      t.includes('/api/files/serve/') ||
+      t.includes('agent-generated-images') ||
+      /\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(t)
+    )
+  }
+  return false
+}
+
+/**
+ * Resolves assistant message text into deduped image URLs and remaining markdown prose.
+ * Handles: (1) multiple outputs joined with \\n\\n (same URL twice from content+image picks),
+ * (2) JSON payloads `{ content, image, metadata }`, (3) single URL lines.
+ */
+export function resolveMessageImagesAndProse(raw: string): { urls: string[]; prose: string } {
+  if (!raw || typeof raw !== 'string') {
+    return { urls: [], prose: '' }
+  }
+
+  const pushUrl = (u: string, seen: Set<string>, urls: string[]) => {
+    const t = u.trim()
+    if (!t || !isImageUrlLine(t)) return
+    const k = normalizeUrlDedupeKey(t)
+    if (!seen.has(k)) {
+      seen.add(k)
+      urls.push(t)
+    }
+  }
+
+  const segments = raw
+    .split(/\n\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const urls: string[] = []
+  const seen = new Set<string>()
+  const proseParts: string[] = []
+
+  for (const seg of segments) {
+    const lines = seg
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+    if (lines.length === 0) continue
+
+    if (lines.length === 1 && isImageUrlLine(lines[0])) {
+      pushUrl(lines[0], seen, urls)
+      continue
+    }
+
+    const allLinesAreImageUrls = lines.every((l) => isImageUrlLine(l))
+    if (allLinesAreImageUrls) {
+      for (const l of lines) pushUrl(l, seen, urls)
+      continue
+    }
+
+    const hasAnyImageLine = lines.some((l) => isImageUrlLine(l))
+    if (hasAnyImageLine) {
+      for (const l of lines) {
+        if (isImageUrlLine(l)) pushUrl(l, seen, urls)
+        else proseParts.push(l)
+      }
+      continue
+    }
+
+    proseParts.push(seg)
+  }
+
+  if (urls.length > 0) {
+    return { urls, prose: proseParts.join('\n\n').trim() }
+  }
+
+  const t = raw.trim()
+  if (t.startsWith('{')) {
+    try {
+      const o = JSON.parse(t) as Record<string, unknown>
+      if (o && typeof o === 'object' && !Array.isArray(o)) {
+        const jsonUrls: string[] = []
+        const jSeen = new Set<string>()
+        if (typeof o.image === 'string') pushUrl(o.image, jSeen, jsonUrls)
+        if (typeof o.content === 'string') pushUrl(o.content, jSeen, jsonUrls)
+        if (jsonUrls.length > 0) {
+          return { urls: jsonUrls, prose: '' }
+        }
+      }
+    } catch {
+      /* not JSON */
+    }
+  }
+
+  return { urls: [], prose: raw }
+}
+
 /** Characters that end a URL when scanning from the start. */
 const URL_END_CHARS = /[\s)\]"'\u00A0]/
 
@@ -1026,4 +1223,120 @@ export function sanitizeMessagesForPersistence<T extends ChatMessageWithBase64>(
 
     return sanitized
   })
+}
+
+export const S3_UPLOAD_FAILED_DISMISS_MS = 10_000
+
+/**
+ * Normalizes a URL for deduplication (e.g. encoded vs decoded path).
+ */
+export function normalizeImageUrlForCompare(s: string): string {
+  try {
+    return decodeURIComponent(s.trim())
+  } catch {
+    return s.trim()
+  }
+}
+
+/**
+ * True if the string is an http(s) or app file-serve URL that should render as an image.
+ */
+export function isRenderableImageUrl(s: string): boolean {
+  const t = s.trim()
+  if (!t) return false
+  if (t.startsWith('/api/files/serve/')) return true
+  if (t.startsWith('http://') || t.startsWith('https://')) {
+    return (
+      /\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(t) ||
+      t.includes('agent-generated-images') ||
+      t.includes('/api/files/serve/')
+    )
+  }
+  return false
+}
+
+/**
+ * Collects unique image URLs from workflow output shapes like
+ * `{ content, image, metadata }` so the same URL is not rendered twice.
+ */
+export function collectUniqueImageUrls(imageField: string, contentField: string): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+  const add = (u: string) => {
+    const key = normalizeImageUrlForCompare(u)
+    if (!seen.has(key)) {
+      seen.add(key)
+      urls.push(u.trim())
+    }
+  }
+  if (imageField.trim() && isRenderableImageUrl(imageField)) {
+    add(imageField)
+  }
+  if (contentField.trim() && isRenderableImageUrl(contentField)) {
+    add(contentField)
+  }
+  return urls
+}
+
+/**
+ * Merges `{ image, content }` tool payloads so the same URL is not shown as both markdown and
+ * `<img>`. Streaming often sets `content` to joined text that already includes the image URL while
+ * `image` duplicates it — this strips URL-only lines from prose and dedupes URLs.
+ */
+export function mergeToolOutputImageUrls(
+  imageField: string,
+  contentField: string
+): { uniqueUrls: string[]; prose: string } {
+  const { urls: urlsFromProse, prose } = resolveMessageImagesAndProse(contentField)
+  const fromFields = collectUniqueImageUrls(imageField, contentField)
+  const seen = new Set<string>()
+  const uniqueUrls: string[] = []
+  const add = (u: string) => {
+    const t = u.trim()
+    if (!t) return
+    const key = normalizeImageUrlForCompare(t)
+    if (seen.has(key)) return
+    seen.add(key)
+    uniqueUrls.push(t)
+  }
+  for (const u of fromFields) add(u)
+  for (const u of urlsFromProse) add(u)
+  return { uniqueUrls, prose }
+}
+
+/**
+ * Temporary alert shown when the generated image was saved to local storage because S3 upload failed.
+ * Auto-dismisses after 10s; user can dismiss manually.
+ */
+export function S3UploadFailedAlert() {
+  const [dismissed, setDismissed] = useState(false)
+  const dismiss = useCallback(() => setDismissed(true), [])
+
+  useEffect(() => {
+    const t = setTimeout(dismiss, S3_UPLOAD_FAILED_DISMISS_MS)
+    return () => clearTimeout(t)
+  }, [dismiss])
+
+  if (dismissed) return null
+
+  return (
+    <div
+      className='mb-2 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-amber-800 text-sm dark:text-amber-200'
+      role='alert'
+    >
+      <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400' />
+      <p className='flex-1'>
+        Image was saved locally because upload to the storage bucket failed. Saving to the bucket is
+        important for this workflow and user.
+      </p>
+      <button
+        type='button'
+        onClick={dismiss}
+        className='flex-shrink-0 rounded p-1 hover:bg-amber-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500'
+        aria-label='Dismiss'
+      >
+        <X className='h-4 w-4' />
+      </button>
+    </div>
+  )
 }
