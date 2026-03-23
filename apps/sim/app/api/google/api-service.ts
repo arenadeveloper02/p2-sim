@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
 import sharp from 'sharp'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
+import type { StorageContext } from '@/lib/uploads'
+import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import {
   extractStorageKey,
   inferContextFromKey,
@@ -143,15 +145,22 @@ export const resolveInlineImageData = async (
     try {
       const filePath = obj.path
       let s3Key: string
+      let context: StorageContext
       if (filePath.startsWith('s3://')) {
         const urlWithoutProtocol = filePath.replace('s3://', '')
         const pathParts = urlWithoutProtocol.split('/')
+        const bucket = pathParts[0]
         s3Key = pathParts.slice(1).join('/').split('?')[0]
+        context =
+          bucket && bucket === S3_AGENT_GENERATED_IMAGES_CONFIG.bucket
+            ? 'agent-generated-images'
+            : 'workspace'
       } else {
         s3Key = extractStorageKey(filePath)
+        context = inferContextFromKey(s3Key)
       }
 
-      const fileBuffer = await downloadFile({ key: s3Key, context: 'workspace' })
+      const fileBuffer = await downloadFile({ key: s3Key, context })
       const mimeType = obj.type || inputImageMimeType || 'image/png'
 
       logger.info('Resolved image for inline data', { mimeType, size: fileBuffer.length })

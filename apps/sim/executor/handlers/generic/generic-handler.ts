@@ -18,6 +18,15 @@ export class GenericBlockHandler implements BlockHandler {
     block: SerializedBlock,
     inputs: Record<string, any>
   ): Promise<any> {
+    const blockName = block.metadata?.name ?? block.metadata?.id ?? 'unknown'
+    logger.info('GenericHandler: executing block', {
+      blockId: block.id,
+      blockName,
+      blockType: block.metadata?.id,
+      tool: block.config?.tool,
+      workflowId: ctx.workflowId,
+    })
+
     const isMcp = block.config.tool ? isMcpTool(block.config.tool) : false
     let tool = null
 
@@ -34,8 +43,17 @@ export class GenericBlockHandler implements BlockHandler {
     if (blockType) {
       const blockConfig = getBlock(blockType)
       if (blockConfig?.tools?.config?.params) {
+        logger.info('GenericHandler: transforming params', {
+          blockName,
+          blockType,
+          workflowId: ctx.workflowId,
+        })
         const transformedParams = blockConfig.tools.config.params(inputs)
         finalInputs = { ...inputs, ...transformedParams }
+        logger.info('GenericHandler: params transformed', {
+          blockName,
+          workflowId: ctx.workflowId,
+        })
       }
 
       if (blockConfig?.inputs) {
@@ -66,6 +84,11 @@ export class GenericBlockHandler implements BlockHandler {
     }
 
     try {
+      logger.info('GenericHandler: calling executeTool', {
+        blockName,
+        tool: block.config?.tool,
+        workflowId: ctx.workflowId,
+      })
       const result = await executeTool(
         block.config.tool,
         {
@@ -83,6 +106,12 @@ export class GenericBlockHandler implements BlockHandler {
         false,
         ctx
       )
+
+      logger.info('GenericHandler: executeTool returned', {
+        blockName,
+        success: result.success,
+        workflowId: ctx.workflowId,
+      })
 
       if (!result.success) {
         const errorDetails = []

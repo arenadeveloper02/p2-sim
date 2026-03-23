@@ -3,8 +3,10 @@ import { AuthMode, type BlockConfig } from '@/blocks/types'
 import type { DalleResponse } from '@/tools/openai/types'
 import {
   extractUrlsFromText,
+  isS3Uri,
   mergeUrlsAndDeduplicate,
   parseImageUrls,
+  s3UriToPathObject,
 } from '@/lib/utils/parse-image-urls'
 
 const NANO_BANANA_PRO_MODEL = 'gemini-3-pro-image-preview'
@@ -100,7 +102,9 @@ export const ImageFusionBlock: BlockConfig<DalleResponse> = {
         const urlsFromField = parseImageUrls(params.inputImageUrls)
         const urlsFromPrompt = extractUrlsFromText(params.prompt)
         const urls = mergeUrlsAndDeduplicate(urlsFromField, urlsFromPrompt)
-        const merged = [...files, ...urls]
+        const httpUrls = urls.filter((u) => !isS3Uri(u))
+        const s3Refs = urls.filter(isS3Uri).map(s3UriToPathObject)
+        const merged = [...files, ...httpUrls, ...s3Refs]
         if (merged.length > 0) {
           base.inputImages = merged
         }
