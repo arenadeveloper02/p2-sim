@@ -36,11 +36,9 @@ interface SpeechRecognitionStatic {
   new (): SpeechRecognition
 }
 
-declare global {
-  interface Window {
-    SpeechRecognition?: SpeechRecognitionStatic
-    webkitSpeechRecognition?: SpeechRecognitionStatic
-  }
+type WindowWithSpeech = Window & {
+  SpeechRecognition?: SpeechRecognitionStatic
+  webkitSpeechRecognition?: SpeechRecognitionStatic
 }
 
 interface VoiceInterfaceProps {
@@ -80,9 +78,10 @@ export function VoiceInterface({
   const currentStateRef = useRef<'idle' | 'listening' | 'agent_speaking'>('idle')
   const isCallEndedRef = useRef(false)
 
-  useEffect(() => {
-    currentStateRef.current = state
-  }, [state])
+  const updateState = useCallback((next: 'idle' | 'listening' | 'agent_speaking') => {
+    setState(next)
+    currentStateRef.current = next
+  }, [])
 
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
@@ -93,11 +92,16 @@ export function VoiceInterface({
   const responseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const isSupported =
-    typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+    typeof window !== 'undefined' &&
+    !!(
+      (window as WindowWithSpeech).SpeechRecognition ||
+      (window as WindowWithSpeech).webkitSpeechRecognition
+    )
 
-  useEffect(() => {
-    isMutedRef.current = isMuted
-  }, [isMuted])
+  const updateIsMuted = useCallback((next: boolean) => {
+    setIsMuted(next)
+    isMutedRef.current = next
+  }, [])
 
   const setResponseTimeout = useCallback(() => {
     if (responseTimeoutRef.current) {
@@ -106,7 +110,7 @@ export function VoiceInterface({
 
     responseTimeoutRef.current = setTimeout(() => {
       if (currentStateRef.current === 'listening') {
-        setState('idle')
+        updateState('idle')
       }
     }, 5000)
   }, [])
@@ -121,10 +125,10 @@ export function VoiceInterface({
   useEffect(() => {
     if (isPlayingAudio && state !== 'agent_speaking') {
       clearResponseTimeout()
-      setState('agent_speaking')
+      updateState('agent_speaking')
       setCurrentTranscript('')
 
-      setIsMuted(true)
+      updateIsMuted(true)
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getAudioTracks().forEach((track) => {
           track.enabled = false
@@ -139,17 +143,17 @@ export function VoiceInterface({
         }
       }
     } else if (!isPlayingAudio && state === 'agent_speaking') {
-      setState('idle')
+      updateState('idle')
       setCurrentTranscript('')
 
-      setIsMuted(false)
+      updateIsMuted(false)
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getAudioTracks().forEach((track) => {
           track.enabled = true
         })
       }
     }
-  }, [isPlayingAudio, state, clearResponseTimeout])
+  }, [isPlayingAudio, state, clearResponseTimeout, updateState, updateIsMuted])
 
   const setupAudio = useCallback(async () => {
     try {
@@ -214,7 +218,8 @@ export function VoiceInterface({
   const setupSpeechRecognition = useCallback(() => {
     if (!isSupported) return
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    const w = window as WindowWithSpeech
+    const SpeechRecognition = w.SpeechRecognition || w.webkitSpeechRecognition
     if (!SpeechRecognition) return
 
     const recognition = new SpeechRecognition()
@@ -307,7 +312,7 @@ export function VoiceInterface({
       return
     }
 
-    setState('listening')
+    updateState('listening')
     setCurrentTranscript('')
 
     if (recognitionRef.current) {
@@ -317,10 +322,10 @@ export function VoiceInterface({
         logger.error('Error starting recognition:', error)
       }
     }
-  }, [isInitialized, isMuted, state])
+  }, [isInitialized, isMuted, state, updateState])
 
   const stopListening = useCallback(() => {
-    setState('idle')
+    updateState('idle')
     setCurrentTranscript('')
 
     if (recognitionRef.current) {
@@ -330,15 +335,15 @@ export function VoiceInterface({
         // Ignore
       }
     }
-  }, [])
+  }, [updateState])
 
   const handleInterrupt = useCallback(() => {
     if (state === 'agent_speaking') {
       onInterrupt?.()
-      setState('listening')
+      updateState('listening')
       setCurrentTranscript('')
 
-      setIsMuted(false)
+      updateIsMuted(false)
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getAudioTracks().forEach((track) => {
           track.enabled = true
@@ -353,14 +358,14 @@ export function VoiceInterface({
         }
       }
     }
-  }, [state, onInterrupt])
+  }, [state, onInterrupt, updateState, updateIsMuted])
 
   const handleCallEnd = useCallback(() => {
     isCallEndedRef.current = true
 
-    setState('idle')
+    updateState('idle')
     setCurrentTranscript('')
-    setIsMuted(false)
+    updateIsMuted(false)
 
     if (recognitionRef.current) {
       try {
@@ -373,7 +378,7 @@ export function VoiceInterface({
     clearResponseTimeout()
     onInterrupt?.()
     onCallEnd?.()
-  }, [onCallEnd, onInterrupt, clearResponseTimeout])
+  }, [onCallEnd, onInterrupt, clearResponseTimeout, updateState, updateIsMuted])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -394,7 +399,7 @@ export function VoiceInterface({
     }
 
     const newMutedState = !isMuted
-    setIsMuted(newMutedState)
+    updateIsMuted(newMutedState)
 
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getAudioTracks().forEach((track) => {
@@ -407,7 +412,7 @@ export function VoiceInterface({
     } else if (state === 'idle') {
       startListening()
     }
-  }, [isMuted, state, handleInterrupt, stopListening, startListening])
+  }, [isMuted, state, handleInterrupt, stopListening, startListening, updateIsMuted])
 
   useEffect(() => {
     if (isSupported) {

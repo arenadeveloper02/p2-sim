@@ -22,6 +22,7 @@ export interface ClientContentBlock {
 
 export interface StreamingContext {
   messageId: string
+  requestId?: string
   accumulatedContent: string
   contentBlocks: ClientContentBlock[]
   currentTextBlock: ClientContentBlock | null
@@ -36,6 +37,7 @@ export interface StreamingContext {
   wasAborted?: boolean
   suppressContinueOption?: boolean
   subAgentParentToolCallId?: string
+  subAgentParentStack: string[]
   subAgentContent: Record<string, string>
   subAgentToolCalls: Record<string, CopilotToolCall[]>
   subAgentBlocks: Record<string, SubAgentContentBlock[]>

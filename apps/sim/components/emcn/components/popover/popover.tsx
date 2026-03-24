@@ -50,6 +50,7 @@
 'use client'
 
 import * as React from 'react'
+import { DismissableLayerBranch } from '@radix-ui/react-dismissable-layer'
 import * as PopoverPrimitive from '@radix-ui/react-popover'
 import { Check, ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { createPortal } from 'react-dom'
@@ -66,7 +67,7 @@ type PopoverVariant = 'default' | 'secondary'
 const STYLES = {
   /** Base classes shared by all interactive items */
   itemBase:
-    'flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] font-base disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed',
+    'flex min-w-0 cursor-pointer items-center gap-[8px] rounded-[6px] px-[6px] font-medium disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed',
 
   /** Content container */
   content: 'px-[6px] py-[6px] rounded-[6px]',
@@ -75,9 +76,9 @@ const STYLES = {
   size: {
     sm: { item: 'h-[22px] text-[11px]', icon: 'h-3 w-3', section: 'px-[6px] py-[4px] text-[11px]' },
     md: {
-      item: 'h-[26px] text-[13px]',
+      item: 'h-[26px] text-[12px]',
       icon: 'h-3.5 w-3.5',
-      section: 'px-[6px] py-[4px] text-[13px]',
+      section: 'px-[6px] py-[4px] text-[11px]',
     },
   } satisfies Record<PopoverSize, { item: string; icon: string; section: string }>,
 
@@ -225,6 +226,7 @@ const Popover: React.FC<PopoverProps> = ({
   size = 'md',
   colorScheme = 'default',
   open,
+  onOpenChange,
   ...props
 }) => {
   const [currentFolder, setCurrentFolder] = React.useState<string | null>(null)
@@ -250,21 +252,33 @@ const Popover: React.FC<PopoverProps> = ({
     }
   }, [])
 
+  /** Resets all navigation state to initial values */
+  const resetState = React.useCallback(() => {
+    setCurrentFolder(null)
+    setFolderTitle(null)
+    setOnFolderSelect(null)
+    setSearchQuery('')
+    setLastHoveredItem(null)
+    setIsKeyboardNav(false)
+    setSelectedIndex(-1)
+    registeredItemsRef.current = []
+  }, [])
+
   React.useEffect(() => {
-    if (open === false) {
-      setCurrentFolder(null)
-      setFolderTitle(null)
-      setOnFolderSelect(null)
-      setSearchQuery('')
-      setLastHoveredItem(null)
-      setIsKeyboardNav(false)
-      setSelectedIndex(-1)
-      registeredItemsRef.current = []
-    } else {
-      // Reset hover state when opening to prevent stale submenu from previous menu
-      setLastHoveredItem(null)
+    if (!open) {
+      resetState()
     }
-  }, [open])
+  }, [open, resetState])
+
+  const handleOpenChange = React.useCallback(
+    (nextOpen: boolean) => {
+      if (nextOpen) {
+        setLastHoveredItem(null)
+      }
+      onOpenChange?.(nextOpen)
+    },
+    [onOpenChange]
+  )
 
   const openFolder = React.useCallback(
     (id: string, title: string, onLoad?: () => void | Promise<void>, onSelect?: () => void) => {
@@ -335,7 +349,7 @@ const Popover: React.FC<PopoverProps> = ({
 
   return (
     <PopoverContext.Provider value={contextValue}>
-      <PopoverPrimitive.Root open={open} {...props}>
+      <PopoverPrimitive.Root open={open} onOpenChange={handleOpenChange} {...props}>
         {children}
       </PopoverPrimitive.Root>
     </PopoverContext.Provider>
@@ -773,7 +787,7 @@ const PopoverSection = React.forwardRef<HTMLDivElement, PopoverSectionProps>(
     return (
       <div
         className={cn(
-          'mt-[6px] min-w-0 font-base first:mt-0 first:pt-0',
+          'mt-[6px] min-w-0 font-medium first:mt-0 first:pt-0',
           STYLES.colorScheme[colorScheme].section,
           STYLES.size[size].section,
           className
@@ -948,7 +962,7 @@ const PopoverFolder = React.forwardRef<HTMLDivElement, PopoverFolderProps>(
         {isHoverOpen &&
           typeof document !== 'undefined' &&
           createPortal(
-            <div
+            <DismissableLayerBranch
               className={cn(
                 'fixed z-[10000201] min-w-[120px]',
                 STYLES.content,
@@ -958,10 +972,11 @@ const PopoverFolder = React.forwardRef<HTMLDivElement, PopoverFolderProps>(
               style={{
                 top: submenuPosition.top,
                 left: submenuPosition.left,
+                pointerEvents: 'auto',
               }}
             >
               {children}
-            </div>,
+            </DismissableLayerBranch>,
             document.body
           )}
       </>
@@ -1035,7 +1050,7 @@ const PopoverBackButton = React.forwardRef<HTMLDivElement, PopoverBackButtonProp
         {folderTitle && !onFolderSelect && (
           <div
             className={cn(
-              'font-base',
+              'font-medium',
               STYLES.colorScheme[colorScheme].section,
               STYLES.size[size].section
             )}
@@ -1092,9 +1107,9 @@ const PopoverSearch = React.forwardRef<HTMLDivElement, PopoverSearchProps>(
         <input
           ref={inputRef}
           className={cn(
-            'w-full bg-transparent font-base focus:outline-none',
+            'w-full bg-transparent font-medium focus:outline-none',
             STYLES.colorScheme[colorScheme].searchInput,
-            size === 'sm' ? 'text-[11px]' : 'text-[13px]'
+            size === 'sm' ? 'text-[11px]' : 'text-[12px]'
           )}
           placeholder={placeholder}
           value={searchQuery}

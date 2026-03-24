@@ -34,7 +34,13 @@ export function clearStreamingFlags(toolCall: CopilotToolCall): void {
         ? ClientToolCallState.success
         : ClientToolCallState.aborted
     toolCall.state = normalized
-    toolCall.display = resolveToolDisplay(toolCall.name, normalized, toolCall.id, toolCall.params)
+    toolCall.display = resolveToolDisplay(
+      toolCall.name,
+      normalized,
+      toolCall.id,
+      toolCall.params,
+      toolCall.serverUI
+    )
   }
 
   if (Array.isArray(toolCall.subAgentBlocks)) {
@@ -133,6 +139,10 @@ export function serializeMessagesForDB(
         role: msg.role,
         content: msg.content || '',
         timestamp,
+      }
+
+      if (msg.requestId) {
+        serialized.requestId = msg.requestId
       }
 
       if (Array.isArray(msg.contentBlocks) && msg.contentBlocks.length > 0) {

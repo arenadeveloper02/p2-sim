@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@/components/emcn'
 import { formatLatency } from '@/app/workspace/[workspaceId]/logs/utils'
 import type { DashboardStatsResponse, WorkflowStats } from '@/hooks/queries/logs'
 import { useFilterStore } from '@/stores/logs/filters/store'
@@ -220,10 +220,7 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
 
     return result
   }, [rawExecutions])
-
-  useEffect(() => {
-    prevExecutionsRef.current = executions
-  }, [executions])
+  prevExecutionsRef.current = executions
 
   const lastExecutionByWorkflow = useMemo(() => {
     const map = new Map<string, number>()

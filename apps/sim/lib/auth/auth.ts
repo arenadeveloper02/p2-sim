@@ -7,6 +7,8 @@ import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { nextCookies } from 'better-auth/next-js'
 import {
+  admin,
+  captcha,
   createAuthMiddleware,
   customSession,
   emailOTP,
@@ -16,6 +18,7 @@ import {
   oneTimeToken,
   organization,
 } from 'better-auth/plugins'
+import { emailHarmony } from 'better-auth-harmony'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import Stripe from 'stripe'
@@ -33,11 +36,13 @@ import {
 } from '@/lib/auth/cimd'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
 import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
+import { writeBillingInterval } from '@/lib/billing/core/subscription'
 import { handleNewUser } from '@/lib/billing/core/usage'
 import {
   ensureOrganizationForTeamSubscription,
   syncSubscriptionUsageLimits,
 } from '@/lib/billing/organization'
+import { isOrgPlan, isTeam } from '@/lib/billing/plan-helpers'
 import { getPlans, resolvePlanFromStripeSubscription } from '@/lib/billing/plans'
 import { syncSeatsFromStripeQuantity } from '@/lib/billing/validation/seat-management'
 import { handleChargeDispute, handleDisputeClosed } from '@/lib/billing/webhooks/disputes'
@@ -60,13 +65,11 @@ import {
   isHosted,
   isOrganizationsEnabled,
   isRegistrationDisabled,
+  isSignupEmailValidationEnabled,
 } from '@/lib/core/config/feature-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import {
-  handleCreateCredentialFromDraft,
-  handleReconnectCredential,
-} from '@/lib/credentials/draft-hooks'
+import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
@@ -78,6 +81,10 @@ const logger = createLogger('Auth')
 
 import { getMicrosoftRefreshTokenExpiry, isMicrosoftProvider } from '@/lib/oauth/microsoft'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
+
+const blockedSignupDomains = env.BLOCKED_SIGNUP_DOMAINS
+  ? new Set(env.BLOCKED_SIGNUP_DOMAINS.split(',').map((d) => d.trim().toLowerCase()))
+  : null
 
 const validStripeKey = env.STRIPE_SECRET_KEY
 
@@ -112,6 +119,15 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
+        before: async (user) => {
+          if (blockedSignupDomains) {
+            const emailDomain = user.email?.split('@')[1]?.toLowerCase()
+            if (emailDomain && blockedSignupDomains.has(emailDomain)) {
+              throw new Error('Sign-ups from this email domain are not allowed.')
+            }
+          }
+          return { data: user }
+        },
         after: async (user) => {
           logger.info('[databaseHooks.user.create.after] User created, initializing stats', {
             userId: user.id,
@@ -198,6 +214,16 @@ export const auth = betterAuth({
             modifiedAccount.refreshTokenExpiresAt = getMicrosoftRefreshTokenExpiry()
           }
 
+          // Box token response does not include a scope field, so Better Auth
+          // stores nothing. Populate it from the requested scopes so the
+          // credential-selector can verify permissions.
+          if (account.providerId === 'box' && !account.scope) {
+            const requestedScopes = getCanonicalScopesForProvider('box')
+            if (requestedScopes.length > 0) {
+              modifiedAccount.scope = requestedScopes.join(' ')
+            }
+          }
+
           return { data: modifiedAccount }
         },
         after: async (account) => {
@@ -257,50 +283,12 @@ export const auth = betterAuth({
             })
           }
 
-          /**
-           * If a pending credential draft exists for this (userId, providerId),
-           * either create a new credential or reconnect an existing one.
-           *
-           * - draft.credentialId is null: create a new credential (normal connect flow)
-           * - draft.credentialId is set: update existing credential's accountId (reconnect flow)
-           */
           try {
-            const [draft] = await db
-              .select()
-              .from(schema.pendingCredentialDraft)
-              .where(
-                and(
-                  eq(schema.pendingCredentialDraft.userId, account.userId),
-                  eq(schema.pendingCredentialDraft.providerId, account.providerId),
-                  sql`${schema.pendingCredentialDraft.expiresAt} > NOW()`
-                )
-              )
-              .limit(1)
-
-            if (draft) {
-              const now = new Date()
-
-              if (draft.credentialId) {
-                await handleReconnectCredential({
-                  draft,
-                  newAccountId: account.id,
-                  workspaceId: draft.workspaceId,
-                  now,
-                })
-              } else {
-                await handleCreateCredentialFromDraft({
-                  draft,
-                  accountId: account.id,
-                  providerId: account.providerId,
-                  userId: account.userId,
-                  now,
-                })
-              }
-
-              await db
-                .delete(schema.pendingCredentialDraft)
-                .where(eq(schema.pendingCredentialDraft.id, draft.id))
-            }
+            await processCredentialDraft({
+              userId: account.userId,
+              providerId: account.providerId,
+              accountId: account.id,
+            })
           } catch (error) {
             logger.error('[account.create.after] Failed to process credential draft', {
               userId: account.userId,
@@ -494,6 +482,7 @@ export const auth = betterAuth({
         'google-tasks',
         'vertex-ai',
 
+        'microsoft-ad',
         'microsoft-dataverse',
         'microsoft-teams',
         'microsoft-excel',
@@ -503,6 +492,7 @@ export const auth = betterAuth({
         'sharepoint',
         'jira',
         'airtable',
+        'box',
         'dropbox',
         'salesforce',
         'wealthbox',
@@ -513,6 +503,7 @@ export const auth = betterAuth({
         'shopify',
         'trello',
         'calcom',
+        'docusign',
         ...SSO_TRUSTED_PROVIDERS,
       ],
     },
@@ -637,6 +628,16 @@ export const auth = betterAuth({
         }
       }
 
+      if (ctx.path.startsWith('/sign-up') && blockedSignupDomains) {
+        const requestEmail = ctx.body?.email?.toLowerCase()
+        if (requestEmail) {
+          const emailDomain = requestEmail.split('@')[1]
+          if (emailDomain && blockedSignupDomains.has(emailDomain)) {
+            throw new Error('Sign-ups from this email domain are not allowed.')
+          }
+        }
+      }
+
       if (ctx.path === '/oauth2/authorize' || ctx.path === '/oauth2/token') {
         const clientId = (ctx.query?.client_id ?? ctx.body?.client_id) as string | undefined
         if (clientId && isMetadataUrl(clientId)) {
@@ -664,6 +665,17 @@ export const auth = betterAuth({
   },
   plugins: [
     nextCookies(),
+    ...(isSignupEmailValidationEnabled ? [emailHarmony()] : []),
+    ...(env.TURNSTILE_SECRET_KEY
+      ? [
+          captcha({
+            provider: 'cloudflare-turnstile',
+            secretKey: env.TURNSTILE_SECRET_KEY,
+            endpoints: ['/sign-up/email', '/sign-in/email'],
+          }),
+        ]
+      : []),
+    admin(),
     jwt({
       jwks: {
         keyPairConfig: { alg: 'RS256' },
@@ -1260,6 +1272,46 @@ export const auth = betterAuth({
               }
             } catch (error) {
               logger.error('Error in Google getUserInfo', { error })
+              throw error
+            }
+          },
+        },
+
+        {
+          providerId: 'microsoft-ad',
+          clientId: env.MICROSOFT_CLIENT_ID as string,
+          clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
+          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
+          scopes: getCanonicalScopesForProvider('microsoft-ad'),
+          responseType: 'code',
+          accessType: 'offline',
+          authentication: 'basic',
+          pkce: true,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/microsoft-ad`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://graph.microsoft.com/v1.0/me', {
+                headers: { Authorization: `Bearer ${tokens.accessToken}` },
+              })
+              if (!response.ok) {
+                await response.text().catch(() => {})
+                logger.error('Failed to fetch Microsoft user info', { status: response.status })
+                throw new Error(`Failed to fetch Microsoft user info: ${response.statusText}`)
+              }
+              const profile = await response.json()
+              const now = new Date()
+              return {
+                id: `${profile.id}-${crypto.randomUUID()}`,
+                name: profile.displayName || 'Microsoft User',
+                email: profile.mail || profile.userPrincipalName,
+                emailVerified: true,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Microsoft getUserInfo', { error })
               throw error
             }
           },
@@ -2191,6 +2243,51 @@ export const auth = betterAuth({
         },
 
         {
+          providerId: 'box',
+          clientId: env.BOX_CLIENT_ID as string,
+          clientSecret: env.BOX_CLIENT_SECRET as string,
+          authorizationUrl: 'https://account.box.com/api/oauth2/authorize',
+          tokenUrl: 'https://api.box.com/oauth2/token',
+          scopes: getCanonicalScopesForProvider('box'),
+          responseType: 'code',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/box`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://api.box.com/2.0/users/me', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                const errorText = await response.text()
+                logger.error('Box API error:', {
+                  status: response.status,
+                  statusText: response.statusText,
+                  body: errorText,
+                })
+                throw new Error(`Box API error: ${response.status} ${response.statusText}`)
+              }
+
+              const data = await response.json()
+
+              return {
+                id: `${data.id}-${crypto.randomUUID()}`,
+                email: data.login,
+                name: data.name || data.login,
+                emailVerified: true,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                image: data.avatar_url || undefined,
+              }
+            } catch (error) {
+              logger.error('Error in Box getUserInfo:', error)
+              throw error
+            }
+          },
+        },
+
+        {
           providerId: 'dropbox',
           clientId: env.DROPBOX_CLIENT_ID as string,
           clientSecret: env.DROPBOX_CLIENT_SECRET as string,
@@ -2607,6 +2704,64 @@ export const auth = betterAuth({
           },
         },
 
+        // DocuSign provider
+        {
+          providerId: 'docusign',
+          clientId: env.DOCUSIGN_CLIENT_ID as string,
+          clientSecret: env.DOCUSIGN_CLIENT_SECRET as string,
+          authorizationUrl: 'https://account-d.docusign.com/oauth/auth',
+          tokenUrl: 'https://account-d.docusign.com/oauth/token',
+          userInfoUrl: 'https://account-d.docusign.com/oauth/userinfo',
+          scopes: getCanonicalScopesForProvider('docusign'),
+          responseType: 'code',
+          accessType: 'offline',
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/docusign`,
+          getUserInfo: async (tokens) => {
+            try {
+              logger.info('Fetching DocuSign user profile')
+
+              const response = await fetch('https://account-d.docusign.com/oauth/userinfo', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
+              if (!response.ok) {
+                await response.text().catch(() => {})
+                logger.error('Failed to fetch DocuSign user info', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                throw new Error('Failed to fetch user info')
+              }
+
+              const data = await response.json()
+              const accounts = data.accounts ?? []
+              const defaultAccount =
+                accounts.find((a: { is_default: boolean }) => a.is_default) ?? accounts[0]
+              const accountName = defaultAccount?.account_name || 'DocuSign Account'
+
+              if (data.scope) {
+                tokens.scopes = data.scope.split(/\s+/).filter(Boolean)
+              }
+
+              return {
+                id: `${data.sub}-${crypto.randomUUID()}`,
+                name: data.name || accountName,
+                email: data.email || `${data.sub}@docusign.com`,
+                emailVerified: true,
+                image: undefined,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              }
+            } catch (error) {
+              logger.error('Error in DocuSign getUserInfo:', { error })
+              return null
+            }
+          },
+        },
+
         // Cal.com provider
         {
           providerId: 'calcom',
@@ -2676,11 +2831,11 @@ export const auth = betterAuth({
             subscription: {
               enabled: true,
               plans: getPlans(),
-              authorizeReference: async ({ user, referenceId }) => {
-                return await authorizeSubscriptionReference(user.id, referenceId)
+              authorizeReference: async ({ user, referenceId, action }) => {
+                return await authorizeSubscriptionReference(user.id, referenceId, action)
               },
               getCheckoutSessionParams: async ({ plan, subscription }) => {
-                if (plan.name === 'team') {
+                if (isTeam(plan.name)) {
                   return {
                     params: {
                       allow_promotion_codes: true,
@@ -2713,7 +2868,7 @@ export const auth = betterAuth({
                 stripeSubscription: Stripe.Subscription
                 subscription: any
               }) => {
-                const { priceId, planFromStripe, isTeamPlan } =
+                const { priceId, planFromStripe, isAnnual } =
                   resolvePlanFromStripeSubscription(stripeSubscription)
 
                 logger.info('[onSubscriptionComplete] Subscription created', {
@@ -2722,18 +2877,25 @@ export const auth = betterAuth({
                   dbPlan: subscription.plan,
                   planFromStripe,
                   priceId,
+                  isAnnual,
                   status: subscription.status,
                 })
 
-                const subscriptionForOrgCreation = isTeamPlan
-                  ? { ...subscription, plan: 'team' }
-                  : subscription
+                if (!planFromStripe) {
+                  logger.error(
+                    '[onSubscriptionComplete] Could not resolve plan from Stripe price — check env var configuration',
+                    { subscriptionId: subscription.id, dbPlan: subscription.plan, priceId }
+                  )
+                }
+                const subscriptionForOrg = {
+                  ...subscription,
+                  plan: planFromStripe ?? subscription.plan,
+                }
 
                 let resolvedSubscription = subscription
                 try {
-                  resolvedSubscription = await ensureOrganizationForTeamSubscription(
-                    subscriptionForOrgCreation
-                  )
+                  resolvedSubscription =
+                    await ensureOrganizationForTeamSubscription(subscriptionForOrg)
                 } catch (orgError) {
                   logger.error(
                     '[onSubscriptionComplete] Failed to ensure organization for team subscription',
@@ -2753,6 +2915,8 @@ export const auth = betterAuth({
 
                 await syncSubscriptionUsageLimits(resolvedSubscription)
 
+                await writeBillingInterval(resolvedSubscription.id, isAnnual ? 'year' : 'month')
+
                 await sendPlanWelcomeEmail(resolvedSubscription)
               },
               onSubscriptionUpdate: async ({
@@ -2763,7 +2927,7 @@ export const auth = betterAuth({
                 subscription: any
               }) => {
                 const stripeSubscription = event.data.object as Stripe.Subscription
-                const { priceId, planFromStripe, isTeamPlan } =
+                const { priceId, planFromStripe, isTeamPlan, isAnnual } =
                   resolvePlanFromStripeSubscription(stripeSubscription)
 
                 if (priceId && !planFromStripe) {
@@ -2779,7 +2943,7 @@ export const auth = betterAuth({
 
                 const isUpgradeToTeam =
                   isTeamPlan &&
-                  subscription.plan !== 'team' &&
+                  !isTeam(subscription.plan) &&
                   !subscription.referenceId.startsWith('org_')
 
                 const effectivePlanForTeamFeatures = planFromStripe ?? subscription.plan
@@ -2790,18 +2954,25 @@ export const auth = betterAuth({
                   dbPlan: subscription.plan,
                   planFromStripe,
                   isUpgradeToTeam,
+                  isAnnual,
                   referenceId: subscription.referenceId,
                 })
 
-                const subscriptionForOrgCreation = isUpgradeToTeam
-                  ? { ...subscription, plan: 'team' }
-                  : subscription
+                if (!planFromStripe) {
+                  logger.error(
+                    '[onSubscriptionUpdate] Could not resolve plan from Stripe price — org creation may be skipped for team upgrades',
+                    { subscriptionId: subscription.id, dbPlan: subscription.plan }
+                  )
+                }
+                const subscriptionForOrg = {
+                  ...subscription,
+                  plan: planFromStripe ?? subscription.plan,
+                }
 
                 let resolvedSubscription = subscription
                 try {
-                  resolvedSubscription = await ensureOrganizationForTeamSubscription(
-                    subscriptionForOrgCreation
-                  )
+                  resolvedSubscription =
+                    await ensureOrganizationForTeamSubscription(subscriptionForOrg)
 
                   if (isUpgradeToTeam) {
                     logger.info(
@@ -2840,7 +3011,7 @@ export const auth = betterAuth({
                   })
                 }
 
-                if (effectivePlanForTeamFeatures === 'team') {
+                if (isTeam(effectivePlanForTeamFeatures)) {
                   try {
                     const quantity = stripeSubscription.items?.data?.[0]?.quantity || 1
 
@@ -2866,6 +3037,8 @@ export const auth = betterAuth({
                     })
                   }
                 }
+
+                await writeBillingInterval(resolvedSubscription.id, isAnnual ? 'year' : 'month')
               },
               onSubscriptionDeleted: async ({
                 subscription,
@@ -2959,8 +3132,7 @@ export const auth = betterAuth({
                 .where(eq(schema.subscription.referenceId, user.id))
 
               const hasTeamPlan = dbSubscriptions.some(
-                (sub) =>
-                  sub.status === 'active' && (sub.plan === 'team' || sub.plan === 'enterprise')
+                (sub) => sub.status === 'active' && isOrgPlan(sub.plan)
               )
 
               return hasTeamPlan
