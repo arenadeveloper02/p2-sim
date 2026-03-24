@@ -218,6 +218,17 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         generationType: 'timestamp',
       },
     },
+    {
+      id: 'orderBy',
+      title: 'Order By',
+      type: 'dropdown',
+      condition: { field: 'operation', value: 'list' },
+      options: [
+        { label: 'Default', id: '' },
+        { label: 'Start Time', id: 'startTime' },
+        { label: 'Last Updated', id: 'updated' },
+      ],
+    },
 
     // Get Event Fields
     {
@@ -614,6 +625,7 @@ Return ONLY the natural language event text - no explanations.`,
     // List/Instances operation inputs
     timeMin: { type: 'string', description: 'Start time filter' },
     timeMax: { type: 'string', description: 'End time filter' },
+    orderBy: { type: 'string', description: 'Order by field' },
     maxResults: { type: 'string', description: 'Maximum number of results' },
 
     // Get/Update/Delete/Move/Instances/Invite operation inputs

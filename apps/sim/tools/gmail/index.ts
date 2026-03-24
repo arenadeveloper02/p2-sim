@@ -15,6 +15,7 @@ import { gmailMarkReadTool, gmailMarkReadV2Tool } from '@/tools/gmail/mark_read'
 import { gmailMarkUnreadTool, gmailMarkUnreadV2Tool } from '@/tools/gmail/mark_unread'
 import { gmailMoveTool, gmailMoveV2Tool } from '@/tools/gmail/move'
 import { gmailReadTool, gmailReadV2Tool } from '@/tools/gmail/read'
+import { gmailReadThreadTool, gmailReadThreadV2Tool } from '@/tools/gmail/read_thread'
 import { gmailRemoveLabelTool, gmailRemoveLabelV2Tool } from '@/tools/gmail/remove_label'
 import { gmailSearchTool, gmailSearchV2Tool } from '@/tools/gmail/search'
 import { gmailSendTool, gmailSendV2Tool } from '@/tools/gmail/send'
@@ -27,6 +28,8 @@ export {
   gmailSendV2Tool,
   gmailReadTool,
   gmailReadV2Tool,
+  gmailReadThreadTool,
+  gmailReadThreadV2Tool,
   gmailSearchTool,
   gmailAdvancedSearchTool,
   gmailAdvancedSearchV2Tool,

@@ -31,7 +31,19 @@ export const ChatInput: React.FC<{
   onStopStreaming?: () => void
   onVoiceStart?: () => void
   voiceOnly?: boolean
-}> = ({ onSubmit, isStreaming = false, onStopStreaming, onVoiceStart, voiceOnly = false }) => {
+  /** When set, this text is inserted into the input followed by a space and the input is focused; then onInsertConsumed is called */
+  insertText?: string
+  /** Called after insertText has been applied so the parent can clear it */
+  onInsertConsumed?: () => void
+}> = ({
+  onSubmit,
+  isStreaming = false,
+  onStopStreaming,
+  onVoiceStart,
+  voiceOnly = false,
+  insertText,
+  onInsertConsumed,
+}) => {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null) // Ref for the textarea
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -71,6 +83,23 @@ export const ChatInput: React.FC<{
   useEffect(() => {
     adjustTextareaHeight()
   }, [inputValue])
+
+  // When parent injects text (e.g. "Ask this in chat"), set input to that text + space and focus
+  useEffect(() => {
+    if (!insertText || !insertText.trim()) return
+    const value = `${insertText.trim()} `
+    setInputValue((prev) => (prev ? `${prev.trimEnd()} ${value}` : value))
+    setIsActive(true)
+    onInsertConsumed?.()
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus()
+        adjustTextareaHeight()
+        const el = textareaRef.current
+        if (el) el.setSelectionRange(el.value.length, el.value.length)
+      })
+    })
+  }, [insertText])
 
   // Close the input when clicking outside (only when empty)
   useEffect(() => {

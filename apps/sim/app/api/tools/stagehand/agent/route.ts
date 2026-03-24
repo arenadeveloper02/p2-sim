@@ -168,8 +168,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid Anthropic API key format' }, { status: 400 })
     }
 
-    const modelName =
-      provider === 'anthropic' ? 'anthropic/claude-sonnet-4-5-20250929' : 'openai/gpt-5'
+    const modelName = provider === 'anthropic' ? 'anthropic/claude-sonnet-4-0' : 'openai/gpt-4.1'
 
     try {
       logger.info('Initializing Stagehand with Browserbase (v3)', { provider, modelName })
