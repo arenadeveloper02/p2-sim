@@ -1,12 +1,11 @@
 import type { ToolConfig } from '@/tools/types'
-import type { ShopifyListOrdersParams, ShopifyOrdersResponse } from './types'
 
 export interface ShopifyGrossSalesOverTimeParams {
   shopDomain: string
   accessToken: string
   idToken?: string
   startDate?: string // Format: YYYY-MM-DD
-  endDate?: string   // Format: YYYY-MM-DD
+  endDate?: string // Format: YYYY-MM-DD
   groupBy?: 'day' | 'week' | 'month' // Default: 'day'
 }
 
@@ -29,7 +28,10 @@ export interface ShopifyGrossSalesOverTimeResponse {
   }
 }
 
-export const shopifyGrossSalesOverTimeTool: ToolConfig<ShopifyGrossSalesOverTimeParams, ShopifyGrossSalesOverTimeResponse> = {
+export const shopifyGrossSalesOverTimeTool: ToolConfig<
+  ShopifyGrossSalesOverTimeParams,
+  ShopifyGrossSalesOverTimeResponse
+> = {
   id: 'shopify_gross_sales_over_time',
   name: 'Shopify Gross Sales Over Time',
   description: 'Get aggregated gross sales data over time periods (day/week/month)',
@@ -126,19 +128,21 @@ export const shopifyGrossSalesOverTimeTool: ToolConfig<ShopifyGrossSalesOverTime
 
   transformResponse: async (response, params) => {
     let allOrders: any[] = []
-    let hasNextPage = true
-    let cursor: string | null = null
+    const hasNextPage = true
+    const cursor: string | null = null
 
     const fetchAllOrders = async (currentCursor: string | null) => {
       if (!params) throw new Error('Missing parameters for Shopify API request')
-      const res = await fetch(`https://${params.shopDomain || params.idToken}/admin/api/2024-10/graphql.json`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': params.accessToken,
-        },
-        body: JSON.stringify({
-          query: `
+      const res = await fetch(
+        `https://${params.shopDomain || params.idToken}/admin/api/2024-10/graphql.json`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Access-Token': params.accessToken,
+          },
+          body: JSON.stringify({
+            query: `
             query getOrdersForSales($first: Int!, $query: String, $after: String) {
               orders(first: $first, query: $query, after: $after, sortKey: CREATED_AT, reverse: true) {
                 edges {
@@ -183,22 +187,23 @@ export const shopifyGrossSalesOverTimeTool: ToolConfig<ShopifyGrossSalesOverTime
               }
             }
           `,
-          variables: {
-            first: 250,
-            query: buildDateQuery(params),
-            after: currentCursor,
-          },
-        }),
-      })
+            variables: {
+              first: 250,
+              query: buildDateQuery(params),
+              after: currentCursor,
+            },
+          }),
+        }
+      )
 
       const data = await res.json()
       if (data.errors) throw new Error(data.errors[0]?.message || 'Failed to fetch orders')
-      
+
       const ordersData = data.data?.orders
       if (!ordersData) return
 
       allOrders = [...allOrders, ...ordersData.edges.map((edge: any) => edge.node)]
-      
+
       if (ordersData.pageInfo.hasNextPage) {
         const lastCursor = ordersData.edges[ordersData.edges.length - 1].cursor
         await fetchAllOrders(lastCursor)
@@ -222,19 +227,27 @@ export const shopifyGrossSalesOverTimeTool: ToolConfig<ShopifyGrossSalesOverTime
       return {
         success: false,
         error: error.message,
-        output: { salesData: [], summary: { totalSales: 0, totalOrders: 0, averageOrderValue: 0, currency: 'USD' } },
+        output: {
+          salesData: [],
+          summary: { totalSales: 0, totalOrders: 0, averageOrderValue: 0, currency: 'USD' },
+        },
       }
     }
 
     const orders = allOrders
-    
+
     // Group orders by time period
     const groupBy = params?.groupBy || 'day'
     const salesData: Record<string, { total: number; count: number; currency: string }> = {}
 
     const STORE_TZ = 'America/New_York'
 
-    function toStoreDateParts(isoDate: string): { year: number; month: number; day: number; dayOfWeek: number } {
+    function toStoreDateParts(isoDate: string): {
+      year: number
+      month: number
+      day: number
+      dayOfWeek: number
+    } {
       const d = new Date(isoDate)
       const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: STORE_TZ,
@@ -242,9 +255,9 @@ export const shopifyGrossSalesOverTimeTool: ToolConfig<ShopifyGrossSalesOverTime
         month: '2-digit',
         day: '2-digit',
       }).formatToParts(d)
-      const year = parseInt(parts.find((p) => p.type === 'year')!.value, 10)
-      const month = parseInt(parts.find((p) => p.type === 'month')!.value, 10)
-      const day = parseInt(parts.find((p) => p.type === 'day')!.value, 10)
+      const year = Number.parseInt(parts.find((p) => p.type === 'year')!.value, 10)
+      const month = Number.parseInt(parts.find((p) => p.type === 'month')!.value, 10)
+      const day = Number.parseInt(parts.find((p) => p.type === 'day')!.value, 10)
       const localDate = new Date(d.toLocaleString('en-US', { timeZone: STORE_TZ }))
       const dayOfWeek = localDate.getDay()
       return { year, month, day, dayOfWeek }
@@ -262,7 +275,7 @@ export const shopifyGrossSalesOverTimeTool: ToolConfig<ShopifyGrossSalesOverTime
       const lineItems = order.lineItems?.edges || []
       for (const edge of lineItems) {
         const item = edge.node
-        orderGrossSales += parseFloat(item.originalTotalSet?.shopMoney?.amount || '0')
+        orderGrossSales += Number.parseFloat(item.originalTotalSet?.shopMoney?.amount || '0')
       }
       const currency = order.totalPriceSet?.shopMoney?.currencyCode || 'USD'
 
