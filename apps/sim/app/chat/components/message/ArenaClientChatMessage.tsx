@@ -10,13 +10,14 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Check, Copy, Download, ThumbsDown, ThumbsUp } from 'lucide-react'
+// import MarkdownRenderer from './components/markdown-renderer'
+// import { toastError, toastSuccess } from '@/components/ui'
+import { createLogger } from '@sim/logger'
+import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import type { KnowledgeRef, KnowledgeResultChunk } from '@/app/chat/components/message/message'
-// import MarkdownRenderer from './components/markdown-renderer'
-// import { toastError, toastSuccess } from '@/components/ui'
 import {
   downloadImage,
   extractAllBase64Images,
@@ -24,12 +25,18 @@ import {
   getImageUrlFromContent,
   hasBase64Images,
   isBase64,
-  isImageUrlString,
+  isRenderableImageUrl,
+  mergeToolOutputImageUrls,
+  normalizeImageUrlForCompare,
   renderBs64Img,
+  resolveMessageImagesAndProse,
+  S3UploadFailedAlert,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
 import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
+
+const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
 export interface ChatMessage {
   id: string
@@ -52,16 +59,214 @@ export interface ChatMessage {
 //   )
 // }
 
+/**
+ * Returns true if the content looks like a GFM markdown table (has a separator line of dashes/colons between pipes).
+ * When true, we skip pipe-segment split so the table renders correctly.
+ */
+function isLikelyMarkdownTable(str: string): boolean {
+  const lines = str.trim().split(/\r?\n/)
+  if (lines.length < 2) return false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const cells = line
+      .split('|')
+      .map((c) => c.trim())
+      .filter(Boolean)
+    if (cells.length === 0) continue
+    const onlySeparatorChars = new RegExp('^[' + '\\-' + ':' + '\\s' + ']+$')
+    const isSeparatorLine = cells.every((cell) => onlySeparatorChars.test(cell) && cell.length > 0)
+    if (isSeparatorLine) return true
+  }
+  return false
+}
+
+/**
+ * Returns true if the content contains a fenced code block (```).
+ * When true, we skip pipe-segment split so code blocks and any pipes inside them are preserved.
+ */
+function hasFencedCodeBlock(str: string): boolean {
+  return /```/.test(str)
+}
+
+/** Total character length of a node's text content (recursive). */
+function getNodeTextLength(node: Node): number {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent?.length ?? 0
+  let len = 0
+  for (let i = 0; i < node.childNodes.length; i++) {
+    len += getNodeTextLength(node.childNodes[i])
+  }
+  return len
+}
+
+/**
+ * Returns the character offset of (targetNode, targetOffset) within container's text content.
+ * Walks container's subtree in document order. For a text node, targetOffset is a character index;
+ * for an element node (e.g. container or button), Range API gives child index, so we sum preceding siblings' text lengths.
+ */
+function getCharacterOffset(container: Node, targetNode: Node, targetOffset: number): number {
+  let offset = 0
+  function walk(node: Node): boolean {
+    if (node === targetNode) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        offset += targetOffset
+      } else {
+        for (let i = 0; i < targetOffset && i < node.childNodes.length; i++) {
+          offset += getNodeTextLength(node.childNodes[i])
+        }
+      }
+      return true
+    }
+    if (node.nodeType === Node.TEXT_NODE) {
+      offset += node.textContent?.length ?? 0
+      return false
+    }
+    for (let i = 0; i < node.childNodes.length; i++) {
+      if (walk(node.childNodes[i])) return true
+    }
+    return false
+  }
+  walk(container)
+  return offset
+}
+
+/**
+ * Detects a pipe-delimited segment at the given offset in the line:
+ * look backward for a pipe (stop at newline/start), then forward for a pipe (stop at newline/end).
+ * Returns { start, end, text } for the segment between the two pipes, or null.
+ */
+function getPipeSegmentAtOffset(
+  line: string,
+  offset: number
+): { start: number; end: number; text: string } | null {
+  if (offset < 0 || offset > line.length) return null
+  let pipeBefore = -1
+  for (let i = offset - 1; i >= 0; i--) {
+    if (line[i] === '\n') break
+    if (line[i] === '|') {
+      pipeBefore = i
+      break
+    }
+  }
+  if (pipeBefore < 0) return null
+  let pipeAfter = -1
+  for (let i = offset; i < line.length; i++) {
+    if (line[i] === '\n') break
+    if (line[i] === '|') {
+      pipeAfter = i
+      break
+    }
+  }
+  if (pipeAfter < 0 || pipeAfter <= pipeBefore) return null
+  const text = line.slice(pipeBefore + 1, pipeAfter).trim()
+  if (!text) return null
+  return { start: pipeBefore + 1, end: pipeAfter, text }
+}
+
+interface LineWithPipeHoverProps {
+  line: string
+  onCopySegment: (text: string) => void
+}
+
+function LineWithPipeHover({ line, onCopySegment }: LineWithPipeHoverProps) {
+  const [hovered, setHovered] = useState<{ start: number; end: number; text: string } | null>(null)
+  const lineRef = useRef<HTMLSpanElement>(null)
+
+  const onMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      const container = lineRef.current
+      if (!container) return
+      const doc = container.ownerDocument
+      const range =
+        doc.caretRangeFromPoint?.(e.clientX, e.clientY) ??
+        (() => {
+          const pos = (
+            doc as Document & {
+              caretPositionFromPoint?(
+                x: number,
+                y: number
+              ): { offsetNode: Node; offset: number } | null
+            }
+          ).caretPositionFromPoint?.(e.clientX, e.clientY)
+          if (!pos) return null
+          return { startContainer: pos.offsetNode, startOffset: pos.offset }
+        })()
+      if (!range || !container.contains(range.startContainer)) {
+        setHovered(null)
+        return
+      }
+      const offset = getCharacterOffset(container, range.startContainer, range.startOffset)
+      if (offset < 0 || offset > line.length) {
+        setHovered(null)
+        return
+      }
+      const segment = getPipeSegmentAtOffset(line, offset)
+      setHovered(segment)
+    },
+    [line]
+  )
+
+  const onMouseLeave = useCallback(() => setHovered(null), [])
+
+  const handleCopy = useCallback(
+    (text: string) => {
+      onCopySegment(text)
+    },
+    [onCopySegment]
+  )
+
+  if (hovered) {
+    return (
+      <span
+        ref={lineRef}
+        className='whitespace-pre-wrap'
+        onMouseMove={onMouseMove}
+        onMouseLeave={onMouseLeave}
+      >
+        {line.slice(0, hovered.start)}
+        <Tooltip.Provider>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <button
+                type='button'
+                onClick={() => handleCopy(hovered.text)}
+                className='cursor-pointer rounded px-0.5 py-0 text-inherit no-underline transition-colors hover:underline hover:decoration-2 hover:decoration-gray-400 hover:underline-offset-2'
+              >
+                {line.slice(hovered.start, hovered.end)}
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>Click to copy</Tooltip.Content>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+        {line.slice(hovered.end)}
+      </span>
+    )
+  }
+
+  return (
+    <span
+      ref={lineRef}
+      className='whitespace-pre-wrap'
+      onMouseMove={onMouseMove}
+      onMouseLeave={onMouseLeave}
+    >
+      {line}
+    </span>
+  )
+}
+
 export const ArenaClientChatMessage = memo(
   function ArenaClientChatMessage({
     message,
     setMessages,
     workspaceIdsForKbLinks,
+    onCopySegmentToInput,
   }: {
     message: ChatMessage
     setMessages?: Dispatch<SetStateAction<ChatMessage[]>>
     /** When set, show "View in Knowledge Base" link for refs whose workspaceId is in this list */
     workspaceIdsForKbLinks?: string[]
+    /** When set, text between pipes (| text |) is clickable and copies to chat input */
+    onCopySegmentToInput?: (text: string) => void
   }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
@@ -92,69 +297,110 @@ export const ArenaClientChatMessage = memo(
       }
     }, [])
 
-    const renderContent = (content: any) => {
+    /** Renders string content. When onCopySegmentToInput is set and content has pipes (and is not a table/code block), renders line-by-line: on hover we look backward for a pipe and forward for a pipe (stop at newline); if both exist the text between is copyable. No extra pipes are rendered. */
+    const renderStringContent = useCallback(
+      (str: string) => {
+        if (!onCopySegmentToInput || !str.includes('|')) {
+          return <ArenaCopilotMarkdownRenderer content={str} />
+        }
+        if (isLikelyMarkdownTable(str) || hasFencedCodeBlock(str)) {
+          return <ArenaCopilotMarkdownRenderer content={str} />
+        }
+        const lines = str.split(/\r?\n/)
+        return (
+          <span className='whitespace-pre-wrap'>
+            {lines.map((line, i) => (
+              <span key={i}>
+                {i > 0 && '\n'}
+                {line.includes('|') ? (
+                  <LineWithPipeHover line={line} onCopySegment={onCopySegmentToInput} />
+                ) : (
+                  <ArenaCopilotMarkdownRenderer content={line} />
+                )}
+              </span>
+            ))}
+          </span>
+        )
+      },
+      [onCopySegmentToInput]
+    )
+
+    const renderContent = (content: unknown) => {
       if (!content) {
         return null
       }
 
       try {
-        // If content is an object with an image field (from tool output)
-        if (typeof content === 'object' && content !== null && content.image) {
-          const imageValue = content.image
-          const isImageUrl =
-            typeof imageValue === 'string' &&
-            (imageValue.startsWith('http') || imageValue.startsWith('/api/files/serve/'))
-          const isBase64Image = typeof imageValue === 'string' && isBase64(imageValue)
-          const contentStr =
-            content.content && typeof content.content === 'string' ? content.content.trim() : ''
-          const contentIsImageUrl = contentStr && isImageUrlString(contentStr)
+        if (typeof content === 'object' && content !== null) {
+          const o = content as Record<string, unknown>
+          const imgRaw = typeof o.image === 'string' ? o.image : ''
+          const txtRaw = typeof o.content === 'string' ? o.content : ''
 
-          return (
-            <>
-              {contentStr && !contentIsImageUrl && (
-                <ArenaCopilotMarkdownRenderer content={content.content} />
-              )}
-              {isImageUrl && (
-                <div>{renderBs64Img({ isBase64: false, imageData: '', imageUrl: imageValue })}</div>
-              )}
-              {isBase64Image && (
-                <div>
-                  {renderBs64Img({ isBase64: true, imageData: imageValue.replace(/\s+/g, '') })}
-                </div>
-              )}
-            </>
+          const imageBase64 =
+            imgRaw.trim() && isBase64(imgRaw) && !isRenderableImageUrl(imgRaw)
+              ? imgRaw.replace(/\s+/g, '')
+              : ''
+
+          const { uniqueUrls, prose: proseWithoutUrlLines } = mergeToolOutputImageUrls(
+            imgRaw,
+            txtRaw
           )
+          const proseTrim = proseWithoutUrlLines.trim()
+          const txtTrim = txtRaw.trim()
+
+          const showS3 =
+            o.s3UploadFailed === true && (uniqueUrls.length > 0 || Boolean(imageBase64))
+
+          if (uniqueUrls.length > 0 || imageBase64) {
+            return (
+              <>
+                {proseTrim ? renderStringContent(proseTrim) : null}
+                {showS3 && <S3UploadFailedAlert />}
+                {uniqueUrls.map((url) => (
+                  <div key={normalizeImageUrlForCompare(url)} className='w-full'>
+                    {renderBs64Img({ isBase64: false, imageData: '', imageUrl: url })}
+                  </div>
+                ))}
+                {imageBase64 && (
+                  <div className='w-full'>
+                    {renderBs64Img({ isBase64: true, imageData: imageBase64 })}
+                  </div>
+                )}
+              </>
+            )
+          }
+
+          if (txtTrim) {
+            return renderStringContent(txtTrim)
+          }
+
+          return <ArenaCopilotMarkdownRenderer content={JSON.stringify(content, null, 2)} />
         }
 
-        // Fallback: If content is an object with a content field that's a URL (from tool output)
-        // and image field is empty, try to render the content as an image URL
-        if (
-          typeof content === 'object' &&
-          content !== null &&
-          typeof content.content === 'string' &&
-          content.content &&
-          (!content.image || content.image === '') &&
-          (content.content.startsWith('http') || content.content.startsWith('/api/files/serve/'))
-        ) {
-          return (
-            <>
-              <div>
-                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: content.content })}
-              </div>
-            </>
-          )
+        if (typeof content === 'string') {
+          const { urls, prose } = resolveMessageImagesAndProse(content)
+          if (urls.length > 0) {
+            return (
+              <>
+                {prose ? renderStringContent(prose) : null}
+                {urls.map((url) => (
+                  <div key={normalizeImageUrlForCompare(url)} className='w-full'>
+                    {renderBs64Img({ isBase64: false, imageData: '', imageUrl: url })}
+                  </div>
+                ))}
+              </>
+            )
+          }
         }
 
-        // If content is a pure base64 image, render it directly
         if (typeof content === 'string' && isBase64(content)) {
           const cleanedContent = content.replace(/\s+/g, '')
           return renderBs64Img({ isBase64: true, imageData: cleanedContent })
         }
 
-        // If content is a string that is an image URL (e.g. from image generator), render as <img> only (no URL text)
         if (typeof content === 'string') {
           const trimmed = content.trim()
-          if (isImageUrlString(trimmed)) {
+          if (isRenderableImageUrl(trimmed)) {
             return (
               <div className='w-full'>
                 {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
@@ -163,17 +409,13 @@ export const ArenaClientChatMessage = memo(
           }
         }
 
-        // If content is a string, check for mixed content (text + base64 images)
         if (typeof content === 'string') {
           const { textParts, base64Images } = extractBase64Image(content)
 
-          // If we found base64 images, render both text and images
           if (base64Images.length > 0) {
             return (
               <>
-                {textParts.length > 0 && (
-                  <ArenaCopilotMarkdownRenderer content={textParts.join('\n\n')} />
-                )}
+                {textParts.length > 0 && renderStringContent(textParts.join('\n\n'))}
                 {base64Images.map((imageData, index) => (
                   <div key={index}>{renderBs64Img({ isBase64: true, imageData })}</div>
                 ))}
@@ -181,14 +423,12 @@ export const ArenaClientChatMessage = memo(
             )
           }
 
-          // If no base64 images, just render as markdown
-          return <ArenaCopilotMarkdownRenderer content={content} />
+          return renderStringContent(content)
         }
 
-        // For other content types, render as markdown
-        return <ArenaCopilotMarkdownRenderer content={content} />
+        return <ArenaCopilotMarkdownRenderer content={String(content)} />
       } catch (error) {
-        console.error('Error rendering message content:', error)
+        arenaChatMessageLogger.error('Error rendering message content', { error })
         return (
           <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>
             <p className='text-sm'>⚠️ Error displaying content. Please try refreshing the chat.</p>
@@ -666,7 +906,7 @@ export const ArenaClientChatMessage = memo(
                       </Tooltip.Root>
                     </Tooltip.Provider>
                   )}
-                  {(containsBase64Images || hasImageUrl) && (
+                  {/* {(containsBase64Images || hasImageUrl) && (
                     <Tooltip.Provider>
                       <Tooltip.Root>
                         <Tooltip.Trigger asChild>
@@ -682,7 +922,7 @@ export const ArenaClientChatMessage = memo(
                         </Tooltip.Content>
                       </Tooltip.Root>
                     </Tooltip.Provider>
-                  )}
+                  )} */}
                   {cleanTextContent && message?.executionId && (
                     <>
                       {isFeedbackPending ? (
@@ -813,7 +1053,8 @@ export const ArenaClientChatMessage = memo(
       prevProps.message.liked === nextProps.message.liked &&
       prevProps.message.knowledgeResults?.length === nextProps.message.knowledgeResults?.length &&
       prevProps.message.knowledgeRefs?.length === nextProps.message.knowledgeRefs?.length &&
-      prevProps.workspaceIdsForKbLinks?.length === nextProps.workspaceIdsForKbLinks?.length
+      prevProps.workspaceIdsForKbLinks?.length === nextProps.workspaceIdsForKbLinks?.length &&
+      prevProps.onCopySegmentToInput === nextProps.onCopySegmentToInput
     )
   }
 )

@@ -167,6 +167,19 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Get Email Statistics Histogram', id: 'get_email_statistics_histogram' },
         // { label: 'Get Email', id: 'get_email' },
         { label: 'Marketing Emails', id: 'list_emails' },
+        { label: 'List CRM Objects', id: 'list_objects' },
+        { label: 'Get CRM Object', id: 'get_object' },
+        { label: 'List Association Types', id: 'list_association_types' },
+        { label: 'List Associations', id: 'list_associations' },
+        { label: 'Get Carts', id: 'get_carts' },
+        { label: 'Get Commerce Payments', id: 'get_commerce_payments' },
+        { label: 'Get Subscriptions', id: 'get_subscriptions' },
+        { label: 'List Imports', id: 'list_imports' },
+        { label: 'Get Import', id: 'get_import' },
+        { label: 'List Pipelines', id: 'list_pipelines' },
+        { label: 'Get Pipeline', id: 'get_pipeline' },
+        { label: 'List Properties', id: 'list_properties' },
+        { label: 'Get Property', id: 'get_property' },
       ],
       value: () => 'get_contacts',
     },
@@ -593,13 +606,145 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       condition: { field: 'operation', value: ['list_emails'] },
     },
     {
+      id: 'objectType',
+      title: 'Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. appointments, companies, contacts, deals, tickets, carts',
+      condition: { field: 'operation', value: 'list_objects' },
+      required: true,
+    },
+    {
+      id: 'objectType',
+      title: 'Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. appointments, 0-410 (courses), 0-3 (deals), discounts',
+      condition: { field: 'operation', value: 'get_object' },
+      required: true,
+    },
+    {
+      id: 'objectId',
+      title: 'Object ID',
+      type: 'short-input',
+      placeholder: 'ID of the CRM object to retrieve',
+      condition: { field: 'operation', value: 'get_object' },
+      required: true,
+    },
+    {
+      id: 'fromObjectType',
+      title: 'From Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. contacts, companies',
+      condition: { field: 'operation', value: 'list_association_types' },
+      required: true,
+    },
+    {
+      id: 'toObjectType',
+      title: 'To Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. companies, contacts, deals',
+      condition: { field: 'operation', value: 'list_association_types' },
+      required: true,
+    },
+    {
+      id: 'objectType',
+      title: 'Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. contacts, companies',
+      condition: { field: 'operation', value: 'list_associations' },
+      required: true,
+    },
+    {
+      id: 'objectId',
+      title: 'Object ID',
+      type: 'short-input',
+      placeholder: 'ID of the source CRM object',
+      condition: { field: 'operation', value: 'list_associations' },
+      required: true,
+    },
+    {
+      id: 'toObjectType',
+      title: 'To Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. companies, deals',
+      condition: { field: 'operation', value: 'list_associations' },
+      required: true,
+    },
+    {
+      id: 'cartId',
+      title: 'Cart ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all carts',
+      condition: { field: 'operation', value: 'get_carts' },
+    },
+    {
+      id: 'commercePaymentId',
+      title: 'Commerce Payment ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all commerce payments',
+      condition: { field: 'operation', value: 'get_commerce_payments' },
+    },
+    {
+      id: 'subscriptionId',
+      title: 'Subscription ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all subscriptions',
+      condition: { field: 'operation', value: 'get_subscriptions' },
+    },
+    {
+      id: 'importId',
+      title: 'Import ID',
+      type: 'short-input',
+      placeholder: 'ID of the CRM import to retrieve',
+      condition: { field: 'operation', value: 'get_import' },
+      required: true,
+    },
+    {
+      id: 'objectType',
+      title: 'Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. deals, tickets',
+      condition: { field: 'operation', value: ['list_pipelines', 'get_pipeline'] },
+      required: true,
+    },
+    {
+      id: 'pipelineId',
+      title: 'Pipeline ID',
+      type: 'short-input',
+      placeholder: 'ID of the pipeline to retrieve',
+      condition: { field: 'operation', value: 'get_pipeline' },
+      required: true,
+    },
+    {
+      id: 'objectType',
+      title: 'Object Type',
+      type: 'short-input',
+      placeholder: 'e.g. contacts, companies, deals',
+      condition: { field: 'operation', value: ['list_properties', 'get_property'] },
+      required: true,
+    },
+    {
+      id: 'propertyName',
+      title: 'Property Name',
+      type: 'short-input',
+      placeholder: 'Internal property name (e.g. email, firstname)',
+      condition: { field: 'operation', value: 'get_property' },
+      required: true,
+    },
+    {
+      id: 'dataSensitivity',
+      title: 'Data Sensitivity',
+      type: 'short-input',
+      placeholder: 'e.g. non_sensitive (optional)',
+      condition: { field: 'operation', value: ['list_properties', 'get_property'] },
+    },
+    {
       id: 'idProperty',
       title: 'ID Property',
       type: 'short-input',
       placeholder: 'Required if using email/domain (e.g., "email" or "domain")',
       condition: {
         field: 'operation',
-        value: ['get_contacts', 'update_contact', 'get_companies', 'update_company'],
+        value: ['get_contacts', 'update_contact', 'get_companies', 'update_company', 'get_object'],
       },
     },
     {
@@ -739,7 +884,19 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
       title: 'Properties to Return',
       type: 'short-input',
       placeholder: 'Comma-separated list (e.g., "email,firstname,lastname")',
-      condition: { field: 'operation', value: ['get_contacts', 'get_companies', 'get_deals'] },
+      condition: {
+        field: 'operation',
+        value: [
+          'get_contacts',
+          'get_companies',
+          'get_deals',
+          'list_objects',
+          'get_object',
+          'get_carts',
+          'get_commerce_payments',
+          'get_subscriptions',
+        ],
+      },
     },
     {
       id: 'associations',
@@ -748,7 +905,18 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
       placeholder: 'Comma-separated object types (e.g., "companies,deals")',
       condition: {
         field: 'operation',
-        value: ['get_contacts', 'get_companies', 'get_deals', 'create_contact', 'create_company'],
+        value: [
+          'get_contacts',
+          'get_companies',
+          'get_deals',
+          'create_contact',
+          'create_company',
+          'list_objects',
+          'get_object',
+          'get_carts',
+          'get_commerce_payments',
+          'get_subscriptions',
+        ],
       },
     },
     {
@@ -766,6 +934,12 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'search_contacts',
           'search_companies',
           'list_campaigns',
+          'list_objects',
+          'list_associations',
+          'list_carts',
+          'list_commerce_payments',
+          'list_subscriptions',
+          'list_imports',
         ],
       },
     },
@@ -785,6 +959,12 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'list_campaigns',
           'get_campaign_contacts',
           'get_campaign_assets',
+          'list_objects',
+          'list_associations',
+          'list_carts',
+          'list_commerce_payments',
+          'list_subscriptions',
+          'list_imports',
         ],
       },
     },
@@ -1303,6 +1483,22 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       'hubspot_get_email_statistics_histogram',
       'hubspot_get_email',
       'hubspot_list_emails',
+      'hubspot_list_objects',
+      'hubspot_get_object',
+      'hubspot_list_association_types',
+      'hubspot_list_associations',
+      'hubspot_list_carts',
+      'hubspot_get_cart',
+      'hubspot_list_commerce_payments',
+      'hubspot_get_commerce_payment',
+      'hubspot_list_subscriptions',
+      'hubspot_get_subscription',
+      'hubspot_list_imports',
+      'hubspot_get_import',
+      'hubspot_list_pipelines',
+      'hubspot_get_pipeline',
+      'hubspot_list_properties',
+      'hubspot_get_property',
     ],
     config: {
       tool: (params) => {
@@ -1351,6 +1547,34 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_get_email'
           case 'list_emails':
             return 'hubspot_list_emails'
+          case 'list_objects':
+            return 'hubspot_list_objects'
+          case 'get_object':
+            return 'hubspot_get_object'
+          case 'list_association_types':
+            return 'hubspot_list_association_types'
+          case 'list_associations':
+            return 'hubspot_list_associations'
+          case 'get_carts':
+            return params.cartId ? 'hubspot_get_cart' : 'hubspot_list_carts'
+          case 'get_commerce_payments':
+            return params.commercePaymentId
+              ? 'hubspot_get_commerce_payment'
+              : 'hubspot_list_commerce_payments'
+          case 'get_subscriptions':
+            return params.subscriptionId ? 'hubspot_get_subscription' : 'hubspot_list_subscriptions'
+          case 'list_imports':
+            return 'hubspot_list_imports'
+          case 'get_import':
+            return 'hubspot_get_import'
+          case 'list_pipelines':
+            return 'hubspot_list_pipelines'
+          case 'get_pipeline':
+            return 'hubspot_get_pipeline'
+          case 'list_properties':
+            return 'hubspot_list_properties'
+          case 'get_property':
+            return 'hubspot_get_property'
           default:
             throw new Error(`Unknown operation: ${params.operation}`)
         }
@@ -1386,7 +1610,16 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           cleanParams.properties = propertiesToSet
         }
 
-        const getListOps = ['get_contacts', 'get_companies', 'get_deals']
+        const getListOps = [
+          'get_contacts',
+          'get_companies',
+          'get_deals',
+          'list_objects',
+          'get_object',
+          'get_carts',
+          'get_commerce_payments',
+          'get_subscriptions',
+        ]
         if (properties && !searchProperties && getListOps.includes(operation as string)) {
           cleanParams.properties = properties
         }
@@ -1503,6 +1736,24 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     filterGroups: { type: 'json', description: 'Filter groups for search (JSON array)' },
     sorts: { type: 'json', description: 'Sort order (JSON array of strings or objects)' },
     searchProperties: { type: 'json', description: 'Properties to return in search (JSON array)' },
+    objectType: {
+      type: 'string',
+      description:
+        'CRM object type (e.g. appointments, 0-410 courses, 0-3 deals, discounts, companies, contacts, carts)',
+    },
+    objectId: {
+      type: 'string',
+      description: 'CRM object ID (for Get CRM Object or list associations)',
+    },
+    fromObjectType: { type: 'string', description: 'Source object type for association types' },
+    toObjectType: { type: 'string', description: 'Target object type for associations' },
+    cartId: { type: 'string', description: 'Cart ID (empty to list all carts)' },
+    commercePaymentId: { type: 'string', description: 'Commerce payment ID (empty to list all)' },
+    subscriptionId: { type: 'string', description: 'Subscription ID (empty to list all)' },
+    importId: { type: 'string', description: 'CRM import ID for Get Import' },
+    pipelineId: { type: 'string', description: 'Pipeline ID for Get Pipeline' },
+    propertyName: { type: 'string', description: 'Property name for Get Property' },
+    dataSensitivity: { type: 'string', description: 'Data sensitivity filter for properties API' },
   },
   outputs: {
     users: { type: 'json', description: 'Array of user objects' },

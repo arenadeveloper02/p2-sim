@@ -7,6 +7,7 @@ import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@
 import type { StorageContext } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
+import { canAccessAgentGeneratedImageViaDeployedChat } from '@/app/api/chat/utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
 import {
   createErrorResponse,
@@ -40,26 +41,6 @@ export async function GET(
 
     // Handle agent-generated-images paths specially
     if (fullPath.startsWith('agent-generated-images/')) {
-      logger.info('Agent-generated-image serve: checking auth', { fullPath })
-      const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
-
-      if (!authResult.success || !authResult.userId) {
-        logger.warn('Unauthorized agent-generated-image access attempt', {
-          path,
-          fullPath,
-          error: authResult.error || 'Missing userId',
-          authType: authResult.authType,
-        })
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const userId = authResult.userId
-      logger.info('Agent-generated-image serve: auth success', {
-        userId,
-        authType: authResult.authType,
-      })
-
-      // Path format: agent-generated-images/[workflow_id]/[user_id]/[image] (exactly 4 segments)
       const pathSegments = fullPath.split('/')
       const hasValidStructure =
         pathSegments.length >= 4 &&
@@ -77,6 +58,41 @@ export async function GET(
           }
         )
         return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
+
+      const workflowIdFromPath = pathSegments[1]
+      logger.info('Agent-generated-image serve: checking auth', { fullPath, workflowIdFromPath })
+
+      const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
+      let userId: string
+      let authType: string
+
+      if (authResult.success && authResult.userId) {
+        userId = authResult.userId
+        authType = authResult.authType ?? 'hybrid'
+        logger.info('Agent-generated-image serve: hybrid auth success', {
+          userId,
+          authType,
+        })
+      } else {
+        const deployedChatOk = await canAccessAgentGeneratedImageViaDeployedChat(
+          request,
+          workflowIdFromPath
+        )
+        if (!deployedChatOk) {
+          logger.warn('Unauthorized agent-generated-image access attempt', {
+            path,
+            fullPath,
+            error: authResult.error || 'Missing userId',
+            authType: authResult.authType,
+          })
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+        userId = 'deployed-chat-viewer'
+        authType = 'deployed_chat'
+        logger.info('Agent-generated-image serve: deployed chat access', {
+          workflowIdFromPath,
+        })
       }
 
       // Any authenticated user may view agent-generated images
