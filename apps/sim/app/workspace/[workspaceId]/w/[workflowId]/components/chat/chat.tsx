@@ -11,6 +11,7 @@ import {
   Square,
   X,
 } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 import {
   Badge,
   Button,
@@ -34,6 +35,7 @@ import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { normalizeInputFormatValue } from '@/lib/workflows/input-format'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
+import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import {
   ChatMessage,
   OutputSelect,
@@ -84,17 +86,6 @@ interface ChatFile {
   file: File
 }
 
-/**
- * Represents a processed file attachment with data URL for display
- */
-interface ProcessedAttachment {
-  id: string
-  name: string
-  type: string
-  size: number
-  dataUrl: string
-}
-
 /** Timeout for FileReader operations in milliseconds */
 const FILE_READ_TIMEOUT_MS = 60000
 
@@ -103,13 +94,13 @@ const FILE_READ_TIMEOUT_MS = 60000
  * @param chatFiles - Array of chat files to process
  * @returns Promise resolving to array of files with data URLs for images
  */
-const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ProcessedAttachment[]> => {
+const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ChatMessageAttachment[]> => {
   return Promise.all(
     chatFiles.map(async (file) => {
-      let dataUrl = ''
+      let previewUrl: string | undefined
       if (file.type.startsWith('image/')) {
         try {
-          dataUrl = await new Promise<string>((resolve, reject) => {
+          previewUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader()
             let settled = false
 
@@ -150,10 +141,10 @@ const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ProcessedA
       }
       return {
         id: file.id,
-        name: file.name,
-        type: file.type,
+        filename: file.name,
+        media_type: file.type,
         size: file.size,
-        dataUrl,
+        previewUrl,
       }
     })
   )
@@ -230,7 +221,7 @@ interface StartInputFormatField {
  * position across sessions using the floating chat store.
  */
 export function Chat() {
-  const { activeWorkflowId } = useWorkflowRegistry()
+  const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
   const blocks = useWorkflowStore((state) => state.blocks)
   const triggerWorkflowUpdate = useWorkflowStore((state) => state.triggerUpdate)
   const setSubBlockValue = useSubBlockStore((state) => state.setValue)
@@ -252,7 +243,26 @@ export function Chat() {
     getConversationId,
     clearChat,
     exportChatCSV,
-  } = useChatStore()
+  } = useChatStore(
+    useShallow((s) => ({
+      isChatOpen: s.isChatOpen,
+      chatPosition: s.chatPosition,
+      chatWidth: s.chatWidth,
+      chatHeight: s.chatHeight,
+      setIsChatOpen: s.setIsChatOpen,
+      setChatPosition: s.setChatPosition,
+      setChatDimensions: s.setChatDimensions,
+      messages: s.messages,
+      addMessage: s.addMessage,
+      selectedWorkflowOutputs: s.selectedWorkflowOutputs,
+      setSelectedWorkflowOutput: s.setSelectedWorkflowOutput,
+      appendMessageContent: s.appendMessageContent,
+      finalizeMessageStream: s.finalizeMessageStream,
+      getConversationId: s.getConversationId,
+      clearChat: s.clearChat,
+      exportChatCSV: s.exportChatCSV,
+    }))
+  )
 
   const hasConsoleHydrated = useTerminalConsoleStore((state) => state._hasHydrated)
   const entriesFromStore = useTerminalConsoleStore((state) => state.entries)

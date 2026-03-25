@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { Square } from 'lucide-react'
+import { History, Plus, Square } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -22,16 +22,26 @@ import {
   ModalHeader,
   MoreHorizontal,
   Play,
+  Popover,
+  PopoverContent,
+  PopoverItem,
+  PopoverScrollArea,
+  PopoverSection,
+  PopoverTrigger,
   Trash,
 } from '@/components/emcn'
 import { Lock, Unlock, Upload } from '@/components/emcn/icons'
 import { VariableIcon } from '@/components/icons'
+import { useSession } from '@/lib/auth/auth-client'
 import { generateWorkflowJson } from '@/lib/workflows/operations/import-export'
+import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
+import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components'
+import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
+import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
 import {
-  Copilot,
   Deploy,
   Editor,
   Toolbar,
@@ -51,12 +61,15 @@ import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useChatStore } from '@/stores/chat/store'
 import { useNotificationStore } from '@/stores/notifications/store'
-import type { PanelTab } from '@/stores/panel'
+import type { ChatContext, PanelTab } from '@/stores/panel'
 import { usePanelStore, useVariablesStore as usePanelVariablesStore } from '@/stores/panel'
 import { useVariablesStore } from '@/stores/variables/store'
+import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
+import { captureBaselineSnapshot } from '@/stores/workflow-diff/utils'
 import { getWorkflowWithValues } from '@/stores/workflows'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('Panel')
 /**
@@ -92,14 +105,10 @@ export const Panel = memo(function Panel() {
       setHasHydrated: state.setHasHydrated,
     }))
   )
-  const copilotRef = useRef<{
-    createNewChat: () => void
-    setInputValueAndFocus: (value: string) => void
-    focusInput: () => void
-  }>(null)
   const toolbarRef = useRef<{
     focusSearch: () => void
   } | null>(null)
+  const { data: session } = useSession()
 
   // State
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -202,6 +211,192 @@ export const Panel = memo(function Panel() {
 
   const currentWorkflow = activeWorkflowId ? workflows[activeWorkflowId] : null
   const { isSnapshotView } = useCurrentWorkflow()
+
+  const [copilotChatId, setCopilotChatId] = useState<string | undefined>(undefined)
+  const [copilotChatTitle, setCopilotChatTitle] = useState<string | null>(null)
+  const [copilotChatList, setCopilotChatList] = useState<
+    { id: string; title: string | null; updatedAt: string; conversationId: string | null }[]
+  >([])
+  const [isCopilotHistoryOpen, setIsCopilotHistoryOpen] = useState(false)
+
+  const copilotChatIdRef = useRef(copilotChatId)
+  copilotChatIdRef.current = copilotChatId
+  const copilotInitialLoadDoneRef = useRef(false)
+
+  const loadCopilotChats = useCallback(() => {
+    if (!activeWorkflowId) return
+    fetch('/api/copilot/chats')
+      .then((res) => (res.ok ? res.json() : { chats: [] }))
+      .then((data) => {
+        const allChats = Array.isArray(data?.chats) ? data.chats : []
+        const filtered = allChats.filter(
+          (c: { workflowId?: string }) => c.workflowId === activeWorkflowId
+        ) as Array<{
+          id: string
+          title: string | null
+          updatedAt: string
+          conversationId: string | null
+        }>
+        setCopilotChatList(filtered)
+
+        const currentId = copilotChatIdRef.current
+        if (currentId) {
+          const match = filtered.find((c: { id: string }) => c.id === currentId)
+          if (match?.title) setCopilotChatTitle(match.title)
+        }
+
+        if (!copilotInitialLoadDoneRef.current && !currentId && filtered.length > 0) {
+          copilotInitialLoadDoneRef.current = true
+          setCopilotChatId(filtered[0].id)
+          setCopilotChatTitle(filtered[0].title)
+        }
+        copilotInitialLoadDoneRef.current = true
+      })
+      .catch(() => {})
+  }, [activeWorkflowId])
+
+  useEffect(() => {
+    copilotInitialLoadDoneRef.current = false
+    loadCopilotChats()
+  }, [loadCopilotChats])
+
+  const handleCopilotSelectChat = useCallback((chat: { id: string; title: string | null }) => {
+    setCopilotChatId(chat.id)
+    setCopilotChatTitle(chat.title)
+    setIsCopilotHistoryOpen(false)
+  }, [])
+
+  const handleCopilotDeleteChat = useCallback(
+    (chatId: string) => {
+      fetch('/api/copilot/chat/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId }),
+      })
+        .then(() => {
+          if (copilotChatId === chatId) {
+            setCopilotChatId(undefined)
+            setCopilotChatTitle(null)
+          }
+          loadCopilotChats()
+        })
+        .catch(() => {})
+    },
+    [copilotChatId, loadCopilotChats]
+  )
+
+  const handleCopilotToolResult = useCallback(
+    (toolName: string, success: boolean, _output: unknown) => {
+      if (toolName !== 'edit_workflow' || !success) return
+      const workflowId = activeWorkflowId || useWorkflowRegistry.getState().activeWorkflowId
+      if (!workflowId) return
+
+      const baselineWorkflow = captureBaselineSnapshot(workflowId)
+
+      fetch(`/api/workflows/${workflowId}/state`)
+        .then((res) => {
+          if (!res.ok) throw new Error(`State fetch failed: ${res.status}`)
+          return res.json()
+        })
+        .then((freshState) => {
+          const diffStore = useWorkflowDiffStore.getState()
+          return diffStore.setProposedChanges(freshState as WorkflowState, undefined, {
+            baselineWorkflow,
+            skipPersist: true,
+          })
+        })
+        .catch((err) => {
+          logger.error('Failed to fetch/apply edit_workflow state', {
+            error: err instanceof Error ? err.message : String(err),
+            workflowId,
+          })
+        })
+    },
+    [activeWorkflowId]
+  )
+
+  const {
+    messages: copilotMessages,
+    isSending: copilotIsSending,
+    sendMessage: copilotSendMessage,
+    stopGeneration: copilotStopGeneration,
+    resolvedChatId: copilotResolvedChatId,
+    messageQueue: copilotMessageQueue,
+    removeFromQueue: copilotRemoveFromQueue,
+    sendNow: copilotSendNow,
+    editQueuedMessage: copilotEditQueuedMessage,
+  } = useChat(
+    workspaceId,
+    copilotChatId,
+    getWorkflowCopilotUseChatOptions({
+      workflowId: activeWorkflowId || undefined,
+      onTitleUpdate: loadCopilotChats,
+      onToolResult: handleCopilotToolResult,
+    })
+  )
+
+  const handleCopilotNewChat = useCallback(() => {
+    if (!activeWorkflowId || !workspaceId) return
+    fetch('/api/copilot/chats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId, workflowId: activeWorkflowId }),
+    })
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('create chat failed'))))
+      .then((data: { id?: string }) => {
+        if (data?.id) {
+          setCopilotChatId(data.id)
+          setCopilotChatTitle(null)
+          loadCopilotChats()
+        }
+      })
+      .catch((err) => {
+        logger.error('Failed to create copilot chat', err)
+      })
+  }, [activeWorkflowId, workspaceId, loadCopilotChats])
+
+  const prevResolvedRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (
+      copilotResolvedChatId &&
+      copilotResolvedChatId !== prevResolvedRef.current &&
+      !copilotChatId
+    ) {
+      prevResolvedRef.current = copilotResolvedChatId
+      setCopilotChatId(copilotResolvedChatId)
+      loadCopilotChats()
+    } else {
+      prevResolvedRef.current = copilotResolvedChatId
+    }
+  }, [copilotResolvedChatId, copilotChatId, loadCopilotChats])
+
+  const wasCopilotSendingRef = useRef(false)
+  useEffect(() => {
+    if (wasCopilotSendingRef.current && !copilotIsSending) {
+      loadCopilotChats()
+    }
+    wasCopilotSendingRef.current = copilotIsSending
+  }, [copilotIsSending, loadCopilotChats])
+
+  const [copilotEditingInputValue, setCopilotEditingInputValue] = useState('')
+  const clearCopilotEditingValue = useCallback(() => setCopilotEditingInputValue(''), [])
+
+  const handleCopilotEditQueuedMessage = useCallback(
+    (id: string) => {
+      const msg = copilotEditQueuedMessage(id)
+      if (msg) setCopilotEditingInputValue(msg.content)
+    },
+    [copilotEditQueuedMessage]
+  )
+
+  const handleCopilotSubmit = useCallback(
+    (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
+      const trimmed = text.trim()
+      if (!trimmed && !(fileAttachments && fileAttachments.length > 0)) return
+      copilotSendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts)
+    },
+    [copilotSendMessage]
+  )
 
   /**
    * Mark hydration as complete on mount
@@ -405,7 +600,7 @@ export const Panel = memo(function Panel() {
             <div className='flex gap-[6px]'>
               <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
                 <DropdownMenuTrigger asChild>
-                  <Button className='h-[30px] w-[30px] rounded-[5px]'>
+                  <Button className='h-[30px] w-[30px] rounded-[5px]' data-tour='panel-menu'>
                     <MoreHorizontal />
                   </Button>
                 </DropdownMenuTrigger>
@@ -465,10 +660,11 @@ export const Panel = memo(function Panel() {
             </div>
 
             {/* Deploy and Run */}
-            <div className='flex gap-[6px]'>
+            <div className='flex gap-[6px]' data-tour='deploy-run'>
               <Deploy activeWorkflowId={activeWorkflowId} userPermissions={userPermissions} />
               <Button
                 className='h-[30px] gap-[8px] px-[10px]'
+                data-tour='run-button'
                 variant={isExecuting ? 'active' : 'tertiary'}
                 onClick={isExecuting ? cancelWorkflow : () => runWorkflow()}
                 disabled={!isExecuting && isButtonDisabled}
@@ -496,6 +692,7 @@ export const Panel = memo(function Panel() {
                   variant={_hasHydrated && activeTab === 'copilot' ? 'active' : 'ghost'}
                   onClick={() => handleTabClick('copilot')}
                   data-tab-button='copilot'
+                  data-tour='tab-copilot'
                 >
                   Copilot
                 </Button>
@@ -509,6 +706,7 @@ export const Panel = memo(function Panel() {
                 variant={_hasHydrated && activeTab === 'toolbar' ? 'active' : 'ghost'}
                 onClick={() => handleTabClick('toolbar')}
                 data-tab-button='toolbar'
+                data-tour='tab-toolbar'
               >
                 Toolbar
               </Button>
@@ -521,6 +719,7 @@ export const Panel = memo(function Panel() {
                 variant={_hasHydrated && activeTab === 'editor' ? 'active' : 'ghost'}
                 onClick={() => handleTabClick('editor')}
                 data-tab-button='editor'
+                data-tour='tab-editor'
               >
                 Editor
               </Button>
@@ -533,14 +732,97 @@ export const Panel = memo(function Panel() {
               <div
                 className={
                   _hasHydrated && activeTab === 'copilot'
-                    ? 'h-full'
+                    ? 'flex h-full flex-col'
                     : _hasHydrated
                       ? 'hidden'
-                      : 'h-full'
+                      : 'flex h-full flex-col'
                 }
                 data-tab-content='copilot'
               >
-                <Copilot ref={copilotRef} panelWidth={panelWidth} />
+                {/* Copilot Header */}
+                <div className='mx-[-1px] flex flex-shrink-0 items-center justify-between gap-[8px] rounded-[4px] border border-[var(--border)] bg-[var(--surface-4)] px-[12px] py-[6px]'>
+                  <h2 className='min-w-0 flex-1 truncate font-medium text-[14px] text-[var(--text-primary)]'>
+                    {copilotChatTitle || 'New Chat'}
+                  </h2>
+                  <div className='flex items-center gap-[8px]'>
+                    <Button variant='ghost' className='p-0' onClick={handleCopilotNewChat}>
+                      <Plus className='h-[14px] w-[14px]' />
+                    </Button>
+                    <Popover
+                      open={isCopilotHistoryOpen}
+                      onOpenChange={(open) => {
+                        setIsCopilotHistoryOpen(open)
+                        if (open) loadCopilotChats()
+                      }}
+                    >
+                      <PopoverTrigger asChild>
+                        <Button variant='ghost' className='p-0'>
+                          <History className='h-[14px] w-[14px]' />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align='end' side='bottom' sideOffset={8} maxHeight={280}>
+                        {copilotChatList.length === 0 ? (
+                          <div className='px-[6px] py-[16px] text-center text-[12px] text-muted-foreground'>
+                            No chats yet
+                          </div>
+                        ) : (
+                          <PopoverScrollArea>
+                            <PopoverSection className='pt-0'>Recent</PopoverSection>
+                            <div className='flex flex-col gap-0.5'>
+                              {copilotChatList.map((chat) => (
+                                <div key={chat.id} className='group'>
+                                  <PopoverItem
+                                    active={copilotChatId === chat.id}
+                                    onClick={() => handleCopilotSelectChat(chat)}
+                                  >
+                                    <ConversationListItem
+                                      title={chat.title || 'New Chat'}
+                                      isActive={Boolean(chat.conversationId)}
+                                      titleClassName='text-[13px]'
+                                      actions={
+                                        <div
+                                          className={`flex flex-shrink-0 items-center gap-[4px] ${copilotChatId !== chat.id ? 'opacity-0 transition-opacity group-hover:opacity-100' : ''}`}
+                                        >
+                                          <Button
+                                            variant='ghost'
+                                            className='h-[16px] w-[16px] p-0'
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleCopilotDeleteChat(chat.id)
+                                            }}
+                                            aria-label='Delete chat'
+                                          >
+                                            <Trash className='h-[10px] w-[10px]' />
+                                          </Button>
+                                        </div>
+                                      }
+                                    />
+                                  </PopoverItem>
+                                </div>
+                              ))}
+                            </div>
+                          </PopoverScrollArea>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+
+                <MothershipChat
+                  className='min-h-0 flex-1'
+                  messages={copilotMessages}
+                  isSending={copilotIsSending}
+                  onSubmit={handleCopilotSubmit}
+                  onStopGeneration={copilotStopGeneration}
+                  messageQueue={copilotMessageQueue}
+                  onRemoveQueuedMessage={copilotRemoveFromQueue}
+                  onSendQueuedMessage={copilotSendNow}
+                  onEditQueuedMessage={handleCopilotEditQueuedMessage}
+                  userId={session?.user?.id}
+                  editValue={copilotEditingInputValue}
+                  onEditValueConsumed={clearCopilotEditingValue}
+                  layout='copilot-view'
+                />
               </div>
             )}
             <div

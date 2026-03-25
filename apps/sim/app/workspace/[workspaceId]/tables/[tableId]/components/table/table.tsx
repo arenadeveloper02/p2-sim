@@ -196,6 +196,18 @@ export function Table({
   const columnWidthsRef = useRef(columnWidths)
   columnWidthsRef.current = columnWidths
   const [resizingColumn, setResizingColumn] = useState<string | null>(null)
+  const [columnOrder, setColumnOrder] = useState<string[] | null>(null)
+  const columnOrderRef = useRef(columnOrder)
+  columnOrderRef.current = columnOrder
+  const [dragColumnName, setDragColumnName] = useState<string | null>(null)
+  const dragColumnNameRef = useRef(dragColumnName)
+  dragColumnNameRef.current = dragColumnName
+  const [dropTargetColumnName, setDropTargetColumnName] = useState<string | null>(null)
+  const dropTargetColumnNameRef = useRef(dropTargetColumnName)
+  dropTargetColumnNameRef.current = dropTargetColumnName
+  const [dropSide, setDropSide] = useState<'left' | 'right'>('left')
+  const dropSideRef = useRef(dropSide)
+  dropSideRef.current = dropSide
   const metadataSeededRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -208,6 +220,9 @@ export function Table({
   })
 
   const userPermissions = useUserPermissionsContext()
+  const canEditRef = useRef(userPermissions.canEdit)
+  canEditRef.current = userPermissions.canEdit
+
   const {
     contextMenu,
     handleRowContextMenu: baseHandleRowContextMenu,
@@ -236,6 +251,23 @@ export function Table({
     [tableData?.schema?.columns]
   )
 
+  const displayColumns = useMemo(() => {
+    if (!columnOrder || columnOrder.length === 0) return columns
+    const colMap = new Map(columns.map((c) => [c.name, c]))
+    const ordered: ColumnDefinition[] = []
+    for (const name of columnOrder) {
+      const col = colMap.get(name)
+      if (col) {
+        ordered.push(col)
+        colMap.delete(name)
+      }
+    }
+    for (const col of colMap.values()) {
+      ordered.push(col)
+    }
+    return ordered
+  }, [columns, columnOrder])
+
   const maxPosition = useMemo(() => (rows.length > 0 ? rows[rows.length - 1].position : -1), [rows])
   const maxPositionRef = useRef(maxPosition)
   maxPositionRef.current = maxPosition
@@ -255,23 +287,23 @@ export function Table({
     [selectionAnchor, selectionFocus]
   )
 
-  const displayColCount = isLoadingTable ? SKELETON_COL_COUNT : columns.length
+  const displayColCount = isLoadingTable ? SKELETON_COL_COUNT : displayColumns.length
   const tableWidth = useMemo(() => {
     const colsWidth = isLoadingTable
       ? displayColCount * COL_WIDTH
-      : columns.reduce((sum, col) => sum + (columnWidths[col.name] ?? COL_WIDTH), 0)
+      : displayColumns.reduce((sum, col) => sum + (columnWidths[col.name] ?? COL_WIDTH), 0)
     return CHECKBOX_COL_WIDTH + colsWidth + ADD_COL_WIDTH
-  }, [isLoadingTable, displayColCount, columns, columnWidths])
+  }, [isLoadingTable, displayColCount, displayColumns, columnWidths])
 
   const resizeIndicatorLeft = useMemo(() => {
     if (!resizingColumn) return 0
     let left = CHECKBOX_COL_WIDTH
-    for (const col of columns) {
+    for (const col of displayColumns) {
       left += columnWidths[col.name] ?? COL_WIDTH
       if (col.name === resizingColumn) return left
     }
     return 0
-  }, [resizingColumn, columns, columnWidths])
+  }, [resizingColumn, displayColumns, columnWidths])
 
   const isAllRowsSelected = useMemo(() => {
     if (checkedRows.size > 0 && rows.length > 0 && checkedRows.size >= rows.length) {
@@ -286,14 +318,15 @@ export function Table({
       normalizedSelection.startRow === 0 &&
       normalizedSelection.endRow === maxPosition &&
       normalizedSelection.startCol === 0 &&
-      normalizedSelection.endCol === columns.length - 1
+      normalizedSelection.endCol === displayColumns.length - 1
     )
-  }, [checkedRows, normalizedSelection, maxPosition, columns.length, rows])
+  }, [checkedRows, normalizedSelection, maxPosition, displayColumns.length, rows])
 
   const isAllRowsSelectedRef = useRef(isAllRowsSelected)
   isAllRowsSelectedRef.current = isAllRowsSelected
 
-  const columnsRef = useRef(columns)
+  const columnsRef = useRef(displayColumns)
+  const schemaColumnsRef = useRef(columns)
   const rowsRef = useRef(rows)
   const selectionAnchorRef = useRef(selectionAnchor)
   const selectionFocusRef = useRef(selectionFocus)
@@ -301,7 +334,8 @@ export function Table({
   const checkedRowsRef = useRef(checkedRows)
   checkedRowsRef.current = checkedRows
 
-  columnsRef.current = columns
+  columnsRef.current = displayColumns
+  schemaColumnsRef.current = columns
   rowsRef.current = rows
   selectionAnchorRef.current = selectionAnchor
   selectionFocusRef.current = selectionFocus
@@ -326,10 +360,20 @@ export function Table({
   const columnRename = useInlineRename({
     onSave: (columnName, newName) => {
       pushUndoRef.current({ type: 'rename-column', oldName: columnName, newName })
-      setColumnWidths((prev) => {
-        if (!(columnName in prev)) return prev
-        return { ...prev, [newName]: prev[columnName] }
-      })
+      let updatedWidths = columnWidthsRef.current
+      if (columnName in updatedWidths) {
+        const { [columnName]: width, ...rest } = updatedWidths
+        updatedWidths = { ...rest, [newName]: width }
+        setColumnWidths(updatedWidths)
+      }
+      const updatedOrder = columnOrderRef.current?.map((n) => (n === columnName ? newName : n))
+      if (updatedOrder) {
+        setColumnOrder(updatedOrder)
+        updateMetadataRef.current({
+          columnWidths: updatedWidths,
+          columnOrder: updatedOrder,
+        })
+      }
       updateColumnMutation.mutate({ columnName, updates: { name: newName } })
     },
   })
@@ -604,11 +648,58 @@ export function Table({
     updateMetadataRef.current({ columnWidths: columnWidthsRef.current })
   }, [])
 
+  const handleColumnDragStart = useCallback((columnName: string) => {
+    setDragColumnName(columnName)
+  }, [])
+
+  const handleColumnDragOver = useCallback((columnName: string, side: 'left' | 'right') => {
+    if (columnName === dropTargetColumnNameRef.current && side === dropSideRef.current) return
+    setDropTargetColumnName(columnName)
+    setDropSide(side)
+  }, [])
+
+  const handleColumnDragEnd = useCallback(() => {
+    const dragged = dragColumnNameRef.current
+    if (!dragged) return
+    const target = dropTargetColumnNameRef.current
+    const side = dropSideRef.current
+    if (target && dragged !== target) {
+      const cols = columnsRef.current
+      const currentOrder = columnOrderRef.current ?? cols.map((c) => c.name)
+      const fromIndex = currentOrder.indexOf(dragged)
+      const toIndex = currentOrder.indexOf(target)
+      if (fromIndex !== -1 && toIndex !== -1) {
+        const newOrder = currentOrder.filter((n) => n !== dragged)
+        let insertIndex = newOrder.indexOf(target)
+        if (side === 'right') insertIndex += 1
+        newOrder.splice(insertIndex, 0, dragged)
+        setColumnOrder(newOrder)
+        updateMetadataRef.current({
+          columnWidths: columnWidthsRef.current,
+          columnOrder: newOrder,
+        })
+      }
+    }
+    setDragColumnName(null)
+    setDropTargetColumnName(null)
+  }, [])
+
+  const handleColumnDragLeave = useCallback(() => {
+    dropTargetColumnNameRef.current = null
+    setDropTargetColumnName(null)
+  }, [])
+
   useEffect(() => {
-    if (!tableData?.metadata?.columnWidths || metadataSeededRef.current) return
+    if (!tableData?.metadata || metadataSeededRef.current) return
+    if (!tableData.metadata.columnWidths && !tableData.metadata.columnOrder) return
     metadataSeededRef.current = true
-    setColumnWidths(tableData.metadata.columnWidths)
-  }, [tableData?.metadata?.columnWidths])
+    if (tableData.metadata.columnWidths) {
+      setColumnWidths(tableData.metadata.columnWidths)
+    }
+    if (tableData.metadata.columnOrder) {
+      setColumnOrder(tableData.metadata.columnOrder)
+    }
+  }, [tableData?.metadata])
 
   useEffect(() => {
     const handleMouseUp = () => {
@@ -633,6 +724,7 @@ export function Table({
   const handleCellClick = useCallback((rowId: string, columnName: string) => {
     const column = columnsRef.current.find((c) => c.name === columnName)
     if (column?.type === 'boolean') {
+      if (!canEditRef.current) return
       const row = rowsRef.current.find((r) => r.id === rowId)
       if (row) {
         toggleBooleanCell(rowId, columnName, row.data[columnName])
@@ -647,6 +739,7 @@ export function Table({
   }, [])
 
   const handleCellDoubleClick = useCallback((rowId: string, columnName: string) => {
+    if (!canEditRef.current) return
     const column = columnsRef.current.find((c) => c.name === columnName)
     if (!column || column.type === 'boolean') return
 
@@ -739,6 +832,7 @@ export function Table({
 
       if ((e.key === 'Delete' || e.key === 'Backspace') && checkedRowsRef.current.size > 0) {
         if (editingCellRef.current) return
+        if (!canEditRef.current) return
         e.preventDefault()
         const checked = checkedRowsRef.current
         const pMap = positionMapRef.current
@@ -770,6 +864,7 @@ export function Table({
       const totalRows = mp + 1
 
       if (e.shiftKey && e.key === 'Enter') {
+        if (!canEditRef.current) return
         const row = positionMapRef.current.get(anchor.rowIndex)
         if (!row) return
         e.preventDefault()
@@ -792,6 +887,7 @@ export function Table({
       }
 
       if (e.key === 'Enter' || e.key === 'F2') {
+        if (!canEditRef.current) return
         e.preventDefault()
         const col = cols[anchor.colIndex]
         if (!col) return
@@ -809,6 +905,7 @@ export function Table({
       }
 
       if (e.key === ' ' && !e.shiftKey) {
+        if (!canEditRef.current) return
         e.preventDefault()
         const row = positionMapRef.current.get(anchor.rowIndex)
         if (row) {
@@ -861,6 +958,7 @@ export function Table({
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (!canEditRef.current) return
         e.preventDefault()
         const sel = computeNormalizedSelection(anchor, selectionFocusRef.current)
         if (!sel) return
@@ -888,6 +986,7 @@ export function Table({
       }
 
       if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (!canEditRef.current) return
         const col = cols[anchor.colIndex]
         if (!col || col.type === 'boolean') return
         if (col.type === 'number' && !/[\d.-]/.test(e.key)) return
@@ -957,6 +1056,7 @@ export function Table({
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       if (editingCellRef.current) return
+      if (!canEditRef.current) return
 
       const checked = checkedRowsRef.current
       const cols = columnsRef.current
@@ -1029,6 +1129,7 @@ export function Table({
     const handlePaste = (e: ClipboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (!canEditRef.current) return
 
       const currentAnchor = selectionAnchorRef.current
       if (!currentAnchor || editingCellRef.current) return
@@ -1201,7 +1302,7 @@ export function Table({
   }, [])
 
   const generateColumnName = useCallback(() => {
-    const existing = columnsRef.current.map((c) => c.name.toLowerCase())
+    const existing = schemaColumnsRef.current.map((c) => c.name.toLowerCase())
     let name = 'untitled'
     let i = 2
     while (existing.includes(name.toLowerCase())) {
@@ -1213,7 +1314,7 @@ export function Table({
 
   const handleAddColumn = useCallback(() => {
     const name = generateColumnName()
-    const position = columnsRef.current.length
+    const position = schemaColumnsRef.current.length
     addColumnMutation.mutate(
       { name, type: 'string' },
       {
@@ -1237,9 +1338,30 @@ export function Table({
     updateColumnMutation.mutate({ columnName, updates: { type: newType } })
   }, [])
 
+  const insertColumnInOrder = useCallback(
+    (anchorColumn: string, newColumn: string, side: 'left' | 'right') => {
+      const order = columnOrderRef.current
+      if (!order) return
+      const newOrder = [...order]
+      let anchorIdx = newOrder.indexOf(anchorColumn)
+      if (anchorIdx === -1) {
+        newOrder.push(anchorColumn)
+        anchorIdx = newOrder.length - 1
+      }
+      const insertIdx = anchorIdx + (side === 'right' ? 1 : 0)
+      newOrder.splice(insertIdx, 0, newColumn)
+      setColumnOrder(newOrder)
+      updateMetadataRef.current({
+        columnWidths: columnWidthsRef.current,
+        columnOrder: newOrder,
+      })
+    },
+    []
+  )
+
   const handleInsertColumnLeft = useCallback(
     (columnName: string) => {
-      const index = columnsRef.current.findIndex((c) => c.name === columnName)
+      const index = schemaColumnsRef.current.findIndex((c) => c.name === columnName)
       if (index === -1) return
       const name = generateColumnName()
       addColumnMutation.mutate(
@@ -1247,16 +1369,17 @@ export function Table({
         {
           onSuccess: () => {
             pushUndoRef.current({ type: 'create-column', columnName: name, position: index })
+            insertColumnInOrder(columnName, name, 'left')
           },
         }
       )
     },
-    [generateColumnName]
+    [generateColumnName, insertColumnInOrder]
   )
 
   const handleInsertColumnRight = useCallback(
     (columnName: string) => {
-      const index = columnsRef.current.findIndex((c) => c.name === columnName)
+      const index = schemaColumnsRef.current.findIndex((c) => c.name === columnName)
       if (index === -1) return
       const name = generateColumnName()
       const position = index + 1
@@ -1265,11 +1388,12 @@ export function Table({
         {
           onSuccess: () => {
             pushUndoRef.current({ type: 'create-column', columnName: name, position })
+            insertColumnInOrder(columnName, name, 'right')
           },
         }
       )
     },
-    [generateColumnName]
+    [generateColumnName, insertColumnInOrder]
   )
 
   const handleToggleUnique = useCallback((columnName: string) => {
@@ -1297,8 +1421,20 @@ export function Table({
 
   const handleDeleteColumnConfirm = useCallback(() => {
     if (!deletingColumn) return
-    deleteColumnMutation.mutate(deletingColumn)
+    const columnToDelete = deletingColumn
     setDeletingColumn(null)
+    deleteColumnMutation.mutate(columnToDelete, {
+      onSuccess: () => {
+        const order = columnOrderRef.current
+        if (!order) return
+        const newOrder = order.filter((n) => n !== columnToDelete)
+        setColumnOrder(newOrder)
+        updateMetadataRef.current({
+          columnWidths: columnWidthsRef.current,
+          columnOrder: newOrder,
+        })
+      },
+    })
   }, [deletingColumn])
 
   const handleSortChange = useCallback((column: string, direction: SortDirection) => {
@@ -1314,13 +1450,13 @@ export function Table({
   }, [])
   const columnOptions = useMemo<ColumnOption[]>(
     () =>
-      columns.map((col) => ({
+      displayColumns.map((col) => ({
         id: col.name,
         label: col.name,
         type: col.type,
         icon: COLUMN_TYPE_ICONS[col.type],
       })),
-    [columns]
+    [displayColumns]
   )
 
   const tableDataRef = useRef(tableData)
@@ -1391,8 +1527,8 @@ export function Table({
   )
 
   const filterElement = useMemo(
-    () => <TableFilter columns={columns} onApply={handleFilterApply} />,
-    [columns, handleFilterApply]
+    () => <TableFilter columns={displayColumns} onApply={handleFilterApply} />,
+    [displayColumns, handleFilterApply]
   )
 
   const activeSortState = useMemo(() => {
@@ -1488,7 +1624,7 @@ export function Table({
                 <col style={{ width: ADD_COL_WIDTH }} />
               </colgroup>
             ) : (
-              <TableColGroup columns={columns} columnWidths={columnWidths} />
+              <TableColGroup columns={displayColumns} columnWidths={columnWidths} />
             )}
             <thead className='sticky top-0 z-10'>
               {isLoadingTable ? (
@@ -1519,10 +1655,11 @@ export function Table({
                     checked={isAllRowsSelected}
                     onCheckedChange={handleSelectAllToggle}
                   />
-                  {columns.map((column) => (
+                  {displayColumns.map((column) => (
                     <ColumnHeaderMenu
                       key={column.name}
                       column={column}
+                      readOnly={!userPermissions.canEdit}
                       isRenaming={columnRename.editingId === column.name}
                       renameValue={
                         columnRename.editingId === column.name ? columnRename.editValue : ''
@@ -1539,12 +1676,21 @@ export function Table({
                       onResizeStart={handleColumnResizeStart}
                       onResize={handleColumnResize}
                       onResizeEnd={handleColumnResizeEnd}
+                      isDragging={dragColumnName === column.name}
+                      isDropTarget={dropTargetColumnName === column.name}
+                      dropSide={dropTargetColumnName === column.name ? dropSide : undefined}
+                      onDragStart={handleColumnDragStart}
+                      onDragOver={handleColumnDragOver}
+                      onDragEnd={handleColumnDragEnd}
+                      onDragLeave={handleColumnDragLeave}
                     />
                   ))}
-                  <AddColumnButton
-                    onClick={handleAddColumn}
-                    disabled={addColumnMutation.isPending}
-                  />
+                  {userPermissions.canEdit && (
+                    <AddColumnButton
+                      onClick={handleAddColumn}
+                      disabled={addColumnMutation.isPending}
+                    />
+                  )}
                 </tr>
               )}
             </thead>
@@ -1562,7 +1708,7 @@ export function Table({
                           <PositionGapRows
                             count={gapCount}
                             startPosition={prevPosition + 1}
-                            columns={columns}
+                            columns={displayColumns}
                             normalizedSelection={normalizedSelection}
                             checkedRows={checkedRows}
                             firstRowUnderHeader={prevPosition === -1}
@@ -1573,7 +1719,7 @@ export function Table({
                         )}
                         <DataRow
                           row={row}
-                          columns={columns}
+                          columns={displayColumns}
                           rowIndex={row.position}
                           isFirstRow={row.position === 0}
                           editingColumnName={
@@ -2414,6 +2560,7 @@ const COLUMN_TYPE_OPTIONS: { type: string; label: string; icon: React.ElementTyp
 
 const ColumnHeaderMenu = React.memo(function ColumnHeaderMenu({
   column,
+  readOnly,
   isRenaming,
   renameValue,
   onRenameValueChange,
@@ -2428,8 +2575,16 @@ const ColumnHeaderMenu = React.memo(function ColumnHeaderMenu({
   onResizeStart,
   onResize,
   onResizeEnd,
+  isDragging,
+  isDropTarget,
+  dropSide,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  onDragLeave,
 }: {
   column: ColumnDefinition
+  readOnly?: boolean
   isRenaming: boolean
   renameValue: string
   onRenameValueChange: (value: string) => void
@@ -2444,6 +2599,13 @@ const ColumnHeaderMenu = React.memo(function ColumnHeaderMenu({
   onResizeStart: (columnName: string) => void
   onResize: (columnName: string, width: number) => void
   onResizeEnd: () => void
+  isDragging?: boolean
+  isDropTarget?: boolean
+  dropSide?: 'left' | 'right'
+  onDragStart?: (columnName: string) => void
+  onDragOver?: (columnName: string, side: 'left' | 'right') => void
+  onDragEnd?: () => void
+  onDragLeave?: () => void
 }) {
   const renameInputRef = useRef<HTMLInputElement>(null)
 
@@ -2485,8 +2647,68 @@ const ColumnHeaderMenu = React.memo(function ColumnHeaderMenu({
     [column.name, onResizeStart, onResize, onResizeEnd]
   )
 
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      if (readOnly || isRenaming) {
+        e.preventDefault()
+        return
+      }
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', column.name)
+      onDragStart?.(column.name)
+    },
+    [column.name, readOnly, isRenaming, onDragStart]
+  )
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const midX = rect.left + rect.width / 2
+      const side = e.clientX < midX ? 'left' : 'right'
+      onDragOver?.(column.name, side)
+    },
+    [column.name, onDragOver]
+  )
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    onDragEnd?.()
+  }, [onDragEnd])
+
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      const th = e.currentTarget as HTMLElement
+      const related = e.relatedTarget as Node | null
+      if (related && th.contains(related)) return
+      onDragLeave?.()
+    },
+    [onDragLeave]
+  )
+
   return (
-    <th className='relative border-[var(--border)] border-r border-b bg-[var(--bg)] p-0 text-left align-middle'>
+    <th
+      className={cn(
+        'relative border-[var(--border)] border-r border-b bg-[var(--bg)] p-0 text-left align-middle',
+        isDragging && 'opacity-40'
+      )}
+      draggable={!readOnly && !isRenaming}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      onDragEnd={handleDragEnd}
+      onDragLeave={handleDragLeave}
+    >
+      {isDropTarget && dropSide === 'left' && (
+        <div className='pointer-events-none absolute top-0 bottom-0 left-[-1px] z-10 w-[2px] bg-[var(--selection)]' />
+      )}
+      {isDropTarget && dropSide === 'right' && (
+        <div className='pointer-events-none absolute top-0 right-[-1px] bottom-0 z-10 w-[2px] bg-[var(--selection)]' />
+      )}
       {isRenaming ? (
         <div className='flex h-full w-full min-w-0 items-center px-[8px] py-[7px]'>
           <ColumnTypeIcon type={column.type} />
@@ -2503,15 +2725,22 @@ const ColumnHeaderMenu = React.memo(function ColumnHeaderMenu({
             className='ml-[6px] min-w-0 flex-1 border-0 bg-transparent p-0 font-medium text-[13px] text-[var(--text-primary)] outline-none focus:outline-none focus:ring-0'
           />
         </div>
+      ) : readOnly ? (
+        <div className='flex h-full w-full min-w-0 items-center px-[8px] py-[7px]'>
+          <ColumnTypeIcon type={column.type} />
+          <span className='ml-[6px] min-w-0 overflow-clip text-ellipsis whitespace-nowrap font-medium text-[13px] text-[var(--text-primary)]'>
+            {column.name}
+          </span>
+        </div>
       ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type='button'
-              className='flex h-full w-full min-w-0 cursor-pointer items-center px-[8px] py-[7px] outline-none'
+              className='flex h-full w-full min-w-0 cursor-grab items-center px-[8px] py-[7px] outline-none active:cursor-grabbing'
             >
               <ColumnTypeIcon type={column.type} />
-              <span className='ml-[6px] min-w-0 truncate font-medium text-[13px] text-[var(--text-primary)]'>
+              <span className='ml-[6px] min-w-0 overflow-clip text-ellipsis whitespace-nowrap font-medium text-[13px] text-[var(--text-primary)]'>
                 {column.name}
               </span>
               <ChevronDown className='ml-[8px] h-[7px] w-[9px] shrink-0 text-[var(--text-muted)]' />
@@ -2564,6 +2793,8 @@ const ColumnHeaderMenu = React.memo(function ColumnHeaderMenu({
       )}
       <div
         className='-right-[3px] absolute top-0 z-[1] h-full w-[6px] cursor-col-resize'
+        draggable={false}
+        onDragStart={(e) => e.stopPropagation()}
         onPointerDown={handleResizePointerDown}
       />
     </th>

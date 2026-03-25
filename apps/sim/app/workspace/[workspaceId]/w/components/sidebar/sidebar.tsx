@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { MoreHorizontal } from 'lucide-react'
+import { Compass, MoreHorizontal } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
@@ -22,6 +22,7 @@ import {
   Tooltip,
 } from '@/components/emcn'
 import {
+  BookOpen,
   Calendar,
   Database,
   File,
@@ -35,6 +36,11 @@ import {
 } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
+import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
+import {
+  START_NAV_TOUR_EVENT,
+  START_WORKFLOW_TOUR_EVENT,
+} from '@/app/workspace/[workspaceId]/components/product-tour'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -198,27 +204,43 @@ const SidebarNavItem = memo(function SidebarNavItem({
     'group flex h-[30px] items-center gap-[8px] rounded-[8px] mx-[2px] px-[8px] text-[14px] hover:bg-[var(--surface-active)]'
   const activeClasses = active ? 'bg-[var(--surface-active)]' : ''
 
-  const element = item.onClick ? (
+  const content = (
+    <>
+      <Icon className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+      <span className='truncate font-base text-[var(--text-body)]'>{item.label}</span>
+    </>
+  )
+
+  const element = item.href ? (
+    <Link
+      href={item.href}
+      data-item-id={item.id}
+      data-tour={`nav-${item.id}`}
+      className={`${baseClasses} ${activeClasses}`}
+      onClick={
+        item.onClick
+          ? (e) => {
+              if (e.ctrlKey || e.metaKey || e.shiftKey) return
+              e.preventDefault()
+              item.onClick!()
+            }
+          : undefined
+      }
+      onContextMenu={onContextMenu ? (e) => onContextMenu(e, item.href!) : undefined}
+    >
+      {content}
+    </Link>
+  ) : item.onClick ? (
     <button
       type='button'
       data-item-id={item.id}
+      data-tour={`nav-${item.id}`}
       className={`${baseClasses} ${activeClasses}`}
       onClick={item.onClick}
     >
-      <Icon className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
-      <span className='truncate font-base text-[var(--text-body)]'>{item.label}</span>
+      {content}
     </button>
-  ) : (
-    <Link
-      href={item.href!}
-      data-item-id={item.id}
-      className={`${baseClasses} ${activeClasses}`}
-      onContextMenu={onContextMenu ? (e) => onContextMenu(e, item.href!) : undefined}
-    >
-      <Icon className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
-      <span className='truncate font-base text-[var(--text-body)]'>{item.label}</span>
-    </Link>
-  )
+  ) : null
 
   return (
     <Tooltip.Root>
@@ -262,7 +284,7 @@ export const Sidebar = memo(function Sidebar() {
   const { data: sessionData, isPending: sessionLoading } = useSession()
   const { canEdit } = useUserPermissionsContext()
   const { config: permissionConfig, filterBlocks } = usePermissionConfig()
-  const { navigateToSettings } = useSettingsNavigation()
+  const { navigateToSettings, getSettingsHref } = useSettingsNavigation()
   const initializeSearchData = useSearchModalStore((state) => state.initializeData)
 
   useEffect(() => {
@@ -582,15 +604,10 @@ export const Sidebar = memo(function Sidebar() {
   const footerItems = useMemo(
     () => [
       {
-        id: 'help',
-        label: 'Help',
-        icon: HelpCircle,
-        onClick: () => setIsHelpModalOpen(true),
-      },
-      {
         id: 'settings',
         label: 'Settings',
         icon: Settings,
+        href: getSettingsHref(),
         onClick: () => {
           if (!isCollapsed) {
             setSidebarWidth(SIDEBAR_WIDTH.MIN)
@@ -599,8 +616,14 @@ export const Sidebar = memo(function Sidebar() {
         },
       },
     ],
-    [workspaceId, navigateToSettings, isCollapsed, setSidebarWidth]
+    [workspaceId, navigateToSettings, getSettingsHref, isCollapsed, setSidebarWidth]
   )
+
+  const handleStartTour = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent(isOnWorkflowPage ? START_WORKFLOW_TOUR_EVENT : START_NAV_TOUR_EVENT)
+    )
+  }, [isOnWorkflowPage])
 
   const { data: fetchedTasks = [], isLoading: tasksLoading } = useTasks(workspaceId)
 
@@ -1118,7 +1141,7 @@ export const Sidebar = memo(function Sidebar() {
                 )}
               >
                 {/* Tasks */}
-                <div className='flex flex-shrink-0 flex-col'>
+                <div className='tasks-section flex flex-shrink-0 flex-col' data-tour='nav-tasks'>
                   <div className='flex h-[18px] flex-shrink-0 items-center justify-between px-[16px]'>
                     <div className='font-base text-[var(--text-icon)] text-small'>All tasks</div>
                     {!isCollapsed && (
@@ -1159,16 +1182,11 @@ export const Sidebar = memo(function Sidebar() {
                         tasks.map((task) => (
                           <DropdownMenuItem key={task.id} asChild>
                             <Link href={task.href}>
-                              <span className='relative flex-shrink-0'>
-                                <Blimp className='h-[16px] w-[16px]' />
-                                {task.isActive && (
-                                  <span className='-bottom-[1px] -right-[1px] absolute h-[6px] w-[6px] rounded-full border border-[var(--surface-1)] bg-amber-400' />
-                                )}
-                                {!task.isActive && task.isUnread && (
-                                  <span className='-bottom-[1px] -right-[1px] absolute h-[6px] w-[6px] rounded-full border border-[var(--surface-1)] bg-[#33C482]' />
-                                )}
-                              </span>
-                              <span>{task.name}</span>
+                              <ConversationListItem
+                                title={task.name}
+                                isActive={task.isActive}
+                                isUnread={task.isUnread}
+                              />
                             </Link>
                           </DropdownMenuItem>
                         ))
@@ -1237,7 +1255,10 @@ export const Sidebar = memo(function Sidebar() {
                 </div>
 
                 {/* Workflows */}
-                <div className='workflows-section relative mt-[14px] flex flex-col'>
+                <div
+                  className='workflows-section relative mt-[14px] flex flex-col'
+                  data-tour='nav-workflows'
+                >
                   <div className='flex h-[18px] flex-shrink-0 items-center justify-between px-[16px]'>
                     <div className='font-base text-[var(--text-icon)] text-small'>Workflows</div>
                     {!isCollapsed && (
@@ -1379,12 +1400,56 @@ export const Sidebar = memo(function Sidebar() {
                   !hasOverflowBottom && 'border-transparent'
                 )}
               >
+                {/* Help dropdown */}
+                <DropdownMenu>
+                  <Tooltip.Root>
+                    <DropdownMenuTrigger asChild>
+                      <Tooltip.Trigger asChild>
+                        <button
+                          type='button'
+                          data-item-id='help'
+                          className='group mx-[2px] flex h-[30px] items-center gap-[8px] rounded-[8px] px-[8px] text-[14px] hover:bg-[var(--surface-active)]'
+                        >
+                          <HelpCircle className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+                          <span className='sidebar-collapse-hide truncate font-base text-[var(--text-body)]'>
+                            Help
+                          </span>
+                        </button>
+                      </Tooltip.Trigger>
+                    </DropdownMenuTrigger>
+                    {showCollapsedContent && (
+                      <Tooltip.Content side='right'>
+                        <p>Help</p>
+                      </Tooltip.Content>
+                    )}
+                  </Tooltip.Root>
+                  <DropdownMenuContent align='start' side='top' sideOffset={4}>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        window.open('https://docs.sim.ai', '_blank', 'noopener,noreferrer')
+                      }
+                    >
+                      <BookOpen className='h-[14px] w-[14px]' />
+                      Docs
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setIsHelpModalOpen(true)}>
+                      <HelpCircle className='h-[14px] w-[14px]' />
+                      Report an issue
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={handleStartTour}>
+                      <Compass className='h-[14px] w-[14px]' />
+                      Take a tour
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
                 {footerItems.map((item) => (
                   <SidebarNavItem
                     key={`${item.id}-${isCollapsed}`}
                     item={item}
                     active={false}
                     showCollapsedContent={showCollapsedContent}
+                    onContextMenu={item.href ? handleNavItemContextMenu : undefined}
                   />
                 ))}
               </div>

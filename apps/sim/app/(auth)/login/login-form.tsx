@@ -1,7 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
-import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
+import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
@@ -88,8 +87,6 @@ export default function LoginPage({
   const [passwordErrors, setPasswordErrors] = useState<string[]>([])
   const [showValidationError, setShowValidationError] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const turnstileRef = useRef<TurnstileInstance>(null)
-  const turnstileSiteKey = useMemo(() => getEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY'), [])
   const buttonClass = useBrandedButtonClass()
 
   const callbackUrlParam = searchParams?.get('callbackUrl')
@@ -169,20 +166,6 @@ export default function LoginPage({
       const safeCallbackUrl = callbackUrl
       let errorHandled = false
 
-      // Execute Turnstile challenge on submit and get a fresh token
-      let token: string | undefined
-      if (turnstileSiteKey && turnstileRef.current) {
-        try {
-          turnstileRef.current.reset()
-          turnstileRef.current.execute()
-          token = await turnstileRef.current.getResponsePromise(15_000)
-        } catch {
-          setFormError('Captcha verification failed. Please try again.')
-          setIsLoading(false)
-          return
-        }
-      }
-
       setFormError(null)
       const result = await client.signIn.email(
         {
@@ -191,11 +174,6 @@ export default function LoginPage({
           callbackURL: safeCallbackUrl,
         },
         {
-          fetchOptions: {
-            headers: {
-              ...(token ? { 'x-captcha-response': token } : {}),
-            },
-          },
           onError: (ctx) => {
             logger.error('Login error:', ctx.error)
 
@@ -383,13 +361,6 @@ export default function LoginPage({
         </div>
       )}
 
-      {/* Password reset success message */}
-      {resetSuccessMessage && (
-        <div className='mt-1 space-y-1 text-[#4CAF50] text-xs'>
-          <p>{resetSuccessMessage}</p>
-        </div>
-      )}
-
       {/* Email/Password Form - show unless explicitly disabled */}
       {!isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED')) && (
         <form onSubmit={onSubmit} className='mt-8 space-y-8'>
@@ -471,12 +442,10 @@ export default function LoginPage({
             </div>
           </div>
 
-          {turnstileSiteKey && (
-            <Turnstile
-              ref={turnstileRef}
-              siteKey={turnstileSiteKey}
-              options={{ size: 'invisible', execution: 'execute' }}
-            />
+          {resetSuccessMessage && (
+            <div className='text-[#4CAF50] text-xs'>
+              <p>{resetSuccessMessage}</p>
+            </div>
           )}
 
           {formError && (
