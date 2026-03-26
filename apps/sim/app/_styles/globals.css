@@ -329,7 +329,7 @@
 @layer base {
   * {
     border-color: var(--border);
-    overscroll-behavior-x: none;
+    /*overscroll-behavior-x: none;*/
   }
 
   *:focus {
