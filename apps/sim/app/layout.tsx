@@ -2,9 +2,12 @@ import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import { PublicEnvScript } from 'next-runtime-env'
 import { BrandedLayout } from '@/components/branded-layout'
-import { generateThemeCSS } from '@/lib/branding/inject-theme'
-import { generateBrandedMetadata, generateStructuredData } from '@/lib/branding/metadata'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
+import {
+  generateBrandedMetadata,
+  generateStructuredData,
+  generateThemeCSS,
+} from '@/ee/whitelabeling'
 import '@/app/_styles/globals.css'
 import { OneDollarStats } from '@/components/analytics/onedollarstats'
 import { isReactGrabEnabled, isReactScanEnabled } from '@/lib/core/config/feature-flags'
@@ -35,6 +38,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang='en' suppressHydrationWarning>
       <head>
+        {/* Polyfill crypto.randomUUID for non-secure contexts (HTTP on non-localhost) */}
+        <script
+          id='crypto-randomuuid-polyfill'
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (typeof crypto !== 'undefined' && typeof crypto.randomUUID !== 'function' && typeof crypto.getRandomValues === 'function') {
+                crypto.randomUUID = function() {
+                  var a = new Uint8Array(16);
+                  crypto.getRandomValues(a);
+                  a[6] = (a[6] & 0x0f) | 0x40;
+                  a[8] = (a[8] & 0x3f) | 0x80;
+                  var h = Array.prototype.map.call(a, function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+                  return h.slice(0,8) + '-' + h.slice(8,12) + '-' + h.slice(12,16) + '-' + h.slice(16,20) + '-' + h.slice(20);
+                };
+              }
+            `,
+          }}
+        />
         {isReactScanEnabled && (
           <Script
             src='https://unpkg.com/react-scan/dist/auto.global.js'
@@ -119,13 +140,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   if (stored) {
                     var parsed = JSON.parse(stored);
                     var state = parsed && parsed.state;
-                    var width = state && state.sidebarWidth;
-                    var maxSidebarWidth = window.innerWidth * 0.3;
+                    var isCollapsed = state && state.isCollapsed;
 
-                    if (width >= 232 && width <= maxSidebarWidth) {
-                      document.documentElement.style.setProperty('--sidebar-width', width + 'px');
-                    } else if (width > maxSidebarWidth) {
-                      document.documentElement.style.setProperty('--sidebar-width', maxSidebarWidth + 'px');
+                    if (isCollapsed) {
+                      document.documentElement.style.setProperty('--sidebar-width', '51px');
+                      document.documentElement.setAttribute('data-sidebar-collapsed', '');
+                    } else {
+                      var width = state && state.sidebarWidth;
+                      var maxSidebarWidth = window.innerWidth * 0.3;
+
+                      if (width >= 248 && width <= maxSidebarWidth) {
+                        document.documentElement.style.setProperty('--sidebar-width', width + 'px');
+                      } else if (width > maxSidebarWidth) {
+                        document.documentElement.style.setProperty('--sidebar-width', maxSidebarWidth + 'px');
+                      }
                     }
                   }
                 } catch (e) {

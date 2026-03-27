@@ -9,13 +9,10 @@ import type { GlobalCommand } from '@/app/workspace/[workspaceId]/providers/glob
 export type CommandId =
   | 'accept-diff-changes'
   | 'add-agent'
-  | 'goto-templates'
+  // | 'goto-templates'
   | 'goto-logs'
   | 'open-search'
   | 'run-workflow'
-  | 'focus-copilot-tab'
-  | 'focus-toolbar-tab'
-  | 'focus-editor-tab'
   | 'clear-terminal-console'
   | 'focus-toolbar-search'
   | 'clear-notifications'
@@ -55,11 +52,11 @@ export const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
     shortcut: 'Mod+Shift+A',
     allowInEditable: true,
   },
-  'goto-templates': {
-    id: 'goto-templates',
-    shortcut: 'Mod+Y',
-    allowInEditable: true,
-  },
+  // 'goto-templates': {
+  //   id: 'goto-templates',
+  //   shortcut: 'Mod+Y',
+  //   allowInEditable: true,
+  // },
   'goto-logs': {
     id: 'goto-logs',
     shortcut: 'Mod+L',
@@ -73,21 +70,6 @@ export const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   'run-workflow': {
     id: 'run-workflow',
     shortcut: 'Mod+Enter',
-    allowInEditable: false,
-  },
-  'focus-copilot-tab': {
-    id: 'focus-copilot-tab',
-    shortcut: 'C',
-    allowInEditable: false,
-  },
-  'focus-toolbar-tab': {
-    id: 'focus-toolbar-tab',
-    shortcut: 'T',
-    allowInEditable: false,
-  },
-  'focus-editor-tab': {
-    id: 'focus-editor-tab',
-    shortcut: 'E',
     allowInEditable: false,
   },
   'clear-terminal-console': {

@@ -1,6 +1,6 @@
 import { ElasticsearchIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { ElasticsearchResponse } from '@/tools/elasticsearch/types'
 
 export const ElasticsearchBlock: BlockConfig<ElasticsearchResponse> = {
@@ -12,6 +12,8 @@ export const ElasticsearchBlock: BlockConfig<ElasticsearchResponse> = {
     'Integrate Elasticsearch into workflows for powerful search, indexing, and data management. Supports document CRUD operations, advanced search queries, bulk operations, index management, and cluster monitoring. Works with both self-hosted and Elastic Cloud deployments.',
   docsLink: 'https://docs.sim.ai/tools/elasticsearch',
   category: 'tools',
+  integrationType: IntegrationType.Databases,
+  tags: ['vector-search', 'data-analytics'],
   bgColor: '#E0E0E0',
   icon: ElasticsearchIcon,
   subBlocks: [
@@ -457,23 +459,18 @@ Return ONLY valid JSON - no explanations, no markdown code blocks.`,
     ],
     config: {
       tool: (params) => {
-        // Convert numeric strings to numbers
-        if (params.size) {
-          params.size = Number(params.size)
-        }
-        if (params.from) {
-          params.from = Number(params.from)
-        }
-        if (params.retryOnConflict) {
-          params.retryOnConflict = Number(params.retryOnConflict)
-        }
-        // Append 's' to timeout for Elasticsearch time format
-        if (params.timeout && !params.timeout.endsWith('s')) {
-          params.timeout = `${params.timeout}s`
-        }
-
         // Return the operation as the tool ID
         return params.operation || 'elasticsearch_search'
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.size) result.size = Number(params.size)
+        if (params.from) result.from = Number(params.from)
+        if (params.retryOnConflict) result.retryOnConflict = Number(params.retryOnConflict)
+        if (params.timeout && typeof params.timeout === 'string') {
+          result.timeout = params.timeout.endsWith('s') ? params.timeout : `${params.timeout}s`
+        }
+        return result
       },
     },
   },

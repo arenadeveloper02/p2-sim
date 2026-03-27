@@ -1,8 +1,11 @@
-import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
-import { buildZendeskUrl, handleZendeskError } from './types'
-
-const logger = createLogger('ZendeskAutocompleteOrganizations')
+import {
+  buildZendeskUrl,
+  handleZendeskError,
+  METADATA_OUTPUT,
+  ORGANIZATIONS_ARRAY_OUTPUT,
+  PAGING_OUTPUT,
+} from '@/tools/zendesk/types'
 
 export interface ZendeskAutocompleteOrganizationsParams {
   email: string
@@ -18,9 +21,9 @@ export interface ZendeskAutocompleteOrganizationsResponse {
   output: {
     organizations: any[]
     paging?: {
+      after_cursor: string | null
+      has_more: boolean
       next_page?: string | null
-      previous_page?: string | null
-      count: number
     }
     metadata: {
       total_returned: number
@@ -62,20 +65,20 @@ export const zendeskAutocompleteOrganizationsTool: ToolConfig<
     name: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'Organization name to search for',
+      visibility: 'user-or-llm',
+      description: 'Organization name prefix to search for (e.g., "Acme")',
     },
     perPage: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Results per page (default: 100, max: 100)',
+      visibility: 'user-or-llm',
+      description: 'Results per page as a number string (default: "100", max: "100")',
     },
     page: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Page number',
+      visibility: 'user-or-llm',
+      description: 'Page number for pagination (1-based)',
     },
   },
 
@@ -83,8 +86,8 @@ export const zendeskAutocompleteOrganizationsTool: ToolConfig<
     url: (params) => {
       const queryParams = new URLSearchParams()
       queryParams.append('name', params.name)
-      if (params.page) queryParams.append('page', params.page)
       if (params.perPage) queryParams.append('per_page', params.perPage)
+      if (params.page) queryParams.append('page', params.page)
 
       const query = queryParams.toString()
       const url = buildZendeskUrl(params.subdomain, '/organizations/autocomplete')
@@ -109,19 +112,22 @@ export const zendeskAutocompleteOrganizationsTool: ToolConfig<
 
     const data = await response.json()
     const organizations = data.organizations || []
+    const hasMore = data.next_page !== null && data.next_page !== undefined
 
     return {
       success: true,
       output: {
         organizations,
+        // /organizations/autocomplete uses offset pagination (page/per_page), not cursor pagination.
+        // after_cursor is always null; use next_page URL or page param for subsequent pages.
         paging: {
+          after_cursor: null,
+          has_more: hasMore,
           next_page: data.next_page ?? null,
-          previous_page: data.previous_page ?? null,
-          count: data.count || organizations.length,
         },
         metadata: {
           total_returned: organizations.length,
-          has_more: !!data.next_page,
+          has_more: hasMore,
         },
         success: true,
       },
@@ -129,30 +135,8 @@ export const zendeskAutocompleteOrganizationsTool: ToolConfig<
   },
 
   outputs: {
-    organizations: { type: 'array', description: 'Array of organization objects' },
-    paging: {
-      type: 'object',
-      description: 'Pagination information',
-      properties: {
-        next_page: { type: 'string', description: 'URL for next page of results', optional: true },
-        previous_page: {
-          type: 'string',
-          description: 'URL for previous page of results',
-          optional: true,
-        },
-        count: { type: 'number', description: 'Total count of organizations' },
-      },
-    },
-    metadata: {
-      type: 'object',
-      description: 'Response metadata',
-      properties: {
-        total_returned: {
-          type: 'number',
-          description: 'Number of organizations returned in this response',
-        },
-        has_more: { type: 'boolean', description: 'Whether more organizations are available' },
-      },
-    },
+    organizations: ORGANIZATIONS_ARRAY_OUTPUT,
+    paging: PAGING_OUTPUT,
+    metadata: METADATA_OUTPUT,
   },
 }

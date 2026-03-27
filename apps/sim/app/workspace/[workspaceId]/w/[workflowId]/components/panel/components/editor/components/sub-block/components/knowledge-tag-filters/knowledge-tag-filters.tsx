@@ -16,6 +16,7 @@ import { FIELD_TYPE_LABELS, getPlaceholderForFieldType } from '@/lib/knowledge/c
 import { type FilterFieldType, getOperatorsForFieldType } from '@/lib/knowledge/filters/types'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
+import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import type { SubBlockConfig } from '@/blocks/types'
@@ -68,8 +69,12 @@ export function KnowledgeTagFilters({
   const valueInputRefs = useRef<Record<string, HTMLInputElement>>({})
   const overlayRefs = useRef<Record<string, HTMLDivElement>>({})
 
-  const [knowledgeBaseIdFromStore] = useSubBlockValue(blockId, 'knowledgeBaseId')
-  const knowledgeBaseIdValue = previewContextValues?.knowledgeBaseId ?? knowledgeBaseIdFromStore
+  const { dependencyValues } = useDependsOnGate(blockId, subBlock, {
+    disabled,
+    isPreview,
+    previewContextValues,
+  })
+  const knowledgeBaseIdValue = dependencyValues.knowledgeBaseSelector
   const knowledgeBaseId =
     typeof knowledgeBaseIdValue === 'string' && knowledgeBaseIdValue.trim().length > 0
       ? knowledgeBaseIdValue
@@ -238,7 +243,9 @@ export function KnowledgeTagFilters({
           {filter.collapsed ? filter.tagName || `Filter ${index + 1}` : `Filter ${index + 1}`}
         </span>
         {filter.collapsed && filter.tagName && (
-          <Badge size='sm'>{FIELD_TYPE_LABELS[filter.fieldType] || 'Text'}</Badge>
+          <Badge variant='type' size='sm'>
+            {FIELD_TYPE_LABELS[filter.fieldType] || 'Text'}
+          </Badge>
         )}
       </div>
       <div className='flex items-center gap-[8px] pl-[8px]' onClick={(e) => e.stopPropagation()}>
@@ -307,7 +314,10 @@ export function KnowledgeTagFilters({
           ref={(el) => {
             if (el) overlayRefs.current[cellKey] = el
           }}
-          className='pointer-events-none absolute inset-0 flex items-center overflow-x-auto bg-transparent px-[8px] py-[6px] font-medium font-sans text-sm'
+          className={cn(
+            'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-[8px] py-[6px] font-medium font-sans text-sm',
+            !isReadOnly && 'pointer-events-none'
+          )}
         >
           <div className='w-full whitespace-pre' style={{ minWidth: 'fit-content' }}>
             {formatDisplayText(
@@ -350,7 +360,7 @@ export function KnowledgeTagFilters({
     const isBetween = filter.operator === 'between'
 
     return (
-      <div className='flex flex-col gap-[8px] border-[var(--border-1)] border-t px-[10px] pt-[6px] pb-[10px]'>
+      <div className='flex flex-col gap-[8px] rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-[10px] pt-[6px] pb-[10px]'>
         <div className='flex flex-col gap-[6px]'>
           <Label className='text-[13px]'>Tag</Label>
           <Combobox

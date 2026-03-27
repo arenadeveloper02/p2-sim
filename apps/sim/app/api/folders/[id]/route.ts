@@ -1,10 +1,12 @@
 import { db } from '@sim/db'
 import { workflow, workflowFolder } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
+import { archiveWorkflowsByIdsInWorkspace } from '@/lib/workflows/lifecycle'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('FoldersIDAPI')
@@ -150,7 +152,7 @@ export async function DELETE(
     const totalWorkflowsInWorkspace = await db
       .select({ id: workflow.id })
       .from(workflow)
-      .where(eq(workflow.workspaceId, existingFolder.workspaceId))
+      .where(and(eq(workflow.workspaceId, existingFolder.workspaceId), isNull(workflow.archivedAt)))
 
     if (workflowsInFolder > 0 && workflowsInFolder >= totalWorkflowsInWorkspace.length) {
       return NextResponse.json(
@@ -165,6 +167,25 @@ export async function DELETE(
     logger.info('Deleted folder and all contents:', {
       id,
       deletionStats,
+    })
+
+    recordAudit({
+      workspaceId: existingFolder.workspaceId,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
+      action: AuditAction.FOLDER_DELETED,
+      resourceType: AuditResourceType.FOLDER,
+      resourceId: id,
+      resourceName: existingFolder.name,
+      description: `Deleted folder "${existingFolder.name}"`,
+      metadata: {
+        affected: {
+          workflows: deletionStats.workflows,
+          subfolders: deletionStats.folders - 1,
+        },
+      },
+      request,
     })
 
     return NextResponse.json({
@@ -202,12 +223,20 @@ async function deleteFolderRecursively(
   const workflowsInFolder = await db
     .select({ id: workflow.id })
     .from(workflow)
-    .where(and(eq(workflow.folderId, folderId), eq(workflow.workspaceId, workspaceId)))
+    .where(
+      and(
+        eq(workflow.folderId, folderId),
+        eq(workflow.workspaceId, workspaceId),
+        isNull(workflow.archivedAt)
+      )
+    )
 
   if (workflowsInFolder.length > 0) {
-    await db
-      .delete(workflow)
-      .where(and(eq(workflow.folderId, folderId), eq(workflow.workspaceId, workspaceId)))
+    await archiveWorkflowsByIdsInWorkspace(
+      workspaceId,
+      workflowsInFolder.map((entry) => entry.id),
+      { requestId: `folder-${folderId}` }
+    )
 
     stats.workflows += workflowsInFolder.length
   }
@@ -232,7 +261,13 @@ async function countWorkflowsInFolderRecursively(
   const workflowsInFolder = await db
     .select({ id: workflow.id })
     .from(workflow)
-    .where(and(eq(workflow.folderId, folderId), eq(workflow.workspaceId, workspaceId)))
+    .where(
+      and(
+        eq(workflow.folderId, folderId),
+        eq(workflow.workspaceId, workspaceId),
+        isNull(workflow.archivedAt)
+      )
+    )
 
   count += workflowsInFolder.length
 

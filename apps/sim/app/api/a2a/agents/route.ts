@@ -7,16 +7,16 @@
 import { db } from '@sim/db'
 import { a2aAgent, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { generateSkillsFromWorkflow } from '@/lib/a2a/agent-card'
 import { A2A_DEFAULT_CAPABILITIES } from '@/lib/a2a/constants'
 import { sanitizeAgentName } from '@/lib/a2a/utils'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { hasValidStartBlockInState } from '@/lib/workflows/triggers/trigger-utils'
-import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('A2AAgentsAPI')
 
@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -39,9 +39,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'workspaceId is required' }, { status: 400 })
     }
 
-    const ws = await getWorkspaceById(workspaceId)
-    if (!ws) {
+    const workspaceAccess = await checkWorkspaceAccess(workspaceId, auth.userId)
+    if (!workspaceAccess.exists) {
       return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+    if (!workspaceAccess.hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const agents = await db
@@ -69,8 +72,8 @@ export async function GET(request: NextRequest) {
         )`.as('task_count'),
       })
       .from(a2aAgent)
-      .leftJoin(workflow, eq(a2aAgent.workflowId, workflow.id))
-      .where(eq(a2aAgent.workspaceId, workspaceId))
+      .leftJoin(workflow, and(eq(a2aAgent.workflowId, workflow.id), isNull(workflow.archivedAt)))
+      .where(and(eq(a2aAgent.workspaceId, workspaceId), isNull(a2aAgent.archivedAt)))
       .orderBy(a2aAgent.createdAt)
 
     logger.info(`Listed ${agents.length} A2A agents for workspace ${workspaceId}`)
@@ -87,7 +90,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -103,6 +106,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const workspaceAccess = await checkWorkspaceAccess(workspaceId, auth.userId)
+    if (!workspaceAccess.exists) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+    if (!workspaceAccess.canWrite) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const [wf] = await db
       .select({
         id: workflow.id,
@@ -112,7 +123,13 @@ export async function POST(request: NextRequest) {
         isDeployed: workflow.isDeployed,
       })
       .from(workflow)
-      .where(and(eq(workflow.id, workflowId), eq(workflow.workspaceId, workspaceId)))
+      .where(
+        and(
+          eq(workflow.id, workflowId),
+          eq(workflow.workspaceId, workspaceId),
+          isNull(workflow.archivedAt)
+        )
+      )
       .limit(1)
 
     if (!wf) {
@@ -133,7 +150,13 @@ export async function POST(request: NextRequest) {
     const [existing] = await db
       .select({ id: a2aAgent.id })
       .from(a2aAgent)
-      .where(and(eq(a2aAgent.workspaceId, workspaceId), eq(a2aAgent.workflowId, workflowId)))
+      .where(
+        and(
+          eq(a2aAgent.workspaceId, workspaceId),
+          eq(a2aAgent.workflowId, workflowId),
+          isNull(a2aAgent.archivedAt)
+        )
+      )
       .limit(1)
 
     if (existing) {

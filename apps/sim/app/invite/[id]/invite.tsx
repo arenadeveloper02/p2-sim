@@ -336,7 +336,7 @@ export default function Invite() {
     }
 
     fetchInvitationDetails()
-  }, [session?.user, inviteId, token])
+  }, [session?.user, inviteId])
 
   const handleAcceptInvitation = async () => {
     if (!session?.user) return

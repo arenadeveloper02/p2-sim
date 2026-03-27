@@ -2,10 +2,10 @@ import { randomUUID } from 'crypto'
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { SUPPORTED_FIELD_TYPES } from '@/lib/knowledge/constants'
 import { createTagDefinition, getTagDefinitions } from '@/lib/knowledge/tags/service'
-import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
+import { checkKnowledgeBaseWriteAccess } from '@/app/api/knowledge/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,24 +19,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     logger.info(`[${requestId}] Getting tag definitions for knowledge base ${knowledgeBaseId}`)
 
-    const auth = await checkHybridAuth(req, { requireWorkflowId: false })
+    const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
     if (!auth.success) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
     }
 
-    // Only allow session and internal JWT auth (not API key)
-    if (auth.authType === 'api_key') {
-      return NextResponse.json(
-        { error: 'API key auth not supported for this endpoint' },
-        { status: 401 }
-      )
-    }
-
     // For session auth, verify KB access. Internal JWT is trusted.
-    if (auth.authType === 'session' && auth.userId) {
-      const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, auth.userId)
+    if (auth.authType === AuthType.SESSION && auth.userId) {
+      const accessCheck = await checkKnowledgeBaseWriteAccess(knowledgeBaseId, auth.userId)
       if (!accessCheck.hasAccess) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        return NextResponse.json(
+          { error: accessCheck.notFound ? 'Not found' : 'Forbidden' },
+          { status: accessCheck.notFound ? 404 : 403 }
+        )
       }
     }
 
@@ -64,24 +59,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     logger.info(`[${requestId}] Creating tag definition for knowledge base ${knowledgeBaseId}`)
 
-    const auth = await checkHybridAuth(req, { requireWorkflowId: false })
+    const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
     if (!auth.success) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
     }
 
-    // Only allow session and internal JWT auth (not API key)
-    if (auth.authType === 'api_key') {
-      return NextResponse.json(
-        { error: 'API key auth not supported for this endpoint' },
-        { status: 401 }
-      )
-    }
-
     // For session auth, verify KB access. Internal JWT is trusted.
-    if (auth.authType === 'session' && auth.userId) {
-      const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, auth.userId)
+    if (auth.authType === AuthType.SESSION && auth.userId) {
+      const accessCheck = await checkKnowledgeBaseWriteAccess(knowledgeBaseId, auth.userId)
       if (!accessCheck.hasAccess) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        return NextResponse.json(
+          { error: accessCheck.notFound ? 'Not found' : 'Forbidden' },
+          { status: accessCheck.notFound ? 404 : 403 }
+        )
       }
     }
 

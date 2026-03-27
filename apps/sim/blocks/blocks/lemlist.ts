@@ -1,5 +1,5 @@
 import { LemlistIcon } from '@/components/icons'
-import { AuthMode, type BlockConfig } from '@/blocks/types'
+import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import type { LemlistResponse } from '@/tools/lemlist/types'
 import { getTrigger } from '@/triggers'
 
@@ -12,6 +12,8 @@ export const LemlistBlock: BlockConfig<LemlistResponse> = {
     'Integrate Lemlist into your workflow. Retrieve campaign activities and replies, get lead information, and send emails through the Lemlist inbox.',
   docsLink: 'https://docs.sim.ai/tools/lemlist',
   category: 'tools',
+  integrationType: IntegrationType.Email,
+  tags: ['sales-engagement', 'email-marketing', 'automation'],
   bgColor: '#316BFF',
   icon: LemlistIcon,
   subBlocks: [
@@ -169,17 +171,7 @@ export const LemlistBlock: BlockConfig<LemlistResponse> = {
     access: ['lemlist_get_activities', 'lemlist_get_lead', 'lemlist_send_email'],
     config: {
       tool: (params) => {
-        if (params.limit) {
-          params.limit = Number(params.limit)
-        }
-        if (params.offset) {
-          params.offset = Number(params.offset)
-        }
-        // Map filterLeadId to leadId for get_activities tool
-        if (params.filterLeadId) {
-          params.leadId = params.filterLeadId
-        }
-
+        if (params.filterLeadId) params.leadId = params.filterLeadId
         switch (params.operation) {
           case 'get_activities':
             return 'lemlist_get_activities'
@@ -190,6 +182,12 @@ export const LemlistBlock: BlockConfig<LemlistResponse> = {
           default:
             return 'lemlist_get_activities'
         }
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.limit) result.limit = Number(params.limit)
+        if (params.offset) result.offset = Number(params.offset)
+        return result
       },
     },
   },

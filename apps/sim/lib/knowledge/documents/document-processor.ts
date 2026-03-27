@@ -7,13 +7,14 @@ import { parseBuffer, parseFile } from '@/lib/file-parsers'
 import type { FileParseMetadata } from '@/lib/file-parsers/types'
 import { retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
 import { StorageService } from '@/lib/uploads'
+import { getExtensionFromMimeType, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromUrl } from '@/lib/uploads/utils/file-utils.server'
 import { mistralParserTool } from '@/tools/mistral/parser'
 
 const logger = createLogger('DocumentProcessor')
 
 const TIMEOUTS = {
-  FILE_DOWNLOAD: 180000,
+  FILE_DOWNLOAD: 600000,
   MISTRAL_OCR_API: 120000,
 } as const
 
@@ -245,7 +246,7 @@ async function handleFileForOCR(
   userId?: string,
   workspaceId?: string | null
 ) {
-  const isExternalHttps = fileUrl.startsWith('https://') && !fileUrl.includes('/api/files/serve/')
+  const isExternalHttps = fileUrl.startsWith('https://') && !isInternalFileUrl(fileUrl)
 
   if (isExternalHttps) {
     if (mimeType === 'application/pdf') {
@@ -489,7 +490,7 @@ async function parseWithMistralOCR(
     workspaceId
   )
 
-  logger.info(`Mistral OCR: Using presigned URL for ${filename}: ${httpsUrl.substring(0, 120)}...`)
+  logger.info(`Mistral OCR: Using presigned URL for ${filename}: ${httpsUrl}`)
 
   let pageCount = 0
   if (mimeType === 'application/pdf' && buffer) {
@@ -538,8 +539,8 @@ async function executeMistralOCRRequest(
       const isInternalRoute = url.startsWith('/')
 
       if (isInternalRoute) {
-        const { getBaseUrl } = await import('@/lib/core/utils/urls')
-        url = `${getBaseUrl()}${url}`
+        const { getInternalApiBaseUrl } = await import('@/lib/core/utils/urls')
+        url = `${getInternalApiBaseUrl()}${url}`
       }
 
       let headers =
@@ -726,7 +727,7 @@ async function parseWithFileParser(fileUrl: string, filename: string, mimeType: 
     if (fileUrl.startsWith('data:')) {
       content = await parseDataURI(fileUrl, filename, mimeType)
     } else if (fileUrl.startsWith('http')) {
-      const result = await parseHttpFile(fileUrl, filename)
+      const result = await parseHttpFile(fileUrl, filename, mimeType)
       content = result.content
       metadata = result.metadata || {}
     } else {
@@ -758,7 +759,10 @@ async function parseDataURI(fileUrl: string, filename: string, mimeType: string)
       : decodeURIComponent(base64Data)
   }
 
-  const extension = filename.split('.').pop()?.toLowerCase() || 'txt'
+  const extension =
+    (filename.includes('.') ? filename.split('.').pop()?.toLowerCase() : undefined) ||
+    getExtensionFromMimeType(mimeType) ||
+    'txt'
   const buffer = Buffer.from(base64Data, 'base64')
   const result = await parseBuffer(buffer, extension)
   return result.content
@@ -766,13 +770,17 @@ async function parseDataURI(fileUrl: string, filename: string, mimeType: string)
 
 async function parseHttpFile(
   fileUrl: string,
-  filename: string
+  filename: string,
+  mimeType?: string
 ): Promise<{ content: string; metadata?: FileParseMetadata }> {
   const buffer = await downloadFileWithTimeout(fileUrl)
 
-  const extension = filename.split('.').pop()?.toLowerCase()
+  let extension = filename.includes('.') ? filename.split('.').pop()?.toLowerCase() : undefined
+  if (!extension && mimeType) {
+    extension = getExtensionFromMimeType(mimeType) ?? undefined
+  }
   if (!extension) {
-    throw new Error(`Could not determine file extension: ${filename}`)
+    throw new Error(`Could not determine file type for: ${filename}`)
   }
 
   const result = await parseBuffer(buffer, extension)

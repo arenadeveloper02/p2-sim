@@ -1,6 +1,7 @@
 import { SpotifyIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import type { ToolResponse } from '@/tools/types'
 
 export const SpotifyBlock: BlockConfig<ToolResponse> = {
@@ -12,6 +13,8 @@ export const SpotifyBlock: BlockConfig<ToolResponse> = {
     'Integrate Spotify into your workflow. Search for tracks, albums, artists, and playlists. Manage playlists, access your library, control playback, browse podcasts and audiobooks.',
   docsLink: 'https://docs.sim.ai/tools/spotify',
   category: 'tools',
+  integrationType: IntegrationType.Media,
+  tags: ['content-management', 'automation'],
   hideFromToolbar: true,
   bgColor: '#000000',
   icon: SpotifyIcon,
@@ -159,6 +162,17 @@ export const SpotifyBlock: BlockConfig<ToolResponse> = {
       title: 'Spotify Account',
       type: 'oauth-input',
       serviceId: 'spotify',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
+      required: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'Spotify Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
     },
 
@@ -450,10 +464,24 @@ export const SpotifyBlock: BlockConfig<ToolResponse> = {
 
     // === PLAYLIST COVER ===
     {
-      id: 'imageBase64',
-      title: 'Image (Base64)',
-      type: 'long-input',
-      placeholder: 'Base64-encoded JPEG image (max 256KB)',
+      id: 'coverImageFile',
+      title: 'Cover Image',
+      type: 'file-upload',
+      canonicalParamId: 'coverImage',
+      placeholder: 'Upload cover image (JPEG, max 256KB)',
+      mode: 'basic',
+      multiple: false,
+      required: true,
+      acceptedTypes: '.jpg,.jpeg',
+      condition: { field: 'operation', value: 'spotify_add_playlist_cover' },
+    },
+    {
+      id: 'coverImageRef',
+      title: 'Cover Image',
+      type: 'short-input',
+      canonicalParamId: 'coverImage',
+      placeholder: 'Reference image from previous blocks',
+      mode: 'advanced',
       required: true,
       condition: { field: 'operation', value: 'spotify_add_playlist_cover' },
     },
@@ -740,44 +768,29 @@ export const SpotifyBlock: BlockConfig<ToolResponse> = {
     ],
     config: {
       tool: (params) => {
-        // Convert numeric parameters
-        if (params.limit) {
-          params.limit = Number(params.limit)
-        }
-        if (params.volume_percent) {
-          params.volume_percent = Number(params.volume_percent)
-        }
-        if (params.range_start) {
-          params.range_start = Number(params.range_start)
-        }
-        if (params.insert_before) {
-          params.insert_before = Number(params.insert_before)
-        }
-        if (params.range_length) {
-          params.range_length = Number(params.range_length)
-        }
-        if (params.position_ms) {
-          params.position_ms = Number(params.position_ms)
-        }
-        // Map followType to type for check_following
-        if (params.followType) {
-          params.type = params.followType
-        }
-        // Map newName to name for update_playlist
-        if (params.newName) {
-          params.name = params.newName
-        }
-        // Map playUris to uris for play
-        if (params.playUris) {
-          params.uris = params.playUris
-        }
+        if (params.followType) params.type = params.followType
+        if (params.newName) params.name = params.newName
+        if (params.playUris) params.uris = params.playUris
         return params.operation || 'spotify_search'
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.limit) result.limit = Number(params.limit)
+        if (params.volume_percent) result.volume_percent = Number(params.volume_percent)
+        if (params.range_start) result.range_start = Number(params.range_start)
+        if (params.insert_before) result.insert_before = Number(params.insert_before)
+        if (params.range_length) result.range_length = Number(params.range_length)
+        if (params.position_ms) result.position_ms = Number(params.position_ms)
+        if (params.coverImage !== undefined) {
+          result.coverImage = normalizeFileInput(params.coverImage, { single: true })
+        }
+        return result
       },
     },
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Spotify OAuth credential' },
+    oauthCredential: { type: 'string', description: 'Spotify OAuth credential' },
     // Search
     query: { type: 'string', description: 'Search query' },
     type: { type: 'string', description: 'Search type' },
@@ -804,7 +817,7 @@ export const SpotifyBlock: BlockConfig<ToolResponse> = {
     newName: { type: 'string', description: 'New playlist name' },
     description: { type: 'string', description: 'Playlist description' },
     public: { type: 'boolean', description: 'Whether playlist is public' },
-    imageBase64: { type: 'string', description: 'Base64-encoded JPEG image' },
+    coverImage: { type: 'json', description: 'Cover image (UserFile)' },
     range_start: { type: 'number', description: 'Start index for reorder' },
     insert_before: { type: 'number', description: 'Insert before index' },
     range_length: { type: 'number', description: 'Number of items to move' },

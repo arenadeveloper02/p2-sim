@@ -74,10 +74,11 @@ export class GenericBlockHandler implements BlockHandler {
             workflowId: ctx.workflowId,
             workspaceId: ctx.workspaceId,
             executionId: ctx.executionId,
-            isDeployedContext: ctx.isDeployedContext,
             userId: ctx.userId,
+            isDeployedContext: ctx.isDeployedContext,
             sessionUserId: ctx.metadata?.sessionUserId,
             workflowUserId: ctx.metadata?.workflowUserId,
+            enforceCredentialAccess: ctx.enforceCredentialAccess,
           },
         },
         false,
@@ -107,27 +108,7 @@ export class GenericBlockHandler implements BlockHandler {
         throw error
       }
 
-      const output = result.output
-      let cost = null
-
-      if (output?.cost) {
-        cost = output.cost
-      }
-
-      if (cost) {
-        return {
-          ...output,
-          cost: {
-            input: cost.input,
-            output: cost.output,
-            total: cost.total,
-          },
-          tokens: cost.tokens,
-          model: cost.model,
-        }
-      }
-
-      return output
+      return result.output
     } catch (error: any) {
       if (!error.message || error.message === 'undefined (undefined)') {
         let errorMessage = `Block execution of ${tool?.name || block.config.tool} failed`

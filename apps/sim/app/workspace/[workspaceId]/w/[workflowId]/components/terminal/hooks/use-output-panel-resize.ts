@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { OUTPUT_PANEL_WIDTH } from '@/stores/constants'
+import { OUTPUT_PANEL_WIDTH, TERMINAL_BLOCK_COLUMN_WIDTH } from '@/stores/constants'
 import { useTerminalStore } from '@/stores/terminal'
-
-const BLOCK_COLUMN_WIDTH = 240
 
 export function useOutputPanelResize() {
   const setOutputPanelWidth = useTerminalStore((state) => state.setOutputPanelWidth)
@@ -16,16 +14,12 @@ export function useOutputPanelResize() {
     if (!isResizing) return
 
     const handleMouseMove = (e: MouseEvent) => {
-      const panelWidth = Number.parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue('--panel-width') || '0'
-      )
-      const sidebarWidth = Number.parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width') || '0'
-      )
+      const terminalEl = document.querySelector('[aria-label="Terminal"]')
+      if (!terminalEl) return
 
-      const newWidth = window.innerWidth - e.clientX - panelWidth
-      const terminalWidth = window.innerWidth - sidebarWidth - panelWidth
-      const maxWidth = terminalWidth - BLOCK_COLUMN_WIDTH
+      const terminalRect = terminalEl.getBoundingClientRect()
+      const newWidth = terminalRect.right - e.clientX
+      const maxWidth = terminalRect.width - TERMINAL_BLOCK_COLUMN_WIDTH
       const clampedWidth = Math.max(OUTPUT_PANEL_WIDTH.MIN, Math.min(newWidth, maxWidth))
 
       setOutputPanelWidth(clampedWidth)

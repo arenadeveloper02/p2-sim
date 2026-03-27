@@ -23,7 +23,7 @@ import {
   type TagDefinition,
   useKnowledgeBaseTagDefinitions,
 } from '@/hooks/kb/use-knowledge-base-tag-definitions'
-import { useCreateTagDefinition, useDeleteTagDefinition } from '@/hooks/queries/knowledge'
+import { useCreateTagDefinition, useDeleteTagDefinition } from '@/hooks/queries/kb/knowledge'
 
 const logger = createLogger('BaseTagsModal')
 
@@ -92,14 +92,8 @@ interface BaseTagsModalProps {
   knowledgeBaseName?: string
 }
 
-export function BaseTagsModal({
-  open,
-  onOpenChange,
-  knowledgeBaseId,
-  knowledgeBaseName,
-}: BaseTagsModalProps) {
-  const { tagDefinitions: kbTagDefinitions, fetchTagDefinitions: refreshTagDefinitions } =
-    useKnowledgeBaseTagDefinitions(knowledgeBaseId)
+export function BaseTagsModal({ open, onOpenChange, knowledgeBaseId, knowledgeBaseName }: BaseTagsModalProps) {
+  const { tagDefinitions: kbTagDefinitions } = useKnowledgeBaseTagDefinitions(knowledgeBaseId)
 
   const createTagMutation = useCreateTagDefinition()
   const deleteTagMutation = useDeleteTagDefinition()
@@ -226,7 +220,7 @@ export function BaseTagsModal({
         fieldType: createTagForm.fieldType,
       })
 
-      await Promise.all([refreshTagDefinitions(), fetchTagUsage()])
+      await fetchTagUsage()
 
       addTagsforKBEvent({
         'Knowledge Base Name': knowledgeBaseName || '',
@@ -253,7 +247,7 @@ export function BaseTagsModal({
         tagDefinitionId: selectedTag.id,
       })
 
-      await Promise.all([refreshTagDefinitions(), fetchTagUsage()])
+      await fetchTagUsage()
 
       setDeleteTagDialogOpen(false)
       setSelectedTag(null)
@@ -400,7 +394,7 @@ export function BaseTagsModal({
                         Cancel
                       </Button>
                       <Button
-                        variant='tertiary'
+                        variant='primary'
                         onClick={saveTagDefinition}
                         className='flex-1'
                         disabled={
@@ -432,7 +426,7 @@ export function BaseTagsModal({
           <ModalHeader>Delete Tag</ModalHeader>
           <ModalBody>
             <div className='space-y-[8px]'>
-              <p className='text-[12px] text-[var(--text-secondary)]'>
+              <p className='text-[var(--text-secondary)]'>
                 Are you sure you want to delete the "{selectedTag?.displayName}" tag? This will
                 remove this tag from {selectedTagUsage?.documentCount || 0} document
                 {selectedTagUsage?.documentCount !== 1 ? 's' : ''}.{' '}
@@ -475,7 +469,7 @@ export function BaseTagsModal({
           <ModalHeader>Documents using "{selectedTag?.displayName}"</ModalHeader>
           <ModalBody>
             <div className='space-y-[8px]'>
-              <p className='text-[12px] text-[var(--text-secondary)]'>
+              <p className='text-[var(--text-secondary)]'>
                 {selectedTagUsage?.documentCount || 0} document
                 {selectedTagUsage?.documentCount !== 1 ? 's are' : ' is'} currently using this tag
                 definition.
@@ -483,7 +477,7 @@ export function BaseTagsModal({
 
               {selectedTagUsage?.documentCount === 0 ? (
                 <div className='rounded-[6px] border p-[16px] text-center'>
-                  <p className='text-[12px] text-[var(--text-secondary)]'>
+                  <p className='text-[var(--text-secondary)]'>
                     This tag definition is not being used by any documents. You can safely delete it
                     to free up the tag slot.
                   </p>

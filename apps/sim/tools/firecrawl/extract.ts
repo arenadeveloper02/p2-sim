@@ -1,13 +1,14 @@
 import { createLogger } from '@sim/logger'
 import { getEnv } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
+import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
 import type { ExtractParams, ExtractResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('FirecrawlExtractTool')
 
-const POLL_INTERVAL_MS = 5000 // 5 seconds between polls
-const MAX_POLL_TIME_MS = 300000 // 5 minutes maximum polling time
+const POLL_INTERVAL_MS = 5000
+const MAX_POLL_TIME_MS = DEFAULT_EXECUTION_TIMEOUT_MS
 
 export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
   id: 'firecrawl_extract',
@@ -21,7 +22,8 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
       type: 'json',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Array of URLs to extract data from (supports glob format)',
+      description:
+        'Array of URLs to extract data from (e.g., ["https://example.com/page1", "https://example.com/page2"] or ["https://example.com/*"])',
     },
     prompt: {
       type: 'string',
@@ -76,6 +78,34 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
       required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
+    },
+  },
+
+  hosting: {
+    envKeyPrefix: 'FIRECRAWL_API_KEY',
+    apiKeyParam: 'apiKey',
+    byokProviderId: 'firecrawl',
+    pricing: {
+      type: 'custom',
+      getCost: (_params, output) => {
+        if (output.creditsUsed == null) {
+          throw new Error('Firecrawl response missing creditsUsed field')
+        }
+
+        const creditsUsed = Number(output.creditsUsed)
+        if (Number.isNaN(creditsUsed)) {
+          throw new Error('Firecrawl response returned a non-numeric creditsUsed field')
+        }
+
+        return {
+          cost: creditsUsed * 0.001,
+          metadata: { creditsUsed },
+        }
+      },
+    },
+    rateLimit: {
+      mode: 'per_request',
+      requestsPerMinute: 100,
     },
   },
 
@@ -164,6 +194,7 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
             jobId,
             success: true,
             data: extractData.data || {},
+            creditsUsed: extractData.creditsUsed,
           }
           return result
         }

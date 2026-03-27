@@ -1,5 +1,6 @@
 import { WikipediaIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { IntegrationType } from '@/blocks/types'
 import type { WikipediaResponse } from '@/tools/wikipedia/types'
 
 export const WikipediaBlock: BlockConfig<WikipediaResponse> = {
@@ -10,6 +11,8 @@ export const WikipediaBlock: BlockConfig<WikipediaResponse> = {
     'Integrate Wikipedia into the workflow. Can get page summary, search pages, get page content, and get random page.',
   docsLink: 'https://docs.sim.ai/tools/wikipedia',
   category: 'tools',
+  integrationType: IntegrationType.Search,
+  tags: ['knowledge-base', 'web-scraping'],
   bgColor: '#000000',
   icon: WikipediaIcon,
   subBlocks: [
@@ -64,11 +67,6 @@ export const WikipediaBlock: BlockConfig<WikipediaResponse> = {
     access: ['wikipedia_summary', 'wikipedia_search', 'wikipedia_content', 'wikipedia_random'],
     config: {
       tool: (params) => {
-        // Convert searchLimit to a number for search operation
-        if (params.searchLimit) {
-          params.searchLimit = Number(params.searchLimit)
-        }
-
         switch (params.operation) {
           case 'wikipedia_summary':
             return 'wikipedia_summary'
@@ -81,6 +79,11 @@ export const WikipediaBlock: BlockConfig<WikipediaResponse> = {
           default:
             return 'wikipedia_summary'
         }
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.searchLimit) result.searchLimit = Number(params.searchLimit)
+        return result
       },
     },
   },

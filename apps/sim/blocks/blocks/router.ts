@@ -1,9 +1,12 @@
 import { ConnectIcon } from '@/components/icons'
 import { AuthMode, type BlockConfig } from '@/blocks/types'
-import { getProviderCredentialSubBlocks, PROVIDER_CREDENTIAL_INPUTS } from '@/blocks/utils'
+import {
+  getModelOptions,
+  getProviderCredentialSubBlocks,
+  PROVIDER_CREDENTIAL_INPUTS,
+} from '@/blocks/utils'
 import type { ProviderId } from '@/providers/types'
-import { getBaseModelProviders, getProviderIcon } from '@/providers/utils'
-import { useProvidersStore } from '@/stores/providers'
+import { getBaseModelProviders } from '@/providers/utils'
 import type { ToolResponse } from '@/tools/types'
 
 interface RouterResponse extends ToolResponse {
@@ -135,25 +138,6 @@ Respond with a JSON object containing:
 }
 
 /**
- * Helper to get model options for both router versions.
- */
-const getModelOptions = () => {
-  const providersState = useProvidersStore.getState()
-  const baseModels = providersState.providers.base.models
-  const ollamaModels = providersState.providers.ollama.models
-  const vllmModels = providersState.providers.vllm.models
-  const openrouterModels = providersState.providers.openrouter.models
-  const allModels = Array.from(
-    new Set([...baseModels, ...ollamaModels, ...vllmModels, ...openrouterModels])
-  )
-
-  return allModels.map((model) => {
-    const icon = getProviderIcon(model)
-    return { label: model, id: model, ...(icon && { icon }) }
-  })
-}
-
-/**
  * Legacy Router Block (block-based routing).
  * Hidden from toolbar but still supported for existing workflows.
  */
@@ -247,6 +231,7 @@ export const RouterBlock: BlockConfig<RouterResponse> = {
     tokens: { type: 'json', description: 'Token usage' },
     cost: { type: 'json', description: 'Cost information' },
     selectedPath: { type: 'json', description: 'Selected routing path' },
+    selectedRoute: { type: 'string', description: 'Selected route ID' },
   },
 }
 

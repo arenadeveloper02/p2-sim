@@ -1,21 +1,97 @@
 import type { JSX, SVGProps } from 'react'
 import type { ImageProps } from 'next/image'
-import type { ToolResponse } from '@/tools/types'
 
 export type BlockIcon =
   | ((props: SVGProps<SVGSVGElement>) => JSX.Element) // for Lucide SVGs
   | ((props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) => JSX.Element) // for Next Image
-export type ParamType = 'string' | 'number' | 'boolean' | 'json' | 'array'
+import type { SelectorKey } from '@/hooks/selectors/types'
+import type { ToolResponse } from '@/tools/types'
+export type ParamType = 'string' | 'number' | 'boolean' | 'json' | 'array' | 'file'
 export type PrimitiveValueType =
   | 'string'
   | 'number'
   | 'boolean'
   | 'json'
   | 'array'
-  | 'files'
+  | 'file'
+  | 'file[]'
   | 'any'
 
 export type BlockCategory = 'blocks' | 'tools' | 'triggers'
+
+export enum IntegrationType {
+  AI = 'ai',
+  Analytics = 'analytics',
+  Automation = 'automation',
+  Communication = 'communication',
+  CRM = 'crm',
+  CustomerSupport = 'customer-support',
+  Databases = 'databases',
+  Design = 'design',
+  DeveloperTools = 'developer-tools',
+  Documents = 'documents',
+  Ecommerce = 'ecommerce',
+  Email = 'email',
+  FileStorage = 'file-storage',
+  HR = 'hr',
+  Media = 'media',
+  Other = 'other',
+  Productivity = 'productivity',
+  SalesIntelligence = 'sales-intelligence',
+  Search = 'search',
+  Security = 'security',
+  Social = 'social',
+}
+
+export type IntegrationTag =
+  | 'marketing'
+  | 'automation'
+  | 'webhooks'
+  | 'vector-search'
+  | 'meeting'
+  | 'calendar'
+  | 'scheduling'
+  | 'incident-management'
+  | 'monitoring'
+  | 'error-tracking'
+  | 'prediction-markets'
+  | 'document-processing'
+  | 'ocr'
+  | 'text-to-speech'
+  | 'speech-to-text'
+  | 'image-generation'
+  | 'video-generation'
+  | 'cloud'
+  | 'google-workspace'
+  | 'microsoft-365'
+  | 'data-warehouse'
+  | 'data-analytics'
+  | 'customer-support'
+  | 'project-management'
+  | 'ticketing'
+  | 'payments'
+  | 'subscriptions'
+  | 'enrichment'
+  | 'web-scraping'
+  | 'llm'
+  | 'messaging'
+  | 'version-control'
+  | 'ci-cd'
+  | 'note-taking'
+  | 'spreadsheet'
+  | 'seo'
+  | 'email-marketing'
+  | 'e-signatures'
+  | 'identity'
+  | 'secrets-management'
+  | 'hiring'
+  | 'sales-engagement'
+  | 'agentic'
+  | 'knowledge-base'
+  | 'content-management'
+  | 'forms'
+  | 'link-management'
+  | 'events'
 
 // Authentication modes for sub-blocks and summaries
 export enum AuthMode {
@@ -29,6 +105,7 @@ export type GenerationType =
   | 'typescript-function-body'
   | 'json-schema'
   | 'json-object'
+  | 'table-schema'
   | 'system-prompt'
   | 'custom-tool-schema'
   | 'sql-query'
@@ -41,6 +118,9 @@ export type GenerationType =
   | 'neo4j-cypher'
   | 'neo4j-parameters'
   | 'timestamp'
+  | 'timezone'
+  | 'cron-expression'
+  | 'odata-expression'
 
 export type SubBlockType =
   | 'short-input' // Single line input
@@ -52,6 +132,7 @@ export type SubBlockType =
   | 'code' // Code editor
   | 'switch' // Toggle button
   | 'tool-input' // Tool configuration
+  | 'skill-input' // Skill selection for agent blocks
   | 'checkbox-list' // Multiple selection
   | 'grouped-checkbox-list' // Grouped, scrollable checkbox list with select all
   | 'condition-input' // Conditional logic
@@ -77,6 +158,8 @@ export type SubBlockType =
   | 'mcp-dynamic-args' // MCP dynamic arguments based on tool schema
   | 'input-format' // Input structure format
   | 'response-format' // Response structure format
+  | 'filter-builder' // Filter conditions builder
+  | 'sort-builder' // Sort conditions builder
   /**
    * @deprecated Legacy trigger save subblock type.
    */
@@ -97,6 +180,7 @@ export type SubBlockType =
   | 'slack-client-selector'
   | 'slack-channel-selector'
   | 'router-input' // Router route definitions with descriptions
+  | 'table-selector' // Table selector with link to view table
 
 /**
  * Selector types that require display name hydration
@@ -116,6 +200,7 @@ export const SELECTOR_TYPES_HYDRATION_REQUIRED: SubBlockType[] = [
   'variables-input',
   'mcp-server-selector',
   'mcp-tool-selector',
+  'table-selector',
 ] as const
 
 export type ExtractToolOutput<T> = T extends ToolResponse ? T['output'] : never
@@ -134,9 +219,7 @@ export type ToolOutputToValueType<T> = T extends Record<string, any>
     }
   : never
 
-export type BlockOutput =
-  | PrimitiveValueType
-  | { [key: string]: PrimitiveValueType | Record<string, any> }
+export type BlockOutput = PrimitiveValueType | { [key: string]: any }
 
 /**
  * Condition for showing an output field.
@@ -170,7 +253,18 @@ export type OutputFieldDefinition =
        * Uses the same condition format as subBlocks.
        */
       condition?: OutputCondition
+      /**
+       * If true, this output is hidden from display in the tag dropdown and logs,
+       * but still available for resolution and execution.
+       */
+      hiddenFromDisplay?: boolean
     }
+
+export function isHiddenFromDisplay(def: unknown): boolean {
+  return Boolean(
+    def && typeof def === 'object' && 'hiddenFromDisplay' in def && def.hiddenFromDisplay
+  )
+}
 
 export interface ParamConfig {
   type: ParamType
@@ -195,6 +289,8 @@ export interface SubBlockConfig {
   type: SubBlockType
   mode?: 'basic' | 'advanced' | 'both' | 'trigger' // Default is 'both' if not specified. 'trigger' means only shown in trigger mode
   canonicalParamId?: string
+  /** Controls parameter visibility in agent/tool-input context */
+  paramVisibility?: 'user-or-llm' | 'user-only' | 'llm-only' | 'hidden'
   required?:
     | boolean
     | {
@@ -207,7 +303,7 @@ export interface SubBlockConfig {
           not?: boolean
         }
       }
-    | (() => {
+    | ((values?: Record<string, unknown>) => {
         field: string
         value: string | number | boolean | Array<string | number | boolean>
         not?: boolean
@@ -224,12 +320,14 @@ export interface SubBlockConfig {
         id: string
         icon?: React.ComponentType<{ className?: string }>
         group?: string
+        hidden?: boolean
       }[]
     | (() => {
         label: string
         id: string
         icon?: React.ComponentType<{ className?: string }>
         group?: string
+        hidden?: boolean
       }[])
   min?: number
   max?: number
@@ -242,6 +340,7 @@ export interface SubBlockConfig {
   hidden?: boolean
   hideFromPreview?: boolean // Hide this subblock from the workflow block preview
   requiresFeature?: string // Environment variable name that must be truthy for this subblock to be visible
+  hideWhenHosted?: boolean // Hide this subblock when running on hosted sim
   description?: string
   tooltip?: string // Tooltip text displayed via info icon next to the title
   value?: (params: Record<string, any>) => string
@@ -260,7 +359,7 @@ export interface SubBlockConfig {
           not?: boolean
         }
       }
-    | (() => {
+    | ((values?: Record<string, unknown>) => {
         field: string
         value: string | number | boolean | Array<string | number | boolean>
         not?: boolean
@@ -280,6 +379,9 @@ export interface SubBlockConfig {
   requiredScopes?: string[]
   // Whether this credential selector supports credential sets (for trigger blocks)
   supportsCredentialSets?: boolean
+  // Selector properties — declarative mapping to a SelectorKey
+  selectorKey?: SelectorKey
+  selectorAllowSearch?: boolean
   // File selector specific properties
   mimeType?: string
   // File upload specific properties
@@ -338,6 +440,8 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
   name: string
   description: string
   category: BlockCategory
+  integrationType?: IntegrationType
+  tags?: IntegrationTag[]
   longDescription?: string
   bestPractices?: string
   docsLink?: string

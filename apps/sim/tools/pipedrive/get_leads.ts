@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import type { PipedriveGetLeadsParams, PipedriveGetLeadsResponse } from '@/tools/pipedrive/types'
+import { PIPEDRIVE_LEAD_OUTPUT_PROPERTIES } from '@/tools/pipedrive/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('PipedriveGetLeads')
@@ -26,38 +27,44 @@ export const pipedriveGetLeadsTool: ToolConfig<PipedriveGetLeadsParams, Pipedriv
       lead_id: {
         type: 'string',
         required: false,
-        visibility: 'user-only',
-        description: 'Optional: ID of a specific lead to retrieve',
+        visibility: 'user-or-llm',
+        description: 'Optional: ID of a specific lead to retrieve (e.g., "abc123-def456-ghi789")',
       },
       archived: {
         type: 'string',
         required: false,
-        visibility: 'user-only',
-        description: 'Get archived leads instead of active ones',
+        visibility: 'user-or-llm',
+        description: 'Get archived leads instead of active ones (e.g., "true" or "false")',
       },
       owner_id: {
         type: 'string',
         required: false,
-        visibility: 'user-only',
-        description: 'Filter by owner user ID',
+        visibility: 'user-or-llm',
+        description: 'Filter by owner user ID (e.g., "123")',
       },
       person_id: {
         type: 'string',
         required: false,
-        visibility: 'user-only',
-        description: 'Filter by person ID',
+        visibility: 'user-or-llm',
+        description: 'Filter by person ID (e.g., "456")',
       },
       organization_id: {
         type: 'string',
         required: false,
-        visibility: 'user-only',
-        description: 'Filter by organization ID',
+        visibility: 'user-or-llm',
+        description: 'Filter by organization ID (e.g., "789")',
       },
       limit: {
         type: 'string',
         required: false,
-        visibility: 'user-only',
-        description: 'Number of results to return (default: 100, max: 500)',
+        visibility: 'user-or-llm',
+        description: 'Number of results to return (e.g., "50", default: 100, max: 500)',
+      },
+      start: {
+        type: 'string',
+        required: false,
+        visibility: 'user-or-llm',
+        description: 'Pagination start offset (0-based index of the first item to return)',
       },
     },
 
@@ -80,6 +87,7 @@ export const pipedriveGetLeadsTool: ToolConfig<PipedriveGetLeadsParams, Pipedriv
         if (params.person_id) queryParams.append('person_id', params.person_id)
         if (params.organization_id) queryParams.append('organization_id', params.organization_id)
         if (params.limit) queryParams.append('limit', params.limit)
+        if (params.start) queryParams.append('start', params.start)
 
         const queryString = queryParams.toString()
         return queryString ? `${baseUrl}?${queryString}` : baseUrl
@@ -118,12 +126,19 @@ export const pipedriveGetLeadsTool: ToolConfig<PipedriveGetLeadsParams, Pipedriv
 
       // Otherwise, return list of leads
       const leads = data.data || []
+      // Leads endpoint puts pagination fields directly on additional_data (no .pagination wrapper)
+      const hasMore = data.additional_data?.more_items_in_collection || false
+      const currentStart = data.additional_data?.start ?? 0
+      const currentLimit = data.additional_data?.limit ?? leads.length
+      const nextStart = hasMore ? currentStart + currentLimit : null
 
       return {
         success: true,
         output: {
           leads,
           total_items: leads.length,
+          has_more: hasMore,
+          next_start: nextStart,
           success: true,
         },
       }
@@ -134,15 +149,30 @@ export const pipedriveGetLeadsTool: ToolConfig<PipedriveGetLeadsParams, Pipedriv
         type: 'array',
         description: 'Array of lead objects (when listing all)',
         optional: true,
+        items: {
+          type: 'object',
+          properties: PIPEDRIVE_LEAD_OUTPUT_PROPERTIES,
+        },
       },
       lead: {
         type: 'object',
         description: 'Single lead object (when lead_id is provided)',
         optional: true,
+        properties: PIPEDRIVE_LEAD_OUTPUT_PROPERTIES,
       },
       total_items: {
         type: 'number',
         description: 'Total number of leads returned',
+        optional: true,
+      },
+      has_more: {
+        type: 'boolean',
+        description: 'Whether more leads are available',
+        optional: true,
+      },
+      next_start: {
+        type: 'number',
+        description: 'Offset for fetching the next page',
         optional: true,
       },
       success: { type: 'boolean', description: 'Operation success status' },

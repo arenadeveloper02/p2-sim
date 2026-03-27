@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react'
 import { useParams } from 'next/navigation'
+import { useShallow } from 'zustand/react/shallow'
 import {
   Badge,
   Button,
@@ -31,9 +32,11 @@ import {
   extractPathFromOutputId,
   parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
-import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
+import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { type InputFormatField, START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
+import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import {
   workflowChatAddInputEvent,
   workflowChatMsgSentEvent,
@@ -58,7 +61,7 @@ import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useChatStore } from '@/stores/chat/store'
 import { getChatPosition } from '@/stores/chat/utils'
-import { useExecutionStore } from '@/stores/execution'
+import { useCurrentWorkflowExecution } from '@/stores/execution'
 import { useOperationQueue } from '@/stores/operation-queue/store'
 import { useTerminalConsoleStore } from '@/stores/terminal'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -90,17 +93,6 @@ interface ChatFile {
   file: File
 }
 
-/**
- * Represents a processed file attachment with data URL for display
- */
-interface ProcessedAttachment {
-  id: string
-  name: string
-  type: string
-  size: number
-  dataUrl: string
-}
-
 /** Timeout for FileReader operations in milliseconds */
 const FILE_READ_TIMEOUT_MS = 60000
 
@@ -109,13 +101,13 @@ const FILE_READ_TIMEOUT_MS = 60000
  * @param chatFiles - Array of chat files to process
  * @returns Promise resolving to array of files with data URLs for images
  */
-const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ProcessedAttachment[]> => {
+const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ChatMessageAttachment[]> => {
   return Promise.all(
     chatFiles.map(async (file) => {
-      let dataUrl = ''
+      let previewUrl: string | undefined
       if (file.type.startsWith('image/')) {
         try {
-          dataUrl = await new Promise<string>((resolve, reject) => {
+          previewUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader()
             let settled = false
 
@@ -156,10 +148,10 @@ const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ProcessedA
       }
       return {
         id: file.id,
-        name: file.name,
-        type: file.type,
+        filename: file.name,
+        media_type: file.type,
         size: file.size,
-        dataUrl,
+        previewUrl,
       }
     })
   )
@@ -238,7 +230,7 @@ interface StartInputFormatField {
 export function Chat() {
   const params = useParams()
   const workspaceId = params.workspaceId as string
-  const { activeWorkflowId } = useWorkflowRegistry()
+  const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
   const blocks = useWorkflowStore((state) => state.blocks)
   const triggerWorkflowUpdate = useWorkflowStore((state) => state.triggerUpdate)
   const setSubBlockValue = useSubBlockStore((state) => state.setValue)
@@ -263,12 +255,31 @@ export function Chat() {
     getConversationId,
     clearChat,
     exportChatCSV,
-  } = useChatStore()
+  } = useChatStore(
+    useShallow((s) => ({
+      isChatOpen: s.isChatOpen,
+      chatPosition: s.chatPosition,
+      chatWidth: s.chatWidth,
+      chatHeight: s.chatHeight,
+      setIsChatOpen: s.setIsChatOpen,
+      setChatPosition: s.setChatPosition,
+      setChatDimensions: s.setChatDimensions,
+      messages: s.messages,
+      addMessage: s.addMessage,
+      selectedWorkflowOutputs: s.selectedWorkflowOutputs,
+      setSelectedWorkflowOutput: s.setSelectedWorkflowOutput,
+      appendMessageContent: s.appendMessageContent,
+      finalizeMessageStream: s.finalizeMessageStream,
+      getConversationId: s.getConversationId,
+      clearChat: s.clearChat,
+      exportChatCSV: s.exportChatCSV,
+    }))
+  )
 
   const hasConsoleHydrated = useTerminalConsoleStore((state) => state._hasHydrated)
   const entriesFromStore = useTerminalConsoleStore((state) => state.entries)
   const entries = hasConsoleHydrated ? entriesFromStore : []
-  const { isExecuting } = useExecutionStore()
+  const { isExecuting } = useCurrentWorkflowExecution()
   const { handleRunWorkflow, handleCancelExecution } = useWorkflowExecution()
   const { data: session } = useSession()
   const { addToQueue } = useOperationQueue()
@@ -554,26 +565,6 @@ export function Chat() {
     }
   }, [])
 
-  // React to execution cancellation from run button
-  // Only cancel if execution was explicitly cancelled, not just because isExecuting became false
-  // (streaming might still be in progress even if execution state changed)
-  useEffect(() => {
-    // Only cancel if execution was explicitly stopped AND we have a streaming message
-    // Don't cancel just because isExecuting became false - the stream might still be active
-    const lastMessage = workflowMessages[workflowMessages.length - 1]
-    if (lastMessage?.isStreaming && streamReaderRef.current) {
-      // Check if this is an explicit cancellation (user clicked stop)
-      // We'll rely on handleStopStreaming for explicit cancellations
-      // This effect should only handle cleanup when execution truly ends
-      logger.debug('Execution state changed during streaming', {
-        isExecuting,
-        isStreaming,
-        hasStreamReader: !!streamReaderRef.current,
-        messageId: lastMessage.id,
-      })
-    }
-  }, [isExecuting, isStreaming, workflowMessages])
-
   const handleStopStreaming = useCallback(() => {
     streamReaderRef.current?.cancel()
     streamReaderRef.current = null
@@ -597,6 +588,41 @@ export function Chat() {
       let receivedFinalEvent = false
       let finalEventData: ExecutionResult | null = null
       let chunkCount = 0
+
+      const BATCH_MAX_MS = 50
+      let pendingChunks = ''
+      let batchRAF: number | null = null
+      let batchTimer: ReturnType<typeof setTimeout> | null = null
+      let lastFlush = 0
+
+      const flushChunks = () => {
+        if (batchRAF !== null) {
+          cancelAnimationFrame(batchRAF)
+          batchRAF = null
+        }
+        if (batchTimer !== null) {
+          clearTimeout(batchTimer)
+          batchTimer = null
+        }
+        if (pendingChunks) {
+          appendMessageContent(responseMessageId, pendingChunks)
+          pendingChunks = ''
+        }
+        lastFlush = performance.now()
+      }
+
+      const scheduleFlush = () => {
+        if (batchRAF !== null) return
+        const elapsed = performance.now() - lastFlush
+        if (elapsed >= BATCH_MAX_MS) {
+          flushChunks()
+          return
+        }
+        batchRAF = requestAnimationFrame(flushChunks)
+        if (batchTimer === null) {
+          batchTimer = setTimeout(flushChunks, Math.max(0, BATCH_MAX_MS - elapsed))
+        }
+      }
 
       try {
         while (true) {
@@ -708,7 +734,8 @@ export function Chat() {
               finalAccumulatedLength: accumulatedContent.length,
               totalChunks: chunkCount,
             })
-
+            
+            flushChunks()
             finalizeMessageStream(responseMessageId, contentToSet)
             break
           }
@@ -754,39 +781,25 @@ export function Chat() {
                 ) {
                   const additionalOutputs: string[] = []
 
-                  for (const outputId of selectedOutputs) {
-                    const blockId = extractBlockIdFromOutputId(outputId)
-                    const path = extractPathFromOutputId(outputId, blockId)
-
-                    if (path === 'content') continue
-
-                    const outputValue = extractOutputFromLogs(
-                      finalEventData.logs as BlockLog[],
-                      outputId
-                    )
-                    if (outputValue !== undefined) {
-                      const formattedValue =
-                        typeof outputValue === 'string' ? outputValue : JSON.stringify(outputValue)
-                      if (formattedValue) {
-                        additionalOutputs.push(`**${path}:** ${formattedValue}`)
-                      }
-                    }
-                  }
-
-                  if (additionalOutputs.length > 0) {
-                    appendMessageContent(responseMessageId, `\n\n${additionalOutputs.join('\n\n')}`)
-                  }
+                if ('success' in finalEventData && !finalEventData.success) {
+                  const errorMessage = finalEventData.error || 'Workflow execution failed'
+                  flushChunks()
+                  appendMessageContent(
+                    responseMessageId,
+                    `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
+                  )
+                  finalizeMessageStream(responseMessageId)
+                  return
                 }
                 continue
               }
 
-              // Process content chunks
-              if (contentChunk && typeof contentChunk === 'string') {
+                flushChunks()
+                finalizeMessageStream(responseMessageId)
+              } else if (contentChunk) {
                 accumulatedContent += contentChunk
-                chunkCount++
-                appendMessageContent(responseMessageId, contentChunk)
-                // Small delay to prevent UI blocking
-                await new Promise((resolve) => setTimeout(resolve, 5))
+                pendingChunks += contentChunk
+                scheduleFlush()
               }
             } catch (e) {
               logger.error('Error parsing stream data:', e)
@@ -797,8 +810,11 @@ export function Chat() {
         if ((error as Error)?.name !== 'AbortError') {
           logger.error('Error processing stream:', error)
         }
+        flushChunks()
         finalizeMessageStream(responseMessageId)
       } finally {
+        if (batchRAF !== null) cancelAnimationFrame(batchRAF)
+        if (batchTimer !== null) clearTimeout(batchTimer)
         if (streamReaderRef.current === reader) {
           streamReaderRef.current = null
         }
@@ -1195,7 +1211,7 @@ export function Chat() {
 
       const newReservedFields: StartInputFormatField[] = missingStartReservedFields.map(
         (fieldName) => {
-          const defaultType = fieldName === 'files' ? 'files' : 'string'
+          const defaultType = fieldName === 'files' ? 'file[]' : 'string'
 
           return {
             id: crypto.randomUUID(),
@@ -1426,7 +1442,7 @@ export function Chat() {
           >
             {/* File thumbnails */}
             {chatFiles.length > 0 && (
-              <div className='mt-[4px] flex gap-[6px] overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'>
+              <div className='mt-[4px] flex flex-wrap gap-[6px]'>
                 {chatFiles.map((file) => {
                   const previewUrl = getFilePreviewUrl(file)
 
@@ -1540,7 +1556,7 @@ export function Chat() {
               id='floating-chat-file-input'
               type='file'
               multiple
-              accept='.pdf,.csv,.doc,.docx,.txt,.md,.xlsx,.xls,.html,.htm,.pptx,.ppt,.json,.xml,.rtf,image/*'
+              accept={CHAT_ACCEPT_ATTRIBUTE}
               onChange={handleFileInputChange}
               className='hidden'
               disabled={!activeWorkflowId || isExecuting}

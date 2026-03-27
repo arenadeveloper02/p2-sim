@@ -1,4 +1,5 @@
 import type { SlackUpdateMessageParams, SlackUpdateMessageResponse } from '@/tools/slack/types'
+import { MESSAGE_METADATA_OUTPUT_PROPERTIES, MESSAGE_OUTPUT_PROPERTIES } from '@/tools/slack/types'
 import type { ToolConfig } from '@/tools/types'
 
 export const slackUpdateMessageTool: ToolConfig<
@@ -37,7 +38,7 @@ export const slackUpdateMessageTool: ToolConfig<
     channel: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'Channel ID where the message was posted (e.g., C1234567890)',
     },
     timestamp: {
@@ -52,6 +53,13 @@ export const slackUpdateMessageTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'New message text (supports Slack mrkdwn formatting)',
     },
+    blocks: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Block Kit layout blocks as a JSON array. When provided, text becomes the fallback notification text.',
+    },
   },
 
   request: {
@@ -65,6 +73,8 @@ export const slackUpdateMessageTool: ToolConfig<
       channel: params.channel,
       timestamp: params.timestamp,
       text: params.text,
+      blocks:
+        typeof params.blocks === 'string' ? JSON.parse(params.blocks) : params.blocks || undefined,
     }),
   },
 
@@ -85,6 +95,7 @@ export const slackUpdateMessageTool: ToolConfig<
     message: {
       type: 'object',
       description: 'Complete updated message object with all properties returned by Slack',
+      properties: MESSAGE_OUTPUT_PROPERTIES,
     },
     // Legacy properties for backward compatibility
     content: { type: 'string', description: 'Success message' },
@@ -92,8 +103,7 @@ export const slackUpdateMessageTool: ToolConfig<
       type: 'object',
       description: 'Updated message metadata',
       properties: {
-        channel: { type: 'string', description: 'Channel ID' },
-        timestamp: { type: 'string', description: 'Message timestamp' },
+        ...MESSAGE_METADATA_OUTPUT_PROPERTIES,
         text: { type: 'string', description: 'Updated message text' },
       },
     },

@@ -1,15 +1,17 @@
 import { db } from '@sim/db'
 import {
+  jobExecutionLogs,
   permissions,
   workflow,
   workflowExecutionLogs,
   workflowExecutionSnapshots,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
+import type { TraceSpan, WorkflowExecutionLog } from '@/lib/logs/types'
 
 const logger = createLogger('LogsByExecutionIdAPI')
 
@@ -22,7 +24,7 @@ export async function GET(
   try {
     const { executionId } = await params
 
-    const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
+    const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthorized execution data access attempt for: ${executionId}`)
       return NextResponse.json(
@@ -32,10 +34,6 @@ export async function GET(
     }
 
     const authenticatedUserId = authResult.userId
-
-    logger.debug(
-      `[${requestId}] Fetching execution data for: ${executionId} (auth: ${authResult.authType})`
-    )
 
     const [workflowLog] = await db
       .select({
@@ -48,23 +46,64 @@ export async function GET(
         endedAt: workflowExecutionLogs.endedAt,
         totalDurationMs: workflowExecutionLogs.totalDurationMs,
         cost: workflowExecutionLogs.cost,
+        executionData: workflowExecutionLogs.executionData,
       })
       .from(workflowExecutionLogs)
-      .innerJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
+      .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
       .innerJoin(
         permissions,
         and(
           eq(permissions.entityType, 'workspace'),
-          eq(permissions.entityId, workflow.workspaceId),
+          eq(permissions.entityId, workflowExecutionLogs.workspaceId),
           eq(permissions.userId, authenticatedUserId)
         )
       )
       .where(eq(workflowExecutionLogs.executionId, executionId))
       .limit(1)
 
+    // Fallback: check job_execution_logs
     if (!workflowLog) {
-      logger.warn(`[${requestId}] Execution not found or access denied: ${executionId}`)
-      return NextResponse.json({ error: 'Workflow execution not found' }, { status: 404 })
+      const [jobLog] = await db
+        .select({
+          id: jobExecutionLogs.id,
+          executionId: jobExecutionLogs.executionId,
+          trigger: jobExecutionLogs.trigger,
+          startedAt: jobExecutionLogs.startedAt,
+          endedAt: jobExecutionLogs.endedAt,
+          totalDurationMs: jobExecutionLogs.totalDurationMs,
+          cost: jobExecutionLogs.cost,
+          executionData: jobExecutionLogs.executionData,
+        })
+        .from(jobExecutionLogs)
+        .innerJoin(
+          permissions,
+          and(
+            eq(permissions.entityType, 'workspace'),
+            eq(permissions.entityId, jobExecutionLogs.workspaceId),
+            eq(permissions.userId, authenticatedUserId)
+          )
+        )
+        .where(eq(jobExecutionLogs.executionId, executionId))
+        .limit(1)
+
+      if (!jobLog) {
+        logger.warn(`[${requestId}] Execution not found or access denied: ${executionId}`)
+        return NextResponse.json({ error: 'Workflow execution not found' }, { status: 404 })
+      }
+
+      return NextResponse.json({
+        executionId,
+        workflowId: null,
+        workflowState: null,
+        childWorkflowSnapshots: {},
+        executionMetadata: {
+          trigger: jobLog.trigger,
+          startedAt: jobLog.startedAt.toISOString(),
+          endedAt: jobLog.endedAt?.toISOString(),
+          totalDurationMs: jobLog.totalDurationMs,
+          cost: jobLog.cost || null,
+        },
+      })
     }
 
     const [snapshot] = await db
@@ -78,10 +117,42 @@ export async function GET(
       return NextResponse.json({ error: 'Workflow state snapshot not found' }, { status: 404 })
     }
 
+    const executionData = workflowLog.executionData as WorkflowExecutionLog['executionData']
+    const traceSpans = (executionData?.traceSpans as TraceSpan[]) || []
+    const childSnapshotIds = new Set<string>()
+    const collectSnapshotIds = (spans: TraceSpan[]) => {
+      spans.forEach((span) => {
+        const snapshotId = span.childWorkflowSnapshotId
+        if (typeof snapshotId === 'string') {
+          childSnapshotIds.add(snapshotId)
+        }
+        if (span.children?.length) {
+          collectSnapshotIds(span.children)
+        }
+      })
+    }
+    if (traceSpans.length > 0) {
+      collectSnapshotIds(traceSpans)
+    }
+
+    const childWorkflowSnapshots =
+      childSnapshotIds.size > 0
+        ? await db
+            .select()
+            .from(workflowExecutionSnapshots)
+            .where(inArray(workflowExecutionSnapshots.id, Array.from(childSnapshotIds)))
+        : []
+
+    const childSnapshotMap = childWorkflowSnapshots.reduce<Record<string, unknown>>((acc, snap) => {
+      acc[snap.id] = snap.stateData
+      return acc
+    }, {})
+
     const response = {
       executionId,
       workflowId: workflowLog.workflowId,
       workflowState: snapshot.stateData,
+      childWorkflowSnapshots: childSnapshotMap,
       executionMetadata: {
         trigger: workflowLog.trigger,
         startedAt: workflowLog.startedAt.toISOString(),
@@ -90,11 +161,6 @@ export async function GET(
         cost: workflowLog.cost || null,
       },
     }
-
-    logger.debug(`[${requestId}] Successfully fetched execution data for: ${executionId}`)
-    logger.debug(
-      `[${requestId}] Workflow state contains ${Object.keys((snapshot.stateData as any)?.blocks || {}).length} blocks`
-    )
 
     return NextResponse.json(response)
   } catch (error) {

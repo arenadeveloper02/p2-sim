@@ -102,6 +102,7 @@ export const {service}{Action}Tool: ToolConfig<Params, Response> = {
 - Always use `?? []` for optional array fields
 - Set `optional: true` for outputs that may not exist
 - Never output raw JSON dumps - extract meaningful fields
+- When using `type: 'json'` and you know the object shape, define `properties` with the inner fields so downstream consumers know the structure. Only use bare `type: 'json'` when the shape is truly dynamic
 
 ## Step 3: Create Block
 
@@ -112,7 +113,8 @@ export const {service}{Action}Tool: ToolConfig<Params, Response> = {
 ```typescript
 import { {Service}Icon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
+import { getScopesForService } from '@/lib/oauth/utils'
 
 export const {Service}Block: BlockConfig = {
   type: '{service}',
@@ -121,6 +123,8 @@ export const {Service}Block: BlockConfig = {
   longDescription: '...',
   docsLink: 'https://docs.sim.ai/tools/{service}',
   category: 'tools',
+  integrationType: IntegrationType.X,   // Primary category (see IntegrationType enum)
+  tags: ['oauth', 'api'],              // Cross-cutting tags (see IntegrationTag type)
   bgColor: '#HEXCOLOR',
   icon: {Service}Icon,
   authMode: AuthMode.OAuth,  // or AuthMode.ApiKey
@@ -143,6 +147,7 @@ export const {Service}Block: BlockConfig = {
       title: '{Service} Account',
       type: 'oauth-input',
       serviceId: '{service}',
+      requiredScopes: getScopesForService('{service}'),
       required: true,
     },
     // Conditional fields per operation
@@ -206,10 +211,15 @@ export const {Service}Block: BlockConfig = {
 }
 ```
 
-**Critical:**
-- `canonicalParamId` must NOT match any other subblock's `id`, must be unique per block, and should only be used to link basic/advanced alternatives for the same parameter.
-- `mode` only controls UI visibility, NOT serialization. Without `canonicalParamId`, both basic and advanced field values would be sent.
-- Every subblock `id` must be unique within the block. Duplicate IDs cause conflicts even with different conditions.
+**Critical Canonical Param Rules:**
+- `canonicalParamId` must NOT match any subblock's `id` in the block
+- `canonicalParamId` must be unique per operation/condition context
+- Only use `canonicalParamId` to link basic/advanced alternatives for the same logical parameter
+- `mode` only controls UI visibility, NOT serialization. Without `canonicalParamId`, both basic and advanced field values would be sent
+- Every subblock `id` must be unique within the block. Duplicate IDs cause conflicts even with different conditions
+- **Required consistency:** If one subblock in a canonical group has `required: true`, ALL subblocks in that group must have `required: true` (prevents bypassing validation by switching modes)
+- **Inputs section:** Must list canonical param IDs (e.g., `fileId`), NOT raw subblock IDs (e.g., `fileSelector`, `manualFileId`)
+- **Params function:** Must use canonical param IDs, NOT raw subblock IDs (raw IDs are deleted after canonical transformation)
 
 ## Step 4: Add Icon
 
@@ -402,8 +412,10 @@ If creating V2 versions (API-aligned outputs):
 
 ### Block
 - [ ] Created `blocks/blocks/{service}.ts`
+- [ ] Set `integrationType` to the correct `IntegrationType` enum value
+- [ ] Set `tags` array with all applicable `IntegrationTag` values
 - [ ] Defined operation dropdown with all operations
-- [ ] Added credential field (oauth-input or short-input)
+- [ ] Added credential field with `requiredScopes: getScopesForService('{service}')`
 - [ ] Added conditional fields per operation
 - [ ] Set up dependsOn for cascading selectors
 - [ ] Configured tools.access with all tool IDs
@@ -412,6 +424,12 @@ If creating V2 versions (API-aligned outputs):
 - [ ] Registered block in `blocks/registry.ts`
 - [ ] If triggers: set `triggers.enabled` and `triggers.available`
 - [ ] If triggers: spread trigger subBlocks with `getTrigger()`
+
+### OAuth Scopes (if OAuth service)
+- [ ] Defined scopes in `lib/oauth/oauth.ts` under `OAUTH_PROVIDERS`
+- [ ] Added scope descriptions in `SCOPE_DESCRIPTIONS` within `lib/oauth/utils.ts`
+- [ ] Used `getCanonicalScopesForProvider()` in `auth.ts` (never hardcode)
+- [ ] Used `getScopesForService()` in block `requiredScopes` (never hardcode)
 
 ### Icon
 - [ ] Asked user to provide SVG
@@ -430,6 +448,12 @@ If creating V2 versions (API-aligned outputs):
 ### Docs
 - [ ] Ran `bun run scripts/generate-docs.ts`
 - [ ] Verified docs file created
+
+### Final Validation (Required)
+- [ ] Read every tool file and cross-referenced inputs/outputs against the API docs
+- [ ] Verified block subBlocks cover all required tool params with correct conditions
+- [ ] Verified block outputs match what the tools actually return
+- [ ] Verified `tools.config.params` correctly maps and coerces all param types
 
 ## Example Command
 
@@ -457,11 +481,284 @@ You can usually find this in the service's brand/press kit page, or copy it from
 Paste the SVG code here and I'll convert it to a React component.
 ```
 
-## Common Gotchas
+## File Handling
+
+When your integration handles file uploads or downloads, follow these patterns to work with `UserFile` objects consistently.
+
+### What is a UserFile?
+
+A `UserFile` is the standard file representation in Sim:
+
+```typescript
+interface UserFile {
+  id: string       // Unique identifier
+  name: string     // Original filename
+  url: string      // Presigned URL for download
+  size: number     // File size in bytes
+  type: string     // MIME type (e.g., 'application/pdf')
+  base64?: string  // Optional base64 content (if small file)
+  key?: string     // Internal storage key
+  context?: object // Storage context metadata
+}
+```
+
+### File Input Pattern (Uploads)
+
+For tools that accept file uploads, **always route through an internal API endpoint** rather than calling external APIs directly. This ensures proper file content retrieval.
+
+#### 1. Block SubBlocks for File Input
+
+Use the basic/advanced mode pattern:
+
+```typescript
+// Basic mode: File upload UI
+{
+  id: 'uploadFile',
+  title: 'File',
+  type: 'file-upload',
+  canonicalParamId: 'file',  // Maps to 'file' param
+  placeholder: 'Upload file',
+  mode: 'basic',
+  multiple: false,
+  required: true,
+  condition: { field: 'operation', value: 'upload' },
+},
+// Advanced mode: Reference from previous block
+{
+  id: 'fileRef',
+  title: 'File',
+  type: 'short-input',
+  canonicalParamId: 'file',  // Same canonical param
+  placeholder: 'Reference file (e.g., {{file_block.output}})',
+  mode: 'advanced',
+  required: true,
+  condition: { field: 'operation', value: 'upload' },
+},
+```
+
+**Critical:** `canonicalParamId` must NOT match any subblock `id`.
+
+#### 2. Normalize File Input in Block Config
+
+In `tools.config.tool`, use `normalizeFileInput` to handle all input variants:
+
+```typescript
+import { normalizeFileInput } from '@/blocks/utils'
+
+tools: {
+  config: {
+    tool: (params) => {
+      // Normalize file from basic (uploadFile), advanced (fileRef), or legacy (fileContent)
+      const normalizedFile = normalizeFileInput(
+        params.uploadFile || params.fileRef || params.fileContent,
+        { single: true }
+      )
+      if (normalizedFile) {
+        params.file = normalizedFile
+      }
+      return `{service}_${params.operation}`
+    },
+  },
+}
+```
+
+#### 3. Create Internal API Route
+
+Create `apps/sim/app/api/tools/{service}/{action}/route.ts`:
+
+```typescript
+import { createLogger } from '@sim/logger'
+import { NextResponse, type NextRequest } from 'next/server'
+import { z } from 'zod'
+import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { generateRequestId } from '@/lib/core/utils/request'
+import { FileInputSchema, type RawFileInput } from '@/lib/uploads/utils/file-schemas'
+import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
+import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+
+const logger = createLogger('{Service}UploadAPI')
+
+const RequestSchema = z.object({
+  accessToken: z.string(),
+  file: FileInputSchema.optional().nullable(),
+  // Legacy field for backwards compatibility
+  fileContent: z.string().optional().nullable(),
+  // ... other params
+})
+
+export async function POST(request: NextRequest) {
+  const requestId = generateRequestId()
+
+  const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
+  if (!authResult.success) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const body = await request.json()
+  const data = RequestSchema.parse(body)
+
+  let fileBuffer: Buffer
+  let fileName: string
+
+  // Prefer UserFile input, fall back to legacy base64
+  if (data.file) {
+    const userFiles = processFilesToUserFiles([data.file as RawFileInput], requestId, logger)
+    if (userFiles.length === 0) {
+      return NextResponse.json({ success: false, error: 'Invalid file' }, { status: 400 })
+    }
+    const userFile = userFiles[0]
+    fileBuffer = await downloadFileFromStorage(userFile, requestId, logger)
+    fileName = userFile.name
+  } else if (data.fileContent) {
+    // Legacy: base64 string (backwards compatibility)
+    fileBuffer = Buffer.from(data.fileContent, 'base64')
+    fileName = 'file'
+  } else {
+    return NextResponse.json({ success: false, error: 'File required' }, { status: 400 })
+  }
+
+  // Now call external API with fileBuffer
+  const response = await fetch('https://api.{service}.com/upload', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${data.accessToken}` },
+    body: new Uint8Array(fileBuffer),  // Convert Buffer for fetch
+  })
+
+  // ... handle response
+}
+```
+
+#### 4. Update Tool to Use Internal Route
+
+```typescript
+export const {service}UploadTool: ToolConfig<Params, Response> = {
+  id: '{service}_upload',
+  // ...
+  params: {
+    file: { type: 'file', required: false, visibility: 'user-or-llm' },
+    fileContent: { type: 'string', required: false, visibility: 'hidden' }, // Legacy
+  },
+  request: {
+    url: '/api/tools/{service}/upload',  // Internal route
+    method: 'POST',
+    body: (params) => ({
+      accessToken: params.accessToken,
+      file: params.file,
+      fileContent: params.fileContent,
+    }),
+  },
+}
+```
+
+### File Output Pattern (Downloads)
+
+For tools that return files, use `FileToolProcessor` to store files and return `UserFile` objects.
+
+#### In Tool transformResponse
+
+```typescript
+import { FileToolProcessor } from '@/executor/utils/file-tool-processor'
+
+transformResponse: async (response, context) => {
+  const data = await response.json()
+
+  // Process file outputs to UserFile objects
+  const fileProcessor = new FileToolProcessor(context)
+  const file = await fileProcessor.processFileData({
+    data: data.content,      // base64 or buffer
+    mimeType: data.mimeType,
+    filename: data.filename,
+  })
+
+  return {
+    success: true,
+    output: { file },
+  }
+}
+```
+
+#### In API Route (for complex file handling)
+
+```typescript
+// Return file data that FileToolProcessor can handle
+return NextResponse.json({
+  success: true,
+  output: {
+    file: {
+      data: base64Content,
+      mimeType: 'application/pdf',
+      filename: 'document.pdf',
+    },
+  },
+})
+```
+
+### Key Helpers Reference
+
+| Helper | Location | Purpose |
+|--------|----------|---------|
+| `normalizeFileInput` | `@/blocks/utils` | Normalize file params in block config |
+| `processFilesToUserFiles` | `@/lib/uploads/utils/file-utils` | Convert raw inputs to UserFile[] |
+| `downloadFileFromStorage` | `@/lib/uploads/utils/file-utils.server` | Get file Buffer from UserFile |
+| `FileToolProcessor` | `@/executor/utils/file-tool-processor` | Process tool output files |
+| `isUserFile` | `@/lib/core/utils/user-file` | Type guard for UserFile objects |
+| `FileInputSchema` | `@/lib/uploads/utils/file-schemas` | Zod schema for file validation |
+
+### Advanced Mode for Optional Fields
+
+Optional fields that are rarely used should be set to `mode: 'advanced'` so they don't clutter the basic UI. Examples: pagination tokens, time range filters, sort order, max results, reply settings.
+
+### WandConfig for Complex Inputs
+
+Use `wandConfig` for fields that are hard to fill out manually:
+- **Timestamps**: Use `generationType: 'timestamp'` to inject current date context into the AI prompt
+- **JSON arrays**: Use `generationType: 'json-object'` for structured data
+- **Complex queries**: Use a descriptive prompt explaining the expected format
+
+```typescript
+{
+  id: 'startTime',
+  title: 'Start Time',
+  type: 'short-input',
+  mode: 'advanced',
+  wandConfig: {
+    enabled: true,
+    prompt: 'Generate an ISO 8601 timestamp. Return ONLY the timestamp string.',
+    generationType: 'timestamp',
+  },
+}
+```
+
+### OAuth Scopes (Centralized System)
+
+Scopes are maintained in a single source of truth and reused everywhere:
+
+1. **Define scopes** in `lib/oauth/oauth.ts` under `OAUTH_PROVIDERS[provider].services[service].scopes`
+2. **Add descriptions** in `SCOPE_DESCRIPTIONS` within `lib/oauth/utils.ts` for the OAuth modal UI
+3. **Reference in auth.ts** using `getCanonicalScopesForProvider(providerId)` from `@/lib/oauth/utils`
+4. **Reference in blocks** using `getScopesForService(serviceId)` from `@/lib/oauth/utils`
+
+**Never hardcode scope arrays** in `auth.ts` or block `requiredScopes`. Always import from the centralized source.
+
+```typescript
+// In auth.ts (Better Auth config)
+scopes: getCanonicalScopesForProvider('{service}'),
+
+// In block credential sub-block
+requiredScopes: getScopesForService('{service}'),
+```
+
+### Common Gotchas
 
 1. **OAuth serviceId must match** - The `serviceId` in oauth-input must match the OAuth provider configuration
-2. **Tool IDs are snake_case** - `stripe_create_payment`, not `stripeCreatePayment`
+2. **All tool IDs MUST be snake_case** - `stripe_create_payment`, not `stripeCreatePayment`. This applies to tool `id` fields, registry keys, `tools.access` arrays, and `tools.config.tool` return values
 3. **Block type is snake_case** - `type: 'stripe'`, not `type: 'Stripe'`
 4. **Alphabetical ordering** - Keep imports and registry entries alphabetically sorted
 5. **Required can be conditional** - Use `required: { field: 'op', value: 'create' }` instead of always true
 6. **DependsOn clears options** - When a dependency changes, selector options are refetched
+7. **Never pass Buffer directly to fetch** - Convert to `new Uint8Array(buffer)` for TypeScript compatibility
+8. **Always handle legacy file params** - Keep hidden `fileContent` params for backwards compatibility
+9. **Optional fields use advanced mode** - Set `mode: 'advanced'` on rarely-used optional fields
+10. **Complex inputs need wandConfig** - Timestamps, JSON arrays, and other hard-to-type values should have `wandConfig` enabled
+11. **Never hardcode scopes** - Use `getScopesForService()` in blocks and `getCanonicalScopesForProvider()` in auth.ts
+12. **Always add scope descriptions** - New scopes must have entries in `SCOPE_DESCRIPTIONS` within `lib/oauth/utils.ts`

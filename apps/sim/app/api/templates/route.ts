@@ -11,13 +11,15 @@ import { and, desc, eq, ilike, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { verifyEffectiveSuperUser } from '@/lib/templates/permissions'
+import { canAccessTemplate, verifyEffectiveSuperUser } from '@/lib/templates/permissions'
 import {
   extractRequiredCredentials,
   sanitizeCredentials,
 } from '@/lib/workflows/credentials/credential-extractor'
+import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 
 const logger = createLogger('TemplatesAPI')
 
@@ -67,8 +69,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const params = QueryParamsSchema.parse(Object.fromEntries(searchParams.entries()))
 
-    logger.debug(`[${requestId}] Fetching templates with params:`, params)
-
     // Check if user is a super user
     const { effectiveSuperUser } = await verifyEffectiveSuperUser(session.user.id)
     const isSuperUser = effectiveSuperUser
@@ -80,12 +80,45 @@ export async function GET(request: NextRequest) {
     // When fetching by workflowId, we want to get the template regardless of status
     // This is used by the deploy modal to check if a template exists
     if (params.workflowId) {
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId: params.workflowId,
+        userId: session.user.id,
+        action: 'write',
+      })
+      if (!authorization.allowed) {
+        return NextResponse.json(
+          {
+            data: [],
+            pagination: {
+              total: 0,
+              limit: params.limit,
+              offset: params.offset,
+              page: 1,
+              totalPages: 0,
+            },
+          },
+          { status: 200 }
+        )
+      }
       conditions.push(eq(templates.workflowId, params.workflowId))
-      // Don't apply status filter when fetching by workflowId - we want to show
-      // the template to its owner even if it's pending
     } else {
       // Apply status filter - only approved templates for non-super users
       if (params.status) {
+        if (!isSuperUser && params.status !== 'approved') {
+          return NextResponse.json(
+            {
+              data: [],
+              pagination: {
+                total: 0,
+                limit: params.limit,
+                offset: params.offset,
+                page: 1,
+                totalPages: 0,
+              },
+            },
+            { status: 200 }
+          )
+        }
         conditions.push(eq(templates.status, params.status))
       } else if (!isSuperUser || !params.includeAllStatuses) {
         // Non-super users and super users without includeAllStatuses flag see only approved templates
@@ -146,16 +179,33 @@ export async function GET(request: NextRequest) {
 
     const total = totalCount[0]?.count || 0
 
-    logger.info(`[${requestId}] Successfully retrieved ${results.length} templates`)
+    const visibleResults =
+      params.workflowId && !isSuperUser
+        ? (
+            await Promise.all(
+              results.map(async (template) => {
+                if (template.status === 'approved') {
+                  return template
+                }
+                const access = await canAccessTemplate(template.id, session.user.id)
+                return access.allowed ? template : null
+              })
+            )
+          ).filter((template): template is (typeof results)[number] => template !== null)
+        : results
+
+    logger.info(`[${requestId}] Successfully retrieved ${visibleResults.length} templates`)
 
     return NextResponse.json({
-      data: results,
+      data: visibleResults,
       pagination: {
-        total,
+        total: params.workflowId && !isSuperUser ? visibleResults.length : total,
         limit: params.limit,
         offset: params.offset,
         page: Math.floor(params.offset / params.limit) + 1,
-        totalPages: Math.ceil(total / params.limit),
+        totalPages: Math.ceil(
+          (params.workflowId && !isSuperUser ? visibleResults.length : total) / params.limit
+        ),
       },
     })
   } catch (error: any) {
@@ -186,21 +236,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = CreateTemplateSchema.parse(body)
 
-    logger.debug(`[${requestId}] Creating template:`, {
-      name: data.name,
+    const workflowAuthorization = await authorizeWorkflowByWorkspacePermission({
       workflowId: data.workflowId,
+      userId: session.user.id,
+      action: 'write',
     })
 
-    // Verify the workflow exists and belongs to the user
-    const workflowExists = await db
-      .select({ id: workflow.id })
-      .from(workflow)
-      .where(eq(workflow.id, data.workflowId))
-      .limit(1)
-
-    if (workflowExists.length === 0) {
+    if (!workflowAuthorization.workflow) {
       logger.warn(`[${requestId}] Workflow not found: ${data.workflowId}`)
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
+    }
+
+    if (!workflowAuthorization.allowed) {
+      logger.warn(`[${requestId}] User denied permission to template workflow ${data.workflowId}`)
+      return NextResponse.json(
+        { error: workflowAuthorization.message || 'Access denied' },
+        { status: workflowAuthorization.status || 403 }
+      )
     }
 
     const { verifyCreatorPermission } = await import('@/lib/templates/permissions')
@@ -284,6 +336,18 @@ export async function POST(request: NextRequest) {
     await db.insert(templates).values(newTemplate)
 
     logger.info(`[${requestId}] Successfully created template: ${templateId}`)
+
+    recordAudit({
+      actorId: session.user.id,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
+      action: AuditAction.TEMPLATE_CREATED,
+      resourceType: AuditResourceType.TEMPLATE,
+      resourceId: templateId,
+      resourceName: data.name,
+      description: `Created template "${data.name}"`,
+      request,
+    })
 
     return NextResponse.json(
       {

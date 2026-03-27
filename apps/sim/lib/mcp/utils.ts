@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
 import type { McpApiResponse } from '@/lib/mcp/types'
 import { isMcpTool, MCP } from '@/executor/constants'
 
-/**
- * MCP-specific constants
- */
 export const MCP_CONSTANTS = {
-  EXECUTION_TIMEOUT: 60000,
+  EXECUTION_TIMEOUT: DEFAULT_EXECUTION_TIMEOUT_MS,
   CACHE_TIMEOUT: 5 * 60 * 1000,
   DEFAULT_RETRIES: 3,
   DEFAULT_CONNECTION_TIMEOUT: 30000,
@@ -45,27 +43,24 @@ export function sanitizeHeaders(
   )
 }
 
-/**
- * Client-safe MCP constants
- */
 export const MCP_CLIENT_CONSTANTS = {
-  CLIENT_TIMEOUT: 60000,
+  CLIENT_TIMEOUT: DEFAULT_EXECUTION_TIMEOUT_MS,
   AUTO_REFRESH_INTERVAL: 5 * 60 * 1000,
 } as const
 
 /**
- * Create standardized MCP error response
+ * Create standardized MCP error response.
+ * Always returns the defaultMessage to clients to prevent leaking internal error details.
+ * Callers are responsible for logging the original error before calling this function.
  */
 export function createMcpErrorResponse(
-  error: unknown,
+  _error: unknown,
   defaultMessage: string,
   status = 500
 ): NextResponse {
-  const errorMessage = error instanceof Error ? error.message : defaultMessage
-
   const response: McpApiResponse = {
     success: false,
-    error: errorMessage,
+    error: defaultMessage,
   }
 
   return NextResponse.json(response, { status })
@@ -120,36 +115,33 @@ export function validateRequiredFields(
 }
 
 /**
- * Enhanced error categorization for more specific HTTP status codes
+ * Enhanced error categorization for more specific HTTP status codes.
+ * Returns safe, generic messages to prevent leaking internal details.
  */
 export function categorizeError(error: unknown): { message: string; status: number } {
   if (!(error instanceof Error)) {
     return { message: 'Unknown error occurred', status: 500 }
   }
 
-  const message = error.message.toLowerCase()
+  const msg = error.message.toLowerCase()
 
-  if (message.includes('timeout')) {
+  if (msg.includes('timeout')) {
     return { message: 'Request timed out', status: 408 }
   }
 
-  if (message.includes('not found') || message.includes('not accessible')) {
-    return { message: error.message, status: 404 }
+  if (msg.includes('not found') || msg.includes('not accessible')) {
+    return { message: 'Resource not found', status: 404 }
   }
 
-  if (message.includes('authentication') || message.includes('unauthorized')) {
+  if (msg.includes('authentication') || msg.includes('unauthorized')) {
     return { message: 'Authentication required', status: 401 }
   }
 
-  if (
-    message.includes('invalid') ||
-    message.includes('missing required') ||
-    message.includes('validation')
-  ) {
-    return { message: error.message, status: 400 }
+  if (msg.includes('invalid') || msg.includes('missing required') || msg.includes('validation')) {
+    return { message: 'Invalid request parameters', status: 400 }
   }
 
-  return { message: error.message, status: 500 }
+  return { message: 'Internal server error', status: 500 }
 }
 
 /**

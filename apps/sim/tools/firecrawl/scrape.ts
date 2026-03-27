@@ -1,6 +1,7 @@
 import { getEnv } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
+import { PAGE_METADATA_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import { safeAssign } from '@/tools/safe-assign'
 import type { ToolConfig } from '@/tools/types'
 
@@ -16,7 +17,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The URL to scrape content from',
+      description: 'The URL to scrape content from (e.g., "https://example.com/page")',
     },
     scrapeOptions: {
       type: 'json',
@@ -29,6 +30,34 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
       required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
+    },
+  },
+
+  hosting: {
+    envKeyPrefix: 'FIRECRAWL_API_KEY',
+    apiKeyParam: 'apiKey',
+    byokProviderId: 'firecrawl',
+    pricing: {
+      type: 'custom',
+      getCost: (_params, output) => {
+        const creditsUsed = (output.metadata as { creditsUsed?: number })?.creditsUsed
+        if (creditsUsed == null) {
+          throw new Error('Firecrawl response missing creditsUsed field')
+        }
+
+        if (Number.isNaN(creditsUsed)) {
+          throw new Error('Firecrawl response returned a non-numeric creditsUsed field')
+        }
+
+        return {
+          cost: creditsUsed * 0.001,
+          metadata: { creditsUsed },
+        }
+      },
+    },
+    rateLimit: {
+      mode: 'per_request',
+      requestsPerMinute: 100,
     },
   },
 
@@ -83,16 +112,18 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
         markdown: data.data.markdown,
         html: data.data.html,
         metadata: data.data.metadata,
+        creditsUsed: data.creditsUsed,
       },
     }
   },
 
   outputs: {
     markdown: { type: 'string', description: 'Page content in markdown format' },
-    html: { type: 'string', description: 'Raw HTML content of the page' },
+    html: { type: 'string', description: 'Raw HTML content of the page', optional: true },
     metadata: {
       type: 'object',
       description: 'Page metadata including SEO and Open Graph information',
+      properties: PAGE_METADATA_OUTPUT_PROPERTIES,
     },
   },
 }

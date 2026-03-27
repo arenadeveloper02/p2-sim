@@ -12,12 +12,12 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   TagInput,
   type TagItem,
   Textarea,
   Tooltip,
 } from '@/components/emcn'
-import { Alert, AlertDescription, Skeleton } from '@/components/ui'
 import { CustomSelect } from '@/components/ui/native-select'
 import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
@@ -131,7 +131,6 @@ export function ChatDeploy({
   chatAlreadyExists,
 }: ChatDeployProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
   const [internalShowDeleteConfirmation, setInternalShowDeleteConfirmation] = useState(false)
 
   const showDeleteConfirmation =
@@ -156,6 +155,7 @@ export function ChatDeploy({
 
   const [showUnselectKnowledgeConfirm, setShowUnselectKnowledgeConfirm] = useState(false)
   const [pendingOutputSelection, setPendingOutputSelection] = useState<string[] | null>(null)
+  const [formInitCounter, setFormInitCounter] = useState(0)
 
   const createChatMutation = useCreateChat()
   const updateChatMutation = useUpdateChat()
@@ -333,13 +333,20 @@ export function ChatDeploy({
 
     setChatSubmitting(true)
 
+    const isNewChat = !existingChat?.id
+
+    // Open window before async operation to avoid popup blockers
+    const newTab = isNewChat ? window.open('', '_blank') : null
+
     try {
       if (!validateForm(!!existingChat)) {
+        newTab?.close()
         setChatSubmitting(false)
         return
       }
 
       if (!isIdentifierValid && formData.identifier !== existingChat?.identifier) {
+        newTab?.close()
         setError('identifier', 'Please wait for identifier validation to complete')
         setChatSubmitting(false)
         return
@@ -368,13 +375,18 @@ export function ChatDeploy({
       onDeployed?.()
       onVersionActivated?.()
 
-      if (chatUrl && !chatAlreadyExists) {
-        window.open(`${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`, '_blank')
+      if (newTab && chatUrl) {
+        newTab.opener = null
+        newTab.location.href = `${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`
+      } else if (newTab) {
+        newTab.close()
       }
 
       await onRefetchChat()
       setHasInitializedForm(false)
+      setFormInitCounter((c) => c + 1)
     } catch (error: any) {
+      newTab?.close()
       if (error.message?.includes('identifier')) {
         setError('identifier', error.message)
       } else {
@@ -389,8 +401,6 @@ export function ChatDeploy({
     if (!existingChat || !existingChat.id) return
 
     try {
-      setIsDeleting(true)
-
       await deleteChatMutation.mutateAsync({
         chatId: existingChat.id,
         workflowId,
@@ -398,6 +408,7 @@ export function ChatDeploy({
 
       setImageUrl(null)
       setHasInitializedForm(false)
+      setFormInitCounter((c) => c + 1)
       await onRefetchChat()
 
       onDeploymentComplete?.()
@@ -405,7 +416,6 @@ export function ChatDeploy({
       logger.error('Failed to delete chat:', error)
       setError('general', error.message || 'An unexpected error occurred while deleting')
     } finally {
-      setIsDeleting(false)
       setShowDeleteConfirmation(false)
     }
   }
@@ -423,10 +433,10 @@ export function ChatDeploy({
         className='-mx-1 space-y-4 overflow-y-auto px-1'
       >
         {errors.general && (
-          <Alert variant='destructive'>
-            <AlertTriangle className='h-4 w-4' />
-            <AlertDescription>{errors.general}</AlertDescription>
-          </Alert>
+          <div className='flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-[13px] text-red-400'>
+            <AlertTriangle className='h-4 w-4 flex-shrink-0' />
+            <span>{errors.general}</span>
+          </div>
         )}
 
         {/* <IdentifierInput
@@ -507,7 +517,7 @@ export function ChatDeploy({
           </div>
 
           <AuthSelector
-            key={existingChat?.id ?? 'new'}
+            key={`${existingChat?.id ?? 'new'}-${formInitCounter}`}
             authType={formData.authType}
             password={formData.password}
             emails={formData.emails}
@@ -579,7 +589,7 @@ export function ChatDeploy({
         <ModalContent size='sm'>
           <ModalHeader>Delete Chat</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-secondary)]'>
+            <p className='text-[var(--text-secondary)]'>
               Are you sure you want to delete{' '}
               <span className='font-medium text-[var(--text-primary)]'>
                 {existingChat?.title || 'this chat'}
@@ -595,12 +605,16 @@ export function ChatDeploy({
             <Button
               variant='default'
               onClick={() => setShowDeleteConfirmation(false)}
-              disabled={isDeleting}
+              disabled={deleteChatMutation.isPending}
             >
               Cancel
             </Button>
-            <Button variant='destructive' onClick={handleDelete} disabled={isDeleting}>
-              {isDeleting ? 'Deleting...' : 'Delete'}
+            <Button
+              variant='destructive'
+              onClick={handleDelete}
+              disabled={deleteChatMutation.isPending}
+            >
+              {deleteChatMutation.isPending ? 'Deleting...' : 'Delete'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -861,6 +875,11 @@ function AuthSelector({
       )
     }
   }, [emails, invalidEmails])
+  useEffect(() => {
+    if (!copySuccess) return
+    const timer = setTimeout(() => setCopySuccess(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copySuccess])
 
   const handleGeneratePassword = () => {
     const newPassword = generatePassword(24)
@@ -870,7 +889,6 @@ function AuthSelector({
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     setCopySuccess(true)
-    setTimeout(() => setCopySuccess(false), 2000)
   }
 
   const addEmail = async (email: string): Promise<boolean> => {

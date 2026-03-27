@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { SupabaseIcon } from '@/components/icons'
-import { AuthMode, type BlockConfig } from '@/blocks/types'
+import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import type { SupabaseResponse } from '@/tools/supabase/types'
 
 const logger = createLogger('SupabaseBlock')
@@ -14,6 +15,8 @@ export const SupabaseBlock: BlockConfig<SupabaseResponse> = {
     'Integrate Supabase into the workflow. Supports database operations (query, insert, update, delete, upsert), full-text search, RPC functions, row counting, vector search, and complete storage management (upload, download, list, move, copy, delete files and buckets).',
   docsLink: 'https://docs.sim.ai/tools/supabase',
   category: 'tools',
+  integrationType: IntegrationType.Databases,
+  tags: ['cloud', 'data-warehouse', 'vector-search'],
   bgColor: '#1C1C1C',
   icon: SupabaseIcon,
   subBlocks: [
@@ -444,6 +447,13 @@ Return ONLY the order by expression - no explanations, no extra text.`,
       placeholder: '100',
       condition: { field: 'operation', value: 'query' },
     },
+    {
+      id: 'offset',
+      title: 'Offset',
+      type: 'short-input',
+      placeholder: '0',
+      condition: { field: 'operation', value: 'query' },
+    },
     // Vector search operation fields
     {
       id: 'functionName',
@@ -540,6 +550,13 @@ Return ONLY the order by expression - no explanations, no extra text.`,
       title: 'Limit',
       type: 'short-input',
       placeholder: '100',
+      condition: { field: 'operation', value: 'text_search' },
+    },
+    {
+      id: 'offset',
+      title: 'Offset',
+      type: 'short-input',
+      placeholder: '0',
       condition: { field: 'operation', value: 'text_search' },
     },
     // Count operation fields
@@ -675,9 +692,9 @@ Return ONLY the PostgREST filter expression - no explanations, no markdown, no e
     {
       id: 'fileContent',
       title: 'File Content',
-      type: 'code',
+      type: 'short-input',
       canonicalParamId: 'fileData',
-      placeholder: 'Base64 encoded for binary files, or plain text',
+      placeholder: 'File reference from previous block',
       condition: { field: 'operation', value: 'storage_upload' },
       mode: 'advanced',
       required: true,
@@ -973,8 +990,15 @@ Return ONLY the PostgREST filter expression - no explanations, no markdown, no e
           allowedMimeTypes,
           upsert,
           download,
+          fileData,
           ...rest
         } = params
+
+        // Normalize file input for storage_upload operation
+        // fileData is the canonical param for both basic (file) and advanced (fileContent) modes
+        const normalizedFileData = normalizeFileInput(fileData, {
+          single: true,
+        })
 
         // Parse JSON data if it's a string
         let parsedData
@@ -1102,6 +1126,10 @@ Return ONLY the PostgREST filter expression - no explanations, no markdown, no e
           result.isPublic = parsedIsPublic
         }
 
+        if (normalizedFileData !== undefined) {
+          result.fileData = normalizedFileData
+        }
+
         return result
       },
     },
@@ -1142,7 +1170,7 @@ Return ONLY the PostgREST filter expression - no explanations, no markdown, no e
     // Storage operation inputs
     bucket: { type: 'string', description: 'Storage bucket name' },
     path: { type: 'string', description: 'File or folder path in storage' },
-    fileContent: { type: 'string', description: 'File content (base64 for binary)' },
+    fileData: { type: 'json', description: 'File data (UserFile)' },
     contentType: { type: 'string', description: 'MIME type of the file' },
     fileName: { type: 'string', description: 'File name for upload or download override' },
     upsert: { type: 'boolean', description: 'Whether to overwrite existing file' },
@@ -1173,7 +1201,7 @@ Return ONLY the PostgREST filter expression - no explanations, no markdown, no e
       description: 'Row count for count operations',
     },
     file: {
-      type: 'files',
+      type: 'file',
       description: 'Downloaded file stored in execution files',
     },
     publicUrl: {

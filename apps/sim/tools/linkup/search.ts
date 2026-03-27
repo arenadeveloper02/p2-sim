@@ -16,19 +16,20 @@ export const searchTool: ToolConfig<LinkupSearchParams, LinkupSearchToolResponse
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The search query',
+      description: 'The search query (e.g., "latest AI research papers 2024")',
     },
     depth: {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Search depth (has to either be "standard" or "deep")',
+      description: 'Search depth: "standard" for quick results, "deep" for comprehensive search',
     },
     outputType: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'Type of output to return (has to be "sourcedAnswer" or "searchResults")',
+      visibility: 'user-or-llm',
+      description:
+        'Output format: "sourcedAnswer" for AI-generated answer with citations, "searchResults" for raw results',
     },
     apiKey: {
       type: 'string',
@@ -78,6 +79,27 @@ export const searchTool: ToolConfig<LinkupSearchParams, LinkupSearchToolResponse
       required: false,
       visibility: 'user-or-llm',
       description: 'Include sources in response',
+    },
+  },
+
+  hosting: {
+    envKeyPrefix: 'LINKUP_API_KEY',
+    apiKeyParam: 'apiKey',
+    byokProviderId: 'linkup',
+    pricing: {
+      type: 'custom',
+      getCost: (params) => {
+        // Linkup pricing (https://docs.linkup.so/pages/documentation/development/pricing):
+        //   Standard: €0.005/call ≈ $0.006
+        //   Deep:     €0.05/call  ≈ $0.055
+        const depth = params.depth as string
+        const cost = depth === 'deep' ? 0.055 : 0.006
+        return { cost, metadata: { depth } }
+      },
+    },
+    rateLimit: {
+      mode: 'per_request',
+      requestsPerMinute: 60,
     },
   },
 

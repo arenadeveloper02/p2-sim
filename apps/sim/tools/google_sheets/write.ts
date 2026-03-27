@@ -212,8 +212,8 @@ export const writeV2Tool: ToolConfig<GoogleSheetsV2ToolParams, GoogleSheetsV2Wri
     spreadsheetId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'The ID of the spreadsheet',
+      visibility: 'user-or-llm',
+      description: 'Google Sheets spreadsheet ID',
     },
     sheetName: {
       type: 'string',

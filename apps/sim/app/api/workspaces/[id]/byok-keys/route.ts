@@ -5,6 +5,7 @@ import { and, eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { decryptSecret, encryptSecret } from '@/lib/core/security/encryption'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -12,7 +13,21 @@ import { getUserEntityPermissions, getWorkspaceById } from '@/lib/workspaces/per
 
 const logger = createLogger('WorkspaceBYOKKeysAPI')
 
-const VALID_PROVIDERS = ['openai', 'anthropic', 'google', 'mistral'] as const
+const VALID_PROVIDERS = [
+  'openai',
+  'anthropic',
+  'google',
+  'mistral',
+  'firecrawl',
+  'exa',
+  'serper',
+  'linkup',
+  'perplexity',
+  'jina',
+  'google_cloud',
+  'parallel_ai',
+  'brandfetch',
+] as const
 
 const UpsertKeySchema = z.object({
   providerId: z.enum(VALID_PROVIDERS),
@@ -185,6 +200,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     logger.info(`[${requestId}] Created BYOK key for ${providerId} in workspace ${workspaceId}`)
 
+    recordAudit({
+      workspaceId,
+      actorId: userId,
+      actorName: session?.user?.name,
+      actorEmail: session?.user?.email,
+      action: AuditAction.BYOK_KEY_CREATED,
+      resourceType: AuditResourceType.BYOK_KEY,
+      resourceId: newKey.id,
+      resourceName: providerId,
+      description: `Added BYOK key for ${providerId}`,
+      metadata: { providerId },
+      request,
+    })
+
     return NextResponse.json({
       success: true,
       key: {
@@ -241,6 +270,19 @@ export async function DELETE(
       )
 
     logger.info(`[${requestId}] Deleted BYOK key for ${providerId} from workspace ${workspaceId}`)
+
+    recordAudit({
+      workspaceId,
+      actorId: userId,
+      actorName: session?.user?.name,
+      actorEmail: session?.user?.email,
+      action: AuditAction.BYOK_KEY_DELETED,
+      resourceType: AuditResourceType.BYOK_KEY,
+      resourceName: providerId,
+      description: `Removed BYOK key for ${providerId}`,
+      metadata: { providerId },
+      request,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error: unknown) {

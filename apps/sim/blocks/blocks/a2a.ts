@@ -1,5 +1,7 @@
 import { A2AIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { IntegrationType } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import type { ToolResponse } from '@/tools/types'
 
 export interface A2AResponse extends ToolResponse {
@@ -62,6 +64,8 @@ export const A2ABlock: BlockConfig<A2AResponse> = {
     'Compatible with any A2A-compliant agent including LangGraph, Google ADK, and other Sim workflows.',
   docsLink: 'https://docs.sim.ai/blocks/a2a',
   category: 'tools',
+  integrationType: IntegrationType.DeveloperTools,
+  tags: ['agentic', 'automation'],
   bgColor: '#4151B5',
   icon: A2AIcon,
   subBlocks: [
@@ -214,6 +218,14 @@ export const A2ABlock: BlockConfig<A2AResponse> = {
     ],
     config: {
       tool: (params) => params.operation as string,
+      params: (params) => {
+        const { files, ...rest } = params
+        const normalizedFiles = normalizeFileInput(files)
+        return {
+          ...rest,
+          ...(normalizedFiles && { files: normalizedFiles }),
+        }
+      },
     },
   },
   inputs: {
@@ -243,15 +255,7 @@ export const A2ABlock: BlockConfig<A2AResponse> = {
     },
     files: {
       type: 'array',
-      description: 'Files to include with the message',
-    },
-    fileUpload: {
-      type: 'array',
-      description: 'Uploaded files (basic mode)',
-    },
-    fileReference: {
-      type: 'json',
-      description: 'File reference from previous blocks (advanced mode)',
+      description: 'Files to include with the message (canonical param)',
     },
     historyLength: {
       type: 'number',

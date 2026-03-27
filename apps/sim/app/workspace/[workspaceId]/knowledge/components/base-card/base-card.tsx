@@ -8,6 +8,7 @@ import { clickKnowledgeBaseEvent } from '@/app/arenaMixpanelEvents/mixpanelEvent
 import { BaseTagsModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
+import { CONNECTOR_REGISTRY } from '@/connectors/registry'
 import { DeleteKnowledgeBaseModal } from '../delete-knowledge-base-modal/delete-knowledge-base-modal'
 import { EditKnowledgeBaseModal } from '../edit-knowledge-base-modal/edit-knowledge-base-modal'
 import { KnowledgeBaseContextMenu } from '../knowledge-base-context-menu/knowledge-base-context-menu'
@@ -20,6 +21,7 @@ interface BaseCardProps {
   createdAt?: string
   updatedAt?: string
   searchQuery?: string
+  connectorTypes?: string[]
   onUpdate?: (id: string, name: string, description: string) => Promise<void>
   onDelete?: (id: string) => Promise<void>
 }
@@ -78,6 +80,7 @@ export function BaseCard({
   description,
   updatedAt,
   searchQuery,
+  connectorTypes = [],
   onUpdate,
   onDelete,
 }: BaseCardProps) {
@@ -208,9 +211,33 @@ export function BaseCard({
 
             <div className='h-0 w-full border-[var(--divider)] border-t' />
 
-            <p className='line-clamp-2 h-[36px] text-[12px] text-[var(--text-tertiary)] leading-[18px]'>
-              {description}
-            </p>
+            <div className='flex items-start justify-between gap-[8px]'>
+              <p className='line-clamp-2 h-[36px] flex-1 text-[12px] text-[var(--text-tertiary)] leading-[18px]'>
+                {description}
+              </p>
+              {connectorTypes.length > 0 && (
+                <div className='flex flex-shrink-0 items-center'>
+                  {connectorTypes.map((type, index) => {
+                    const config = CONNECTOR_REGISTRY[type]
+                    if (!config?.icon) return null
+                    const Icon = config.icon
+                    return (
+                      <Tooltip.Root key={type}>
+                        <Tooltip.Trigger asChild>
+                          <div
+                            className='flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center rounded-[4px] bg-[var(--surface-5)]'
+                            style={{ marginLeft: index > 0 ? '-4px' : '0' }}
+                          >
+                            <Icon className='h-[12px] w-[12px] text-[var(--text-secondary)]' />
+                          </div>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>{config.name}</Tooltip.Content>
+                      </Tooltip.Root>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -218,7 +245,6 @@ export function BaseCard({
       <KnowledgeBaseContextMenu
         isOpen={isContextMenuOpen}
         position={contextMenuPosition}
-        menuRef={menuRef}
         onClose={closeContextMenu}
         onOpenInNewTab={handleOpenInNewTab}
         onViewTags={handleViewTags}

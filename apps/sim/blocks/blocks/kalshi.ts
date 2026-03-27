@@ -1,6 +1,6 @@
 import { KalshiIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import { createVersionedToolSelector } from '@/blocks/utils'
 
 export const KalshiBlock: BlockConfig = {
@@ -12,6 +12,8 @@ export const KalshiBlock: BlockConfig = {
   docsLink: 'https://docs.sim.ai/tools/kalshi',
   authMode: AuthMode.ApiKey,
   category: 'tools',
+  integrationType: IntegrationType.Analytics,
+  tags: ['prediction-markets', 'data-analytics'],
   hideFromToolbar: true,
   bgColor: '#09C285',
   icon: KalshiIcon,
@@ -96,6 +98,7 @@ export const KalshiBlock: BlockConfig = {
         { label: 'Settled', id: 'settled' },
       ],
       condition: { field: 'operation', value: ['get_markets', 'get_events'] },
+      mode: 'advanced',
     },
     {
       id: 'seriesTicker',
@@ -103,6 +106,7 @@ export const KalshiBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Filter by series ticker',
       condition: { field: 'operation', value: ['get_markets', 'get_events'] },
+      mode: 'advanced',
     },
     {
       id: 'eventTicker',
@@ -134,6 +138,7 @@ export const KalshiBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Filter by market ticker (optional)',
       condition: { field: 'operation', value: ['get_orders', 'get_positions'] },
+      mode: 'advanced',
     },
     // Nested markets option
     {
@@ -145,6 +150,7 @@ export const KalshiBlock: BlockConfig = {
         { label: 'Yes', id: 'true' },
       ],
       condition: { field: 'operation', value: ['get_events', 'get_event'] },
+      mode: 'advanced',
     },
     // Get Positions fields
     {
@@ -157,6 +163,7 @@ export const KalshiBlock: BlockConfig = {
         { label: 'Settled', id: 'settled' },
       ],
       condition: { field: 'operation', value: ['get_positions'] },
+      mode: 'advanced',
     },
     // Get Orders fields
     {
@@ -170,6 +177,7 @@ export const KalshiBlock: BlockConfig = {
         { label: 'Executed', id: 'executed' },
       ],
       condition: { field: 'operation', value: ['get_orders'] },
+      mode: 'advanced',
     },
     // Get Fills timestamp filters
     {
@@ -178,6 +186,7 @@ export const KalshiBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Minimum timestamp (Unix milliseconds)',
       condition: { field: 'operation', value: ['get_fills'] },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a Unix timestamp in milliseconds based on the user's description.
@@ -198,6 +207,7 @@ Return ONLY the numeric timestamp (milliseconds since Unix epoch) - no explanati
       type: 'short-input',
       placeholder: 'Maximum timestamp (Unix milliseconds)',
       condition: { field: 'operation', value: ['get_fills'] },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a Unix timestamp in milliseconds based on the user's description.
@@ -290,6 +300,7 @@ Return ONLY the numeric timestamp (seconds since Unix epoch) - no explanations, 
       type: 'short-input',
       placeholder: 'Filter by market ticker (optional)',
       condition: { field: 'operation', value: ['get_fills'] },
+      mode: 'advanced',
     },
     {
       id: 'orderId',
@@ -297,6 +308,7 @@ Return ONLY the numeric timestamp (seconds since Unix epoch) - no explanations, 
       type: 'short-input',
       placeholder: 'Filter by order ID (optional)',
       condition: { field: 'operation', value: ['get_fills'] },
+      mode: 'advanced',
     },
     // Get Series by Ticker fields
     {
@@ -398,6 +410,7 @@ Return ONLY the numeric timestamp (seconds since Unix epoch) - no explanations, 
       type: 'short-input',
       placeholder: 'Custom order identifier (optional)',
       condition: { field: 'operation', value: ['create_order'] },
+      mode: 'advanced',
     },
     {
       id: 'clientOrderIdAmend',
@@ -425,6 +438,7 @@ Return ONLY the numeric timestamp (seconds since Unix epoch) - no explanations, 
         { label: 'Immediate or Cancel', id: 'immediate_or_cancel' },
       ],
       condition: { field: 'operation', value: ['create_order'] },
+      mode: 'advanced',
     },
     {
       id: 'expirationTs',
@@ -432,6 +446,7 @@ Return ONLY the numeric timestamp (seconds since Unix epoch) - no explanations, 
       type: 'short-input',
       placeholder: 'Unix timestamp for order expiration',
       condition: { field: 'operation', value: ['create_order'] },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a Unix timestamp in seconds based on the user's description for when the order should expire.
@@ -455,6 +470,7 @@ Return ONLY the numeric timestamp (seconds since Unix epoch) - no explanations, 
         { label: 'Yes', id: 'true' },
       ],
       condition: { field: 'operation', value: ['create_order'] },
+      mode: 'advanced',
     },
     {
       id: 'reduceOnly',
@@ -465,6 +481,7 @@ Return ONLY the numeric timestamp (seconds since Unix epoch) - no explanations, 
         { label: 'Yes', id: 'true' },
       ],
       condition: { field: 'operation', value: ['create_order'] },
+      mode: 'advanced',
     },
     // Pagination fields
     {
@@ -483,6 +500,7 @@ Return ONLY the numeric timestamp (seconds since Unix epoch) - no explanations, 
           'get_fills',
         ],
       },
+      mode: 'advanced',
     },
     {
       id: 'cursor',
@@ -500,6 +518,7 @@ Return ONLY the numeric timestamp (seconds since Unix epoch) - no explanations, 
           'get_fills',
         ],
       },
+      mode: 'advanced',
     },
   ],
   tools: {
@@ -690,6 +709,8 @@ export const KalshiV2Block: BlockConfig = {
   description: 'Access prediction markets and trade on Kalshi',
   longDescription:
     'Integrate Kalshi prediction markets into the workflow. Can get markets, market, events, event, balance, positions, orders, orderbook, trades, candlesticks, fills, series, exchange status, and place/cancel/amend trades.',
+  integrationType: IntegrationType.Analytics,
+  tags: ['prediction-markets', 'data-analytics'],
   hideFromToolbar: false,
   tools: {
     ...KalshiBlock.tools,

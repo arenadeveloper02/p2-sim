@@ -12,11 +12,11 @@ import {
   Code,
   Input,
   Label,
+  Skeleton,
   TagInput,
   Textarea,
   Tooltip,
 } from '@/components/emcn'
-import { Skeleton } from '@/components/ui'
 import type { AgentAuthentication, AgentCapabilities } from '@/lib/a2a/types'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { normalizeInputFormatValue } from '@/lib/workflows/input-format'
@@ -179,7 +179,7 @@ export function A2aDeploy({
       newFields.push({
         id: crypto.randomUUID(),
         name: 'files',
-        type: 'files',
+        type: 'file[]',
         value: '',
         collapsed: false,
       })

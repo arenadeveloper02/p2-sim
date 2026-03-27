@@ -32,7 +32,18 @@ export class NodeExecutionOrchestrator {
       throw new Error(`Node not found in DAG: ${nodeId}`)
     }
 
-    if (this.state.hasExecuted(nodeId)) {
+    if (ctx.runFromBlockContext && !ctx.runFromBlockContext.dirtySet.has(nodeId)) {
+      const cachedOutput = this.state.getBlockOutput(nodeId) || {}
+      logger.debug('Skipping non-dirty block in run-from-block mode', { nodeId })
+      return {
+        nodeId,
+        output: cachedOutput,
+        isFinalOutput: false,
+      }
+    }
+
+    const isDirtyBlock = ctx.runFromBlockContext?.dirtySet.has(nodeId) ?? false
+    if (!isDirtyBlock && this.state.hasExecuted(nodeId)) {
       const output = this.state.getBlockOutput(nodeId) || {}
       return {
         nodeId,
@@ -79,7 +90,7 @@ export class NodeExecutionOrchestrator {
             //   maxIterations: existingScope.maxIterations || existingScope.items?.length,
             // })
             // Clear execution state for all nodes in the loop so they can execute again
-            this.loopOrchestrator.clearLoopExecutionState(loopId)
+            this.loopOrchestrator.clearLoopExecutionState(loopId, ctx)
             // Restore loop edges that may have been deactivated
             this.loopOrchestrator.restoreLoopEdges(loopId)
             // Re-initialize the loop scope with fresh state
@@ -115,20 +126,20 @@ export class NodeExecutionOrchestrator {
       // This ensures loop variables from outer loops are available
       this.initializeContainingLoopScopes(ctx, nodeId, loopId)
 
-      if (!this.loopOrchestrator.shouldExecuteLoopNode(ctx, nodeId, loopId)) {
-        return {
-          nodeId,
-          output: {},
-          isFinalOutput: false,
-        }
-      }
+      // if (!this.loopOrchestrator.shouldExecuteLoopNode(ctx, nodeId, loopId)) {
+      //   return {
+      //     nodeId,
+      //     output: {},
+      //     isFinalOutput: false,
+      //   }
+      // }
     }
 
     const parallelId = node.metadata.parallelId
     if (parallelId && !this.parallelOrchestrator.getParallelScope(ctx, parallelId)) {
       const parallelConfig = this.dag.parallelConfigs.get(parallelId)
       const nodesInParallel = parallelConfig?.nodes?.length || 1
-      this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
+      await this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
     }
 
     if (node.metadata.isSentinel) {
@@ -160,7 +171,7 @@ export class NodeExecutionOrchestrator {
     const isParallelSentinel = node.metadata.isParallelSentinel
 
     if (isParallelSentinel) {
-      return this.handleParallelSentinel(ctx, node, sentinelType, parallelId)
+      return await this.handleParallelSentinel(ctx, node, sentinelType, parallelId)
     }
 
     switch (sentinelType) {
@@ -228,12 +239,12 @@ export class NodeExecutionOrchestrator {
     }
   }
 
-  private handleParallelSentinel(
+  private async handleParallelSentinel(
     ctx: ExecutionContext,
     node: DAGNode,
     sentinelType: string | undefined,
     parallelId: string | undefined
-  ): NormalizedBlockOutput {
+  ): Promise<NormalizedBlockOutput> {
     if (!parallelId) {
       logger.warn('Parallel sentinel called without parallelId')
       return {}
@@ -244,14 +255,25 @@ export class NodeExecutionOrchestrator {
         const parallelConfig = this.dag.parallelConfigs.get(parallelId)
         if (parallelConfig) {
           const nodesInParallel = parallelConfig.nodes?.length || 1
-          this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
+          await this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
         }
       }
+
+      const scope = this.parallelOrchestrator.getParallelScope(ctx, parallelId)
+      if (scope?.isEmpty) {
+        logger.info('Parallel has empty distribution, skipping parallel body', { parallelId })
+        return {
+          sentinelStart: true,
+          shouldExit: true,
+          selectedRoute: EDGE.PARALLEL_EXIT,
+        }
+      }
+
       return { sentinelStart: true }
     }
 
     if (sentinelType === 'end') {
-      const result = this.parallelOrchestrator.aggregateParallelResults(ctx, parallelId)
+      const result = await this.parallelOrchestrator.aggregateParallelResults(ctx, parallelId)
       return {
         results: result.results || [],
         sentinelEnd: true,
@@ -285,7 +307,7 @@ export class NodeExecutionOrchestrator {
     } else if (isParallelBranch) {
       const parallelId = this.findParallelIdForNode(node.id)
       if (parallelId) {
-        this.handleParallelNodeCompletion(ctx, node, output, parallelId)
+        await this.handleParallelNodeCompletion(ctx, node, output, parallelId)
       } else {
         this.handleRegularNodeCompletion(ctx, node, output)
       }
@@ -304,17 +326,17 @@ export class NodeExecutionOrchestrator {
     this.state.setBlockOutput(node.id, output)
   }
 
-  private handleParallelNodeCompletion(
+  private async handleParallelNodeCompletion(
     ctx: ExecutionContext,
     node: DAGNode,
     output: NormalizedBlockOutput,
     parallelId: string
-  ): void {
+  ): Promise<void> {
     const scope = this.parallelOrchestrator.getParallelScope(ctx, parallelId)
     if (!scope) {
       const parallelConfig = this.dag.parallelConfigs.get(parallelId)
       const nodesInParallel = parallelConfig?.nodes?.length || 1
-      this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
+      await this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
     }
     const allComplete = this.parallelOrchestrator.handleParallelBranchCompletion(
       ctx,
@@ -323,7 +345,7 @@ export class NodeExecutionOrchestrator {
       output
     )
     if (allComplete) {
-      this.parallelOrchestrator.aggregateParallelResults(ctx, parallelId)
+      await this.parallelOrchestrator.aggregateParallelResults(ctx, parallelId)
     }
 
     this.state.setBlockOutput(node.id, output)
@@ -343,7 +365,7 @@ export class NodeExecutionOrchestrator {
     ) {
       const loopId = node.metadata.loopId
       if (loopId) {
-        this.loopOrchestrator.clearLoopExecutionState(loopId)
+        this.loopOrchestrator.clearLoopExecutionState(loopId, ctx)
         this.loopOrchestrator.restoreLoopEdges(loopId)
       }
     }

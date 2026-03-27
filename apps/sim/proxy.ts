@@ -39,8 +39,8 @@ function handleRootPathRedirects(
   // Always redirect root path to workspace
   // Auto-login will handle authentication if email cookie exists
   if (hasActiveSession) {
-    const from = url.searchParams.get('from')
-    if (!from) {
+    const isBrowsingHome = url.searchParams.has('home')
+    if (!isBrowsingHome) {
       return NextResponse.redirect(new URL('/workspace', request.url))
     }
     return null
@@ -115,11 +115,17 @@ function handleWorkspaceInvitationAPI(
  */
 function handleSecurityFiltering(request: NextRequest): NextResponse | null {
   const userAgent = request.headers.get('user-agent') || ''
-  const isWebhookEndpoint = request.nextUrl.pathname.startsWith('/api/webhooks/trigger/')
+  const { pathname } = request.nextUrl
+  const isWebhookEndpoint = pathname.startsWith('/api/webhooks/trigger/')
+  const isMcpEndpoint = pathname.startsWith('/api/mcp/')
+  const isMcpOauthDiscoveryEndpoint =
+    pathname.startsWith('/.well-known/oauth-authorization-server') ||
+    pathname.startsWith('/.well-known/oauth-protected-resource')
   const isSuspicious = SUSPICIOUS_UA_PATTERNS.some((pattern) => pattern.test(userAgent))
 
-  // Block suspicious requests, but exempt webhook endpoints from User-Agent validation
-  if (isSuspicious && !isWebhookEndpoint) {
+  // Block suspicious requests, but exempt machine-to-machine endpoints that may
+  // legitimately omit User-Agent headers (webhooks and MCP protocol discovery/calls).
+  if (isSuspicious && !isWebhookEndpoint && !isMcpEndpoint && !isMcpOauthDiscoveryEndpoint) {
     logger.warn('Blocked suspicious request', {
       userAgent,
       ip: request.headers.get('x-forwarded-for') || 'unknown',
@@ -166,6 +172,7 @@ export async function proxy(request: NextRequest) {
     return response
   }
 
+  // Chat pages are publicly accessible embeds — CSP is set in next.config.ts headers
   if (url.pathname.startsWith('/chat/')) {
     return NextResponse.next()
   }
@@ -209,11 +216,7 @@ export async function proxy(request: NextRequest) {
   const response = NextResponse.next()
   response.headers.set('Vary', 'User-Agent')
 
-  if (
-    url.pathname.startsWith('/workspace') ||
-    url.pathname.startsWith('/chat') ||
-    url.pathname === '/'
-  ) {
+  if (url.pathname.startsWith('/workspace') || url.pathname === '/') {
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
   }
 
@@ -232,6 +235,6 @@ export const config = {
     '/signup',
     '/invite/:path*', // Match invitation routes
     // Catch-all for other pages, excluding static assets and public directories
-    '/((?!_next/static|_next/image|favicon.ico|logo/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
+    '/((?!_next/static|_next/image|ingest|favicon.ico|logo/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
   ],
 }

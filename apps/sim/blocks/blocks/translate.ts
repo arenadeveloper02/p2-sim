@@ -1,8 +1,10 @@
 import { TranslateIcon } from '@/components/icons'
-import { AuthMode, type BlockConfig } from '@/blocks/types'
-import { getProviderCredentialSubBlocks, PROVIDER_CREDENTIAL_INPUTS } from '@/blocks/utils'
-import { getProviderIcon } from '@/providers/utils'
-import { useProvidersStore } from '@/stores/providers/store'
+import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
+import {
+  getModelOptions,
+  getProviderCredentialSubBlocks,
+  PROVIDER_CREDENTIAL_INPUTS,
+} from '@/blocks/utils'
 
 const getTranslationPrompt = (targetLanguage: string) =>
   `Translate the following text into ${targetLanguage || 'English'}. Output ONLY the translated text with no additional commentary, explanations, or notes.`
@@ -15,6 +17,8 @@ export const TranslateBlock: BlockConfig = {
   longDescription: 'Integrate Translate into the workflow. Can translate text to any language.',
   docsLink: 'https://docs.sim.ai/tools/translate',
   category: 'tools',
+  integrationType: IntegrationType.AI,
+  tags: ['document-processing', 'llm'],
   bgColor: '#FF4B4B',
   icon: TranslateIcon,
   subBlocks: [
@@ -38,18 +42,7 @@ export const TranslateBlock: BlockConfig = {
       type: 'combobox',
       placeholder: 'Type or select a model...',
       required: true,
-      options: () => {
-        const providersState = useProvidersStore.getState()
-        const baseModels = providersState.providers.base.models
-        const ollamaModels = providersState.providers.ollama.models
-        const openrouterModels = providersState.providers.openrouter.models
-        const allModels = Array.from(new Set([...baseModels, ...ollamaModels, ...openrouterModels]))
-
-        return allModels.map((model) => {
-          const icon = getProviderIcon(model)
-          return { label: model, id: model, ...(icon && { icon }) }
-        })
-      },
+      options: getModelOptions,
     },
     ...getProviderCredentialSubBlocks(),
     {
@@ -76,8 +69,9 @@ export const TranslateBlock: BlockConfig = {
         vertexProject: params.vertexProject,
         vertexLocation: params.vertexLocation,
         vertexCredential: params.vertexCredential,
-        bedrockRegion: params.bedrockRegion,
+        bedrockAccessKeyId: params.bedrockAccessKeyId,
         bedrockSecretKey: params.bedrockSecretKey,
+        bedrockRegion: params.bedrockRegion,
       }),
     },
   },

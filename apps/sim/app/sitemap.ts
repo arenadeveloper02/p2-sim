@@ -13,24 +13,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: now,
     },
     {
-      url: `${baseUrl}/studio`,
+      url: `${baseUrl}/blog`,
       lastModified: now,
     },
     {
-      url: `${baseUrl}/studio/tags`,
+      url: `${baseUrl}/blog/tags`,
       lastModified: now,
     },
-    {
-      url: `${baseUrl}/templates`,
-      lastModified: now,
-    },
+    // {
+    //   url: `${baseUrl}/templates`,
+    //   lastModified: now,
+    // },
     {
       url: `${baseUrl}/changelog`,
       lastModified: now,
-    },
-    {
-      url: `${baseUrl}/careers`,
-      lastModified: new Date('2024-10-06'),
     },
     {
       url: `${baseUrl}/terms`,

@@ -59,13 +59,21 @@ export const FILTER_DEFINITIONS: FilterDefinition[] = [
     label: 'Cost',
     description: 'Filter by execution cost',
     options: [
-      { value: '>0.01', label: 'Over $0.01', description: 'Executions costing more than $0.01' },
+      {
+        value: '>0.01',
+        label: 'Over 2 credits',
+        description: 'Executions costing more than 2 credits',
+      },
       {
         value: '<0.005',
-        label: 'Under $0.005',
-        description: 'Executions costing less than $0.005',
+        label: 'Under 1 credit',
+        description: 'Executions costing less than 1 credit',
       },
-      { value: '>0.05', label: 'Over $0.05', description: 'Executions costing more than $0.05' },
+      {
+        value: '>0.05',
+        label: 'Over 10 credits',
+        description: 'Executions costing more than 10 credits',
+      },
       { value: '=0', label: 'Free', description: 'Free executions' },
       { value: '>0', label: 'Paid', description: 'Executions with cost' },
     ],
@@ -433,7 +441,7 @@ export class SearchSuggestions {
         value: `date:${partial}`,
         label: `${this.formatDateLabel(startDate)} to ${this.formatDateLabel(endDate)}`,
         description: 'Custom date range',
-        category: 'date' as any,
+        category: 'date',
       })
       return suggestions
     }
@@ -446,7 +454,7 @@ export class SearchSuggestions {
         value: `date:${startDate}..`,
         label: `${this.formatDateLabel(startDate)} to ...`,
         description: 'Type end date (YYYY-MM-DD)',
-        category: 'date' as any,
+        category: 'date',
       })
       return suggestions
     }
@@ -458,7 +466,7 @@ export class SearchSuggestions {
         value: `date:${partial}`,
         label: `Year ${partial}`,
         description: 'All logs from this year',
-        category: 'date' as any,
+        category: 'date',
       })
       return suggestions
     }
@@ -486,7 +494,7 @@ export class SearchSuggestions {
         value: `date:${partial}`,
         label: `${monthName} ${year}`,
         description: 'All logs from this month',
-        category: 'date' as any,
+        category: 'date',
       })
       return suggestions
     }
@@ -500,7 +508,7 @@ export class SearchSuggestions {
           value: `date:${partial}`,
           label: this.formatDateLabel(partial),
           description: 'Single date',
-          category: 'date' as any,
+          category: 'date',
         })
         // Also suggest starting a range
         suggestions.push({
@@ -508,7 +516,7 @@ export class SearchSuggestions {
           value: `date:${partial}..`,
           label: `${this.formatDateLabel(partial)} to ...`,
           description: 'Start a date range',
-          category: 'date' as any,
+          category: 'date',
         })
       }
       return suggestions
@@ -521,7 +529,7 @@ export class SearchSuggestions {
         value: `date:${partial}`,
         label: partial,
         description: 'Continue typing: YYYY, YYYY-MM, or YYYY-MM-DD',
-        category: 'date' as any,
+        category: 'date',
       })
     }
 

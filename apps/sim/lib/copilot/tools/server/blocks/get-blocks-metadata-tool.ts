@@ -1,15 +1,13 @@
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { createLogger } from '@sim/logger'
+import { getCopilotToolDescription } from '@/lib/copilot/tool-descriptions'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
-import {
-  type GetBlocksMetadataInput,
-  GetBlocksMetadataResult,
-} from '@/lib/copilot/tools/shared/schemas'
+import { GetBlocksMetadataInput, GetBlocksMetadataResult } from '@/lib/copilot/tools/shared/schemas'
+import { getAllowedIntegrationsFromEnv, isHosted } from '@/lib/core/config/feature-flags'
 import { registry as blockRegistry } from '@/blocks/registry'
-import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
-import { getUserPermissionConfig } from '@/executor/utils/permission-check'
+import { AuthMode, type BlockConfig, isHiddenFromDisplay } from '@/blocks/types'
+import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 import { tools as toolsRegistry } from '@/tools/registry'
 import { getTrigger, isTriggerValid } from '@/triggers'
@@ -106,6 +104,8 @@ export const getBlocksMetadataServerTool: BaseServerTool<
   ReturnType<typeof GetBlocksMetadataResult.parse>
 > = {
   name: 'get_blocks_metadata',
+  inputSchema: GetBlocksMetadataInput,
+  outputSchema: GetBlocksMetadataResult,
   async execute(
     { blockIds }: ReturnType<typeof GetBlocksMetadataInput.parse>,
     context?: { userId: string }
@@ -114,11 +114,12 @@ export const getBlocksMetadataServerTool: BaseServerTool<
     logger.debug('Executing get_blocks_metadata', { count: blockIds?.length })
 
     const permissionConfig = context?.userId ? await getUserPermissionConfig(context.userId) : null
-    const allowedIntegrations = permissionConfig?.allowedIntegrations
+    const allowedIntegrations =
+      permissionConfig?.allowedIntegrations ?? getAllowedIntegrationsFromEnv()
 
     const result: Record<string, CopilotBlockMetadata> = {}
     for (const blockId of blockIds || []) {
-      if (allowedIntegrations != null && !allowedIntegrations.includes(blockId)) {
+      if (allowedIntegrations != null && !allowedIntegrations.includes(blockId.toLowerCase())) {
         logger.debug('Block not allowed by permission group', { blockId })
         continue
       }
@@ -161,7 +162,10 @@ export const getBlocksMetadataServerTool: BaseServerTool<
               return {
                 id: toolId,
                 name: tool.name || toolId,
-                description: tool.description || '',
+                description: getCopilotToolDescription(tool, {
+                  isHosted,
+                  fallbackName: toolId,
+                }),
                 inputs: tool.params || {},
                 outputs: tool.outputs || {},
               }
@@ -234,7 +238,11 @@ export const getBlocksMetadataServerTool: BaseServerTool<
           const resolvedToolId = resolveToolIdForOperation(blockConfig, opId)
           const toolCfg = resolvedToolId ? toolsRegistry[resolvedToolId] : undefined
           const toolParams: Record<string, any> = toolCfg?.params || {}
-          const toolOutputs: Record<string, any> = toolCfg?.outputs || {}
+          const toolOutputs: Record<string, any> = toolCfg?.outputs
+            ? Object.fromEntries(
+                Object.entries(toolCfg.outputs).filter(([_, def]) => !isHiddenFromDisplay(def))
+              )
+            : {}
           const filteredToolParams: Record<string, any> = {}
           for (const [k, v] of Object.entries(toolParams)) {
             if (!(k in blockInputs)) filteredToolParams[k] = v
@@ -242,12 +250,23 @@ export const getBlocksMetadataServerTool: BaseServerTool<
           operations[opId] = {
             toolId: resolvedToolId,
             toolName: toolCfg?.name || resolvedToolId,
-            description: toolCfg?.description || undefined,
+            description: toolCfg
+              ? getCopilotToolDescription(toolCfg, {
+                  isHosted,
+                  fallbackName: resolvedToolId,
+                })
+              : undefined,
             inputs: { ...filteredToolParams, ...(operationInputs[opId] || {}) },
             outputs: toolOutputs,
             inputSchema: operationParameters[opId] || [],
           }
         }
+
+        const filteredOutputs = blockConfig.outputs
+          ? Object.fromEntries(
+              Object.entries(blockConfig.outputs).filter(([_, def]) => !isHiddenFromDisplay(def))
+            )
+          : undefined
 
         metadata = {
           id: blockId,
@@ -262,7 +281,7 @@ export const getBlocksMetadataServerTool: BaseServerTool<
           triggers,
           operationInputSchema: operationParameters,
           operations,
-          outputs: blockConfig.outputs,
+          outputs: filteredOutputs,
         }
       }
 
@@ -283,7 +302,11 @@ export const getBlocksMetadataServerTool: BaseServerTool<
         if (existsSync(docPath)) {
           metadata.yamlDocumentation = readFileSync(docPath, 'utf-8')
         }
-      } catch {}
+      } catch (error) {
+        logger.warn('Failed to read YAML documentation file', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
 
       if (metadata) {
         result[blockId] = removeNullish(metadata) as CopilotBlockMetadata
@@ -408,7 +431,6 @@ function extractInputs(metadata: CopilotBlockMetadata): {
     }
 
     if (schema.options && schema.options.length > 0) {
-      // Always return the id (actual value to use), not the display label
       input.options = schema.options.map((opt) => opt.id || opt.label)
     }
 
@@ -946,7 +968,12 @@ function resolveToolIdForOperation(blockConfig: BlockConfig, opId: string): stri
       const maybeToolId = toolSelector({ operation: opId })
       if (typeof maybeToolId === 'string') return maybeToolId
     }
-  } catch {}
+  } catch (error) {
+    const toolLogger = createLogger('GetBlocksMetadataServerTool')
+    toolLogger.warn('Failed to resolve tool ID for operation', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
   return undefined
 }
 

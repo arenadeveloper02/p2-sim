@@ -3,8 +3,9 @@
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { AlertCircle, Paperclip, Send, Square, X } from 'lucide-react'
-import { Tooltip } from '@/components/emcn'
+import { Paperclip, Send, Square, X } from 'lucide-react'
+import { Badge, Tooltip } from '@/components/emcn'
+import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
 const logger = createLogger('ChatInput')
@@ -15,6 +16,13 @@ const PLACEHOLDER_MOBILE = 'Enter a message'
 const PLACEHOLDER_DESKTOP = 'Enter a message or click the mic to speak'
 const MAX_TEXTAREA_HEIGHT = 120 // Max height in pixels (e.g., for about 3-4 lines)
 const MAX_TEXTAREA_HEIGHT_MOBILE = 100 // Smaller for mobile
+const IS_STT_AVAILABLE =
+  typeof window !== 'undefined' &&
+  !!(
+    (window as Window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown })
+      .SpeechRecognition ||
+    (window as Window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition
+  )
 
 interface AttachedFile {
   id: string
@@ -54,10 +62,6 @@ export const ChatInput: React.FC<{
   const [dragCounter, setDragCounter] = useState(0)
   const isDragOver = dragCounter > 0
 
-  // Check if speech-to-text is available in the browser
-  const isSttAvailable =
-    typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition)
-
   // Function to adjust textarea height
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
@@ -79,10 +83,6 @@ export const ChatInput: React.FC<{
     }
   }
 
-  // Adjust height on input change
-  useEffect(() => {
-    adjustTextareaHeight()
-  }, [inputValue])
 
   // When parent injects text (e.g. "Ask this in chat"), set input to that text + space and focus
   useEffect(() => {
@@ -119,17 +119,14 @@ export const ChatInput: React.FC<{
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [inputValue])
 
-  // Handle focus and initial height when activated
-  useEffect(() => {
-    if (isActive && textareaRef.current) {
-      textareaRef.current.focus()
-      adjustTextareaHeight() // Adjust height when becoming active
-    }
-  }, [isActive])
-
   const handleActivate = () => {
     setIsActive(true)
-    // Focus is now handled by the useEffect above
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+        adjustTextareaHeight()
+      }
+    })
   }
 
   // Handle file selection
@@ -211,6 +208,7 @@ export const ChatInput: React.FC<{
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value)
+    adjustTextareaHeight()
   }
 
   // Handle voice start with smooth transition to voice-first mode
@@ -224,7 +222,7 @@ export const ChatInput: React.FC<{
       <Tooltip.Provider>
         <div className='flex items-center justify-center'>
           {/* Voice Input Only */}
-          {isSttAvailable && (
+          {IS_STT_AVAILABLE && (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <div>
@@ -247,24 +245,12 @@ export const ChatInput: React.FC<{
         <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
           {/* Error Messages */}
           {uploadErrors.length > 0 && (
-            <div className='mb-3'>
-              <div className='rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-950/20'>
-                <div className='flex items-start gap-2'>
-                  <AlertCircle className='mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400' />
-                  <div className='flex-1'>
-                    <div className='mb-1 font-medium text-red-800 text-sm dark:text-red-300'>
-                      File upload error
-                    </div>
-                    <div className='space-y-1'>
-                      {uploadErrors.map((error, idx) => (
-                        <div key={idx} className='text-red-700 text-sm dark:text-red-400'>
-                          {error}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <div className='mb-3 flex flex-col gap-2'>
+              {uploadErrors.map((error, idx) => (
+                <Badge key={idx} variant='red' size='lg' dot className='max-w-full'>
+                  {error}
+                </Badge>
+              ))}
             </div>
           )}
 
@@ -309,7 +295,7 @@ export const ChatInput: React.FC<{
           >
             {/* File Previews */}
             {attachedFiles.length > 0 && (
-              <div className='mb-2 flex flex-wrap gap-2 px-3 pt-3 md:px-4'>
+              <div className='mb-2 flex max-h-[160px] flex-wrap gap-2 overflow-y-auto px-3 pt-3 md:px-4'>
                 {attachedFiles.map((file) => {
                   const formatFileSize = (bytes: number) => {
                     if (bytes === 0) return '0 B'
@@ -389,7 +375,7 @@ export const ChatInput: React.FC<{
                 ref={fileInputRef}
                 type='file'
                 multiple
-                accept='.pdf,.csv,.doc,.docx,.txt,.md,.xlsx,.xls,.html,.htm,.pptx,.ppt,.json,.xml,.rtf,image/*'
+                accept={CHAT_ACCEPT_ATTRIBUTE}
                 onChange={(e) => {
                   handleFileSelect(e.target.files)
                   if (fileInputRef.current) {
@@ -447,7 +433,7 @@ export const ChatInput: React.FC<{
               </div>
 
               {/* Voice Input */}
-              {isSttAvailable && (
+              {IS_STT_AVAILABLE && (
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
                     <div>

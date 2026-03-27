@@ -14,19 +14,22 @@ import {
   loadDeployedWorkflowState,
   loadWorkflowFromNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
+import { mergeSubblockStateWithValues } from '@/lib/workflows/subblocks'
 import { TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { updateWorkflowRunCounts } from '@/lib/workflows/utils'
 import { Executor } from '@/executor'
 import type { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type {
+  ChildWorkflowContext,
   ContextExtensions,
   ExecutionCallbacks,
   IterationContext,
+  SerializableExecutionState,
 } from '@/executor/execution/types'
 import type { ExecutionResult, NormalizedBlockOutput } from '@/executor/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
+import { buildParallelSentinelEndId, buildSentinelEndId } from '@/executor/utils/subflow-utils'
 import { Serializer } from '@/serializer'
-import { mergeSubblockState } from '@/stores/workflows/server-utils'
 
 const logger = createLogger('ExecutionCore')
 
@@ -40,6 +43,12 @@ export interface ExecuteWorkflowCoreOptions {
   abortSignal?: AbortSignal
   includeFileBase64?: boolean
   base64MaxBytes?: number
+  stopAfterBlockId?: string
+  /** Run-from-block mode: execute starting from a specific block using cached upstream outputs */
+  runFromBlock?: {
+    startBlockId: string
+    sourceSnapshot: SerializableExecutionState
+  }
 }
 
 function parseVariableValueByType(value: unknown, type: string): unknown {
@@ -114,11 +123,13 @@ export async function executeWorkflowCore(
     abortSignal,
     includeFileBase64,
     base64MaxBytes,
+    stopAfterBlockId,
+    runFromBlock,
   } = options
   const { metadata, workflow, input, workflowVariables, selectedOutputs } = snapshot
   const { requestId, workflowId, userId, triggerType, executionId, triggerBlockId, useDraftState } =
     metadata
-  const { onBlockStart, onBlockComplete, onStream } = callbacks
+  const { onBlockStart, onBlockComplete, onStream, onChildWorkflowInstanceReady } = callbacks
 
   const providedWorkspaceId = metadata.workspaceId
   if (!providedWorkspaceId) {
@@ -172,16 +183,12 @@ export async function executeWorkflowCore(
       logger.info(`[${requestId}] Using deployed workflow state (deployed execution)`)
     }
 
-    // Merge block states
-    const mergedStates = mergeSubblockState(blocks)
+    const mergedStates = mergeSubblockStateWithValues(blocks)
 
-    const personalEnvUserId =
-      metadata.isClientSession && metadata.sessionUserId
-        ? metadata.sessionUserId
-        : metadata.workflowUserId
+    const personalEnvUserId = metadata.sessionUserId || metadata.userId
 
     if (!personalEnvUserId) {
-      throw new Error('Missing workflowUserId in execution metadata')
+      throw new Error('Missing execution actor for environment resolution')
     }
 
     const { personalEncrypted, workspaceEncrypted, personalDecrypted, workspaceDecrypted } =
@@ -369,6 +376,16 @@ export async function executeWorkflowCore(
 
     processedInput = input || {}
 
+    // Resolve stopAfterBlockId for loop/parallel containers to their sentinel-end IDs
+    let resolvedStopAfterBlockId = stopAfterBlockId
+    if (stopAfterBlockId) {
+      if (serializedWorkflow.loops?.[stopAfterBlockId]) {
+        resolvedStopAfterBlockId = buildSentinelEndId(stopAfterBlockId)
+      } else if (serializedWorkflow.parallels?.[stopAfterBlockId]) {
+        resolvedStopAfterBlockId = buildParallelSentinelEndId(stopAfterBlockId)
+      }
+    }
+
     // Create and execute workflow with callbacks
     if (resumeFromSnapshot) {
       logger.info(`[${requestId}] Resume execution detected`, {
@@ -386,12 +403,26 @@ export async function executeWorkflowCore(
       blockId: string,
       blockName: string,
       blockType: string,
-      output: { input?: unknown; output: NormalizedBlockOutput; executionTime: number },
-      iterationContext?: IterationContext
+      output: {
+        input?: unknown
+        output: NormalizedBlockOutput
+        executionTime: number
+        startedAt: string
+        endedAt: string
+      },
+      iterationContext?: IterationContext,
+      childWorkflowContext?: ChildWorkflowContext
     ) => {
       await loggingSession.onBlockComplete(blockId, blockName, blockType, output)
       if (onBlockComplete) {
-        await onBlockComplete(blockId, blockName, blockType, output, iterationContext)
+        await onBlockComplete(
+          blockId,
+          blockName,
+          blockType,
+          output,
+          iterationContext,
+          childWorkflowContext
+        )
       }
     }
 
@@ -402,6 +433,7 @@ export async function executeWorkflowCore(
       workspaceId: providedWorkspaceId,
       userId,
       isDeployedContext: !metadata.isClientSession,
+      enforceCredentialAccess: metadata.enforceCredentialAccess ?? false,
       onBlockStart,
       onBlockComplete: wrappedOnBlockComplete,
       onStream,
@@ -419,6 +451,9 @@ export async function executeWorkflowCore(
       abortSignal,
       includeFileBase64,
       base64MaxBytes,
+      stopAfterBlockId: resolvedStopAfterBlockId,
+      onChildWorkflowInstanceReady,
+      callChain: metadata.callChain,
     }
 
     const executorInstance = new Executor({
@@ -428,8 +463,6 @@ export async function executeWorkflowCore(
       workflowVariables,
       contextExtensions,
     })
-
-    loggingSession.setupExecutor(executorInstance)
 
     // Convert initial workflow variables to their native types
     if (workflowVariables) {
@@ -441,181 +474,184 @@ export async function executeWorkflowCore(
       }
     }
 
-    const result = (await executorInstance.execute(
-      workflowId,
-      resolvedTriggerBlockId
-    )) as ExecutionResult
+    const result = runFromBlock
+      ? ((await executorInstance.executeFromBlock(
+          workflowId,
+          runFromBlock.startBlockId,
+          runFromBlock.sourceSnapshot
+        )) as ExecutionResult)
+      : ((await executorInstance.execute(workflowId, resolvedTriggerBlockId)) as ExecutionResult)
 
-    // Build trace spans for logging from the full execution result
-    const { traceSpans, totalDuration } = buildTraceSpans(result)
+    // Fire-and-forget: post-execution logging, billing, and cleanup
+    void (async () => {
+      try {
+        const { traceSpans, totalDuration } = buildTraceSpans(result)
 
-    // Detect skipped workflow (intent analyzer decided to skip)
-    const isSkippedExecution =
-      result.success &&
-      result.output &&
-      typeof result.output === 'object' &&
-      'skippedWorkflow' in result.output &&
-      result.output.skippedWorkflow === true
-
-    if (isSkippedExecution) {
-      result.status = 'skipped'
-    }
-
-    // Update workflow run counts (skip for paused and skipped executions)
-    if (result.success && result.status !== 'paused' && result.status !== 'skipped') {
-      await updateWorkflowRunCounts(workflowId)
-    }
-
-    if (result.status === 'skipped') {
-      const skipContent =
-        result.output && typeof result.output === 'object' && 'content' in result.output
-          ? (result.output.content as string)
-          : undefined
-
-      // Ensure we have skipContent - this is critical for UI display
-      if (!skipContent) {
-        logger.warn(`[${requestId}] Skip response content is missing, cannot display in UI`, {
-          executionId,
-          hasOutput: !!result.output,
-          outputKeys:
-            result.output && typeof result.output === 'object' ? Object.keys(result.output) : [],
-        })
-      }
-
-      // Use complete input from skipOutput if available (includes conversation history)
-      const completeInput =
-        (result.output &&
+        // Detect skipped workflow (intent analyzer decided to skip)
+        const isSkippedExecution =
+          result.success &&
+          result.output &&
           typeof result.output === 'object' &&
-          '_completeInputForLogging' in result.output &&
-          result.output._completeInputForLogging) ||
-        processedInput
+          'skippedWorkflow' in result.output &&
+          result.output.skippedWorkflow === true
 
-      // Extract user prompt and system prompt from skip output for execution_data
-      const skipOutput = result.output && typeof result.output === 'object' ? result.output : {}
-      const userPrompt =
-        (skipOutput.userPrompt as string) ||
-        (skipOutput._actualPromptsForSkip &&
-        typeof skipOutput._actualPromptsForSkip === 'object' &&
-        'userMessage' in skipOutput._actualPromptsForSkip
-          ? (skipOutput._actualPromptsForSkip.userMessage as string)
-          : undefined) ||
-        (typeof processedInput === 'object' && processedInput && 'input' in processedInput
-          ? (processedInput.input as string)
-          : undefined)
-
-      const systemPrompt =
-        (skipOutput.systemPrompt as string) ||
-        (skipOutput._actualPromptsForSkip &&
-        typeof skipOutput._actualPromptsForSkip === 'object' &&
-        'systemPrompt' in skipOutput._actualPromptsForSkip
-          ? (skipOutput._actualPromptsForSkip.systemPrompt as string)
-          : undefined)
-
-      // Enhance finalOutput with prompts for execution_data
-      const enhancedFinalOutput = {
-        ...skipOutput,
-        ...(userPrompt && { userPrompt }),
-        ...(systemPrompt && { systemPrompt }),
-      }
-
-      logger.info(`[${requestId}] Completing skipped workflow with chat output`, {
-        executionId,
-        hasSkipContent: !!skipContent,
-        skipContentLength: skipContent?.length || 0,
-        triggerType,
-      })
-
-      await loggingSession.safeCompleteAsSkipped({
-        endedAt: new Date().toISOString(),
-        totalDurationMs: totalDuration || 0,
-        finalOutput: enhancedFinalOutput,
-        traceSpans: traceSpans || [],
-        workflowInput: completeInput,
-        finalChatOutput: skipContent, // This must be set for UI to display the response
-      })
-
-      await clearExecutionCancellation(executionId)
-
-      logger.info(`[${requestId}] Workflow execution skipped by intent analyzer`, {
-        duration: result.metadata?.duration,
-      })
-
-      return result
-    }
-
-    if (result.status === 'cancelled') {
-      await loggingSession.safeCompleteWithCancellation({
-        endedAt: new Date().toISOString(),
-        totalDurationMs: totalDuration || 0,
-        traceSpans: traceSpans || [],
-      })
-
-      await clearExecutionCancellation(executionId)
-
-      logger.info(`[${requestId}] Workflow execution cancelled`, {
-        duration: result.metadata?.duration,
-      })
-
-      return result
-    }
-
-    if (result.status === 'paused') {
-      await loggingSession.safeCompleteWithPause({
-        endedAt: new Date().toISOString(),
-        totalDurationMs: totalDuration || 0,
-        traceSpans: traceSpans || [],
-        workflowInput: processedInput,
-      })
-
-      await clearExecutionCancellation(executionId)
-
-      logger.info(`[${requestId}] Workflow execution paused`, {
-        duration: result.metadata?.duration,
-      })
-
-      return result
-    }
-
-    let finalChatOutput: string | undefined
-    if (triggerType === 'chat' && result.success) {
-      const output = result.output
-      if (typeof output === 'string') {
-        finalChatOutput = output
-      } else if (output !== undefined && output !== null) {
-        // Extract content field if it exists (e.g., from provider response objects)
-        // This ensures we only store the text content, not the entire metadata object
-        if (
-          typeof output === 'object' &&
-          'content' in output &&
-          typeof output.content === 'string'
-        ) {
-          finalChatOutput = output.content
-        } else {
-          // Fallback to JSON.stringify for other object types
-          finalChatOutput = JSON.stringify(output)
+        if (isSkippedExecution) {
+          result.status = 'skipped'
         }
+
+        // Update workflow run counts (skip for paused and skipped executions)
+        if (result.success && result.status !== 'paused' && result.status !== 'skipped') {
+          await updateWorkflowRunCounts(workflowId)
+        }
+
+        if (result.status === 'skipped') {
+          const skipContent =
+            result.output && typeof result.output === 'object' && 'content' in result.output
+              ? (result.output.content as string)
+              : undefined
+
+          // Ensure we have skipContent - this is critical for UI display
+          if (!skipContent) {
+            logger.warn(`[${requestId}] Skip response content is missing, cannot display in UI`, {
+              executionId,
+              hasOutput: !!result.output,
+              outputKeys:
+                result.output && typeof result.output === 'object'
+                  ? Object.keys(result.output)
+                  : [],
+            })
+          }
+
+          // Use complete input from skipOutput if available (includes conversation history)
+          const completeInput =
+            (result.output &&
+              typeof result.output === 'object' &&
+              '_completeInputForLogging' in result.output &&
+              result.output._completeInputForLogging) ||
+            processedInput
+
+          // Extract user prompt and system prompt from skip output for execution_data
+          const skipOutput = result.output && typeof result.output === 'object' ? result.output : {}
+          const userPrompt =
+            (skipOutput.userPrompt as string) ||
+            (skipOutput._actualPromptsForSkip &&
+            typeof skipOutput._actualPromptsForSkip === 'object' &&
+            'userMessage' in skipOutput._actualPromptsForSkip
+              ? (skipOutput._actualPromptsForSkip.userMessage as string)
+              : undefined) ||
+            (typeof processedInput === 'object' && processedInput && 'input' in processedInput
+              ? (processedInput.input as string)
+              : undefined)
+
+          const systemPrompt =
+            (skipOutput.systemPrompt as string) ||
+            (skipOutput._actualPromptsForSkip &&
+            typeof skipOutput._actualPromptsForSkip === 'object' &&
+            'systemPrompt' in skipOutput._actualPromptsForSkip
+              ? (skipOutput._actualPromptsForSkip.systemPrompt as string)
+              : undefined)
+
+          // Enhance finalOutput with prompts for execution_data
+          const enhancedFinalOutput = {
+            ...skipOutput,
+            ...(userPrompt && { userPrompt }),
+            ...(systemPrompt && { systemPrompt }),
+          }
+
+          logger.info(`[${requestId}] Completing skipped workflow with chat output`, {
+            executionId,
+            hasSkipContent: !!skipContent,
+            skipContentLength: skipContent?.length || 0,
+            triggerType,
+          })
+
+          await loggingSession.safeCompleteAsSkipped({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            finalOutput: enhancedFinalOutput,
+            traceSpans: traceSpans || [],
+            workflowInput: completeInput,
+            finalChatOutput: skipContent, // This must be set for UI to display the response
+          })
+
+          await clearExecutionCancellation(executionId)
+
+          logger.info(`[${requestId}] Workflow execution skipped by intent analyzer`, {
+            duration: result.metadata?.duration,
+          })
+
+          return result
+        }
+
+        let finalChatOutput: string | undefined
+        if (triggerType === 'chat' && result.success) {
+          const output = result.output
+          if (typeof output === 'string') {
+            finalChatOutput = output
+          } else if (output !== undefined && output !== null) {
+            // Extract content field if it exists (e.g., from provider response objects)
+            // This ensures we only store the text content, not the entire metadata object
+            if (
+              typeof output === 'object' &&
+              'content' in output &&
+              typeof output.content === 'string'
+            ) {
+              finalChatOutput = output.content
+            } else {
+              // Fallback to JSON.stringify for other object types
+              finalChatOutput = JSON.stringify(output)
+            }
+          }
+        }
+
+        // For RUN case, we need to capture the complete input (with conversation history)
+        // This is already in the messages, but we need to extract it from the execution result
+        // For now, use processedInput - the complete input with conversation history
+        // would be in the agent block's input after buildMessages modifies it
+        // Since we don't have direct access here, we'll store processedInput
+        // The actual complete input is in the trace spans if needed
+
+        if (result.success && result.status !== 'paused') {
+          try {
+            await updateWorkflowRunCounts(workflowId)
+          } catch (runCountError) {
+            logger.error(`[${requestId}] Failed to update run counts`, { error: runCountError })
+          }
+        }
+
+        if (result.status === 'cancelled') {
+          await loggingSession.safeCompleteWithCancellation({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            traceSpans: traceSpans || [],
+          })
+        } else if (result.status === 'paused') {
+          await loggingSession.safeCompleteWithPause({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            traceSpans: traceSpans || [],
+            workflowInput: processedInput,
+          })
+        } else {
+          await loggingSession.safeComplete({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: totalDuration || 0,
+            finalOutput: result.output || {},
+            traceSpans: traceSpans || [],
+            workflowInput: processedInput,
+            executionState: result.executionState,
+          })
+        }
+
+        await clearExecutionCancellation(executionId)
+      } catch (postExecError) {
+        logger.error(`[${requestId}] Post-execution logging failed`, { error: postExecError })
       }
-    }
-
-    // For RUN case, we need to capture the complete input (with conversation history)
-    // This is already in the messages, but we need to extract it from the execution result
-    // For now, use processedInput - the complete input with conversation history
-    // would be in the agent block's input after buildMessages modifies it
-    // Since we don't have direct access here, we'll store processedInput
-    // The actual complete input is in the trace spans if needed
-    await loggingSession.safeComplete({
-      endedAt: new Date().toISOString(),
-      totalDurationMs: totalDuration || 0,
-      finalOutput: result.output || {},
-      traceSpans: traceSpans || [],
-      workflowInput: processedInput,
-      finalChatOutput,
-    })
-
-    await clearExecutionCancellation(executionId)
+    })()
 
     logger.info(`[${requestId}] Workflow execution completed`, {
       success: result.success,
+      status: result.status,
       duration: result.metadata?.duration,
     })
 
@@ -623,20 +659,31 @@ export async function executeWorkflowCore(
   } catch (error: unknown) {
     logger.error(`[${requestId}] Execution failed:`, error)
 
-    const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
-    const { traceSpans } = executionResult ? buildTraceSpans(executionResult) : { traceSpans: [] }
+    // Fire-and-forget: error logging and cleanup
+    void (async () => {
+      try {
+        const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
+        const { traceSpans } = executionResult
+          ? buildTraceSpans(executionResult)
+          : { traceSpans: [] }
 
-    await loggingSession.safeCompleteWithError({
-      endedAt: new Date().toISOString(),
-      totalDurationMs: executionResult?.metadata?.duration || 0,
-      error: {
-        message: error instanceof Error ? error.message : 'Execution failed',
-        stackTrace: error instanceof Error ? error.stack : undefined,
-      },
-      traceSpans,
-    })
+        await loggingSession.safeCompleteWithError({
+          endedAt: new Date().toISOString(),
+          totalDurationMs: executionResult?.metadata?.duration || 0,
+          error: {
+            message: error instanceof Error ? error.message : 'Execution failed',
+            stackTrace: error instanceof Error ? error.stack : undefined,
+          },
+          traceSpans,
+        })
 
-    await clearExecutionCancellation(executionId)
+        await clearExecutionCancellation(executionId)
+      } catch (postExecError) {
+        logger.error(`[${requestId}] Post-execution error logging failed`, {
+          error: postExecError,
+        })
+      }
+    })()
 
     throw error
   }

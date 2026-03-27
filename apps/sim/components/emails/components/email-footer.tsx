@@ -1,8 +1,8 @@
 import { Container, Section } from '@react-email/components'
 import { baseStyles, colors, spacing, typography } from '@/components/emails/_styles'
-import { getBrandConfig } from '@/lib/branding/branding'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getBrandConfig } from '@/ee/whitelabeling'
 
 interface EmailFooterProps {
   baseUrl?: string
@@ -28,6 +28,7 @@ export function EmailFooter({
   showUnsubscribe = true,
 }: EmailFooterProps) {
   const brand = getBrandConfig()
+  const isWhitelabeled = brand.isWhitelabeled
 
   const footerLinkStyle = {
     color: colors.textMuted,
@@ -106,11 +107,11 @@ export function EmailFooter({
               </td>
             </tr>
 
-            <tr>
-              <td style={baseStyles.spacer} height={16}>
-                &nbsp;
-              </td>
-            </tr>
+                <tr>
+                  <td style={baseStyles.spacer} height={16}>
+                    &nbsp;
+                  </td>
+                </tr>
 
             {/* Address row */}
             <tr>
@@ -130,11 +131,11 @@ export function EmailFooter({
               </td>
             </tr>
 
-            <tr>
-              <td style={baseStyles.spacer} height={8}>
-                &nbsp;
-              </td>
-            </tr>
+                <tr>
+                  <td style={baseStyles.spacer} height={8}>
+                    &nbsp;
+                  </td>
+                </tr>
 
             {/* Contact row */}
             <tr>

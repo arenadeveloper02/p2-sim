@@ -1,7 +1,31 @@
 import { isHosted } from '@/lib/core/config/feature-flags'
 import type { BlockOutput, OutputFieldDefinition, SubBlockConfig } from '@/blocks/types'
-import { getHostedModels, providers } from '@/providers/utils'
+import {
+  getHostedModels,
+  getProviderFromModel,
+  getProviderIcon,
+  providers,
+} from '@/providers/utils'
 import { useProvidersStore } from '@/stores/providers/store'
+
+/**
+ * Returns model options for combobox subblocks, combining all provider sources.
+ */
+export function getModelOptions() {
+  const providersState = useProvidersStore.getState()
+  const baseModels = providersState.providers.base.models
+  const ollamaModels = providersState.providers.ollama.models
+  const vllmModels = providersState.providers.vllm.models
+  const openrouterModels = providersState.providers.openrouter.models
+  const allModels = Array.from(
+    new Set([...baseModels, ...ollamaModels, ...vllmModels, ...openrouterModels])
+  )
+
+  return allModels.map((model) => {
+    const icon = getProviderIcon(model)
+    return { label: model, id: model, ...(icon && { icon }) }
+  })
+}
 
 /**
  * Checks if a field is included in the dependsOn config.
@@ -48,11 +72,54 @@ const getCurrentOllamaModels = () => {
   return useProvidersStore.getState().providers.ollama.models
 }
 
-/**
- * Helper to get current vLLM models from store
- */
-const getCurrentVLLMModels = () => {
-  return useProvidersStore.getState().providers.vllm.models
+function buildModelVisibilityCondition(model: string, shouldShow: boolean) {
+  if (!model) {
+    return { field: 'model', value: '__no_model_selected__' }
+  }
+
+  return shouldShow ? { field: 'model', value: model } : { field: 'model', value: model, not: true }
+}
+
+function shouldRequireApiKeyForModel(model: string): boolean {
+  const normalizedModel = model.trim().toLowerCase()
+  if (!normalizedModel) return false
+
+  const hostedModels = getHostedModels()
+  const isHostedModel = hostedModels.some(
+    (hostedModel) => hostedModel.toLowerCase() === normalizedModel
+  )
+  if (isHosted && isHostedModel) return false
+
+  if (normalizedModel.startsWith('vertex/') || normalizedModel.startsWith('bedrock/')) {
+    return false
+  }
+
+  if (normalizedModel.startsWith('vllm/')) {
+    return false
+  }
+
+  const currentOllamaModels = getCurrentOllamaModels()
+  if (currentOllamaModels.some((ollamaModel) => ollamaModel.toLowerCase() === normalizedModel)) {
+    return false
+  }
+
+  if (!isHosted) {
+    try {
+      const providerId = getProviderFromModel(model)
+      if (
+        providerId === 'ollama' ||
+        providerId === 'vllm' ||
+        providerId === 'vertex' ||
+        providerId === 'bedrock'
+      ) {
+        return false
+      }
+    } catch {
+      // If model resolution fails, fall through and require an API key.
+    }
+  }
+
+  return true
 }
 
 /**
@@ -60,27 +127,16 @@ const getCurrentVLLMModels = () => {
  * Handles hosted vs self-hosted environments and excludes providers that don't need API key.
  */
 export function getApiKeyCondition() {
-  return isHosted
-    ? {
-        field: 'model',
-        value: [...getHostedModels(), ...providers.vertex.models, ...providers.bedrock.models],
-        not: true,
-      }
-    : () => ({
-        field: 'model',
-        value: [
-          ...getCurrentOllamaModels(),
-          ...getCurrentVLLMModels(),
-          ...providers.vertex.models,
-          ...providers.bedrock.models,
-        ],
-        not: true,
-      })
+  return (values?: Record<string, unknown>) => {
+    const model = typeof values?.model === 'string' ? values.model : ''
+    const shouldShow = shouldRequireApiKeyForModel(model)
+    return buildModelVisibilityCondition(model, shouldShow)
+  }
 }
 
 /**
  * Returns the standard provider credential subblocks used by LLM-based blocks.
- * This includes: Vertex AI OAuth, API Key, Azure OpenAI, Vertex AI config, and Bedrock config.
+ * This includes: Vertex AI OAuth, API Key, Azure (OpenAI + Anthropic), Vertex AI config, and Bedrock config.
  *
  * Usage: Spread into your block's subBlocks array after block-specific fields
  */
@@ -111,25 +167,25 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
     },
     {
       id: 'azureEndpoint',
-      title: 'Azure OpenAI Endpoint',
+      title: 'Azure Endpoint',
       type: 'short-input',
       password: true,
-      placeholder: 'https://your-resource.openai.azure.com',
+      placeholder: 'https://your-resource.services.ai.azure.com',
       connectionDroppable: false,
       condition: {
         field: 'model',
-        value: providers['azure-openai'].models,
+        value: [...providers['azure-openai'].models, ...providers['azure-anthropic'].models],
       },
     },
     {
       id: 'azureApiVersion',
       title: 'Azure API Version',
       type: 'short-input',
-      placeholder: '2024-07-01-preview',
+      placeholder: 'Enter API version',
       connectionDroppable: false,
       condition: {
         field: 'model',
-        value: providers['azure-openai'].models,
+        value: [...providers['azure-openai'].models, ...providers['azure-anthropic'].models],
       },
     },
     {
@@ -202,7 +258,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
  */
 export const PROVIDER_CREDENTIAL_INPUTS = {
   apiKey: { type: 'string', description: 'Provider API key' },
-  azureEndpoint: { type: 'string', description: 'Azure OpenAI endpoint URL' },
+  azureEndpoint: { type: 'string', description: 'Azure endpoint URL' },
   azureApiVersion: { type: 'string', description: 'Azure API version' },
   vertexProject: { type: 'string', description: 'Google Cloud project ID for Vertex AI' },
   vertexLocation: { type: 'string', description: 'Google Cloud location for Vertex AI' },
@@ -248,4 +304,159 @@ export function createVersionedToolSelector<TParams extends Record<string, any>>
       return fallbackToolId
     }
   }
+}
+
+const DEFAULT_MULTIPLE_FILES_ERROR =
+  'File reference must be a single file, not an array. Use <block.files[0]> to select one file.'
+
+/**
+ * Normalizes file input from block params to a consistent format.
+ * Handles the case where template resolution JSON.stringify's arrays/objects
+ * when they're placed in short-input fields (advanced mode).
+ *
+ * @param fileParam - The file parameter which could be:
+ *   - undefined/null (no files)
+ *   - An array of file objects (basic mode or properly resolved)
+ *   - A single file object
+ *   - A JSON string of file(s) (from advanced mode template resolution)
+ * @param options.single - If true, returns single file object and throws if multiple provided
+ * @param options.errorMessage - Custom error message when single is true and multiple files provided
+ * @returns Normalized file(s), or undefined if no files
+ */
+export function normalizeFileInput(
+  fileParam: unknown,
+  options: { single: true; errorMessage?: string }
+): object | undefined
+export function normalizeFileInput(
+  fileParam: unknown,
+  options?: { single?: false }
+): object[] | undefined
+export function normalizeFileInput(
+  fileParam: unknown,
+  options?: { single?: boolean; errorMessage?: string }
+): object | object[] | undefined {
+  if (!fileParam) return undefined
+
+  if (typeof fileParam === 'string') {
+    try {
+      fileParam = JSON.parse(fileParam)
+    } catch {
+      return undefined
+    }
+  }
+
+  let files: object[] | undefined
+
+  if (Array.isArray(fileParam)) {
+    files = fileParam.length > 0 ? fileParam : undefined
+  } else if (typeof fileParam === 'object' && fileParam !== null) {
+    files = [fileParam]
+  }
+
+  if (!files) return undefined
+
+  if (options?.single) {
+    if (files.length > 1) {
+      throw new Error(options.errorMessage ?? DEFAULT_MULTIPLE_FILES_ERROR)
+    }
+    return files[0]
+  }
+
+  return files
+}
+
+/**
+ * Shared wand configuration for the Response Format code subblock.
+ * Used by Agent and Mothership blocks.
+ */
+export const RESPONSE_FORMAT_WAND_CONFIG = {
+  enabled: true,
+  maintainHistory: true,
+  prompt: `You are an expert programmer specializing in creating JSON schemas according to a specific format.
+Generate ONLY the JSON schema based on the user's request.
+The output MUST be a single, valid JSON object, starting with { and ending with }.
+The JSON object MUST have the following top-level properties: 'name' (string), 'description' (string), 'strict' (boolean, usually true), and 'schema' (object).
+The 'schema' object must define the structure and MUST contain 'type': 'object', 'properties': {...}, 'additionalProperties': false, and 'required': [...].
+Inside 'properties', use standard JSON Schema properties (type, description, enum, items for arrays, etc.).
+
+Current schema: {context}
+
+Do not include any explanations, markdown formatting, or other text outside the JSON object.
+
+Valid Schema Examples:
+
+Example 1:
+{
+    "name": "reddit_post",
+    "description": "Fetches the reddit posts in the given subreddit",
+    "strict": true,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "The title of the post"
+            },
+            "content": {
+                "type": "string",
+                "description": "The content of the post"
+            }
+        },
+        "additionalProperties": false,
+        "required": [ "title", "content" ]
+    }
+}
+
+Example 2:
+{
+    "name": "get_weather",
+    "description": "Fetches the current weather for a specific location.",
+    "strict": true,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "location": {
+                "type": "string",
+                "description": "The city and state, e.g., San Francisco, CA"
+            },
+            "unit": {
+                "type": "string",
+                "description": "Temperature unit",
+                "enum": ["celsius", "fahrenheit"]
+            }
+        },
+        "additionalProperties": false,
+        "required": ["location", "unit"]
+    }
+}
+
+Example 3 (Array Input):
+{
+    "name": "process_items",
+    "description": "Processes a list of items with specific IDs.",
+    "strict": true,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "item_ids": {
+                "type": "array",
+                "description": "A list of unique item identifiers to process.",
+                "items": {
+                    "type": "string",
+                    "description": "An item ID"
+                }
+            },
+            "processing_mode": {
+                "type": "string",
+                "description": "The mode for processing",
+                "enum": ["fast", "thorough"]
+            }
+        },
+        "additionalProperties": false,
+        "required": ["item_ids", "processing_mode"]
+    }
+}
+`,
+  placeholder: 'Describe the JSON schema structure you need...',
+  generationType: 'json-schema' as const,
 }

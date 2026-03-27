@@ -1,6 +1,6 @@
 import { DatadogIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { DatadogResponse } from '@/tools/datadog/types'
 
 export const DatadogBlock: BlockConfig<DatadogResponse> = {
@@ -12,6 +12,8 @@ export const DatadogBlock: BlockConfig<DatadogResponse> = {
     'Integrate Datadog monitoring into workflows. Submit metrics, manage monitors, query logs, create events, handle downtimes, and more.',
   docsLink: 'https://docs.sim.ai/tools/datadog',
   category: 'tools',
+  integrationType: IntegrationType.Analytics,
+  tags: ['monitoring', 'incident-management', 'error-tracking'],
   bgColor: '#632CA6',
   icon: DatadogIcon,
   subBlocks: [
@@ -184,6 +186,7 @@ Return the event description text directly - no extra formatting needed.`,
       ],
       value: () => 'info',
       condition: { field: 'operation', value: 'datadog_create_event' },
+      mode: 'advanced',
     },
     {
       id: 'priority',
@@ -195,6 +198,7 @@ Return the event description text directly - no extra formatting needed.`,
       ],
       value: () => 'normal',
       condition: { field: 'operation', value: 'datadog_create_event' },
+      mode: 'advanced',
     },
     {
       id: 'tags',
@@ -202,6 +206,7 @@ Return the event description text directly - no extra formatting needed.`,
       type: 'short-input',
       placeholder: 'env:production, service:api',
       condition: { field: 'operation', value: 'datadog_create_event' },
+      mode: 'advanced',
     },
 
     // ========================
@@ -267,6 +272,7 @@ Return ONLY the monitor query string - no explanations.`,
       type: 'long-input',
       placeholder: 'Alert! CPU usage is high. @slack-alerts',
       condition: { field: 'operation', value: 'datadog_create_monitor' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a Datadog monitor notification message based on the user's description.
@@ -285,6 +291,7 @@ Return the notification message text directly.`,
       type: 'short-input',
       placeholder: 'team:backend, priority:high',
       condition: { field: 'operation', value: 'datadog_create_monitor' },
+      mode: 'advanced',
     },
     {
       id: 'monitorPriority',
@@ -292,6 +299,7 @@ Return the notification message text directly.`,
       type: 'short-input',
       placeholder: '3',
       condition: { field: 'operation', value: 'datadog_create_monitor' },
+      mode: 'advanced',
     },
     {
       id: 'options',
@@ -299,6 +307,7 @@ Return the notification message text directly.`,
       type: 'code',
       placeholder: '{"notify_no_data": true, "thresholds": {"critical": 90}}',
       condition: { field: 'operation', value: 'datadog_create_monitor' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate Datadog monitor options JSON based on the user's description.
@@ -336,6 +345,7 @@ Return ONLY valid JSON - no explanations, no markdown code blocks.`,
       type: 'short-input',
       placeholder: 'CPU',
       condition: { field: 'operation', value: 'datadog_list_monitors' },
+      mode: 'advanced',
     },
     {
       id: 'listMonitorTags',
@@ -343,6 +353,7 @@ Return ONLY valid JSON - no explanations, no markdown code blocks.`,
       type: 'short-input',
       placeholder: 'env:production',
       condition: { field: 'operation', value: 'datadog_list_monitors' },
+      mode: 'advanced',
     },
 
     // ========================
@@ -362,6 +373,7 @@ Return ONLY valid JSON - no explanations, no markdown code blocks.`,
       type: 'short-input',
       placeholder: 'host:myhost (optional)',
       condition: { field: 'operation', value: 'datadog_mute_monitor' },
+      mode: 'advanced',
     },
     {
       id: 'end',
@@ -369,6 +381,7 @@ Return ONLY valid JSON - no explanations, no markdown code blocks.`,
       type: 'short-input',
       placeholder: 'Leave empty for indefinite',
       condition: { field: 'operation', value: 'datadog_mute_monitor' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a Unix timestamp (seconds since epoch) based on the user's description.
@@ -456,6 +469,7 @@ Return ONLY the relative time string - no explanations, no quotes, no extra text
       type: 'short-input',
       placeholder: '50',
       condition: { field: 'operation', value: 'datadog_query_logs' },
+      mode: 'advanced',
     },
 
     // ========================
@@ -508,6 +522,7 @@ Return ONLY valid JSON - no explanations, no markdown code blocks.`,
       type: 'long-input',
       placeholder: 'Scheduled maintenance',
       condition: { field: 'operation', value: 'datadog_create_downtime' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a downtime message for Datadog based on the user's description.
@@ -524,6 +539,7 @@ Return the message text directly - no extra formatting.`,
       type: 'short-input',
       placeholder: 'Leave empty for now',
       condition: { field: 'operation', value: 'datadog_create_downtime' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a Unix timestamp (seconds since epoch) based on the user's description.
@@ -544,6 +560,7 @@ Return ONLY the numeric timestamp - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       placeholder: 'e.g., 1701450000',
       condition: { field: 'operation', value: 'datadog_create_downtime' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a Unix timestamp (seconds since epoch) based on the user's description.
@@ -564,6 +581,7 @@ Return ONLY the numeric timestamp - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       placeholder: '12345678',
       condition: { field: 'operation', value: 'datadog_create_downtime' },
+      mode: 'advanced',
     },
 
     // ========================
@@ -574,6 +592,7 @@ Return ONLY the numeric timestamp - no explanations, no quotes, no extra text.`,
       title: 'Current Only',
       type: 'switch',
       condition: { field: 'operation', value: 'datadog_list_downtimes' },
+      mode: 'advanced',
     },
 
     // ========================
@@ -635,6 +654,7 @@ Return ONLY the numeric timestamp - no explanations, no quotes, no extra text.`,
         { label: 'US1-FED (ddog-gov.com)', id: 'ddog-gov.com' },
       ],
       value: () => 'datadoghq.com',
+      mode: 'advanced',
     },
   ],
   tools: {

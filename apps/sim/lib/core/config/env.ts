@@ -24,18 +24,24 @@ export const env = createEnv({
     DISABLE_AUTH:                          z.boolean().optional(),                 // Bypass authentication entirely (self-hosted only, creates anonymous session)
     ALLOWED_LOGIN_EMAILS:                  z.string().optional(),                  // Comma-separated list of allowed email addresses for login
     ALLOWED_LOGIN_DOMAINS:                 z.string().optional(),                  // Comma-separated list of allowed email domains for login
+    BLOCKED_SIGNUP_DOMAINS:                z.string().optional(),                  // Comma-separated list of email domains blocked from signing up (e.g., "gmail.com,yahoo.com")
+    TURNSTILE_SECRET_KEY:                  z.string().min(1).optional(),           // Cloudflare Turnstile secret key for captcha verification
+    SIGNUP_EMAIL_VALIDATION_ENABLED:       z.boolean().optional(),                 // Enable disposable email blocking via better-auth-harmony (55K+ domains)
     ENCRYPTION_KEY:                        z.string().min(32),                     // Key for encrypting sensitive data
     API_ENCRYPTION_KEY:                    z.string().min(32).optional(),          // Dedicated key for encrypting API keys (optional for OSS)
     INTERNAL_API_SECRET:                   z.string().min(32),                     // Secret for internal API authentication
 
     // Copilot
-    COPILOT_PROVIDER:                      z.string().optional(),                  // Provider for copilot API calls
-    COPILOT_MODEL:                         z.string().optional(),                  // Model for copilot API calls
     COPILOT_API_KEY:                       z.string().min(1).optional(),           // Secret for internal sim agent API authentication
     SIM_AGENT_API_URL:                     z.string().url().optional(),            // URL for internal sim agent API
     AGENT_INDEXER_URL:                     z.string().url().optional(),            // URL for agent training data indexer
     AGENT_INDEXER_API_KEY:                 z.string().min(1).optional(),           // API key for agent indexer authentication
     MEMORY_API_BASE_URL:                   z.string().url().optional(),            // Base URL for memory API service
+    COPILOT_STREAM_TTL_SECONDS:            z.number().optional(),                  // Redis TTL for copilot SSE buffer
+    COPILOT_STREAM_EVENT_LIMIT:            z.number().optional(),                  // Max events retained per stream
+    COPILOT_STREAM_RESERVE_BATCH:          z.number().optional(),                  // Event ID reservation batch size
+    COPILOT_STREAM_FLUSH_INTERVAL_MS:      z.number().optional(),                  // Buffer flush interval in ms
+    COPILOT_STREAM_FLUSH_MAX_BATCH:        z.number().optional(),                  // Max events per flush batch
 
     // Database & Storage
     REDIS_URL:                             z.string().url().optional(),            // Redis connection string for caching/sessions
@@ -56,6 +62,20 @@ export const env = createEnv({
     ENTERPRISE_TIER_COST_LIMIT:            z.number().optional(),                  // Cost limit for enterprise tier users
     ENTERPRISE_STORAGE_LIMIT_GB:           z.number().optional().default(500),     // Default storage limit in GB for enterprise tier (can be overridden per org)
     BILLING_ENABLED:                       z.boolean().optional(),                 // Enable billing enforcement and usage tracking
+
+    // Credit-tier Stripe prices (monthly)
+    STRIPE_PRICE_TIER_25_MO:               z.string().min(1).optional(),           // Pro: $25/mo (6,000 credits)
+    STRIPE_PRICE_TIER_100_MO:              z.string().min(1).optional(),           // Max: $100/mo (25,000 credits)
+
+    // Credit-tier Stripe prices (annual, 15% discount)
+    STRIPE_PRICE_TIER_25_YR:               z.string().min(1).optional(),           // Pro: $255/yr (15% off $300)
+    STRIPE_PRICE_TIER_100_YR:              z.string().min(1).optional(),           // Max: $1,020/yr (15% off $1,200)
+
+    // Team-specific Stripe prices (separate products for Billing Portal compat)
+    STRIPE_PRICE_TEAM_25_MO:               z.string().min(1).optional(),           // Team Pro: $25/seat/mo
+    STRIPE_PRICE_TEAM_25_YR:               z.string().min(1).optional(),           // Team Pro: $255/seat/yr
+    STRIPE_PRICE_TEAM_100_MO:              z.string().min(1).optional(),           // Team Max: $100/seat/mo
+    STRIPE_PRICE_TEAM_100_YR:              z.string().min(1).optional(),           // Team Max: $1,020/seat/yr
     OVERAGE_THRESHOLD_DOLLARS:             z.number().optional().default(50),      // Dollar threshold for incremental overage billing (default: $50)
 
      //browseruse
@@ -108,6 +128,8 @@ export const env = createEnv({
     DEEPSEEK_MODELS_ENABLED:               z.boolean().optional().default(false),  // Enable Deepseek models in UI (defaults to false for compliance)
     BLACKLISTED_PROVIDERS:                 z.string().optional(),                  // Comma-separated provider IDs to hide (e.g., "openai,anthropic")
     BLACKLISTED_MODELS:                    z.string().optional(),                  // Comma-separated model names/prefixes to hide (e.g., "gpt-4,claude-*")
+    ALLOWED_MCP_DOMAINS:                   z.string().optional(),                  // Comma-separated domains for MCP servers (e.g., "internal.company.com,mcp.example.org"). Empty = all allowed.
+    ALLOWED_INTEGRATIONS:                  z.string().optional(),                  // Comma-separated block types to allow (e.g., "slack,github,agent"). Empty = all allowed.
 
     //Tools API Keys
     SEMRUSH_API_KEY:                       z.string().min(1).optional(),           // Semrush API key for SEO data
@@ -116,6 +138,9 @@ export const env = createEnv({
     AZURE_OPENAI_ENDPOINT:                 z.string().url().optional(),            // Shared Azure OpenAI service endpoint
     AZURE_OPENAI_API_VERSION:              z.string().optional(),                  // Shared Azure OpenAI API version
     AZURE_OPENAI_API_KEY:                  z.string().min(1).optional(),           // Shared Azure OpenAI API key
+    AZURE_ANTHROPIC_ENDPOINT:              z.string().url().optional(),            // Azure Anthropic service endpoint
+    AZURE_ANTHROPIC_API_KEY:               z.string().min(1).optional(),           // Azure Anthropic API key
+    AZURE_ANTHROPIC_API_VERSION:           z.string().min(1).optional(),           // Azure Anthropic API version (e.g. 2023-06-01)
     KB_OPENAI_MODEL_NAME:                  z.string().optional(),                  // Knowledge base OpenAI model name (works with both regular OpenAI and Azure OpenAI)
     WAND_OPENAI_MODEL_NAME:                z.string().optional(),                  // Wand generation OpenAI model name (works with both regular OpenAI and Azure OpenAI)
     OCR_AZURE_ENDPOINT:                    z.string().url().optional(),            // Azure Mistral OCR service endpoint
@@ -186,14 +211,42 @@ export const env = createEnv({
     RATE_LIMIT_WINDOW_MS:                  z.string().optional().default('60000'), // Rate limit window duration in milliseconds (default: 1 minute)
     MANUAL_EXECUTION_LIMIT:                z.string().optional().default('999999'),// Manual execution bypass value (effectively unlimited)
     DISABLE_EXECUTION_RATE_LIMIT:          z.string().optional(),                  // When set (e.g. true), skip execution rate limits (self-hosted / EC2)
-    RATE_LIMIT_FREE_SYNC:                  z.string().optional().default('10'),    // Free tier sync API executions per minute
-    RATE_LIMIT_FREE_ASYNC:                 z.string().optional().default('50'),    // Free tier async API executions per minute
-    RATE_LIMIT_PRO_SYNC:                   z.string().optional().default('25'),    // Pro tier sync API executions per minute
-    RATE_LIMIT_PRO_ASYNC:                  z.string().optional().default('200'),   // Pro tier async API executions per minute
-    RATE_LIMIT_TEAM_SYNC:                  z.string().optional().default('75'),    // Team tier sync API executions per minute
-    RATE_LIMIT_TEAM_ASYNC:                 z.string().optional().default('500'),   // Team tier async API executions per minute
-    RATE_LIMIT_ENTERPRISE_SYNC:            z.string().optional().default('150'),   // Enterprise tier sync API executions per minute
-    RATE_LIMIT_ENTERPRISE_ASYNC:           z.string().optional().default('1000'),  // Enterprise tier async API executions per minute
+    RATE_LIMIT_FREE_SYNC:                  z.string().optional().default('50'),    // Free tier sync API executions per minute
+    RATE_LIMIT_FREE_ASYNC:                 z.string().optional().default('200'),   // Free tier async API executions per minute
+    RATE_LIMIT_PRO_SYNC:                   z.string().optional().default('150'),   // Pro tier sync API executions per minute
+    RATE_LIMIT_PRO_ASYNC:                  z.string().optional().default('1000'),  // Pro tier async API executions per minute
+    RATE_LIMIT_TEAM_SYNC:                  z.string().optional().default('300'),   // Team tier sync API executions per minute
+    RATE_LIMIT_TEAM_ASYNC:                 z.string().optional().default('2500'),  // Team tier async API executions per minute
+    RATE_LIMIT_ENTERPRISE_SYNC:            z.string().optional().default('600'),   // Enterprise tier sync API executions per minute
+    RATE_LIMIT_ENTERPRISE_ASYNC:           z.string().optional().default('5000'),  // Enterprise tier async API executions per minute
+
+    // Timeout Configuration
+    EXECUTION_TIMEOUT_FREE:                z.string().optional().default('300'),   // 5 minutes
+    EXECUTION_TIMEOUT_PRO:                 z.string().optional().default('3000'),  // 50 minutes
+    EXECUTION_TIMEOUT_TEAM:                z.string().optional().default('3000'),  // 50 minutes
+    EXECUTION_TIMEOUT_ENTERPRISE:          z.string().optional().default('3000'),  // 50 minutes
+    EXECUTION_TIMEOUT_ASYNC_FREE:          z.string().optional().default('5400'),  // 90 minutes
+    EXECUTION_TIMEOUT_ASYNC_PRO:           z.string().optional().default('5400'),  // 90 minutes
+    EXECUTION_TIMEOUT_ASYNC_TEAM:          z.string().optional().default('5400'),  // 90 minutes
+    EXECUTION_TIMEOUT_ASYNC_ENTERPRISE:    z.string().optional().default('5400'),  // 90 minutes
+
+    // Isolated-VM Worker Pool Configuration
+    IVM_POOL_SIZE:                         z.string().optional().default('4'),      // Max worker processes in pool
+    IVM_MAX_CONCURRENT:                    z.string().optional().default('10000'),  // Max concurrent executions globally
+    IVM_MAX_PER_WORKER:                    z.string().optional().default('2500'),   // Max concurrent executions per worker
+    IVM_WORKER_IDLE_TIMEOUT_MS:            z.string().optional().default('60000'),  // Worker idle cleanup timeout (ms)
+    IVM_MAX_QUEUE_SIZE:                    z.string().optional().default('10000'),  // Max pending queued executions in memory
+    IVM_MAX_FETCH_RESPONSE_BYTES:          z.string().optional().default('8388608'),// Max bytes read from sandbox fetch responses
+    IVM_MAX_FETCH_RESPONSE_CHARS:          z.string().optional().default('4000000'),// Max chars returned to sandbox from fetch body
+    IVM_MAX_FETCH_OPTIONS_JSON_CHARS:      z.string().optional().default('262144'), // Max JSON payload size for sandbox fetch options
+    IVM_MAX_FETCH_URL_LENGTH:              z.string().optional().default('8192'),   // Max URL length accepted by sandbox fetch
+    IVM_MAX_STDOUT_CHARS:                  z.string().optional().default('200000'), // Max captured stdout characters per execution
+    IVM_MAX_ACTIVE_PER_OWNER:              z.string().optional().default('200'),    // Max active executions per owner (per process)
+    IVM_MAX_QUEUED_PER_OWNER:              z.string().optional().default('2000'),   // Max queued executions per owner (per process)
+    IVM_MAX_OWNER_WEIGHT:                  z.string().optional().default('5'),      // Max accepted weight for weighted owner scheduling
+    IVM_DISTRIBUTED_MAX_INFLIGHT_PER_OWNER:z.string().optional().default('2200'),   // Max owner in-flight leases across replicas
+    IVM_DISTRIBUTED_LEASE_MIN_TTL_MS:      z.string().optional().default('120000'), // Min TTL for distributed in-flight leases (ms)
+    IVM_QUEUE_TIMEOUT_MS:                  z.string().optional().default('300000'), // Max queue wait before rejection (ms)
 
     // Knowledge Base Processing Configuration - Shared across all processing methods
     KB_CONFIG_MAX_DURATION:                z.number().optional().default(600),     // Max processing duration in seconds (10 minutes)
@@ -214,6 +267,7 @@ export const env = createEnv({
     SOCKET_SERVER_URL:                     z.string().url().optional(),            // WebSocket server URL for real-time features
     SOCKET_PORT:                           z.number().optional(),                  // Port for WebSocket server
     PORT:                                  z.number().optional(),                  // Main application port
+    INTERNAL_API_BASE_URL:                 z.string().optional(),                  // Optional internal base URL for server-side self-calls; must include protocol if set (e.g., http://sim-app.namespace.svc.cluster.local:3000)
     ALLOWED_ORIGINS:                       z.string().optional(),                  // CORS allowed origins
 
     // OAuth Integration Credentials - All optional, enables third-party integrations
@@ -221,8 +275,7 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET:                  z.string().optional(),                  // Google OAuth client secret
     GITHUB_CLIENT_ID:                      z.string().optional(),                  // GitHub OAuth client ID for GitHub integration
     GITHUB_CLIENT_SECRET:                  z.string().optional(),                  // GitHub OAuth client secret
-    GITHUB_REPO_CLIENT_ID:                 z.string().optional(),                  // GitHub OAuth client ID for repo access
-    GITHUB_REPO_CLIENT_SECRET:             z.string().optional(),                  // GitHub OAuth client secret for repo access
+
     X_CLIENT_ID:                           z.string().optional(),                  // X (Twitter) OAuth client ID
     X_CLIENT_SECRET:                       z.string().optional(),                  // X (Twitter) OAuth client secret
     CONFLUENCE_CLIENT_ID:                  z.string().optional(),                  // Atlassian Confluence OAuth client ID
@@ -240,6 +293,8 @@ export const env = createEnv({
     NOTION_CLIENT_SECRET:                  z.string().optional(),                  // Notion OAuth client secret
     DISCORD_CLIENT_ID:                     z.string().optional(),                  // Discord OAuth client ID
     DISCORD_CLIENT_SECRET:                 z.string().optional(),                  // Discord OAuth client secret
+    DOCUSIGN_CLIENT_ID:                    z.string().optional(),                  // DocuSign OAuth client ID
+    DOCUSIGN_CLIENT_SECRET:                z.string().optional(),                  // DocuSign OAuth client secret
     MICROSOFT_CLIENT_ID:                   z.string().optional(),                  // Microsoft OAuth client ID for Office 365/Teams
     MICROSOFT_CLIENT_SECRET:               z.string().optional(),                  // Microsoft OAuth client secret
     HUBSPOT_CLIENT_ID:                     z.string().optional(),                  // HubSpot OAuth client ID
@@ -252,6 +307,8 @@ export const env = createEnv({
     PIPEDRIVE_CLIENT_SECRET:               z.string().optional(),                  // Pipedrive OAuth client secret
     LINEAR_CLIENT_ID:                      z.string().optional(),                  // Linear OAuth client ID
     LINEAR_CLIENT_SECRET:                  z.string().optional(),                  // Linear OAuth client secret
+    BOX_CLIENT_ID:                         z.string().optional(),                  // Box OAuth client ID
+    BOX_CLIENT_SECRET:                     z.string().optional(),                  // Box OAuth client secret
     DROPBOX_CLIENT_ID:                     z.string().optional(),                  // Dropbox OAuth client ID
     DROPBOX_CLIENT_SECRET:                 z.string().optional(),                  // Dropbox OAuth client secret
     SLACK_CLIENT_ID:                       z.string().optional(),                  // Slack OAuth client ID
@@ -271,6 +328,14 @@ export const env = createEnv({
     WORDPRESS_CLIENT_SECRET:               z.string().optional(),                  // WordPress.com OAuth client secret
     SPOTIFY_CLIENT_ID:                     z.string().optional(),                  // Spotify OAuth client ID
     SPOTIFY_CLIENT_SECRET:                 z.string().optional(),                  // Spotify OAuth client secret
+    CALCOM_CLIENT_ID:                      z.string().optional(),                  // Cal.com OAuth client ID
+    ATTIO_CLIENT_ID:                       z.string().optional(),                  // Attio OAuth client ID
+    ATTIO_CLIENT_SECRET:                   z.string().optional(),                  // Attio OAuth client secret
+
+    // AgentMail - Mothership Email Inbox
+    AGENTMAIL_API_KEY:                     z.string().min(1).optional(),           // AgentMail API key for mothership email inbox
+    AGENTMAIL_DOMAIN:                      z.string().optional(),                  // Custom domain for AgentMail inboxes (default: agentmail.to)
+    INBOX_ENABLED:                         z.boolean().optional(),                 // Enable inbox (Sim Mailer) on self-hosted (bypasses hosted requirements)
 
     // E2B Remote Code Execution
     E2B_ENABLED:                           z.string().optional(),                  // Enable E2B remote code execution
@@ -287,6 +352,7 @@ export const env = createEnv({
 
     // Invitations - for self-hosted deployments
     DISABLE_INVITATIONS:                   z.boolean().optional(),                 // Disable workspace invitations globally (for self-hosted deployments)
+    DISABLE_PUBLIC_API:                    z.boolean().optional(),                 // Disable public API access globally (for self-hosted deployments)
 
     // Development Tools
     REACT_GRAB_ENABLED:                    z.boolean().optional(),                 // Enable React Grab for UI element debugging in Cursor/AI agents (dev only)
@@ -373,12 +439,13 @@ export const env = createEnv({
     NEXT_PUBLIC_BRAND_BACKGROUND_COLOR:    z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),     // Brand background color (hex format)
 
     // Feature Flags
-    NEXT_PUBLIC_TRIGGER_DEV_ENABLED:       z.boolean().optional(),                   // Client-side gate for async executions UI
     NEXT_PUBLIC_SSO_ENABLED:               z.boolean().optional(),                   // Enable SSO login UI components
     NEXT_PUBLIC_CREDENTIAL_SETS_ENABLED:   z.boolean().optional(),                   // Enable credential sets (email polling) on self-hosted
     NEXT_PUBLIC_ACCESS_CONTROL_ENABLED:    z.boolean().optional(),                   // Enable access control (permission groups) on self-hosted
     NEXT_PUBLIC_ORGANIZATIONS_ENABLED:     z.boolean().optional(),                   // Enable organizations on self-hosted (bypasses plan requirements)
     NEXT_PUBLIC_DISABLE_INVITATIONS:       z.boolean().optional(),                   // Disable workspace invitations globally (for self-hosted deployments)
+    NEXT_PUBLIC_DISABLE_PUBLIC_API:        z.boolean().optional(),                   // Disable public API access UI toggle globally
+    NEXT_PUBLIC_INBOX_ENABLED:             z.boolean().optional(),                   // Enable inbox (Sim Mailer) on self-hosted
     NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED: z.boolean().optional().default(true), // Control visibility of email/password login forms
 
 
@@ -389,6 +456,7 @@ export const env = createEnv({
     NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
     NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS:                z.array(z.string().email()).optional(),          // Platform admin emails
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY:        z.string().min(1).optional(),           // Cloudflare Turnstile site key for captcha widget
   },
 
   // Variables available on both server and client
@@ -416,13 +484,15 @@ export const env = createEnv({
     NEXT_PUBLIC_BRAND_ACCENT_COLOR: process.env.NEXT_PUBLIC_BRAND_ACCENT_COLOR,
     NEXT_PUBLIC_BRAND_ACCENT_HOVER_COLOR: process.env.NEXT_PUBLIC_BRAND_ACCENT_HOVER_COLOR,
     NEXT_PUBLIC_BRAND_BACKGROUND_COLOR: process.env.NEXT_PUBLIC_BRAND_BACKGROUND_COLOR,
-    NEXT_PUBLIC_TRIGGER_DEV_ENABLED: process.env.NEXT_PUBLIC_TRIGGER_DEV_ENABLED,
     NEXT_PUBLIC_SSO_ENABLED: process.env.NEXT_PUBLIC_SSO_ENABLED,
     NEXT_PUBLIC_CREDENTIAL_SETS_ENABLED: process.env.NEXT_PUBLIC_CREDENTIAL_SETS_ENABLED,
     NEXT_PUBLIC_ACCESS_CONTROL_ENABLED: process.env.NEXT_PUBLIC_ACCESS_CONTROL_ENABLED,
     NEXT_PUBLIC_ORGANIZATIONS_ENABLED: process.env.NEXT_PUBLIC_ORGANIZATIONS_ENABLED,
     NEXT_PUBLIC_DISABLE_INVITATIONS: process.env.NEXT_PUBLIC_DISABLE_INVITATIONS,
+    NEXT_PUBLIC_DISABLE_PUBLIC_API: process.env.NEXT_PUBLIC_DISABLE_PUBLIC_API,
+    NEXT_PUBLIC_INBOX_ENABLED: process.env.NEXT_PUBLIC_INBOX_ENABLED,
     NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED: process.env.NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED,
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     NEXT_PUBLIC_E2B_ENABLED: process.env.NEXT_PUBLIC_E2B_ENABLED,
     NEXT_PUBLIC_COPILOT_TRAINING_ENABLED: process.env.NEXT_PUBLIC_COPILOT_TRAINING_ENABLED,
     NEXT_PUBLIC_ENABLE_PLAYGROUND: process.env.NEXT_PUBLIC_ENABLE_PLAYGROUND,

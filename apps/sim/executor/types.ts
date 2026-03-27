@@ -1,7 +1,15 @@
 import type { TraceSpan } from '@/lib/logs/types'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
 import type { BlockOutput } from '@/blocks/types'
+import type {
+  ChildWorkflowContext,
+  IterationContext,
+  ParentIteration,
+  SerializableExecutionState,
+} from '@/executor/execution/types'
+import type { RunFromBlockContext } from '@/executor/utils/run-from-block'
 import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
+import type { SubflowType } from '@/stores/workflows/workflow/types'
 
 export interface UserFile {
   id: string
@@ -110,9 +118,24 @@ export interface BlockLog {
   output?: any
   input?: any
   error?: string
+  /** Whether this error was handled by an error handler path (error port) */
+  errorHandled?: boolean
   loopId?: string
   parallelId?: string
   iterationIndex?: number
+  /** Full ancestor iteration chain for nested subflows (outermost → innermost). */
+  parentIterations?: ParentIteration[]
+  /**
+   * Monotonically increasing integer (1, 2, 3, ...) for accurate block ordering.
+   * Generated via getNextExecutionOrder() to ensure deterministic sorting.
+   */
+  executionOrder: number
+  /**
+   * Child workflow trace spans for nested workflow execution.
+   * Stored separately from output to keep output clean for display
+   * while preserving data for trace-spans processing.
+   */
+  childTraceSpans?: TraceSpan[]
 }
 
 export interface ExecutionMetadata {
@@ -155,6 +178,7 @@ export interface ExecutionContext {
   executionId?: string
   userId?: string
   isDeployedContext?: boolean
+  enforceCredentialAccess?: boolean
 
   permissionConfig?: PermissionGroupConfig | null
   permissionConfigLoaded?: boolean
@@ -173,6 +197,17 @@ export interface ExecutionContext {
   }
 
   completedLoops: Set<string>
+
+  /**
+   * Unified parent map for subflow nesting (loop-in-loop, parallel-in-parallel,
+   * loop-in-parallel, parallel-in-loop). Maps any child subflow ID to its parent
+   * subflow ID and type, enabling the iteration context builder to walk the full
+   * ancestor chain regardless of subflow type.
+   */
+  subflowParentMap?: Map<
+    string,
+    { parentId: string; parentType: SubflowType; branchIndex?: number }
+  >
 
   loopExecutions?: Map<
     string,
@@ -222,13 +257,33 @@ export interface ExecutionContext {
   edges?: Array<{ source: string; target: string }>
 
   onStream?: (streamingExecution: StreamingExecution) => Promise<void>
-  onBlockStart?: (blockId: string, blockName: string, blockType: string) => Promise<void>
+  onBlockStart?: (
+    blockId: string,
+    blockName: string,
+    blockType: string,
+    executionOrder: number,
+    iterationContext?: IterationContext,
+    childWorkflowContext?: ChildWorkflowContext
+  ) => Promise<void>
   onBlockComplete?: (
     blockId: string,
     blockName: string,
     blockType: string,
-    output: any
+    output: any,
+    iterationContext?: IterationContext,
+    childWorkflowContext?: ChildWorkflowContext
   ) => Promise<void>
+
+  /** Context identifying this execution as a child of a workflow block */
+  childWorkflowContext?: ChildWorkflowContext
+
+  /** Fires immediately after instanceId is generated, before child execution begins. */
+  onChildWorkflowInstanceReady?: (
+    blockId: string,
+    childWorkflowInstanceId: string,
+    iterationContext?: IterationContext,
+    executionOrder?: number
+  ) => void
 
   /**
    * AbortSignal for cancellation support.
@@ -258,6 +313,39 @@ export interface ExecutionContext {
    * This is used by Agent blocks to avoid re-running intent analysis.
    */
   intentAnalyzerResult?: import('./utils/intent-analyzer').IntentAnalyzerResult
+  /**   
+* Context for "run from block" mode. When present, only blocks in dirtySet
+   * will be executed; others return cached outputs from the source snapshot.
+   */
+  runFromBlockContext?: RunFromBlockContext
+
+  /**
+   * Stop execution after this block completes. Used for "run until block" feature.
+   */
+  stopAfterBlockId?: string
+
+  /**
+   * Ordered list of workflow IDs in the current call chain, used for cycle detection.
+   * Passed to outgoing HTTP requests via the X-Sim-Via header.
+   */
+  callChain?: string[]
+
+  /**
+   * Counter for generating monotonically increasing execution order values.
+   * Starts at 0 and increments for each block. Use getNextExecutionOrder() to access.
+   */
+  executionOrderCounter?: { value: number }
+}
+
+/**
+ * Gets the next execution order value for a block.
+ * Returns a simple incrementing integer (1, 2, 3, ...) for clear ordering.
+ */
+export function getNextExecutionOrder(ctx: ExecutionContext): number {
+  if (!ctx.executionOrderCounter) {
+    ctx.executionOrderCounter = { value: 0 }
+  }
+  return ++ctx.executionOrderCounter.value
 }
 
 export interface ExecutionResult {
@@ -265,6 +353,7 @@ export interface ExecutionResult {
   output: NormalizedBlockOutput
   error?: string
   logs?: BlockLog[]
+  executionState?: SerializableExecutionState
   metadata?: ExecutionMetadata
   status?: 'completed' | 'paused' | 'cancelled' | 'skipped'
   pausePoints?: PausePoint[]
@@ -309,6 +398,9 @@ export interface BlockHandler {
       parallelId?: string
       branchIndex?: number
       branchTotal?: number
+      originalBlockId?: string
+      isLoopNode?: boolean
+      executionOrder?: number
     }
   ) => Promise<BlockOutput | StreamingExecution>
 }

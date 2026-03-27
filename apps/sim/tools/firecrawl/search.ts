@@ -1,6 +1,7 @@
 import { getEnv } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import type { SearchParams, SearchResponse } from '@/tools/firecrawl/types'
+import { SEARCH_RESULT_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
 export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
@@ -21,6 +22,34 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
       required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
+    },
+  },
+
+  hosting: {
+    envKeyPrefix: 'FIRECRAWL_API_KEY',
+    apiKeyParam: 'apiKey',
+    byokProviderId: 'firecrawl',
+    pricing: {
+      type: 'custom',
+      getCost: (_params, output) => {
+        if (output.creditsUsed == null) {
+          throw new Error('Firecrawl response missing creditsUsed field')
+        }
+
+        const creditsUsed = Number(output.creditsUsed)
+        if (Number.isNaN(creditsUsed)) {
+          throw new Error('Firecrawl response returned a non-numeric creditsUsed field')
+        }
+
+        return {
+          cost: creditsUsed * 0.001,
+          metadata: { creditsUsed },
+        }
+      },
+    },
+    rateLimit: {
+      mode: 'per_request',
+      requestsPerMinute: 100,
     },
   },
 
@@ -59,6 +88,7 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
       success: true,
       output: {
         data: data.data,
+        creditsUsed: data.creditsUsed,
       },
     }
   },
@@ -66,20 +96,10 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
   outputs: {
     data: {
       type: 'array',
-      description: 'Search results data',
+      description: 'Search results data with scraped content and metadata',
       items: {
         type: 'object',
-        properties: {
-          title: { type: 'string' },
-          description: { type: 'string' },
-          url: { type: 'string' },
-          markdown: { type: 'string' },
-          html: { type: 'string' },
-          rawHtml: { type: 'string' },
-          links: { type: 'array' },
-          screenshot: { type: 'string' },
-          metadata: { type: 'object' },
-        },
+        properties: SEARCH_RESULT_OUTPUT_PROPERTIES,
       },
     },
   },

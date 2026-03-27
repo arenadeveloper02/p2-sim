@@ -11,10 +11,12 @@ import type {
   ProviderResponse,
   TimeSegment,
 } from '@/providers/types'
+import { ProviderError } from '@/providers/types'
 import {
   calculateCost,
   prepareToolExecution,
   prepareToolsWithUsageControl,
+  sumToolCosts,
   trackForcedToolUsage,
 } from '@/providers/utils'
 import { executeTool } from '@/tools'
@@ -91,7 +93,7 @@ export const mistralProvider: ProviderConfig = {
     }
 
     if (request.temperature !== undefined) payload.temperature = request.temperature
-    if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+    if (request.maxTokens != null) payload.max_tokens = request.maxTokens
 
     if (request.responseFormat) {
       payload.response_format = {
@@ -141,9 +143,11 @@ export const mistralProvider: ProviderConfig = {
         const streamingParams: ChatCompletionCreateParamsStreaming = {
           ...payload,
           stream: true,
-          stream_options: { include_usage: true },
         }
-        const streamResponse = await mistral.chat.completions.create(streamingParams)
+        const streamResponse = await mistral.chat.completions.create(
+          streamingParams,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const streamingResult = {
           stream: createReadableStreamFromMistralStream(streamResponse, (content, usage) => {
@@ -242,7 +246,10 @@ export const mistralProvider: ProviderConfig = {
         }
       }
 
-      let currentResponse = await mistral.chat.completions.create(payload)
+      let currentResponse = await mistral.chat.completions.create(
+        payload,
+        request.abortSignal ? { signal: request.abortSignal } : undefined
+      )
       const firstResponseTime = Date.now() - initialCallTime
 
       let content = currentResponse.choices[0]?.message?.content || ''
@@ -252,7 +259,7 @@ export const mistralProvider: ProviderConfig = {
         total: currentResponse.usage?.total_tokens || 0,
       }
       const toolCalls = []
-      const toolResults = []
+      const toolResults: Record<string, unknown>[] = []
       const currentMessages = [...allMessages]
       let iterationCount = 0
 
@@ -360,7 +367,7 @@ export const mistralProvider: ProviderConfig = {
           })
 
           let resultContent: any
-          if (result.success) {
+          if (result.success && result.output) {
             toolResults.push(result.output)
             resultContent = result.output
           } else {
@@ -383,6 +390,7 @@ export const mistralProvider: ProviderConfig = {
           currentMessages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
+            name: toolName,
             content: JSON.stringify(resultContent),
           })
         }
@@ -412,7 +420,10 @@ export const mistralProvider: ProviderConfig = {
 
         const nextModelStartTime = Date.now()
 
-        currentResponse = await mistral.chat.completions.create(nextPayload)
+        currentResponse = await mistral.chat.completions.create(
+          nextPayload,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         checkForForcedToolUsage(currentResponse, nextPayload.tool_choice)
 
@@ -452,9 +463,11 @@ export const mistralProvider: ProviderConfig = {
           messages: currentMessages,
           tool_choice: 'auto',
           stream: true,
-          stream_options: { include_usage: true },
         }
-        const streamResponse = await mistral.chat.completions.create(streamingParams)
+        const streamResponse = await mistral.chat.completions.create(
+          streamingParams,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const streamingResult = {
           stream: createReadableStreamFromMistralStream(streamResponse, (content, usage) => {
@@ -470,10 +483,12 @@ export const mistralProvider: ProviderConfig = {
               usage.prompt_tokens,
               usage.completion_tokens
             )
+            const tc = sumToolCosts(toolResults)
             streamingResult.execution.output.cost = {
               input: accumulatedCost.input + streamCost.input,
               output: accumulatedCost.output + streamCost.output,
-              total: accumulatedCost.total + streamCost.total,
+              toolCost: tc || undefined,
+              total: accumulatedCost.total + streamCost.total + tc,
             }
           }),
           execution: {
@@ -552,15 +567,11 @@ export const mistralProvider: ProviderConfig = {
         duration: totalDuration,
       })
 
-      const enhancedError = new Error(error instanceof Error ? error.message : String(error))
-      // @ts-ignore - Adding timing property to error for debugging
-      enhancedError.timing = {
+      throw new ProviderError(error instanceof Error ? error.message : String(error), {
         startTime: providerStartTimeISO,
         endTime: providerEndTimeISO,
         duration: totalDuration,
-      }
-
-      throw enhancedError
+      })
     }
   },
 }

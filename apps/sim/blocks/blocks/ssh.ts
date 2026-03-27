@@ -1,6 +1,6 @@
 import { SshIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { SSHResponse } from '@/tools/ssh/types'
 
 export const SSHBlock: BlockConfig<SSHResponse> = {
@@ -12,6 +12,8 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
     'Execute commands, transfer files, and manage remote servers via SSH. Supports password and private key authentication for secure server access.',
   docsLink: 'https://docs.sim.ai/tools/ssh',
   category: 'tools',
+  integrationType: IntegrationType.DeveloperTools,
+  tags: ['cloud', 'automation'],
   bgColor: '#000000',
   icon: SshIcon,
   subBlocks: [
@@ -108,6 +110,28 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
       placeholder: 'ls -la /var/www',
       required: true,
       condition: { field: 'operation', value: 'ssh_execute_command' },
+      wandConfig: {
+        enabled: true,
+        prompt: `You are an expert Linux/Unix system administrator.
+Generate a shell command or commands based on the user's request for SSH execution on a remote server.
+
+Current command: {context}
+
+RULES:
+1. Generate ONLY the raw shell command(s) - no markdown, no explanations, no code blocks
+2. Use standard Unix/Linux commands that work on most systems
+3. For multiple commands, separate with && or ; as appropriate
+4. Prefer safe, non-destructive commands when possible
+5. Use proper quoting for paths with spaces
+6. Consider common shell utilities: ls, cat, grep, find, awk, sed, tar, curl, wget, systemctl, etc.
+
+Examples:
+- "list files" → ls -la
+- "find large files" → find . -type f -size +100M
+- "check disk space" → df -h
+- "show running processes" → ps aux
+- "restart nginx" → sudo systemctl restart nginx`,
+      },
     },
     {
       id: 'workingDirectory',
@@ -125,6 +149,26 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
       placeholder: '#!/bin/bash\necho "Hello World"',
       required: true,
       condition: { field: 'operation', value: 'ssh_execute_script' },
+      wandConfig: {
+        enabled: true,
+        prompt: `You are an expert shell script writer.
+Generate a complete shell script based on the user's request for SSH execution on a remote server.
+
+Current script: {context}
+
+RULES:
+1. Generate ONLY the raw script content - no markdown, no explanations, no code blocks
+2. Include appropriate shebang (#!/bin/bash) at the start
+3. Use proper error handling where appropriate (set -e, set -o pipefail)
+4. Add comments for complex logic
+5. Use variables for repeated values
+6. Handle edge cases gracefully
+7. Make scripts portable across common Linux distributions
+
+Examples:
+- "backup script" → #!/bin/bash\\nset -e\\ntar -czf backup-$(date +%Y%m%d).tar.gz /var/www
+- "deploy script" → #!/bin/bash\\nset -e\\ngit pull origin main\\nnpm install\\npm run build\\nsystemctl restart app`,
+      },
     },
     {
       id: 'interpreter',
@@ -159,6 +203,25 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
       placeholder: 'Content to upload...',
       required: true,
       condition: { field: 'operation', value: 'ssh_upload_file' },
+      wandConfig: {
+        enabled: true,
+        prompt: `You are an expert at generating configuration files and file content for server deployment.
+Generate file content based on the user's request for uploading to a remote server via SSH.
+
+Current content: {context}
+
+RULES:
+1. Generate ONLY the raw file content - no markdown, no explanations, no code blocks
+2. Use proper formatting for the file type (JSON, YAML, INI, etc.)
+3. Include helpful comments where appropriate for config files
+4. Use sensible defaults and best practices
+5. Ensure valid syntax for the file format
+
+Examples:
+- "nginx config" → server { listen 80; server_name example.com; ... }
+- "json config" → { "key": "value", "port": 3000 }
+- "env file" → NODE_ENV=production\\nPORT=3000\\nDATABASE_URL=...`,
+      },
     },
     {
       id: 'fileName',
@@ -335,6 +398,25 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
       placeholder: 'Content to write...',
       required: true,
       condition: { field: 'operation', value: 'ssh_write_file_content' },
+      wandConfig: {
+        enabled: true,
+        prompt: `You are an expert at generating configuration files and file content for server deployment.
+Generate file content based on the user's request for writing to a remote server via SSH.
+
+Current content: {context}
+
+RULES:
+1. Generate ONLY the raw file content - no markdown, no explanations, no code blocks
+2. Use proper formatting for the file type (JSON, YAML, INI, etc.)
+3. Include helpful comments where appropriate for config files
+4. Use sensible defaults and best practices
+5. Ensure valid syntax for the file format
+
+Examples:
+- "nginx config" → server { listen 80; server_name example.com; ... }
+- "json config" → { "key": "value", "port": 3000 }
+- "env file" → NODE_ENV=production\\nPORT=3000\\nDATABASE_URL=...`,
+      },
     },
     {
       id: 'writeMode',
@@ -507,6 +589,7 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
     stderr: { type: 'string', description: 'Command standard error' },
     exitCode: { type: 'number', description: 'Command exit code' },
     success: { type: 'boolean', description: 'Operation success status' },
+    file: { type: 'file', description: 'Downloaded file stored in execution files' },
     fileContent: { type: 'string', description: 'Downloaded/read file content' },
     entries: { type: 'json', description: 'Directory entries' },
     exists: { type: 'boolean', description: 'File/directory existence' },

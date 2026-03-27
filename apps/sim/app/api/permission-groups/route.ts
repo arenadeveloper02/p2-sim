@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, count, desc, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { hasAccessControlAccess } from '@/lib/billing'
 import {
@@ -19,12 +20,14 @@ const configSchema = z.object({
   allowedModelProviders: z.array(z.string()).nullable().optional(),
   hideTraceSpans: z.boolean().optional(),
   hideKnowledgeBaseTab: z.boolean().optional(),
+  hideTablesTab: z.boolean().optional(),
   hideCopilot: z.boolean().optional(),
   hideApiKeysTab: z.boolean().optional(),
   hideEnvironmentTab: z.boolean().optional(),
   hideFilesTab: z.boolean().optional(),
   disableMcpTools: z.boolean().optional(),
   disableCustomTools: z.boolean().optional(),
+  disableSkills: z.boolean().optional(),
   hideTemplates: z.boolean().optional(),
   disableInvitations: z.boolean().optional(),
   hideDeployApi: z.boolean().optional(),
@@ -195,6 +198,19 @@ export async function POST(req: Request) {
       permissionGroupId: newGroup.id,
       organizationId,
       userId: session.user.id,
+    })
+
+    recordAudit({
+      workspaceId: null,
+      actorId: session.user.id,
+      action: AuditAction.PERMISSION_GROUP_CREATED,
+      resourceType: AuditResourceType.PERMISSION_GROUP,
+      resourceId: newGroup.id,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      resourceName: name,
+      description: `Created permission group "${name}"`,
+      request: req,
     })
 
     return NextResponse.json({ permissionGroup: newGroup }, { status: 201 })

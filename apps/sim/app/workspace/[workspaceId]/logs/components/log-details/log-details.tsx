@@ -6,18 +6,20 @@ import { createPortal } from 'react-dom'
 import {
   Button,
   Code,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   Eye,
   Input,
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverDivider,
-  PopoverItem,
   Tooltip,
 } from '@/components/emcn'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { Copy as CopyIcon, Search as SearchIcon } from '@/components/emcn/icons'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import { cn } from '@/lib/core/utils/cn'
+import { formatDuration } from '@/lib/core/utils/formatting'
+import { filterHiddenOutputKeys } from '@/lib/logs/execution/trace-spans/trace-spans'
 import {
   ExecutionSnapshot,
   FileCards,
@@ -25,6 +27,8 @@ import {
 } from '@/app/workspace/[workspaceId]/logs/components'
 import { useLogDetailsResize } from '@/app/workspace/[workspaceId]/logs/hooks'
 import {
+  DELETED_WORKFLOW_COLOR,
+  DELETED_WORKFLOW_LABEL,
   formatDate,
   getDisplayStatus,
   StatusBadge,
@@ -35,188 +39,214 @@ import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { formatCost } from '@/providers/utils'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
 import { useLogDetailsUIStore } from '@/stores/logs/store'
+import { MAX_LOG_DETAILS_WIDTH_RATIO, MIN_LOG_DETAILS_WIDTH } from '@/stores/logs/utils'
 
 /**
  * Workflow Output section with code viewer, copy, search, and context menu functionality
  */
-function WorkflowOutputSection({ output }: { output: Record<string, unknown> }) {
-  const contentRef = useRef<HTMLDivElement>(null)
-  const [copied, setCopied] = useState(false)
+const WorkflowOutputSection = memo(
+  function WorkflowOutputSection({ output }: { output: Record<string, unknown> }) {
+    const contentRef = useRef<HTMLDivElement>(null)
+    const [copied, setCopied] = useState(false)
+    const copyTimerRef = useRef<number | null>(null)
 
-  // Context menu state
-  const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
-  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
+    const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
+    const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
 
-  const {
-    isSearchActive,
-    searchQuery,
-    setSearchQuery,
-    matchCount,
-    currentMatchIndex,
-    activateSearch,
-    closeSearch,
-    goToNextMatch,
-    goToPreviousMatch,
-    handleMatchCountChange,
-    searchInputRef,
-  } = useCodeViewerFeatures({ contentRef })
+    const {
+      isSearchActive,
+      searchQuery,
+      setSearchQuery,
+      matchCount,
+      currentMatchIndex,
+      activateSearch,
+      closeSearch,
+      goToNextMatch,
+      goToPreviousMatch,
+      handleMatchCountChange,
+      searchInputRef,
+    } = useCodeViewerFeatures({ contentRef })
 
-  const jsonString = useMemo(() => JSON.stringify(output, null, 2), [output])
+    const jsonString = useMemo(() => JSON.stringify(output, null, 2), [output])
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setContextMenuPosition({ x: e.clientX, y: e.clientY })
-    setIsContextMenuOpen(true)
-  }, [])
+    const handleContextMenu = useCallback((e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setContextMenuPosition({ x: e.clientX, y: e.clientY })
+      setIsContextMenuOpen(true)
+    }, [])
 
-  const closeContextMenu = useCallback(() => {
-    setIsContextMenuOpen(false)
-  }, [])
+    const closeContextMenu = useCallback(() => {
+      setIsContextMenuOpen(false)
+    }, [])
 
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(jsonString)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-    closeContextMenu()
-  }, [jsonString, closeContextMenu])
+    const handleCopy = useCallback(() => {
+      navigator.clipboard.writeText(jsonString)
+      setCopied(true)
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+      copyTimerRef.current = window.setTimeout(() => setCopied(false), 1500)
+      closeContextMenu()
+    }, [jsonString, closeContextMenu])
 
-  const handleSearch = useCallback(() => {
-    activateSearch()
-    closeContextMenu()
-  }, [activateSearch, closeContextMenu])
+    useEffect(() => {
+      return () => {
+        if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
+      }
+    }, [])
 
-  return (
-    <div className='relative flex min-w-0 flex-col overflow-hidden'>
-      <div ref={contentRef} onContextMenu={handleContextMenu} className='relative'>
-        <Code.Viewer
-          code={jsonString}
-          language='json'
-          className='!bg-[var(--surface-4)] dark:!bg-[var(--surface-3)] max-h-[300px] min-h-0 max-w-full rounded-[6px] border-0 [word-break:break-all]'
-          wrapText
-          searchQuery={isSearchActive ? searchQuery : undefined}
-          currentMatchIndex={currentMatchIndex}
-          onMatchCountChange={handleMatchCountChange}
-        />
-        {/* Glass action buttons overlay */}
-        {!isSearchActive && (
-          <div className='absolute top-[7px] right-[6px] z-10 flex gap-[4px]'>
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <Button
-                  type='button'
-                  variant='default'
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleCopy()
-                  }}
-                  className='h-[20px] w-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover:bg-[var(--surface-3)]'
-                >
-                  {copied ? (
-                    <Check className='h-[10px] w-[10px] text-[var(--text-success)]' />
-                  ) : (
-                    <Clipboard className='h-[10px] w-[10px]' />
-                  )}
-                </Button>
-              </Tooltip.Trigger>
-              <Tooltip.Content side='top'>{copied ? 'Copied' : 'Copy'}</Tooltip.Content>
-            </Tooltip.Root>
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <Button
-                  type='button'
-                  variant='default'
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    activateSearch()
-                  }}
-                  className='h-[20px] w-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover:bg-[var(--surface-3)]'
-                >
-                  <Search className='h-[10px] w-[10px]' />
-                </Button>
-              </Tooltip.Trigger>
-              <Tooltip.Content side='top'>Search</Tooltip.Content>
-            </Tooltip.Root>
+    const handleSearch = useCallback(() => {
+      activateSearch()
+      closeContextMenu()
+    }, [activateSearch, closeContextMenu])
+
+    return (
+      <div className='relative flex min-w-0 flex-col overflow-hidden'>
+        <div ref={contentRef} onContextMenu={handleContextMenu} className='relative'>
+          <Code.Viewer
+            code={jsonString}
+            language='json'
+            className='!bg-[var(--surface-4)] dark:!bg-[var(--surface-3)] max-h-[300px] min-h-0 max-w-full rounded-[6px] border-0 [word-break:break-all]'
+            wrapText
+            searchQuery={isSearchActive ? searchQuery : undefined}
+            currentMatchIndex={currentMatchIndex}
+            onMatchCountChange={handleMatchCountChange}
+          />
+          {/* Glass action buttons overlay */}
+          {!isSearchActive && (
+            <div className='absolute top-[7px] right-[6px] z-10 flex gap-[4px]'>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <Button
+                    type='button'
+                    variant='default'
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleCopy()
+                    }}
+                    className='h-[20px] w-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover:bg-[var(--surface-3)]'
+                  >
+                    {copied ? (
+                      <Check className='h-[10px] w-[10px] text-[var(--text-success)]' />
+                    ) : (
+                      <Clipboard className='h-[10px] w-[10px]' />
+                    )}
+                  </Button>
+                </Tooltip.Trigger>
+                <Tooltip.Content side='top'>{copied ? 'Copied' : 'Copy'}</Tooltip.Content>
+              </Tooltip.Root>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <Button
+                    type='button'
+                    variant='default'
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      activateSearch()
+                    }}
+                    className='h-[20px] w-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover:bg-[var(--surface-3)]'
+                  >
+                    <Search className='h-[10px] w-[10px]' />
+                  </Button>
+                </Tooltip.Trigger>
+                <Tooltip.Content side='top'>Search</Tooltip.Content>
+              </Tooltip.Root>
+            </div>
+          )}
+        </div>
+
+        {/* Search Overlay */}
+        {isSearchActive && (
+          <div
+            className='absolute top-0 right-0 z-30 flex h-[34px] items-center gap-[6px] rounded-[4px] border border-[var(--border)] bg-[var(--surface-1)] px-[6px] shadow-sm'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Input
+              ref={searchInputRef}
+              type='text'
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder='Search...'
+              className='mr-[2px] h-[23px] w-[94px] text-[12px]'
+            />
+            <span
+              className={cn(
+                'min-w-[45px] text-center text-[11px]',
+                matchCount > 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--text-tertiary)]'
+              )}
+            >
+              {matchCount > 0 ? `${currentMatchIndex + 1}/${matchCount}` : '0/0'}
+            </span>
+            <Button
+              variant='ghost'
+              className='!p-1'
+              onClick={goToPreviousMatch}
+              disabled={matchCount === 0}
+              aria-label='Previous match'
+            >
+              <ArrowUp className='h-[12px] w-[12px]' />
+            </Button>
+            <Button
+              variant='ghost'
+              className='!p-1'
+              onClick={goToNextMatch}
+              disabled={matchCount === 0}
+              aria-label='Next match'
+            >
+              <ArrowDown className='h-[12px] w-[12px]' />
+            </Button>
+            <Button
+              variant='ghost'
+              className='!p-1'
+              onClick={closeSearch}
+              aria-label='Close search'
+            >
+              <X className='h-[12px] w-[12px]' />
+            </Button>
           </div>
         )}
+
+        {/* Context Menu - rendered in portal to avoid transform/overflow clipping */}
+        {typeof document !== 'undefined' &&
+          createPortal(
+            <DropdownMenu open={isContextMenuOpen} onOpenChange={closeContextMenu} modal={false}>
+              <DropdownMenuTrigger asChild>
+                <div
+                  style={{
+                    position: 'fixed',
+                    left: `${contextMenuPosition.x}px`,
+                    top: `${contextMenuPosition.y}px`,
+                    width: '1px',
+                    height: '1px',
+                    pointerEvents: 'none',
+                  }}
+                  tabIndex={-1}
+                  aria-hidden
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align='start'
+                side='bottom'
+                sideOffset={4}
+                onCloseAutoFocus={(e) => e.preventDefault()}
+              >
+                <DropdownMenuItem onSelect={handleCopy}>
+                  <CopyIcon />
+                  Copy
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={handleSearch}>
+                  <SearchIcon />
+                  Search
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>,
+            document.body
+          )}
       </div>
-
-      {/* Search Overlay */}
-      {isSearchActive && (
-        <div
-          className='absolute top-0 right-0 z-30 flex h-[34px] items-center gap-[6px] rounded-[4px] border border-[var(--border)] bg-[var(--surface-1)] px-[6px] shadow-sm'
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Input
-            ref={searchInputRef}
-            type='text'
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder='Search...'
-            className='mr-[2px] h-[23px] w-[94px] text-[12px]'
-          />
-          <span
-            className={cn(
-              'min-w-[45px] text-center text-[11px]',
-              matchCount > 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--text-tertiary)]'
-            )}
-          >
-            {matchCount > 0 ? `${currentMatchIndex + 1}/${matchCount}` : '0/0'}
-          </span>
-          <Button
-            variant='ghost'
-            className='!p-1'
-            onClick={goToPreviousMatch}
-            disabled={matchCount === 0}
-            aria-label='Previous match'
-          >
-            <ArrowUp className='h-[12px] w-[12px]' />
-          </Button>
-          <Button
-            variant='ghost'
-            className='!p-1'
-            onClick={goToNextMatch}
-            disabled={matchCount === 0}
-            aria-label='Next match'
-          >
-            <ArrowDown className='h-[12px] w-[12px]' />
-          </Button>
-          <Button variant='ghost' className='!p-1' onClick={closeSearch} aria-label='Close search'>
-            <X className='h-[12px] w-[12px]' />
-          </Button>
-        </div>
-      )}
-
-      {/* Context Menu - rendered in portal to avoid transform/overflow clipping */}
-      {typeof document !== 'undefined' &&
-        createPortal(
-          <Popover
-            open={isContextMenuOpen}
-            onOpenChange={closeContextMenu}
-            variant='secondary'
-            size='sm'
-            colorScheme='inverted'
-          >
-            <PopoverAnchor
-              style={{
-                position: 'fixed',
-                left: `${contextMenuPosition.x}px`,
-                top: `${contextMenuPosition.y}px`,
-                width: '1px',
-                height: '1px',
-              }}
-            />
-            <PopoverContent align='start' side='bottom' sideOffset={4}>
-              <PopoverItem onClick={handleCopy}>Copy</PopoverItem>
-              <PopoverDivider />
-              <PopoverItem onClick={handleSearch}>Search</PopoverItem>
-            </PopoverContent>
-          </Popover>,
-          document.body
-        )}
-    </div>
-  )
-}
+    )
+  },
+  (prev, next) => prev.output === next.output
+)
 
 interface LogDetailsProps {
   /** The log to display details for */
@@ -256,6 +286,9 @@ export const LogDetails = memo(function LogDetails({
   const { handleMouseDown } = useLogDetailsResize()
   const { config: permissionConfig } = usePermissionConfig()
 
+  const maxVw = `${MAX_LOG_DETAILS_WIDTH_RATIO * 100}vw`
+  const effectiveWidth = `clamp(${MIN_LOG_DETAILS_WIDTH}px, ${panelWidth}px, ${maxVw})`
+
   useEffect(() => {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = 0
@@ -270,20 +303,14 @@ export const LogDetails = memo(function LogDetails({
     )
   }, [log])
 
-  const hasCostInfo = useMemo(() => {
-    return isWorkflowExecutionLog && log?.cost
-  }, [log, isWorkflowExecutionLog])
+  const hasCostInfo = isWorkflowExecutionLog && log?.cost
 
-  // Extract and clean the workflow final output (remove childTraceSpans for cleaner display)
   const workflowOutput = useMemo(() => {
     const executionData = log?.executionData as
       | { finalOutput?: Record<string, unknown> }
       | undefined
     if (!executionData?.finalOutput) return null
-    const { childTraceSpans, ...cleanOutput } = executionData.finalOutput as {
-      childTraceSpans?: unknown
-    } & Record<string, unknown>
-    return cleanOutput
+    return filterHiddenOutputKeys(executionData.finalOutput) as Record<string, unknown>
   }, [log?.executionData])
 
   useEffect(() => {
@@ -314,7 +341,7 @@ export const LogDetails = memo(function LogDetails({
     [log?.createdAt]
   )
 
-  const logStatus = useMemo(() => getDisplayStatus(log?.status), [log?.status])
+  const logStatus = getDisplayStatus(log?.status)
 
   return (
     <>
@@ -322,7 +349,7 @@ export const LogDetails = memo(function LogDetails({
       {isOpen && (
         <div
           className='absolute top-0 bottom-0 z-[60] w-[8px] cursor-ew-resize'
-          style={{ right: `${panelWidth - 4}px` }}
+          style={{ right: `calc(${effectiveWidth} - 4px)` }}
           onMouseDown={handleMouseDown}
           role='separator'
           aria-label='Resize log details panel'
@@ -331,10 +358,10 @@ export const LogDetails = memo(function LogDetails({
       )}
 
       <div
-        className={`absolute top-[0px] right-0 bottom-0 z-50 transform overflow-hidden border-l bg-[var(--surface-1)] shadow-md transition-transform duration-200 ease-out ${
+        className={`absolute top-[0px] right-0 bottom-0 z-50 transform overflow-hidden border-l bg-[var(--bg)] shadow-md transition-transform duration-200 ease-out ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
-        style={{ width: `${panelWidth}px` }}
+        style={{ width: effectiveWidth }}
         aria-label='Log details sidebar'
       >
         {log && (
@@ -368,7 +395,7 @@ export const LogDetails = memo(function LogDetails({
             </div>
 
             {/* Content - Scrollable */}
-            <ScrollArea className='mt-[20px] h-full w-full overflow-y-auto' ref={scrollAreaRef}>
+            <div className='mt-[20px] h-full w-full overflow-y-auto' ref={scrollAreaRef}>
               <div className='flex flex-col gap-[10px] pb-[16px]'>
                 {/* Timestamp & Workflow Row */}
                 <div className='flex min-w-0 items-center gap-[16px] px-[1px]'>
@@ -388,22 +415,36 @@ export const LogDetails = memo(function LogDetails({
                   </div>
 
                   {/* Workflow Card */}
-                  {log.workflow && (
-                    <div className='flex w-0 min-w-0 flex-1 flex-col gap-[8px]'>
-                      <div className='font-medium text-[12px] text-[var(--text-tertiary)]'>
-                        Workflow
-                      </div>
-                      <div className='flex min-w-0 items-center gap-[8px]'>
-                        <div
-                          className='h-[10px] w-[10px] flex-shrink-0 rounded-[3px]'
-                          style={{ backgroundColor: log.workflow?.color }}
-                        />
-                        <span className='min-w-0 flex-1 truncate font-medium text-[14px] text-[var(--text-secondary)]'>
-                          {log.workflow.name}
-                        </span>
-                      </div>
+                  <div className='flex w-0 min-w-0 flex-1 flex-col gap-[8px]'>
+                    <div className='font-medium text-[12px] text-[var(--text-tertiary)]'>
+                      {log.trigger === 'mothership' ? 'Job' : 'Workflow'}
                     </div>
-                  )}
+                    <div className='flex min-w-0 items-center gap-[8px]'>
+                      {(() => {
+                        const c =
+                          log.trigger === 'mothership'
+                            ? '#ec4899'
+                            : log.workflow?.color ||
+                              (!log.workflowId ? DELETED_WORKFLOW_COLOR : undefined)
+                        return (
+                          <div
+                            className='h-[10px] w-[10px] flex-shrink-0 rounded-[3px] border-[1.5px]'
+                            style={{
+                              backgroundColor: c,
+                              borderColor: c ? `${c}60` : undefined,
+                              backgroundClip: 'padding-box',
+                            }}
+                          />
+                        )
+                      })()}
+                      <span className='min-w-0 flex-1 truncate font-medium text-[14px] text-[var(--text-secondary)]'>
+                        {log.trigger === 'mothership'
+                          ? log.jobTitle || 'Untitled Job'
+                          : log.workflow?.name ||
+                            (!log.workflowId ? DELETED_WORKFLOW_LABEL : 'Unknown')}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Execution ID */}
@@ -450,7 +491,7 @@ export const LogDetails = memo(function LogDetails({
                       Duration
                     </span>
                     <span className='font-medium text-[13px] text-[var(--text-secondary)]'>
-                      {log.duration || '—'}
+                      {formatDuration(log.duration, { precision: 2 }) || '—'}
                     </span>
                   </div>
 
@@ -470,21 +511,24 @@ export const LogDetails = memo(function LogDetails({
                 </div>
 
                 {/* Workflow State */}
-                {isWorkflowExecutionLog && log.executionId && !permissionConfig.hideTraceSpans && (
-                  <div className='-mt-[8px] flex flex-col gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--surface-2)] px-[10px] py-[8px]'>
-                    <span className='font-medium text-[12px] text-[var(--text-tertiary)]'>
-                      Workflow State
-                    </span>
-                    <Button
-                      variant='active'
-                      onClick={() => setIsExecutionSnapshotOpen(true)}
-                      className='flex w-full items-center justify-between px-[10px] py-[6px]'
-                    >
-                      <span className='font-medium text-[12px]'>View Snapshot</span>
-                      <Eye className='h-[14px] w-[14px]' />
-                    </Button>
-                  </div>
-                )}
+                {isWorkflowExecutionLog &&
+                  log.executionId &&
+                  log.trigger !== 'mothership' &&
+                  !permissionConfig.hideTraceSpans && (
+                    <div className='-mt-[8px] flex flex-col gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--surface-2)] px-[10px] py-[8px]'>
+                      <span className='font-medium text-[12px] text-[var(--text-tertiary)]'>
+                        Workflow State
+                      </span>
+                      <Button
+                        variant='active'
+                        onClick={() => setIsExecutionSnapshotOpen(true)}
+                        className='flex w-full items-center justify-between px-[10px] py-[6px]'
+                      >
+                        <span className='font-medium text-[12px]'>View Snapshot</span>
+                        <Eye className='h-[14px] w-[14px]' />
+                      </Button>
+                    </div>
+                  )}
 
                 {/* Workflow Output */}
                 {isWorkflowExecutionLog && workflowOutput && !permissionConfig.hideTraceSpans && (
@@ -587,7 +631,7 @@ export const LogDetails = memo(function LogDetails({
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           </div>
         )}
 

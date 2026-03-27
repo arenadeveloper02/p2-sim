@@ -8,7 +8,7 @@ import {
   workflowQueries,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
@@ -158,9 +158,6 @@ export async function POST(
   const requestId = generateRequestId()
 
   try {
-    logger.debug(`[${requestId}] Processing chat request for identifier: ${identifier}`)
-    logger.debug(`[${requestId}] Request body:`, request.body)
-
     let parsedBody
     try {
       const rawBody = await request.json()
@@ -194,7 +191,7 @@ export async function POST(
         outputConfigs: chat.outputConfigs,
       })
       .from(chat)
-      .where(eq(chat.identifier, identifier))
+      .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
       .limit(1)
 
     if (deploymentResult.length === 0) {
@@ -210,7 +207,7 @@ export async function POST(
       const [workflowRecord] = await db
         .select({ workspaceId: workflow.workspaceId })
         .from(workflow)
-        .where(eq(workflow.id, deployment.workflowId))
+        .where(and(eq(workflow.id, deployment.workflowId), isNull(workflow.archivedAt)))
         .limit(1)
 
       const workspaceId = workflowRecord?.workspaceId
@@ -1031,8 +1028,6 @@ export async function GET(
   const requestId = generateRequestId()
 
   try {
-    logger.debug(`[${requestId}] Fetching chat info for identifier: ${identifier}`)
-
     const deploymentResult = await db
       .select({
         id: chat.id,
@@ -1048,7 +1043,7 @@ export async function GET(
         department: chat.department,
       })
       .from(chat)
-      .where(eq(chat.identifier, identifier))
+      .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
       .limit(1)
 
     if (deploymentResult.length === 0) {

@@ -8,11 +8,11 @@ import { workflowDeployCTAEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents
 import { DeployModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal'
 import {
   useChangeDetection,
-  useDeployedState,
   useDeployment,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks'
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-current-workflow'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
+import { useDeployedWorkflowState } from '@/hooks/queries/deployments'
 import type { WorkspaceUserPermissions } from '@/hooks/use-user-permissions'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
@@ -22,10 +22,6 @@ interface DeployProps {
   className?: string
 }
 
-/**
- * Deploy component that handles workflow deployment
- * Manages deployed state, change detection, and deployment operations
- */
 export function Deploy({ activeWorkflowId, userPermissions, className }: DeployProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const params = useParams()
@@ -40,30 +36,28 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
     hydrationPhase === 'state-loading'
   const { hasBlocks } = useCurrentWorkflow()
 
-  // Get deployment status from registry
   const deploymentStatus = useWorkflowRegistry((state) =>
     state.getWorkflowDeploymentStatus(activeWorkflowId)
   )
   const isDeployed = deploymentStatus?.isDeployed || false
 
-  // Fetch and manage deployed state
-  const { deployedState, isLoadingDeployedState, refetchDeployedState } = useDeployedState({
-    workflowId: activeWorkflowId,
-    isDeployed,
-    isRegistryLoading,
-  })
+  const isDeployedStateEnabled = Boolean(activeWorkflowId) && isDeployed && !isRegistryLoading
+  const {
+    data: deployedStateData,
+    isLoading: isLoadingDeployedState,
+    isFetching: isFetchingDeployedState,
+  } = useDeployedWorkflowState(activeWorkflowId, { enabled: isDeployedStateEnabled })
+  const deployedState = isDeployedStateEnabled ? (deployedStateData ?? null) : null
 
   const { changeDetected } = useChangeDetection({
     workflowId: activeWorkflowId,
     deployedState,
-    isLoadingDeployedState,
+    isLoadingDeployedState: isLoadingDeployedState || isFetchingDeployedState,
   })
 
-  // Handle deployment operations
   const { isDeploying, handleDeployClick } = useDeployment({
     workflowId: activeWorkflowId,
     isDeployed,
-    refetchDeployedState,
   })
 
   const isEmpty = !hasBlocks()
@@ -83,9 +77,6 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
     }
   }
 
-  /**
-   * Get tooltip text based on current state
-   */
   const getTooltipText = () => {
     if (isEmpty) {
       return 'Cannot deploy an empty workflow'
@@ -132,9 +123,8 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
         workflowId={activeWorkflowId}
         isDeployed={isDeployed}
         needsRedeployment={changeDetected}
-        deployedState={deployedState!}
+        deployedState={deployedState}
         isLoadingDeployedState={isLoadingDeployedState}
-        refetchDeployedState={refetchDeployedState}
       />
     </>
   )

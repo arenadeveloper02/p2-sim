@@ -1,5 +1,5 @@
 import { TTSIcon } from '@/components/icons'
-import { AuthMode, type BlockConfig } from '@/blocks/types'
+import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import type { TtsBlockResponse } from '@/tools/tts/types'
 
 export const TtsBlock: BlockConfig<TtsBlockResponse> = {
@@ -11,6 +11,8 @@ export const TtsBlock: BlockConfig<TtsBlockResponse> = {
     'Generate natural-sounding speech from text using state-of-the-art AI voices from OpenAI, Deepgram, ElevenLabs, Cartesia, Google Cloud, Azure, and PlayHT. Supports multiple voices, languages, and audio formats.',
   docsLink: 'https://docs.sim.ai/tools/tts',
   category: 'tools',
+  integrationType: IntegrationType.AI,
+  tags: ['text-to-speech', 'llm'],
   bgColor: '#181C1E',
   icon: TTSIcon,
 
@@ -578,7 +580,7 @@ export const TtsBlock: BlockConfig<TtsBlockResponse> = {
 
   outputs: {
     audioUrl: { type: 'string', description: 'URL to the generated audio file' },
-    audioFile: { type: 'json', description: 'Generated audio file object (UserFile)' },
+    audioFile: { type: 'file', description: 'Generated audio file object (UserFile)' },
     duration: {
       type: 'number',
       description: 'Audio duration in seconds',

@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import { Skeleton } from '@/components/ui/skeleton'
+import { useShallow } from 'zustand/react/shallow'
+import { Skeleton } from '@/components/emcn'
 import { formatLatency } from '@/app/workspace/[workspaceId]/logs/utils'
 import type { DashboardStatsResponse, WorkflowStats } from '@/hooks/queries/logs'
 import { useFilterStore } from '@/stores/logs/filters/store'
@@ -141,30 +142,93 @@ function toWorkflowExecution(wf: WorkflowStats): WorkflowExecution {
   }
 }
 
-export default function Dashboard({ stats, isLoading, error }: DashboardProps) {
+function DashboardInner({ stats, isLoading, error }: DashboardProps) {
   const [selectedSegments, setSelectedSegments] = useState<Record<string, number[]>>({})
   const [lastAnchorIndices, setLastAnchorIndices] = useState<Record<string, number>>({})
-  const barsAreaRef = useRef<HTMLDivElement | null>(null)
+  const lastAnchorIndicesRef = useRef<Record<string, number>>({})
 
-  const { workflowIds, searchQuery, toggleWorkflowId, timeRange } = useFilterStore()
+  const { workflowIds, searchQuery, toggleWorkflowId, timeRange } = useFilterStore(
+    useShallow((s) => ({
+      workflowIds: s.workflowIds,
+      searchQuery: s.searchQuery,
+      toggleWorkflowId: s.toggleWorkflowId,
+      timeRange: s.timeRange,
+    }))
+  )
 
   const allWorkflows = useWorkflowRegistry((state) => state.workflows)
 
   const expandedWorkflowId = workflowIds.length === 1 ? workflowIds[0] : null
 
-  const { executions, aggregateSegments, segmentMs } = useMemo(() => {
+  const { rawExecutions, aggregateSegments, segmentMs } = useMemo(() => {
     if (!stats) {
-      return { executions: [], aggregateSegments: [], segmentMs: 0 }
+      return { rawExecutions: [], aggregateSegments: [], segmentMs: 0 }
     }
 
-    const workflowExecutions = stats.workflows.map(toWorkflowExecution)
-
     return {
-      executions: workflowExecutions,
+      rawExecutions: stats.workflows.map(toWorkflowExecution),
       aggregateSegments: stats.aggregateSegments,
       segmentMs: stats.segmentMs,
     }
   }, [stats])
+
+  /**
+   * Stabilize execution objects: reuse previous references for workflows
+   * whose segment data hasn't structurally changed between polls.
+   * This prevents cascading re-renders through WorkflowsList → StatusBar.
+   */
+  const prevExecutionsRef = useRef<WorkflowExecution[]>([])
+
+  const executions = useMemo(() => {
+    const prevMap = new Map(prevExecutionsRef.current.map((e) => [e.workflowId, e]))
+    let anyChanged = false
+
+    const result = rawExecutions.map((exec) => {
+      const prev = prevMap.get(exec.workflowId)
+      if (!prev) {
+        anyChanged = true
+        return exec
+      }
+      if (
+        prev.overallSuccessRate !== exec.overallSuccessRate ||
+        prev.workflowName !== exec.workflowName ||
+        prev.segments.length !== exec.segments.length
+      ) {
+        anyChanged = true
+        return exec
+      }
+
+      for (let i = 0; i < prev.segments.length; i++) {
+        const ps = prev.segments[i]
+        const ns = exec.segments[i]
+        if (
+          ps.totalExecutions !== ns.totalExecutions ||
+          ps.successfulExecutions !== ns.successfulExecutions ||
+          ps.timestamp !== ns.timestamp ||
+          ps.avgDurationMs !== ns.avgDurationMs ||
+          ps.p50Ms !== ns.p50Ms ||
+          ps.p90Ms !== ns.p90Ms ||
+          ps.p99Ms !== ns.p99Ms
+        ) {
+          anyChanged = true
+          return exec
+        }
+      }
+
+      return prev
+    })
+
+    if (
+      !anyChanged &&
+      result.length === prevExecutionsRef.current.length &&
+      result.every((r, i) => r === prevExecutionsRef.current[i])
+    ) {
+      return prevExecutionsRef.current
+    }
+
+    return result
+  }, [rawExecutions])
+  prevExecutionsRef.current = executions
 
   const lastExecutionByWorkflow = useMemo(() => {
     const map = new Map<string, number>()
@@ -312,6 +376,8 @@ export default function Dashboard({ stats, isLoading, error }: DashboardProps) {
     [toggleWorkflowId]
   )
 
+  lastAnchorIndicesRef.current = lastAnchorIndices
+
   /**
    * Handles segment click for selecting time segments.
    * @param workflowId - The workflow containing the segment
@@ -361,7 +427,7 @@ export default function Dashboard({ stats, isLoading, error }: DashboardProps) {
       } else if (mode === 'range') {
         setSelectedSegments((prev) => {
           const currentSegments = prev[workflowId] || []
-          const anchor = lastAnchorIndices[workflowId] ?? segmentIndex
+          const anchor = lastAnchorIndicesRef.current[workflowId] ?? segmentIndex
           const [start, end] =
             anchor < segmentIndex ? [anchor, segmentIndex] : [segmentIndex, anchor]
           const range = Array.from({ length: end - start + 1 }, (_, i) => start + i)
@@ -370,12 +436,12 @@ export default function Dashboard({ stats, isLoading, error }: DashboardProps) {
         })
       }
     },
-    [lastAnchorIndices]
+    []
   )
 
   useEffect(() => {
-    setSelectedSegments({})
-    setLastAnchorIndices({})
+    setSelectedSegments((prev) => (Object.keys(prev).length > 0 ? {} : prev))
+    setLastAnchorIndices((prev) => (Object.keys(prev).length > 0 ? {} : prev))
   }, [stats, timeRange, workflowIds, searchQuery])
 
   if (isLoading) {
@@ -493,7 +559,7 @@ export default function Dashboard({ stats, isLoading, error }: DashboardProps) {
         </div>
       </div>
 
-      <div className='min-h-0 flex-1 overflow-hidden' ref={barsAreaRef}>
+      <div className='min-h-0 flex-1 overflow-hidden'>
         <WorkflowsList
           filteredExecutions={filteredExecutions as WorkflowExecution[]}
           expandedWorkflowId={expandedWorkflowId}
@@ -507,3 +573,5 @@ export default function Dashboard({ stats, isLoading, error }: DashboardProps) {
     </div>
   )
 }
+
+export default memo(DashboardInner)

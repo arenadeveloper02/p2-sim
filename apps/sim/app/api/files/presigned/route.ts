@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth'
 import { CopilotFiles } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/storage-service'
+import { isImageFileType } from '@/lib/uploads/utils/file-utils'
 import { validateFileType } from '@/lib/uploads/utils/validation'
 import { createErrorResponse } from '@/app/api/files/utils'
 
@@ -131,7 +132,7 @@ export async function POST(request: NextRequest) {
             'Authenticated user session is required for profile picture uploads'
           )
         }
-        if (!CopilotFiles.isImageFileType(contentType)) {
+        if (!isImageFileType(contentType)) {
           throw new ValidationError(
             'Only image files (JPEG, PNG, GIF, WebP, SVG) are allowed for profile picture uploads'
           )

@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { hasAccessControlAccess } from '@/lib/billing'
 
@@ -13,6 +14,7 @@ async function getPermissionGroupWithAccess(groupId: string, userId: string) {
   const [group] = await db
     .select({
       id: permissionGroup.id,
+      name: permissionGroup.name,
       organizationId: permissionGroup.organizationId,
     })
     .from(permissionGroup)
@@ -98,8 +100,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { userId } = addMemberSchema.parse(body)
 
     const [orgMember] = await db
-      .select({ id: member.id })
+      .select({ id: member.id, email: user.email })
       .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
       .where(and(eq(member.userId, userId), eq(member.organizationId, result.group.organizationId)))
       .limit(1)
 
@@ -149,6 +152,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       permissionGroupId: id,
       userId,
       assignedBy: session.user.id,
+    })
+
+    recordAudit({
+      workspaceId: null,
+      actorId: session.user.id,
+      action: AuditAction.PERMISSION_GROUP_MEMBER_ADDED,
+      resourceType: AuditResourceType.PERMISSION_GROUP,
+      resourceId: id,
+      resourceName: result.group.name,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      description: `Added member ${userId} to permission group "${result.group.name}"`,
+      metadata: {
+        targetUserId: userId,
+        targetEmail: orgMember.email ?? undefined,
+        permissionGroupId: id,
+      },
+      request: req,
     })
 
     return NextResponse.json({ member: newMember }, { status: 201 })
@@ -202,8 +223,14 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
 
     const [memberToRemove] = await db
-      .select()
+      .select({
+        id: permissionGroupMember.id,
+        permissionGroupId: permissionGroupMember.permissionGroupId,
+        userId: permissionGroupMember.userId,
+        email: user.email,
+      })
       .from(permissionGroupMember)
+      .innerJoin(user, eq(permissionGroupMember.userId, user.id))
       .where(
         and(eq(permissionGroupMember.id, memberId), eq(permissionGroupMember.permissionGroupId, id))
       )
@@ -219,6 +246,25 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       permissionGroupId: id,
       memberId,
       userId: session.user.id,
+    })
+
+    recordAudit({
+      workspaceId: null,
+      actorId: session.user.id,
+      action: AuditAction.PERMISSION_GROUP_MEMBER_REMOVED,
+      resourceType: AuditResourceType.PERMISSION_GROUP,
+      resourceId: id,
+      resourceName: result.group.name,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      description: `Removed member ${memberToRemove.userId} from permission group "${result.group.name}"`,
+      metadata: {
+        targetUserId: memberToRemove.userId,
+        targetEmail: memberToRemove.email ?? undefined,
+        memberId,
+        permissionGroupId: id,
+      },
+      request: req,
     })
 
     return NextResponse.json({ success: true })

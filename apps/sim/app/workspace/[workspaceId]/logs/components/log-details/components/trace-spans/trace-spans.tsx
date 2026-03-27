@@ -8,15 +8,16 @@ import {
   Button,
   ChevronDown,
   Code,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   Input,
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverDivider,
-  PopoverItem,
   Tooltip,
 } from '@/components/emcn'
-import { WorkflowIcon } from '@/components/icons'
+import { Copy as CopyIcon, Search as SearchIcon } from '@/components/emcn/icons'
+import { AgentSkillsIcon, WorkflowIcon } from '@/components/icons'
 import { cn } from '@/lib/core/utils/cn'
 import { formatDuration } from '@/lib/core/utils/formatting'
 import { LoopTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/loop/loop-config'
@@ -58,40 +59,6 @@ function useSetToggle() {
 }
 
 /**
- * Generates a unique key for a trace span
- */
-function getSpanKey(span: TraceSpan): string {
-  if (span.id) {
-    return span.id
-  }
-  const name = span.name || 'span'
-  const start = span.startTime || 'unknown-start'
-  const end = span.endTime || 'unknown-end'
-  return `${name}|${start}|${end}`
-}
-
-/**
- * Merges multiple arrays of trace span children, deduplicating by span key
- */
-function mergeTraceSpanChildren(...groups: TraceSpan[][]): TraceSpan[] {
-  const merged: TraceSpan[] = []
-  const seen = new Set<string>()
-
-  groups.forEach((group) => {
-    group.forEach((child) => {
-      const key = getSpanKey(child)
-      if (seen.has(key)) {
-        return
-      }
-      seen.add(key)
-      merged.push(child)
-    })
-  })
-
-  return merged
-}
-
-/**
  * Parses a time value to milliseconds
  */
 function parseTime(value?: string | number | null): number {
@@ -101,7 +68,7 @@ function parseTime(value?: string | number | null): number {
 }
 
 /**
- * Checks if a span or any of its descendants has an error
+ * Checks if a span or any of its descendants has an error (any error).
  */
 function hasErrorInTree(span: TraceSpan): boolean {
   if (span.status === 'error') return true
@@ -115,35 +82,34 @@ function hasErrorInTree(span: TraceSpan): boolean {
 }
 
 /**
+ * Checks if a span or any of its descendants has an unhandled error.
+ * Spans with errorHandled: true (including containers that propagate it)
+ * are skipped. Used only for the root workflow span to match the actual
+ * workflow status.
+ */
+function hasUnhandledErrorInTree(span: TraceSpan): boolean {
+  if (span.status === 'error' && !span.errorHandled) return true
+  if (span.children && span.children.length > 0) {
+    return span.children.some((child) => hasUnhandledErrorInTree(child))
+  }
+  if (span.toolCalls && span.toolCalls.length > 0 && !span.errorHandled) {
+    return span.toolCalls.some((tc) => tc.error)
+  }
+  return false
+}
+
+/**
  * Normalizes and sorts trace spans recursively.
- * Merges children from both span.children and span.output.childTraceSpans,
- * deduplicates them, and sorts by start time.
+ * Deduplicates children and sorts by start time.
  */
 function normalizeAndSortSpans(spans: TraceSpan[]): TraceSpan[] {
   return spans
     .map((span) => {
       const enrichedSpan: TraceSpan = { ...span }
 
-      // Clean output by removing childTraceSpans after extracting
-      if (enrichedSpan.output && typeof enrichedSpan.output === 'object') {
-        enrichedSpan.output = { ...enrichedSpan.output }
-        if ('childTraceSpans' in enrichedSpan.output) {
-          const { childTraceSpans, ...cleanOutput } = enrichedSpan.output as {
-            childTraceSpans?: TraceSpan[]
-          } & Record<string, unknown>
-          enrichedSpan.output = cleanOutput
-        }
-      }
-
-      // Merge and deduplicate children from both sources
-      const directChildren = Array.isArray(span.children) ? span.children : []
-      const outputChildren = Array.isArray(span.output?.childTraceSpans)
-        ? (span.output!.childTraceSpans as TraceSpan[])
-        : []
-
-      const mergedChildren = mergeTraceSpanChildren(directChildren, outputChildren)
-      enrichedSpan.children =
-        mergedChildren.length > 0 ? normalizeAndSortSpans(mergedChildren) : undefined
+      // Process and deduplicate children
+      const children = Array.isArray(span.children) ? span.children : []
+      enrichedSpan.children = children.length > 0 ? normalizeAndSortSpans(children) : undefined
 
       return enrichedSpan
     })
@@ -170,6 +136,10 @@ function getBlockIconAndColor(
 
   // Check for tool by name first (most specific)
   if (lowerType === 'tool' && toolName) {
+    // Handle load_skill tool with the AgentSkillsIcon
+    if (toolName === 'load_skill') {
+      return { icon: AgentSkillsIcon, bgColor: '#8B5CF6' }
+    }
     const toolBlock = getBlockByToolName(toolName)
     if (toolBlock) {
       return { icon: toolBlock.icon, bgColor: toolBlock.bgColor }
@@ -466,28 +436,38 @@ function InputOutputSection({
           {/* Context Menu - rendered in portal to avoid transform/overflow clipping */}
           {typeof document !== 'undefined' &&
             createPortal(
-              <Popover
-                open={isContextMenuOpen}
-                onOpenChange={closeContextMenu}
-                variant='secondary'
-                size='sm'
-                colorScheme='inverted'
-              >
-                <PopoverAnchor
-                  style={{
-                    position: 'fixed',
-                    left: `${contextMenuPosition.x}px`,
-                    top: `${contextMenuPosition.y}px`,
-                    width: '1px',
-                    height: '1px',
-                  }}
-                />
-                <PopoverContent align='start' side='bottom' sideOffset={4}>
-                  <PopoverItem onClick={handleCopy}>Copy</PopoverItem>
-                  <PopoverDivider />
-                  <PopoverItem onClick={handleSearch}>Search</PopoverItem>
-                </PopoverContent>
-              </Popover>,
+              <DropdownMenu open={isContextMenuOpen} onOpenChange={closeContextMenu} modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <div
+                    style={{
+                      position: 'fixed',
+                      left: `${contextMenuPosition.x}px`,
+                      top: `${contextMenuPosition.y}px`,
+                      width: '1px',
+                      height: '1px',
+                      pointerEvents: 'none',
+                    }}
+                    tabIndex={-1}
+                    aria-hidden
+                  />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align='start'
+                  side='bottom'
+                  sideOffset={4}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                >
+                  <DropdownMenuItem onSelect={handleCopy}>
+                    <CopyIcon />
+                    Copy
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={handleSearch}>
+                    <SearchIcon />
+                    Search
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>,
               document.body
             )}
         </>
@@ -526,13 +506,12 @@ const TraceSpanNode = memo(function TraceSpanNode({
   const duration = span.duration || spanEndTime - spanStartTime
 
   const isDirectError = span.status === 'error'
-  const hasNestedError = hasErrorInTree(span)
+  const isRootWorkflow = depth === 0
+  const isRootWorkflowSpan = isRootWorkflow && span.type?.toLowerCase() === 'workflow'
+  const hasNestedError = isRootWorkflowSpan ? hasUnhandledErrorInTree(span) : hasErrorInTree(span)
   const showErrorStyle = isDirectError || hasNestedError
 
   const { icon: BlockIcon, bgColor } = getBlockIconAndColor(span.type, span.name)
-
-  // Root workflow execution is always expanded and has no toggle
-  const isRootWorkflow = depth === 0
 
   // Build all children including tool calls
   const allChildren = useMemo(() => {
@@ -573,7 +552,19 @@ const TraceSpanNode = memo(function TraceSpanNode({
     return children.sort((a, b) => parseTime(a.startTime) - parseTime(b.startTime))
   }, [span, spanId, spanStartTime])
 
-  const hasChildren = allChildren.length > 0
+  // Hide empty model timing segments for agents without tool calls
+  const filteredChildren = useMemo(() => {
+    const isAgent = span.type?.toLowerCase() === 'agent'
+    const hasToolCalls =
+      (span.toolCalls?.length ?? 0) > 0 || allChildren.some((c) => c.type?.toLowerCase() === 'tool')
+
+    if (isAgent && !hasToolCalls) {
+      return allChildren.filter((c) => c.type?.toLowerCase() !== 'model')
+    }
+    return allChildren
+  }, [allChildren, span.type, span.toolCalls])
+
+  const hasChildren = filteredChildren.length > 0
   const isExpanded = isRootWorkflow || expandedNodes.has(spanId)
   const isToggleable = !isRootWorkflow
 
@@ -685,7 +676,7 @@ const TraceSpanNode = memo(function TraceSpanNode({
           {/* Nested Children */}
           {hasChildren && (
             <div className='flex min-w-0 flex-col gap-[2px] border-[var(--border)] border-l pl-[10px]'>
-              {allChildren.map((child, index) => (
+              {filteredChildren.map((child, index) => (
                 <div key={child.id || `${spanId}-child-${index}`} className='pl-[6px]'>
                   <TraceSpanNode
                     span={child}
@@ -713,7 +704,7 @@ const TraceSpanNode = memo(function TraceSpanNode({
  */
 export const TraceSpans = memo(function TraceSpans({ traceSpans }: TraceSpansProps) {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set())
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set())
   const toggleSet = useSetToggle()
 
   const { workflowStartTime, actualTotalDuration, normalizedSpans } = useMemo(() => {

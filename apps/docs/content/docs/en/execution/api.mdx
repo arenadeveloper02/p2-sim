@@ -17,7 +17,7 @@ curl -H "x-api-key: YOUR_API_KEY" \
   https://sim.ai/api/v1/logs?workspaceId=YOUR_WORKSPACE_ID
 ```
 
-You can generate API keys from your user settings in the Sim dashboard.
+You can generate API keys from the Sim platform and navigate to **Settings**, then go to **Sim Keys** and click **Create**.
 
 ## Logs API
 
@@ -27,16 +27,16 @@ All API responses include information about your workflow execution limits and u
 "limits": {
   "workflowExecutionRateLimit": {
     "sync": {
-      "requestsPerMinute": 60,  // Sustained rate limit per minute
-      "maxBurst": 120,          // Maximum burst capacity
-      "remaining": 118,         // Current tokens available (up to maxBurst)
-      "resetAt": "..."          // When tokens next refill
+      "requestsPerMinute": 150,  // Sustained rate limit per minute
+      "maxBurst": 300,           // Maximum burst capacity
+      "remaining": 298,          // Current tokens available (up to maxBurst)
+      "resetAt": "..."           // When tokens next refill
     },
     "async": {
-      "requestsPerMinute": 200, // Sustained rate limit per minute
-      "maxBurst": 400,          // Maximum burst capacity
-      "remaining": 398,         // Current tokens available
-      "resetAt": "..."          // When tokens next refill
+      "requestsPerMinute": 1000, // Sustained rate limit per minute
+      "maxBurst": 2000,          // Maximum burst capacity
+      "remaining": 1998,         // Current tokens available
+      "resetAt": "..."           // When tokens next refill
     }
   },
   "usage": {
@@ -107,28 +107,28 @@ Query workflow execution logs with extensive filtering options.
         }
       ],
       "nextCursor": "eyJzIjoiMjAyNS0wMS0wMVQxMjozNDo1Ni43ODlaIiwiaWQiOiJsb2dfYWJjMTIzIn0",
-      "limits": {
-        "workflowExecutionRateLimit": {
-          "sync": {
-            "requestsPerMinute": 60,
-            "maxBurst": 120,
-            "remaining": 118,
-            "resetAt": "2025-01-01T12:35:56.789Z"
+"limits": {
+          "workflowExecutionRateLimit": {
+            "sync": {
+              "requestsPerMinute": 150,
+              "maxBurst": 300,
+              "remaining": 298,
+              "resetAt": "2025-01-01T12:35:56.789Z"
+            },
+            "async": {
+              "requestsPerMinute": 1000,
+              "maxBurst": 2000,
+              "remaining": 1998,
+              "resetAt": "2025-01-01T12:35:56.789Z"
+            }
           },
-          "async": {
-            "requestsPerMinute": 200,
-            "maxBurst": 400,
-            "remaining": 398,
-            "resetAt": "2025-01-01T12:35:56.789Z"
+          "usage": {
+            "currentPeriodCost": 1.234,
+            "limit": 10,
+            "plan": "pro",
+            "isExceeded": false
           }
-        },
-        "usage": {
-          "currentPeriodCost": 1.234,
-          "limit": 10,
-          "plan": "pro",
-          "isExceeded": false
         }
-      }
     }
     ```
   </Tab>
@@ -188,15 +188,15 @@ Retrieve detailed information about a specific log entry.
         "limits": {
           "workflowExecutionRateLimit": {
             "sync": {
-              "requestsPerMinute": 60,
-              "maxBurst": 120,
-              "remaining": 118,
+              "requestsPerMinute": 150,
+              "maxBurst": 300,
+              "remaining": 298,
               "resetAt": "2025-01-01T12:35:56.789Z"
             },
             "async": {
-              "requestsPerMinute": 200,
-              "maxBurst": 400,
-              "remaining": 398,
+              "requestsPerMinute": 1000,
+              "maxBurst": 2000,
+              "remaining": 1998,
               "resetAt": "2025-01-01T12:35:56.789Z"
             }
           },
@@ -477,10 +477,10 @@ The API uses a **token bucket algorithm** for rate limiting, providing fair usag
 
 | Plan | Requests/Minute | Burst Capacity |
 |------|-----------------|----------------|
-| Free | 10 | 20 |
-| Pro | 30 | 60 |
-| Team | 60 | 120 |
-| Enterprise | 120 | 240 |
+| Free | 30 | 60 |
+| Pro | 100 | 200 |
+| Team | 200 | 400 |
+| Enterprise | 500 | 1000 |
 
 **How it works:**
 - Tokens refill at `requestsPerMinute` rate
@@ -592,3 +592,15 @@ app.listen(3000, () => {
   console.log('Webhook server listening on port 3000');
 });
 ```
+
+import { FAQ } from '@/components/ui/faq'
+
+<FAQ items={[
+  { question: "How do I trigger async execution via the API?", answer: "Set the X-Execution-Mode header to 'async' on your POST request to /api/workflows/{id}/execute. The API returns a 202 response with a jobId, executionId, and a statusUrl you can poll to check when the job completes. Async mode does not support draft state, workflow overrides, or selective output options." },
+  { question: "What authentication methods does the API support?", answer: "The API supports two authentication methods: API keys passed in the x-api-key header, and session-based authentication for logged-in users. API keys can be generated from Settings > Sim Keys in the platform. Workflows with public API access enabled can also be called without authentication." },
+  { question: "How does the webhook retry policy work?", answer: "Failed webhook deliveries are retried up to 5 times with exponential backoff: 5 seconds, 15 seconds, 1 minute, 3 minutes, and 10 minutes, plus up to 10% jitter. Only HTTP 5xx and 429 responses trigger retries. Each delivery times out after 30 seconds." },
+  { question: "What rate limits apply to the Logs API?", answer: "Rate limits use a token bucket algorithm. Free plans get 30 requests/minute with 60 burst capacity, Pro gets 100/200, Team gets 200/400, and Enterprise gets 500/1000. These are separate from workflow execution rate limits, which are shown in the response body." },
+  { question: "How do I verify that a webhook is from Sim?", answer: "Configure a webhook secret when setting up notifications. Sim signs each delivery with HMAC-SHA256 using the format 't={timestamp},v1={signature}' in the sim-signature header. Compute the HMAC of '{timestamp}.{body}' with your secret and compare it to the signature value." },
+  { question: "What alert rules are available for notifications?", answer: "You can configure alerts for consecutive failures, failure rate thresholds, latency thresholds, latency spikes (percentage above average), cost thresholds, no-activity periods, and error counts within a time window. All alert types include a 1-hour cooldown to prevent notification spam." },
+  { question: "Can I filter which executions trigger notifications?", answer: "Yes. You can filter notifications by specific workflows (or select all), log level (info or error), and trigger type (api, webhook, schedule, manual, chat). You can also choose whether to include final output, trace spans, rate limits, and usage data in the notification payload." },
+]} />

@@ -5,6 +5,39 @@ import { clampPositionToContainer } from '@/app/workspace/[workspaceId]/w/[workf
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 /**
+ * Collects all descendant block IDs for container blocks (loop/parallel) in the given set.
+ * Used to treat a nested subflow as one unit when computing boundary edges (e.g. remove-from-subflow).
+ *
+ * @param blockIds - Root block IDs (e.g. the blocks being removed from subflow)
+ * @param blocks - All workflow blocks
+ * @returns IDs of blocks that are descendants of any container in blockIds (excluding the roots)
+ */
+export function getDescendantBlockIds(
+  blockIds: string[],
+  blocks: Record<string, BlockState>
+): string[] {
+  const current = new Set(blockIds)
+  const added: string[] = []
+  const toProcess = [...blockIds]
+
+  while (toProcess.length > 0) {
+    const id = toProcess.pop()!
+    const block = blocks[id]
+    if (block?.type !== 'loop' && block?.type !== 'parallel') continue
+
+    for (const [bid, b] of Object.entries(blocks)) {
+      if (b?.data?.parentId === id && !current.has(bid)) {
+        current.add(bid)
+        added.push(bid)
+        toProcess.push(bid)
+      }
+    }
+  }
+
+  return added
+}
+
+/**
  * Checks if the currently focused element is an editable input.
  * Returns true if the user is typing in an input, textarea, or contenteditable element.
  */
@@ -187,4 +220,69 @@ export function resolveParentChildSelectionConflicts(
   })
 
   return hasConflict ? resolved : nodes
+}
+
+export function getNodeSelectionContextId(
+  node: Pick<Node, 'id' | 'parentId'>,
+  blocks: Record<string, { data?: { parentId?: string } }>
+): string | null {
+  return node.parentId || blocks[node.id]?.data?.parentId || null
+}
+
+export function getEdgeSelectionContextId(
+  edge: Pick<Edge, 'source' | 'target'>,
+  nodes: Array<Pick<Node, 'id' | 'parentId'>>,
+  blocks: Record<string, { data?: { parentId?: string } }>
+): string | null {
+  const sourceNode = nodes.find((node) => node.id === edge.source)
+  const targetNode = nodes.find((node) => node.id === edge.target)
+  const sourceContextId = sourceNode ? getNodeSelectionContextId(sourceNode, blocks) : null
+  const targetContextId = targetNode ? getNodeSelectionContextId(targetNode, blocks) : null
+  if (sourceContextId) return sourceContextId
+  if (targetContextId) return targetContextId
+  return null
+}
+
+export function resolveSelectionContextConflicts(
+  nodes: Node[],
+  blocks: Record<string, { data?: { parentId?: string } }>,
+  preferredContextId?: string | null
+): Node[] {
+  const selectedNodes = nodes.filter((node) => node.selected)
+  if (selectedNodes.length <= 1) return nodes
+
+  const allowedContextId =
+    preferredContextId !== undefined
+      ? preferredContextId
+      : getNodeSelectionContextId(selectedNodes[0], blocks)
+  let hasConflict = false
+
+  const resolved = nodes.map((node) => {
+    if (!node.selected) return node
+    const contextId = getNodeSelectionContextId(node, blocks)
+    if (contextId !== allowedContextId) {
+      hasConflict = true
+      return { ...node, selected: false }
+    }
+    return node
+  })
+
+  return hasConflict ? resolved : nodes
+}
+
+export function resolveSelectionConflicts(
+  nodes: Node[],
+  blocks: Record<string, { data?: { parentId?: string } }>,
+  preferredNodeId?: string
+): Node[] {
+  const afterParentChild = resolveParentChildSelectionConflicts(nodes, blocks)
+
+  const preferredContextId =
+    preferredNodeId !== undefined
+      ? afterParentChild.find((n) => n.id === preferredNodeId && n.selected)
+        ? getNodeSelectionContextId(afterParentChild.find((n) => n.id === preferredNodeId)!, blocks)
+        : undefined
+      : undefined
+
+  return resolveSelectionContextConflicts(afterParentChild, blocks, preferredContextId)
 }

@@ -1,7 +1,8 @@
 import type { NextConfig } from 'next'
 import { env, getEnv, isTruthy } from './lib/core/config/env'
-import { isDev, isHosted } from './lib/core/config/feature-flags'
+import { isDev } from './lib/core/config/feature-flags'
 import {
+  getChatEmbedCSPPolicy,
   getFormEmbedCSPPolicy,
   getMainCSPPolicy,
   getWorkflowExecutionCSPPolicy,
@@ -81,6 +82,7 @@ const nextConfig: NextConfig = {
     resolveExtensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
   },
   serverExternalPackages: [
+    '@1password/sdk',
     'unpdf',
     'ffmpeg-static',
     'fluent-ffmpeg',
@@ -97,7 +99,7 @@ const nextConfig: NextConfig = {
   ],
   outputFileTracingIncludes: {
     '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
-    '/*': ['./node_modules/sharp/**/*', './node_modules/@img/**/*'],
+    '/*': ['./node_modules/sharp/**/*', './node_modules/@img/**/*', './dist/pptx-worker.cjs'],
   },
   webpack: (config, { webpack }) => {
     // Ignore native modules and optional dependencies that shouldn't be bundled
@@ -138,6 +140,27 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizeCss: true,
     turbopackSourceMaps: false,
+    turbopackFileSystemCacheForDev: true,
+    preloadEntriesOnStart: false,
+    optimizePackageImports: [
+      'lucide-react',
+      'lodash',
+      'framer-motion',
+      'reactflow',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-popover',
+      '@radix-ui/react-select',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-tooltip',
+      '@radix-ui/react-accordion',
+      '@radix-ui/react-checkbox',
+      '@radix-ui/react-switch',
+      '@radix-ui/react-slider',
+      'react-markdown',
+      'zod',
+      'date-fns',
+    ],
   },
   ...(isDev && {
     allowedDevOrigins: [
@@ -161,9 +184,18 @@ const nextConfig: NextConfig = {
     '@t3-oss/env-nextjs',
     '@t3-oss/env-core',
     '@sim/db',
+    'better-auth-harmony',
   ],
   async headers() {
     return [
+      {
+        source: '/.well-known/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, OPTIONS' },
+          { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Accept' },
+        ],
+      },
       {
         // API routes CORS headers
         source: '/api/:path*',
@@ -180,7 +212,52 @@ const nextConfig: NextConfig = {
           {
             key: 'Access-Control-Allow-Headers',
             value:
-              'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key',
+              'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key, Authorization',
+          },
+        ],
+      },
+      {
+        source: '/api/auth/oauth2/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Credentials', value: 'false' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, POST, OPTIONS' },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization, Accept',
+          },
+        ],
+      },
+      {
+        source: '/api/auth/jwks',
+        headers: [
+          { key: 'Access-Control-Allow-Credentials', value: 'false' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, OPTIONS' },
+          { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Accept' },
+        ],
+      },
+      {
+        source: '/api/auth/.well-known/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Credentials', value: 'false' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, OPTIONS' },
+          { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Accept' },
+        ],
+      },
+      {
+        source: '/api/mcp/copilot',
+        headers: [
+          { key: 'Access-Control-Allow-Credentials', value: 'false' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, OPTIONS, DELETE',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization, X-API-Key, X-Requested-With, Accept',
           },
         ],
       },
@@ -244,6 +321,24 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // Chat pages - allow iframe embedding from any origin
+      {
+        source: '/chat/:path*',
+        headers: [
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          // No X-Frame-Options to allow iframe embedding
+          {
+            key: 'Content-Security-Policy',
+            value: getChatEmbedCSPPolicy(),
+          },
+          // Permissive CORS for chat requests from embedded chats
+          { key: 'Cross-Origin-Embedder-Policy', value: 'unsafe-none' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'unsafe-none' },
+        ],
+      },
       // Form pages - allow iframe embedding from any origin
       {
         source: '/form/:path*',
@@ -273,10 +368,10 @@ const nextConfig: NextConfig = {
         ],
       },
       // Apply security headers to routes not handled by middleware runtime CSP
-      // Middleware handles: /, /workspace/*, /chat/*
-      // Exclude form routes which have their own permissive headers
+      // Middleware handles: /, /workspace/*
+      // Exclude chat and form routes which have their own permissive embed headers
       {
-        source: '/((?!workspace|chat$|form).*)',
+        source: '/((?!workspace|chat|form).*)',
         headers: [
           {
             key: 'X-Content-Type-Options',
@@ -318,66 +413,53 @@ const nextConfig: NextConfig = {
         source: '/team',
         destination: 'https://cal.com/emirkarabeg/sim-team',
         permanent: false,
+      },
+      {
+        source: '/careers',
+        destination: 'https://jobs.ashbyhq.com/sim',
+        permanent: true,
       }
     )
 
-    // Redirect /building and /blog to /studio (legacy URL support)
+    // Redirect /building and /studio to /blog (legacy URL support)
     redirects.push(
       {
         source: '/building/:path*',
-        destination: 'https://sim.ai/studio/:path*',
+        destination: 'https://sim.ai/blog/:path*',
         permanent: true,
       },
       {
-        source: '/blog/:path*',
-        destination: 'https://sim.ai/studio/:path*',
+        source: '/studio/:path*',
+        destination: 'https://sim.ai/blog/:path*',
         permanent: true,
       }
     )
 
-    // Move root feeds to studio namespace
+    // Move root feeds to blog namespace
     redirects.push(
       {
         source: '/rss.xml',
-        destination: '/studio/rss.xml',
+        destination: '/blog/rss.xml',
         permanent: true,
       },
       {
         source: '/sitemap-images.xml',
-        destination: '/studio/sitemap-images.xml',
+        destination: '/blog/sitemap-images.xml',
         permanent: true,
       }
     )
-
-    // Only enable domain redirects for the hosted version
-    if (isHosted) {
-      redirects.push(
-        {
-          source: '/((?!api|_next|_vercel|favicon|static|ingest|.*\\..*).*)',
-          destination: 'https://www.sim.ai/$1',
-          permanent: true,
-          has: [{ type: 'host' as const, value: 'simstudio.ai' }],
-        },
-        {
-          source: '/((?!api|_next|_vercel|favicon|static|ingest|.*\\..*).*)',
-          destination: 'https://www.sim.ai/$1',
-          permanent: true,
-          has: [{ type: 'host' as const, value: 'www.simstudio.ai' }],
-        }
-      )
-    }
 
     return redirects
   },
   async rewrites() {
     return [
       {
-        source: '/ingest/static/:path*',
-        destination: 'https://us-assets.i.posthog.com/static/:path*',
+        source: '/favicon.ico',
+        destination: '/icon.svg',
       },
       {
-        source: '/ingest/:path*',
-        destination: 'https://us.i.posthog.com/:path*',
+        source: '/r/:shortCode',
+        destination: 'https://go.trybeluga.ai/:shortCode',
       },
     ]
   },

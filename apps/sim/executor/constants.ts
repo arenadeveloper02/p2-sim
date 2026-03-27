@@ -1,4 +1,16 @@
+import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import type { LoopType, ParallelType } from '@/lib/workflows/types'
+
+/**
+ * Runtime-injected keys for trigger blocks that should be hidden from logs/display.
+ * These are added during execution but aren't part of the block's static output schema.
+ */
+export const TRIGGER_INTERNAL_KEYS = ['webhook', 'workflowId'] as const
+export type TriggerInternalKey = (typeof TRIGGER_INTERNAL_KEYS)[number]
+
+export function isTriggerInternalKey(key: string): key is TriggerInternalKey {
+  return TRIGGER_INTERNAL_KEYS.includes(key as TriggerInternalKey)
+}
 
 export enum BlockType {
   PARALLEL = 'parallel',
@@ -13,6 +25,7 @@ export enum BlockType {
 
   FUNCTION = 'function',
   AGENT = 'agent',
+  MOTHERSHIP = 'mothership',
   API = 'api',
   EVALUATOR = 'evaluator',
   VARIABLES = 'variables',
@@ -147,6 +160,9 @@ export const DEFAULTS = {
   MAX_FOREACH_ITEMS: 1000,
   MAX_PARALLEL_BRANCHES: 500,
   MAX_WORKFLOW_DEPTH: 10,
+  MAX_NESTING_DEPTH: 10,
+  /** Maximum child workflow depth for propagating SSE callbacks (block:started, block:completed). */
+  MAX_SSE_CHILD_DEPTH: 3,
   EXECUTION_TIME: 0,
   TOKENS: {
     PROMPT: 0,
@@ -176,8 +192,12 @@ export const HTTP = {
 
 export const AGENT = {
   DEFAULT_MODEL: 'gpt-5',
-  DEFAULT_FUNCTION_TIMEOUT: 5000,
-  REQUEST_TIMEOUT: 120000,
+  get DEFAULT_FUNCTION_TIMEOUT() {
+    return getMaxExecutionTimeout()
+  },
+  get REQUEST_TIMEOUT() {
+    return getMaxExecutionTimeout()
+  },
   CUSTOM_TOOL_PREFIX: 'custom_',
 } as const
 
@@ -187,10 +207,6 @@ export const MCP = {
 
 export const CREDENTIAL_SET = {
   PREFIX: 'credentialSet:',
-} as const
-
-export const CREDENTIAL = {
-  FOREIGN_LABEL: 'Saved by collaborator',
 } as const
 
 export function isCredentialSetValue(value: string | null | undefined): boolean {
@@ -422,7 +438,10 @@ export function isValidEnvVarName(name: string): boolean {
   return PATTERNS.ENV_VAR_NAME.test(name)
 }
 
-export function sanitizeFileName(fileName: string): string {
+export function sanitizeFileName(fileName: string | null | undefined): string {
+  if (!fileName || typeof fileName !== 'string') {
+    return 'untitled'
+  }
   return fileName.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '_')
 }
 

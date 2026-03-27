@@ -4,7 +4,7 @@
   </a>
 </p>
 
-<p align="center">Build and deploy AI agent workflows in minutes.</p>
+<p align="center">The open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows.</p>
 
 <p align="center">
   <a href="https://sim.ai" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/sim.ai-6F3DFA" alt="Sim.ai"></a>
@@ -171,31 +171,6 @@ Key environment variables for self-hosted deployments. See [`.env.example`](apps
 | `INTERNAL_API_SECRET` | Yes | Encrypts internal API routes (`openssl rand -hex 32`) |
 | `API_ENCRYPTION_KEY` | Yes | Encrypts API keys (`openssl rand -hex 32`) |
 | `COPILOT_API_KEY` | No | API key from sim.ai for Copilot features |
-
-## Troubleshooting
-
-### Ollama models not showing in dropdown (Docker)
-
-If you're running Ollama on your host machine and Sim in Docker, change `OLLAMA_URL` from `localhost` to `host.docker.internal`:
-
-```bash
-OLLAMA_URL=http://host.docker.internal:11434 docker compose -f docker-compose.prod.yml up -d
-```
-
-See [Using an External Ollama Instance](#using-an-external-ollama-instance) for details.
-
-### Database connection issues
-
-Ensure PostgreSQL has the pgvector extension installed. When using Docker, wait for the database to be healthy before running migrations.
-
-### Port conflicts
-
-If ports 3000, 3002, or 5432 are in use, configure alternatives:
-
-```bash
-# Custom ports
-NEXT_PUBLIC_APP_URL=http://localhost:3100 POSTGRES_PORT=5433 docker compose up -d
-```
 
 ## Tech Stack
 

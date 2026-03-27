@@ -4,9 +4,10 @@ import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getWorkflowAccessContext } from '@/lib/workflows/utils'
+import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import type { Variable } from '@/stores/panel/variables/types'
 
 const logger = createLogger('WorkflowVariablesAPI')
@@ -34,31 +35,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const workflowId = (await params).id
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
+    if (!auth.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized workflow variables update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = auth.userId
 
-    // Get the workflow record
-    const accessContext = await getWorkflowAccessContext(workflowId, session.user.id)
-    const workflowData = accessContext?.workflow
+    const authorization = await authorizeWorkflowByWorkspacePermission({
+      workflowId,
+      userId,
+      action: 'write',
+    })
+    const workflowData = authorization.workflow
 
     if (!workflowData) {
       logger.warn(`[${requestId}] Workflow not found: ${workflowId}`)
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
     }
-    const workspaceId = workflowData.workspaceId
-
-    // Check authorization - either the user owns the workflow or has workspace permissions
-    const isAuthorized =
-      accessContext?.isOwner || (workspaceId ? accessContext?.workspacePermission !== null : false)
+    const isAuthorized = authorization.allowed
 
     if (!isAuthorized) {
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted to update variables for workflow ${workflowId} without permission`
+        `[${requestId}] User ${userId} attempted to update variables for workflow ${workflowId} without permission`
       )
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { error: authorization.message || 'Access denied' },
+        { status: authorization.status || 403 }
+      )
     }
 
     const body = await req.json()
@@ -75,6 +79,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           updatedAt: new Date(),
         })
         .where(eq(workflow.id, workflowId))
+
+      recordAudit({
+        workspaceId: workflowData.workspaceId ?? null,
+        actorId: userId,
+        actorName: auth.userName,
+        actorEmail: auth.userEmail,
+        action: AuditAction.WORKFLOW_VARIABLES_UPDATED,
+        resourceType: AuditResourceType.WORKFLOW,
+        resourceId: workflowId,
+        resourceName: workflowData.name ?? undefined,
+        description: `Updated workflow variables`,
+        metadata: { variableCount: Object.keys(variables).length },
+        request: req,
+      })
 
       return NextResponse.json({ success: true })
     } catch (validationError) {
@@ -100,32 +118,34 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const workflowId = (await params).id
 
   try {
-    // Get the session directly in the API route
-    const session = await getSession()
-    if (!session?.user?.id) {
+    const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
+    if (!auth.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized workflow variables access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const userId = auth.userId
 
-    // Get the workflow record
-    const accessContext = await getWorkflowAccessContext(workflowId, session.user.id)
-    const workflowData = accessContext?.workflow
+    const authorization = await authorizeWorkflowByWorkspacePermission({
+      workflowId,
+      userId,
+      action: 'read',
+    })
+    const workflowData = authorization.workflow
 
     if (!workflowData) {
       logger.warn(`[${requestId}] Workflow not found: ${workflowId}`)
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
     }
-    const workspaceId = workflowData.workspaceId
-
-    // Check authorization - either the user owns the workflow or has workspace permissions
-    const isAuthorized =
-      accessContext?.isOwner || (workspaceId ? accessContext?.workspacePermission !== null : false)
+    const isAuthorized = authorization.allowed
 
     if (!isAuthorized) {
       logger.warn(
-        `[${requestId}] User ${session.user.id} attempted to access variables for workflow ${workflowId} without permission`
+        `[${requestId}] User ${userId} attempted to access variables for workflow ${workflowId} without permission`
       )
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { error: authorization.message || 'Access denied' },
+        { status: authorization.status || 403 }
+      )
     }
 
     // Return variables if they exist

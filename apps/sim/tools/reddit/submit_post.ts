@@ -24,19 +24,21 @@ export const submitPostTool: ToolConfig<RedditSubmitParams, RedditWriteResponse>
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The name of the subreddit to post to (without the r/ prefix)',
+      description: 'The subreddit to post to (e.g., "technology", "programming")',
     },
     title: {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Title of the submission (max 300 characters)',
+      description:
+        'Title of the submission (e.g., "Check out this new AI tool"). Max 300 characters',
     },
     text: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Text content for a self post (markdown supported)',
+      description:
+        'Text content for a self post in markdown format (e.g., "This is the **body** of my post")',
     },
     url: {
       type: 'string',
@@ -61,6 +63,24 @@ export const submitPostTool: ToolConfig<RedditSubmitParams, RedditWriteResponse>
       required: false,
       visibility: 'user-or-llm',
       description: 'Send reply notifications to inbox (default: true)',
+    },
+    flair_id: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Flair template UUID for the post (max 36 characters)',
+    },
+    flair_text: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Flair text to display on the post (max 64 characters)',
+    },
+    collection_id: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Collection UUID to add the post to',
     },
   },
 
@@ -103,6 +123,9 @@ export const submitPostTool: ToolConfig<RedditSubmitParams, RedditWriteResponse>
       // Add optional parameters
       if (params.nsfw !== undefined) formData.append('nsfw', params.nsfw.toString())
       if (params.spoiler !== undefined) formData.append('spoiler', params.spoiler.toString())
+      if (params.flair_id) formData.append('flair_id', params.flair_id)
+      if (params.flair_text) formData.append('flair_text', params.flair_text)
+      if (params.collection_id) formData.append('collection_id', params.collection_id)
       if (params.send_replies !== undefined)
         formData.append('sendreplies', params.send_replies.toString())
 
@@ -136,7 +159,9 @@ export const submitPostTool: ToolConfig<RedditSubmitParams, RedditWriteResponse>
           id: postData?.id,
           name: postData?.name,
           url: postData?.url,
-          permalink: `https://www.reddit.com${postData?.url}`,
+          permalink: postData?.permalink
+            ? `https://www.reddit.com${postData.permalink}`
+            : (postData?.url ?? ''),
         },
       },
     }
@@ -154,6 +179,12 @@ export const submitPostTool: ToolConfig<RedditSubmitParams, RedditWriteResponse>
     data: {
       type: 'object',
       description: 'Post data including ID, name, URL, and permalink',
+      properties: {
+        id: { type: 'string', description: 'New post ID' },
+        name: { type: 'string', description: 'Thing fullname (t3_xxxxx)' },
+        url: { type: 'string', description: 'Post URL from API response' },
+        permalink: { type: 'string', description: 'Full Reddit permalink' },
+      },
     },
   },
 }

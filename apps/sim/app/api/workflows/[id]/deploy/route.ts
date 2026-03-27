@@ -1,7 +1,8 @@
 import { chat, db, workflow, workflowDeploymentVersion } from '@sim/db'
 import { createLogger } from '@sim/logger'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { removeMcpToolsForWorkflow, syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
 import {
@@ -10,6 +11,7 @@ import {
   saveTriggerWebhooksForDeploy,
 } from '@/lib/webhooks/deploy'
 import {
+  activateWorkflowVersionById,
   deployWorkflow,
   loadWorkflowFromNormalizedTables,
   undeployWorkflow,
@@ -20,7 +22,11 @@ import {
   validateWorkflowSchedules,
 } from '@/lib/workflows/schedules'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
-import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
+import {
+  checkNeedsRedeployment,
+  createErrorResponse,
+  createSuccessResponse,
+} from '@/app/api/workflows/utils'
 
 const logger = createLogger('WorkflowDeployAPI')
 
@@ -32,8 +38,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
 
   try {
-    logger.debug(`[${requestId}] Fetching deployment info for workflow: ${id}`)
-
     const { error, workflow: workflowData } = await validateWorkflowPermissions(
       id,
       requestId,
@@ -50,43 +54,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         deployedAt: null,
         apiKey: null,
         needsRedeployment: false,
+        isPublicApi: workflowData.isPublicApi ?? false,
       })
     }
 
-    let needsRedeployment = false
-    const [active] = await db
-      .select({ state: workflowDeploymentVersion.state })
-      .from(workflowDeploymentVersion)
-      .where(
-        and(
-          eq(workflowDeploymentVersion.workflowId, id),
-          eq(workflowDeploymentVersion.isActive, true)
-        )
-      )
-      .orderBy(desc(workflowDeploymentVersion.createdAt))
-      .limit(1)
-
-    if (active?.state) {
-      const { loadWorkflowFromNormalizedTables } = await import('@/lib/workflows/persistence/utils')
-      const normalizedData = await loadWorkflowFromNormalizedTables(id)
-      if (normalizedData) {
-        const [workflowRecord] = await db
-          .select({ variables: workflow.variables })
-          .from(workflow)
-          .where(eq(workflow.id, id))
-          .limit(1)
-
-        const currentState = {
-          blocks: normalizedData.blocks,
-          edges: normalizedData.edges,
-          loops: normalizedData.loops,
-          parallels: normalizedData.parallels,
-          variables: workflowRecord?.variables || {},
-        }
-        const { hasWorkflowChanged } = await import('@/lib/workflows/comparison')
-        needsRedeployment = hasWorkflowChanged(currentState as any, active.state as any)
-      }
-    }
+    const needsRedeployment = await checkNeedsRedeployment(id)
 
     logger.info(`[${requestId}] Successfully retrieved deployment info: ${id}`)
 
@@ -97,6 +69,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       isDeployed: workflowData.isDeployed,
       deployedAt: workflowData.deployedAt,
       needsRedeployment,
+      isPublicApi: workflowData.isPublicApi ?? false,
     })
   } catch (error: any) {
     logger.error(`[${requestId}] Error fetching deployment info: ${id}`, error)
@@ -109,8 +82,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params
 
   try {
-    logger.debug(`[${requestId}] Deploying workflow: ${id}`)
-
     const {
       error,
       session,
@@ -151,6 +122,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .limit(1)
     const previousVersionId = currentActiveVersion?.id
 
+    const rollbackDeployment = async () => {
+      if (previousVersionId) {
+        await restorePreviousVersionWebhooks({
+          request,
+          workflow: workflowData as Record<string, unknown>,
+          userId: actorUserId,
+          previousVersionId,
+          requestId,
+        })
+        const reactivateResult = await activateWorkflowVersionById({
+          workflowId: id,
+          deploymentVersionId: previousVersionId,
+        })
+        if (reactivateResult.success) {
+          return
+        }
+      }
+
+      await undeployWorkflow({ workflowId: id })
+    }
+
     const deployResult = await deployWorkflow({
       workflowId: id,
       deployedBy: actorUserId,
@@ -187,7 +179,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         requestId,
         deploymentVersionId,
       })
-      await undeployWorkflow({ workflowId: id })
+      await rollbackDeployment()
       return createErrorResponse(
         triggerSaveResult.error?.message || 'Failed to save trigger configuration',
         triggerSaveResult.error?.status || 500
@@ -211,16 +203,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         requestId,
         deploymentVersionId,
       })
-      if (previousVersionId) {
-        await restorePreviousVersionWebhooks({
-          request,
-          workflow: workflowData as Record<string, unknown>,
-          userId: actorUserId,
-          previousVersionId,
-          requestId,
-        })
-      }
-      await undeployWorkflow({ workflowId: id })
+      await rollbackDeployment()
       return createErrorResponse(scheduleResult.error || 'Failed to create schedule', 500)
     }
     if (scheduleResult.scheduleId) {
@@ -258,6 +241,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Sync MCP tools with the latest parameter schema
     await syncMcpToolsForWorkflow({ workflowId: id, requestId, context: 'deploy' })
 
+    recordAudit({
+      workspaceId: workflowData?.workspaceId || null,
+      actorId: actorUserId,
+      actorName: session?.user?.name,
+      actorEmail: session?.user?.email,
+      action: AuditAction.WORKFLOW_DEPLOYED,
+      resourceType: AuditResourceType.WORKFLOW,
+      resourceId: id,
+      resourceName: workflowData?.name,
+      description: `Deployed workflow "${workflowData?.name || id}"`,
+      metadata: { version: deploymentVersionId },
+      request,
+    })
+
     const responseApiKeyInfo = workflowData!.workspaceId
       ? 'Workspace API keys'
       : 'Personal API keys'
@@ -287,6 +284,49 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 }
 
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = generateRequestId()
+  const { id } = await params
+
+  try {
+    const { error, session } = await validateWorkflowPermissions(id, requestId, 'admin')
+    if (error) {
+      return createErrorResponse(error.message, error.status)
+    }
+
+    const body = await request.json()
+    const { isPublicApi } = body
+
+    if (typeof isPublicApi !== 'boolean') {
+      return createErrorResponse('Invalid request body: isPublicApi must be a boolean', 400)
+    }
+
+    if (isPublicApi) {
+      const { validatePublicApiAllowed, PublicApiNotAllowedError } = await import(
+        '@/ee/access-control/utils/permission-check'
+      )
+      try {
+        await validatePublicApiAllowed(session?.user?.id)
+      } catch (err) {
+        if (err instanceof PublicApiNotAllowedError) {
+          return createErrorResponse('Public API access is disabled', 403)
+        }
+        throw err
+      }
+    }
+
+    await db.update(workflow).set({ isPublicApi }).where(eq(workflow.id, id))
+
+    logger.info(`[${requestId}] Updated isPublicApi for workflow ${id} to ${isPublicApi}`)
+
+    return createSuccessResponse({ isPublicApi })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to update deployment settings'
+    logger.error(`[${requestId}] Error updating deployment settings: ${id}`, { error })
+    return createErrorResponse(message, 500)
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -295,19 +335,14 @@ export async function DELETE(
   const { id } = await params
 
   try {
-    logger.debug(`[${requestId}] Undeploying workflow: ${id}`)
-
-    const { error, workflow: workflowData } = await validateWorkflowPermissions(
-      id,
-      requestId,
-      'admin'
-    )
+    const {
+      error,
+      session,
+      workflow: workflowData,
+    } = await validateWorkflowPermissions(id, requestId, 'admin')
     if (error) {
       return createErrorResponse(error.message, error.status)
     }
-
-    // Clean up external webhook subscriptions before undeploying
-    await cleanupWebhooksForWorkflow(id, workflowData as Record<string, unknown>, requestId)
 
     const result = await undeployWorkflow({ workflowId: id })
     if (!result.success) {
@@ -318,6 +353,8 @@ export async function DELETE(
     await db.transaction(async (tx) => {
       await tx.delete(chat).where(eq(chat.workflowId, id))
     })
+    await cleanupWebhooksForWorkflow(id, workflowData as Record<string, unknown>, requestId)
+
     await removeMcpToolsForWorkflow(id, requestId)
 
     logger.info(`[${requestId}] Workflow undeployed successfully: ${id}`)
@@ -328,6 +365,19 @@ export async function DELETE(
     } catch (_e) {
       // Silently fail
     }
+
+    recordAudit({
+      workspaceId: workflowData?.workspaceId || null,
+      actorId: session!.user.id,
+      actorName: session?.user?.name,
+      actorEmail: session?.user?.email,
+      action: AuditAction.WORKFLOW_UNDEPLOYED,
+      resourceType: AuditResourceType.WORKFLOW,
+      resourceId: id,
+      resourceName: workflowData?.name,
+      description: `Undeployed workflow "${workflowData?.name || id}"`,
+      request,
+    })
 
     return createSuccessResponse({
       isDeployed: false,

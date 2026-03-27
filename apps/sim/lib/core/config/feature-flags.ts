@@ -74,6 +74,11 @@ export const isRegistrationDisabled = isTruthy(env.DISABLE_REGISTRATION)
 export const isEmailPasswordEnabled = !isFalsy(env.EMAIL_PASSWORD_SIGNUP_ENABLED)
 
 /**
+ * Is signup email validation enabled (disposable email blocking via better-auth-harmony)
+ */
+export const isSignupEmailValidationEnabled = isTruthy(env.SIGNUP_EMAIL_VALIDATION_ENABLED)
+
+/**
  * Is Trigger.dev enabled for async job processing
  */
 export const isTriggerDevEnabled = isTruthy(env.TRIGGER_DEV_ENABLED)
@@ -104,6 +109,12 @@ export const isOrganizationsEnabled =
   isBillingEnabled || isTruthy(env.ORGANIZATIONS_ENABLED) || isAccessControlEnabled
 
 /**
+ * Is inbox (Sim Mailer) enabled via env var override
+ * This bypasses hosted requirements for self-hosted deployments
+ */
+export const isInboxEnabled = isTruthy(env.INBOX_ENABLED)
+
+/**
  * Is E2B enabled for remote code execution
  */
 export const isE2bEnabled = isTruthy(env.E2B_ENABLED)
@@ -113,6 +124,12 @@ export const isE2bEnabled = isTruthy(env.E2B_ENABLED)
  * When true, workspace invitations are disabled for all users
  */
 export const isInvitationsDisabled = isTruthy(env.DISABLE_INVITATIONS)
+
+/**
+ * Is public API access disabled globally
+ * When true, the public API toggle is hidden and public API access is blocked
+ */
+export const isPublicApiDisabled = isTruthy(env.DISABLE_PUBLIC_API)
 
 /**
  * Is React Grab enabled for UI element debugging
@@ -125,6 +142,47 @@ export const isReactGrabEnabled = isDev && isTruthy(env.REACT_GRAB_ENABLED)
  * When true and in development mode, enables React Scan for detecting render performance issues
  */
 export const isReactScanEnabled = isDev && isTruthy(env.REACT_SCAN_ENABLED)
+
+/**
+ * Returns the parsed allowlist of integration block types from the environment variable.
+ * If not set or empty, returns null (meaning all integrations are allowed).
+ */
+export function getAllowedIntegrationsFromEnv(): string[] | null {
+  if (!env.ALLOWED_INTEGRATIONS) return null
+  const parsed = env.ALLOWED_INTEGRATIONS.split(',')
+    .map((i) => i.trim().toLowerCase())
+    .filter(Boolean)
+  return parsed.length > 0 ? parsed : null
+}
+
+/**
+ * Normalizes a domain entry from the ALLOWED_MCP_DOMAINS env var.
+ * Accepts bare hostnames (e.g., "mcp.company.com") or full URLs (e.g., "https://mcp.company.com").
+ * Extracts the hostname in either case.
+ */
+function normalizeDomainEntry(entry: string): string {
+  const trimmed = entry.trim().toLowerCase()
+  if (!trimmed) return ''
+  if (trimmed.includes('://')) {
+    try {
+      return new URL(trimmed).hostname
+    } catch {
+      return trimmed
+    }
+  }
+  return trimmed
+}
+
+/**
+ * Get allowed MCP server domains from the ALLOWED_MCP_DOMAINS env var.
+ * Returns null if not set (all domains allowed), or parsed array of lowercase hostnames.
+ * Accepts both bare hostnames and full URLs in the env var value.
+ */
+export function getAllowedMcpDomainsFromEnv(): string[] | null {
+  if (!env.ALLOWED_MCP_DOMAINS) return null
+  const parsed = env.ALLOWED_MCP_DOMAINS.split(',').map(normalizeDomainEntry).filter(Boolean)
+  return parsed.length > 0 ? parsed : null
+}
 
 /**
  * Get cost multiplier based on environment

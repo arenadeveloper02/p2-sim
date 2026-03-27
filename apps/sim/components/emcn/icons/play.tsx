@@ -1,7 +1,7 @@
 import type { SVGProps } from 'react'
 
 /**
- * Play icon component
+ * Play icon component (filled/solid version)
  * @param props - SVG properties including className, fill, etc.
  */
 export function Play(props: SVGProps<SVGSVGElement>) {
@@ -18,6 +18,29 @@ export function Play(props: SVGProps<SVGSVGElement>) {
         d='M6.13231 1.69656C7.08485 2.23771 7.83339 2.66296 8.36666 3.0525C8.9036 3.44472 9.30069 3.85468 9.44293 4.39515C9.54724 4.79151 9.54724 5.20844 9.44293 5.6048C9.30069 6.14527 8.9036 6.55523 8.36666 6.94744C7.8334 7.33698 7.08487 7.76223 6.13234 8.30337L6.13233 8.30338L6.13231 8.30339C5.21218 8.82615 4.43625 9.26697 3.8472 9.51751C3.25341 9.77007 2.71208 9.89808 2.18595 9.74899C1.7993 9.63942 1.44748 9.43146 1.16407 9.14552C0.779435 8.75745 0.62504 8.22109 0.551993 7.5756C0.479482 6.93484 0.479486 6.09605 0.479492 5.0292V5.0292V4.97075V4.97075C0.479486 3.9039 0.479482 3.06511 0.551993 2.42435C0.62504 1.77886 0.779435 1.2425 1.16407 0.85443C1.44748 0.568491 1.7993 0.360528 2.18595 0.250961C2.71208 0.10187 3.25341 0.229878 3.8472 0.482438C4.43626 0.732984 5.21217 1.1738 6.13231 1.69656L6.13231 1.69656Z'
         fill='currentColor'
       />
+    </svg>
+  )
+}
+
+/**
+ * Play icon component (stroke/outline version)
+ * @param props - SVG properties including className, stroke, etc.
+ */
+export function PlayOutline(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      width='24'
+      height='24'
+      viewBox='-1 -2 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.75'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      xmlns='http://www.w3.org/2000/svg'
+      {...props}
+    >
+      <path d='M7.5 3.5C7.5 2.672 8.452 2.18 9.128 2.66L18.128 9.16C18.72 9.58 18.72 10.46 18.128 10.88L9.128 17.38C8.452 17.86 7.5 17.368 7.5 16.54V3.5Z' />
     </svg>
   )
 }

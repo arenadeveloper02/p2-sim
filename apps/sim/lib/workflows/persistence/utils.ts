@@ -7,12 +7,19 @@ import {
   workflowEdges,
   workflowSubflows,
 } from '@sim/db'
+import { credential } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { Edge } from 'reactflow'
 import { v4 as uuidv4 } from 'uuid'
 import type { DbOrTx } from '@/lib/db/types'
+import { getActiveWorkflowContext } from '@/lib/workflows/active-context'
+import { remapConditionBlockIds, remapConditionEdgeHandle } from '@/lib/workflows/condition-ids'
+import {
+  backfillCanonicalModes,
+  migrateSubblockIds,
+} from '@/lib/workflows/migrations/subblock-migrations'
 import { sanitizeAgentToolsInBlocks } from '@/lib/workflows/sanitization/validation'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
 import { SUBFLOW_TYPES } from '@/stores/workflows/workflow/types'
@@ -27,6 +34,7 @@ export interface WorkflowDeploymentVersionResponse {
   id: string
   version: number
   name?: string | null
+  description?: string | null
   isActive: boolean
   createdAt: string
   createdBy?: string | null
@@ -74,7 +82,10 @@ export async function blockExistsInDeployment(
   }
 }
 
-export async function loadDeployedWorkflowState(workflowId: string): Promise<DeployedWorkflowData> {
+export async function loadDeployedWorkflowState(
+  workflowId: string,
+  providedWorkspaceId?: string
+): Promise<DeployedWorkflowData> {
   try {
     const [active] = await db
       .select({
@@ -98,8 +109,23 @@ export async function loadDeployedWorkflowState(workflowId: string): Promise<Dep
 
     const state = active.state as WorkflowState & { variables?: Record<string, unknown> }
 
+    let resolvedWorkspaceId = providedWorkspaceId
+    if (!resolvedWorkspaceId) {
+      const workflowContext = await getActiveWorkflowContext(workflowId)
+      resolvedWorkspaceId = workflowContext?.workspaceId
+    }
+
+    if (!resolvedWorkspaceId) {
+      throw new Error(`Workflow ${workflowId} has no workspace`)
+    }
+
+    const { blocks: migratedBlocks } = await applyBlockMigrations(
+      state.blocks || {},
+      resolvedWorkspaceId
+    )
+
     return {
-      blocks: state.blocks || {},
+      blocks: migratedBlocks,
       edges: state.edges || [],
       loops: state.loops || {},
       parallels: state.parallels || {},
@@ -112,6 +138,54 @@ export async function loadDeployedWorkflowState(workflowId: string): Promise<Dep
     throw error
   }
 }
+
+interface MigrationContext {
+  blocks: Record<string, BlockState>
+  workspaceId: string
+  migrated: boolean
+}
+
+type BlockMigration = (ctx: MigrationContext) => MigrationContext | Promise<MigrationContext>
+
+function createMigrationPipeline(migrations: BlockMigration[]) {
+  return async (
+    blocks: Record<string, BlockState>,
+    workspaceId: string
+  ): Promise<{ blocks: Record<string, BlockState>; migrated: boolean }> => {
+    let ctx: MigrationContext = { blocks, workspaceId, migrated: false }
+    for (const migration of migrations) {
+      ctx = await migration(ctx)
+    }
+    return { blocks: ctx.blocks, migrated: ctx.migrated }
+  }
+}
+
+const applyBlockMigrations = createMigrationPipeline([
+  (ctx) => {
+    const { blocks } = sanitizeAgentToolsInBlocks(ctx.blocks)
+    return { ...ctx, blocks }
+  },
+
+  (ctx) => ({
+    ...ctx,
+    blocks: migrateAgentBlocksToMessagesFormat(ctx.blocks),
+  }),
+
+  async (ctx) => {
+    const { blocks, migrated } = await migrateCredentialIds(ctx.blocks, ctx.workspaceId)
+    return { ...ctx, blocks, migrated: ctx.migrated || migrated }
+  },
+
+  (ctx) => {
+    const { blocks, migrated } = migrateSubblockIds(ctx.blocks)
+    return { ...ctx, blocks, migrated: ctx.migrated || migrated }
+  },
+
+  (ctx) => {
+    const { blocks, migrated } = backfillCanonicalModes(ctx.blocks)
+    return { ...ctx, blocks, migrated: ctx.migrated || migrated }
+  },
+])
 
 /**
  * Migrates agent blocks from old format (systemPrompt/userPrompt) to new format (messages array)
@@ -184,6 +258,107 @@ export function migrateAgentBlocksToMessagesFormat(
   )
 }
 
+const CREDENTIAL_SUBBLOCK_IDS = new Set(['credential', 'triggerCredentials'])
+
+/**
+ * Migrates legacy `account.id` values to `credential.id` in OAuth subblocks.
+ * Collects all potential legacy IDs in a single batch query for efficiency.
+ * Also migrates `tool.params.credential` in agent block tool arrays.
+ */
+async function migrateCredentialIds(
+  blocks: Record<string, BlockState>,
+  workspaceId: string
+): Promise<{ blocks: Record<string, BlockState>; migrated: boolean }> {
+  const potentialLegacyIds = new Set<string>()
+
+  for (const block of Object.values(blocks)) {
+    for (const [subBlockId, subBlock] of Object.entries(block.subBlocks || {})) {
+      const value = (subBlock as { value?: unknown }).value
+      if (
+        CREDENTIAL_SUBBLOCK_IDS.has(subBlockId) &&
+        typeof value === 'string' &&
+        value &&
+        !value.startsWith('cred_')
+      ) {
+        potentialLegacyIds.add(value)
+      }
+
+      if (subBlockId === 'tools' && Array.isArray(value)) {
+        for (const tool of value) {
+          const credParam = tool?.params?.credential
+          if (typeof credParam === 'string' && credParam && !credParam.startsWith('cred_')) {
+            potentialLegacyIds.add(credParam)
+          }
+        }
+      }
+    }
+  }
+
+  if (potentialLegacyIds.size === 0) {
+    return { blocks, migrated: false }
+  }
+
+  const rows = await db
+    .select({ id: credential.id, accountId: credential.accountId })
+    .from(credential)
+    .where(
+      and(
+        inArray(credential.accountId, [...potentialLegacyIds]),
+        eq(credential.workspaceId, workspaceId)
+      )
+    )
+
+  if (rows.length === 0) {
+    return { blocks, migrated: false }
+  }
+
+  const accountToCredential = new Map(rows.map((r) => [r.accountId!, r.id]))
+
+  const migratedBlocks = Object.fromEntries(
+    Object.entries(blocks).map(([blockId, block]) => {
+      let blockChanged = false
+      const newSubBlocks = { ...block.subBlocks }
+
+      for (const [subBlockId, subBlock] of Object.entries(newSubBlocks)) {
+        if (CREDENTIAL_SUBBLOCK_IDS.has(subBlockId) && typeof subBlock.value === 'string') {
+          const newId = accountToCredential.get(subBlock.value)
+          if (newId) {
+            newSubBlocks[subBlockId] = { ...subBlock, value: newId }
+            blockChanged = true
+          }
+        }
+
+        if (subBlockId === 'tools' && Array.isArray(subBlock.value)) {
+          let toolsChanged = false
+          const newTools = (subBlock.value as any[]).map((tool: any) => {
+            const credParam = tool?.params?.credential
+            if (typeof credParam === 'string') {
+              const newId = accountToCredential.get(credParam)
+              if (newId) {
+                toolsChanged = true
+                return { ...tool, params: { ...tool.params, credential: newId } }
+              }
+            }
+            return tool
+          })
+          if (toolsChanged) {
+            newSubBlocks[subBlockId] = { ...subBlock, value: newTools as any }
+            blockChanged = true
+          }
+        }
+      }
+
+      return [blockId, blockChanged ? { ...block, subBlocks: newSubBlocks } : block]
+    })
+  )
+
+  const anyBlockChanged = Object.keys(migratedBlocks).some(
+    (id) => migratedBlocks[id] !== blocks[id]
+  )
+
+  return { blocks: migratedBlocks, migrated: anyBlockChanged }
+}
+
 /**
  * Load workflow state from normalized tables
  * Returns null if no data found (fallback to JSON blob)
@@ -192,11 +367,15 @@ export async function loadWorkflowFromNormalizedTables(
   workflowId: string
 ): Promise<NormalizedWorkflowData | null> {
   try {
-    // Load all components in parallel
-    const [blocks, edges, subflows] = await Promise.all([
+    const [blocks, edges, subflows, [workflowRow]] = await Promise.all([
       db.select().from(workflowBlocks).where(eq(workflowBlocks.workflowId, workflowId)),
       db.select().from(workflowEdges).where(eq(workflowEdges.workflowId, workflowId)),
       db.select().from(workflowSubflows).where(eq(workflowSubflows.workflowId, workflowId)),
+      db
+        .select({ workspaceId: workflow.workspaceId })
+        .from(workflow)
+        .where(eq(workflow.id, workflowId))
+        .limit(1),
     ])
 
     // If no blocks found, assume this workflow hasn't been migrated yet
@@ -225,17 +404,43 @@ export async function loadWorkflowFromNormalizedTables(
         subBlocks: (block.subBlocks as BlockState['subBlocks']) || {},
         outputs: (block.outputs as BlockState['outputs']) || {},
         data: blockData,
+        locked: block.locked,
       }
 
       blocksMap[block.id] = assembled
     })
 
-    // Sanitize any invalid custom tools in agent blocks to prevent client crashes
-    const { blocks: sanitizedBlocks } = sanitizeAgentToolsInBlocks(blocksMap)
+    if (!workflowRow?.workspaceId) {
+      throw new Error(`Workflow ${workflowId} has no workspace`)
+    }
 
-    // Migrate old agent block format (systemPrompt/userPrompt) to new messages array format
-    // This ensures backward compatibility for workflows created before the messages-input refactor
-    const migratedBlocks = migrateAgentBlocksToMessagesFormat(sanitizedBlocks)
+    const { blocks: finalBlocks, migrated } = await applyBlockMigrations(
+      blocksMap,
+      workflowRow.workspaceId
+    )
+
+    if (migrated) {
+      Promise.resolve().then(async () => {
+        try {
+          for (const [blockId, block] of Object.entries(finalBlocks)) {
+            if (block !== blocksMap[blockId]) {
+              await db
+                .update(workflowBlocks)
+                .set({
+                  subBlocks: block.subBlocks,
+                  data: block.data,
+                  updatedAt: new Date(),
+                })
+                .where(
+                  and(eq(workflowBlocks.id, blockId), eq(workflowBlocks.workflowId, workflowId))
+                )
+            }
+          }
+        } catch (err) {
+          logger.warn('Failed to persist block migrations', { workflowId, error: err })
+        }
+      })
+    }
 
     // Convert edges to the expected format
     const edgesArray: Edge[] = edges.map((edge) => ({
@@ -273,15 +478,13 @@ export async function loadWorkflowFromNormalizedTables(
           forEachItems: (config as Loop).forEachItems ?? '',
           whileCondition: (config as Loop).whileCondition ?? '',
           doWhileCondition: (config as Loop).doWhileCondition ?? '',
-          enabled: migratedBlocks[subflow.id]?.enabled ?? true,
+          enabled: finalBlocks[subflow.id]?.enabled ?? true,
         }
         loops[subflow.id] = loop
 
-        // Sync block.data with loop config to ensure all fields are present
-        // This allows switching between loop types without losing data
-        if (migratedBlocks[subflow.id]) {
-          const block = migratedBlocks[subflow.id]
-          migratedBlocks[subflow.id] = {
+        if (finalBlocks[subflow.id]) {
+          const block = finalBlocks[subflow.id]
+          finalBlocks[subflow.id] = {
             ...block,
             data: {
               ...block.data,
@@ -302,7 +505,7 @@ export async function loadWorkflowFromNormalizedTables(
             (config as Parallel).parallelType === 'collection'
               ? (config as Parallel).parallelType
               : 'count',
-          enabled: migratedBlocks[subflow.id]?.enabled ?? true,
+          enabled: finalBlocks[subflow.id]?.enabled ?? true,
         }
         parallels[subflow.id] = parallel
 
@@ -326,7 +529,7 @@ export async function loadWorkflowFromNormalizedTables(
     })
 
     return {
-      blocks: migratedBlocks,
+      blocks: finalBlocks,
       edges: edgesArray,
       loops,
       parallels,
@@ -377,6 +580,7 @@ export async function saveWorkflowToNormalizedTables(
           data: block.data || {},
           parentId: block.data?.parentId || null,
           extent: block.data?.extent || null,
+          locked: block.locked ?? false,
         }))
 
         await tx.insert(workflowBlocks).values(blockInserts)
@@ -641,7 +845,13 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
   // Regenerate blocks with updated references
   Object.entries(state.blocks || {}).forEach(([oldId, block]) => {
     const newId = blockIdMapping.get(oldId)!
-    const newBlock: BlockState = { ...block, id: newId }
+    // Duplicated blocks are always unlocked so users can edit them
+    const newBlock: BlockState = {
+      ...block,
+      id: newId,
+      subBlocks: JSON.parse(JSON.stringify(block.subBlocks)),
+      locked: false,
+    }
 
     // Update parentId reference if it exists
     if (newBlock.data?.parentId) {
@@ -665,6 +875,21 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
           updatedSubBlock.value = blockIdMapping.get(updatedSubBlock.value) ?? updatedSubBlock.value
         }
 
+        // Remap condition/router IDs embedded in condition-input/router-input subBlocks
+        if (
+          (updatedSubBlock.type === 'condition-input' || updatedSubBlock.type === 'router-input') &&
+          typeof updatedSubBlock.value === 'string'
+        ) {
+          try {
+            const parsed = JSON.parse(updatedSubBlock.value)
+            if (Array.isArray(parsed) && remapConditionBlockIds(parsed, oldId, newId)) {
+              updatedSubBlock.value = JSON.stringify(parsed)
+            }
+          } catch {
+            // Not valid JSON, skip
+          }
+        }
+
         updatedSubBlocks[subId] = updatedSubBlock
       })
       newBlock.subBlocks = updatedSubBlocks
@@ -679,12 +904,17 @@ export function regenerateWorkflowStateIds(state: RegenerateStateInput): Regener
     const newId = edgeIdMapping.get(edge.id)!
     const newSource = blockIdMapping.get(edge.source) || edge.source
     const newTarget = blockIdMapping.get(edge.target) || edge.target
+    const newSourceHandle =
+      edge.sourceHandle && blockIdMapping.has(edge.source)
+        ? remapConditionEdgeHandle(edge.sourceHandle, edge.source, newSource)
+        : edge.sourceHandle
 
     newEdges.push({
       ...edge,
       id: newId,
       source: newSource,
       target: newTarget,
+      sourceHandle: newSourceHandle,
     })
   })
 
@@ -841,6 +1071,76 @@ export async function activateWorkflowVersion(params: {
     }
   } catch (error) {
     logger.error(`Error activating version ${version} for workflow ${workflowId}:`, error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to activate version',
+    }
+  }
+}
+
+export async function activateWorkflowVersionById(params: {
+  workflowId: string
+  deploymentVersionId: string
+}): Promise<{
+  success: boolean
+  deployedAt?: Date
+  state?: unknown
+  error?: string
+}> {
+  const { workflowId, deploymentVersionId } = params
+
+  try {
+    const [versionData] = await db
+      .select({ id: workflowDeploymentVersion.id, state: workflowDeploymentVersion.state })
+      .from(workflowDeploymentVersion)
+      .where(
+        and(
+          eq(workflowDeploymentVersion.workflowId, workflowId),
+          eq(workflowDeploymentVersion.id, deploymentVersionId)
+        )
+      )
+      .limit(1)
+
+    if (!versionData) {
+      return { success: false, error: 'Deployment version not found' }
+    }
+
+    const now = new Date()
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(workflowDeploymentVersion)
+        .set({ isActive: false })
+        .where(eq(workflowDeploymentVersion.workflowId, workflowId))
+
+      await tx
+        .update(workflowDeploymentVersion)
+        .set({ isActive: true })
+        .where(
+          and(
+            eq(workflowDeploymentVersion.workflowId, workflowId),
+            eq(workflowDeploymentVersion.id, deploymentVersionId)
+          )
+        )
+
+      await tx
+        .update(workflow)
+        .set({ isDeployed: true, deployedAt: now })
+        .where(eq(workflow.id, workflowId))
+    })
+
+    logger.info(`Activated deployment version ${deploymentVersionId} for workflow ${workflowId}`)
+
+    return {
+      success: true,
+      deployedAt: now,
+      state: versionData.state,
+    }
+  } catch (error) {
+    logger.error(
+      `Error activating deployment version ${deploymentVersionId} for workflow ${workflowId}:`,
+      error
+    )
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to activate version',

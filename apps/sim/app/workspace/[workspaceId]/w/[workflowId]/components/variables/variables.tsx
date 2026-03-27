@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import Editor from 'react-simple-code-editor'
+import { useShallow } from 'zustand/react/shallow'
 import {
   Badge,
   Button,
@@ -92,17 +93,33 @@ const STRINGS = {
  * - Uses emcn Input/Code/Combobox components for a consistent UI
  */
 export function Variables() {
-  const { activeWorkflowId } = useWorkflowRegistry()
+  const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
 
   const { isOpen, position, width, height, setIsOpen, setPosition, setDimensions } =
-    useVariablesStore()
+    useVariablesStore(
+      useShallow((s) => ({
+        isOpen: s.isOpen,
+        position: s.position,
+        width: s.width,
+        height: s.height,
+        setIsOpen: s.setIsOpen,
+        setPosition: s.setPosition,
+        setDimensions: s.setDimensions,
+      }))
+    )
 
-  const { getVariablesByWorkflowId } = usePanelVariablesStore()
+  const variables = usePanelVariablesStore((s) => s.variables)
 
   const { collaborativeUpdateVariable, collaborativeAddVariable, collaborativeDeleteVariable } =
     useCollaborativeWorkflow()
 
-  const workflowVariables = activeWorkflowId ? getVariablesByWorkflowId(activeWorkflowId) : []
+  const workflowVariables = useMemo(
+    () =>
+      activeWorkflowId
+        ? Object.values(variables).filter((v) => v.workflowId === activeWorkflowId)
+        : [],
+    [variables, activeWorkflowId]
+  )
 
   const actualPosition = useMemo(
     () => getVariablesPosition(position, width, height),
@@ -284,7 +301,7 @@ export function Variables() {
       const isCollapsed = collapsedById[variable.id] ?? false
       return (
         <div
-          className='flex cursor-pointer items-center justify-between bg-transparent px-[10px] py-[5px]'
+          className='flex cursor-pointer items-center justify-between rounded-t-[4px] bg-[var(--surface-4)] px-[10px] py-[5px]'
           onClick={() => toggleCollapsed(variable.id)}
           onKeyDown={(e) => handleHeaderKeyDown(e, variable.id)}
           role='button'
@@ -297,7 +314,7 @@ export function Variables() {
               {variable.name || `Variable ${index + 1}`}
             </span>
             {variable.name && (
-              <Badge style={{ height: `${BADGE_HEIGHT}px`, fontSize: `${BADGE_TEXT_SIZE}px` }}>
+              <Badge variant='type' size='sm'>
                 {variable.type}
               </Badge>
             )}
@@ -460,7 +477,7 @@ export function Variables() {
                   {!(collapsedById[variable.id] ?? false) && (
                     <div
                       id={`variable-content-${variable.id}`}
-                      className='flex flex-col gap-[6px] border-[var(--border-1)] border-t px-[10px] pt-[6px] pb-[10px]'
+                      className='flex flex-col gap-[6px] rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-[10px] pt-[6px] pb-[10px]'
                     >
                       <div className='flex flex-col gap-[4px]'>
                         <Label className='text-[13px]'>{STRINGS.labels.name}</Label>

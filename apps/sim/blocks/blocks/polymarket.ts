@@ -1,5 +1,6 @@
 import { PolymarketIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { IntegrationType } from '@/blocks/types'
 
 export const PolymarketBlock: BlockConfig = {
   type: 'polymarket',
@@ -9,6 +10,8 @@ export const PolymarketBlock: BlockConfig = {
     'Integrate Polymarket prediction markets into the workflow. Can get markets, market, events, event, tags, series, orderbook, price, midpoint, price history, last trade price, spread, tick size, positions, trades, activity, leaderboard, holders, and search.',
   docsLink: 'https://docs.sim.ai/tools/polymarket',
   category: 'tools',
+  integrationType: IntegrationType.Analytics,
+  tags: ['prediction-markets', 'data-analytics'],
   bgColor: '#4C82FB',
   icon: PolymarketIcon,
   subBlocks: [
@@ -103,6 +106,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Wallet address (optional filter)',
       condition: { field: 'operation', value: ['get_trades'] },
+      mode: 'advanced',
     },
     // Market/Event filter for positions and trades
     {
@@ -111,6 +115,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Condition ID filter (comma-separated)',
       condition: { field: 'operation', value: ['get_positions', 'get_trades'] },
+      mode: 'advanced',
     },
     {
       id: 'positionEventId',
@@ -118,6 +123,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Event ID filter (alternative to Condition ID)',
       condition: { field: 'operation', value: ['get_positions', 'get_trades'] },
+      mode: 'advanced',
     },
     // Positions-specific filters
     {
@@ -126,6 +132,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Minimum position size (default: 1)',
       condition: { field: 'operation', value: ['get_positions'] },
+      mode: 'advanced',
     },
     {
       id: 'redeemable',
@@ -137,6 +144,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Non-Redeemable Only', id: 'false' },
       ],
       condition: { field: 'operation', value: ['get_positions'] },
+      mode: 'advanced',
     },
     {
       id: 'mergeable',
@@ -148,6 +156,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Non-Mergeable Only', id: 'false' },
       ],
       condition: { field: 'operation', value: ['get_positions'] },
+      mode: 'advanced',
     },
     {
       id: 'positionSortBy',
@@ -165,6 +174,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Avg Price', id: 'AVGPRICE' },
       ],
       condition: { field: 'operation', value: ['get_positions'] },
+      mode: 'advanced',
     },
     {
       id: 'positionSortDirection',
@@ -175,6 +185,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Ascending', id: 'ASC' },
       ],
       condition: { field: 'operation', value: ['get_positions'] },
+      mode: 'advanced',
     },
     {
       id: 'positionTitle',
@@ -182,6 +193,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Search by title',
       condition: { field: 'operation', value: ['get_positions'] },
+      mode: 'advanced',
     },
     // Trades-specific filters
     {
@@ -194,6 +206,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Sell', id: 'SELL' },
       ],
       condition: { field: 'operation', value: ['get_trades'] },
+      mode: 'advanced',
     },
     {
       id: 'takerOnly',
@@ -204,6 +217,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'No', id: 'false' },
       ],
       condition: { field: 'operation', value: ['get_trades'] },
+      mode: 'advanced',
     },
     {
       id: 'filterType',
@@ -215,6 +229,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Tokens', id: 'TOKENS' },
       ],
       condition: { field: 'operation', value: ['get_trades'] },
+      mode: 'advanced',
     },
     {
       id: 'filterAmount',
@@ -222,6 +237,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Minimum amount threshold',
       condition: { field: 'operation', value: ['get_trades'] },
+      mode: 'advanced',
     },
     // Activity-specific fields
     {
@@ -247,6 +263,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Maker Rebate', id: 'MAKER_REBATE' },
       ],
       condition: { field: 'operation', value: ['get_activity'] },
+      mode: 'advanced',
     },
     {
       id: 'activityMarket',
@@ -254,6 +271,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Condition ID filter (comma-separated)',
       condition: { field: 'operation', value: ['get_activity'] },
+      mode: 'advanced',
     },
     {
       id: 'activityEventId',
@@ -261,6 +279,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Event ID filter (comma-separated)',
       condition: { field: 'operation', value: ['get_activity'] },
+      mode: 'advanced',
     },
     {
       id: 'activitySide',
@@ -272,6 +291,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Sell', id: 'SELL' },
       ],
       condition: { field: 'operation', value: ['get_activity'] },
+      mode: 'advanced',
     },
     {
       id: 'activitySortBy',
@@ -283,6 +303,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Cash', id: 'CASH' },
       ],
       condition: { field: 'operation', value: ['get_activity'] },
+      mode: 'advanced',
     },
     {
       id: 'activitySortDirection',
@@ -293,6 +314,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Ascending', id: 'ASC' },
       ],
       condition: { field: 'operation', value: ['get_activity'] },
+      mode: 'advanced',
     },
     {
       id: 'activityStart',
@@ -300,6 +322,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Unix timestamp (seconds)',
       condition: { field: 'operation', value: ['get_activity'] },
+      mode: 'advanced',
     },
     {
       id: 'activityEnd',
@@ -307,6 +330,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Unix timestamp (seconds)',
       condition: { field: 'operation', value: ['get_activity'] },
+      mode: 'advanced',
     },
     // Leaderboard-specific fields
     {
@@ -326,6 +350,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Finance', id: 'FINANCE' },
       ],
       condition: { field: 'operation', value: ['get_leaderboard'] },
+      mode: 'advanced',
     },
     {
       id: 'leaderboardTimePeriod',
@@ -338,6 +363,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'All Time', id: 'ALL' },
       ],
       condition: { field: 'operation', value: ['get_leaderboard'] },
+      mode: 'advanced',
     },
     {
       id: 'leaderboardOrderBy',
@@ -348,6 +374,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Volume', id: 'VOL' },
       ],
       condition: { field: 'operation', value: ['get_leaderboard'] },
+      mode: 'advanced',
     },
     {
       id: 'leaderboardUser',
@@ -355,6 +382,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Filter by specific user wallet',
       condition: { field: 'operation', value: ['get_leaderboard'] },
+      mode: 'advanced',
     },
     {
       id: 'leaderboardUserName',
@@ -362,6 +390,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Filter by username',
       condition: { field: 'operation', value: ['get_leaderboard'] },
+      mode: 'advanced',
     },
     // Market Holders-specific fields
     {
@@ -378,6 +407,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Minimum balance threshold (default: 1)',
       condition: { field: 'operation', value: ['get_holders'] },
+      mode: 'advanced',
     },
     // Token ID for CLOB operations
     {
@@ -426,6 +456,7 @@ export const PolymarketBlock: BlockConfig = {
         { label: 'Max', id: 'max' },
       ],
       condition: { field: 'operation', value: ['get_price_history'] },
+      mode: 'advanced',
     },
     {
       id: 'fidelity',
@@ -433,6 +464,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Data resolution in minutes (e.g., 60)',
       condition: { field: 'operation', value: ['get_price_history'] },
+      mode: 'advanced',
     },
     {
       id: 'startTs',
@@ -440,6 +472,7 @@ export const PolymarketBlock: BlockConfig = {
       type: 'short-input',
       placeholder: 'Unix timestamp UTC (if no interval)',
       condition: { field: 'operation', value: ['get_price_history'] },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a Unix timestamp (seconds since epoch) based on the user's description.
@@ -459,6 +492,7 @@ Return ONLY the Unix timestamp as a number - no explanations, no quotes, no extr
       type: 'short-input',
       placeholder: 'Unix timestamp UTC (if no interval)',
       condition: { field: 'operation', value: ['get_price_history'] },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a Unix timestamp (seconds since epoch) based on the user's description.
@@ -483,6 +517,7 @@ Return ONLY the Unix timestamp as a number - no explanations, no quotes, no extr
         { label: 'Closed Only', id: 'true' },
       ],
       condition: { field: 'operation', value: ['get_markets', 'get_events'] },
+      mode: 'advanced',
     },
     {
       id: 'order',
@@ -498,6 +533,7 @@ Return ONLY the Unix timestamp as a number - no explanations, no quotes, no extr
         { label: 'Updated At', id: 'updatedAt' },
       ],
       condition: { field: 'operation', value: ['get_markets'] },
+      mode: 'advanced',
     },
     {
       id: 'orderEvents',
@@ -513,6 +549,7 @@ Return ONLY the Unix timestamp as a number - no explanations, no quotes, no extr
         { label: 'Updated At', id: 'updatedAt' },
       ],
       condition: { field: 'operation', value: ['get_events'] },
+      mode: 'advanced',
     },
     {
       id: 'ascending',
@@ -523,6 +560,7 @@ Return ONLY the Unix timestamp as a number - no explanations, no quotes, no extr
         { label: 'Ascending', id: 'true' },
       ],
       condition: { field: 'operation', value: ['get_markets', 'get_events'] },
+      mode: 'advanced',
     },
     {
       id: 'tagId',
@@ -530,6 +568,7 @@ Return ONLY the Unix timestamp as a number - no explanations, no quotes, no extr
       type: 'short-input',
       placeholder: 'Filter by tag ID',
       condition: { field: 'operation', value: ['get_markets', 'get_events'] },
+      mode: 'advanced',
     },
     // Pagination fields
     {
@@ -552,6 +591,7 @@ Return ONLY the Unix timestamp as a number - no explanations, no quotes, no extr
           'get_holders',
         ],
       },
+      mode: 'advanced',
     },
     {
       id: 'offset',
@@ -571,6 +611,7 @@ Return ONLY the Unix timestamp as a number - no explanations, no quotes, no extr
           'get_leaderboard',
         ],
       },
+      mode: 'advanced',
     },
     {
       id: 'page',
@@ -578,6 +619,7 @@ Return ONLY the Unix timestamp as a number - no explanations, no quotes, no extr
       type: 'short-input',
       placeholder: 'Page number (1-indexed)',
       condition: { field: 'operation', value: ['search'] },
+      mode: 'advanced',
     },
   ],
   tools: {

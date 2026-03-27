@@ -1,7 +1,8 @@
 import { Link, Section, Text } from '@react-email/components'
 import { baseStyles } from '@/components/emails/_styles'
 import { EmailLayout } from '@/components/emails/components'
-import { getBrandConfig } from '@/lib/branding/branding'
+import { dollarsToCredits } from '@/lib/billing/credits/conversion'
+import { getBrandConfig } from '@/ee/whitelabeling'
 
 interface UsageThresholdEmailProps {
   userName?: string
@@ -37,7 +38,8 @@ export function UsageThresholdEmail({
       <Section style={baseStyles.infoBox}>
         <Text style={baseStyles.infoBoxTitle}>Usage</Text>
         <Text style={baseStyles.infoBoxList}>
-          ${currentUsage.toFixed(2)} of ${limit.toFixed(2)} used ({percentUsed}%)
+          {dollarsToCredits(currentUsage).toLocaleString()} of{' '}
+          {dollarsToCredits(limit).toLocaleString()} credits used ({percentUsed}%)
         </Text>
       </Section>
 

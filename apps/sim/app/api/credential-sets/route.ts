@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, count, desc, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { hasCredentialSetsAccess } from '@/lib/billing'
 
@@ -122,21 +123,23 @@ export async function POST(req: Request) {
       )
     }
 
-    const orgExists = await db
-      .select({ id: organization.id })
-      .from(organization)
-      .where(eq(organization.id, organizationId))
-      .limit(1)
+    // Check org existence and name uniqueness in parallel
+    const [orgExists, existingSet] = await Promise.all([
+      db
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.id, organizationId))
+        .limit(1),
+      db
+        .select({ id: credentialSet.id })
+        .from(credentialSet)
+        .where(and(eq(credentialSet.organizationId, organizationId), eq(credentialSet.name, name)))
+        .limit(1),
+    ])
 
     if (orgExists.length === 0) {
       return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
     }
-
-    const existingSet = await db
-      .select({ id: credentialSet.id })
-      .from(credentialSet)
-      .where(and(eq(credentialSet.organizationId, organizationId), eq(credentialSet.name, name)))
-      .limit(1)
 
     if (existingSet.length > 0) {
       return NextResponse.json(
@@ -163,6 +166,19 @@ export async function POST(req: Request) {
       credentialSetId: newCredentialSet.id,
       organizationId,
       userId: session.user.id,
+    })
+
+    recordAudit({
+      workspaceId: null,
+      actorId: session.user.id,
+      action: AuditAction.CREDENTIAL_SET_CREATED,
+      resourceType: AuditResourceType.CREDENTIAL_SET,
+      resourceId: newCredentialSet.id,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      resourceName: name,
+      description: `Created credential set "${name}"`,
+      request: req,
     })
 
     return NextResponse.json({ credentialSet: newCredentialSet }, { status: 201 })

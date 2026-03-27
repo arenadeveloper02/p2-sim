@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { usageLog, workflow } from '@sim/db/schema'
+import { usageLog } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
@@ -14,7 +14,13 @@ export type UsageLogCategory = 'model' | 'fixed'
 /**
  * Usage log source types
  */
-export type UsageLogSource = 'workflow' | 'wand' | 'copilot'
+export type UsageLogSource =
+  | 'workflow'
+  | 'wand'
+  | 'copilot'
+  | 'workspace-chat'
+  | 'mcp_copilot'
+  | 'mothership_block'
 
 /**
  * Metadata for 'model' category charges
@@ -22,12 +28,13 @@ export type UsageLogSource = 'workflow' | 'wand' | 'copilot'
 export interface ModelUsageMetadata {
   inputTokens: number
   outputTokens: number
+  toolCost?: number
 }
 
 /**
- * Metadata for 'fixed' category charges (currently empty, extensible)
+ * Metadata for 'fixed' category charges (e.g., tool cost breakdown)
  */
-export type FixedUsageMetadata = Record<string, never>
+export type FixedUsageMetadata = Record<string, unknown>
 
 /**
  * Union type for all metadata types
@@ -44,6 +51,7 @@ export interface LogModelUsageParams {
   inputTokens: number
   outputTokens: number
   cost: number
+  toolCost?: number
   workspaceId?: string
   workflowId?: string
   executionId?: string
@@ -60,6 +68,8 @@ export interface LogFixedUsageParams {
   workspaceId?: string
   workflowId?: string
   executionId?: string
+  /** Optional metadata (e.g., tool cost breakdown from API) */
+  metadata?: FixedUsageMetadata
 }
 
 /**
@@ -74,6 +84,7 @@ export async function logModelUsage(params: LogModelUsageParams): Promise<void> 
     const metadata: ModelUsageMetadata = {
       inputTokens: params.inputTokens,
       outputTokens: params.outputTokens,
+      ...(params.toolCost != null && params.toolCost > 0 && { toolCost: params.toolCost }),
     }
 
     await db.insert(usageLog).values({
@@ -119,7 +130,7 @@ export async function logFixedUsage(params: LogFixedUsageParams): Promise<void> 
       category: 'fixed',
       source: params.source,
       description: params.description,
-      metadata: null,
+      metadata: params.metadata ?? null,
       cost: params.cost.toString(),
       workspaceId: params.workspaceId ?? null,
       workflowId: params.workflowId ?? null,
@@ -155,6 +166,7 @@ export interface LogWorkflowUsageBatchParams {
     {
       total: number
       tokens: { input: number; output: number }
+      toolCost?: number
     }
   >
 }
@@ -207,6 +219,8 @@ export async function logWorkflowUsageBatch(params: LogWorkflowUsageBatchParams)
           metadata: {
             inputTokens: modelData.tokens.input,
             outputTokens: modelData.tokens.output,
+            ...(modelData.toolCost != null &&
+              modelData.toolCost > 0 && { toolCost: modelData.toolCost }),
           },
           cost: modelData.total.toString(),
           workspaceId: params.workspaceId ?? null,
@@ -395,27 +409,5 @@ export async function getUserUsageLogs(
       options,
     })
     throw error
-  }
-}
-
-/**
- * Get the user ID associated with a workflow
- * Helper function for cases where we only have a workflow ID
- */
-export async function getUserIdFromWorkflow(workflowId: string): Promise<string | null> {
-  try {
-    const [workflowRecord] = await db
-      .select({ userId: workflow.userId })
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .limit(1)
-
-    return workflowRecord?.userId ?? null
-  } catch (error) {
-    logger.error('Failed to get user ID from workflow', {
-      error: error instanceof Error ? error.message : String(error),
-      workflowId,
-    })
-    return null
   }
 }

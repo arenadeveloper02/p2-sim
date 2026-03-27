@@ -9,6 +9,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -44,6 +45,8 @@ const comboboxVariants = cva(
 export type ComboboxOption = {
   label: string
   value: string
+  /** When true, hidden from the picker list but still resolves for display */
+  hidden?: boolean
   /** Icon component to render */
   icon?: React.ComponentType<{ className?: string }>
   /** Pre-rendered icon element (alternative to icon component) */
@@ -52,6 +55,10 @@ export type ComboboxOption = {
   onSelect?: () => void
   /** Whether this option is disabled */
   disabled?: boolean
+  /** When true, keep the dropdown open after selecting this option */
+  keepOpen?: boolean
+  /** Optional element rendered at the trailing end of the option (e.g. chevron for folders) */
+  suffixElement?: ReactNode
 }
 
 /**
@@ -106,6 +113,8 @@ export interface ComboboxProps
   error?: string | null
   /** Callback when popover open state changes */
   onOpenChange?: (open: boolean) => void
+  /** Callback when ArrowLeft is pressed while dropdown is open (for folder back-navigation) */
+  onArrowLeft?: () => void
   /** Enable search input in dropdown (useful for multiselect) */
   searchable?: boolean
   /** Placeholder for search input */
@@ -157,6 +166,7 @@ const Combobox = memo(
         isLoading = false,
         error = null,
         onOpenChange,
+        onArrowLeft,
         searchable = false,
         searchPlaceholder = 'Search...',
         align = 'start',
@@ -170,6 +180,7 @@ const Combobox = memo(
       },
       ref
     ) => {
+      const listboxId = useId()
       const [open, setOpen] = useState(false)
       const [highlightedIndex, setHighlightedIndex] = useState(-1)
       const [searchQuery, setSearchQuery] = useState('')
@@ -198,12 +209,11 @@ const Combobox = memo(
        * Filter options based on current value or search query
        */
       const filteredOptions = useMemo(() => {
-        let result = allOptions
+        let result = allOptions.filter((opt) => !opt.hidden)
 
-        // Filter by editable input value
         if (filterOptions && value && open) {
           const currentValue = value.toString().toLowerCase()
-          const exactMatch = allOptions.find(
+          const exactMatch = result.find(
             (opt) => opt.value === value || opt.label.toLowerCase() === currentValue
           )
           if (!exactMatch) {
@@ -215,7 +225,6 @@ const Combobox = memo(
           }
         }
 
-        // Filter by search query (for searchable mode)
         if (searchable && searchQuery) {
           const query = searchQuery.toLowerCase()
           result = result.filter((option) => {
@@ -233,10 +242,18 @@ const Combobox = memo(
        */
       const filteredGroups = useMemo(() => {
         if (!groups) return null
-        if (!searchable || !searchQuery) return groups
+
+        const baseGroups = groups
+          .map((group) => ({
+            ...group,
+            items: group.items.filter((opt) => !opt.hidden),
+          }))
+          .filter((group) => group.items.length > 0)
+
+        if (!searchable || !searchQuery) return baseGroups
 
         const query = searchQuery.toLowerCase()
-        return groups
+        return baseGroups
           .map((group) => ({
             ...group,
             items: group.items.filter((option) => {
@@ -252,13 +269,16 @@ const Combobox = memo(
        * Handles selection of an option
        */
       const handleSelect = useCallback(
-        (selectedValue: string, customOnSelect?: () => void) => {
+        (selectedValue: string, customOnSelect?: () => void, keepOpen?: boolean) => {
           // If option has custom onSelect, use it instead
           if (customOnSelect) {
             customOnSelect()
-            setOpen(false)
-            setHighlightedIndex(-1)
+            // Always reset search/highlight so stale queries don't filter new options
             setSearchQuery('')
+            setHighlightedIndex(-1)
+            if (!keepOpen) {
+              setOpen(false)
+            }
             return
           }
 
@@ -270,11 +290,13 @@ const Combobox = memo(
             onMultiSelectChange(newValues)
           } else {
             onChange?.(selectedValue)
-            setOpen(false)
-            setHighlightedIndex(-1)
-            setSearchQuery('')
-            if (editable && inputRef.current) {
-              inputRef.current.blur()
+            if (!keepOpen) {
+              setOpen(false)
+              setHighlightedIndex(-1)
+              setSearchQuery('')
+              if (editable && inputRef.current) {
+                inputRef.current.blur()
+              }
             }
           }
         },
@@ -343,7 +365,7 @@ const Combobox = memo(
               e.preventDefault()
               const selectedOption = filteredOptions[highlightedIndex]
               if (selectedOption && !selectedOption.disabled) {
-                handleSelect(selectedOption.value, selectedOption.onSelect)
+                handleSelect(selectedOption.value, selectedOption.onSelect, selectedOption.keepOpen)
               }
             } else if (!editable) {
               e.preventDefault()
@@ -378,8 +400,36 @@ const Combobox = memo(
               setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : filteredOptions.length - 1))
             }
           }
+
+          if (e.key === 'ArrowRight') {
+            if (open && highlightedIndex >= 0) {
+              const highlightedOption = filteredOptions[highlightedIndex]
+              if (highlightedOption?.keepOpen && highlightedOption?.onSelect) {
+                e.preventDefault()
+                handleSelect(highlightedOption.value, highlightedOption.onSelect, true)
+              }
+            }
+          }
+
+          if (e.key === 'ArrowLeft') {
+            if (open && onArrowLeft) {
+              e.preventDefault()
+              onArrowLeft()
+              setSearchQuery('')
+              setHighlightedIndex(-1)
+            }
+          }
         },
-        [disabled, open, highlightedIndex, filteredOptions, handleSelect, editable, inputRef]
+        [
+          disabled,
+          open,
+          highlightedIndex,
+          filteredOptions,
+          handleSelect,
+          editable,
+          inputRef,
+          onArrowLeft,
+        ]
       )
 
       /**
@@ -412,13 +462,25 @@ const Combobox = memo(
         [disabled, editable, inputRef]
       )
 
+      const effectiveHighlightedIndex =
+        highlightedIndex >= 0 && highlightedIndex < filteredOptions.length ? highlightedIndex : -1
+
+      /**
+       * Reset highlighted index when filtered options change and index is out of bounds
+       */
+      useEffect(() => {
+        if (highlightedIndex >= 0 && highlightedIndex >= filteredOptions.length) {
+          setHighlightedIndex(-1)
+        }
+      }, [filteredOptions, highlightedIndex])
+
       /**
        * Scroll highlighted option into view
        */
       useEffect(() => {
-        if (highlightedIndex >= 0 && dropdownRef.current) {
+        if (effectiveHighlightedIndex >= 0 && dropdownRef.current) {
           const highlightedElement = dropdownRef.current.querySelector(
-            `[data-option-index="${highlightedIndex}"]`
+            `[data-option-index="${effectiveHighlightedIndex}"]`
           )
           if (highlightedElement) {
             highlightedElement.scrollIntoView({
@@ -427,19 +489,7 @@ const Combobox = memo(
             })
           }
         }
-      }, [highlightedIndex])
-
-      /**
-       * Adjust highlighted index when filtered options change
-       */
-      useEffect(() => {
-        setHighlightedIndex((prev) => {
-          if (prev >= 0 && prev < filteredOptions.length) {
-            return prev
-          }
-          return -1
-        })
-      }, [filteredOptions])
+      }, [effectiveHighlightedIndex])
 
       const SelectedIcon = selectedOption?.icon
 
@@ -513,6 +563,7 @@ const Combobox = memo(
                     role='combobox'
                     aria-expanded={open}
                     aria-haspopup='listbox'
+                    aria-controls={listboxId}
                     aria-disabled={disabled}
                     tabIndex={disabled ? -1 : 0}
                     className={cn(
@@ -588,9 +639,17 @@ const Combobox = memo(
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => {
                       // Forward navigation keys to main handler
+                      // Only forward ArrowLeft/ArrowRight when cursor is at the boundary
+                      // so normal text cursor movement still works in the search input
+                      const input = e.currentTarget
+                      const forwardArrowLeft = e.key === 'ArrowLeft' && input.selectionStart === 0
+                      const forwardArrowRight =
+                        e.key === 'ArrowRight' && input.selectionStart === input.value.length
                       if (
                         e.key === 'ArrowDown' ||
                         e.key === 'ArrowUp' ||
+                        forwardArrowRight ||
+                        forwardArrowLeft ||
                         e.key === 'Enter' ||
                         e.key === 'Escape'
                       ) {
@@ -616,7 +675,7 @@ const Combobox = memo(
                   }
                 }}
               >
-                <div ref={dropdownRef} role='listbox'>
+                <div ref={dropdownRef} role='listbox' id={listboxId}>
                   {isLoading ? (
                     <div className='flex items-center justify-center py-[14px]'>
                       <Loader2 className='h-[16px] w-[16px] animate-spin text-[var(--text-muted)]' />
@@ -654,7 +713,7 @@ const Combobox = memo(
                             const globalIndex = filteredOptions.findIndex(
                               (o) => o.value === option.value
                             )
-                            const isHighlighted = globalIndex === highlightedIndex
+                            const isHighlighted = globalIndex === effectiveHighlightedIndex
                             const OptionIcon = option.icon
 
                             return (
@@ -668,7 +727,7 @@ const Combobox = memo(
                                   e.preventDefault()
                                   e.stopPropagation()
                                   if (!option.disabled) {
-                                    handleSelect(option.value, option.onSelect)
+                                    handleSelect(option.value, option.onSelect, option.keepOpen)
                                   }
                                 }}
                                 onMouseEnter={() =>
@@ -690,6 +749,7 @@ const Combobox = memo(
                                 <span className='flex-1 truncate text-[var(--text-primary)]'>
                                   {option.label}
                                 </span>
+                                {option.suffixElement}
                                 {multiSelect && isSelected && (
                                   <Check className='ml-[8px] h-[12px] w-[12px] flex-shrink-0 text-[var(--text-primary)]' />
                                 )}
@@ -729,7 +789,7 @@ const Combobox = memo(
                         const isSelected = multiSelect
                           ? multiSelectValues?.includes(option.value)
                           : effectiveSelectedValue === option.value
-                        const isHighlighted = index === highlightedIndex
+                        const isHighlighted = index === effectiveHighlightedIndex
                         const OptionIcon = option.icon
 
                         return (
@@ -743,7 +803,7 @@ const Combobox = memo(
                               e.preventDefault()
                               e.stopPropagation()
                               if (!option.disabled) {
-                                handleSelect(option.value, option.onSelect)
+                                handleSelect(option.value, option.onSelect, option.keepOpen)
                               }
                             }}
                             onMouseEnter={() => !option.disabled && setHighlightedIndex(index)}
@@ -763,6 +823,7 @@ const Combobox = memo(
                             <span className='flex-1 truncate text-[var(--text-primary)]'>
                               {option.label}
                             </span>
+                            {option.suffixElement}
                             {multiSelect && isSelected && (
                               <Check className='ml-[8px] h-[12px] w-[12px] flex-shrink-0 text-[var(--text-primary)]' />
                             )}

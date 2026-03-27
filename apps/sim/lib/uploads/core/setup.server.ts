@@ -83,5 +83,3 @@ if (typeof process !== 'undefined') {
     logger.info(`S3 copilot bucket: ${env.S3_COPILOT_BUCKET_NAME}`)
   }
 }
-
-export default ensureUploadsDirectory

@@ -1,6 +1,7 @@
 import { SalesforceIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { SalesforceResponse } from '@/tools/salesforce/types'
 
 export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
@@ -12,6 +13,8 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
     'Integrate Salesforce into your workflow. Manage accounts, contacts, leads, opportunities, cases, and tasks with powerful automation capabilities.',
   docsLink: 'https://docs.sim.ai/tools/salesforce',
   category: 'tools',
+  integrationType: IntegrationType.CRM,
+  tags: ['sales-engagement', 'customer-support'],
   bgColor: '#E0E0E0',
   icon: SalesforceIcon,
   subBlocks: [
@@ -62,9 +65,20 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       id: 'credential',
       title: 'Salesforce Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       serviceId: 'salesforce',
-      requiredScopes: ['api', 'refresh_token', 'openid', 'offline_access'],
+      requiredScopes: getScopesForService('salesforce'),
       placeholder: 'Select Salesforce account',
+      required: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'Salesforce Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
     },
     // Common fields for GET operations
@@ -614,8 +628,8 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
         }
       },
       params: (params) => {
-        const { credential, operation, ...rest } = params
-        const cleanParams: Record<string, any> = { credential }
+        const { oauthCredential, operation, ...rest } = params
+        const cleanParams: Record<string, any> = { oauthCredential }
         Object.entries(rest).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== '') {
             cleanParams[key] = value
@@ -627,7 +641,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Salesforce credential' },
+    oauthCredential: { type: 'string', description: 'Salesforce credential' },
   },
   outputs: {
     success: { type: 'boolean', description: 'Operation success status' },

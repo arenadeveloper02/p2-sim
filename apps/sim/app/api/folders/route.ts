@@ -1,12 +1,23 @@
 import { db } from '@sim/db'
-import { workflowFolder } from '@sim/db/schema'
+import { workflow, workflowFolder } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, asc, desc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull, min } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('FoldersAPI')
+
+const CreateFolderSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(1, 'Name is required'),
+  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  parentId: z.string().optional(),
+  color: z.string().optional(),
+  sortOrder: z.number().int().optional(),
+})
 
 // GET - Fetch folders for a workspace
 export async function GET(request: NextRequest) {
@@ -58,13 +69,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, workspaceId, parentId, color, sortOrder: providedSortOrder } = body
+    const {
+      id: clientId,
+      name,
+      workspaceId,
+      parentId,
+      color,
+      sortOrder: providedSortOrder,
+    } = CreateFolderSchema.parse(body)
 
-    if (!name || !workspaceId) {
-      return NextResponse.json({ error: 'Name and workspace ID are required' }, { status: 400 })
-    }
-
-    // Check if user has workspace permissions (at least 'write' access to create folders)
     const workspacePermission = await getUserEntityPermissions(
       session.user.id,
       'workspace',
@@ -78,27 +91,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate a new ID
-    const id = crypto.randomUUID()
+    const id = clientId || crypto.randomUUID()
 
     const newFolder = await db.transaction(async (tx) => {
       let sortOrder: number
       if (providedSortOrder !== undefined) {
         sortOrder = providedSortOrder
       } else {
-        const existingFolders = await tx
-          .select({ sortOrder: workflowFolder.sortOrder })
-          .from(workflowFolder)
-          .where(
-            and(
-              eq(workflowFolder.workspaceId, workspaceId),
-              parentId ? eq(workflowFolder.parentId, parentId) : isNull(workflowFolder.parentId)
-            )
-          )
-          .orderBy(desc(workflowFolder.sortOrder))
-          .limit(1)
+        const folderParentCondition = parentId
+          ? eq(workflowFolder.parentId, parentId)
+          : isNull(workflowFolder.parentId)
+        const workflowParentCondition = parentId
+          ? eq(workflow.folderId, parentId)
+          : isNull(workflow.folderId)
 
-        sortOrder = existingFolders.length > 0 ? existingFolders[0].sortOrder + 1 : 0
+        const [[folderResult], [workflowResult]] = await Promise.all([
+          tx
+            .select({ minSortOrder: min(workflowFolder.sortOrder) })
+            .from(workflowFolder)
+            .where(and(eq(workflowFolder.workspaceId, workspaceId), folderParentCondition)),
+          tx
+            .select({ minSortOrder: min(workflow.sortOrder) })
+            .from(workflow)
+            .where(and(eq(workflow.workspaceId, workspaceId), workflowParentCondition)),
+        ])
+
+        const minSortOrder = [folderResult?.minSortOrder, workflowResult?.minSortOrder].reduce<
+          number | null
+        >((currentMin, candidate) => {
+          if (candidate == null) return currentMin
+          if (currentMin == null) return candidate
+          return Math.min(currentMin, candidate)
+        }, null)
+
+        sortOrder = minSortOrder != null ? minSortOrder - 1 : 0
       }
 
       const [folder] = await tx
@@ -119,8 +145,30 @@ export async function POST(request: NextRequest) {
 
     logger.info('Created new folder:', { id, name, workspaceId, parentId })
 
+    recordAudit({
+      workspaceId,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
+      action: AuditAction.FOLDER_CREATED,
+      resourceType: AuditResourceType.FOLDER,
+      resourceId: id,
+      resourceName: name.trim(),
+      description: `Created folder "${name.trim()}"`,
+      metadata: { name: name.trim() },
+      request,
+    })
+
     return NextResponse.json({ folder: newFolder })
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.warn('Invalid folder creation data', { errors: error.errors })
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      )
+    }
+
     logger.error('Error creating folder:', { error })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

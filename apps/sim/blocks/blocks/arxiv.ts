@@ -1,5 +1,6 @@
 import { ArxivIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { IntegrationType } from '@/blocks/types'
 import type { ArxivResponse } from '@/tools/arxiv/types'
 
 export const ArxivBlock: BlockConfig<ArxivResponse> = {
@@ -10,6 +11,8 @@ export const ArxivBlock: BlockConfig<ArxivResponse> = {
     'Integrates ArXiv into the workflow. Can search for papers, get paper details, and get author papers. Does not require OAuth or an API key.',
   docsLink: 'https://docs.sim.ai/tools/arxiv',
   category: 'tools',
+  integrationType: IntegrationType.Search,
+  tags: ['document-processing', 'knowledge-base'],
   bgColor: '#E0E0E0',
   icon: ArxivIcon,
   subBlocks: [
@@ -110,11 +113,6 @@ export const ArxivBlock: BlockConfig<ArxivResponse> = {
     access: ['arxiv_search', 'arxiv_get_paper', 'arxiv_get_author_papers'],
     config: {
       tool: (params) => {
-        // Convert maxResults to a number for operations that use it
-        if (params.maxResults) {
-          params.maxResults = Number(params.maxResults)
-        }
-
         switch (params.operation) {
           case 'arxiv_search':
             return 'arxiv_search'
@@ -125,6 +123,11 @@ export const ArxivBlock: BlockConfig<ArxivResponse> = {
           default:
             return 'arxiv_search'
         }
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.maxResults) result.maxResults = Number(params.maxResults)
+        return result
       },
     },
   },

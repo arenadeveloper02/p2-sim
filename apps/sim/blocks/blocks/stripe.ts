@@ -1,6 +1,6 @@
 import { StripeIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { StripeResponse } from '@/tools/stripe/types'
 import { getTrigger } from '@/triggers'
 
@@ -13,6 +13,8 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
     'Integrates Stripe into the workflow. Manage payment intents, customers, subscriptions, invoices, charges, products, prices, and events. Can be used in trigger mode to trigger a workflow when a Stripe event occurs.',
   docsLink: 'https://docs.sim.ai/tools/stripe',
   category: 'tools',
+  integrationType: IntegrationType.Ecommerce,
+  tags: ['payments', 'subscriptions', 'webhooks'],
   bgColor: '#635BFF',
   icon: StripeIcon,
   subBlocks: [
@@ -176,6 +178,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: ['update_payment_intent'],
       },
+      mode: 'advanced',
     },
     {
       id: 'payment_method',
@@ -252,6 +255,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: ['create_customer', 'update_customer'],
       },
+      mode: 'advanced',
     },
     {
       id: 'address',
@@ -262,6 +266,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: ['create_customer', 'update_customer'],
       },
+      mode: 'advanced',
     },
     // Subscription specific fields - REQUIRED for create_subscription
     {
@@ -295,6 +300,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'create_subscription',
       },
+      mode: 'advanced',
     },
     {
       id: 'default_payment_method',
@@ -305,6 +311,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'create_subscription',
       },
+      mode: 'advanced',
     },
     {
       id: 'cancel_at_period_end',
@@ -318,6 +325,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: ['create_subscription', 'update_subscription'],
       },
+      mode: 'advanced',
     },
     // Invoice specific fields
     {
@@ -332,6 +340,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'create_invoice',
       },
+      mode: 'advanced',
     },
     {
       id: 'auto_advance',
@@ -345,6 +354,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: ['create_invoice', 'update_invoice', 'finalize_invoice'],
       },
+      mode: 'advanced',
     },
     // Charge specific fields
     {
@@ -369,6 +379,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'create_charge',
       },
+      mode: 'advanced',
     },
     // Product specific fields
     {
@@ -383,6 +394,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: ['create_product', 'update_product', 'update_price'],
       },
+      mode: 'advanced',
     },
     {
       id: 'images',
@@ -393,6 +405,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: ['create_product', 'update_product'],
       },
+      mode: 'advanced',
     },
     // Price specific fields
     {
@@ -447,6 +460,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
           'update_product',
         ],
       },
+      mode: 'advanced',
     },
     // Common metadata field
     {
@@ -473,6 +487,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
           'update_price',
         ],
       },
+      mode: 'advanced',
     },
     // List/Search common fields
     {
@@ -500,6 +515,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
           'search_prices',
         ],
       },
+      mode: 'advanced',
     },
     {
       id: 'query',
@@ -530,6 +546,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: ['list_subscriptions', 'list_invoices'],
       },
+      mode: 'advanced',
     },
     {
       id: 'receipt_email',
@@ -540,6 +557,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'create_payment_intent',
       },
+      mode: 'advanced',
     },
     {
       id: 'cancellation_reason',
@@ -550,6 +568,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'cancel_payment_intent',
       },
+      mode: 'advanced',
     },
     {
       id: 'amount_to_capture',
@@ -560,6 +579,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'capture_payment_intent',
       },
+      mode: 'advanced',
     },
     {
       id: 'prorate',
@@ -573,6 +593,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'cancel_subscription',
       },
+      mode: 'advanced',
     },
     {
       id: 'invoice_now',
@@ -586,6 +607,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'cancel_subscription',
       },
+      mode: 'advanced',
     },
     {
       id: 'paid_out_of_band',
@@ -599,6 +621,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'pay_invoice',
       },
+      mode: 'advanced',
     },
     {
       id: 'type',
@@ -609,6 +632,7 @@ export const StripeBlock: BlockConfig<StripeResponse> = {
         field: 'operation',
         value: 'list_events',
       },
+      mode: 'advanced',
     },
     ...getTrigger('stripe_webhook').subBlocks,
   ],

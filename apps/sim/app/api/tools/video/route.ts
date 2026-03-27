@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import type { UserFile } from '@/executor/types'
 import type { VideoRequestBody } from '@/tools/video/types'
@@ -326,11 +327,12 @@ async function generateWithRunway(
 
   logger.info(`[${requestId}] Runway task created: ${taskId}`)
 
-  const maxAttempts = 120 // 10 minutes with 5-second intervals
+  const pollIntervalMs = 5000
+  const maxAttempts = Math.ceil(getMaxExecutionTimeout() / pollIntervalMs)
   let attempts = 0
 
   while (attempts < maxAttempts) {
-    await sleep(5000) // Poll every 5 seconds
+    await sleep(pollIntervalMs)
 
     const statusResponse = await fetch(`https://api.dev.runwayml.com/v1/tasks/${taskId}`, {
       headers: {
@@ -340,6 +342,7 @@ async function generateWithRunway(
     })
 
     if (!statusResponse.ok) {
+      await statusResponse.text().catch(() => {})
       throw new Error(`Runway status check failed: ${statusResponse.status}`)
     }
 
@@ -350,6 +353,7 @@ async function generateWithRunway(
 
       const videoResponse = await fetch(statusData.output[0])
       if (!videoResponse.ok) {
+        await videoResponse.text().catch(() => {})
         throw new Error(`Failed to download video: ${videoResponse.status}`)
       }
 
@@ -370,7 +374,7 @@ async function generateWithRunway(
     attempts++
   }
 
-  throw new Error('Runway generation timed out after 10 minutes')
+  throw new Error('Runway generation timed out')
 }
 
 async function generateWithVeo(
@@ -429,11 +433,12 @@ async function generateWithVeo(
 
   logger.info(`[${requestId}] Veo operation created: ${operationName}`)
 
-  const maxAttempts = 60 // 5 minutes with 5-second intervals
+  const pollIntervalMs = 5000
+  const maxAttempts = Math.ceil(getMaxExecutionTimeout() / pollIntervalMs)
   let attempts = 0
 
   while (attempts < maxAttempts) {
-    await sleep(5000)
+    await sleep(pollIntervalMs)
 
     const statusResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/${operationName}`,
@@ -445,6 +450,7 @@ async function generateWithVeo(
     )
 
     if (!statusResponse.ok) {
+      await statusResponse.text().catch(() => {})
       throw new Error(`Veo status check failed: ${statusResponse.status}`)
     }
 
@@ -469,6 +475,7 @@ async function generateWithVeo(
       })
 
       if (!videoResponse.ok) {
+        await videoResponse.text().catch(() => {})
         throw new Error(`Failed to download video: ${videoResponse.status}`)
       }
 
@@ -485,7 +492,7 @@ async function generateWithVeo(
     attempts++
   }
 
-  throw new Error('Veo generation timed out after 5 minutes')
+  throw new Error('Veo generation timed out')
 }
 
 async function generateWithLuma(
@@ -541,11 +548,12 @@ async function generateWithLuma(
 
   logger.info(`[${requestId}] Luma generation created: ${generationId}`)
 
-  const maxAttempts = 120 // 10 minutes
+  const pollIntervalMs = 5000
+  const maxAttempts = Math.ceil(getMaxExecutionTimeout() / pollIntervalMs)
   let attempts = 0
 
   while (attempts < maxAttempts) {
-    await sleep(5000)
+    await sleep(pollIntervalMs)
 
     const statusResponse = await fetch(
       `https://api.lumalabs.ai/dream-machine/v1/generations/${generationId}`,
@@ -557,6 +565,7 @@ async function generateWithLuma(
     )
 
     if (!statusResponse.ok) {
+      await statusResponse.text().catch(() => {})
       throw new Error(`Luma status check failed: ${statusResponse.status}`)
     }
 
@@ -572,6 +581,7 @@ async function generateWithLuma(
 
       const videoResponse = await fetch(videoUrl)
       if (!videoResponse.ok) {
+        await videoResponse.text().catch(() => {})
         throw new Error(`Failed to download video: ${videoResponse.status}`)
       }
 
@@ -592,7 +602,7 @@ async function generateWithLuma(
     attempts++
   }
 
-  throw new Error('Luma generation timed out after 10 minutes')
+  throw new Error('Luma generation timed out')
 }
 
 async function generateWithMiniMax(
@@ -658,14 +668,13 @@ async function generateWithMiniMax(
 
   logger.info(`[${requestId}] MiniMax task created: ${taskId}`)
 
-  // Poll for completion (6-10 minutes typical)
-  const maxAttempts = 120 // 10 minutes with 5-second intervals
+  const pollIntervalMs = 5000
+  const maxAttempts = Math.ceil(getMaxExecutionTimeout() / pollIntervalMs)
   let attempts = 0
 
   while (attempts < maxAttempts) {
-    await sleep(5000)
+    await sleep(pollIntervalMs)
 
-    // Query task status
     const statusResponse = await fetch(
       `https://api.minimax.io/v1/query/video_generation?task_id=${taskId}`,
       {
@@ -676,6 +685,7 @@ async function generateWithMiniMax(
     )
 
     if (!statusResponse.ok) {
+      await statusResponse.text().catch(() => {})
       throw new Error(`MiniMax status check failed: ${statusResponse.status}`)
     }
 
@@ -709,6 +719,7 @@ async function generateWithMiniMax(
       )
 
       if (!fileResponse.ok) {
+        await fileResponse.text().catch(() => {})
         throw new Error(`Failed to download video: ${fileResponse.status}`)
       }
 
@@ -722,6 +733,7 @@ async function generateWithMiniMax(
       // Download the actual video file
       const videoResponse = await fetch(videoUrl)
       if (!videoResponse.ok) {
+        await videoResponse.text().catch(() => {})
         throw new Error(`Failed to download video from URL: ${videoResponse.status}`)
       }
 
@@ -743,7 +755,7 @@ async function generateWithMiniMax(
     attempts++
   }
 
-  throw new Error('MiniMax generation timed out after 10 minutes')
+  throw new Error('MiniMax generation timed out')
 }
 
 // Helper function to strip subpaths from Fal.ai model IDs for status/result endpoints
@@ -861,11 +873,12 @@ async function generateWithFalAI(
   // Get base model ID (without subpath) for status and result endpoints
   const baseModelId = getBaseModelId(falModelId)
 
-  const maxAttempts = 96 // 8 minutes with 5-second intervals
+  const pollIntervalMs = 5000
+  const maxAttempts = Math.ceil(getMaxExecutionTimeout() / pollIntervalMs)
   let attempts = 0
 
   while (attempts < maxAttempts) {
-    await sleep(5000)
+    await sleep(pollIntervalMs)
 
     const statusResponse = await fetch(
       `https://queue.fal.run/${baseModelId}/requests/${requestIdFal}/status`,
@@ -877,6 +890,7 @@ async function generateWithFalAI(
     )
 
     if (!statusResponse.ok) {
+      await statusResponse.text().catch(() => {})
       throw new Error(`Fal.ai status check failed: ${statusResponse.status}`)
     }
 
@@ -895,6 +909,7 @@ async function generateWithFalAI(
       )
 
       if (!resultResponse.ok) {
+        await resultResponse.text().catch(() => {})
         throw new Error(`Failed to fetch result: ${resultResponse.status}`)
       }
 
@@ -907,6 +922,7 @@ async function generateWithFalAI(
 
       const videoResponse = await fetch(videoUrl)
       if (!videoResponse.ok) {
+        await videoResponse.text().catch(() => {})
         throw new Error(`Failed to download video: ${videoResponse.status}`)
       }
 
@@ -938,7 +954,7 @@ async function generateWithFalAI(
     attempts++
   }
 
-  throw new Error('Fal.ai generation timed out after 8 minutes')
+  throw new Error('Fal.ai generation timed out')
 }
 
 function getVideoDimensions(

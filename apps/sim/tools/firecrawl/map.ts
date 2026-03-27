@@ -15,7 +15,7 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The base URL to map and discover links from',
+      description: 'The base URL to map and discover links from (e.g., "https://example.com")',
     },
     search: {
       type: 'string',
@@ -44,8 +44,9 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
     limit: {
       type: 'number',
       required: false,
-      visibility: 'user-only',
-      description: 'Maximum number of links to return (max: 100,000, default: 5,000)',
+      visibility: 'user-or-llm',
+      description:
+        'Maximum number of links to return (e.g., 100, 1000, 5000). Max: 100,000, default: 5,000',
     },
     timeout: {
       type: 'number',
@@ -64,6 +65,34 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
       required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
+    },
+  },
+
+  hosting: {
+    envKeyPrefix: 'FIRECRAWL_API_KEY',
+    apiKeyParam: 'apiKey',
+    byokProviderId: 'firecrawl',
+    pricing: {
+      type: 'custom',
+      getCost: (_params, output) => {
+        if (output.creditsUsed == null) {
+          throw new Error('Firecrawl response missing creditsUsed field')
+        }
+
+        const creditsUsed = Number(output.creditsUsed)
+        if (Number.isNaN(creditsUsed)) {
+          throw new Error('Firecrawl response returned a non-numeric creditsUsed field')
+        }
+
+        return {
+          cost: creditsUsed * 0.001,
+          metadata: { creditsUsed },
+        }
+      },
+    },
+    rateLimit: {
+      mode: 'per_request',
+      requestsPerMinute: 100,
     },
   },
 
@@ -101,6 +130,7 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
       output: {
         success: data.success,
         links: data.links || [],
+        creditsUsed: 1,
       },
     }
   },

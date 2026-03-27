@@ -1,9 +1,11 @@
 import { db } from '@sim/db'
 import { workflowMcpServer, workflowMcpTool } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { mcpPubSub } from '@/lib/mcp/pubsub'
 import { createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
 import { sanitizeToolName } from '@/lib/mcp/workflow-tool-schema'
 
@@ -30,7 +32,11 @@ export const GET = withMcpAuth<RouteParams>('read')(
         .select({ id: workflowMcpServer.id })
         .from(workflowMcpServer)
         .where(
-          and(eq(workflowMcpServer.id, serverId), eq(workflowMcpServer.workspaceId, workspaceId))
+          and(
+            eq(workflowMcpServer.id, serverId),
+            eq(workflowMcpServer.workspaceId, workspaceId),
+            isNull(workflowMcpServer.deletedAt)
+          )
         )
         .limit(1)
 
@@ -41,7 +47,13 @@ export const GET = withMcpAuth<RouteParams>('read')(
       const [tool] = await db
         .select()
         .from(workflowMcpTool)
-        .where(and(eq(workflowMcpTool.id, toolId), eq(workflowMcpTool.serverId, serverId)))
+        .where(
+          and(
+            eq(workflowMcpTool.id, toolId),
+            eq(workflowMcpTool.serverId, serverId),
+            isNull(workflowMcpTool.archivedAt)
+          )
+        )
         .limit(1)
 
       if (!tool) {
@@ -64,7 +76,11 @@ export const GET = withMcpAuth<RouteParams>('read')(
  * PATCH - Update a tool's configuration
  */
 export const PATCH = withMcpAuth<RouteParams>('write')(
-  async (request: NextRequest, { userId, workspaceId, requestId }, { params }) => {
+  async (
+    request: NextRequest,
+    { userId, userName, userEmail, workspaceId, requestId },
+    { params }
+  ) => {
     try {
       const { id: serverId, toolId } = await params
       const body = getParsedBody(request) || (await request.json())
@@ -75,7 +91,11 @@ export const PATCH = withMcpAuth<RouteParams>('write')(
         .select({ id: workflowMcpServer.id })
         .from(workflowMcpServer)
         .where(
-          and(eq(workflowMcpServer.id, serverId), eq(workflowMcpServer.workspaceId, workspaceId))
+          and(
+            eq(workflowMcpServer.id, serverId),
+            eq(workflowMcpServer.workspaceId, workspaceId),
+            isNull(workflowMcpServer.deletedAt)
+          )
         )
         .limit(1)
 
@@ -86,7 +106,13 @@ export const PATCH = withMcpAuth<RouteParams>('write')(
       const [existingTool] = await db
         .select({ id: workflowMcpTool.id })
         .from(workflowMcpTool)
-        .where(and(eq(workflowMcpTool.id, toolId), eq(workflowMcpTool.serverId, serverId)))
+        .where(
+          and(
+            eq(workflowMcpTool.id, toolId),
+            eq(workflowMcpTool.serverId, serverId),
+            isNull(workflowMcpTool.archivedAt)
+          )
+        )
         .limit(1)
 
       if (!existingTool) {
@@ -115,6 +141,21 @@ export const PATCH = withMcpAuth<RouteParams>('write')(
 
       logger.info(`[${requestId}] Successfully updated tool ${toolId}`)
 
+      mcpPubSub?.publishWorkflowToolsChanged({ serverId, workspaceId })
+
+      recordAudit({
+        workspaceId,
+        actorId: userId,
+        actorName: userName,
+        actorEmail: userEmail,
+        action: AuditAction.MCP_SERVER_UPDATED,
+        resourceType: AuditResourceType.MCP_SERVER,
+        resourceId: serverId,
+        description: `Updated tool "${updatedTool.toolName}" in MCP server`,
+        metadata: { toolId, toolName: updatedTool.toolName },
+        request,
+      })
+
       return createMcpSuccessResponse({ tool: updatedTool })
     } catch (error) {
       logger.error(`[${requestId}] Error updating tool:`, error)
@@ -131,7 +172,11 @@ export const PATCH = withMcpAuth<RouteParams>('write')(
  * DELETE - Remove a tool from an MCP server
  */
 export const DELETE = withMcpAuth<RouteParams>('write')(
-  async (request: NextRequest, { userId, workspaceId, requestId }, { params }) => {
+  async (
+    request: NextRequest,
+    { userId, userName, userEmail, workspaceId, requestId },
+    { params }
+  ) => {
     try {
       const { id: serverId, toolId } = await params
 
@@ -141,7 +186,11 @@ export const DELETE = withMcpAuth<RouteParams>('write')(
         .select({ id: workflowMcpServer.id })
         .from(workflowMcpServer)
         .where(
-          and(eq(workflowMcpServer.id, serverId), eq(workflowMcpServer.workspaceId, workspaceId))
+          and(
+            eq(workflowMcpServer.id, serverId),
+            eq(workflowMcpServer.workspaceId, workspaceId),
+            isNull(workflowMcpServer.deletedAt)
+          )
         )
         .limit(1)
 
@@ -159,6 +208,21 @@ export const DELETE = withMcpAuth<RouteParams>('write')(
       }
 
       logger.info(`[${requestId}] Successfully deleted tool ${toolId}`)
+
+      mcpPubSub?.publishWorkflowToolsChanged({ serverId, workspaceId })
+
+      recordAudit({
+        workspaceId,
+        actorId: userId,
+        actorName: userName,
+        actorEmail: userEmail,
+        action: AuditAction.MCP_SERVER_UPDATED,
+        resourceType: AuditResourceType.MCP_SERVER,
+        resourceId: serverId,
+        description: `Removed tool "${deletedTool.toolName}" from MCP server`,
+        metadata: { toolId, toolName: deletedTool.toolName },
+        request,
+      })
 
       return createMcpSuccessResponse({ message: `Tool ${toolId} deleted successfully` })
     } catch (error) {

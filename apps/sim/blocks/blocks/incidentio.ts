@@ -1,6 +1,6 @@
 import { IncidentioIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { IncidentioResponse } from '@/tools/incidentio/types'
 
 export const IncidentioBlock: BlockConfig<IncidentioResponse> = {
@@ -12,6 +12,8 @@ export const IncidentioBlock: BlockConfig<IncidentioResponse> = {
     'Integrate incident.io into the workflow. Manage incidents, actions, follow-ups, workflows, schedules, escalations, custom fields, and more.',
   docsLink: 'https://docs.sim.ai/tools/incidentio',
   category: 'tools',
+  integrationType: IntegrationType.DeveloperTools,
+  tags: ['incident-management', 'monitoring'],
   bgColor: '#E0E0E0',
   icon: IncidentioIcon,
   subBlocks: [
@@ -92,12 +94,9 @@ export const IncidentioBlock: BlockConfig<IncidentioResponse> = {
         field: 'operation',
         value: [
           'incidentio_incidents_list',
-          'incidentio_actions_list',
-          'incidentio_follow_ups_list',
           'incidentio_users_list',
           'incidentio_workflows_list',
           'incidentio_schedules_list',
-          'incidentio_escalations_list',
           'incidentio_incident_updates_list',
           'incidentio_schedule_entries_list',
         ],
@@ -113,6 +112,7 @@ export const IncidentioBlock: BlockConfig<IncidentioResponse> = {
         field: 'operation',
         value: [
           'incidentio_incidents_list',
+          'incidentio_users_list',
           'incidentio_workflows_list',
           'incidentio_schedules_list',
           'incidentio_incident_updates_list',
@@ -828,16 +828,6 @@ Return ONLY the JSON array - no explanations or markdown formatting.`,
     ],
     config: {
       tool: (params) => {
-        // Convert page_size to a number if provided
-        if (params.page_size) {
-          params.page_size = Number(params.page_size)
-        }
-
-        // Convert notify_incident_channel from string to boolean
-        if (params.notify_incident_channel !== undefined) {
-          params.notify_incident_channel = params.notify_incident_channel === 'true'
-        }
-
         switch (params.operation) {
           case 'incidentio_incidents_list':
             return 'incidentio_incidents_list'
@@ -930,6 +920,14 @@ Return ONLY the JSON array - no explanations or markdown formatting.`,
           default:
             return 'incidentio_incidents_list'
         }
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.page_size) result.page_size = Number(params.page_size)
+        if (params.notify_incident_channel !== undefined) {
+          result.notify_incident_channel = params.notify_incident_channel === 'true'
+        }
+        return result
       },
     },
   },

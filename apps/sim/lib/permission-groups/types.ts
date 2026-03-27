@@ -4,14 +4,17 @@ export interface PermissionGroupConfig {
   // Platform Configuration
   hideTraceSpans: boolean
   hideKnowledgeBaseTab: boolean
+  hideTablesTab: boolean
   hideCopilot: boolean
   hideApiKeysTab: boolean
   hideEnvironmentTab: boolean
   hideFilesTab: boolean
   disableMcpTools: boolean
   disableCustomTools: boolean
+  disableSkills: boolean
   hideTemplates: boolean
   disableInvitations: boolean
+  disablePublicApi: boolean
   // Deploy Modal Tabs
   hideDeployApi: boolean
   hideDeployMcp: boolean
@@ -25,14 +28,17 @@ export const DEFAULT_PERMISSION_GROUP_CONFIG: PermissionGroupConfig = {
   allowedModelProviders: null,
   hideTraceSpans: false,
   hideKnowledgeBaseTab: false,
+  hideTablesTab: false,
   hideCopilot: false,
   hideApiKeysTab: false,
   hideEnvironmentTab: false,
   hideFilesTab: false,
   disableMcpTools: false,
   disableCustomTools: false,
+  disableSkills: false,
   hideTemplates: false,
   disableInvitations: false,
+  disablePublicApi: false,
   hideDeployApi: false,
   hideDeployMcp: false,
   hideDeployA2a: false,
@@ -53,14 +59,17 @@ export function parsePermissionGroupConfig(config: unknown): PermissionGroupConf
     hideTraceSpans: typeof c.hideTraceSpans === 'boolean' ? c.hideTraceSpans : false,
     hideKnowledgeBaseTab:
       typeof c.hideKnowledgeBaseTab === 'boolean' ? c.hideKnowledgeBaseTab : false,
+    hideTablesTab: typeof c.hideTablesTab === 'boolean' ? c.hideTablesTab : false,
     hideCopilot: typeof c.hideCopilot === 'boolean' ? c.hideCopilot : false,
     hideApiKeysTab: typeof c.hideApiKeysTab === 'boolean' ? c.hideApiKeysTab : false,
     hideEnvironmentTab: typeof c.hideEnvironmentTab === 'boolean' ? c.hideEnvironmentTab : false,
     hideFilesTab: typeof c.hideFilesTab === 'boolean' ? c.hideFilesTab : false,
     disableMcpTools: typeof c.disableMcpTools === 'boolean' ? c.disableMcpTools : false,
     disableCustomTools: typeof c.disableCustomTools === 'boolean' ? c.disableCustomTools : false,
+    disableSkills: typeof c.disableSkills === 'boolean' ? c.disableSkills : false,
     hideTemplates: typeof c.hideTemplates === 'boolean' ? c.hideTemplates : false,
     disableInvitations: typeof c.disableInvitations === 'boolean' ? c.disableInvitations : false,
+    disablePublicApi: typeof c.disablePublicApi === 'boolean' ? c.disablePublicApi : false,
     hideDeployApi: typeof c.hideDeployApi === 'boolean' ? c.hideDeployApi : false,
     hideDeployMcp: typeof c.hideDeployMcp === 'boolean' ? c.hideDeployMcp : false,
     hideDeployA2a: typeof c.hideDeployA2a === 'boolean' ? c.hideDeployA2a : false,

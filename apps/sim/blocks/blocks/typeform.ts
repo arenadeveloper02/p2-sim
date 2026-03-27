@@ -1,6 +1,6 @@
 import { TypeformIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { TypeformResponse } from '@/tools/typeform/types'
 import { getTrigger } from '@/triggers'
 
@@ -13,6 +13,8 @@ export const TypeformBlock: BlockConfig<TypeformResponse> = {
     'Integrate Typeform into the workflow. Can retrieve responses, download files, and get form insights. Can be used in trigger mode to trigger a workflow when a form is submitted. Requires API Key.',
   docsLink: 'https://docs.sim.ai/tools/typeform',
   category: 'tools',
+  integrationType: IntegrationType.Documents,
+  tags: ['forms', 'data-analytics'],
   bgColor: '#262627', // Typeform brand color
   icon: TypeformIcon,
   subBlocks: [
@@ -64,6 +66,20 @@ export const TypeformBlock: BlockConfig<TypeformResponse> = {
       title: 'Page Size',
       type: 'short-input',
       placeholder: 'Number of responses per page (default: 25)',
+      condition: { field: 'operation', value: 'typeform_responses' },
+    },
+    {
+      id: 'before',
+      title: 'Before (Cursor)',
+      type: 'short-input',
+      placeholder: 'Cursor token from previous response for pagination',
+      condition: { field: 'operation', value: 'typeform_responses' },
+    },
+    {
+      id: 'after',
+      title: 'After (Cursor)',
+      type: 'short-input',
+      placeholder: 'Cursor token from previous response for newer results',
       condition: { field: 'operation', value: 'typeform_responses' },
     },
     {
@@ -380,6 +396,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
     apiKey: { type: 'string', description: 'Personal access token' },
     // Response operation params
     pageSize: { type: 'number', description: 'Responses per page' },
+    before: { type: 'string', description: 'Cursor token for fetching the next page' },
+    after: { type: 'string', description: 'Cursor token for fetching newer results' },
     since: { type: 'string', description: 'Start date filter' },
     until: { type: 'string', description: 'End date filter' },
     completed: { type: 'string', description: 'Completion status filter' },

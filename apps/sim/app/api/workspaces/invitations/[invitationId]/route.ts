@@ -6,17 +6,20 @@ import {
   user,
   type WorkspaceInvitationStatus,
   workspace,
+  workspaceEnvironment,
   workspaceInvitation,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { WorkspaceInvitationEmail } from '@/components/emails'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress } from '@/lib/messaging/email/utils'
-import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
+import { getWorkspaceById, hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceInvitationAPI')
 
@@ -71,7 +74,7 @@ export async function GET(
     const workspaceDetails = await db
       .select()
       .from(workspace)
-      .where(eq(workspace.id, invitation.workspaceId))
+      .where(and(eq(workspace.id, invitation.workspaceId), isNull(workspace.archivedAt)))
       .then((rows) => rows[0])
 
     if (!workspaceDetails) {
@@ -139,7 +142,7 @@ export async function GET(
           .where(eq(workspaceInvitation.id, invitation.id))
 
         return NextResponse.redirect(
-          new URL(`/workspace/${invitation.workspaceId}/w`, getBaseUrl())
+          new URL(`/workspace/${invitation.workspaceId}/home`, getBaseUrl())
         )
       }
 
@@ -163,7 +166,37 @@ export async function GET(
           .where(eq(workspaceInvitation.id, invitation.id))
       })
 
-      return NextResponse.redirect(new URL(`/workspace/${invitation.workspaceId}/w`, getBaseUrl()))
+      const [wsEnvRow] = await db
+        .select({ variables: workspaceEnvironment.variables })
+        .from(workspaceEnvironment)
+        .where(eq(workspaceEnvironment.workspaceId, invitation.workspaceId))
+        .limit(1)
+      const wsEnvKeys = Object.keys((wsEnvRow?.variables as Record<string, string>) || {})
+      if (wsEnvKeys.length > 0) {
+        await syncWorkspaceEnvCredentials({
+          workspaceId: invitation.workspaceId,
+          envKeys: wsEnvKeys,
+          actingUserId: session.user.id,
+        })
+      }
+
+      recordAudit({
+        workspaceId: invitation.workspaceId,
+        actorId: session.user.id,
+        action: AuditAction.INVITATION_ACCEPTED,
+        resourceType: AuditResourceType.WORKSPACE,
+        resourceId: invitation.workspaceId,
+        actorName: session.user.name ?? undefined,
+        actorEmail: session.user.email ?? undefined,
+        resourceName: workspaceDetails.name,
+        description: `Accepted workspace invitation to "${workspaceDetails.name}"`,
+        metadata: { targetEmail: invitation.email },
+        request: req,
+      })
+
+      return NextResponse.redirect(
+        new URL(`/workspace/${invitation.workspaceId}/home`, getBaseUrl())
+      )
     }
 
     return NextResponse.json({
@@ -205,6 +238,11 @@ export async function DELETE(
       return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
     }
 
+    const activeWorkspace = await getWorkspaceById(invitation.workspaceId)
+    if (!activeWorkspace) {
+      return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
+    }
+
     const hasAdminAccess = await hasWorkspaceAdminAccess(session.user.id, invitation.workspaceId)
 
     if (!hasAdminAccess) {
@@ -216,6 +254,19 @@ export async function DELETE(
     }
 
     await db.delete(workspaceInvitation).where(eq(workspaceInvitation.id, invitationId))
+
+    recordAudit({
+      workspaceId: invitation.workspaceId,
+      actorId: session.user.id,
+      action: AuditAction.INVITATION_REVOKED,
+      resourceType: AuditResourceType.WORKSPACE,
+      resourceId: invitation.workspaceId,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      description: `Revoked workspace invitation for ${invitation.email}`,
+      metadata: { invitationId, targetEmail: invitation.email },
+      request: _request,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
