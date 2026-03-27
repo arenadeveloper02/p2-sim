@@ -34,7 +34,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
-import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
+import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 

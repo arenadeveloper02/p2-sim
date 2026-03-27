@@ -232,22 +232,14 @@ export const imagenTool: ToolConfig = {
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Generated image data',
-      properties: {
-        content: { type: 'string', description: 'Image identifier' },
-        image: { type: 'string', description: 'Base64 encoded image data' },
-        metadata: {
-          type: 'object',
-          description: 'Image generation metadata',
-          properties: {
-            model: { type: 'string', description: 'Model used for image generation' },
-            numberOfImages: { type: 'number', description: 'Number of images generated' },
-          },
-        },
-      },
+    content: { type: 'string', description: 'Image URL or identifier' },
+    image: {
+      type: 'file',
+      description: 'Generated image (URL in S3/local storage or base64)',
+    },
+    metadata: {
+      type: 'json',
+      description: 'Generation metadata (model, count, storage status, etc.)',
     },
   },
 }

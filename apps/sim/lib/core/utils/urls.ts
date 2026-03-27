@@ -23,13 +23,21 @@ function normalizeBaseUrl(url: string): string {
 export function getBaseUrl(): string {
   const baseUrl = getEnv('NEXT_PUBLIC_APP_URL')?.trim()
 
-  if (!baseUrl) {
-    throw new Error(
-      'NEXT_PUBLIC_APP_URL must be configured for webhooks and callbacks to work correctly'
-    )
+  if (baseUrl) {
+    return normalizeBaseUrl(baseUrl)
   }
 
-  return normalizeBaseUrl(baseUrl)
+  if (!isProd) {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin
+    }
+
+    return 'http://localhost:3000'
+  }
+
+  throw new Error(
+    'NEXT_PUBLIC_APP_URL must be configured for webhooks and callbacks to work correctly'
+  )
 }
 
 /**

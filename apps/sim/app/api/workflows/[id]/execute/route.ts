@@ -907,7 +907,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         registerManualExecutionAborter(executionId, timeoutController.abort)
         isManualAbortRegistered = true
 
+        let localEventSeq = 0
         const sendEvent = (event: ExecutionEvent) => {
+          const isBuffered = event.type !== 'stream:chunk' && event.type !== 'stream:done'
+          if (isBuffered) {
+            localEventSeq++
+            event.eventId = localEventSeq
+          }
           if (!isStreamClosed) {
             try {
               controller.enqueue(encodeSSEEvent(event))
@@ -915,7 +921,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               isStreamClosed = true
             }
           }
-          if (event.type !== 'stream:chunk' && event.type !== 'stream:done') {
+          if (isBuffered) {
             eventWriter.write(event).catch(() => {})
           }
         }

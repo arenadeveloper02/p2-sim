@@ -357,9 +357,9 @@ export const Dropdown = memo(function Dropdown({
       if (!isPreview && !disabled) {
         // If selectAllOption is enabled and empty array is passed, toggle select all/clear all
         if (selectAllOption && multiSelect && selectedValues.length === 0) {
-          const allOptionIds = availableOptions.map((opt) =>
-            typeof opt === 'string' ? opt : opt.id
-          )
+          const allOptionIds = comboboxOptions
+            .filter((opt) => !opt.hidden)
+            .map((opt) => opt.value)
           const currentValues = (storeValue as string[]) || []
           const allSelected =
             currentValues.length === allOptionIds.length &&
@@ -376,7 +376,7 @@ export const Dropdown = memo(function Dropdown({
         }
       }
     },
-    [isPreview, disabled, setStoreValue, selectAllOption, multiSelect, availableOptions, storeValue]
+    [isPreview, disabled, setStoreValue, selectAllOption, multiSelect, comboboxOptions, storeValue]
   )
 
   /**
@@ -494,10 +494,7 @@ export const Dropdown = memo(function Dropdown({
     return (
       <div className='flex items-center gap-1 overflow-hidden whitespace-nowrap'>
         {multiValues.map((selectedValue: string) => (
-          <Badge
-            key={selectedValue}
-            className='shrink-0 rounded-[8px] py-[4px] text-[12px] leading-none'
-          >
+          <Badge key={selectedValue} className='shrink-0 rounded-lg py-1 text-caption leading-none'>
             {(optionMap.get(selectedValue) || selectedValue).toLowerCase()}
           </Badge>
         ))}

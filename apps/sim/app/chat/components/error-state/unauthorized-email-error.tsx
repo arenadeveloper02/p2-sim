@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { useBrandConfig } from '@/lib/branding/branding'
+import { useBrandConfig } from '@/ee/whitelabeling/branding'
 import { inter } from '@/app/_styles/fonts/inter/inter'
 import { soehne } from '@/app/_styles/fonts/soehne/soehne'
 

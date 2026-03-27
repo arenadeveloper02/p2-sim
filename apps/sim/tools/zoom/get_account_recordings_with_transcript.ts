@@ -1,10 +1,31 @@
 import { createLogger } from '@sim/logger'
-import { executeTool } from '@/tools/index'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 import type { ZoomListAccountRecordingsParams } from '@/tools/zoom/types'
 import { fetchZoomRecordings, splitDateRange } from './list_account_recordings'
 
 const logger = createLogger('zoom:get_account_recordings_with_transcript')
+
+async function downloadTranscript(downloadUrl: string, accessToken?: string): Promise<string> {
+  if (!accessToken) {
+    throw new Error('Missing access token for Zoom transcript download')
+  }
+
+  const response = await fetch(downloadUrl, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '')
+    throw new Error(
+      `Failed to download transcript: ${response.statusText}${errorText ? ` - ${errorText}` : ''}`
+    )
+  }
+
+  return response.text()
+}
 
 export interface ZoomGetAccountRecordingsWithTranscriptParams
   extends ZoomListAccountRecordingsParams {
@@ -232,25 +253,14 @@ export const zoomGetAccountRecordingsWithTranscriptTool: ToolConfig<
         })
 
         try {
-          // Call the download transcript tool
-          const downloadResult = await executeTool('zoom_download_transcript', {
-            accessToken: params.accessToken,
-            downloadUrl: transcriptFile.download_url,
+          const content = await downloadTranscript(transcriptFile.download_url, params.accessToken)
+          results.push({
+            topic: recording.topic || '',
+            start_time: recording.start_time || '',
+            transcript_download_url: transcriptFile.download_url,
+            content,
           })
-
-          if (downloadResult.success && downloadResult.output?.content) {
-            results.push({
-              topic: recording.topic || '',
-              start_time: recording.start_time || '',
-              transcript_download_url: transcriptFile.download_url,
-              content: downloadResult.output.content,
-            })
-            logger.info(`Successfully downloaded transcript for ${recording.topic}`)
-          } else {
-            logger.error(`Failed to download transcript for ${recording.topic}`, {
-              error: downloadResult.error,
-            })
-          }
+          logger.info(`Successfully downloaded transcript for ${recording.topic}`)
         } catch (error) {
           logger.error(`Error downloading transcript for ${recording.topic}`, {
             error: error instanceof Error ? error.message : String(error),

@@ -70,7 +70,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
   category: 'blocks',
   integrationType: IntegrationType.AI,
   tags: ['llm', 'agentic', 'automation'],
-  bgColor: 'var(--brand-primary-hex)',
+  bgColor: 'var(--brand)',
   icon: AgentIcon,
   subBlocks: [
     {
@@ -407,6 +407,7 @@ Return ONLY the JSON array.`,
       type: 'short-input',
       placeholder: 'Enter your API key',
       password: true,
+      hideWhenHosted: true,
       connectionDroppable: false,
       required: true,
       condition: getApiKeyCondition(),

@@ -21,6 +21,7 @@ import {
 import { signOut, useSession } from '@/lib/auth/auth-client'
 import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { GeneralSkeleton } from '@/app/workspace/[workspaceId]/settings/components/general/general-skeleton'
 import { useProfilePictureUpload } from '@/app/workspace/[workspaceId]/settings/hooks/use-profile-picture-upload'
@@ -362,7 +363,7 @@ export function General() {
             size='sm'
             align='end'
             dropdownWidth={140}
-            value={settings?.theme || 'light'}
+            value={settings?.theme}
             onChange={handleThemeChange}
             placeholder='Select theme'
             options={[
@@ -476,27 +477,27 @@ export function General() {
         </div>
       )}
 
-      {/* {!loadingSuperUser && isSuperUser && (
-        <div className='flex items-center justify-between'>
-          <Label htmlFor='super-user-mode'>Super admin mode</Label>
-          <Switch
-            id='super-user-mode'
-            checked={settings?.superUserModeEnabled ?? true}
-            onCheckedChange={handleSuperUserModeToggle}
-          />
-        </div>
-      )} */}
-
-      {/* {!isAuthDisabled && (
-        <div className='mt-auto flex items-center gap-[8px]'>
-          <Button onClick={handleSignOut} variant='active'>
-            Sign out
+      <div className='mt-auto flex items-center gap-[8px]'>
+        {/* {!isAuthDisabled && (
+          <>
+            <Button onClick={handleSignOut} variant='active'>
+              Sign out
+            </Button>
+            <Button onClick={() => setShowResetPasswordModal(true)} variant='active'>
+              Reset password
+            </Button>
+          </>
+        )} */}
+        {isHosted && (
+          <Button
+            onClick={() => window.open('/?home', '_blank', 'noopener,noreferrer')}
+            variant='active'
+            className='ml-auto'
+          >
+            Home Page
           </Button>
-          <Button onClick={() => setShowResetPasswordModal(true)} variant='active'>
-            Reset password
-          </Button>
-        </div>
-      )} */}
+        )}
+      </div>
 
       {/* Password Reset Confirmation Modal */}
       <Modal open={showResetPasswordModal} onOpenChange={setShowResetPasswordModal}>

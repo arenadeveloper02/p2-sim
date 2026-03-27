@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import type { HubSpotListCartsParams, HubSpotListCartsResponse } from '@/tools/hubspot/types'
+import { GENERIC_CRM_ARRAY_OUTPUT, METADATA_OUTPUT, PAGING_OUTPUT } from '@/tools/hubspot/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('HubSpotListCarts')
@@ -7,7 +8,7 @@ const logger = createLogger('HubSpotListCarts')
 export const hubspotListCartsTool: ToolConfig<HubSpotListCartsParams, HubSpotListCartsResponse> = {
   id: 'hubspot_list_carts',
   name: 'List Carts from HubSpot',
-  description: 'Retrieve all carts from HubSpot CRM with pagination support',
+  description: 'Retrieve all carts from HubSpot account with pagination support',
   version: '1.0.0',
 
   oauth: {
@@ -25,25 +26,25 @@ export const hubspotListCartsTool: ToolConfig<HubSpotListCartsParams, HubSpotLis
     limit: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Maximum number of results per page (default 10)',
+      visibility: 'user-or-llm',
+      description: 'Maximum number of results per page (max 100, default 10)',
     },
     after: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Pagination cursor for next page of results',
+      visibility: 'user-or-llm',
+      description: 'Pagination cursor for next page of results (from previous response)',
     },
     properties: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Comma-separated list of properties to return',
+      visibility: 'user-or-llm',
+      description: 'Comma-separated list of HubSpot property names to return',
     },
     associations: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'Comma-separated list of object types to retrieve associated IDs for',
     },
   },
@@ -61,7 +62,9 @@ export const hubspotListCartsTool: ToolConfig<HubSpotListCartsParams, HubSpotLis
     },
     method: 'GET',
     headers: (params) => {
-      if (!params.accessToken) throw new Error('Access token is required')
+      if (!params.accessToken) {
+        throw new Error('Access token is required')
+      }
       return {
         Authorization: `Bearer ${params.accessToken}`,
         'Content-Type': 'application/json',
@@ -78,7 +81,7 @@ export const hubspotListCartsTool: ToolConfig<HubSpotListCartsParams, HubSpotLis
     return {
       success: true,
       output: {
-        results: data.results || [],
+        carts: data.results || [],
         paging: data.paging ?? null,
         metadata: {
           totalReturned: data.results?.length || 0,
@@ -90,9 +93,9 @@ export const hubspotListCartsTool: ToolConfig<HubSpotListCartsParams, HubSpotLis
   },
 
   outputs: {
-    results: { type: 'array', description: 'Array of HubSpot cart objects' },
-    paging: { type: 'object', description: 'Pagination information', optional: true },
-    metadata: { type: 'object', description: 'Metadata with totalReturned and hasMore' },
+    carts: GENERIC_CRM_ARRAY_OUTPUT,
+    paging: PAGING_OUTPUT,
+    metadata: METADATA_OUTPUT,
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

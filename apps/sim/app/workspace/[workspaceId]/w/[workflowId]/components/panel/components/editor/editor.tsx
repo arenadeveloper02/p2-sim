@@ -359,11 +359,11 @@ export function Editor() {
   return (
     <div className='flex h-full flex-col'>
       {/* Header */}
-      <div className='mx-[-1px] flex flex-shrink-0 items-center justify-between rounded-[4px] border border-[var(--border)] bg-[var(--surface-4)] px-[12px] py-[6px]'>
-        <div className='flex min-w-0 flex-1 items-center gap-[8px]'>
+      <div className='mx-[-1px] flex flex-shrink-0 items-center justify-between rounded-none border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'>
+        <div className='flex min-w-0 flex-1 items-center gap-2'>
           {(blockConfig || isSubflow) && currentBlock?.type !== 'note' && (
             <div
-              className='flex h-[18px] w-[18px] items-center justify-center rounded-[4px]'
+              className='flex h-[18px] w-[18px] items-center justify-center rounded-sm'
               style={{ background: isSubflow ? subflowConfig?.bgColor : blockConfig?.bgColor }}
             >
               <IconComponent
@@ -403,7 +403,7 @@ export function Editor() {
             </h2>
           )}
         </div>
-        <div className='flex shrink-0 items-center gap-[8px]'>
+        <div className='flex shrink-0 items-center gap-2'>
           {/* Locked indicator - clickable to unlock if user has admin permissions, block is locked directly, and not locked by an ancestor */}
           {isLocked && currentBlock && (
             <Tooltip.Root>
@@ -540,7 +540,7 @@ export function Editor() {
       </div>
 
       {!currentBlockId || !currentBlock ? (
-        <div className='flex flex-1 items-center justify-center text-[#8D8D8D] text-[13px]'>
+        <div className='flex flex-1 items-center justify-center text-[var(--text-placeholder)] text-small'>
           Select a block to edit
         </div>
       ) : isSubflow ? (
@@ -564,15 +564,15 @@ export function Editor() {
             ref={subBlocksRef}
             className='subblocks-section flex flex-1 flex-col overflow-hidden'
           >
-            <div className='flex-1 overflow-y-auto overflow-x-hidden px-[8px] pt-[12px] pb-[8px] [overflow-anchor:none]'>
+            <div className='flex-1 overflow-y-auto overflow-x-hidden px-2 pt-3 pb-2 [overflow-anchor:none]'>
               {/* Workflow Preview - only for workflow blocks with a selected child workflow */}
               {isWorkflowBlock && childWorkflowId && (
                 <>
                   <div className='subblock-content flex flex-col gap-[9.5px]'>
-                    <div className='pl-[2px] font-medium text-[13px] text-[var(--text-primary)] leading-none'>
+                    <div className='pl-0.5 font-medium text-[var(--text-primary)] text-small leading-none'>
                       Workflow Preview
                     </div>
-                    <div className='relative h-[160px] overflow-hidden rounded-[4px] border border-[var(--border)]'>
+                    <div className='relative h-[160px] overflow-hidden rounded-sm border border-[var(--border)]'>
                       {isLoadingChildWorkflow ? (
                         <div className='flex h-full items-center justify-center bg-[var(--surface-3)]'>
                           <Loader2 className='h-5 w-5 animate-spin text-[var(--text-tertiary)]' />
@@ -597,7 +597,7 @@ export function Editor() {
                                 type='button'
                                 variant='ghost'
                                 onClick={handleOpenChildWorkflow}
-                                className='absolute right-[6px] bottom-[6px] z-10 h-[24px] w-[24px] cursor-pointer border border-[var(--border)] bg-[var(--surface-2)] p-0 hover:bg-[var(--surface-4)]'
+                                className='absolute right-[6px] bottom-1.5 z-10 h-[24px] w-[24px] cursor-pointer border border-[var(--border)] bg-[var(--surface-2)] p-0 hover-hover:bg-[var(--surface-4)]'
                               >
                                 <ExternalLink className='h-[12px] w-[12px]' />
                               </Button>
@@ -607,20 +607,20 @@ export function Editor() {
                         </>
                       ) : (
                         <div className='flex h-full items-center justify-center bg-[var(--surface-3)]'>
-                          <span className='text-[13px] text-[var(--text-tertiary)]'>
+                          <span className='text-[var(--text-tertiary)] text-small'>
                             Unable to load preview
                           </span>
                         </div>
                       )}
                     </div>
                   </div>
-                  <div className='subblock-divider px-[2px] pt-[16px] pb-[13px]'>
+                  <div className='subblock-divider px-0.5 pt-4 pb-[13px]'>
                     <div className='h-[1.25px]' style={DASHED_DIVIDER_STYLE} />
                   </div>
                 </>
               )}
               {subBlocks.length === 0 && !isWorkflowBlock ? (
-                <div className='flex h-full items-center justify-center text-center text-[#8D8D8D] text-[13px]'>
+                <div className='flex h-full items-center justify-center text-center text-[var(--text-placeholder)] text-small'>
                   This block has no subblocks
                 </div>
               ) : (
@@ -681,7 +681,7 @@ export function Editor() {
                           }
                         />
                         {showDivider && (
-                          <div className='subblock-divider px-[2px] pt-[16px] pb-[13px]'>
+                          <div className='subblock-divider px-0.5 pt-4 pb-[13px]'>
                             <div className='h-[1.25px]' style={DASHED_DIVIDER_STYLE} />
                           </div>
                         )}
@@ -690,12 +690,12 @@ export function Editor() {
                   })}
 
                   {hasAdvancedOnlyFields && canEditBlock && !isArenaBlock && (
-                    <div className='flex items-center gap-[10px] px-[2px] pt-[14px] pb-[12px]'>
+                    <div className='flex items-center gap-[10px] px-0.5 pt-3.5 pb-3'>
                       <div className='h-[1.25px] flex-1' style={DASHED_DIVIDER_STYLE} />
                       <button
                         type='button'
                         onClick={handleToggleAdvancedMode}
-                        className='flex items-center gap-[6px] whitespace-nowrap font-medium text-[13px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        className='flex items-center gap-1.5 whitespace-nowrap font-medium text-[var(--text-secondary)] text-small hover-hover:text-[var(--text-primary)]'
                       >
                         {displayAdvancedOptions
                           ? 'Hide additional fields'
@@ -708,9 +708,9 @@ export function Editor() {
                     </div>
                   )}
                   {hasAdvancedOnlyFields && !canEditBlock && displayAdvancedOptions && (
-                    <div className='flex items-center gap-[10px] px-[2px] pt-[14px] pb-[12px]'>
+                    <div className='flex items-center gap-2.5 px-0.5 pt-3.5 pb-3'>
                       <div className='h-[1.25px] flex-1' style={DASHED_DIVIDER_STYLE} />
-                      <span className='whitespace-nowrap font-medium text-[13px] text-[var(--text-secondary)]'>
+                      <span className='whitespace-nowrap font-medium text-[var(--text-secondary)] text-small'>
                         Additional fields
                       </span>
                       <div className='h-[1.25px] flex-1' style={DASHED_DIVIDER_STYLE} />
@@ -769,7 +769,7 @@ export function Editor() {
 
               {/* Connections Header with Chevron */}
               <div
-                className='flex flex-shrink-0 cursor-pointer items-center gap-[8px] px-[10px] pt-[5px] pb-[5px]'
+                className='flex flex-shrink-0 cursor-pointer items-center gap-2 px-2.5 pt-[5px] pb-[5px]'
                 onClick={toggleConnectionsCollapsed}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -789,13 +789,11 @@ export function Editor() {
                     (!isConnectionsAtMinHeight ? ' rotate-180' : '')
                   }
                 />
-                <div className='font-medium text-[13px] text-[var(--text-primary)]'>
-                  Connections
-                </div>
+                <div className='font-medium text-[var(--text-primary)] text-small'>Connections</div>
               </div>
 
               {/* Connections Content - Always visible */}
-              <div className='flex-1 overflow-y-auto overflow-x-hidden px-[6px] pb-[8px]'>
+              <div className='flex-1 overflow-y-auto overflow-x-hidden px-1.5 pb-2'>
                 <ConnectionBlocks
                   connections={incomingConnections}
                   currentBlockId={currentBlock.id}

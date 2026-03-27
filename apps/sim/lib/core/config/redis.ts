@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import Redis from 'ioredis'
+import type Redis from 'ioredis'
 import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('Redis')
@@ -10,6 +10,9 @@ let globalRedisClient: Redis | null = null
 let pingFailures = 0
 let pingInterval: NodeJS.Timeout | null = null
 let pingInFlight = false
+let redisConstructor:
+  | (new (url: string, options?: Record<string, unknown>) => Redis)
+  | null = null
 
 const PING_INTERVAL_MS = 15_000
 const MAX_PING_FAILURES = 2
@@ -78,16 +81,25 @@ export function getRedisClient(): Redis | null {
   if (globalRedisClient) return globalRedisClient
 
   try {
+    if (!redisConstructor) {
+      const nodeRequire = eval('require') as NodeRequire
+      type RedisModule =
+        | (new (url: string, options?: Record<string, unknown>) => Redis)
+        | { default: new (url: string, options?: Record<string, unknown>) => Redis }
+      const module = nodeRequire('ioredis') as RedisModule
+      redisConstructor = typeof module === 'function' ? module : module.default
+    }
+
     logger.info('Initializing Redis client')
 
-    globalRedisClient = new Redis(redisUrl, {
+    globalRedisClient = new redisConstructor(redisUrl, {
       keepAlive: 1000,
       connectTimeout: 10000,
       commandTimeout: 5000,
       maxRetriesPerRequest: 5,
       enableOfflineQueue: true,
 
-      retryStrategy: (times) => {
+      retryStrategy: (times: number) => {
         if (times > 10) {
           logger.error(`Redis reconnection attempt ${times}`, { nextRetryMs: 30000 })
           return 30000
@@ -99,7 +111,7 @@ export function getRedisClient(): Redis | null {
         return delay
       },
 
-      reconnectOnError: (err) => {
+      reconnectOnError: (err: Error) => {
         const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED']
         return targetErrors.some((e) => err.message.includes(e))
       },

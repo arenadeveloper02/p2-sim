@@ -28,12 +28,13 @@ export function generateThemeCSS(): string {
     process.env.NEXT_PUBLIC_BRAND_BACKGROUND_COLOR || brandConfig.theme?.backgroundColor
 
   if (primaryColor) {
-    cssVars.push(`--brand-primary-hex: ${primaryColor};`)
-    cssVars.push(`--brand-tertiary-2: ${process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR};`)
+    cssVars.push(`--brand: ${primaryColor};`)
+    // Override brand-accent so Run/Deploy buttons and other accent-styled elements use the brand color
+    cssVars.push(`--brand-accent: ${primaryColor};`)
   }
 
   if (primaryHoverColor) {
-    cssVars.push(`--brand-primary-hover-hex: ${primaryHoverColor};`)
+    cssVars.push(`--brand-hover: ${primaryHoverColor};`)
   }
 
   if (secondaryColor) {
@@ -41,16 +42,15 @@ export function generateThemeCSS(): string {
   }
 
   if (accentColor) {
-    cssVars.push(`--brand-accent-hex: ${accentColor};`)
+    cssVars.push(`--brand-link: ${accentColor};`)
   }
 
   if (accentHoverColor) {
-    cssVars.push(`--brand-accent-hover-hex: ${accentHoverColor};`)
+    cssVars.push(`--brand-link-hover: ${accentHoverColor};`)
   }
 
   if (backgroundColor) {
     cssVars.push(`--brand-background-hex: ${backgroundColor};`)
-
     // Add dark theme class when background is dark
     const isDark = isDarkBackground(backgroundColor)
     if (isDark) {

@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
       // Merge customizations with the additional fields
       const mergedCustomizations = {
         ...(customizations || {}),
-        primaryColor: customizations?.primaryColor || 'var(--brand-primary-hover-hex)',
+        primaryColor: customizations?.primaryColor || 'var(--brand-hover)',
         // Only use default if welcomeMessage is undefined/null, not if it's an empty string
         welcomeMessage:
           customizations?.welcomeMessage !== undefined && customizations?.welcomeMessage !== null

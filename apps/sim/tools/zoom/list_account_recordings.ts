@@ -1,9 +1,8 @@
 import { createLogger } from '@sim/logger'
-import { secureFetchWithPinnedIP, validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 import type {
-  ZoomListAccountRecordingsParams,
-  ZoomListAccountRecordingsResponse,
+  ZoomListRecordingsParams,
+  ZoomListRecordingsResponse,
 } from '@/tools/zoom/types'
 
 const logger = createLogger('zoom:list_account_recordings')
@@ -54,7 +53,7 @@ export function splitDateRange(from: string, to: string): Array<{ from: string; 
  * Make a single API call to Zoom for a date range, handling pagination
  */
 export async function fetchZoomRecordings(
-  params: ZoomListAccountRecordingsParams,
+  params: ZoomListRecordingsParams,
   chunkFrom?: string,
   chunkTo?: string
 ): Promise<{ recordings: any[]; pageInfo: any }> {
@@ -80,20 +79,27 @@ export async function fetchZoomRecordings(
 
     const url = `${baseUrl}?${queryParams.toString()}`
 
-    // Validate and fetch with DNS pinning
-    const urlValidation = await validateUrlWithDNS(url, 'zoomApiUrl')
-    if (!urlValidation.isValid) {
-      throw new Error(`Invalid Zoom API URL: ${urlValidation.error}`)
+    // Keep URL validation local so this module remains client-bundle safe.
+    let validatedUrl: URL
+    try {
+      validatedUrl = new URL(url)
+    } catch {
+      throw new Error('Invalid Zoom API URL')
+    }
+    if (validatedUrl.protocol !== 'https:') {
+      throw new Error('Invalid Zoom API URL: HTTPS required')
     }
 
-    const response = await secureFetchWithPinnedIP(url, urlValidation.resolvedIP!, {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 300000)
+    const response = await fetch(validatedUrl.toString(), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${params.accessToken}`,
       },
-      timeout: 300000, // 5 minutes
-    })
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId))
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -137,8 +143,8 @@ export async function fetchZoomRecordings(
 }
 
 export const zoomListAccountRecordingsTool: ToolConfig<
-  ZoomListAccountRecordingsParams,
-  ZoomListAccountRecordingsResponse
+  ZoomListRecordingsParams,
+  ZoomListRecordingsResponse
 > = {
   id: 'zoom_list_account_recordings',
   name: 'Zoom List Account Recordings',
@@ -213,7 +219,7 @@ export const zoomListAccountRecordingsTool: ToolConfig<
     },
   },
 
-  directExecution: async (params: ZoomListAccountRecordingsParams): Promise<ToolResponse> => {
+  directExecution: async (params: ZoomListRecordingsParams): Promise<ToolResponse> => {
     // If no date range provided, make a single API call without date filters
     if (!params.from || !params.to) {
       logger.info('No date range provided, making single API call without date filters')

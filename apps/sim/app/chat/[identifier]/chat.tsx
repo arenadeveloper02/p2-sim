@@ -10,7 +10,7 @@ import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
+import { getFormattedGitHubStars } from '@/app/(home)/actions/github'
 import {
   ChatErrorState,
   ChatHeader,
@@ -962,7 +962,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   if (authRequired) {
     // const title = new URLSearchParams(window.location.search).get('title') || 'chat'
     // const primaryColor =
-    //   new URLSearchParams(window.location.search).get('color') || 'var(--brand-primary-hover-hex)'
+    //   new URLSearchParams(window.location.search).get('color') || 'var(--brand-hover)'
 
     if (authRequired === 'password') {
       return <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
@@ -999,13 +999,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }
 
   return (
-    <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
+    <div className='dark fixed inset-0 z-[100] flex flex-col bg-[var(--landing-bg)] text-[var(--landing-text)]'>
       {isHistoryLoading && (
         <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
           <LoadingAgentP2 size='lg' />
         </div>
       )}
-
       {/* Header component */}
       <ChatHeader chatConfig={chatConfig} starCount={starCount} />
 

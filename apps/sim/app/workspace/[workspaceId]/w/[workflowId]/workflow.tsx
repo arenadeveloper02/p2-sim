@@ -3276,6 +3276,15 @@ const WorkflowContent = React.memo(
     /** Handles node drag stop to establish parent-child relationships. */
     const onNodeDragStop = useCallback(
       (_event: React.MouseEvent, node: any) => {
+        if (!node?.id) {
+          logger.warn('Received invalid node payload in onNodeDragStop')
+          clearDragHighlights()
+          setDragStartPosition(null)
+          setPotentialParentId(null)
+          multiNodeDragStartRef.current.clear()
+          return
+        }
+
         clearDragHighlights()
 
         // Get all selected nodes to update their positions too

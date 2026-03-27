@@ -133,7 +133,7 @@ export const buildNanoBananaRequestBody = async (params: {
       },
     ],
     generationConfig: {
-      responseModalities: ['Image'],
+      responseModalities: ['IMAGE'],
     },
   }
 

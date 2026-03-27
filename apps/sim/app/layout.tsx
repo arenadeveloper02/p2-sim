@@ -3,11 +3,7 @@ import Script from 'next/script'
 import { PublicEnvScript } from 'next-runtime-env'
 import { BrandedLayout } from '@/components/branded-layout'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
-import {
-  generateBrandedMetadata,
-  generateStructuredData,
-  generateThemeCSS,
-} from '@/ee/whitelabeling'
+import { generateBrandedMetadata, generateThemeCSS } from '@/ee/whitelabeling'
 import '@/app/_styles/globals.css'
 import { OneDollarStats } from '@/components/analytics/onedollarstats'
 import { isReactGrabEnabled, isReactScanEnabled } from '@/lib/core/config/feature-flags'
@@ -16,13 +12,12 @@ import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
+import { TooltipProvider } from '@/app/_shell/providers/tooltip-provider'
 import { season } from '@/app/_styles/fonts/season/season'
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#ffffff' },
     { media: '(prefers-color-scheme: dark)', color: '#0c0c0c' },
@@ -32,7 +27,6 @@ export const viewport: Viewport = {
 export const metadata: Metadata = generateBrandedMetadata()
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const structuredData = generateStructuredData()
   const themeCSS = generateThemeCSS()
 
   return (
@@ -76,13 +70,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             strategy='lazyOnload'
           />
         )}
-        {/* Structured Data for SEO */}
-        <script
-          type='application/ld+json'
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(structuredData),
-          }}
-        />
 
         {/* Theme initialization: set light theme by default, convert 'system' to 'light' */}
         <script
@@ -275,7 +262,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <QueryProvider>
               <SessionProvider>
                 <AutoLoginProvider>
-                  <BrandedLayout>{children}</BrandedLayout>
+                  <TooltipProvider>
+                    <BrandedLayout>{children}</BrandedLayout>
+                  </TooltipProvider>
                 </AutoLoginProvider>
               </SessionProvider>
             </QueryProvider>

@@ -19,6 +19,45 @@ interface NanoBananaResponse {
   }>
 }
 
+interface CandidatePart {
+  text?: string
+  inlineData?: {
+    mimeType?: string
+    data?: string
+  }
+  inline_data?: {
+    mime_type?: string
+    data?: string
+  }
+  image?: {
+    data?: string
+    mimeType?: string
+    mime_type?: string
+  }
+}
+
+const extractCandidateParts = (candidate: Record<string, unknown>): CandidatePart[] => {
+  const directParts = candidate.parts
+  if (Array.isArray(directParts)) {
+    return directParts as CandidatePart[]
+  }
+
+  const content = candidate.content as
+    | { parts?: CandidatePart[]; role?: string }
+    | CandidatePart[]
+    | undefined
+
+  if (Array.isArray(content)) {
+    return content
+  }
+
+  if (content?.parts && Array.isArray(content.parts)) {
+    return content.parts
+  }
+
+  return []
+}
+
 const nanoBananaTool: ToolConfig = {
   id: 'google_nano_banana',
   name: 'Google Nano Banana',
@@ -60,7 +99,6 @@ const nanoBananaTool: ToolConfig = {
   },
 
   request: {
-    timeout: 120000,
     url: (params) => {
       logger.info('Routing Nano Banana tool request through internal API')
       return '/api/google'
@@ -103,28 +141,52 @@ const nanoBananaTool: ToolConfig = {
         throw new Error('No candidates found in response')
       }
 
-      const candidate = dt.data?.candidates[0]
-      if (!candidate.content || !candidate.content.parts) {
+      const candidate = dt.data?.candidates[0] as Record<string, unknown>
+      const finishReason =
+        typeof candidate.finishReason === 'string' ? candidate.finishReason : 'UNKNOWN'
+      if (finishReason === 'NO_IMAGE') {
+        logger.error('Nano Banana did not return an image', {
+          finishReason,
+          candidate,
+          promptFeedback: dt.data?.promptFeedback,
+          modelVersion: dt.data?.modelVersion,
+        })
+        throw new Error(
+          'Google Nano Banana returned NO_IMAGE. The model did not generate an image for this prompt; try a shorter/simpler prompt or a different aspect ratio.'
+        )
+      }
+
+      const candidateParts = extractCandidateParts(candidate)
+      if (candidateParts.length === 0) {
         logger.error('No content parts found in candidate:', candidate)
-        throw new Error('No content parts found in candidate')
+        throw new Error(
+          `No content parts found in candidate (keys: ${Object.keys(candidate).join(', ') || 'none'})`
+        )
       }
 
       // Find the image part
       let base64Image = null
       let mimeType = 'image/png'
 
-      for (const part of candidate.content.parts) {
-        if (part.inlineData?.data) {
-          base64Image = part.inlineData.data
-          mimeType = part.inlineData.mimeType || 'image/png'
+      for (const part of candidateParts) {
+        const inlineData = part.inlineData ?? part.inline_data
+        const imageData = inlineData?.data ?? part.image?.data
+        if (imageData) {
+          base64Image = imageData
+          mimeType =
+            part.inlineData?.mimeType ??
+            part.inline_data?.mime_type ??
+            part.image?.mimeType ??
+            part.image?.mime_type ??
+            'image/png'
           logger.info('Found image data in part, MIME type:', mimeType)
           break
         }
       }
 
       if (!base64Image) {
-        logger.error('No image data found in response parts:', candidate.content.parts)
-        throw new Error('No image data found in response')
+        logger.error('No image data found in response parts:', candidateParts)
+        throw new Error('No image data found in response parts')
       }
 
       logger.info('Successfully received Nano Banana image, length:', base64Image.length)
@@ -155,7 +217,7 @@ const nanoBananaTool: ToolConfig = {
           image: imageUrlToReturn,
           metadata: {
             model: params?.model || 'gemini-2.5-flash-image',
-            mimeType: mimeType,
+            mimeType,
             aspectRatio: params?.aspectRatio || '1:1',
             imageSize: params?.imageSize ?? null,
             hasInputImage: !!(params?.inputImage && params?.inputImageMimeType),
@@ -173,35 +235,14 @@ const nanoBananaTool: ToolConfig = {
   },
 
   outputs: {
-    success: { type: 'boolean', description: 'Operation success status' },
-    output: {
-      type: 'object',
-      description: 'Generated image data',
-      properties: {
-        content: { type: 'string', description: 'Image identifier' },
-        image: { type: 'string', description: 'Base64 encoded image data' },
-        metadata: {
-          type: 'object',
-          description: 'Image generation metadata',
-          properties: {
-            model: { type: 'string', description: 'Model used for image generation' },
-            mimeType: { type: 'string', description: 'Image MIME type' },
-            aspectRatio: { type: 'string', description: 'Image aspect ratio' },
-            imageSize: {
-              type: 'string',
-              description: 'Output resolution (1K/2K/4K) when using Nano Banana Pro',
-            },
-            hasInputImage: {
-              type: 'boolean',
-              description: 'Whether an input image was provided for editing',
-            },
-            inputImageMimeType: {
-              type: 'string',
-              description: 'MIME type of the input image (if provided)',
-            },
-          },
-        },
-      },
+    content: { type: 'string', description: 'Image URL or identifier' },
+    image: {
+      type: 'file',
+      description: 'Generated image (URL in S3/local storage or base64)',
+    },
+    metadata: {
+      type: 'json',
+      description: 'Generation metadata (model, aspect ratio, storage status, etc.)',
     },
   },
 }

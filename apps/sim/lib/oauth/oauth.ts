@@ -888,8 +888,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'crm.import',
           'crm.lists.read',
           'crm.lists.write',
-          'crm.objects.tickets.read',
-          'crm.objects.tickets.write',
           'tickets',
           'crm.objects.subscriptions.write',
           'crm.schemas.subscriptions.write',
@@ -1320,6 +1318,7 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientId,
         clientSecret,
         useBasicAuth: false,
+        supportsRefreshTokenRotation: false,
       }
     }
     case 'slack': {

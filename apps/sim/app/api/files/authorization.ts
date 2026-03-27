@@ -4,7 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, isNull, like, or } from 'drizzle-orm'
 import { getFileMetadata } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
-import { S3_CHAT_CONFIG, S3_KB_CONFIG } from '@/lib/uploads/config'
+import { S3_CHAT_CONFIG } from '@/lib/uploads/config'
 import type { StorageConfig } from '@/lib/uploads/core/storage-client'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
@@ -114,9 +114,9 @@ export async function verifyFileAccess(
     // Infer context from key if not explicitly provided
     const inferredContext = context || inferContextFromKey(cloudKey)
 
-    // 0. Profile pictures: Public access (anyone can view creator profile pictures)
-    if (inferredContext === 'profile-pictures') {
-      logger.info('Profile picture access allowed (public)', { cloudKey })
+    // 0. Public contexts: profile pictures and OG images are publicly accessible
+    if (inferredContext === 'profile-pictures' || inferredContext === 'og-images') {
+      logger.info('Public file access allowed', { cloudKey, context: inferredContext })
       return true
     }
 
