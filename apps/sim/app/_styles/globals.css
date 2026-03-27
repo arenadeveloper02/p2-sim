@@ -403,7 +403,7 @@ html[data-sidebar-collapsed] .sidebar-container .sidebar-collapse-btn {
 @layer base {
   * {
     border-color: var(--border);
-    overscroll-behavior-x: none;
+    /*overscroll-behavior-x: none;*/
   }
 
   *:focus {
