@@ -8,10 +8,7 @@ import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { canAccessTemplate, verifyTemplateOwnership } from '@/lib/templates/permissions'
-import {
-  type RegenerateStateInput,
-  regenerateWorkflowStateIds,
-} from '@/lib/workflows/persistence/utils'
+import { regenerateWorkflowStateIds } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
 import { getUserEntityPermissions, getWorkspaceById } from '@/lib/workspaces/permissions/utils'
 

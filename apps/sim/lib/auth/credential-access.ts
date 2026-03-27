@@ -52,7 +52,7 @@ export async function authorizeCredentialUse(
     .from(account)
     .where(eq(account.id, credentialId))
     .limit(1)
-    
+
   const actingUserId = auth.authType === AuthType.INTERNAL_JWT ? callerUserId : auth.userId
 
   const [workflowContext] = workflowId
@@ -262,7 +262,6 @@ export async function authorizeCredentialUse(
       credentialOwnerUserId,
     }
   }
-
 
   if (!legacyAccount) {
     return { ok: false, error: 'Credential not found' }

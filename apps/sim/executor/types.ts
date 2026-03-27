@@ -313,8 +313,8 @@ export interface ExecutionContext {
    * This is used by Agent blocks to avoid re-running intent analysis.
    */
   intentAnalyzerResult?: import('./utils/intent-analyzer').IntentAnalyzerResult
-  /**   
-* Context for "run from block" mode. When present, only blocks in dirtySet
+  /**
+   * Context for "run from block" mode. When present, only blocks in dirtySet
    * will be executed; others return cached outputs from the source snapshot.
    */
   runFromBlockContext?: RunFromBlockContext

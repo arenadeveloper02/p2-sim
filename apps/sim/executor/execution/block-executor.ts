@@ -17,12 +17,12 @@ import {
 } from '@/executor/constants'
 import type { DAGNode } from '@/executor/dag/builder'
 import { ChildWorkflowError } from '@/executor/errors/child-workflow-error'
-import type { Message } from '@/executor/handlers/agent/types'
 import type {
   BlockStateWriter,
   ContextExtensions,
   WorkflowNodeMetadata,
 } from '@/executor/execution/types'
+import type { Message } from '@/executor/handlers/agent/types'
 import {
   generatePauseContextId,
   mapNodeMetadataToPauseScopes,

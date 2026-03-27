@@ -25,7 +25,6 @@ import {
   getStartDateFromTimeRange,
   hasActiveFilters,
 } from '@/lib/logs/filters'
-import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { getTriggerOptions } from '@/lib/logs/get-trigger-options'
 import { type ParsedFilter, parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import {
@@ -34,6 +33,7 @@ import {
   type TriggerData,
   type WorkflowData,
 } from '@/lib/logs/search-suggestions'
+import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import type {
   FilterTag,
   HeaderAction,
@@ -460,7 +460,6 @@ export default function Logs() {
           .join(', ') || '',
     })
   }, [debouncedSearchQuery, level, timeRange, triggers, workflowIds, workflows, isInitialized])
-
 
   const handleLogClick = useCallback((rowId: string) => {
     dispatch({ type: 'TOGGLE_LOG', logId: rowId })

@@ -34,7 +34,7 @@ import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import type { CredentialRequirement } from '@/lib/workflows/credentials/credential-extractor'
-import { useTemplateEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { useTemplateEvent as trackUseTemplateEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview'
 import { getBlock } from '@/blocks/registry'
 import { useStarTemplate, useTemplate } from '@/hooks/queries/templates'
@@ -371,7 +371,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
   }
 
   const handleUseTemplate = () => {
-    useTemplateEvent({
+    trackUseTemplateEvent({
       'Template Name': template?.name || '',
       'Template ID': template?.id || '',
       'Workspace Name': workspaceId ? workspaces.find((ws) => ws.id === workspaceId)?.name : '',

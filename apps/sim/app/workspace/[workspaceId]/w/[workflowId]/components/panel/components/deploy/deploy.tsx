@@ -11,8 +11,8 @@ import {
   useDeployment,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks'
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-current-workflow'
-import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useDeployedWorkflowState } from '@/hooks/queries/deployments'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import type { WorkspaceUserPermissions } from '@/hooks/use-user-permissions'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 

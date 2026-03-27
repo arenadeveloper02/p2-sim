@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { Compass, MoreHorizontal, ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Compass, MoreHorizontal } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
@@ -35,14 +35,8 @@ import {
   Table,
 } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
-import {
-  createWorkflowEvent,
-  openKnowledgeBasePageEvent,
-  openLogsPageEvent,
-  openSettingsPageEvent,
-  openTemplatesPageEvent,
-} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { cn } from '@/lib/core/utils/cn'
+import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
 import {
   START_NAV_TOUR_EVENT,
@@ -1024,21 +1018,21 @@ export const Sidebar = memo(function Sidebar() {
       >
         <div className='flex h-full flex-col pt-[12px]'>
           <div>
-                <p className='pointer-events-auto w-full px-[10px] pb-[12px] text-center text-sm hover:cursor-pointer'>
-                  <span
-                    onClick={() => {
-                      const hostname = window.location.hostname
-                      const redirectUrl = getRedirectUrl(hostname)
+            <p className='pointer-events-auto w-full px-[10px] pb-[12px] text-center text-sm hover:cursor-pointer'>
+              <span
+                onClick={() => {
+                  const hostname = window.location.hostname
+                  const redirectUrl = getRedirectUrl(hostname)
 
-                      window.location.href = redirectUrl
-                    }}
-                    className='flex items-center justify-start gap-2'
-                  >
-                    <ArrowLeft className='h-5 w-5' />
-                    <span> Back </span>
-                  </span>
-                </p>
-              </div>
+                  window.location.href = redirectUrl
+                }}
+                className='flex items-center justify-start gap-2'
+              >
+                <ArrowLeft className='h-5 w-5' />
+                <span> Back </span>
+              </span>
+            </p>
+          </div>
           {/* Top bar: Logo + Collapse toggle */}
           <div className='flex flex-shrink-0 items-center pr-[8px] pb-[8px] pl-[10px]'>
             <Tooltip.Root>

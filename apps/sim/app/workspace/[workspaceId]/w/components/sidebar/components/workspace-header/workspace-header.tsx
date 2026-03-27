@@ -20,10 +20,10 @@ import {
   UserPlus,
 } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
-import { env } from '@/lib/core/config/env'
-import { changeWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { getDisplayPlanName } from '@/lib/billing/plan-helpers'
+import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
+import { changeWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'

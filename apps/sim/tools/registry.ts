@@ -504,6 +504,13 @@ import {
 } from '@/tools/exa'
 import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import {
+  fathomGetSummaryTool,
+  fathomGetTranscriptTool,
+  fathomListMeetingsTool,
+  fathomListTeamMembersTool,
+  fathomListTeamsTool,
+} from '@/tools/fathom'
+import {
   figmaCreateTool,
   figmaDeleteCommentTool,
   figmaGetCommentsTool,
@@ -515,13 +522,6 @@ import {
   figmaPostCommentTool,
   figmaToHTMLAITool,
 } from '@/tools/figma'
-import {
-  fathomGetSummaryTool,
-  fathomGetTranscriptTool,
-  fathomListMeetingsTool,
-  fathomListTeamMembersTool,
-  fathomListTeamsTool,
-} from '@/tools/fathom'
 import { fileParserV2Tool, fileParserV3Tool, fileParseTool } from '@/tools/file'
 import {
   firecrawlAgentTool,
@@ -780,7 +780,6 @@ import {
   gmailUnarchiveV2Tool,
   gmailUntrashThreadV2Tool,
 } from '@/tools/gmail'
-import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
 import {
   gongAggregateActivityTool,
   gongAnsweredScorecardsTool,
@@ -808,9 +807,10 @@ import {
   googleAdsListAdGroupsTool,
   googleAdsListCampaignsTool,
   googleAdsListCustomersTool,
+  googleAdsQueryTool,
   googleAdsSearchTool,
-  googleAdsQueryTool
 } from '@/tools/google_ads'
+import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
 import {
   googleBigQueryGetTableTool,
   googleBigQueryInsertRowsTool,
@@ -2031,11 +2031,11 @@ import {
   slackListUsersTool,
   slackMessageReaderTool,
   slackMessageTool,
-  slackSearchAllTool,
   slackOpenViewTool,
   slackPublishViewTool,
   slackPushViewTool,
   slackRemoveReactionTool,
+  slackSearchAllTool,
   slackUpdateMessageTool,
   slackUpdateViewTool,
 } from '@/tools/slack'

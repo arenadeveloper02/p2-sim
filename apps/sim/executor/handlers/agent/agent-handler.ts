@@ -613,7 +613,6 @@ export class AgentBlockHandler implements BlockHandler {
     return inputs
   }
 
-
   private async validateToolPermissions(ctx: ExecutionContext, tools: ToolInput[]): Promise<void> {
     if (!Array.isArray(tools) || tools.length === 0) return
 

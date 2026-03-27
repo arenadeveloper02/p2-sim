@@ -189,7 +189,6 @@ export function Document({
 
   const [selectedChunks, setSelectedChunks] = useState<Set<string>>(() => new Set())
 
-
   // Inline editor state
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null)
   const [isCreatingNewChunk, setIsCreatingNewChunk] = useState(false)

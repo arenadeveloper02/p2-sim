@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { defineI18nUI } from 'fumadocs-ui/i18n'
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
 import { RootProvider } from 'fumadocs-ui/provider/next'
-import { Geist_Mono, Inter } from 'next/font/google'
 import Script from 'next/script'
 import {
   SidebarFolder,

@@ -8,13 +8,7 @@ import { Blimp, Library } from '@/components/emcn'
 import { Calendar, Database, File, HelpCircle, Settings, Table } from '@/components/emcn/icons'
 import { Search } from '@/components/emcn/icons/search'
 import { cn } from '@/lib/core/utils/cn'
-import { getToolOperationsIndex } from '@/lib/search/tool-operations'
-import { getTriggersForSidebar, hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
-import {
-  changeWorkspaceEvent,
-  selectTriggerEvent,
-  selectWorkflowEvent,
-} from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
 // import { searchItems } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-utils'
 import { SIDEBAR_SCROLL_EVENT } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 import { usePermissionConfig } from '@/hooks/use-permission-config'

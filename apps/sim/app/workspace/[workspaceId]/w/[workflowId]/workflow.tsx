@@ -2868,61 +2868,60 @@ const WorkflowContent = React.memo(
     )
 
     /**
-   * Check if two blocks are in the same container hierarchy.
-   * Returns true if:
-   * - Both are in the same container (same parentId)
-   * - One is an ancestor of the other (nested containers)
-   * - Both are at root level (no parentId)
-   */
-  const areInSameContainerHierarchyHelper = useCallback(
-    (
-      sourceParentId: string | undefined,
-      targetParentId: string | undefined,
-      blocks: Record<string, BlockState>
-    ): boolean => {
-      // Both at root level
-      if (!sourceParentId && !targetParentId) {
-        return true
-      }
+     * Check if two blocks are in the same container hierarchy.
+     * Returns true if:
+     * - Both are in the same container (same parentId)
+     * - One is an ancestor of the other (nested containers)
+     * - Both are at root level (no parentId)
+     */
+    const areInSameContainerHierarchyHelper = useCallback(
+      (
+        sourceParentId: string | undefined,
+        targetParentId: string | undefined,
+        blocks: Record<string, BlockState>
+      ): boolean => {
+        // Both at root level
+        if (!sourceParentId && !targetParentId) {
+          return true
+        }
 
-      // Same direct parent
-      if (sourceParentId === targetParentId) {
-        return true
-      }
+        // Same direct parent
+        if (sourceParentId === targetParentId) {
+          return true
+        }
 
-      // One is at root, other is in container - not allowed
-      if ((sourceParentId && !targetParentId) || (!sourceParentId && targetParentId)) {
+        // One is at root, other is in container - not allowed
+        if ((sourceParentId && !targetParentId) || (!sourceParentId && targetParentId)) {
+          return false
+        }
+
+        // Both have parents - check if one is ancestor of the other
+        if (sourceParentId && targetParentId) {
+          // Check if source's parent is an ancestor of target's parent
+          let currentId: string | undefined = targetParentId
+          while (currentId) {
+            if (currentId === sourceParentId) {
+              return true // sourceParentId is ancestor of targetParentId
+            }
+            const currentBlock: BlockState | undefined = blocks[currentId]
+            currentId = currentBlock?.data?.parentId
+          }
+
+          // Check if target's parent is an ancestor of source's parent
+          currentId = sourceParentId
+          while (currentId) {
+            if (currentId === targetParentId) {
+              return true // targetParentId is ancestor of sourceParentId
+            }
+            const currentBlock: BlockState | undefined = blocks[currentId]
+            currentId = currentBlock?.data?.parentId
+          }
+        }
+
         return false
-      }
-
-      // Both have parents - check if one is ancestor of the other
-      if (sourceParentId && targetParentId) {
-        // Check if source's parent is an ancestor of target's parent
-        let currentId: string | undefined = targetParentId
-        while (currentId) {
-          if (currentId === sourceParentId) {
-            return true // sourceParentId is ancestor of targetParentId
-          }
-          const currentBlock: BlockState | undefined = blocks[currentId]
-          currentId = currentBlock?.data?.parentId
-        }
-
-        // Check if target's parent is an ancestor of source's parent
-        currentId = sourceParentId
-        while (currentId) {
-          if (currentId === targetParentId) {
-            return true // targetParentId is ancestor of sourceParentId
-          }
-          const currentBlock: BlockState | undefined = blocks[currentId]
-          currentId = currentBlock?.data?.parentId
-        }
-      }
-
-      return false
-    },
-    []
-  )
-
+      },
+      []
+    )
 
     /**
      * Captures the source handle when a connection drag starts.

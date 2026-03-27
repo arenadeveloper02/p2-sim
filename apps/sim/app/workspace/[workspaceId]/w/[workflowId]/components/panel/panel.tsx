@@ -713,11 +713,14 @@ export const Panel = memo(function Panel() {
                     <Layout animate={isAutoLayouting} variant='clockwise' />
                     Auto layout
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => {setVariablesOpen(!isVariablesOpen);
-                    workflowClickMoreOptionsEvent({
-                      Options: 'Variables',
-                    })
-                  }}>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setVariablesOpen(!isVariablesOpen)
+                      workflowClickMoreOptionsEvent({
+                        Options: 'Variables',
+                      })
+                    }}
+                  >
                     <VariableIcon />
                     Variables
                   </DropdownMenuItem>

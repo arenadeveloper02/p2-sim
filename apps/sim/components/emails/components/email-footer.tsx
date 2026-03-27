@@ -107,11 +107,11 @@ export function EmailFooter({
               </td>
             </tr>
 
-                <tr>
-                  <td style={baseStyles.spacer} height={16}>
-                    &nbsp;
-                  </td>
-                </tr>
+            <tr>
+              <td style={baseStyles.spacer} height={16}>
+                &nbsp;
+              </td>
+            </tr>
 
             {/* Address row */}
             <tr>
@@ -131,11 +131,11 @@ export function EmailFooter({
               </td>
             </tr>
 
-                <tr>
-                  <td style={baseStyles.spacer} height={8}>
-                    &nbsp;
-                  </td>
-                </tr>
+            <tr>
+              <td style={baseStyles.spacer} height={8}>
+                &nbsp;
+              </td>
+            </tr>
 
             {/* Contact row */}
             <tr>

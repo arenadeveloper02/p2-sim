@@ -2,13 +2,13 @@ import { createLogger } from '@sim/logger'
 import { TextChunker } from '@/lib/chunkers/text-chunker'
 import { rerankContent } from '@/lib/content/rerank'
 import type { GoogleDriveSearchParams, GoogleDriveSearchResponse } from '@/tools/google_drive/types'
-import { DEFAULT_EXPORT_FORMATS, GOOGLE_WORKSPACE_MIME_TYPES } from '@/tools/google_drive/utils'
+import {
+  ALL_FILE_FIELDS,
+  DEFAULT_EXPORT_FORMATS,
+  GOOGLE_WORKSPACE_MIME_TYPES,
+} from '@/tools/google_drive/utils'
 import type { ToolConfig } from '@/tools/types'
 import { buildDriveQueryWithAI } from './ai-query-generation'
-import type { GoogleDriveFile, GoogleDriveToolParams } from '@/tools/google_drive/types'
-import { ALL_FILE_FIELDS } from '@/tools/google_drive/utils'
-
-
 
 const logger = createLogger('GoogleDriveSearchTool')
 
@@ -549,7 +549,6 @@ async function extractFileContent(
 //   return parts.join(' and ')
 // }
 
-
 // interface GoogleDriveSearchParams extends GoogleDriveToolParams {
 //   query: string
 //   pageSize?: number
@@ -884,7 +883,8 @@ export const searchTool: ToolConfig<GoogleDriveSearchParams, GoogleDriveSearchRe
   outputs: {
     files: {
       type: 'array',
-      description: 'Array of file metadata objects matching the search prompt. Each file includes webViewLink, webContentLink, mimeType-specific details, file type information, and parsed content when available.',
+      description:
+        'Array of file metadata objects matching the search prompt. Each file includes webViewLink, webContentLink, mimeType-specific details, file type information, and parsed content when available.',
       items: {
         type: 'object',
         properties: {

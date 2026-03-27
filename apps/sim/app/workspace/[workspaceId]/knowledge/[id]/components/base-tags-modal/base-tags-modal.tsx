@@ -92,7 +92,12 @@ interface BaseTagsModalProps {
   knowledgeBaseName?: string
 }
 
-export function BaseTagsModal({ open, onOpenChange, knowledgeBaseId, knowledgeBaseName }: BaseTagsModalProps) {
+export function BaseTagsModal({
+  open,
+  onOpenChange,
+  knowledgeBaseId,
+  knowledgeBaseName,
+}: BaseTagsModalProps) {
   const { tagDefinitions: kbTagDefinitions } = useKnowledgeBaseTagDefinitions(knowledgeBaseId)
 
   const createTagMutation = useCreateTagDefinition()

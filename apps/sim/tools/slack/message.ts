@@ -96,7 +96,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
           typeof params.blocks === 'string'
             ? JSON.parse(params.blocks)
             : params.blocks || undefined,
-                    // Enable link parsing for proper mention handling
+        // Enable link parsing for proper mention handling
         link_names: true,
         // Enable unfurling of links
         unfurl_links: true,

@@ -122,6 +122,8 @@ export function extractFilename(path: string): string {
 
 export async function findLocalFile(filename: string): Promise<string | null> {
   try {
+    const { existsSync } = await import('fs')
+
     if (filename.startsWith('agent-generated-images/')) {
       if (filename.includes('..')) {
         return null
@@ -142,7 +144,6 @@ export async function findLocalFile(filename: string): Promise<string | null> {
       return null
     }
 
-    const { existsSync } = await import('fs')
     const path = await import('path')
     const { UPLOAD_DIR_SERVER } = await import('@/lib/uploads/core/setup.server')
 

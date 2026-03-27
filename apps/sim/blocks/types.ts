@@ -4,6 +4,7 @@ import type { ImageProps } from 'next/image'
 export type BlockIcon =
   | ((props: SVGProps<SVGSVGElement>) => JSX.Element) // for Lucide SVGs
   | ((props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) => JSX.Element) // for Next Image
+
 import type { SelectorKey } from '@/hooks/selectors/types'
 import type { ToolResponse } from '@/tools/types'
 export type ParamType = 'string' | 'number' | 'boolean' | 'json' | 'array' | 'file'

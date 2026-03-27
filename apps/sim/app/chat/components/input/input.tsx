@@ -83,7 +83,6 @@ export const ChatInput: React.FC<{
     }
   }
 
-
   // When parent injects text (e.g. "Ask this in chat"), set input to that text + space and focus
   useEffect(() => {
     if (!insertText || !insertText.trim()) return

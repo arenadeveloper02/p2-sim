@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { permissions, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, asc, desc, eq, isNull , sql} from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'

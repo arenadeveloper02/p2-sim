@@ -4,9 +4,9 @@ import { task } from '@trigger.dev/sdk'
 import { Cron } from 'croner'
 import { and, eq, isNull } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
-import { decryptSecret } from '@/lib/core/security/encryption'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
+import { decryptSecret } from '@/lib/core/security/encryption'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
@@ -26,13 +26,13 @@ import {
   getSubBlockValue,
   validateCronExpression,
 } from '@/lib/workflows/schedules/utils'
-import { REFERENCE } from '@/executor/constants'
-import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
+import { REFERENCE } from '@/executor/constants'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata } from '@/executor/execution/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
 import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
+import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
 
 const logger = createLogger('TriggerScheduleExecution')

@@ -14,7 +14,6 @@ import {
   MODELS_WITH_REASONING_EFFORT,
   MODELS_WITH_THINKING,
   MODELS_WITH_VERBOSITY,
-  MODELS_WITHOUT_MEMORY,
   providers,
   supportsTemperature,
 } from '@/providers/utils'

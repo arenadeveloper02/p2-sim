@@ -36,11 +36,11 @@ import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
 import { type InputFormatField, START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
-import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import {
   workflowChatAddInputEvent,
   workflowChatMsgSentEvent,
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import {
   ChatMessage,
   OutputSelect,
@@ -734,7 +734,7 @@ export function Chat() {
               finalAccumulatedLength: accumulatedContent.length,
               totalChunks: chunkCount,
             })
-            
+
             flushChunks()
             finalizeMessageStream(responseMessageId, contentToSet)
             break
@@ -781,18 +781,18 @@ export function Chat() {
                 ) {
                   const additionalOutputs: string[] = []
 
-                if ('success' in finalEventData && !finalEventData.success) {
-                  const errorMessage = finalEventData.error || 'Workflow execution failed'
-                  flushChunks()
-                  appendMessageContent(
-                    responseMessageId,
-                    `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
-                  )
-                  finalizeMessageStream(responseMessageId)
-                  return
+                  if ('success' in finalEventData && !finalEventData.success) {
+                    const errorMessage = finalEventData.error || 'Workflow execution failed'
+                    flushChunks()
+                    appendMessageContent(
+                      responseMessageId,
+                      `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
+                    )
+                    finalizeMessageStream(responseMessageId)
+                    return
+                  }
+                  continue
                 }
-                continue
-              }
 
                 flushChunks()
                 finalizeMessageStream(responseMessageId)

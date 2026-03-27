@@ -254,7 +254,8 @@ export async function sendSlackMessage(
   }
   error?: string
 }> {
-  const { accessToken, text, threadTs, blocks, files, link_names, unfurl_links, unfurl_media } = params
+  const { accessToken, text, threadTs, blocks, files, link_names, unfurl_links, unfurl_media } =
+    params
   let { channel } = params
 
   if (!channel && params.userId) {
@@ -280,7 +281,7 @@ export async function sendSlackMessage(
       unfurl_links,
       unfurl_media
     )
-    
+
     if (!data.ok) {
       logger.error(`[${requestId}] Slack API error:`, data.error)
       return { success: false, error: data.error || 'Failed to send message' }
@@ -313,7 +314,7 @@ export async function sendSlackMessage(
       unfurl_links,
       unfurl_media
     )
-    
+
     if (!data.ok) {
       return { success: false, error: data.error || 'Failed to send message' }
     }

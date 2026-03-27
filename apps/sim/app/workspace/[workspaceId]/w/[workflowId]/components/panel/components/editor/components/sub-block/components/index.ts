@@ -22,11 +22,11 @@ export { ResponseFormat } from './response/response-format'
 export { ScheduleInfo } from './schedule-info/schedule-info'
 export { SelectorInput, type SelectorOverrides } from './selector-input/selector-input'
 export { ShortInput } from './short-input/short-input'
+export { SkillInput } from './skill-input/skill-input'
 export {
   SlackDateInput,
   SlackDateRangeSelector,
 } from './slack-date-range-selector/slack-date-range-selector'
-export { SkillInput } from './skill-input/skill-input'
 export { SliderInput } from './slider-input/slider-input'
 export { SortBuilder } from './sort-builder/sort-builder'
 export { InputFormat } from './starter/input-format'

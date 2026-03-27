@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { secureFetchWithPinnedIP, validateUrlWithDNS } from '@/lib/core/security/input-validation'
+import { secureFetchWithPinnedIP, validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 import type {
   ZoomListAccountRecordingsParams,

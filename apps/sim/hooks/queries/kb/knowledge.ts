@@ -83,7 +83,6 @@ export async function fetchUserAccessKnowledgeBases(
   return Array.isArray(result?.data) ? result.data : []
 }
 
-
 export async function fetchKnowledgeBase(
   knowledgeBaseId: string,
   signal?: AbortSignal

@@ -17,7 +17,7 @@ body {
 }
 
 @theme {
-  --color-fd-primary:var(--color-fd-foreground);
+  --color-fd-primary: var(--color-fd-foreground);
   --font-geist-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-geist-mono: "Geist Mono", ui-monospace, monospace;
 }
