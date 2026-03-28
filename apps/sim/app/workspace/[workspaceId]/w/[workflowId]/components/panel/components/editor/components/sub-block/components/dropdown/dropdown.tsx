@@ -357,9 +357,7 @@ export const Dropdown = memo(function Dropdown({
       if (!isPreview && !disabled) {
         // If selectAllOption is enabled and empty array is passed, toggle select all/clear all
         if (selectAllOption && multiSelect && selectedValues.length === 0) {
-          const allOptionIds = comboboxOptions
-            .filter((opt) => !opt.hidden)
-            .map((opt) => opt.value)
+          const allOptionIds = comboboxOptions.filter((opt) => !opt.hidden).map((opt) => opt.value)
           const currentValues = (storeValue as string[]) || []
           const allSelected =
             currentValues.length === allOptionIds.length &&

@@ -34,7 +34,8 @@ export const getBrandConfig = (): BrandConfig => {
   return {
     name: getEnv('NEXT_PUBLIC_BRAND_NAME') || defaultBrandConfig.name,
     logoUrl: getEnv('NEXT_PUBLIC_BRAND_LOGO_URL') || defaultBrandConfig.logoUrl,
-    logoUrlBlacktext: getEnv('NEXT_PUBLIC_BRAND_LOGO_URL_DARK') || defaultBrandConfig.logoUrlBlacktext,
+    logoUrlBlacktext:
+      getEnv('NEXT_PUBLIC_BRAND_LOGO_URL_DARK') || defaultBrandConfig.logoUrlBlacktext,
     faviconUrl: getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL') || defaultBrandConfig.faviconUrl,
     customCssUrl: getEnv('NEXT_PUBLIC_CUSTOM_CSS_URL') || defaultBrandConfig.customCssUrl,
     supportEmail: getEnv('NEXT_PUBLIC_SUPPORT_EMAIL') || defaultBrandConfig.supportEmail,

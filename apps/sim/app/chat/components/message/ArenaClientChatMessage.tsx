@@ -17,6 +17,7 @@ import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
+import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 import type { KnowledgeRef, KnowledgeResultChunk } from '@/app/chat/components/message/message'
 import {
   downloadImage,
@@ -34,7 +35,6 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
-import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 

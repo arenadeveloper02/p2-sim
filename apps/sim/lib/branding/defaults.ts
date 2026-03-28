@@ -24,4 +24,3 @@ export const defaultBrandConfig: BrandConfig = {
   },
   isWhitelabeled: false,
 }
-

@@ -1,9 +1,6 @@
 import { createLogger } from '@sim/logger'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
-import type {
-  ZoomListRecordingsParams,
-  ZoomListRecordingsResponse,
-} from '@/tools/zoom/types'
+import type { ZoomListRecordingsParams, ZoomListRecordingsResponse } from '@/tools/zoom/types'
 
 const logger = createLogger('zoom:list_account_recordings')
 

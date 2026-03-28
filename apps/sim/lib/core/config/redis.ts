@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { createLogger } from '@sim/logger'
 import type Redis from 'ioredis'
 import { env } from '@/lib/core/config/env'
@@ -10,9 +11,7 @@ let globalRedisClient: Redis | null = null
 let pingFailures = 0
 let pingInterval: NodeJS.Timeout | null = null
 let pingInFlight = false
-let redisConstructor:
-  | (new (url: string, options?: Record<string, unknown>) => Redis)
-  | null = null
+let redisConstructor: (new (url: string, options?: Record<string, unknown>) => Redis) | null = null
 
 const PING_INTERVAL_MS = 15_000
 const MAX_PING_FAILURES = 2
@@ -82,9 +81,12 @@ export function getRedisClient(): Redis | null {
 
   try {
     if (!redisConstructor) {
-      const nodeRequire = eval('require') as NodeRequire
+      const nodeRequire = createRequire(import.meta.url)
       type RedisModule =
-        | (new (url: string, options?: Record<string, unknown>) => Redis)
+        | (new (
+            url: string,
+            options?: Record<string, unknown>
+          ) => Redis)
         | { default: new (url: string, options?: Record<string, unknown>) => Redis }
       const module = nodeRequire('ioredis') as RedisModule
       redisConstructor = typeof module === 'function' ? module : module.default

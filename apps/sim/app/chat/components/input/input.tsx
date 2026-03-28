@@ -194,7 +194,7 @@ export const ChatInput: React.FC<{
           <div
             onClick={handleContainerClick}
             className={cn(
-              'relative z-10 cursor-text rounded-[20px] border border-[var(--border-1)] bg-[var(--landing-bg-elevated)] px-2.5 py-2',
+              'relative z-10 cursor-text rounded-[20px] border border-[var(--border-1)]  px-2.5 py-2',
               isDragOver && 'border-purple-500'
             )}
             onDragEnter={(e) => {
@@ -268,7 +268,7 @@ export const ChatInput: React.FC<{
               onKeyDown={handleKeyDown}
               placeholder={isDragOver ? 'Drop files here...' : 'Enter a message...'}
               rows={1}
-              className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent px-1 py-1 text-[15px] text-[var(--landing-text)] leading-[24px] caret-[var(--landing-text)] outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--landing-text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
+              className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent px-1 py-1 text-[15px] leading-[24px] caret-black outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--landing-text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
             />
 
             {/* Bottom row */}

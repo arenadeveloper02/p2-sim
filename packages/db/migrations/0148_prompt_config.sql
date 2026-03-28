@@ -8,3 +8,7 @@ CREATE TABLE IF NOT EXISTS "prompt_config" (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "prompt_config_key_idx" ON "prompt_config" USING btree ("key");
+
+ALTER TABLE "workflow_execution_logs" ADD COLUMN IF NOT EXISTS "conversation_id" text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS "workflow_snapshots_workflow_hash_idx" ON "workflow_execution_snapshots" USING btree ("workflow_id","state_hash");

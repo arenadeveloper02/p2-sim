@@ -20,8 +20,9 @@ import {
   UserPlus,
 } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
-import { getDisplayPlanName } from '@/lib/billing/plan-helpers'
+import { getDisplayPlanName, isFree } from '@/lib/billing/plan-helpers'
 import { env } from '@/lib/core/config/env'
+import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { cn } from '@/lib/core/utils/cn'
 import { changeWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
@@ -30,6 +31,7 @@ import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components
 import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
+import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 
 const logger = createLogger('WorkspaceHeader')
 
@@ -167,9 +169,17 @@ export function WorkspaceHeader({
   }, [])
 
   const { isInvitationsDisabled } = usePermissionConfig()
-  const { data: subscriptionResponse } = useSubscriptionData()
-  const rawPlanName = getDisplayPlanName(subscriptionResponse?.data?.plan)
-  const planDisplayName = rawPlanName.includes('for Teams') ? rawPlanName : `${rawPlanName} Plan`
+  const { data: subscriptionResponse } = useSubscriptionData({ enabled: isBillingEnabled })
+  const { navigateToSettings } = useSettingsNavigation()
+  const currentPlan = subscriptionResponse?.data?.plan
+  const showPlanInfo = isBillingEnabled && typeof currentPlan !== 'undefined'
+  const rawPlanName = showPlanInfo ? getDisplayPlanName(currentPlan) : ''
+  const planDisplayName = showPlanInfo
+    ? rawPlanName.includes('for Teams')
+      ? rawPlanName
+      : `${rawPlanName} Plan`
+    : ''
+  const isFreePlan = showPlanInfo && isFree(currentPlan)
 
   // Listen for open-invite-modal event from context menu
   useEffect(() => {
@@ -431,11 +441,30 @@ export function WorkspaceHeader({
                     >
                       {workspaceInitial}
                     </div>
-                    <div className='flex min-w-0 flex-col'>
+                    <div className='flex min-w-0 flex-1 flex-col'>
                       <span className='truncate font-medium text-[var(--text-primary)] text-small'>
                         {activeWorkspace?.name || 'Loading...'}
                       </span>
-                      <span className='text-[var(--text-tertiary)] text-xs'>{planDisplayName}</span>
+                      {showPlanInfo && (
+                        <div className='flex items-center gap-2'>
+                          <span className='truncate text-[var(--text-tertiary)] text-xs'>
+                            {planDisplayName}
+                          </span>
+                          {isFreePlan && (
+                            <button
+                              type='button'
+                              className='flex-shrink-0 rounded-full bg-[color-mix(in_srgb,var(--brand-accent)_16%,transparent)] px-2 py-0.5 font-medium text-[11px] text-[var(--brand-accent)] leading-none transition-opacity hover:opacity-85'
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setIsWorkspaceMenuOpen(false)
+                                navigateToSettings({ section: 'subscription' })
+                              }}
+                            >
+                              Upgrade
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -499,7 +528,9 @@ export function WorkspaceHeader({
                           ) : (
                             <div
                               className={cn(
-                                'group flex cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-active)]',
+                                'group flex cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors',
+                                workspace.id !== workspaceId &&
+                                  'hover-hover:bg-[var(--surface-hover)]',
                                 workspace.id === workspaceId && 'bg-[var(--surface-active)]'
                               )}
                               onClick={() => {
@@ -525,7 +556,7 @@ export function WorkspaceHeader({
                                   const rect = e.currentTarget.getBoundingClientRect()
                                   openContextMenuAt(workspace, rect.right, rect.top)
                                 }}
-                                className='flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity hover-hover:bg-[var(--surface-7)] group-hover:opacity-100'
+                                className='flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity group-hover:opacity-100'
                               >
                                 <MoreHorizontal className='h-[14px] w-[14px] text-[var(--text-tertiary)]' />
                               </button>
@@ -539,7 +570,7 @@ export function WorkspaceHeader({
                   <div className='mt-1 flex flex-col gap-0.5'>
                     <button
                       type='button'
-                      className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-active)] disabled:pointer-events-none disabled:opacity-50'
+                      className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-hover)] disabled:pointer-events-none disabled:opacity-50'
                       onClick={(e) => {
                         e.stopPropagation()
                         setIsWorkspaceMenuOpen(false)
@@ -557,7 +588,7 @@ export function WorkspaceHeader({
                       <DropdownMenuSeparator />
                       <button
                         type='button'
-                        className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-active)]'
+                        className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-hover)]'
                         onClick={() => {
                           setIsInviteModalOpen(true)
                           setIsWorkspaceMenuOpen(false)
