@@ -30,11 +30,7 @@ const fetchCampaignOptions = async (
     const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
     const blockValues = workflowValues?.[blockId]
 
-    const accounts = blockValues?.accounts
-    const credential = blockValues?.credential
-
-    const useSharedAccount = accounts && accounts !== 'manual'
-    const credentialId = (useSharedAccount ? accounts : credential) as string
+    const credentialId = blockValues?.accounts as string
 
     if (!credentialId) {
       return []
@@ -104,10 +100,7 @@ const fetchCampaignOptions = async (
       if (activeWorkflowId) {
         const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
         const blockValues = workflowValues?.[blockId]
-        const accounts = blockValues?.accounts
-        const credential = blockValues?.credential
-        const useSharedAccount = accounts && accounts !== 'manual'
-        const credentialId = (useSharedAccount ? accounts : credential) as string
+        const credentialId = blockValues?.accounts as string
 
         if (credentialId) {
           const cached = campaignCache.get(credentialId)
@@ -224,7 +217,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       serviceId: 'hubspot',
       requiredScopes: getScopesForService('hubspot'),
       placeholder: 'Select HubSpot account',
-      required: true,
+      /** Auth is resolved from `accounts` only; this field is not user-edited. */
+      required: false,
       hidden: true,
     },
     {
@@ -234,7 +228,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
       placeholder: 'Enter credential ID',
-      required: true,
+      /** Not used when only shared `accounts` options are supported. */
+      required: false,
     },
     {
       id: 'contactId',
@@ -1728,7 +1723,6 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       params: (params) => {
         const {
           accounts,
-          oauthCredential,
           operation,
           propertiesToSet,
           properties,
@@ -1740,11 +1734,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           ...rest
         } = params
 
-        const useSharedAccount = accounts && accounts !== 'manual'
-        // const effectiveCredential = useSharedAccount ? (accounts as string) : (credential as string)
-
         const cleanParams: Record<string, any> = {
-          oauthCredential,
+          oauthCredential: accounts as string,
         }
 
         const createUpdateOps = [

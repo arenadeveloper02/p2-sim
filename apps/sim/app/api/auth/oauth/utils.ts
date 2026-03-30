@@ -87,10 +87,38 @@ export async function safeAccountInsert(
 }
 
 /**
- * Get a credential by ID and verify it belongs to the user
+ * Get a credential by ID and verify it belongs to the user.
+ *
+ * Resolution order:
+ * 1. Legacy `account` row by id + userId (user-owned OAuth connection).
+ * 2. HubSpot shared tenants (`accountTokens.alias` — e.g. `northstar_anesthesia`) — matches legacy branch behavior.
+ * 3. Workspace `credential` row → underlying `account.id` via {@link resolveOAuthAccountId}.
  */
 export async function getCredential(requestId: string, credentialId: string, userId: string) {
-  // First attempt ID lookup
+  debugger
+  const directAccount = await db
+    .select()
+    .from(account)
+    .where(and(eq(account.id, credentialId), eq(account.userId, userId)))
+    .limit(1)
+
+  if (directAccount.length > 0) {
+    return directAccount[0]
+  }
+
+  const manualAliasCredentials = await db
+    .select()
+    .from(accountTokens)
+    .where(and(eq(accountTokens.alias, credentialId), eq(accountTokens.providerId, 'hubspot')))
+    .limit(1)
+
+  if (manualAliasCredentials.length > 0) {
+    logger.info(`[${requestId}] Resolved manual HubSpot credential via alias from accountTokens`, {
+      alias: credentialId,
+    })
+    return manualAliasCredentials[0]
+  }
+
   const resolved = await resolveOAuthAccountId(credentialId)
   if (!resolved) {
     logger.warn(`[${requestId}] Credential is not an OAuth credential`)
@@ -107,27 +135,8 @@ export async function getCredential(requestId: string, credentialId: string, use
     return credentials[0]
   }
 
-  // If not found in account table, attempt HubSpot alias lookup in accountTokens table
-  const manualAliasCredentials = await db
-    .select()
-    .from(accountTokens)
-    .where(and(eq(accountTokens.alias, credentialId), eq(accountTokens.providerId, 'hubspot')))
-    .limit(1)
-
-  if (manualAliasCredentials.length > 0) {
-    logger.info(`[${requestId}] Resolved manual HubSpot credential via alias from accountTokens`, {
-      alias: credentialId,
-    })
-    return manualAliasCredentials[0]
-  }
-
-  // logger.warn(`[${requestId}] Credential not found for ID or alias: ${credentialId}`)
-  // return undefined
-
-  return {
-    ...credentials[0],
-    resolvedCredentialId: resolved.accountId,
-  }
+  logger.warn(`[${requestId}] Credential not found for ID or alias: ${credentialId}`)
+  return undefined
 }
 
 export async function getOAuthToken(userId: string, providerId: string): Promise<string | null> {
