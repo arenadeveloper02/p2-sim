@@ -194,7 +194,7 @@ export const ChatInput: React.FC<{
           <div
             onClick={handleContainerClick}
             className={cn(
-              'relative z-10 cursor-text rounded-[20px] border border-[var(--border-1)]  px-2.5 py-2',
+              'relative z-10 cursor-text rounded-[20px] border border-[var(--border-1)] px-2.5 py-2',
               isDragOver && 'border-purple-500'
             )}
             onDragEnter={(e) => {
