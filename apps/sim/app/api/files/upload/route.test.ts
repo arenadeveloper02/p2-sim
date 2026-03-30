@@ -308,6 +308,48 @@ describe('File Upload API Route', () => {
     expect(data).toBeDefined()
   })
 
+  it('should accept webp and other chat-style images for execution context', async () => {
+    vi.resetModules()
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+
+    vi.doMock('@/lib/uploads/contexts/execution', () => ({
+      uploadExecutionFile: vi.fn().mockResolvedValue({
+        id: 'exec-file-id',
+        name: 'fusion.webp',
+        url: '/api/files/serve/execution/test-workspace-id/wf/ex/fusion.webp',
+        size: 4,
+        type: 'image/webp',
+        key: 'execution/test-workspace-id/wf/ex/fusion.webp',
+        uploadedAt: new Date().toISOString(),
+      }),
+    }))
+
+    const formData = new FormData()
+    formData.append('context', 'execution')
+    formData.append('workspaceId', 'test-workspace-id')
+    formData.append('workflowId', 'wf-id')
+    formData.append('executionId', 'ex-id')
+    formData.append('file', new File(['webp'], 'fusion.webp', { type: 'image/webp' }))
+
+    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    const { POST } = await import('@/app/api/files/upload/route')
+    const response = await POST(req)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data).toMatchObject({ name: 'fusion.webp', type: 'image/webp' })
+
+    const { uploadExecutionFile } = await import('@/lib/uploads/contexts/execution')
+    expect(uploadExecutionFile).toHaveBeenCalled()
+  })
+
   it('should handle missing files', async () => {
     setupFileApiMocks()
 

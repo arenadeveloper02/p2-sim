@@ -130,7 +130,19 @@ export class BlockExecutor {
         await validateBlockType(ctx.userId, blockType, ctx)
       }
 
+      logger.info('BlockExecutor: resolving inputs', {
+        blockId: block.id,
+        blockName: block.metadata?.name ?? block.metadata?.id,
+        blockType: block.metadata?.id,
+        workflowId: ctx.workflowId,
+      })
       resolvedInputs = this.resolver.resolveInputs(ctx, node.id, block.config.params, block)
+      logger.info('BlockExecutor: inputs resolved', {
+        blockId: block.id,
+        blockName: block.metadata?.name ?? block.metadata?.id,
+        paramCount: Object.keys(resolvedInputs).length,
+        workflowId: ctx.workflowId,
+      })
 
       if (blockLog) {
         blockLog.input = this.sanitizeInputsForLog(resolvedInputs)
@@ -152,9 +164,20 @@ export class BlockExecutor {
     cleanupSelfReference?.()
 
     try {
+      logger.info('BlockExecutor: invoking handler', {
+        blockId: block.id,
+        blockName: block.metadata?.name ?? block.metadata?.id,
+        blockType: block.metadata?.id,
+        workflowId: ctx.workflowId,
+      })
       const output = handler.executeWithNode
         ? await handler.executeWithNode(ctx, block, resolvedInputs, nodeMetadata)
         : await handler.execute(ctx, block, resolvedInputs)
+      logger.info('BlockExecutor: handler returned', {
+        blockId: block.id,
+        blockName: block.metadata?.name ?? block.metadata?.id,
+        workflowId: ctx.workflowId,
+      })
 
       const isStreamingExecution =
         output && typeof output === 'object' && 'stream' in output && 'execution' in output

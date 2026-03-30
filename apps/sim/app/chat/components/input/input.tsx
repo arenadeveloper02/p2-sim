@@ -71,22 +71,14 @@ export const ChatInput: React.FC<{
     const newFiles: AttachedFile[] = []
     const maxSize = 10 * 1024 * 1024
     const maxFiles = 15
+    const preparedFiles: AttachedFile[] = []
+    const errors: string[] = []
 
     for (let i = 0; i < selectedFiles.length; i++) {
-      if (attachedFiles.length + newFiles.length >= maxFiles) break
-
       const file = selectedFiles[i]
 
       if (file.size > maxSize) {
-        setUploadErrors((prev) => [...prev, `${file.name} is too large (max 10MB)`])
-        continue
-      }
-
-      const isDuplicate = attachedFiles.some(
-        (existing) => existing.name === file.name && existing.size === file.size
-      )
-      if (isDuplicate) {
-        setUploadErrors((prev) => [...prev, `${file.name} already added`])
+        errors.push(`${file.name} is too large (max 10MB)`)
         continue
       }
 
@@ -104,7 +96,7 @@ export const ChatInput: React.FC<{
         }
       }
 
-      newFiles.push({
+      preparedFiles.push({
         id: crypto.randomUUID(),
         name: file.name,
         size: file.size,
@@ -114,9 +106,38 @@ export const ChatInput: React.FC<{
       })
     }
 
-    if (newFiles.length > 0) {
-      setAttachedFiles((prev) => [...prev, ...newFiles])
-      setUploadErrors([])
+    setAttachedFiles((current) => {
+      if (preparedFiles.length === 0) return current
+
+      const remainingSlots = Math.max(0, maxFiles - current.length)
+      if (remainingSlots === 0) {
+        errors.push(`Maximum of ${maxFiles} files allowed`)
+        return current
+      }
+
+      const next: AttachedFile[] = [...current]
+      for (const candidate of preparedFiles) {
+        if (next.length >= maxFiles) break
+
+        const isDuplicate = next.some(
+          (existingFile) =>
+            existingFile.name === candidate.name && existingFile.size === candidate.size
+        )
+        if (isDuplicate) {
+          errors.push(`${candidate.name} already added`)
+          continue
+        }
+
+        next.push(candidate)
+      }
+
+      return next
+    })
+
+    if (errors.length > 0) {
+      setUploadErrors(errors)
+    } else if (preparedFiles.length > 0) {
+      setUploadErrors([]) // Clear errors when files are successfully added
     }
   }
 
@@ -194,7 +215,7 @@ export const ChatInput: React.FC<{
           <div
             onClick={handleContainerClick}
             className={cn(
-              'relative z-10 cursor-text rounded-[20px] border border-[var(--border-1)]  px-2.5 py-2',
+              'relative z-10 cursor-text rounded-[20px] border border-[var(--border-1)] px-2.5 py-2',
               isDragOver && 'border-purple-500'
             )}
             onDragEnter={(e) => {

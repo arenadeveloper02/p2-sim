@@ -15,6 +15,7 @@ export { shopifyGetInventoryLevelTool } from './get_inventory_level'
 // Order Tools
 export { shopifyGetOrderTool } from './get_order'
 export { shopifyGetProductTool } from './get_product'
+export { shopifyGrossSalesOverTimeTool } from './gross_sales_over_time'
 // Collection Tools
 export { shopifyListCollectionsTool } from './list_collections'
 export { shopifyListCustomersTool } from './list_customers'

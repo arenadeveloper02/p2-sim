@@ -389,6 +389,10 @@ export interface SubBlockConfig {
   acceptedTypes?: string
   multiple?: boolean
   maxSize?: number
+  /** When 'image-fusion', upload API validates against all image extensions (e.g. svg, webp). */
+  uploadContext?: 'image-fusion'
+  /** When true, show "Use Start block files" so chat-uploaded files can be passed via <start.files>. */
+  allowStartFilesReference?: boolean
   // Slider-specific properties
   step?: number
   integer?: boolean

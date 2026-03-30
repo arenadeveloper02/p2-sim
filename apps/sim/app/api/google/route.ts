@@ -5,7 +5,13 @@ import { buildGenerateContentUrl, buildNanoBananaRequestBody } from '@/app/api/g
 
 export const runtime = 'nodejs'
 
+/** Allow up to 5 minutes for image generation (same as image-generator; 4K/fusion can be slow). */
+export const maxDuration = 300
+
 const logger = createLogger('GoogleNanoBananaApi')
+
+/** Timeout for the outgoing request to Google – match maxDuration so we never abort before the route is killed. */
+const GOOGLE_API_TIMEOUT_MS = 5 * 60 * 1000
 
 /**
  * POST /api/google
@@ -19,6 +25,7 @@ const logger = createLogger('GoogleNanoBananaApi')
  * - imageSize: string (optional) - For Pro only: 1K, 2K, 4K
  * - inputImage: string | { path: string; type?: string } (optional) - base64 image or file reference
  * - inputImageMimeType: string (optional) - MIME type for the input image
+ * - inputImages: array (optional) - multiple images for fusion (Nano Banana Pro)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -29,6 +36,7 @@ export async function POST(request: NextRequest) {
     const imageSize = body.imageSize as string | undefined
     const inputImage = body.inputImage as unknown
     const inputImageMimeType = body.inputImageMimeType as string | undefined
+    const inputImages = Array.isArray(body.inputImages) ? body.inputImages : undefined
 
     if (!model || !prompt) {
       return NextResponse.json(
@@ -48,21 +56,49 @@ export async function POST(request: NextRequest) {
       imageSize,
       inputImage,
       inputImageMimeType,
+      inputImages,
     })
 
-    logger.info('Sending Nano Banana request', { model, aspectRatio, hasImage: !!inputImage })
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify(requestBody),
+    const imageCount = inputImages?.length ?? (inputImage ? 1 : 0)
+    logger.info('Sending Nano Banana request', {
+      model,
+      aspectRatio,
+      imageCount,
     })
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), GOOGLE_API_TIMEOUT_MS)
+
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timeoutId)
+    }
 
     if (!response.ok) {
       const errorText = await response.text()
+      let errorMessage = `Nano Banana API error: ${response.status} ${response.statusText}`
+      try {
+        const errJson = JSON.parse(errorText) as { error?: { message?: string } }
+        if (errJson?.error?.message) {
+          errorMessage = `Nano Banana API error: ${errJson.error.message}`
+          if (errJson.error.message.toLowerCase().includes('deadline')) {
+            errorMessage +=
+              '. Try using Resolution 1K, fewer input images, or smaller images for fusion.'
+          }
+        }
+      } catch {
+        if (errorText) errorMessage += ` - ${errorText.slice(0, 500)}`
+      }
       logger.error('Nano Banana API error response', {
         status: response.status,
         statusText: response.statusText,
@@ -71,7 +107,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: `Nano Banana API error: ${response.status} ${response.statusText}`,
+          error: errorMessage,
           details: errorText,
         },
         { status: response.status }
@@ -117,6 +153,8 @@ export async function GET() {
       imageSize: 'string - For Pro only: 1K, 2K, 4K',
       inputImage: 'string | { path: string; type?: string } - Base64 image or file reference',
       inputImageMimeType: 'string - MIME type of the input image',
+      inputImages:
+        'array - Multiple images for fusion (Nano Banana Pro); each item: base64 string or { path, type? }',
     },
     response: {
       success: 'boolean',

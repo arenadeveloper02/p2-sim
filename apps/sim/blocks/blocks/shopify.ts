@@ -37,6 +37,7 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
         // Order Operations
         { label: 'Get Order', id: 'shopify_get_order' },
         { label: 'List Orders', id: 'shopify_list_orders' },
+        { label: 'Gross Sales Over Time', id: 'shopify_gross_sales_over_time' },
         { label: 'Update Order', id: 'shopify_update_order' },
         { label: 'Cancel Order', id: 'shopify_cancel_order' },
         // Customer Operations
@@ -233,6 +234,44 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
       condition: {
         field: 'operation',
         value: ['shopify_list_orders'],
+      },
+    },
+    // Start Date (for gross sales)
+    {
+      id: 'startDate',
+      title: 'Start Date',
+      type: 'short-input',
+      placeholder: 'YYYY-MM-DD',
+      condition: {
+        field: 'operation',
+        value: ['shopify_gross_sales_over_time'],
+      },
+    },
+    // End Date (for gross sales)
+    {
+      id: 'endDate',
+      title: 'End Date',
+      type: 'short-input',
+      placeholder: 'YYYY-MM-DD',
+      condition: {
+        field: 'operation',
+        value: ['shopify_gross_sales_over_time'],
+      },
+    },
+    // Group By (for gross sales)
+    {
+      id: 'groupBy',
+      title: 'Group By',
+      type: 'dropdown',
+      options: [
+        { label: 'Day', id: 'day' },
+        { label: 'Week', id: 'week' },
+        { label: 'Month', id: 'month' },
+      ],
+      value: () => 'day',
+      condition: {
+        field: 'operation',
+        value: ['shopify_gross_sales_over_time'],
       },
     },
     // Order Note (for update)
@@ -513,6 +552,7 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
       'shopify_delete_product',
       'shopify_get_order',
       'shopify_list_orders',
+      'shopify_gross_sales_over_time',
       'shopify_update_order',
       'shopify_cancel_order',
       'shopify_create_customer',
@@ -613,6 +653,14 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
             return {
               ...baseParams,
               status: params.orderStatus !== 'any' ? params.orderStatus : undefined,
+            }
+
+          case 'shopify_gross_sales_over_time':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              groupBy: params.groupBy || 'day',
             }
 
           case 'shopify_update_order':
@@ -800,6 +848,10 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
     orderTags: { type: 'string', description: 'Order tags' },
     cancelReason: { type: 'string', description: 'Order cancellation reason' },
     staffNote: { type: 'string', description: 'Staff note for order cancellation' },
+    // Gross Sales inputs
+    startDate: { type: 'string', description: 'Start date for sales analysis (YYYY-MM-DD)' },
+    endDate: { type: 'string', description: 'End date for sales analysis (YYYY-MM-DD)' },
+    groupBy: { type: 'string', description: 'Group by day, week, or month' },
     // Customer inputs
     customerId: { type: 'string', description: 'Customer ID' },
     customerEmail: { type: 'string', description: 'Customer email' },
@@ -844,6 +896,9 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
     // Collection outputs
     collection: { type: 'json', description: 'Collection data with products' },
     collections: { type: 'json', description: 'Collections list' },
+    // Gross Sales outputs
+    salesData: { type: 'json', description: 'Aggregated sales data over time' },
+    summary: { type: 'json', description: 'Sales summary statistics' },
     // Delete outputs
     deletedId: { type: 'string', description: 'ID of deleted resource' },
     // Success indicator

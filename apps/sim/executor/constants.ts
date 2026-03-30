@@ -127,6 +127,9 @@ export const REFERENCE = {
   },
 } as const
 
+/** Reference to Start block's files output (e.g. chat-uploaded files). Use in file-upload params to receive start.files at runtime. */
+export const START_FILES_REF = '<start.files>'
+
 export const SPECIAL_REFERENCE_PREFIXES = [
   REFERENCE.PREFIX.LOOP,
   REFERENCE.PREFIX.PARALLEL,

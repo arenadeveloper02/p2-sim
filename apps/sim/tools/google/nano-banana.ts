@@ -96,6 +96,13 @@ const nanoBananaTool: ToolConfig = {
       visibility: 'user-or-llm',
       description: 'MIME type of the input image (image/png, image/jpeg, etc.)',
     },
+    inputImages: {
+      type: 'array',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Multiple images for fusion (Nano Banana Pro). Array of base64 strings or { path, type? } objects. When provided, used instead of inputImage.',
+    },
   },
 
   request: {
@@ -109,14 +116,21 @@ const nanoBananaTool: ToolConfig = {
         'Content-Type': 'application/json',
       }
     },
-    body: async (params) => ({
-      model: params.model,
-      prompt: params.prompt,
-      aspectRatio: params.aspectRatio,
-      imageSize: params.imageSize,
-      inputImage: params.inputImage,
-      inputImageMimeType: params.inputImageMimeType,
-    }),
+    body: async (params) => {
+      const body: Record<string, unknown> = {
+        model: params.model,
+        prompt: params.prompt,
+        aspectRatio: params.aspectRatio,
+        imageSize: params.imageSize,
+      }
+      if (Array.isArray(params.inputImages) && params.inputImages.length > 0) {
+        body.inputImages = params.inputImages
+      } else {
+        body.inputImage = params.inputImage
+        body.inputImageMimeType = params.inputImageMimeType
+      }
+      return body
+    },
   },
 
   transformResponse: async (response, params) => {
@@ -221,6 +235,8 @@ const nanoBananaTool: ToolConfig = {
             aspectRatio: params?.aspectRatio || '1:1',
             imageSize: params?.imageSize ?? null,
             hasInputImage: !!(params?.inputImage && params?.inputImageMimeType),
+            hasInputImages: Array.isArray(params?.inputImages) && params.inputImages.length > 0,
+            inputImageCount: Array.isArray(params?.inputImages) ? params.inputImages.length : null,
             inputImageMimeType: params?.inputImageMimeType || null,
             stored: !!finalImageUrl,
             s3UploadFailed,
@@ -235,14 +251,43 @@ const nanoBananaTool: ToolConfig = {
   },
 
   outputs: {
-    content: { type: 'string', description: 'Image URL or identifier' },
-    image: {
-      type: 'file',
-      description: 'Generated image (URL in S3/local storage or base64)',
-    },
-    metadata: {
-      type: 'json',
-      description: 'Generation metadata (model, aspect ratio, storage status, etc.)',
+    success: { type: 'boolean', description: 'Operation success status' },
+    output: {
+      type: 'object',
+      description: 'Generated image data',
+      properties: {
+        content: { type: 'string', description: 'Image identifier' },
+        image: { type: 'string', description: 'Base64 encoded image data' },
+        metadata: {
+          type: 'object',
+          description: 'Image generation metadata',
+          properties: {
+            model: { type: 'string', description: 'Model used for image generation' },
+            mimeType: { type: 'string', description: 'Image MIME type' },
+            aspectRatio: { type: 'string', description: 'Image aspect ratio' },
+            imageSize: {
+              type: 'string',
+              description: 'Output resolution (1K/2K/4K) when using Nano Banana Pro',
+            },
+            hasInputImage: {
+              type: 'boolean',
+              description: 'Whether an input image was provided for editing',
+            },
+            hasInputImages: {
+              type: 'boolean',
+              description: 'Whether multiple images were provided for fusion (Nano Banana Pro)',
+            },
+            inputImageCount: {
+              type: 'number',
+              description: 'Number of input images used for fusion (when hasInputImages is true)',
+            },
+            inputImageMimeType: {
+              type: 'string',
+              description: 'MIME type of the input image (if provided)',
+            },
+          },
+        },
+      },
     },
   },
 }

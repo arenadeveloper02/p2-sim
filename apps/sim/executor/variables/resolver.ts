@@ -145,6 +145,13 @@ export class VariableResolver {
     }
 
     if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (/^<[^<>]+>$/.test(trimmed)) {
+        const raw = this.resolveSingleReference(ctx, currentNodeId, trimmed, loopScope)
+        return raw !== undefined
+          ? raw
+          : this.resolveTemplate(ctx, currentNodeId, value, loopScope, block)
+      }
       return this.resolveTemplate(ctx, currentNodeId, value, loopScope, block)
     }
     return value
