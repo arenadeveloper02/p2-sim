@@ -102,6 +102,7 @@ export const env = createEnv({
     OPENAI_API_KEY_1:                      z.string().min(1).optional(),           // Additional OpenAI API key for load balancing
     OPENAI_API_KEY_2:                      z.string().min(1).optional(),           // Additional OpenAI API key for load balancing
     OPENAI_API_KEY_3:                      z.string().min(1).optional(),           // Additional OpenAI API key for load balancing
+    OPENROUTER_API_KEY:                    z.string().min(1).optional(),           // OpenRouter API key
     XAI_API_KEY:                           z.string().min(1).optional(),  
     XAI_API_KEY_1:                         z.string().min(1).optional(), 
     XAI_API_KEY_2:                         z.string().min(1).optional(), 

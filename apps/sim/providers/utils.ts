@@ -777,6 +777,7 @@ export function getApiKey(
   const isGeminiModel = provider === 'google'
   const isSambaNovaModel = provider === 'sambanova'
   const isXaiModel = provider === 'xai'
+  const isOpenRouterModel = provider === 'openrouter'
 
   if (
     isHosted &&
@@ -820,6 +821,8 @@ export function getApiKey(
       envVarName = 'SAMBANOVA_API_KEY'
     } else if (isXaiModel) {
       envVarName = 'XAI_API_KEY'
+    } else if (isOpenRouterModel) {
+      envVarName = 'OPENROUTER_API_KEY'
     }
 
     if (envVarName && environmentVariables[envVarName]) {
@@ -841,6 +844,8 @@ export function getApiKey(
       serverEnvVarName = 'SAMBANOVA_API_KEY'
     } else if (isXaiModel) {
       serverEnvVarName = 'XAI_API_KEY'
+    } else if (isOpenRouterModel) {
+      serverEnvVarName = 'OPENROUTER_API_KEY'
     }
 
     if (serverEnvVarName && env[serverEnvVarName as keyof typeof env]) {
