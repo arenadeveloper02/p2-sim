@@ -19,6 +19,39 @@ interface NanoBananaResponse {
   }>
 }
 
+function formatCandidateFailureReason(candidate: unknown): string | null {
+  if (!candidate || typeof candidate !== 'object') return null
+
+  const candidateObj = candidate as {
+    finishReason?: string
+    finishMessage?: string
+    safetyRatings?: Array<{ category?: string; probability?: string; blocked?: boolean }>
+  }
+
+  const details: string[] = []
+
+  if (candidateObj.finishReason) {
+    details.push(`finishReason=${candidateObj.finishReason}`)
+  }
+  if (candidateObj.finishMessage) {
+    details.push(`finishMessage=${candidateObj.finishMessage}`)
+  }
+  if (Array.isArray(candidateObj.safetyRatings) && candidateObj.safetyRatings.length > 0) {
+    const blockedCategories = candidateObj.safetyRatings
+      .filter((rating) => rating?.blocked)
+      .map(
+        (rating) =>
+          `${rating.category || 'unknown'}${rating.probability ? `(${rating.probability})` : ''}`
+      )
+    if (blockedCategories.length > 0) {
+      details.push(`blockedCategories=${blockedCategories.join(',')}`)
+    }
+  }
+
+  if (details.length === 0) return null
+  return details.join('; ')
+}
+
 const nanoBananaTool: ToolConfig = {
   id: 'google_nano_banana',
   name: 'Google Nano Banana',
@@ -121,7 +154,12 @@ const nanoBananaTool: ToolConfig = {
       const candidate = dt.data?.candidates[0]
       if (!candidate.content || !candidate.content.parts) {
         logger.error('No content parts found in candidate:', candidate)
-        throw new Error('No content parts found in candidate')
+        const reason = formatCandidateFailureReason(candidate)
+        throw new Error(
+          reason
+            ? `No content parts found in candidate (${reason})`
+            : 'No content parts found in candidate'
+        )
       }
 
       // Find the image part
@@ -139,7 +177,10 @@ const nanoBananaTool: ToolConfig = {
 
       if (!base64Image) {
         logger.error('No image data found in response parts:', candidate.content.parts)
-        throw new Error('No image data found in response')
+        const reason = formatCandidateFailureReason(candidate)
+        throw new Error(
+          reason ? `No image data found in response (${reason})` : 'No image data found in response'
+        )
       }
 
       logger.info('Successfully received Nano Banana image, length:', base64Image.length)
