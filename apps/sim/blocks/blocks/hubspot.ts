@@ -225,6 +225,7 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       requiredScopes: getScopesForService('hubspot'),
       placeholder: 'Select HubSpot account',
       required: true,
+      hidden: true,
     },
     {
       id: 'manualCredential',
