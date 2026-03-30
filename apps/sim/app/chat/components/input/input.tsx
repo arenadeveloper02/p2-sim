@@ -136,27 +136,17 @@ export const ChatInput: React.FC<{
   const handleFileSelect = async (selectedFiles: FileList | null) => {
     if (!selectedFiles) return
 
-    const newFiles: AttachedFile[] = []
     const maxSize = 10 * 1024 * 1024 // 10MB limit
     const maxFiles = 15
+    const preparedFiles: AttachedFile[] = []
+    const errors: string[] = []
 
     for (let i = 0; i < selectedFiles.length; i++) {
-      if (attachedFiles.length + newFiles.length >= maxFiles) break
-
       const file = selectedFiles[i]
 
       // Check file size
       if (file.size > maxSize) {
-        setUploadErrors((prev) => [...prev, `${file.name} is too large (max 10MB)`])
-        continue
-      }
-
-      // Check for duplicates
-      const isDuplicate = attachedFiles.some(
-        (existingFile) => existingFile.name === file.name && existingFile.size === file.size
-      )
-      if (isDuplicate) {
-        setUploadErrors((prev) => [...prev, `${file.name} already added`])
+        errors.push(`${file.name} is too large (max 10MB)`)
         continue
       }
 
@@ -175,7 +165,7 @@ export const ChatInput: React.FC<{
         }
       }
 
-      newFiles.push({
+      preparedFiles.push({
         id: crypto.randomUUID(),
         name: file.name,
         size: file.size,
@@ -185,8 +175,37 @@ export const ChatInput: React.FC<{
       })
     }
 
-    if (newFiles.length > 0) {
-      setAttachedFiles([...attachedFiles, ...newFiles])
+    setAttachedFiles((current) => {
+      if (preparedFiles.length === 0) return current
+
+      const remainingSlots = Math.max(0, maxFiles - current.length)
+      if (remainingSlots === 0) {
+        errors.push(`Maximum of ${maxFiles} files allowed`)
+        return current
+      }
+
+      const next: AttachedFile[] = [...current]
+      for (const candidate of preparedFiles) {
+        if (next.length >= maxFiles) break
+
+        const isDuplicate = next.some(
+          (existingFile) =>
+            existingFile.name === candidate.name && existingFile.size === candidate.size
+        )
+        if (isDuplicate) {
+          errors.push(`${candidate.name} already added`)
+          continue
+        }
+
+        next.push(candidate)
+      }
+
+      return next
+    })
+
+    if (errors.length > 0) {
+      setUploadErrors(errors)
+    } else if (preparedFiles.length > 0) {
       setUploadErrors([]) // Clear errors when files are successfully added
     }
   }

@@ -103,8 +103,17 @@ export class ExecutionEngine {
 
   async run(triggerBlockId?: string): Promise<ExecutionResult> {
     const startTime = Date.now()
+    logger.info('Engine: run() started', {
+      triggerBlockId,
+      workflowId: this.context.workflowId,
+      executionId: this.context.executionId,
+    })
     try {
       this.initializeQueue(triggerBlockId)
+      logger.info('Engine: queue initialized', {
+        queueLength: this.readyQueue.length,
+        workflowId: this.context.workflowId,
+      })
 
       while (this.hasWork()) {
         if ((await this.checkCancellation()) || this.errorFlag || this.skippedFlag) {
@@ -129,6 +138,12 @@ export class ExecutionEngine {
       const endTime = Date.now()
       this.context.metadata.endTime = new Date(endTime).toISOString()
       this.context.metadata.duration = endTime - startTime
+
+      logger.info('Engine: run() completed', {
+        success: !this.cancelledFlag && !this.skippedFlag,
+        durationMs: endTime - startTime,
+        workflowId: this.context.workflowId,
+      })
 
       if (this.cancelledFlag) {
         return {
@@ -335,30 +350,54 @@ export class ExecutionEngine {
       }
       const nodeId = this.dequeue()
       if (!nodeId) continue
+      logger.info('Engine: dequeued node for execution', {
+        nodeId,
+        queueRemaining: this.readyQueue.length,
+        workflowId: this.context.workflowId,
+      })
       const promise = this.executeNodeAsync(nodeId)
       this.trackExecution(promise)
     }
 
     if (this.executing.size > 0 && !this.cancelledFlag && !this.errorFlag && !this.skippedFlag) {
+      logger.info('Engine: waiting for in-flight executions', {
+        executingCount: this.executing.size,
+        workflowId: this.context.workflowId,
+      })
       await this.waitForAnyExecution()
     }
   }
 
   private async executeNodeAsync(nodeId: string): Promise<void> {
-    // Check for cancellation or skip before executing the node
+    const node = this.dag.nodes.get(nodeId)
+    const blockName = node?.block.metadata?.name ?? node?.block.metadata?.id ?? 'unknown'
+
     if (await this.checkCancellation()) {
-      logger.info('Node execution cancelled before starting', { nodeId })
+      logger.info('Node execution cancelled before starting', { nodeId, blockName })
       return
     }
 
     if (this.skippedFlag) {
-      logger.info('Node execution skipped - workflow was skipped', { nodeId })
+      logger.info('Node execution skipped - workflow was skipped', { nodeId, blockName })
       return
     }
+
+    logger.info('Engine: starting block execution', {
+      nodeId,
+      blockName,
+      blockType: node?.block.metadata?.id,
+      workflowId: this.context.workflowId,
+    })
 
     try {
       const wasAlreadyExecuted = this.context.executedBlocks.has(nodeId)
       const result = await this.nodeOrchestrator.executeNode(this.context, nodeId)
+
+      logger.info('Engine: block execution completed', {
+        nodeId,
+        blockName,
+        workflowId: this.context.workflowId,
+      })
 
       if (!wasAlreadyExecuted) {
         await this.withQueueLock(async () => {
@@ -370,7 +409,12 @@ export class ExecutionEngine {
       }
     } catch (error) {
       const errorMessage = normalizeError(error)
-      logger.error('Node execution failed', { nodeId, error: errorMessage })
+      logger.error('Engine: block execution failed', {
+        nodeId,
+        blockName,
+        error: errorMessage,
+        workflowId: this.context.workflowId,
+      })
       throw error
     }
   }
@@ -392,7 +436,16 @@ export class ExecutionEngine {
       node.block.metadata?.id === BlockType.STARTER
 
     if (isStartBlock && !this.context.intentAnalyzerResult) {
+      logger.info('Engine: Start block completed, running intent analyzer', {
+        workflowId: this.context.workflowId,
+        executionId: this.context.executionId,
+      })
       await this.runWorkflowLevelIntentAnalyzer(output)
+
+      logger.info('Engine: intent analyzer finished', {
+        workflowId: this.context.workflowId,
+        skipped: this.skippedFlag,
+      })
 
       // Check if workflow was skipped after intent analyzer - return immediately to prevent any further execution
       if (this.skippedFlag) {

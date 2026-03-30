@@ -12,6 +12,10 @@ import {
   createOptionsResponse,
   InvalidRequestError,
 } from '@/app/api/files/utils'
+import {
+  IMAGE_FUSION_ALLOWED_EXTENSIONS,
+  validateImageFusionFileExtension,
+} from '@/app/api/files/validators/image-fusion'
 
 const ALLOWED_EXTENSIONS = new Set([
   // Documents
@@ -54,6 +58,27 @@ function validateFileExtension(filename: string): boolean {
   return ALLOWED_EXTENSIONS.has(extension)
 }
 
+/**
+ * Validates uploads for workflow execution (e.g. workspace chat attachments).
+ * Matches deployed chat behavior: any `image/*` MIME (browser `accept="image/*"`) or
+ * an extension allowed for Image Fusion when MIME is missing or generic.
+ */
+function validateExecutionContextUpload(fileName: string, mimeType: string): void {
+  const mime = mimeType.toLowerCase().trim()
+  if (mime.startsWith('image/')) {
+    return
+  }
+  if (validateImageFusionFileExtension(fileName)) {
+    return
+  }
+  if (!validateFileExtension(fileName)) {
+    const extension = fileName.split('.').pop()?.toLowerCase() || 'unknown'
+    throw new InvalidRequestError(
+      `File type '${extension}' is not allowed. Allowed: document/audio/video types (${Array.from(ALLOWED_EXTENSIONS).join(', ')}) or image types (any image/* MIME or ${Array.from(IMAGE_FUSION_ALLOWED_EXTENSIONS).sort().join(', ')})`
+    )
+  }
+}
+
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('FilesUploadAPI')
@@ -77,6 +102,7 @@ export async function POST(request: NextRequest) {
     const executionId = formData.get('executionId') as string | null
     const workspaceId = formData.get('workspaceId') as string | null
     const contextParam = formData.get('context') as string | null
+    const uploadContext = formData.get('uploadContext') as string | null
 
     // Context must be explicitly provided
     if (!contextParam) {
@@ -95,8 +121,18 @@ export async function POST(request: NextRequest) {
 
     for (const file of files) {
       const originalName = file.name
+      const isImageFusionUpload = uploadContext === 'image-fusion'
 
-      if (!validateFileExtension(originalName)) {
+      if (isImageFusionUpload) {
+        if (!validateImageFusionFileExtension(originalName)) {
+          const extension = originalName.split('.').pop()?.toLowerCase() || 'unknown'
+          throw new InvalidRequestError(
+            `File type '${extension}' is not allowed for Image Fusion. Allowed image types: ${Array.from(IMAGE_FUSION_ALLOWED_EXTENSIONS).sort().join(', ')}`
+          )
+        }
+      } else if (context === 'execution') {
+        validateExecutionContextUpload(originalName, file.type)
+      } else if (!validateFileExtension(originalName)) {
         const extension = originalName.split('.').pop()?.toLowerCase() || 'unknown'
         throw new InvalidRequestError(
           `File type '${extension}' is not allowed. Allowed types: ${Array.from(ALLOWED_EXTENSIONS).join(', ')}`

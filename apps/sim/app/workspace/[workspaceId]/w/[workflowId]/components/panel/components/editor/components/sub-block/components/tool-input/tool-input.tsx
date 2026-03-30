@@ -667,6 +667,7 @@ function FileUploadSyncWrapper({
         acceptedTypes={uiComponent.acceptedTypes}
         multiple={uiComponent.multiple}
         maxSize={uiComponent.maxSize}
+        uploadContext={uiComponent.uploadContext}
         disabled={disabled}
       />
     </GenericSyncWrapper>
@@ -963,6 +964,7 @@ const BUILT_IN_TOOL_TYPES = new Set([
   'knowledge',
   'search',
   'thinking',
+  'image_fusion',
   'image_generator',
   'video_generator',
   'vision',

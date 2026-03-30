@@ -639,12 +639,24 @@ IMPORTANT: Answer ONLY the CURRENT USER QUESTION above. The context sections are
 export async function analyzeIntent(params: IntentAnalyzerParams): Promise<IntentAnalyzerResult> {
   const { ctx, userPrompt } = params
 
-  logger.debug('Analyzing intent')
+  logger.info('Intent analyzer: starting', {
+    workflowId: ctx.workflowId,
+    conversationId: params.inputs.conversationId,
+    userPromptPreview: userPrompt?.substring(0, 80),
+  })
+
   // 1. Search Mem0 for conversation memories and build token-limited context
+  logger.info('Intent analyzer: step 1 - searching Mem0 for conversation memories')
   const { searchResults, memoryContext } = await searchAndBuildMemoryContext(params)
+  logger.info('Intent analyzer: step 1 done', {
+    searchResultsCount: searchResults.length,
+    memoryContextLength: memoryContext.length,
+  })
 
   // 2. Fetch the intent analyzer system prompt from DB
+  logger.info('Intent analyzer: step 2 - fetching system prompt from DB')
   const dbPrompt = await fetchIntentAnalyzerPrompt()
+  logger.info('Intent analyzer: step 2 done', { hasDbPrompt: !!dbPrompt })
 
   if (!dbPrompt) {
     logger.warn('No intent analyzer prompt configured in prompt_config table, defaulting to RUN')
@@ -660,10 +672,13 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
   }
 
   // 3. Fetch the latest conversation from workflow_execution_logs
+  logger.info('Intent analyzer: step 3 - fetching latest conversation from DB')
   const conversationId = params.inputs.conversationId
   const lastConversation = conversationId ? await fetchLatestConversation(conversationId) : null
+  logger.info('Intent analyzer: step 3 done', { hasLastConversation: !!lastConversation })
 
   // 4. Get fact memories (if not provided)
+  logger.info('Intent analyzer: step 4 - getting fact memories')
   const factMemories =
     params.factMemories !== undefined
       ? params.factMemories
@@ -678,6 +693,8 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
           )
         : []
 
+  logger.info('Intent analyzer: step 4 done', { factMemoriesCount: factMemories.length })
+
   logger.debug('Intent analyzer context', {
     conversationId,
     hasLastConversation: !!lastConversation,
@@ -686,6 +703,7 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
   })
 
   // 5. Call LLM to decide RUN or SKIP (includes last conversation context)
+  logger.info('Intent analyzer: step 5 - calling LLM for RUN/SKIP decision')
   const decision = await callIntentDecision(
     dbPrompt,
     memoryContext,
@@ -694,17 +712,18 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
     params.useGemini ?? false
   )
 
-  logger.debug('Decision:', decision)
+  logger.info('Intent analyzer: step 5 done', { decision })
 
   // 6. If SKIP, generate a response using the already-fetched conversation context
   if (decision === 'SKIP') {
+    logger.info('Intent analyzer: step 6 - generating SKIP response')
     const skipResult = await generateSkipResponse(
       memoryContext,
       userPrompt,
       lastConversation,
       factMemories
     )
-    logger.debug('Skip response:', skipResult.response)
+    logger.info('Intent analyzer: step 6 done - returning SKIP result')
     return {
       decision: 'SKIP',
       searchResults,
@@ -716,6 +735,7 @@ export async function analyzeIntent(params: IntentAnalyzerParams): Promise<Inten
     }
   }
 
+  logger.info('Intent analyzer: completed with RUN decision')
   return {
     decision: 'RUN',
     searchResults,

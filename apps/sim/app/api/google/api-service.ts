@@ -1,8 +1,35 @@
 import { createLogger } from '@sim/logger'
+import sharp from 'sharp'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
-import { extractStorageKey } from '@/lib/uploads/utils/file-utils'
+import type { StorageContext } from '@/lib/uploads'
+import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
+import {
+  extractStorageKey,
+  inferContextFromKey,
+  isInternalFileUrl,
+} from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('GoogleApiService')
+
+const SVG_MIME = 'image/svg+xml'
+const MAX_URL_IMAGE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
+const URL_FETCH_TIMEOUT_MS = 30_000 // 30 seconds
+
+/**
+ * Gemini image API does not support image/svg+xml. Convert SVG to PNG for API compatibility.
+ */
+async function ensureSupportedMime(
+  buffer: Buffer,
+  mimeType: string
+): Promise<{ mimeType: string; data: string }> {
+  const normalized = mimeType.toLowerCase().split(';')[0].trim()
+  if (normalized !== SVG_MIME) {
+    return { mimeType: normalized || 'image/png', data: buffer.toString('base64') }
+  }
+  logger.info('Converting SVG to PNG for Gemini API compatibility')
+  const pngBuffer = await sharp(buffer).png().toBuffer()
+  return { mimeType: 'image/png', data: pngBuffer.toString('base64') }
+}
 const GOOGLE_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 export interface NanoBananaRequestBody {
@@ -58,39 +85,104 @@ export const resolveInlineImageData = async (
   }
 
   if (typeof inputImage === 'string') {
-    return {
-      mimeType: inputImageMimeType || 'image/png',
-      data: inputImage,
+    const str = inputImage.trim()
+    if (str.startsWith('http://') || str.startsWith('https://')) {
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), URL_FETCH_TIMEOUT_MS)
+        const response = await fetch(str, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Sim-Workflow/1.0' },
+        })
+        clearTimeout(timeoutId)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
+        }
+        const arrayBuffer = await response.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
+        if (buffer.length > MAX_URL_IMAGE_SIZE_BYTES) {
+          throw new Error(
+            `Image from URL exceeds 20MB limit (${(buffer.length / (1024 * 1024)).toFixed(2)}MB)`
+          )
+        }
+        const contentType = response.headers.get('content-type') || 'image/png'
+        const mimeType = contentType.split(';')[0].trim() || inputImageMimeType || 'image/png'
+        logger.info('Fetched image from URL for inline data', { mimeType, size: buffer.length })
+        return ensureSupportedMime(buffer, mimeType)
+      } catch (error) {
+        logger.error('Failed to fetch image from URL', { url: str.slice(0, 80), error })
+        throw new Error(
+          `Failed to fetch image from URL: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+      }
+    }
+    const mimeType = inputImageMimeType || 'image/png'
+    const buffer = Buffer.from(inputImage, 'base64')
+    return ensureSupportedMime(buffer, mimeType)
+  }
+
+  const obj = inputImage as { path?: string; key?: string; url?: string; type?: string }
+  if (typeof inputImage !== 'object' || inputImage === null) {
+    throw new Error('Invalid input image format')
+  }
+
+  if (obj.key) {
+    try {
+      const context = inferContextFromKey(obj.key)
+      const fileBuffer = await downloadFile({ key: obj.key, context })
+      const mimeType = obj.type || inputImageMimeType || 'image/png'
+      logger.info('Resolved image from key for inline data', { mimeType, size: fileBuffer.length })
+      return ensureSupportedMime(fileBuffer, mimeType)
+    } catch (error) {
+      logger.error('Failed to resolve inline image data from key', error)
+      throw new Error(
+        `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
     }
   }
 
-  if (typeof inputImage === 'object' && (inputImage as { path?: string }).path) {
+  if (obj.path) {
     try {
-      const filePath = (inputImage as { path: string }).path
+      const filePath = obj.path
       let s3Key: string
+      let context: StorageContext
       if (filePath.startsWith('s3://')) {
         const urlWithoutProtocol = filePath.replace('s3://', '')
         const pathParts = urlWithoutProtocol.split('/')
+        const bucket = pathParts[0]
         s3Key = pathParts.slice(1).join('/').split('?')[0]
+        context =
+          bucket && bucket === S3_AGENT_GENERATED_IMAGES_CONFIG.bucket
+            ? 'agent-generated-images'
+            : 'workspace'
       } else {
         s3Key = extractStorageKey(filePath)
+        context = inferContextFromKey(s3Key)
       }
 
-      const fileBuffer = await downloadFile({ key: s3Key, context: 'workspace' })
-      const base64Data = fileBuffer.toString('base64')
-      const mimeType = (inputImage as { type?: string }).type || inputImageMimeType || 'image/png'
+      const fileBuffer = await downloadFile({ key: s3Key, context })
+      const mimeType = obj.type || inputImageMimeType || 'image/png'
 
-      logger.info('Converted image to base64 for inline data', {
-        mimeType,
-        length: base64Data.length,
-      })
+      logger.info('Resolved image for inline data', { mimeType, size: fileBuffer.length })
 
-      return {
-        mimeType,
-        data: base64Data,
-      }
+      return ensureSupportedMime(fileBuffer, mimeType)
     } catch (error) {
       logger.error('Failed to resolve inline image data', error)
+      throw new Error(
+        `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    }
+  }
+
+  if (obj.url && isInternalFileUrl(obj.url)) {
+    try {
+      const s3Key = extractStorageKey(obj.url)
+      const fileBuffer = await downloadFile({ key: s3Key, context: inferContextFromKey(s3Key) })
+      const mimeType = obj.type || inputImageMimeType || 'image/png'
+      logger.info('Resolved image from URL for inline data', { mimeType, size: fileBuffer.length })
+      return ensureSupportedMime(fileBuffer, mimeType)
+    } catch (error) {
+      logger.error('Failed to resolve inline image data from URL', error)
       throw new Error(
         `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
@@ -101,9 +193,63 @@ export const resolveInlineImageData = async (
 }
 
 /**
+ * Deduplicate inputImages array before processing. First occurrence wins.
+ * Keys: URL strings by value; objects by key, url, or path (whichever present).
+ *
+ * @param inputImages - Raw array of image refs
+ * @returns Deduplicated array
+ */
+function deduplicateInputImages(inputImages: unknown[]): unknown[] {
+  const seen = new Set<string>()
+  const result: unknown[] = []
+  for (const item of inputImages) {
+    let key: string
+    if (typeof item === 'string') {
+      key = item.trim()
+    } else if (item && typeof item === 'object') {
+      const obj = item as { key?: string; url?: string; path?: string }
+      key = (obj.key || obj.url || obj.path || JSON.stringify(item)) as string
+    } else {
+      key = String(item)
+    }
+    if (key && !seen.has(key)) {
+      seen.add(key)
+      result.push(item)
+    }
+  }
+  return result
+}
+
+/**
+ * Resolve an array of image references to inline data for multi-image fusion.
+ * Deduplicates before processing.
+ *
+ * @param inputImages - Array of base64 strings, URLs, or objects with path/key/url.
+ * @returns Array of inline image data in order, or empty array if none.
+ */
+export const resolveInlineImageDataArray = async (
+  inputImages: unknown[]
+): Promise<InlineImageData[]> => {
+  const deduplicated = deduplicateInputImages(inputImages)
+  const results: InlineImageData[] = []
+  for (let i = 0; i < deduplicated.length; i++) {
+    const item = deduplicated[i]
+    const mimeType =
+      typeof item === 'object' && item !== null && 'type' in item
+        ? (item as { type?: string }).type
+        : undefined
+    const resolved = await resolveInlineImageData(item, mimeType)
+    if (resolved) {
+      results.push(resolved)
+    }
+  }
+  return results
+}
+
+/**
  * Build the Nano Banana generateContent request payload.
  *
- * @param params - Request parameters including prompt, aspect ratio, and optional image.
+ * @param params - Request parameters including prompt, aspect ratio, optional image(s).
  * @returns Request body ready for the Google Generative Language API.
  */
 export const buildNanoBananaRequestBody = async (params: {
@@ -113,17 +259,28 @@ export const buildNanoBananaRequestBody = async (params: {
   imageSize?: string
   inputImage?: unknown
   inputImageMimeType?: string
+  /** Multiple images for fusion (Nano Banana Pro). When set, takes precedence over inputImage. */
+  inputImages?: unknown[]
 }): Promise<NanoBananaRequestBody> => {
   const parts: Array<{ text?: string; inlineData?: InlineImageData }> = [
     {
       text: params.prompt,
     },
   ]
-  const inlineImage = await resolveInlineImageData(params.inputImage, params.inputImageMimeType)
-  if (inlineImage) {
-    parts.push({
-      inlineData: inlineImage,
-    })
+
+  if (Array.isArray(params.inputImages) && params.inputImages.length > 0) {
+    const inlineImages = await resolveInlineImageDataArray(params.inputImages)
+    for (const inlineImage of inlineImages) {
+      parts.push({ inlineData: inlineImage })
+    }
+  } else {
+    const inlineImage = await resolveInlineImageData(
+      params.inputImage,
+      params.inputImageMimeType
+    )
+    if (inlineImage) {
+      parts.push({ inlineData: inlineImage })
+    }
   }
 
   const body: NanoBananaRequestBody = {
@@ -133,7 +290,7 @@ export const buildNanoBananaRequestBody = async (params: {
       },
     ],
     generationConfig: {
-      responseModalities: ['Image'],
+      responseModalities: ['IMAGE'],
     },
   }
 
