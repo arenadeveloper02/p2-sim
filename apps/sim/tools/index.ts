@@ -1,7 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import { generateInternalToken } from '@/lib/auth/internal'
-import { getEnv } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
 import {
@@ -57,21 +56,6 @@ async function injectHostedKeyIfNeeded(
   if (!isHosted) return { isUsingHostedKey: false }
 
   const { envKeyPrefix, apiKeyParam, byokProviderId, rateLimit } = tool.hosting
-
-  if (tool.id.startsWith('firecrawl_')) {
-    const firecrawlApiKey = getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY')
-
-    if (!firecrawlApiKey) {
-      logger.error(`[${requestId}] Missing Firecrawl env key for ${tool.id}`)
-      const error = new Error('Firecrawl API key is not configured in environment')
-      ;(error as any).status = 503
-      throw error
-    }
-
-    params[apiKeyParam] = firecrawlApiKey
-    logger.info(`[${requestId}] Using environment Firecrawl key for ${tool.id}`)
-    return { isUsingHostedKey: false }
-  }
 
   // Derive workspace/user/workflow IDs from executionContext or params._context
   const ctx = params._context as Record<string, unknown> | undefined

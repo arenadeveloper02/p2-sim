@@ -1,6 +1,8 @@
 import type { MapParams, MapResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
+const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
+
 export const mapTool: ToolConfig<MapParams, MapResponse> = {
   id: 'firecrawl_map',
   name: 'Firecrawl Map',
@@ -60,7 +62,7 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -69,9 +71,9 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
   request: {
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/map',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${firecrawlApiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
