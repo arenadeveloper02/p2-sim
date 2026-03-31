@@ -204,7 +204,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
             onClick={scrollToBottom}
             size='sm'
             variant='outline'
-            className='flex items-center gap-1 rounded-full border border-[var(--border-1)] bg-[var(--landing-bg-elevated)] px-3 py-1 shadow-lg transition-all hover:opacity-80'
+            className='flex items-center gap-1 rounded-full border border-[var(--border-1)] dark:bg-[var(--landing-bg-elevated)] px-3 py-1 shadow-lg transition-all hover:opacity-80'
           >
             <ArrowDown className='h-3.5 w-3.5' />
             <span className='sr-only'>Scroll to bottom</span>

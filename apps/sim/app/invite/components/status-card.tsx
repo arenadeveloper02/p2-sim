@@ -34,7 +34,7 @@ export function InviteStatusCard({
     return (
       <>
         <div className='space-y-1 text-center'>
-          <h1 className='font-[500] text-[32px] text-[var(--landing-text)] tracking-tight'>
+          <h1 className='font-[500] text-[32px] dark:text-[var(--landing-text)] text-black tracking-tight'>
             Loading
           </h1>
           <p className='font-[380] text-[var(--landing-text-muted)] text-md'>{description}</p>
@@ -49,7 +49,7 @@ export function InviteStatusCard({
   return (
     <>
       <div className='space-y-1 text-center'>
-        <h1 className='font-[500] text-[32px] text-[var(--landing-text)] tracking-tight'>
+        <h1 className='font-[500] text-[32px] dark:text-[var(--landing-text)] text-black tracking-tight'>
           {title}
         </h1>
         <p className='font-[380] text-[var(--landing-text-muted)] text-md'>{description}</p>
@@ -59,7 +59,7 @@ export function InviteStatusCard({
         {isExpiredError && (
           <button
             onClick={() => router.push('/')}
-            className='inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] border border-white bg-white px-2.5 font-[430] font-season text-black text-sm transition-colors hover:border-[var(--border-1)] hover:bg-[var(--border-1)] disabled:cursor-not-allowed disabled:opacity-50'
+            className='inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] bg-[var(--brand-400)] px-2.5 font-[430] font-season text-white text-sm transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50'
           >
             Request New Invitation
           </button>
@@ -71,9 +71,9 @@ export function InviteStatusCard({
             onClick={action.onClick}
             disabled={action.disabled || action.loading}
             className={cn(
-              'inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] border border-white bg-white px-2.5 font-[430] font-season text-black text-sm transition-colors hover:border-[var(--border-1)] hover:bg-[var(--border-1)] disabled:cursor-not-allowed disabled:opacity-50',
+              'inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] dark:bg-white bg-[var(--brand-400)] px-2.5 font-[430] font-season text-white text-sm transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50',
               index !== 0 &&
-                'border-[var(--landing-border-strong)] bg-transparent text-[var(--landing-text)] hover:border-[var(--landing-border-strong)] hover:bg-[var(--landing-bg-elevated)]'
+                'border-[var(--landing-border-strong)] bg-[var(--brand-400)] text-[var(--landing-text)] hover:bg-[var(--primary-hover)]'
             )}
           >
             {action.loading ? (

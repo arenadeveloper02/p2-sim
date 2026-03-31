@@ -1427,7 +1427,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                 ) => {
                   void handleSendMessage(value, isVoiceInput, files)
                 }}
-                isStreaming={isStreamingResponse}
+                isStreaming={isLoading || isStreamingResponse}
                 onStopStreaming={() => stopStreaming(setMessages)}
                 onVoiceStart={handleVoiceStart}
               />
