@@ -166,58 +166,61 @@ export async function authorizeCredentialUse(
       )
       .limit(1)
 
-    if (!workspaceCredential?.accountId) {
-      return { ok: false, error: 'Credential not found' }
-    }
-
-    const [accountRow] = await db
-      .select({ userId: account.userId })
-      .from(account)
-      .where(eq(account.id, workspaceCredential.accountId))
-      .limit(1)
-
-    if (!accountRow) {
-      return { ok: false, error: 'Credential account not found' }
-    }
-
-    if (actingUserId) {
-      const [membership] = await db
-        .select({ id: credentialMember.id })
-        .from(credentialMember)
-        .where(
-          and(
-            eq(credentialMember.credentialId, workspaceCredential.id),
-            eq(credentialMember.userId, actingUserId),
-            eq(credentialMember.status, 'active')
-          )
-        )
+    /**
+     * Only treat `credentialId` as a workspace `account.id` when a row exists.
+     * HubSpot shared tenants use string aliases (e.g. `northstar_anesthesia`) — they never match
+     * `credential.accountId`; those must fall through to legacy / `accountTokens` handling below.
+     */
+    if (workspaceCredential?.accountId) {
+      const [accountRow] = await db
+        .select({ userId: account.userId })
+        .from(account)
+        .where(eq(account.id, workspaceCredential.accountId))
         .limit(1)
 
-      if (!membership) {
-        return {
-          ok: false,
-          error:
-            'You do not have access to this credential. Ask the credential admin to add you as a member.',
+      if (!accountRow) {
+        return { ok: false, error: 'Credential account not found' }
+      }
+
+      if (actingUserId) {
+        const [membership] = await db
+          .select({ id: credentialMember.id })
+          .from(credentialMember)
+          .where(
+            and(
+              eq(credentialMember.credentialId, workspaceCredential.id),
+              eq(credentialMember.userId, actingUserId),
+              eq(credentialMember.status, 'active')
+            )
+          )
+          .limit(1)
+
+        if (!membership) {
+          return {
+            ok: false,
+            error:
+              'You do not have access to this credential. Ask the credential admin to add you as a member.',
+          }
         }
       }
-    }
 
-    const ownerPerm = await getUserEntityPermissions(
-      accountRow.userId,
-      'workspace',
-      workflowContext.workspaceId
-    )
-    if (ownerPerm === null) {
-      return { ok: false, error: 'Unauthorized' }
-    }
+      const ownerPerm = await getUserEntityPermissions(
+        accountRow.userId,
+        'workspace',
+        workflowContext.workspaceId
+      )
+      if (ownerPerm === null) {
+        return { ok: false, error: 'Unauthorized' }
+      }
 
-    return {
-      ok: true,
-      authType: auth.authType as CredentialAccessResult['authType'],
-      requesterUserId: auth.userId,
-      credentialOwnerUserId: accountRow.userId,
-      workspaceId: workflowContext.workspaceId,
-      resolvedCredentialId: workspaceCredential.accountId,
+      return {
+        ok: true,
+        authType: auth.authType as CredentialAccessResult['authType'],
+        requesterUserId: auth.userId,
+        credentialOwnerUserId: accountRow.userId,
+        workspaceId: workflowContext.workspaceId,
+        resolvedCredentialId: workspaceCredential.accountId,
+      }
     }
   }
 

@@ -1,5 +1,3 @@
-import { getEnv } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
 import { PAGE_METADATA_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import { safeAssign } from '@/tools/safe-assign'
@@ -33,40 +31,12 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     },
   },
 
-  hosting: {
-    envKeyPrefix: 'FIRECRAWL_API_KEY',
-    apiKeyParam: 'apiKey',
-    byokProviderId: 'firecrawl',
-    pricing: {
-      type: 'custom',
-      getCost: (_params, output) => {
-        const creditsUsed = (output.metadata as { creditsUsed?: number })?.creditsUsed
-        if (creditsUsed == null) {
-          throw new Error('Firecrawl response missing creditsUsed field')
-        }
-
-        if (Number.isNaN(creditsUsed)) {
-          throw new Error('Firecrawl response returned a non-numeric creditsUsed field')
-        }
-
-        return {
-          cost: creditsUsed * 0.001,
-          metadata: { creditsUsed },
-        }
-      },
-    },
-    rateLimit: {
-      mode: 'per_request',
-      requestsPerMinute: 100,
-    },
-  },
-
   request: {
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/scrape',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -112,7 +82,6 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
         markdown: data.data.markdown,
         html: data.data.html,
         metadata: data.data.metadata,
-        creditsUsed: data.creditsUsed,
       },
     }
   },

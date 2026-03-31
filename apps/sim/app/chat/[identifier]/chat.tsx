@@ -999,7 +999,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }
 
   return (
-    <div className='fixed inset-0 z-[100] flex flex-col bg-[var(--landing-bg)] text-[var(--landing-text)]'>
+    <div className='fixed inset-0 z-[100] flex flex-col text-[var(--landing-text)] dark:bg-[var(--landing-bg)]'>
       {isHistoryLoading && (
         <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
           <LoadingAgentP2 size='lg' />

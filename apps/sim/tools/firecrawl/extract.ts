@@ -1,6 +1,4 @@
 import { createLogger } from '@sim/logger'
-import { getEnv } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
 import type { ExtractParams, ExtractResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
@@ -81,40 +79,12 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
     },
   },
 
-  hosting: {
-    envKeyPrefix: 'FIRECRAWL_API_KEY',
-    apiKeyParam: 'apiKey',
-    byokProviderId: 'firecrawl',
-    pricing: {
-      type: 'custom',
-      getCost: (_params, output) => {
-        if (output.creditsUsed == null) {
-          throw new Error('Firecrawl response missing creditsUsed field')
-        }
-
-        const creditsUsed = Number(output.creditsUsed)
-        if (Number.isNaN(creditsUsed)) {
-          throw new Error('Firecrawl response returned a non-numeric creditsUsed field')
-        }
-
-        return {
-          cost: creditsUsed * 0.001,
-          metadata: { creditsUsed },
-        }
-      },
-    },
-    rateLimit: {
-      mode: 'per_request',
-      requestsPerMinute: 100,
-    },
-  },
-
   request: {
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/extract',
     headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -177,7 +147,7 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
         const statusResponse = await fetch(`https://api.firecrawl.dev/v2/extract/${jobId}`, {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
+            Authorization: `Bearer ${params.apiKey}`,
             'Content-Type': 'application/json',
           },
         })
@@ -194,7 +164,6 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
             jobId,
             success: true,
             data: extractData.data || {},
-            creditsUsed: extractData.creditsUsed,
           }
           return result
         }
