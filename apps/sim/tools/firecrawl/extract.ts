@@ -4,6 +4,7 @@ import type { ExtractParams, ExtractResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('FirecrawlExtractTool')
+const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
 
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_TIME_MS = DEFAULT_EXECUTION_TIMEOUT_MS
@@ -73,7 +74,7 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -82,9 +83,9 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
   request: {
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/extract',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${firecrawlApiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -147,7 +148,7 @@ export const extractTool: ToolConfig<ExtractParams, ExtractResponse> = {
         const statusResponse = await fetch(`https://api.firecrawl.dev/v2/extract/${jobId}`, {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${params.apiKey}`,
+            Authorization: `Bearer ${firecrawlApiKey}`,
             'Content-Type': 'application/json',
           },
         })
