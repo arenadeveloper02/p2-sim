@@ -24,6 +24,7 @@ import {
 import type { ToolResponse } from '@/tools/types'
 
 const logger = createLogger('AgentBlock')
+const MODELS_WITHOUT_AGENT_TOOLS = ['gpt-4o-search-preview'] as const
 
 interface AgentResponse extends ToolResponse {
   output: {
@@ -423,7 +424,7 @@ Return ONLY the JSON array.`,
       defaultValue: [],
       condition: {
         field: 'model',
-        value: MODELS_WITH_DEEP_RESEARCH,
+        value: [...MODELS_WITH_DEEP_RESEARCH, ...MODELS_WITHOUT_AGENT_TOOLS],
         not: true,
       },
     },
@@ -540,6 +541,13 @@ Return ONLY the JSON array.`,
         return tool
       },
       params: (params: Record<string, any>) => {
+        if (MODELS_WITHOUT_AGENT_TOOLS.includes(params.model)) {
+          return {
+            ...params,
+            tools: undefined,
+          }
+        }
+
         // If tools array is provided, handle tool usage control
         if (params.tools && Array.isArray(params.tools)) {
           // Transform tools to include usageControl

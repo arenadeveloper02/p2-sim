@@ -123,6 +123,7 @@ export async function waitForPendingChatStream(
   expectedStreamId?: string
 ): Promise<boolean> {
   const redis = getRedisClient()
+  const lockKey = getChatStreamLockKey(chatId)
   const deadline = Date.now() + timeoutMs
 
   for (;;) {
@@ -131,15 +132,23 @@ export async function waitForPendingChatStream(
 
     if (redis) {
       try {
-        const ownerStreamId = await redis.get(getChatStreamLockKey(chatId))
+        const ownerStreamId = await redis.get(lockKey)
         const lockReleased =
           !ownerStreamId || (expectedStreamId !== undefined && ownerStreamId !== expectedStreamId)
         if (!localPending && lockReleased) {
+          logger.info('waitForPendingChatStream: Redis + local settled', {
+            chatId,
+            lockKey,
+            expectedStreamId,
+            redisOwnerStreamId: ownerStreamId ?? null,
+            localPending,
+          })
           return true
         }
       } catch (error) {
         logger.warn('Failed to check distributed chat stream lock while waiting', {
           chatId,
+          lockKey,
           expectedStreamId,
           error: error instanceof Error ? error.message : String(error),
         })
@@ -148,15 +157,60 @@ export async function waitForPendingChatStream(
       return true
     }
 
-    if (Date.now() >= deadline) return false
+    if (Date.now() >= deadline) {
+      let redisOwnerAtTimeout: string | null = null
+      if (redis) {
+        try {
+          redisOwnerAtTimeout = await redis.get(lockKey)
+        } catch {
+          redisOwnerAtTimeout = null
+        }
+      }
+      logger.warn('waitForPendingChatStream: timeout', {
+        chatId,
+        lockKey,
+        expectedStreamId,
+        redisEnabled: Boolean(redis),
+        redisOwnerStreamId: redisOwnerAtTimeout,
+        localPending,
+        localEntryStreamId: entry?.streamId,
+      })
+      return false
+    }
     await new Promise((resolve) => setTimeout(resolve, 200))
   }
 }
 
 export async function releasePendingChatStream(chatId: string, streamId: string): Promise<void> {
   const redis = getRedisClient()
+  const lockKey = getChatStreamLockKey(chatId)
   if (redis) {
-    await releaseLock(getChatStreamLockKey(chatId), streamId).catch(() => false)
+    logger.info('releasePendingChatStream: releasing Redis lock', {
+      chatId,
+      streamId,
+      lockKey,
+    })
+    const released = await releaseLock(lockKey, streamId).catch((err) => {
+      logger.warn('releasePendingChatStream: Redis releaseLock threw', {
+        chatId,
+        streamId,
+        lockKey,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return false
+    })
+    logger.info('releasePendingChatStream: Redis releaseLock result', {
+      chatId,
+      streamId,
+      lockKey,
+      released,
+    })
+  } else {
+    logger.info('releasePendingChatStream: no Redis client; skipping Redis release', {
+      chatId,
+      streamId,
+      lockKey,
+    })
   }
   resolvePendingChatStream(chatId, streamId)
 }
@@ -167,21 +221,47 @@ export async function acquirePendingChatStream(
   timeoutMs = 5_000
 ): Promise<boolean> {
   const redis = getRedisClient()
+  const lockKey = getChatStreamLockKey(chatId)
+
   if (redis) {
     const deadline = Date.now() + timeoutMs
+    let attempt = 0
+    logger.info('acquirePendingChatStream: Redis path', {
+      chatId,
+      streamId,
+      lockKey,
+      timeoutMs,
+      lockTtlSeconds: CHAT_STREAM_LOCK_TTL_SECONDS,
+    })
     for (;;) {
+      attempt++
       try {
-        const acquired = await acquireLock(
-          getChatStreamLockKey(chatId),
-          streamId,
-          CHAT_STREAM_LOCK_TTL_SECONDS
-        )
+        const acquired = await acquireLock(lockKey, streamId, CHAT_STREAM_LOCK_TTL_SECONDS)
         if (acquired) {
+          logger.info('acquirePendingChatStream: Redis lock acquired', {
+            chatId,
+            streamId,
+            lockKey,
+            attempt,
+          })
           registerPendingChatStream(chatId, streamId)
           return true
         }
+
+        const redisOwnerStreamId = await redis.get(lockKey)
+        if (attempt === 1 || attempt % 25 === 0) {
+          logger.warn('acquirePendingChatStream: Redis lock not acquired (contested)', {
+            chatId,
+            streamId,
+            lockKey,
+            attempt,
+            redisOwnerStreamId: redisOwnerStreamId ?? null,
+            pendingMapHasChatId: pendingChatStreams.has(chatId),
+          })
+        }
+
         if (!pendingChatStreams.has(chatId)) {
-          const ownerStreamId = await redis.get(getChatStreamLockKey(chatId))
+          const ownerStreamId = redisOwnerStreamId
           if (ownerStreamId) {
             const ownerMeta = await getStreamMeta(ownerStreamId)
             const ownerTerminal =
@@ -189,7 +269,17 @@ export async function acquirePendingChatStream(
               ownerMeta?.status === 'error' ||
               ownerMeta?.status === 'cancelled'
             if (ownerTerminal) {
-              await releaseLock(getChatStreamLockKey(chatId), ownerStreamId).catch(() => false)
+              logger.info(
+                'acquirePendingChatStream: Redis lock owner stream terminal — releasing stale lock',
+                {
+                  chatId,
+                  streamId,
+                  lockKey,
+                  ownerStreamId,
+                  ownerMetaStatus: ownerMeta?.status,
+                }
+              )
+              await releaseLock(lockKey, ownerStreamId).catch(() => false)
               continue
             }
           }
@@ -198,13 +288,37 @@ export async function acquirePendingChatStream(
         logger.warn('Distributed chat stream lock failed; retrying distributed coordination', {
           chatId,
           streamId,
+          lockKey,
+          attempt,
           error: error instanceof Error ? error.message : String(error),
         })
       }
-      if (Date.now() >= deadline) return false
+      if (Date.now() >= deadline) {
+        let finalOwner: string | null = null
+        try {
+          finalOwner = await redis.get(lockKey)
+        } catch {
+          finalOwner = null
+        }
+        logger.warn('acquirePendingChatStream: Redis path timed out', {
+          chatId,
+          streamId,
+          lockKey,
+          timeoutMs,
+          attempt,
+          redisOwnerStreamId: finalOwner,
+        })
+        return false
+      }
       await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }
+
+  logger.info('acquirePendingChatStream: no Redis client; using in-memory pending map only', {
+    chatId,
+    streamId,
+    lockKey,
+  })
 
   for (;;) {
     logger.info('acquirePendingChatStream: checking in-memory pending map', {
@@ -266,17 +380,27 @@ export async function acquirePendingChatStream(
 
 export async function abortActiveStream(streamId: string): Promise<boolean> {
   const redis = getRedisClient()
+  const abortKey = getStreamAbortKey(streamId)
   let published = false
   if (redis) {
     try {
-      await redis.set(getStreamAbortKey(streamId), '1', 'EX', STREAM_ABORT_TTL_SECONDS)
+      logger.info('abortActiveStream: publishing Redis stream abort key', {
+        streamId,
+        abortKey,
+        ttlSeconds: STREAM_ABORT_TTL_SECONDS,
+      })
+      await redis.set(abortKey, '1', 'EX', STREAM_ABORT_TTL_SECONDS)
       published = true
+      logger.info('abortActiveStream: Redis stream abort key set', { streamId, abortKey })
     } catch (error) {
       logger.warn('Failed to publish distributed stream abort', {
         streamId,
+        abortKey,
         error: error instanceof Error ? error.message : String(error),
       })
     }
+  } else {
+    logger.info('abortActiveStream: no Redis client; skipping abort key', { streamId, abortKey })
   }
   const entry = activeStreams.get(streamId)
   if (!entry) return published

@@ -959,7 +959,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const itemRefs = useRef<Map<string, HTMLElement>>(new Map())
-  const prevSelectedIndexRef = useRef(selectedIndex)
 
   const [nestedPath, setNestedPath] = useState<NestedTag[]>([])
   const baseFolderRef = useRef<{
@@ -1168,43 +1167,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       {} as Record<string, { type: string; id: string }>
     )
 
-    // Find all containing loops recursively (nested loops from innermost to outermost)
-    const findAllContainingLoops = (targetBlockId: string): Array<[string, any]> => {
-      const containingLoops: Array<[string, any]> = []
-      const visited = new Set<string>()
-
-      const findLoopsRecursively = (blockId: string) => {
-        if (visited.has(blockId)) return
-        visited.add(blockId)
-
-        // Find all loops that contain this block directly
-        const directContainingLoops = Object.entries(loops).filter(([_, loop]) =>
-          loop.nodes.includes(blockId)
-        )
-
-        for (const [loopId, loop] of directContainingLoops) {
-          if (!containingLoops.some(([id]) => id === loopId)) {
-            containingLoops.push([loopId, loop])
-            // Recursively find loops that contain this loop block
-            findLoopsRecursively(loopId)
-          }
-        }
-      }
-
-      findLoopsRecursively(targetBlockId)
-      return containingLoops
-    }
-
-    const isLoopBlock = blocks[blockId]?.type === 'loop'
-    const currentLoop = isLoopBlock ? loops[blockId] : null
-
-    // Get all containing loops (including nested ones)
-    const allContainingLoops = findAllContainingLoops(blockId)
-
-    // Count total loops to determine if we need to prefix tags for uniqueness
-    const totalLoops = allContainingLoops.length + (isLoopBlock ? 1 : 0)
-    const hasMultipleLoops = totalLoops > 1
-
     const loopBlockGroups: BlockTagGroup[] = []
     const ancestorLoopIds = new Set<string>()
     const visitedContainerIds = new Set<string>()
@@ -1248,6 +1210,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       }
     }
 
+    const isLoopBlock = blocks[blockId]?.type === 'loop'
     if (isLoopBlock && loops[blockId]) {
       const loop = loops[blockId]
       ancestorLoopIds.add(blockId)
@@ -1255,21 +1218,11 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       if (loopBlock) {
         const loopType = loop.loopType || 'for'
         const loopBlockName = loopBlock.name || loopBlock.type
-        const normalizedBlockName = normalizeName(loopBlockName)
-
-        // If multiple loops exist, prefix tags with block name to make them unique
-        // Otherwise, keep simple format for backward compatibility
-        const contextualTags: string[] = hasMultipleLoops
-          ? [`${normalizedBlockName}.index`]
-          : ['index']
+        const normalizedLoopName = normalizeName(loopBlockName)
+        const contextualTags: string[] = [`${normalizedLoopName}.index`]
         if (loopType === 'forEach') {
-          if (hasMultipleLoops) {
-            contextualTags.push(`${normalizedBlockName}.currentItem`)
-            contextualTags.push(`${normalizedBlockName}.items`)
-          } else {
-            contextualTags.push('currentItem')
-            contextualTags.push('items')
-          }
+          contextualTags.push(`${normalizedLoopName}.currentItem`)
+          contextualTags.push(`${normalizedLoopName}.items`)
         }
         loopBlockGroups.push({
           blockName: loopBlockName,
@@ -1283,43 +1236,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
       findAncestorContainers(blockId)
     } else {
       findAncestorContainers(blockId)
-    }
-
-    // Add all containing loops (from innermost to outermost)
-    for (const [loopId, loop] of allContainingLoops) {
-      // Skip if we already added this loop (when current block is a loop)
-      if (loopId === blockId && isLoopBlock) continue
-
-      const loopType = loop.loopType || 'for'
-      const containingLoopBlock = blocks[loopId]
-      if (containingLoopBlock) {
-        const loopBlockName = containingLoopBlock.name || containingLoopBlock.type
-        const normalizedBlockName = normalizeName(loopBlockName)
-
-        // If multiple loops exist, prefix tags with block name to make them unique
-        // Otherwise, keep simple format for backward compatibility
-        const contextualTags: string[] = hasMultipleLoops
-          ? [`${normalizedBlockName}.index`]
-          : ['index']
-        if (loopType === 'forEach') {
-          if (hasMultipleLoops) {
-            contextualTags.push(`${normalizedBlockName}.currentItem`)
-            contextualTags.push(`${normalizedBlockName}.items`)
-          } else {
-            contextualTags.push('currentItem')
-            contextualTags.push('items')
-          }
-        }
-
-        loopBlockGroups.push({
-          blockName: loopBlockName,
-          blockId: loopId,
-          blockType: 'loop',
-          tags: contextualTags,
-          distance: 0,
-          isContextual: true,
-        })
-      }
     }
 
     const parallelBlockGroups: BlockTagGroup[] = []
@@ -1558,36 +1474,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
           })
         } else {
           tagsForTree.push(tag)
-          const path = tagParts.slice(1).join('.')
-          if (
-            (group.blockType === 'loop' || group.blockType === 'parallel') &&
-            tagParts.length === 2 &&
-            ['index', 'currentItem', 'items'].includes(tagParts[1])
-          ) {
-            // For loop/parallel tags like "LoopName.index", display just "index" but keep full tag
-            const displayName = tagParts[1] // e.g., "index", "currentItem", "items"
-            directTags.push({
-              key: displayName,
-              display: displayName,
-              fullTag: tag, // Keep the full prefixed tag for selection
-            })
-          } else if (
-            (group.blockType === 'loop' || group.blockType === 'parallel') &&
-            tagParts.length === 1
-          ) {
-            // Fallback for tags without prefix (backward compatibility)
-            directTags.push({
-              key: tag,
-              display: tag,
-              fullTag: tag,
-            })
-          } else {
-            directTags.push({
-              key: path || group.blockName,
-              display: path || group.blockName,
-              fullTag: tag,
-            })
-          }
         }
       })
 
@@ -1809,7 +1695,6 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
         return true
       },
       registerFolder: (folderId, folderTitle, baseTag, group) => {
-        const isNewFolder = baseFolderRef.current?.id !== folderId
         baseFolderRef.current = { id: folderId, title: folderTitle, baseTag, group }
       },
     }),

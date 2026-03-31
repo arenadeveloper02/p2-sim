@@ -1,8 +1,22 @@
 import { createLogger } from '@sim/logger'
 import type OpenAI from 'openai'
+import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
+import type { CompletionUsage } from 'openai/resources/completions'
+import type { Stream } from 'openai/streaming'
+import { createOpenAICompatibleStream } from '@/providers/utils'
 import type { Message } from '@/providers/types'
 
 const logger = createLogger('ResponsesUtils')
+
+/**
+ * Creates a ReadableStream from an OpenAI chat-completions stream.
+ */
+export function createReadableStreamFromOpenAIStream(
+  openaiStream: Stream<ChatCompletionChunk>,
+  onComplete?: (content: string, usage: CompletionUsage) => void
+): ReadableStream<Uint8Array> {
+  return createOpenAICompatibleStream(openaiStream, 'OpenAI', onComplete)
+}
 
 export interface ResponsesUsageTokens {
   promptTokens: number
