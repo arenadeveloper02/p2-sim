@@ -1,10 +1,11 @@
 import { createLogger } from '@sim/logger'
+import { env } from '@/lib/core/config/env'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
 import type { ExaResearchParams, ExaResearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ExaResearchTool')
-const exaApiKey = process.env.EXA_API_KEY
 
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_TIME_MS = DEFAULT_EXECUTION_TIMEOUT_MS
@@ -30,7 +31,7 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
     },
     apiKey: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-only',
       description: 'Exa AI API Key',
     },
@@ -39,9 +40,9 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
   request: {
     url: 'https://api.exa.ai/research/v1',
     method: 'POST',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': exaApiKey || '',
+      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
     }),
     body: (params) => {
       const body: any = {
@@ -83,7 +84,7 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
         const statusResponse = await fetch(`https://api.exa.ai/research/v1/${taskId}`, {
           method: 'GET',
           headers: {
-            'x-api-key': exaApiKey || '',
+            'x-api-key': params.apiKey,
             'Content-Type': 'application/json',
           },
         })
