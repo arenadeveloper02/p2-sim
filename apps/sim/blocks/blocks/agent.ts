@@ -3,7 +3,11 @@ import { AgentIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
-import { getApiKeyCondition, getModelOptions, RESPONSE_FORMAT_WAND_CONFIG } from '@/blocks/utils'
+import {
+  getAgentModelOptions,
+  getApiKeyCondition,
+  RESPONSE_FORMAT_WAND_CONFIG,
+} from '@/blocks/utils'
 import {
   getBaseModelProviders,
   getMaxTemperature,
@@ -123,7 +127,7 @@ Return ONLY the JSON array.`,
       required: true,
       defaultValue: 'gpt-4o',
       searchable: true,
-      options: getModelOptions,
+      options: getAgentModelOptions,
     },
     {
       id: 'vertexCredential',

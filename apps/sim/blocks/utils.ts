@@ -27,6 +27,33 @@ export function getModelOptions() {
   })
 }
 
+const OPENROUTER_MODEL_PREFIX = 'openrouter/' as const
+
+/**
+ * OpenRouter models with zero prompt and completion pricing (from `/api/providers/openrouter/models`).
+ */
+function isFreeOpenRouterModel(modelId: string): boolean {
+  if (!modelId.startsWith(OPENROUTER_MODEL_PREFIX)) {
+    return true
+  }
+
+  const info = useProvidersStore.getState().openRouterModelInfo[modelId]
+  const pricing = info?.pricing
+  if (!pricing) {
+    return false
+  }
+
+  return pricing.input === 0 && pricing.output === 0
+}
+
+/**
+ * Model options for the Agent block: same as {@link getModelOptions}, but OpenRouter entries are
+ * limited to models OpenRouter reports as free (zero input and output price).
+ */
+export function getAgentModelOptions() {
+  return getModelOptions().filter((opt) => isFreeOpenRouterModel(opt.id))
+}
+
 /**
  * Checks if a field is included in the dependsOn config.
  * Handles both simple array format and object format with all/any fields.

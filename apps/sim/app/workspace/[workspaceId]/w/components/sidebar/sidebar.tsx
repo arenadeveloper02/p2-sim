@@ -1211,16 +1211,16 @@ export const Sidebar = memo(function Sidebar() {
             <div className='relative flex h-[30px] items-center'>
               <Link
                 href={`/workspace/${workspaceId}/home`}
-                className='sidebar-collapse-hide sidebar-collapse-remove flex h-[30px] items-center rounded-[8px] px-1.5 hover-hover:bg-[var(--surface-hover)]'
+                className='sidebar-collapse-hide sidebar-collapse-remove flex h-[30px] items-center rounded-[8px] px-1 hover-hover:bg-[var(--surface-hover)]'
                 tabIndex={isCollapsed ? -1 : 0}
               >
-                {brand.logoUrl ? (
+                {brand.logoUrlBlacktext ? (
                   <Image
-                    src={brand.logoUrl}
+                    src={brand.logoUrlBlacktext}
                     alt={brand.name}
-                    width={16}
-                    height={16}
-                    className='h-[16px] w-[16px] object-contain'
+                    width={34}
+                    height={28}
+                    className='h-[28px] w-[34px] object-contain'
                     unoptimized
                   />
                 ) : (
@@ -1237,13 +1237,13 @@ export const Sidebar = memo(function Sidebar() {
                     aria-label='Expand sidebar'
                     tabIndex={isCollapsed ? 0 : -1}
                   >
-                    {brand.logoUrl ? (
+                    {brand.logoUrlBlacktext ? (
                       <Image
-                        src={brand.logoUrl}
+                        src={brand.logoUrlBlacktext}
                         alt={brand.name}
-                        width={16}
-                        height={16}
-                        className='h-[16px] w-[16px] object-contain group-hover:hidden'
+                        width={34}
+                        height={28}
+                        className='h-[28px] w-[34px] object-contain group-hover:hidden'
                         unoptimized
                       />
                     ) : (
