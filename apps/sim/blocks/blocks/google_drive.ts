@@ -347,6 +347,7 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
       type: 'file-selector',
       canonicalParamId: 'searchFolderId',
       serviceId: 'google-drive',
+      selectorKey: 'google.drive',
       requiredScopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive',
