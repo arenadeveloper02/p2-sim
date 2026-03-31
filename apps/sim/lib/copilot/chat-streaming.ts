@@ -42,18 +42,66 @@ function registerPendingChatStream(chatId: string, streamId: string): void {
   if (pendingChatStreams.has(chatId)) {
     logger.warn(`registerPendingChatStream: overwriting existing entry for chatId ${chatId}`)
   }
+  logger.info('registerPendingChatStream: setting pending entry', {
+    chatId,
+    streamId,
+    pendingCountBefore: pendingChatStreams.size,
+    pendingMapBefore: Array.from(pendingChatStreams.entries()).map(([id, entry]) => ({
+      chatId: id,
+      streamId: entry.streamId,
+    })),
+  })
   let resolve!: () => void
   const promise = new Promise<void>((r) => {
     resolve = r
   })
   pendingChatStreams.set(chatId, { promise, resolve, streamId })
+  logger.info('registerPendingChatStream: pending entry set', {
+    chatId,
+    streamId,
+    pendingCountAfter: pendingChatStreams.size,
+    pendingMapAfter: Array.from(pendingChatStreams.entries()).map(([id, entry]) => ({
+      chatId: id,
+      streamId: entry.streamId,
+    })),
+  })
 }
 
 function resolvePendingChatStream(chatId: string, streamId: string): void {
   const entry = pendingChatStreams.get(chatId)
   if (entry && entry.streamId === streamId) {
+    logger.info('resolvePendingChatStream: resolving pending entry', {
+      chatId,
+      streamId,
+      pendingCountBefore: pendingChatStreams.size,
+      pendingMapBefore: Array.from(pendingChatStreams.entries()).map(([id, e]) => ({
+        chatId: id,
+        streamId: e.streamId,
+      })),
+    })
     entry.resolve()
     pendingChatStreams.delete(chatId)
+    logger.info('resolvePendingChatStream: pending entry deleted', {
+      chatId,
+      streamId,
+      pendingCountAfter: pendingChatStreams.size,
+      pendingMapAfter: Array.from(pendingChatStreams.entries()).map(([id, e]) => ({
+        chatId: id,
+        streamId: e.streamId,
+      })),
+    })
+  } else {
+    logger.info('resolvePendingChatStream: no matching pending entry to resolve', {
+      chatId,
+      streamId,
+      existingStreamId: entry?.streamId,
+      hasEntry: Boolean(entry),
+      pendingCount: pendingChatStreams.size,
+      pendingMap: Array.from(pendingChatStreams.entries()).map(([id, e]) => ({
+        chatId: id,
+        streamId: e.streamId,
+      })),
+    })
   }
 }
 
@@ -159,17 +207,60 @@ export async function acquirePendingChatStream(
   }
 
   for (;;) {
+    logger.info('acquirePendingChatStream: checking in-memory pending map', {
+      chatId,
+      streamId,
+      pendingCount: pendingChatStreams.size,
+      hasChatId: pendingChatStreams.has(chatId),
+      pendingMap: Array.from(pendingChatStreams.entries()).map(([id, entry]) => ({
+        chatId: id,
+        streamId: entry.streamId,
+      })),
+    })
     const existing = pendingChatStreams.get(chatId)
     if (!existing) {
       registerPendingChatStream(chatId, streamId)
       return true
     }
 
+    logger.warn('acquirePendingChatStream: in-memory pending entry exists; waiting', {
+      chatId,
+      streamId,
+      existingStreamId: existing.streamId,
+      pendingCount: pendingChatStreams.size,
+      pendingMap: Array.from(pendingChatStreams.entries()).map(([id, entry]) => ({
+        chatId: id,
+        streamId: entry.streamId,
+      })),
+    })
     const settled = await Promise.race([
       existing.promise.then(() => true),
       new Promise<boolean>((r) => setTimeout(() => r(false), timeoutMs)),
     ])
-    if (!settled) return false
+    if (!settled) {
+      logger.warn('acquirePendingChatStream: timed out waiting for pending entry to settle', {
+        chatId,
+        streamId,
+        existingStreamId: existing.streamId,
+        timeoutMs,
+        pendingCount: pendingChatStreams.size,
+        pendingMap: Array.from(pendingChatStreams.entries()).map(([id, entry]) => ({
+          chatId: id,
+          streamId: entry.streamId,
+        })),
+      })
+      return false
+    }
+    logger.info('acquirePendingChatStream: pending entry settled; retrying acquire', {
+      chatId,
+      streamId,
+      previousExistingStreamId: existing.streamId,
+      pendingCount: pendingChatStreams.size,
+      pendingMap: Array.from(pendingChatStreams.entries()).map(([id, entry]) => ({
+        chatId: id,
+        streamId: entry.streamId,
+      })),
+    })
   }
 }
 
