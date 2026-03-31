@@ -1,6 +1,6 @@
 import { FirecrawlIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode, IntegrationType } from '@/blocks/types'
+import { AuthMode } from '@/blocks/types'
 import type { FirecrawlResponse } from '@/tools/firecrawl/types'
 
 export const FirecrawlBlock: BlockConfig<FirecrawlResponse> = {
@@ -12,8 +12,6 @@ export const FirecrawlBlock: BlockConfig<FirecrawlResponse> = {
     'Integrate Firecrawl into the workflow. Scrape pages, search the web, crawl entire sites, map URL structures, and extract structured data with AI.',
   docsLink: 'https://docs.sim.ai/tools/firecrawl',
   category: 'tools',
-  integrationType: IntegrationType.Automation,
-  tags: ['web-scraping', 'automation'],
   bgColor: '#181C1E',
   icon: FirecrawlIcon,
   subBlocks: [
@@ -251,24 +249,6 @@ Example 2 - Product Data:
       password: true,
       required: false,
       hidden: true,
-      hideWhenHosted: true,
-      condition: {
-        field: 'operation',
-        value: 'agent',
-        not: true,
-      },
-    },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your Firecrawl API key',
-      password: true,
-      required: true,
-      condition: {
-        field: 'operation',
-        value: 'agent',
-      },
     },
   ],
   tools: {
@@ -312,7 +292,6 @@ Example 2 - Product Data:
           onlyMainContent,
           mobile,
           prompt,
-          apiKey,
           agentPrompt,
           agentUrls,
           schema,
@@ -320,7 +299,7 @@ Example 2 - Product Data:
           strictConstrainToURLs,
         } = params
 
-        const result: Record<string, any> = { apiKey }
+        const result: Record<string, any> = {}
 
         switch (operation) {
           case 'scrape':
@@ -464,6 +443,7 @@ Example 2 - Product Data:
     // Crawl output
     pages: { type: 'json', description: 'Crawled pages data' },
     total: { type: 'number', description: 'Total pages found' },
+    creditsUsed: { type: 'number', description: 'Credits consumed' },
     // Map output
     success: { type: 'boolean', description: 'Operation success status' },
     links: { type: 'json', description: 'Discovered URLs array' },
