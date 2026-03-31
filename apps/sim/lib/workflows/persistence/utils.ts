@@ -508,21 +508,6 @@ export async function loadWorkflowFromNormalizedTables(
           enabled: finalBlocks[subflow.id]?.enabled ?? true,
         }
         parallels[subflow.id] = parallel
-
-        // Sync block.data with parallel config to ensure collection field is present
-        // This ensures the UI editor can read the collection value correctly
-        if (migratedBlocks[subflow.id]) {
-          const block = migratedBlocks[subflow.id]
-          migratedBlocks[subflow.id] = {
-            ...block,
-            data: {
-              ...block.data,
-              collection: parallel.distribution ?? block.data?.collection ?? '',
-              count: parallel.count ?? block.data?.count ?? 5,
-              parallelType: parallel.parallelType ?? block.data?.parallelType ?? 'count',
-            },
-          }
-        }
       } else {
         logger.warn(`Unknown subflow type: ${subflow.type} for subflow ${subflow.id}`)
       }

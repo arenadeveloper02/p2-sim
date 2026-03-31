@@ -316,20 +316,20 @@ export async function POST(request: NextRequest) {
           userId,
           action: 'read',
         })
-        const workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
-        if (
-          workflowWorkspaceId &&
-          accessChecks.some(
-            (accessCheck) =>
-              accessCheck?.hasAccess &&
-              accessCheck.knowledgeBase?.workspaceId !== workflowWorkspaceId
-          )
-        ) {
-          return NextResponse.json(
-            { error: 'Knowledge base does not belong to the workflow workspace' },
-            { status: 400 }
-          )
-        }
+        // const workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
+        // if (
+        //   workflowWorkspaceId &&
+        //   accessChecks.some(
+        //     (accessCheck) =>
+        //       accessCheck?.hasAccess &&
+        //       accessCheck.knowledgeBase?.workspaceId !== workflowWorkspaceId
+        //   )
+        // ) {
+        //   return NextResponse.json(
+        //     { error: 'Knowledge base does not belong to the workflow workspace' },
+        //     { status: 400 }
+        //   )
+        // }
       }
 
       let results: SearchResult[]

@@ -62,7 +62,7 @@ export class EdgeConstructor {
       pauseTriggerMapping
     )
 
-    this.wireLoopSentinels(dag, reachableBlocks)
+    this.wireLoopSentinels(dag)
     this.wireParallelSentinels(dag)
   }
 
@@ -231,9 +231,6 @@ export class EdgeConstructor {
         }
         source = sentinelEndId
         sourceHandle = EDGE.LOOP_EXIT
-        // Don't create an edge from sentinel-start for LOOP_EXIT edges
-        // Only sentinel-end should have LOOP_EXIT edges to targets outside the loop
-        loopSentinelStartId = undefined
       }
 
       if (targetIsLoopBlock) {
@@ -275,7 +272,7 @@ export class EdgeConstructor {
         this.addEdge(dag, loopSentinelStartId, target, EDGE.LOOP_EXIT, targetHandle)
       }
 
-      if (!this.isEdgeReachable(originalSource, originalTarget, reachableBlocks, dag)) {
+      if (!this.isEdgeReachable(source, target, reachableBlocks, dag)) {
         continue
       }
 
@@ -297,7 +294,7 @@ export class EdgeConstructor {
     }
   }
 
-  private wireLoopSentinels(dag: DAG, reachableBlocks: Set<string>): void {
+  private wireLoopSentinels(dag: DAG): void {
     for (const [loopId, loopConfig] of dag.loopConfigs) {
       const nodes = loopConfig.nodes
 
@@ -310,12 +307,7 @@ export class EdgeConstructor {
         continue
       }
 
-      const { startNodes, terminalNodes } = this.findLoopBoundaryNodes(
-        nodes,
-        dag,
-        reachableBlocks,
-        loopId
-      )
+      const { startNodes, terminalNodes } = this.findLoopBoundaryNodes(nodes, dag)
 
       for (const startNodeId of startNodes) {
         const resolvedId = this.resolveLoopBlockToSentinelStart(startNodeId, dag)
@@ -542,13 +534,10 @@ export class EdgeConstructor {
 
   private findLoopBoundaryNodes(
     nodes: string[],
-    dag: DAG,
-    reachableBlocks: Set<string>,
-    loopId: string
+    dag: DAG
   ): { startNodes: string[]; terminalNodes: string[] } {
     const effectiveNodeSet = this.buildEffectiveNodeSet(nodes, dag)
     const startNodesSet = new Set<string>()
-    const nodesSet = new Set(nodes)
     const terminalNodesSet = new Set<string>()
 
     for (const nodeId of nodes) {
@@ -562,35 +551,10 @@ export class EdgeConstructor {
           hasIncomingFromLoop = true
           break
         }
-
-        // Check if incoming edge is from a nested loop's sentinel-end
-        // A node should NOT be a startNode if it has incoming from nested loop sentinel-end
-        const incomingNode = dag.nodes.get(incomingNodeId)
-        if (
-          incomingNode?.metadata.isSentinel &&
-          incomingNode.metadata.sentinelType === 'end' &&
-          incomingNode.metadata.loopId &&
-          incomingNode.metadata.loopId !== loopId
-        ) {
-          // This is a sentinel-end from a different loop
-          // Check if that loop is nested inside the current loop
-          const nestedLoopId = incomingNode.metadata.loopId
-          if (nodesSet.has(nestedLoopId)) {
-            // The nested loop block ID is in the current loop's nodes
-            // So this sentinel-end is from a nested loop
-            hasIncomingFromLoop = true
-            break
-          }
-        }
       }
 
       if (!hasIncomingFromLoop) {
-        // Don't add nested loop container blocks as start nodes
-        // They are just containers; their execution is handled by their Sentinel Start
-        // which is triggered by specific edges (or not, if path is skipped)
-        if (!dag.loopConfigs.has(nodeId)) {
-          startNodesSet.add(nodeId)
-        }
+        startNodesSet.add(nodeId)
       }
     }
 
@@ -612,9 +576,7 @@ export class EdgeConstructor {
       }
 
       if (!hasOutgoingToLoop) {
-        if (!dag.loopConfigs.has(nodeId)) {
-          terminalNodesSet.add(nodeId)
-        }
+        terminalNodesSet.add(nodeId)
       }
     }
 
