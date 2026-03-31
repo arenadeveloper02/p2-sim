@@ -214,6 +214,7 @@ html[data-sidebar-collapsed] .sidebar-container .sidebar-collapse-btn {
     /* Brand & state */
     --brand-400: var(--brand-primary-hex, #1a73e8);
     --brand-500: var(--brand-primary-hex, #1a73e8);
+    --primary-hover: var(--brand-primary-hex, #155cba);
     --brand-secondary: var(--brand-secondary-hex, #488fed);
     --brand-tertiary: var(--brand-accent-hex, #76abf1);
     --brand-tertiary-2: #33c481;

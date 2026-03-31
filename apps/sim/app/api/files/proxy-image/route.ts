@@ -9,7 +9,15 @@ const logger = createLogger('FilesProxyImageAPI')
  * Checks whether the target URL is allowed for proxying (same app host or Arena hosts).
  * Arena hosts are allowed for any path so that download/display can proxy when needed.
  */
-function isAllowedProxyUrl(targetUrl: URL): boolean {
+function isLocalhostHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+}
+
+function isAllowedProxyUrl(targetUrl: URL, requestHost: string): boolean {
+  if (isLocalhostHost(requestHost)) {
+    return true
+  }
+
   const appUrl = getEnv('NEXT_PUBLIC_APP_URL')
   if (!appUrl) return false
   try {
@@ -47,7 +55,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid url protocol' }, { status: 400 })
   }
 
-  if (!isAllowedProxyUrl(targetUrl)) {
+  if (!isAllowedProxyUrl(targetUrl, request.nextUrl.hostname)) {
     logger.warn('Proxy-image rejected: url not in allowed list', { host: targetUrl.host })
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

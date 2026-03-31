@@ -7,7 +7,7 @@ interface InviteLayoutProps {
 
 export default function InviteLayout({ children }: InviteLayoutProps) {
   return (
-    <div className='relative flex min-h-screen flex-col bg-[var(--landing-bg)] font-[430] font-season text-[var(--landing-text)]'>
+    <div className='relative flex min-h-screen flex-col bg-white font-[430] font-season text-[var(--landing-text)] dark:bg-[var(--landing-bg)]'>
       <header className='shrink-0'>
         <Navbar logoOnly />
       </header>
