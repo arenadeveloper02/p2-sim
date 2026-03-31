@@ -226,6 +226,20 @@ const nanoBananaTool: ToolConfig = {
 
       return {
         success: true,
+        content: finalImageUrl || 'nano-banana-generated-image',
+        image: imageUrlToReturn,
+        metadata: {
+          model: params?.model || 'gemini-2.5-flash-image',
+          mimeType,
+          aspectRatio: params?.aspectRatio || '1:1',
+          imageSize: params?.imageSize ?? null,
+          hasInputImage: !!(params?.inputImage && params?.inputImageMimeType),
+          hasInputImages: Array.isArray(params?.inputImages) && params.inputImages.length > 0,
+          inputImageCount: Array.isArray(params?.inputImages) ? params.inputImages.length : null,
+          inputImageMimeType: params?.inputImageMimeType || null,
+          stored: !!finalImageUrl,
+          s3UploadFailed,
+        },
         output: {
           content: finalImageUrl || 'nano-banana-generated-image',
           image: imageUrlToReturn,
@@ -252,6 +266,37 @@ const nanoBananaTool: ToolConfig = {
 
   outputs: {
     success: { type: 'boolean', description: 'Operation success status' },
+    content: { type: 'string', description: 'Image identifier' },
+    image: { type: 'string', description: 'Base64 encoded image data' },
+    metadata: {
+      type: 'object',
+      description: 'Image generation metadata',
+      properties: {
+        model: { type: 'string', description: 'Model used for image generation' },
+        mimeType: { type: 'string', description: 'Image MIME type' },
+        aspectRatio: { type: 'string', description: 'Image aspect ratio' },
+        imageSize: {
+          type: 'string',
+          description: 'Output resolution (1K/2K/4K) when using Nano Banana Pro',
+        },
+        hasInputImage: {
+          type: 'boolean',
+          description: 'Whether an input image was provided for editing',
+        },
+        hasInputImages: {
+          type: 'boolean',
+          description: 'Whether multiple images were provided for fusion (Nano Banana Pro)',
+        },
+        inputImageCount: {
+          type: 'number',
+          description: 'Number of input images used for fusion (when hasInputImages is true)',
+        },
+        inputImageMimeType: {
+          type: 'string',
+          description: 'MIME type of the input image (if provided)',
+        },
+      },
+    },
     output: {
       type: 'object',
       description: 'Generated image data',

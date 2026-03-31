@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
+import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components'
 import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import { useThrottledValue } from '@/hooks/use-throttled-value'
@@ -40,10 +41,6 @@ interface ChatMessageProps {
 }
 
 const MAX_WORD_LENGTH = 25
-
-function StreamingIndicator() {
-  return <span className='inline-block h-[14px] w-[6px] animate-pulse bg-current opacity-70' />
-}
 
 /**
  * Component for wrapping long words to prevent overflow
@@ -315,7 +312,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       <div className='whitespace-normal break-words font-[470] font-season text-[#E8E8E8] text-sm leading-[1.25rem]'>
         {/* <WordWrap text={formattedContent} /> */}
         {renderContent(message?.content)}
-        {message?.isStreaming && <StreamingIndicator />}
+        {message?.isStreaming && <StreamingIndicator className='mt-1 text-[#E8E8E8]' />}
       </div>
       <RenderButtons message={message} formattedContent={formattedContent} />
     </div>
