@@ -167,6 +167,7 @@ export const CRAWL_OUTPUT_PROPERTIES = {
     },
   },
   total: { type: 'number', description: 'Total number of pages found during crawl' },
+  creditsUsed: { type: 'number', description: 'Number of credits consumed by the crawl operation' },
 } as const satisfies Record<string, OutputProperty>
 
 /**
@@ -272,6 +273,11 @@ export const AGENT_OUTPUT_PROPERTIES = {
   data: {
     type: 'object',
     description: 'Extracted data from the agent based on the prompt and schema',
+  },
+  creditsUsed: {
+    type: 'number',
+    description: 'Number of credits consumed by this agent task',
+    optional: true,
   },
   expiresAt: {
     type: 'string',
@@ -442,7 +448,6 @@ export interface ScrapeResponse extends ToolResponse {
       statusCode: number
       error?: string
     }
-    creditsUsed?: number
   }
 }
 
@@ -465,7 +470,6 @@ export interface SearchResponse extends ToolResponse {
         error?: string
       }
     }>
-    creditsUsed?: number
   }
 }
 
@@ -488,7 +492,7 @@ export interface FirecrawlCrawlResponse extends ToolResponse {
       }
     }>
     total: number
-    creditsUsed?: number
+    creditsUsed: number
   }
 }
 
@@ -496,7 +500,6 @@ export interface MapResponse extends ToolResponse {
   output: {
     success: boolean
     links: string[]
-    creditsUsed?: number
   }
 }
 
@@ -505,7 +508,6 @@ export interface ExtractResponse extends ToolResponse {
     jobId: string
     success: boolean
     data: Record<string, any>
-    creditsUsed?: number
   }
 }
 
