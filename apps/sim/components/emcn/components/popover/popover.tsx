@@ -98,7 +98,8 @@ const STYLES = {
       search: 'text-[var(--text-muted-inverse)] dark:text-[var(--text-muted)]',
       searchInput:
         'text-white placeholder:text-[var(--text-muted-inverse)] dark:text-[var(--text-primary)] dark:placeholder:text-[var(--text-muted)]',
-      content: 'dark:bg-[var(--surface-inverted)] bg-[var(--surface-5)] text-black dark:text-foreground',
+      content:
+        'dark:bg-[var(--surface-inverted)] bg-[var(--surface-5)] text-black dark:text-foreground',
       divider: 'border-[var(--border-inverted)]',
     },
   } satisfies Record<

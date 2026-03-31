@@ -95,7 +95,6 @@ export async function safeAccountInsert(
  * 3. Workspace `credential` row → underlying `account.id` via {@link resolveOAuthAccountId}.
  */
 export async function getCredential(requestId: string, credentialId: string, userId: string) {
-  debugger
   const directAccount = await db
     .select()
     .from(account)

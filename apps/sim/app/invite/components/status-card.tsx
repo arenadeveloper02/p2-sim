@@ -34,7 +34,7 @@ export function InviteStatusCard({
     return (
       <>
         <div className='space-y-1 text-center'>
-          <h1 className='font-[500] text-[32px] dark:text-[var(--landing-text)] text-black tracking-tight'>
+          <h1 className='font-[500] text-[32px] text-black tracking-tight dark:text-[var(--landing-text)]'>
             Loading
           </h1>
           <p className='font-[380] text-[var(--landing-text-muted)] text-md'>{description}</p>
@@ -49,7 +49,7 @@ export function InviteStatusCard({
   return (
     <>
       <div className='space-y-1 text-center'>
-        <h1 className='font-[500] text-[32px] dark:text-[var(--landing-text)] text-black tracking-tight'>
+        <h1 className='font-[500] text-[32px] text-black tracking-tight dark:text-[var(--landing-text)]'>
           {title}
         </h1>
         <p className='font-[380] text-[var(--landing-text-muted)] text-md'>{description}</p>
@@ -59,7 +59,7 @@ export function InviteStatusCard({
         {isExpiredError && (
           <button
             onClick={() => router.push('/')}
-            className='inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] bg-[var(--brand-400)] px-2.5 font-[430] font-season text-white text-sm transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50'
+            className='inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] bg-[var(--brand-400)] px-2.5 font-[430] font-season text-sm text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50'
           >
             Request New Invitation
           </button>
@@ -71,7 +71,7 @@ export function InviteStatusCard({
             onClick={action.onClick}
             disabled={action.disabled || action.loading}
             className={cn(
-              'inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] dark:bg-white bg-[var(--brand-400)] px-2.5 font-[430] font-season text-white text-sm transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50',
+              'inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] bg-[var(--brand-400)] px-2.5 font-[430] font-season text-sm text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white',
               index !== 0 &&
                 'border-[var(--landing-border-strong)] bg-[var(--brand-400)] text-[var(--landing-text)] hover:bg-[var(--primary-hover)]'
             )}

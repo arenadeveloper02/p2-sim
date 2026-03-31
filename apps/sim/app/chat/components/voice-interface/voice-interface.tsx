@@ -495,7 +495,7 @@ export function VoiceInterface({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-[100] flex flex-col dark:bg-[var(--landing-bg)] text-[var(--landing-text)]',
+        'fixed inset-0 z-[100] flex flex-col text-[var(--landing-text)] dark:bg-[var(--landing-bg)]',
         className
       )}
     >

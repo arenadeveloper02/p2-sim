@@ -96,7 +96,7 @@ export default function Navbar({ logoOnly = false, blogPosts = [] }: NavbarProps
   return (
     <nav
       aria-label='Primary navigation'
-      className='relative flex h-[52px] border-[var(--landing-bg-elevated)] dark:border-b-[1px] bg-white dark:bg-[var(--landing-bg)] font-[430] font-season text-[var(--landing-text)] text-sm'
+      className='relative flex h-[52px] border-[var(--landing-bg-elevated)] bg-white font-[430] font-season text-[var(--landing-text)] text-sm dark:border-b-[1px] dark:bg-[var(--landing-bg)]'
       itemScope
       itemType='https://schema.org/SiteNavigationElement'
     >
@@ -271,7 +271,7 @@ export default function Navbar({ logoOnly = false, blogPosts = [] }: NavbarProps
 
           <div
             className={cn(
-              'fixed inset-x-0 top-[52px] bottom-0 z-50 flex flex-col overflow-y-auto dark:bg-[var(--landing-bg)] bg-white font-[430] font-season text-sm transition-all duration-200 lg:hidden',
+              'fixed inset-x-0 top-[52px] bottom-0 z-50 flex flex-col overflow-y-auto bg-white font-[430] font-season text-sm transition-all duration-200 lg:hidden dark:bg-[var(--landing-bg)]',
               mobileMenuOpen ? 'visible opacity-100' : 'invisible opacity-0'
             )}
           >
