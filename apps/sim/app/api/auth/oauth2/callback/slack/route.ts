@@ -7,6 +7,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { env } from '@/lib/core/config/env'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 
 export const dynamic = 'force-dynamic'
 
@@ -295,12 +296,26 @@ export async function GET(request: NextRequest) {
       }
     } else {
       logger.warn(
-        'Slack OAuth callback: no workspaceId resolved from state; skipping credential create',
+        'Slack OAuth callback: no workspaceId resolved from state; attempting to process credential draft instead',
         {
           userId: session.user.id,
           state,
         }
       )
+
+      try {
+        await processCredentialDraft({
+          userId: session.user.id,
+          providerId: 'slack',
+          accountId: slackAccountId,
+        })
+      } catch (err: any) {
+        logger.error('Slack OAuth callback: failed to process credential draft', {
+          userId: session.user.id,
+          accountId: slackAccountId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
 
     // Decide where to send the user after OAuth based on origin context.
