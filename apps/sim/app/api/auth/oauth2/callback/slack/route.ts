@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { db } from '@sim/db'
-import { account } from '@sim/db/schema'
+import { account, credential, credentialMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -163,27 +164,172 @@ export async function GET(request: NextRequest) {
       updatedAt: now,
     }
 
+    // Upsert Slack account
+    let slackAccountId: string
     if (existing) {
+      slackAccountId = existing.id
       await db.update(account).set(accountData).where(eq(account.id, existing.id))
       logger.info('Updated existing Slack account with both tokens', {
         accountId: existing.id,
         hasUserToken: !!userToken,
       })
     } else {
+      slackAccountId = `slack_${session.user.id}_${Date.now()}`
       await db.insert(account).values({
-        id: `slack_${session.user.id}_${Date.now()}`,
+        id: slackAccountId,
         userId: session.user.id,
         providerId: 'slack',
         ...accountData,
         createdAt: now,
       })
       logger.info('Created new Slack account with both tokens', {
+        accountId: slackAccountId,
         hasUserToken: !!userToken,
       })
     }
 
-    // Redirect to workspace with success
-    return NextResponse.redirect(`${baseUrl}/workspace?slack_connected=true`)
+    // Try to derive workspaceId from state payload (if provided)
+    let workspaceId: string | null = null
+    if (state) {
+      try {
+        const decoded = decodeURIComponent(state)
+        const parsed = JSON.parse(decoded) as { workspaceId?: string } | null
+        if (parsed && typeof parsed.workspaceId === 'string' && parsed.workspaceId.length > 0) {
+          workspaceId = parsed.workspaceId
+        }
+      } catch {
+        // state not in expected JSON format; ignore
+      }
+    }
+
+    // Parse richer context from state for post-OAuth routing
+    let origin: string | undefined
+    let workflowId: string | undefined
+    let knowledgeBaseId: string | undefined
+
+    if (state) {
+      try {
+        const decoded = decodeURIComponent(state)
+        const parsed = JSON.parse(decoded) as {
+          workspaceId?: string
+          origin?: string
+          workflowId?: string
+          knowledgeBaseId?: string
+          redirectPath?: string
+        } | null
+
+        if (parsed) {
+          if (!workspaceId && typeof parsed.workspaceId === 'string' && parsed.workspaceId.length > 0) {
+            workspaceId = parsed.workspaceId
+          }
+          if (typeof parsed.origin === 'string') {
+            origin = parsed.origin
+          }
+          if (typeof parsed.workflowId === 'string') {
+            workflowId = parsed.workflowId
+          }
+          if (typeof parsed.knowledgeBaseId === 'string') {
+            knowledgeBaseId = parsed.knowledgeBaseId
+          }
+
+          if (!parsed.origin && parsed.redirectPath) {
+            // Legacy shape: treat explicit redirectPath as integrations-style redirect
+            origin = 'integrations'
+          }
+        }
+      } catch {
+        // state not JSON – ignore, we'll fall back to workspace/home redirect
+      }
+    }
+
+    if (workspaceId) {
+      try {
+        const credentialId = randomUUID()
+
+        await db.insert(credential).values({
+          id: credentialId,
+          workspaceId,
+          type: 'oauth',
+          displayName: teamName,
+          description: null,
+          providerId: 'slack',
+          accountId: slackAccountId,
+          envKey: null,
+          envOwnerUserId: null,
+          createdBy: session.user.id,
+          createdAt: now,
+          updatedAt: now,
+        })
+
+        await db.insert(credentialMember).values({
+          id: randomUUID(),
+          credentialId,
+          userId: session.user.id,
+          role: 'admin',
+          status: 'active',
+          joinedAt: now,
+          invitedBy: session.user.id,
+          createdAt: now,
+          updatedAt: now,
+        })
+
+        logger.info('Created Slack credential and membership for workspace', {
+          workspaceId,
+          credentialId,
+          accountId: slackAccountId,
+        })
+      } catch (err: any) {
+        // Ignore duplicate-credential errors; everything else should be logged
+        if (err?.code === '23505') {
+          logger.warn('Slack credential already exists for this workspace/account', {
+            workspaceId,
+            accountId: slackAccountId,
+          })
+        } else {
+          logger.error('Failed to create Slack credential for workspace', {
+            workspaceId,
+            accountId: slackAccountId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+    } else {
+      logger.warn(
+        'Slack OAuth callback: no workspaceId resolved from state; skipping credential create',
+        {
+          userId: session.user.id,
+          state,
+        }
+      )
+    }
+
+    // Decide where to send the user after OAuth based on origin context.
+    if (origin === 'workflow' && workspaceId && workflowId) {
+      logger.info('Slack OAuth callback: redirecting back to workflow page', {
+        workspaceId,
+        workflowId,
+      })
+      return NextResponse.redirect(`${baseUrl}/workspace/${workspaceId}/w/${workflowId}`)
+    }
+
+    if (origin === 'kb-connectors' && workspaceId && knowledgeBaseId) {
+      logger.info('Slack OAuth callback: redirecting back to KB connectors page', {
+        workspaceId,
+        knowledgeBaseId,
+      })
+      return NextResponse.redirect(
+        `${baseUrl}/workspace/${workspaceId}/knowledge/${knowledgeBaseId}`
+      )
+    }
+
+    // Default: go to workspace home (integrations will be reachable from there)
+    logger.info('Slack OAuth callback: redirecting back to workspace home', {
+      workspaceId: workspaceId ?? 'unknown',
+      origin: origin ?? 'unknown',
+    })
+    return NextResponse.redirect(
+      workspaceId ? `${baseUrl}/workspace/${workspaceId}` : `${baseUrl}/workspace`
+    )
   } catch (error) {
     logger.error('Error in Slack OAuth callback:', error)
     return NextResponse.redirect(`${baseUrl}/workspace?error=slack_callback_error`)
