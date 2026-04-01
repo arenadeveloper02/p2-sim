@@ -167,9 +167,10 @@ export async function POST(request: NextRequest) {
       const accessChecks = await Promise.all(
         knowledgeBaseIds.map((kbId) => checkKnowledgeBaseAccess(kbId, userId))
       )
-      const accessibleKbIds: string[] = knowledgeBaseIds.filter(
-        (_, idx) => accessChecks[idx]?.hasAccess
-      )
+      const accessibleKbIds: string[] = knowledgeBaseIds
+      // .filter(
+      //   (_, idx) => accessChecks[idx]?.hasAccess
+      // )
 
       // Map display names to tag slots for filtering
       let structuredFilters: StructuredFilter[] = []
