@@ -83,6 +83,7 @@ const logger = createLogger('Auth')
 
 import { getMicrosoftRefreshTokenExpiry, isMicrosoftProvider } from '@/lib/oauth/microsoft'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 
 /**
  * Extracts user info from a Microsoft ID token JWT instead of calling Graph API /me.
@@ -2268,7 +2269,7 @@ export const auth = betterAuth({
           clientId: env.SLACK_CLIENT_ID as string,
           clientSecret: env.SLACK_CLIENT_SECRET as string,
           authorizationUrl: 'https://slack.com/oauth/v2/authorize',
-          tokenUrl: 'https://slack.com/api/oauth.v2.access',
+          tokenUrl: `${getInternalApiBaseUrl()}/api/auth/oauth2/slack/token`,
           userInfoUrl: 'https://slack.com/api/users.identity',
           scopes: getCanonicalScopesForProvider('slack'),
           responseType: 'code',
