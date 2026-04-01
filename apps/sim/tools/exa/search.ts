@@ -1,7 +1,7 @@
-import { env } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ExaSearchParams, ExaSearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
+
+const exaApiKey = process.env.EXA_API_KEY
 
 export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
   id: 'exa_search',
@@ -83,37 +83,18 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Exa AI API Key',
-    },
-  },
-  hosting: {
-    envKeyPrefix: 'EXA_API_KEY',
-    apiKeyParam: 'apiKey',
-    byokProviderId: 'exa',
-    pricing: {
-      type: 'custom',
-      getCost: (_params, output) => {
-        const costDollars = output.__costDollars as { total?: number } | undefined
-        if (costDollars?.total == null) {
-          throw new Error('Exa search response missing costDollars field')
-        }
-        return { cost: costDollars.total, metadata: { costDollars } }
-      },
-    },
-    rateLimit: {
-      mode: 'per_request',
-      requestsPerMinute: 5,
     },
   },
 
   request: {
     url: 'https://api.exa.ai/search',
     method: 'POST',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
+      'x-api-key': exaApiKey ?? '',
     }),
     body: (params) => {
       const body: Record<string, any> = {
