@@ -83,11 +83,12 @@ export async function POST(request: NextRequest) {
     const accessChecks = await Promise.all(
       knowledgeBaseIds.map((kbId) => checkKnowledgeBaseAccess(kbId, userId))
     )
-    const accessibleKbIds = knowledgeBaseIds.filter(
-      (_, idx) =>
-        accessChecks[idx]?.hasAccess &&
-        accessChecks[idx]?.knowledgeBase?.workspaceId === workspaceId
-    )
+    const accessibleKbIds = knowledgeBaseIds
+    // .filter(
+    //   (_, idx) =>
+    //     accessChecks[idx]?.hasAccess &&
+    //     accessChecks[idx]?.knowledgeBase?.workspaceId === workspaceId
+    // )
 
     if (accessibleKbIds.length === 0) {
       return NextResponse.json(

@@ -1625,7 +1625,7 @@ export const Sidebar = memo(function Sidebar() {
               >
                 {/* Help dropdown */}
                 <DropdownMenu>
-                  <Tooltip.Root>
+                  {/* <Tooltip.Root>
                     <DropdownMenuTrigger asChild>
                       <Tooltip.Trigger asChild>
                         <button
@@ -1645,7 +1645,7 @@ export const Sidebar = memo(function Sidebar() {
                         <p>Help</p>
                       </Tooltip.Content>
                     )}
-                  </Tooltip.Root>
+                  </Tooltip.Root> */}
                   <DropdownMenuContent align='start' side='top' sideOffset={4}>
                     <DropdownMenuItem onSelect={handleOpenDocs}>
                       <BookOpen className='h-[14px] w-[14px]' />
