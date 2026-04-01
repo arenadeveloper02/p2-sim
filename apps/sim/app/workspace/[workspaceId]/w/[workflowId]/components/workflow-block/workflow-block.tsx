@@ -46,9 +46,9 @@ import { useCredentialName } from '@/hooks/queries/oauth/oauth-credentials'
 import { useReactivateSchedule, useScheduleInfo } from '@/hooks/queries/schedules'
 import { useSkills } from '@/hooks/queries/skills'
 import { useTablesList } from '@/hooks/queries/tables'
+import { useWorkflowMap } from '@/hooks/queries/workflows'
 import { useSelectorDisplayName } from '@/hooks/use-selector-display-name'
 import { useVariablesStore } from '@/stores/panel'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { wouldCreateCycle } from '@/stores/workflows/workflow/utils'
@@ -600,11 +600,11 @@ const SubBlockRow = memo(function SubBlockRow({
   )
   const knowledgeBaseDisplayName = kbForDisplayName?.name ?? null
 
-  const workflowMap = useWorkflowRegistry((state) => state.workflows)
-  const workflowSelectionName =
-    subBlock?.id === 'workflowId' && typeof rawValue === 'string'
-      ? (workflowMap[rawValue]?.name ?? null)
-      : null
+  const { data: workflowMapForLookup = {} } = useWorkflowMap(workspaceId)
+  const workflowSelectionName = useMemo(() => {
+    if (subBlock?.id !== 'workflowId' || typeof rawValue !== 'string') return null
+    return workflowMapForLookup[rawValue]?.name ?? null
+  }, [workflowMapForLookup, subBlock?.id, rawValue])
 
   const { data: mcpServers = [] } = useMcpServers(workspaceId || '')
   const mcpServerDisplayName = useMemo(() => {
@@ -855,13 +855,14 @@ export const WorkflowBlock = memo(function WorkflowBlock({
   data,
   selected,
 }: NodeProps<WorkflowBlockProps>) {
-  const { type, config, name, isPending } = data
+  const { type, config, name, isPending, isSandbox } = data
 
   const contentRef = useRef<HTMLDivElement>(null)
 
   const params = useParams()
-  const currentWorkflowId = params.workflowId as string
-  const workspaceId = params.workspaceId as string
+  // In sandbox mode pass empty strings so all workspace-scoped queries are disabled
+  const currentWorkflowId = isSandbox ? '' : (params.workflowId as string)
+  const workspaceId = isSandbox ? '' : (params.workspaceId as string)
 
   const {
     currentWorkflow,

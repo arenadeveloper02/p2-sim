@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
+import { useParams } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 import { useShallow } from 'zustand/react/shallow'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
@@ -30,6 +31,7 @@ import type { BlockLog, BlockState, ExecutionResult, StreamingExecution } from '
 import { hasExecutionResult } from '@/executor/utils/errors'
 import { coerceValue } from '@/executor/utils/start-block'
 import { subscriptionKeys } from '@/hooks/queries/subscription'
+import { getWorkflows } from '@/hooks/queries/utils/workflow-cache'
 import { useExecutionStream } from '@/hooks/use-execution-stream'
 import { WorkflowValidationError } from '@/serializer'
 import { useCurrentWorkflowExecution, useExecutionStore } from '@/stores/execution'
@@ -102,11 +104,11 @@ function normalizeErrorMessage(error: unknown): string {
 }
 
 export function useWorkflowExecution() {
+  const { workspaceId: routeWorkspaceId } = useParams<{ workspaceId: string }>()
+  const hydrationWorkspaceId = useWorkflowRegistry((s) => s.hydration.workspaceId)
   const queryClient = useQueryClient()
   const currentWorkflow = useCurrentWorkflow()
-  const { activeWorkflowId, workflows } = useWorkflowRegistry(
-    useShallow((s) => ({ activeWorkflowId: s.activeWorkflowId, workflows: s.workflows }))
-  )
+  const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
   const { toggleConsole, addConsole, updateConsole, cancelRunningEntries, clearExecutionEntries } =
     useTerminalConsoleStore(
       useShallow((s) => ({
@@ -380,8 +382,17 @@ export function useWorkflowExecution() {
     async (workflowInput?: any, enableDebug = false) => {
       if (!activeWorkflowId) return
 
-      // Get workspaceId from workflow metadata
-      const workspaceId = workflows[activeWorkflowId]?.workspaceId
+      // Sandbox exercises have no real workflow — signal the SandboxCanvasProvider
+      // to run mock execution by setting isExecuting, then bail out immediately.
+      const scopedWorkspaceId = routeWorkspaceId ?? hydrationWorkspaceId ?? undefined
+      const cachedWorkflows = scopedWorkspaceId ? getWorkflows(scopedWorkspaceId) : []
+      const activeWorkflow = cachedWorkflows.find((w) => w.id === activeWorkflowId)
+      if (activeWorkflow?.isSandbox) {
+        setIsExecuting(activeWorkflowId, true)
+        return
+      }
+
+      const workspaceId = scopedWorkspaceId ?? activeWorkflow?.workspaceId
 
       if (!workspaceId) {
         logger.error('Cannot execute workflow without workspaceId')
@@ -741,7 +752,6 @@ export function useWorkflowExecution() {
       setExecutor,
       setPendingBlocks,
       setActiveBlocks,
-      workflows,
       queryClient,
     ]
   )

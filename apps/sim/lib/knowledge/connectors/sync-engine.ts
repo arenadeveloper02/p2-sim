@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import {
   document,
+  embedding,
   knowledgeBase,
   knowledgeConnector,
   knowledgeConnectorSyncLog,
@@ -8,7 +9,9 @@ import {
 import { createLogger } from '@sim/logger'
 import { and, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { decryptApiKey } from '@/lib/api-key/crypto'
+import { createBullMQJobData, isBullMQEnabled } from '@/lib/core/bullmq'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
+import { enqueueWorkspaceDispatch } from '@/lib/core/workspace-dispatch'
 import type { DocumentData } from '@/lib/knowledge/documents/service'
 import {
   hardDeleteDocuments,
@@ -140,8 +143,7 @@ export function resolveTagMapping(
 }
 
 /**
- * Dispatch a connector sync — uses Trigger.dev when available,
- * otherwise falls back to direct executeSync.
+ * Dispatch a connector sync using the configured background execution backend.
  */
 export async function dispatchSync(
   connectorId: string,
@@ -150,15 +152,64 @@ export async function dispatchSync(
   const requestId = options?.requestId ?? crypto.randomUUID()
 
   if (isTriggerAvailable()) {
+    const connectorRows = await db
+      .select({
+        knowledgeBaseId: knowledgeConnector.knowledgeBaseId,
+        workspaceId: knowledgeBase.workspaceId,
+        userId: knowledgeBase.userId,
+      })
+      .from(knowledgeConnector)
+      .innerJoin(knowledgeBase, eq(knowledgeBase.id, knowledgeConnector.knowledgeBaseId))
+      .where(eq(knowledgeConnector.id, connectorId))
+      .limit(1)
+
+    const row = connectorRows[0]
+    const tags = [`connectorId:${connectorId}`]
+    if (row?.knowledgeBaseId) tags.push(`knowledgeBaseId:${row.knowledgeBaseId}`)
+    if (row?.workspaceId) tags.push(`workspaceId:${row.workspaceId}`)
+    if (row?.userId) tags.push(`userId:${row.userId}`)
+
     await knowledgeConnectorSync.trigger(
       {
         connectorId,
         fullSync: options?.fullSync,
         requestId,
       },
-      { tags: [`connector:${connectorId}`] }
+      { tags }
     )
     logger.info(`Dispatched connector sync to Trigger.dev`, { connectorId, requestId })
+  } else if (isBullMQEnabled()) {
+    const connectorRows = await db
+      .select({
+        workspaceId: knowledgeBase.workspaceId,
+        userId: knowledgeBase.userId,
+      })
+      .from(knowledgeConnector)
+      .innerJoin(knowledgeBase, eq(knowledgeBase.id, knowledgeConnector.knowledgeBaseId))
+      .where(eq(knowledgeConnector.id, connectorId))
+      .limit(1)
+
+    const workspaceId = connectorRows[0]?.workspaceId
+    const userId = connectorRows[0]?.userId
+    if (!workspaceId || !userId) {
+      throw new Error(`No workspace found for connector ${connectorId}`)
+    }
+
+    await enqueueWorkspaceDispatch({
+      workspaceId,
+      lane: 'knowledge',
+      queueName: 'knowledge-connector-sync',
+      bullmqJobName: 'knowledge-connector-sync',
+      bullmqPayload: createBullMQJobData({
+        connectorId,
+        fullSync: options?.fullSync,
+        requestId,
+      }),
+      metadata: {
+        userId,
+      },
+    })
+    logger.info(`Dispatched connector sync to BullMQ`, { connectorId, requestId })
   } else {
     executeSync(connectorId, { fullSync: options?.fullSync }).catch((error) => {
       logger.error(`Sync failed for connector ${connectorId}`, {
@@ -625,6 +676,23 @@ export async function executeSync(
     if (stuckDocs.length > 0) {
       logger.info(`Retrying ${stuckDocs.length} stuck documents`, { connectorId })
       try {
+        const stuckDocIds = stuckDocs.map((doc) => doc.id)
+
+        await db.delete(embedding).where(inArray(embedding.documentId, stuckDocIds))
+
+        await db
+          .update(document)
+          .set({
+            processingStatus: 'pending',
+            processingStartedAt: null,
+            processingCompletedAt: null,
+            processingError: null,
+            chunkCount: 0,
+            tokenCount: 0,
+            characterCount: 0,
+          })
+          .where(inArray(document.id, stuckDocIds))
+
         await processDocumentsWithQueue(
           stuckDocs.map((doc) => ({
             documentId: doc.id,

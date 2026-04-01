@@ -18,6 +18,7 @@ import {
 import {
   Badge,
   Button,
+  Checkbox,
   Modal,
   ModalBody,
   ModalContent,
@@ -35,6 +36,7 @@ import {
 } from '@/lib/oauth'
 import { getMissingRequiredScopes } from '@/lib/oauth/utils'
 import { EditConnectorModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/edit-connector-modal/edit-connector-modal'
+import { ConnectCredentialModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/components/connect-credential-modal'
 import { OAuthRequiredModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/components/oauth-required-modal'
 import { CONNECTOR_REGISTRY } from '@/connectors/registry'
 import type { ConnectorData, SyncLogData } from '@/hooks/queries/kb/connectors'
@@ -45,6 +47,7 @@ import {
   useUpdateConnector,
 } from '@/hooks/queries/kb/connectors'
 import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
+import { useCredentialRefreshTriggers } from '@/hooks/use-credential-refresh-triggers'
 
 const logger = createLogger('ConnectorsSection')
 
@@ -77,6 +80,12 @@ export function ConnectorsSection({
   const { mutate: updateConnector } = useUpdateConnector()
   const { mutate: deleteConnector, isPending: isDeleting } = useDeleteConnector()
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [deleteDocuments, setDeleteDocuments] = useState(false)
+
+  const closeDeleteModal = useCallback(() => {
+    setDeleteTarget(null)
+    setDeleteDocuments(false)
+  }, [])
   const [editingConnector, setEditingConnector] = useState<ConnectorData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [syncingIds, setSyncingIds] = useState<Set<string>>(() => new Set())
@@ -224,22 +233,30 @@ export function ConnectorsSection({
         />
       )}
 
-      <Modal open={deleteTarget !== null} onOpenChange={() => setDeleteTarget(null)}>
+      <Modal open={deleteTarget !== null} onOpenChange={closeDeleteModal}>
         <ModalContent size='sm'>
-          <ModalHeader>Delete Connector</ModalHeader>
+          <ModalHeader>Remove Connector</ModalHeader>
           <ModalBody>
             <p className='text-[var(--text-secondary)] text-sm'>
-              Are you sure you want to remove this connected source?{' '}
-              <span className='text-[var(--text-error)]'>
-                This will stop future syncs from this source.
-              </span>{' '}
-              <span className='text-[var(--text-tertiary)]'>
-                Documents already synced will remain in the knowledge base.
-              </span>
+              This will disconnect the source and stop future syncs. Documents already synced will
+              remain in the knowledge base unless you choose to delete them.
             </p>
+            <div className='mt-3 flex items-center gap-2'>
+              <Checkbox
+                id='delete-docs'
+                checked={deleteDocuments}
+                onCheckedChange={(checked) => setDeleteDocuments(checked === true)}
+              />
+              <label
+                htmlFor='delete-docs'
+                className='cursor-pointer text-[var(--text-secondary)] text-sm'
+              >
+                Also delete all synced documents
+              </label>
+            </div>
           </ModalBody>
           <ModalFooter>
-            <Button variant='default' onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
+            <Button variant='default' onClick={closeDeleteModal} disabled={isDeleting}>
               Cancel
             </Button>
             <Button
@@ -248,23 +265,23 @@ export function ConnectorsSection({
               onClick={() => {
                 if (deleteTarget) {
                   deleteConnector(
-                    { knowledgeBaseId, connectorId: deleteTarget },
+                    { knowledgeBaseId, connectorId: deleteTarget, deleteDocuments },
                     {
                       onSuccess: () => {
                         setError(null)
-                        setDeleteTarget(null)
+                        closeDeleteModal()
                       },
                       onError: (err) => {
                         logger.error('Delete connector failed', { error: err.message })
                         setError(err.message)
-                        setDeleteTarget(null)
+                        closeDeleteModal()
                       },
                     }
                   )
                 }
               }}
             >
-              {isDeleting ? 'Deleting...' : 'Delete'}
+              {isDeleting ? 'Removing...' : 'Remove'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -313,11 +330,16 @@ function ConnectorCard({
   const requiredScopes =
     connectorDef?.auth.mode === 'oauth' ? (connectorDef.auth.requiredScopes ?? []) : []
 
-  const { data: credentials } = useOAuthCredentials(providerId, { workspaceId })
+  const { data: credentials, refetch: refetchCredentials } = useOAuthCredentials(providerId, {
+    workspaceId,
+  })
+
+  useCredentialRefreshTriggers(refetchCredentials, providerId ?? '', workspaceId)
 
   const missingScopes = useMemo(() => {
     if (!credentials || !connector.credentialId) return []
     const credential = credentials.find((c) => c.id === connector.credentialId)
+    if (!credential) return []
     return getMissingRequiredScopes(credential, requiredScopes)
   }, [credentials, connector.credentialId, requiredScopes])
 
@@ -469,15 +491,17 @@ function ConnectorCard({
               <Button
                 variant='active'
                 onClick={() => {
-                  writeOAuthReturnContext({
-                    origin: 'kb-connectors',
-                    knowledgeBaseId,
-                    displayName: connectorDef?.name ?? connector.connectorType,
-                    providerId: providerId!,
-                    preCount: credentials?.length ?? 0,
-                    workspaceId,
-                    requestedAt: Date.now(),
-                  })
+                  if (connector.credentialId) {
+                    writeOAuthReturnContext({
+                      origin: 'kb-connectors',
+                      knowledgeBaseId,
+                      displayName: connectorDef?.name ?? connector.connectorType,
+                      providerId: providerId!,
+                      preCount: credentials?.length ?? 0,
+                      workspaceId,
+                      requestedAt: Date.now(),
+                    })
+                  }
                   setShowOAuthModal(true)
                 }}
                 className='w-full px-2 py-1 font-medium text-caption'
@@ -495,7 +519,22 @@ function ConnectorCard({
         </div>
       )}
 
-      {showOAuthModal && serviceId && providerId && (
+      {showOAuthModal && serviceId && providerId && !connector.credentialId && (
+        <ConnectCredentialModal
+          isOpen={showOAuthModal}
+          onClose={() => {
+            consumeOAuthReturnContext()
+            setShowOAuthModal(false)
+          }}
+          provider={providerId as OAuthProvider}
+          serviceId={serviceId}
+          workspaceId={workspaceId}
+          knowledgeBaseId={knowledgeBaseId}
+          credentialCount={credentials?.length ?? 0}
+        />
+      )}
+
+      {showOAuthModal && serviceId && providerId && connector.credentialId && (
         <OAuthRequiredModal
           isOpen={showOAuthModal}
           onClose={() => {

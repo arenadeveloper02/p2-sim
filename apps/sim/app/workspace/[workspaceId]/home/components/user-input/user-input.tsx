@@ -45,10 +45,54 @@ import {
   computeMentionHighlightRanges,
   extractContextTokens,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/utils'
+import { useWorkflowMap } from '@/hooks/queries/workflows'
 import type { ChatContext } from '@/stores/panel'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
+
+function getCaretAnchor(
+  textarea: HTMLTextAreaElement,
+  caretPos: number
+): { left: number; top: number } {
+  const textareaRect = textarea.getBoundingClientRect()
+  const style = window.getComputedStyle(textarea)
+
+  const mirror = document.createElement('div')
+  mirror.style.position = 'absolute'
+  mirror.style.top = '0'
+  mirror.style.left = '0'
+  mirror.style.visibility = 'hidden'
+  mirror.style.whiteSpace = 'pre-wrap'
+  mirror.style.overflowWrap = 'break-word'
+  mirror.style.font = style.font
+  mirror.style.padding = style.padding
+  mirror.style.border = style.border
+  mirror.style.width = style.width
+  mirror.style.lineHeight = style.lineHeight
+  mirror.style.boxSizing = style.boxSizing
+  mirror.style.letterSpacing = style.letterSpacing
+  mirror.style.textTransform = style.textTransform
+  mirror.style.textIndent = style.textIndent
+  mirror.style.textAlign = style.textAlign
+  mirror.textContent = textarea.value.substring(0, caretPos)
+
+  const marker = document.createElement('span')
+  marker.style.display = 'inline-block'
+  marker.style.width = '0px'
+  marker.style.padding = '0'
+  marker.style.border = '0'
+  mirror.appendChild(marker)
+
+  document.body.appendChild(mirror)
+  const markerRect = marker.getBoundingClientRect()
+  const mirrorRect = mirror.getBoundingClientRect()
+  document.body.removeChild(mirror)
+
+  return {
+    left: textareaRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft,
+    top: textareaRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop,
+  }
+}
 
 interface UserInputProps {
   defaultValue?: string
@@ -78,6 +122,7 @@ export function UserInput({
   onContextAdd,
 }: UserInputProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { data: workflowsById = {} } = useWorkflowMap(workspaceId)
   const { data: session } = useSession()
   const [value, setValue] = useState(defaultValue)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -486,7 +531,8 @@ export function UserInput({
         const adjusted = `${before}${after}`
         setValue(adjusted)
         atInsertPosRef.current = caret - 1
-        plusMenuRef.current?.open()
+        const anchor = getCaretAnchor(e.target, caret - 1)
+        plusMenuRef.current?.open(anchor)
         restartRecognition(adjusted)
         return
       }
@@ -522,6 +568,28 @@ export function UserInput({
     [isInitialView]
   )
 
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    const pastedFiles: File[] = []
+    for (const item of Array.from(items)) {
+      if (item.kind === 'file') {
+        const file = item.getAsFile()
+        if (file) pastedFiles.push(file)
+      }
+    }
+
+    if (pastedFiles.length === 0) return
+
+    e.preventDefault()
+    const dt = new DataTransfer()
+    for (const file of pastedFiles) {
+      dt.items.add(file)
+    }
+    filesRef.current.processFiles(dt.files)
+  }, [])
+
   const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
     if (overlayRef.current) {
       overlayRef.current.scrollTop = e.currentTarget.scrollTop
@@ -550,7 +618,6 @@ export function UserInput({
 
     const elements: React.ReactNode[] = []
     let lastIndex = 0
-
     for (let i = 0; i < ranges.length; i++) {
       const range = ranges[i]
 
@@ -572,7 +639,7 @@ export function UserInput({
           case 'workflow':
           case 'current_workflow': {
             const wfId = (matchingCtx as { workflowId: string }).workflowId
-            const wfColor = useWorkflowRegistry.getState().workflows[wfId]?.color ?? '#888'
+            const wfColor = workflowsById[wfId]?.color ?? '#888'
             mentionIconNode = (
               <div
                 className='absolute inset-0 m-auto h-[12px] w-[12px] rounded-[3px] border-[2px]'
@@ -624,7 +691,7 @@ export function UserInput({
     }
 
     return elements.length > 0 ? elements : <span>{'\u00A0'}</span>
-  }, [value, contextManagement.selectedContexts])
+  }, [value, contextManagement.selectedContexts, workflowsById])
 
   return (
     <div
@@ -661,6 +728,7 @@ export function UserInput({
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
+          onPaste={handlePaste}
           onCut={mentionTokensWithContext.handleCut}
           onSelect={handleSelectAdjust}
           onMouseUp={handleSelectAdjust}
