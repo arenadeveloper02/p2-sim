@@ -243,11 +243,25 @@ export async function executeResponsesProviderRequest(
   const createRequestBody = (
     input: ResponsesInputItem[],
     overrides: Record<string, unknown> = {}
-  ) => ({
-    ...basePayload,
-    input,
-    ...overrides,
-  })
+  ) => {
+    const body: Record<string, unknown> = {
+      ...basePayload,
+      input,
+      ...overrides,
+    }
+
+    const toolsValue = body.tools
+    const hasTools = Array.isArray(toolsValue) && toolsValue.length > 0
+    if (!hasTools) {
+      body.tools = undefined
+      body.tool_choice = undefined
+      body.parallel_tool_calls = undefined
+    } else if (body.tool_choice === undefined) {
+      body.tool_choice = undefined
+    }
+
+    return body
+  }
 
   const parseErrorResponse = async (response: Response): Promise<string> => {
     const text = await response.text()

@@ -3,7 +3,11 @@ import { AgentIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
-import { getApiKeyCondition, getModelOptions, RESPONSE_FORMAT_WAND_CONFIG } from '@/blocks/utils'
+import {
+  getAgentModelOptions,
+  getApiKeyCondition,
+  RESPONSE_FORMAT_WAND_CONFIG,
+} from '@/blocks/utils'
 import {
   getBaseModelProviders,
   getMaxTemperature,
@@ -20,6 +24,7 @@ import {
 import type { ToolResponse } from '@/tools/types'
 
 const logger = createLogger('AgentBlock')
+const MODELS_WITHOUT_AGENT_TOOLS = ['gpt-4o-search-preview'] as const
 
 interface AgentResponse extends ToolResponse {
   output: {
@@ -122,7 +127,7 @@ Return ONLY the JSON array.`,
       required: true,
       defaultValue: 'gpt-4o',
       searchable: true,
-      options: getModelOptions,
+      options: getAgentModelOptions,
     },
     {
       id: 'vertexCredential',
@@ -419,7 +424,7 @@ Return ONLY the JSON array.`,
       defaultValue: [],
       condition: {
         field: 'model',
-        value: MODELS_WITH_DEEP_RESEARCH,
+        value: [...MODELS_WITH_DEEP_RESEARCH, ...MODELS_WITHOUT_AGENT_TOOLS],
         not: true,
       },
     },
@@ -536,6 +541,13 @@ Return ONLY the JSON array.`,
         return tool
       },
       params: (params: Record<string, any>) => {
+        if (MODELS_WITHOUT_AGENT_TOOLS.includes(params.model)) {
+          return {
+            ...params,
+            tools: undefined,
+          }
+        }
+
         // If tools array is provided, handle tool usage control
         if (params.tools && Array.isArray(params.tools)) {
           // Transform tools to include usageControl
