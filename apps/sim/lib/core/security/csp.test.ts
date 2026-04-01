@@ -28,6 +28,8 @@ import {
   buildTimeCSPDirectives,
   type CSPDirectives,
   generateRuntimeCSP,
+  getChatEmbedCSPPolicy,
+  getFormEmbedCSPPolicy,
   getMainCSPPolicy,
   getWorkflowExecutionCSPPolicy,
   removeCSPSource,
@@ -144,6 +146,33 @@ describe('getWorkflowExecutionCSPPolicy', () => {
 
     expect(execPolicy.length).toBeLessThan(mainPolicy.length)
     expect(execPolicy).toContain('*')
+  })
+})
+
+describe('embed CSP policies', () => {
+  it('should allow public image URLs for chat embeds', () => {
+    const policy = getChatEmbedCSPPolicy()
+    expect(policy).toContain('img-src')
+    expect(policy).toContain('https:')
+    expect(policy).toContain('http:')
+    expect(policy).toContain('frame-ancestors *')
+  })
+
+  it('should keep form embeds on standard image allowlist', () => {
+    const policy = getFormEmbedCSPPolicy()
+    expect(policy).toContain('img-src')
+    expect(policy).not.toContain('img-src \'self\' data: blob: https: http:')
+    expect(policy).toContain('frame-ancestors *')
+  })
+
+  it('should allow external image URL schemes in deployed chat CSP', () => {
+    const policy = getChatEmbedCSPPolicy()
+    expect(policy).toContain("img-src 'self' data: blob: https: http:")
+  })
+
+  it('should not relax form CSP to wildcard image schemes', () => {
+    const policy = getFormEmbedCSPPolicy()
+    expect(policy).not.toContain('https: http:')
   })
 })
 
