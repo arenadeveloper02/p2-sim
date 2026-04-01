@@ -1,7 +1,7 @@
-import { type NextRequest, NextResponse } from 'next/server'
-import { createLogger } from '@sim/logger'
 import { db } from '@sim/db'
+import { createLogger } from '@sim/logger'
 import { sql } from 'drizzle-orm'
+import { type NextRequest, NextResponse } from 'next/server'
 
 const logger = createLogger('FacebookAdsAccounts')
 

@@ -219,14 +219,7 @@ function getEmbedCSPPolicy(options?: { allowPublicImageUrls?: boolean }): string
     ...buildTimeCSPDirectives,
     ...(allowPublicImageUrls
       ? {
-          'img-src': [
-            "'self'",
-            'data:',
-            'blob:',
-            'https:',
-            'http:',
-            ...(isDev ? ['*'] : []),
-          ],
+          'img-src': ["'self'", 'data:', 'blob:', 'https:', 'http:', ...(isDev ? ['*'] : [])],
         }
       : {}),
     'frame-ancestors': ['*'],
