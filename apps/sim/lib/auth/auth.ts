@@ -2283,24 +2283,15 @@ export const auth = betterAuth({
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
             try {
-              logger.info('Slack getUserInfo called', {
-                hasAccessToken: !!tokens.accessToken,
-                tokenKeys: Object.keys(tokens),
-                fullTokens: JSON.stringify(tokens, null, 2),
-                hasAuthedUser: !!(tokens as any).authed_user,
-                authedUserKeys: (tokens as any).authed_user
-                  ? Object.keys((tokens as any).authed_user)
-                  : [],
-              })
-
-              // Use user token for auth.test to get user-specific info, fallback to bot token
-              const userAccessToken = (tokens as any).authed_user?.access_token
+              // tokens.idToken is the user token (xoxp-...) injected by the
+              // /api/auth/oauth2/slack/token proxy as `id_token`. Fall back to
+              // the bot token (xoxb-...) if the user token is absent.
+              const userAccessToken = tokens.idToken ?? null
               const tokenToUse = userAccessToken || tokens.accessToken
 
-              logger.info('Using token for Slack auth.test', {
+              logger.info('Slack getUserInfo called', {
+                hasAccessToken: !!tokens.accessToken,
                 hasUserToken: !!userAccessToken,
-                usingUserToken: !!userAccessToken,
-                tokenPrefix: tokenToUse ? `${tokenToUse.substring(0, 10)}...` : 'none',
               })
 
               const response = await fetch('https://slack.com/api/auth.test', {
@@ -2340,8 +2331,6 @@ export const auth = betterAuth({
                 emailVerified: false,
                 createdAt: new Date(),
                 updatedAt: new Date(),
-                // Store user token in idToken field for later use
-                idToken: userAccessToken || null,
               }
             } catch (error) {
               logger.error('Error creating Slack bot profile:', { error })
