@@ -1,4 +1,22 @@
+import { createLogger } from '@sim/logger'
 import { env } from '@/lib/core/config/env'
+
+const logger = createLogger('ApiKeysRotation')
+
+function maskKeyForLogging(key: string | undefined): string {
+  if (!key) return 'undefined'
+  if (key.length === 0) return 'empty_string'
+
+  const displayLength = Math.min(12, Math.floor(key.length / 2))
+  const start = key.substring(0, displayLength)
+  const end = key.substring(key.length - 4)
+  const firstChar = key[0]
+  const lastChar = key[key.length - 1]
+  const hasQuotes = firstChar === '"' || firstChar === "'" || lastChar === '"' || lastChar === "'"
+  const hasWhitespace = /^\s|\s$/.test(key)
+
+  return `Prefix: '${start}...${end}', Length: ${key.length}, HasQuotes: ${hasQuotes}, HasWhitespace: ${hasWhitespace}, ExactFirstChar: '${firstChar}', ExactLastChar: '${lastChar}'`
+}
 
 /**
  * Rotates through available API keys for a provider
@@ -59,5 +77,14 @@ export function getRotatingApiKey(provider: string): string {
   const currentMinute = new Date().getMinutes()
   const keyIndex = currentMinute % keys.length
 
-  return keys[keyIndex]
+  const selectedKey = keys[keyIndex]
+
+  logger.info(`Selected rotating API key for ${provider}`, {
+    totalKeysConfigured: keys.length,
+    selectedIndex: keyIndex,
+    currentMinute,
+    keyDetails: maskKeyForLogging(selectedKey),
+  })
+
+  return selectedKey
 }
