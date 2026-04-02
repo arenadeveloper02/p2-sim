@@ -67,18 +67,19 @@ if (typeof document !== 'undefined') {
         min-width: max-content !important;
       }
 
-      .copilot-markdown-wrapper th,
-      .copilot-markdown-wrapper td {
+      .copilot-markdown-wrapper th {
         white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        max-width: 200px !important;
         min-width: 80px !important;
       }
 
-      .copilot-markdown-wrapper th:last-child,
-      .copilot-markdown-wrapper td:last-child {
-        max-width: none !important;
+      .copilot-markdown-wrapper td {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        overflow-wrap: anywhere !important;
+        word-break: break-word !important;
+        max-width: 400px !important;
+        min-width: 80px !important;
       }
 
       /* Reduce top margin for first heading (e.g., right after thinking block) */
@@ -416,7 +417,7 @@ export default function ArenaCopilotMarkdownRenderer({
         </th>
       ),
       td: ({ children }: React.TdHTMLAttributes<HTMLTableCellElement>) => (
-        <td className='max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap border-gray-300 border-r px-4 py-2 text-gray-800 last:border-r-0 dark:border-gray-700 dark:text-gray-200'>
+        <td className='max-w-[360px] whitespace-normal break-words border-gray-300 border-r px-4 py-2 align-top text-gray-800 last:border-r-0 dark:border-gray-700 dark:text-gray-200'>
           {children}
         </td>
       ),
