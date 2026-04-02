@@ -425,8 +425,7 @@ export async function executeChatCompletionsProviderRequest(
       const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
       const streamingParams: ChatCompletionCreateParamsStreaming = {
         ...(payload as Omit<ChatCompletionCreateParamsStreaming, 'stream'>),
-        messages:
-          currentMessages as unknown as ChatCompletionCreateParamsStreaming['messages'],
+        messages: currentMessages as unknown as ChatCompletionCreateParamsStreaming['messages'],
         tool_choice: 'auto',
         stream: true,
         stream_options: { include_usage: true },
@@ -532,12 +531,13 @@ export async function executeChatCompletionsProviderRequest(
     })
 
     const enhancedError = new Error(error instanceof Error ? error.message : String(error))
-    ;(enhancedError as Error & { timing: { startTime: string; endTime: string; duration: number } }).timing =
-      {
+    ;(
+      enhancedError as Error & { timing: { startTime: string; endTime: string; duration: number } }
+    ).timing = {
       startTime: providerStartTimeISO,
       endTime: providerEndTimeISO,
       duration: totalDuration,
-      }
+    }
     throw enhancedError
   }
 }

@@ -7,7 +7,6 @@ import {
   Lock,
   LogIn,
   Mail,
-  Send,
   Server,
   Settings,
   ShieldCheck,
@@ -132,16 +131,16 @@ export const allNavigationItems: NavigationItem[] = [
     section: 'system',
     requiresHosted: true,
   },
-  {
-    id: 'inbox',
-    label: 'Sim Mailer',
-    icon: Send,
-    section: 'system',
-    requiresMax: true,
-    requiresHosted: true,
-    selfHostedOverride: isInboxEnabled,
-    showWhenLocked: true,
-  },
+  // {
+  //   id: 'inbox',
+  //   label: 'Sim Mailer',
+  //   icon: Send,
+  //   section: 'system',
+  //   requiresMax: true,
+  //   requiresHosted: true,
+  //   selfHostedOverride: isInboxEnabled,
+  //   showWhenLocked: true,
+  // },
   ...(isCredentialSetsEnabled
     ? [
         {

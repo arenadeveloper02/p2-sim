@@ -1,9 +1,9 @@
 import { createLogger } from '@sim/logger'
 import type { StreamingExecution } from '@/executor/types'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
-import { executeChatCompletionsProviderRequest } from './coreChatCompletions'
 import type { ProviderConfig, ProviderRequest, ProviderResponse } from '@/providers/types'
 import { executeResponsesProviderRequest } from './core'
+import { executeChatCompletionsProviderRequest } from './coreChatCompletions'
 
 const logger = createLogger('OpenAIProvider')
 const responsesEndpoint = 'https://api.openai.com/v1/responses'

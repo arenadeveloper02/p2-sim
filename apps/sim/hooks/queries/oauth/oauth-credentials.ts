@@ -107,6 +107,8 @@ export function useOAuthCredentials(
         signal
       ),
     enabled: Boolean(providerId) && enabled,
+    // Avoid multiple retries/spikes against the credentials API; failures should surface immediately.
+    retry: false,
     staleTime: 60 * 1000,
   })
 }
@@ -120,6 +122,8 @@ export function useOAuthCredentialDetail(
     queryKey: oauthCredentialKeys.detail(credentialId, workflowId),
     queryFn: ({ signal }) => fetchOAuthCredentialDetail(credentialId ?? '', workflowId, signal),
     enabled: Boolean(credentialId) && enabled,
+    // Same here: do not retry repeatedly on failure.
+    retry: false,
     staleTime: 60 * 1000,
   })
 }
