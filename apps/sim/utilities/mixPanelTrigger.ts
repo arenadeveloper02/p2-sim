@@ -93,6 +93,7 @@ export const setPeople = async ({
   // Determine instance based on NEXT_PUBLIC_APP_URL
   const instanceMap: Record<string, string> = {
     'https://agent.thearena.ai': 'Prod',
+    'https://sandbox-agent.thearena.ai': 'Sandbox',
     'https://test-agent.thearena.ai': 'Test',
     'https://dev-agent.thearena.ai': 'Dev',
   }
