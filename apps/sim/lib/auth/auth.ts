@@ -81,9 +81,9 @@ import { createAnonymousSession, ensureAnonymousUserExists } from './anonymous'
 
 const logger = createLogger('Auth')
 
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { getMicrosoftRefreshTokenExpiry, isMicrosoftProvider } from '@/lib/oauth/microsoft'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
-import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 
 /**
  * Extracts user info from a Microsoft ID token JWT instead of calling Graph API /me.
