@@ -147,6 +147,9 @@ export const auth = betterAuth({
   baseURL: getBaseUrl(),
   trustedOrigins: [
     getBaseUrl(),
+    ...(env.ALLOWED_ORIGINS
+      ? env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+      : []),
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
     'https://claude.ai',
     'https://claude.com',

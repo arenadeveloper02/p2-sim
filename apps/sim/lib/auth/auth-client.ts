@@ -15,8 +15,19 @@ import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { SessionContext, type SessionHookResult } from '@/app/_shell/providers/session-provider'
 
+/**
+ * Uses the current browser origin when available so auth requests stay same-origin
+ * in deployed environments even if `NEXT_PUBLIC_APP_URL` was baked as localhost at build time.
+ */
+function getAuthClientBaseUrl(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin
+  }
+  return getBaseUrl()
+}
+
 export const client = createAuthClient({
-  baseURL: getBaseUrl(),
+  baseURL: getAuthClientBaseUrl(),
   plugins: [
     adminClient(),
     emailOTPClient(),
