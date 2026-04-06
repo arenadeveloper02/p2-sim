@@ -14,6 +14,7 @@ services:
         limits:
           memory: 12G
     environment:
+      - NODE_ENV=production
       - DATABASE_URL=postgresql://p2agent:SB8%5ECt1%24Ns7%21wqk@sandbox-agents.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
