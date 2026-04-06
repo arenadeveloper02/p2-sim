@@ -99,39 +99,39 @@ ENV NODE_ENV=production
 # ========================================
 # Install Python + Chrome + Chromedriver
 # ========================================
-# RUN apt-get update && apt-get install -y \
-#       python3 python3-pip python3-venv bash ffmpeg \
-#       wget gnupg ca-certificates \
-#       xvfb \
-#       libnss3 \
-#       libxss1 \
-#       libasound2 \
-#       libx11-xcb1 \
-#       libxcomposite1 \
-#       libxrandr2 \
-#       libxdamage1 \
-#       libgbm1 \
-#       libgtk-3-0 \
-#       libatk1.0-0 \
-#       libatk-bridge2.0-0 \
-#       libcairo2 \
-#       libpango-1.0-0 \
-#       libpangocairo-1.0-0 \
-#       fonts-liberation \
-#     && wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
-#          | gpg --dearmor > /usr/share/keyrings/google-linux.gpg \
-#     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-#          > /etc/apt/sources.list.d/google-chrome.list \
-#     && apt-get update && apt-get install -y \
-#       google-chrome-stable \
-#       chromium-driver \
-#     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+      python3 python3-pip python3-venv bash ffmpeg \
+      wget gnupg ca-certificates \
+      xvfb \
+      libnss3 \
+      libxss1 \
+      libasound2 \
+      libx11-xcb1 \
+      libxcomposite1 \
+      libxrandr2 \
+      libxdamage1 \
+      libgbm1 \
+      libgtk-3-0 \
+      libatk1.0-0 \
+      libatk-bridge2.0-0 \
+      libcairo2 \
+      libpango-1.0-0 \
+      libpangocairo-1.0-0 \
+      fonts-liberation \
+    && wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
+         | gpg --dearmor > /usr/share/keyrings/google-linux.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+         > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update && apt-get install -y \
+      google-chrome-stable \
+      chromium-driver \
+    && rm -rf /var/lib/apt/lists/*
 
 # # Environment variables for Chrome
-# ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
-#     CHROME_BIN=/usr/bin/google-chrome \
-#     CHROME_PATH=/usr/bin/google-chrome \
-#     PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+    CHROME_BIN=/usr/bin/google-chrome \
+    CHROME_PATH=/usr/bin/google-chrome \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
 
 
 # ========================================
