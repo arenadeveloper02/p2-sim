@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: docker/app.Dockerfile
+      args:
+        # Must match runtime NEXT_PUBLIC_APP_URL — Next inlines NEXT_PUBLIC_* at build time.
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
     restart: unless-stopped
     ports:
       - '3000:3000'
