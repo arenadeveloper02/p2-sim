@@ -48,6 +48,9 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
       if (hostname.includes('test-agent')) {
         return 'https://test.thearena.ai/hub/agents'
       }
+      if (hostname.includes('sandbox-agent')) {
+        return 'https://sandbox.thearena.ai/hub/agents'
+      }
       // prod - agent.thearena.ai
       return 'https://app.thearena.ai/hub/agents'
     }

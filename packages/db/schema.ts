@@ -3242,6 +3242,18 @@ export const mothershipInboxTask = pgTable(
   })
 )
 
+export const channelAccounts = pgTable(
+  'channel_accounts',
+  {
+    accountId: varchar('account_id', { length: 100 }).notNull(),
+    accountName: varchar('account_name', { length: 255 }).notNull(),
+    accountType: varchar('account_type', { length: 50 }).notNull(),
+  },
+  (table) => ({
+    pk: uniqueIndex('channel_accounts_pkey').on(table.accountId, table.accountType),
+  })
+)
+
 export const mothershipInboxWebhook = pgTable('mothership_inbox_webhook', {
   id: text('id').primaryKey(),
   workspaceId: text('workspace_id')

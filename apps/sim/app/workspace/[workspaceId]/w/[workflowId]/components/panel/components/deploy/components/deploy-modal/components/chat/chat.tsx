@@ -343,18 +343,13 @@ export function ChatDeploy({
 
     const isNewChat = !existingChat?.id
 
-    // Open window before async operation to avoid popup blockers
-    const newTab = isNewChat ? window.open('', '_blank') : null
-
     try {
       if (!validateForm()) {
-        newTab?.close()
         setChatSubmitting(false)
         return
       }
 
       if (!isIdentifierValid && formData.identifier !== existingChat?.identifier) {
-        newTab?.close()
         setError('identifier', 'Please wait for identifier validation to complete')
         setChatSubmitting(false)
         return
@@ -383,18 +378,15 @@ export function ChatDeploy({
       onDeployed?.()
       onVersionActivated?.()
 
-      if (newTab && chatUrl) {
-        newTab.opener = null
-        newTab.location.href = `${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`
-      } else if (newTab) {
-        newTab.close()
+      if (isNewChat && chatUrl) {
+        const url = `${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`
+        window.open(url, '_blank', 'noopener,noreferrer')
       }
 
       await onRefetchChat()
       setHasInitializedForm(false)
       setFormInitCounter((c) => c + 1)
     } catch (error: any) {
-      newTab?.close()
       if (error.message?.includes('identifier')) {
         setError('identifier', error.message)
       } else {
