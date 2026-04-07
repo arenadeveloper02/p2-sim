@@ -9,7 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockInsert,
   mockDelete,
-  mockOnConflictDoUpdate,
+  mockUpdate,
+  mockSet,
   mockValues,
   mockWhere,
   mockGenerateCronExpression,
@@ -23,7 +24,8 @@ const {
 } = vi.hoisted(() => ({
   mockInsert: vi.fn(),
   mockDelete: vi.fn(),
-  mockOnConflictDoUpdate: vi.fn(),
+  mockUpdate: vi.fn(),
+  mockSet: vi.fn(),
   mockValues: vi.fn(),
   mockWhere: vi.fn(),
   mockGenerateCronExpression: vi.fn(),
@@ -46,6 +48,7 @@ vi.mock('@sim/db', () => ({
     deploymentVersionId: 'deployment_version_id',
     id: 'id',
     archivedAt: 'archived_at',
+    sourceType: 'source_type',
   },
 }))
 
@@ -105,12 +108,15 @@ describe('Schedule Deploy Utilities', () => {
     })
 
     // Setup mock chain for insert
-    mockOnConflictDoUpdate.mockResolvedValue({})
-    mockValues.mockReturnValue({ onConflictDoUpdate: mockOnConflictDoUpdate })
+    mockValues.mockResolvedValue({})
     mockInsert.mockReturnValue({ values: mockValues })
 
-    // Setup mock chain for delete
+    // Setup mock chain for update
     mockWhere.mockResolvedValue({})
+    mockSet.mockReturnValue({ where: mockWhere })
+    mockUpdate.mockReturnValue({ set: mockSet })
+
+    // Setup mock chain for delete
     mockDelete.mockReturnValue({ where: mockWhere })
 
     // Setup mock chain for select
@@ -123,6 +129,7 @@ describe('Schedule Deploy Utilities', () => {
         insert: mockInsert,
         delete: mockDelete,
         select: mockSelect,
+        update: mockUpdate,
       }
       return callback(mockTx)
     })
@@ -753,7 +760,7 @@ describe('Schedule Deploy Utilities', () => {
       expect(result.nextRunAt).toEqual(new Date('2025-04-15T09:00:00Z'))
       expect(mockTransaction).toHaveBeenCalled()
       expect(mockInsert).toHaveBeenCalled()
-      expect(mockOnConflictDoUpdate).toHaveBeenCalled()
+      expect(mockUpdate).not.toHaveBeenCalled()
     })
 
     it('should return error for invalid schedule block', async () => {
@@ -777,7 +784,7 @@ describe('Schedule Deploy Utilities', () => {
       expect(mockTransaction).not.toHaveBeenCalled()
     })
 
-    it('should use onConflictDoUpdate for existing schedules', async () => {
+    it('should update existing deploy schedule row for the same block', async () => {
       const blocks: Record<string, BlockState> = {
         'block-1': {
           id: 'block-1',
@@ -790,20 +797,23 @@ describe('Schedule Deploy Utilities', () => {
         } as BlockState,
       }
 
-      setupMockTransaction()
+      mockFrom.mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: 'existing-schedule-id', blockId: 'block-1' }]),
+      })
+      mockSelect.mockReturnValue({ from: mockFrom })
 
       await createSchedulesForDeploy('workflow-1', blocks, {} as any)
 
-      expect(mockOnConflictDoUpdate).toHaveBeenCalledWith({
-        target: expect.any(Array),
-        targetWhere: expect.objectContaining({ type: 'isNull' }),
-        set: expect.objectContaining({
+      expect(mockUpdate).toHaveBeenCalled()
+      expect(mockSet).toHaveBeenCalledWith(
+        expect.objectContaining({
           blockId: 'block-1',
           cronExpression: '0 9 * * *',
           status: 'active',
           failedCount: 0,
-        }),
-      })
+        })
+      )
+      expect(mockInsert).not.toHaveBeenCalled()
     })
 
     it('should rollback on database error', async () => {
