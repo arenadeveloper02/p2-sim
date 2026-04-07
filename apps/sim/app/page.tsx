@@ -8,33 +8,33 @@ const baseUrl = getBaseUrl()
 
 export const metadata: Metadata = {
   metadataBase: new URL(baseUrl),
-  title: 'Sim — Build AI Agents & Run Your Agentic Workforce',
+  title: 'Arena — Build AI Agents & Run Your Agentic Workforce',
   description:
-    'Sim is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows.',
+    'Arena is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows.',
   keywords:
     'AI agents, agentic workforce, open-source AI agent platform, agentic workflows, LLM orchestration, AI automation, knowledge base, workflow builder, AI integrations, SOC2 compliant, HIPAA compliant, enterprise AI',
-  authors: [{ name: 'Sim' }],
-  creator: 'Sim',
-  publisher: 'Sim',
+  authors: [{ name: 'Arena' }],
+  creator: 'Arena',
+  publisher: 'Arena',
   formatDetection: {
     email: false,
     address: false,
     telephone: false,
   },
   openGraph: {
-    title: 'Sim — Build AI Agents & Run Your Agentic Workforce',
+    title: 'Arena — Build AI Agents & Run Your Agentic Workforce',
     description:
-      'Sim is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows. Create agents, workflows, knowledge bases, tables, and docs. Join over 100,000 builders.',
+      'Arena is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows. Create agents, workflows, knowledge bases, tables, and docs. Join over 100,000 builders.',
     type: 'website',
     url: baseUrl,
-    siteName: 'Sim',
+    siteName: 'Arena',
     locale: 'en_US',
     images: [
       {
         url: '/logo/426-240/primary/small.png',
         width: 2130,
         height: 1200,
-        alt: 'Sim — Build AI Agents & Run Your Agentic Workforce',
+        alt: 'Arena — Build AI Agents & Run Your Agentic Workforce',
         type: 'image/png',
       },
     ],
@@ -43,12 +43,12 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@simdotai',
     creator: '@simdotai',
-    title: 'Sim — Build AI Agents & Run Your Agentic Workforce',
+    title: 'Arena — Build AI Agents & Run Your Agentic Workforce',
     description:
-      'Sim is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows.',
+      'Arena is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows.',
     images: {
       url: '/logo/426-240/primary/small.png',
-      alt: 'Sim — Build AI Agents & Run Your Agentic Workforce',
+      alt: 'Arena — Build AI Agents & Run Your Agentic Workforce',
     },
   },
   alternates: {

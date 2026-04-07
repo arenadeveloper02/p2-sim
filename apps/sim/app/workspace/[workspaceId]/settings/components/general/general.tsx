@@ -21,7 +21,6 @@ import {
 import { signOut, useSession } from '@/lib/auth/auth-client'
 import { ANONYMOUS_USER_ID } from '@/lib/auth/constants'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { GeneralSkeleton } from '@/app/workspace/[workspaceId]/settings/components/general/general-skeleton'
 import { useProfilePictureUpload } from '@/app/workspace/[workspaceId]/settings/hooks/use-profile-picture-upload'
@@ -416,6 +415,7 @@ export function General() {
         </div>
         <Switch
           id='error-notifications'
+          disabled={true}
           checked={settings?.errorNotificationsEnabled ?? true}
           onCheckedChange={handleErrorNotificationsChange}
         />
@@ -462,8 +462,8 @@ export function General() {
       </div>
 
       <p className='-mt-[8px] text-[13px] text-[var(--text-muted)]'>
-        We use OpenTelemetry to collect anonymous usage data to improve Sim. You can opt-out at any
-        time.
+        We use OpenTelemetry to collect anonymous usage data to improve Arena. You can opt-out at
+        any time.
       </p>
 
       {isTrainingEnabled && (
@@ -488,7 +488,7 @@ export function General() {
             </Button>
           </>
         )} */}
-        {isHosted && (
+        {/* {isHosted && (
           <Button
             onClick={() => window.open('/?home', '_blank', 'noopener,noreferrer')}
             variant='active'
@@ -496,7 +496,7 @@ export function General() {
           >
             Home Page
           </Button>
-        )}
+        )} */}
       </div>
 
       {/* Password Reset Confirmation Modal */}

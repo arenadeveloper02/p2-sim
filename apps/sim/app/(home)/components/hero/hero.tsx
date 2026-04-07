@@ -38,7 +38,7 @@ export default function Hero() {
       className='relative flex flex-col items-center overflow-hidden bg-[var(--landing-bg)] pt-[60px] pb-3 lg:pt-[100px]'
     >
       <p className='sr-only'>
-        Sim is the open-source platform to build AI agents and run your agentic workforce. Connect
+        Arena is the open-source platform to build AI agents and run your agentic workforce. Connect
         1,000+ integrations and LLMs — including OpenAI, Claude, Gemini, Mistral, and xAI — to
         deploy and orchestrate agentic workflows. Create agents, workflows, knowledge bases, tables,
         and docs. Trusted by over 100,000 builders at startups and Fortune 500 companies. SOC2 and
@@ -67,7 +67,7 @@ export default function Hero() {
           Build AI Agents
         </h1>
         <p className='font-[430] font-season text-[color-mix(in_srgb,var(--landing-text-subtle)_60%,transparent)] text-base leading-[125%] tracking-[0.02em] lg:text-lg'>
-          Sim is the AI Workspace for Agent Builders.
+          Arena is the AI Workspace for Agent Builders.
         </p>
 
         <div className='mt-3 flex items-center gap-2'>

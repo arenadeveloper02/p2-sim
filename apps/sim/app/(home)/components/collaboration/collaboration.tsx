@@ -296,7 +296,7 @@ export default function Collaboration() {
               <AlexaCursor />
             </div>
             <figcaption className='sr-only'>
-              Sim collaboration interface with real-time cursors, shared workspace, and team
+              Arena collaboration interface with real-time cursors, shared workspace, and team
               presence indicators
             </figcaption>
           </figure>

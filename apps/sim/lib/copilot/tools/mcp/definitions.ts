@@ -561,7 +561,7 @@ Supports full and partial execution:
     name: 'sim_info',
     agentId: 'info',
     description:
-      "Inspect a workflow's blocks, connections, outputs, variables, and metadata. Use for questions about the Sim platform itself — how blocks work, what integrations are available, platform concepts, etc. Always provide workflowId to scope results to a specific workflow.",
+      "Inspect a workflow's blocks, connections, outputs, variables, and metadata. Use for questions about the Arena platform itself — how blocks work, what integrations are available, platform concepts, etc. Always provide workflowId to scope results to a specific workflow.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -593,7 +593,7 @@ Supports full and partial execution:
     name: 'sim_research',
     agentId: 'research',
     description:
-      'Research external APIs and documentation. Use when you need to understand third-party services, external APIs, authentication flows, or data formats OUTSIDE of Sim. For questions about Sim itself, use sim_info instead.',
+      'Research external APIs and documentation. Use when you need to understand third-party services, external APIs, authentication flows, or data formats OUTSIDE of Arena. For questions about Arena itself, use sim_info instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -623,7 +623,7 @@ Supports full and partial execution:
     name: 'sim_platform',
     agentId: 'tour',
     description:
-      'Get help with Sim platform navigation, keyboard shortcuts, and UI actions. Use when the user asks "how do I..." about the Sim editor, wants keyboard shortcuts, or needs to know what actions are available in the UI.',
+      'Get help with Arena platform navigation, keyboard shortcuts, and UI actions. Use when the user asks "how do I..." about the Sim editor, wants keyboard shortcuts, or needs to know what actions are available in the UI.',
     inputSchema: {
       type: 'object',
       properties: {

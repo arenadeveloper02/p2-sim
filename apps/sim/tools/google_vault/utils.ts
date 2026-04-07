@@ -31,9 +31,9 @@ export function enhanceGoogleVaultError(errorMessage: string): string {
       `Google Vault authentication failed (likely due to reauthentication policy). ` +
       `To resolve this, try disconnecting and reconnecting your Google Vault credential ` +
       `in the Credentials settings. If the issue persists, ask your Google Workspace ` +
-      `administrator to disable "Reauthentication policy" for Sim Studio in the Google ` +
+      `administrator to disable "Reauthentication policy" for Arena Studio in the Google ` +
       `Admin Console (Security > Access and data control > Context-Aware Access > ` +
-      `Reauthentication policy), or exempt Sim Studio from reauthentication requirements. ` +
+      `Reauthentication policy), or exempt Arena Studio from reauthentication requirements. ` +
       `Learn more: https://support.google.com/a/answer/9368756`
     )
   }

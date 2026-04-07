@@ -81,6 +81,7 @@ import { createAnonymousSession, ensureAnonymousUserExists } from './anonymous'
 
 const logger = createLogger('Auth')
 
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { getMicrosoftRefreshTokenExpiry, isMicrosoftProvider } from '@/lib/oauth/microsoft'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
 
@@ -146,6 +147,11 @@ export const auth = betterAuth({
   baseURL: getBaseUrl(),
   trustedOrigins: [
     getBaseUrl(),
+    ...(env.ALLOWED_ORIGINS
+      ? env.ALLOWED_ORIGINS.split(',')
+          .map((o) => o.trim())
+          .filter(Boolean)
+      : []),
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
     'https://claude.ai',
     'https://claude.com',
@@ -2268,7 +2274,7 @@ export const auth = betterAuth({
           clientId: env.SLACK_CLIENT_ID as string,
           clientSecret: env.SLACK_CLIENT_SECRET as string,
           authorizationUrl: 'https://slack.com/oauth/v2/authorize',
-          tokenUrl: 'https://slack.com/api/oauth.v2.access',
+          tokenUrl: `${getInternalApiBaseUrl()}/api/auth/oauth2/slack/token`,
           userInfoUrl: 'https://slack.com/api/users.identity',
           scopes: getCanonicalScopesForProvider('slack'),
           responseType: 'code',
@@ -2282,24 +2288,15 @@ export const auth = betterAuth({
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
             try {
-              logger.info('Slack getUserInfo called', {
-                hasAccessToken: !!tokens.accessToken,
-                tokenKeys: Object.keys(tokens),
-                fullTokens: JSON.stringify(tokens, null, 2),
-                hasAuthedUser: !!(tokens as any).authed_user,
-                authedUserKeys: (tokens as any).authed_user
-                  ? Object.keys((tokens as any).authed_user)
-                  : [],
-              })
-
-              // Use user token for auth.test to get user-specific info, fallback to bot token
-              const userAccessToken = (tokens as any).authed_user?.access_token
+              // tokens.idToken is the user token (xoxp-...) injected by the
+              // /api/auth/oauth2/slack/token proxy as `id_token`. Fall back to
+              // the bot token (xoxb-...) if the user token is absent.
+              const userAccessToken = tokens.idToken ?? null
               const tokenToUse = userAccessToken || tokens.accessToken
 
-              logger.info('Using token for Slack auth.test', {
+              logger.info('Slack getUserInfo called', {
+                hasAccessToken: !!tokens.accessToken,
                 hasUserToken: !!userAccessToken,
-                usingUserToken: !!userAccessToken,
-                tokenPrefix: tokenToUse ? `${tokenToUse.substring(0, 10)}...` : 'none',
               })
 
               const response = await fetch('https://slack.com/api/auth.test', {
@@ -2339,8 +2336,6 @@ export const auth = betterAuth({
                 emailVerified: false,
                 createdAt: new Date(),
                 updatedAt: new Date(),
-                // Store user token in idToken field for later use
-                idToken: userAccessToken || null,
               }
             } catch (error) {
               logger.error('Error creating Slack bot profile:', { error })

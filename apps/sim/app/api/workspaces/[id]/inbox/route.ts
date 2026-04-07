@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     getUserEntityPermissions(session.user.id, 'workspace', workspaceId),
   ])
   if (!hasAccess) {
-    return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
+    return NextResponse.json({ error: 'Arena Mailer requires a Max plan' }, { status: 403 })
   }
   if (!permission) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -90,7 +90,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     getUserEntityPermissions(session.user.id, 'workspace', workspaceId),
   ])
   if (!hasAccess) {
-    return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
+    return NextResponse.json({ error: 'Arena Mailer requires a Max plan' }, { status: 403 })
   }
   if (permission !== 'admin') {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 })

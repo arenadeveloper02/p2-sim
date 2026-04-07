@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-const PLACEHOLDER_PREFIX = 'Ask Sim to '
+const PLACEHOLDER_PREFIX = 'Ask Vimi to '
 const PLACEHOLDER_SUFFIXES = [
   'respond to my emails...',
   'find and track leads...',

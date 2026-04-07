@@ -161,7 +161,7 @@ describe('embed CSP policies', () => {
   it('should keep form embeds on standard image allowlist', () => {
     const policy = getFormEmbedCSPPolicy()
     expect(policy).toContain('img-src')
-    expect(policy).not.toContain('img-src \'self\' data: blob: https: http:')
+    expect(policy).not.toContain("img-src 'self' data: blob: https: http:")
     expect(policy).toContain('frame-ancestors *')
   })
 

@@ -1,13 +1,11 @@
 import {
   Card,
   Connections,
-  HexSimple,
   Key,
   KeySquare,
   Lock,
   LogIn,
   Mail,
-  Send,
   Server,
   Settings,
   ShieldCheck,
@@ -116,7 +114,7 @@ export const allNavigationItems: NavigationItem[] = [
   { id: 'custom-tools', label: 'Custom Tools', icon: Wrench, section: 'tools' },
   { id: 'skills', label: 'Skills', icon: AgentSkillsIcon, section: 'tools' },
   { id: 'mcp', label: 'MCP Tools', icon: McpIcon, section: 'tools' },
-  { id: 'apikeys', label: 'Sim Keys', icon: TerminalWindow, section: 'system' },
+  { id: 'apikeys', label: 'Arena Keys', icon: TerminalWindow, section: 'system' },
   { id: 'workflow-mcp-servers', label: 'MCP Servers', icon: Server, section: 'system' },
   {
     id: 'byok',
@@ -125,23 +123,23 @@ export const allNavigationItems: NavigationItem[] = [
     section: 'system',
     requiresHosted: true,
   },
-  {
-    id: 'copilot',
-    label: 'Copilot Keys',
-    icon: HexSimple,
-    section: 'system',
-    requiresHosted: true,
-  },
-  {
-    id: 'inbox',
-    label: 'Sim Mailer',
-    icon: Send,
-    section: 'system',
-    requiresMax: true,
-    requiresHosted: true,
-    selfHostedOverride: isInboxEnabled,
-    showWhenLocked: true,
-  },
+  // {
+  //   id: 'copilot',
+  //   label: 'Copilot Keys',
+  //   icon: HexSimple,
+  //   section: 'system',
+  //   requiresHosted: true,
+  // },
+  // {
+  //   id: 'inbox',
+  //   label: 'Sim Mailer',
+  //   icon: Send,
+  //   section: 'system',
+  //   requiresMax: true,
+  //   requiresHosted: true,
+  //   selfHostedOverride: isInboxEnabled,
+  //   showWhenLocked: true,
+  // },
   ...(isCredentialSetsEnabled
     ? [
         {

@@ -127,7 +127,7 @@ RUN apt-get update && apt-get install -y \
       chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
-# Environment variables for Chrome
+# # Environment variables for Chrome
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
     CHROME_BIN=/usr/bin/google-chrome \
     CHROME_PATH=/usr/bin/google-chrome \

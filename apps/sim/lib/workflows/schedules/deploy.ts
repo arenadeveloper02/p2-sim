@@ -74,17 +74,20 @@ export async function createSchedulesForDeploy(
     await db.transaction(async (tx) => {
       const currentBlockIds = new Set(validatedBlocks.map((b) => b.blockId))
 
+      /**
+       * Deploy-owned rows use `source_type = 'workflow'`. Match all active rows for this workflow
+       * so redeploys with a new `deployment_version_id` still find the previous schedule row.
+       * `ON CONFLICT` on the partial unique index is brittle (migration / PG inference mismatches).
+       */
       const existingSchedules = await tx
         .select({ id: workflowSchedule.id, blockId: workflowSchedule.blockId })
         .from(workflowSchedule)
         .where(
-          deploymentVersionId
-            ? and(
-                eq(workflowSchedule.workflowId, workflowId),
-                eq(workflowSchedule.deploymentVersionId, deploymentVersionId),
-                isNull(workflowSchedule.archivedAt)
-              )
-            : and(eq(workflowSchedule.workflowId, workflowId), isNull(workflowSchedule.archivedAt))
+          and(
+            eq(workflowSchedule.workflowId, workflowId),
+            isNull(workflowSchedule.archivedAt),
+            eq(workflowSchedule.sourceType, 'workflow')
+          )
         )
 
       const orphanedScheduleIds = existingSchedules
@@ -98,57 +101,85 @@ export async function createSchedulesForDeploy(
         await tx.delete(workflowSchedule).where(inArray(workflowSchedule.id, orphanedScheduleIds))
       }
 
+      const keptIds = new Set(
+        existingSchedules.filter((s) => !orphanedScheduleIds.includes(s.id)).map((s) => s.id)
+      )
+
       for (const validated of validatedBlocks) {
         const { blockId, cronExpression, nextRunAt, timezone } = validated
-        const scheduleId = crypto.randomUUID()
         const now = new Date()
 
-        const values = {
-          id: scheduleId,
-          workflowId,
-          deploymentVersionId: deploymentVersionId || null,
-          blockId,
-          cronExpression,
-          triggerType: 'schedule',
-          createdAt: now,
-          updatedAt: now,
-          nextRunAt,
-          timezone,
-          status: 'active',
-          failedCount: 0,
+        const rowsForBlock = existingSchedules.filter(
+          (s) => s.blockId === blockId && keptIds.has(s.id)
+        )
+        const duplicateIds = rowsForBlock.slice(1).map((s) => s.id)
+        if (duplicateIds.length > 0) {
+          logger.warn(
+            `Removing ${duplicateIds.length} duplicate workflow_schedule row(s) for workflow ${workflowId} block ${blockId}`
+          )
+          await tx.delete(workflowSchedule).where(inArray(workflowSchedule.id, duplicateIds))
+          for (const id of duplicateIds) {
+            keptIds.delete(id)
+          }
         }
+
+        const primaryRow = rowsForBlock[0]
 
         const setValues = {
+          deploymentVersionId: deploymentVersionId ?? null,
           blockId,
           cronExpression,
-          ...(deploymentVersionId ? { deploymentVersionId } : {}),
           updatedAt: now,
           nextRunAt,
           timezone,
-          status: 'active',
+          status: 'active' as const,
           failedCount: 0,
         }
 
-        await tx
-          .insert(workflowSchedule)
-          .values(values)
-          .onConflictDoUpdate({
-            target: [
-              workflowSchedule.workflowId,
-              workflowSchedule.blockId,
-              workflowSchedule.deploymentVersionId,
-            ],
-            targetWhere: isNull(workflowSchedule.archivedAt),
-            set: setValues,
+        if (primaryRow) {
+          await tx
+            .update(workflowSchedule)
+            .set(setValues)
+            .where(eq(workflowSchedule.id, primaryRow.id))
+
+          logger.info(`Schedule updated for workflow ${workflowId}, block ${blockId}`, {
+            scheduleId: primaryRow.id,
+            cronExpression,
+            nextRunAt: nextRunAt?.toISOString(),
           })
 
-        logger.info(`Schedule created/updated for workflow ${workflowId}, block ${blockId}`, {
-          scheduleId: values.id,
-          cronExpression,
-          nextRunAt: nextRunAt?.toISOString(),
-        })
+          lastScheduleInfo = {
+            scheduleId: primaryRow.id,
+            cronExpression,
+            nextRunAt,
+            timezone,
+          }
+        } else {
+          const scheduleId = crypto.randomUUID()
+          await tx.insert(workflowSchedule).values({
+            id: scheduleId,
+            workflowId,
+            deploymentVersionId: deploymentVersionId ?? null,
+            blockId,
+            cronExpression,
+            triggerType: 'schedule',
+            createdAt: now,
+            updatedAt: now,
+            nextRunAt,
+            timezone,
+            status: 'active',
+            failedCount: 0,
+            sourceType: 'workflow',
+          })
 
-        lastScheduleInfo = { scheduleId: values.id, cronExpression, nextRunAt, timezone }
+          logger.info(`Schedule created for workflow ${workflowId}, block ${blockId}`, {
+            scheduleId,
+            cronExpression,
+            nextRunAt: nextRunAt?.toISOString(),
+          })
+
+          lastScheduleInfo = { scheduleId, cronExpression, nextRunAt, timezone }
+        }
       }
     })
   } catch (error) {

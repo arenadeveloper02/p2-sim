@@ -42,7 +42,7 @@ interface AgentData {
 export function generateAgentCard(agent: AgentData, workflow: WorkflowData): AppAgentCard {
   const baseUrl = getBaseUrl()
   const description =
-    agent.description || workflow.description || `${agent.name} - A2A Agent powered by Sim`
+    agent.description || workflow.description || `${agent.name} - A2A Agent powered by Arena`
 
   return {
     name: agent.name,

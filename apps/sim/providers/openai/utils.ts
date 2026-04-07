@@ -3,8 +3,8 @@ import type OpenAI from 'openai'
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
 import type { Stream } from 'openai/streaming'
-import { createOpenAICompatibleStream } from '@/providers/utils'
 import type { Message } from '@/providers/types'
+import { createOpenAICompatibleStream } from '@/providers/utils'
 
 const logger = createLogger('ResponsesUtils')
 
