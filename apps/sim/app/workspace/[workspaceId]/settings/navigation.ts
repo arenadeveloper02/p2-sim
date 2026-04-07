@@ -1,7 +1,6 @@
 import {
   Card,
   Connections,
-  HexSimple,
   Key,
   KeySquare,
   Lock,

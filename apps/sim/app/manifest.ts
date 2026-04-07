@@ -5,7 +5,8 @@ export default function manifest(): MetadataRoute.Manifest {
   const brand = getBrandConfig()
 
   return {
-    name: brand.name === 'Sim' ? 'Arena — Build AI Agents & Run Your Agentic Workforce' : brand.name,
+    name:
+      brand.name === 'Sim' ? 'Arena — Build AI Agents & Run Your Agentic Workforce' : brand.name,
     short_name: brand.name,
     description:
       'Arena is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows.',

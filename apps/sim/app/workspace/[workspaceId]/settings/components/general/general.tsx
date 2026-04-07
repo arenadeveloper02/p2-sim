@@ -462,8 +462,8 @@ export function General() {
       </div>
 
       <p className='-mt-[8px] text-[13px] text-[var(--text-muted)]'>
-        We use OpenTelemetry to collect anonymous usage data to improve Arena. You can opt-out at any
-        time.
+        We use OpenTelemetry to collect anonymous usage data to improve Arena. You can opt-out at
+        any time.
       </p>
 
       {isTrainingEnabled && (
