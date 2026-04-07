@@ -6,6 +6,13 @@ import { glob } from 'glob'
 
 console.log('Starting documentation generator...')
 
+/**
+ * Cache for resolved const definitions from types files.
+ * Key: "toolPrefix:constName" (e.g., "calcom:SCHEDULE_DATA_OUTPUT_PROPERTIES")
+ * Value: The resolved properties object
+ */
+const constResolutionCache = new Map<string, Record<string, any>>()
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, '..')
@@ -14,6 +21,11 @@ const BLOCKS_PATH = path.join(rootDir, 'apps/sim/blocks/blocks')
 const DOCS_OUTPUT_PATH = path.join(rootDir, 'apps/docs/content/docs/en/tools')
 const ICONS_PATH = path.join(rootDir, 'apps/sim/components/icons.tsx')
 const DOCS_ICONS_PATH = path.join(rootDir, 'apps/docs/components/icons.tsx')
+const LANDING_INTEGRATIONS_DATA_PATH = path.join(
+  rootDir,
+  'apps/sim/app/(landing)/integrations/data'
+)
+const TRIGGERS_PATH = path.join(rootDir, 'apps/sim/triggers')
 
 if (!fs.existsSync(DOCS_OUTPUT_PATH)) {
   fs.mkdirSync(DOCS_OUTPUT_PATH, { recursive: true })
@@ -36,7 +48,39 @@ interface BlockConfig {
   tools?: {
     access?: string[]
   }
+  operations?: OperationInfo[]
+  docsLink?: string
   [key: string]: any
+}
+
+interface TriggerInfo {
+  id: string
+  name: string
+  description: string
+}
+
+interface OperationInfo {
+  name: string
+  description: string
+}
+
+interface IntegrationEntry {
+  type: string
+  slug: string
+  name: string
+  description: string
+  longDescription: string
+  bgColor: string
+  iconName: string
+  docsUrl: string
+  operations: OperationInfo[]
+  operationCount: number
+  triggers: TriggerInfo[]
+  triggerCount: number
+  authType: 'oauth' | 'api-key' | 'none'
+  category: string
+  integrationType?: string
+  tags?: string[]
 }
 
 /**
@@ -79,7 +123,7 @@ async function generateIconMapping(): Promise<Record<string, string>> {
       // For icon mapping, we need ALL blocks including hidden ones
       // because V2 blocks inherit icons from legacy blocks via spread
       // First, extract the primary icon from the file (usually the legacy block's icon)
-      const primaryIcon = extractIconName(fileContent)
+      const primaryIcon = extractIconNameFromContent(fileContent)
 
       // Find all block exports and their types
       const exportRegex = /export\s+const\s+(\w+)Block\s*:\s*BlockConfig[^=]*=\s*\{/g
@@ -201,13 +245,440 @@ ${mappingEntries}
 }
 
 /**
+ * Extract operation options from the subBlock with id: 'operation' (if present).
+ * Returns { label, id } pairs — label is the display name, id is the option's id field
+ * (used to construct the tool ID as `{blockType}_{id}`).
+ * Parses the subBlocks array using brace/bracket counting to safely traverse
+ * the nested structure without eval or a full AST parser.
+ */
+function extractOperationsFromContent(blockContent: string): { label: string; id: string }[] {
+  const subBlocksMatch = /subBlocks\s*:\s*\[/.exec(blockContent)
+  if (!subBlocksMatch) return []
+
+  // Locate the opening '[' of the subBlocks array
+  const arrayStart = subBlocksMatch.index + subBlocksMatch[0].length - 1
+  let bracketCount = 1
+  let pos = arrayStart + 1
+  while (pos < blockContent.length && bracketCount > 0) {
+    if (blockContent[pos] === '[') bracketCount++
+    else if (blockContent[pos] === ']') bracketCount--
+    pos++
+  }
+  const subBlocksContent = blockContent.substring(arrayStart + 1, pos - 1)
+
+  // Iterate over top-level objects in the subBlocks array, looking for id: 'operation'
+  let i = 0
+  while (i < subBlocksContent.length) {
+    if (subBlocksContent[i] === '{') {
+      let braceCount = 1
+      let j = i + 1
+      while (j < subBlocksContent.length && braceCount > 0) {
+        if (subBlocksContent[j] === '{') braceCount++
+        else if (subBlocksContent[j] === '}') braceCount--
+        j++
+      }
+      const objContent = subBlocksContent.substring(i, j)
+
+      if (/\bid\s*:\s*['"]operation['"]/.test(objContent)) {
+        const optionsMatch = /options\s*:\s*\[/.exec(objContent)
+        if (!optionsMatch) return []
+
+        const optArrayStart = optionsMatch.index + optionsMatch[0].length - 1
+        let bc = 1
+        let op = optArrayStart + 1
+        while (op < objContent.length && bc > 0) {
+          if (objContent[op] === '[') bc++
+          else if (objContent[op] === ']') bc--
+          op++
+        }
+        const optionsContent = objContent.substring(optArrayStart + 1, op - 1)
+
+        // Extract { label, id } pairs from each option object
+        const pairs: { label: string; id: string }[] = []
+        const optionObjectRegex = /\{[^{}]*\}/g
+        let m
+        while ((m = optionObjectRegex.exec(optionsContent)) !== null) {
+          const optObj = m[0]
+          const labelMatch = /label\s*:\s*['"]([^'"]+)['"]/.exec(optObj)
+          const idMatch = /\bid\s*:\s*['"]([^'"]+)['"]/.exec(optObj)
+          if (labelMatch) {
+            pairs.push({ label: labelMatch[1], id: idMatch ? idMatch[1] : '' })
+          }
+        }
+        return pairs
+      }
+      i = j
+    } else {
+      i++
+    }
+  }
+  return []
+}
+
+/**
+ * Extract a mapping from operation id → tool id by scanning switch/case/return
+ * patterns in a block file. Handles both simple returns and ternary returns
+ * (for ternaries, takes the last quoted tool-like string, which is typically
+ * the default/list variant). Also picks up named helper functions referenced
+ * from tools.config.tool (e.g. selectGmailToolId).
+ */
+function extractSwitchCaseToolMapping(fileContent: string): Map<string, string> {
+  const mapping = new Map<string, string>()
+  const caseRegex = /\bcase\s+['"]([^'"]+)['"]\s*:/g
+  let caseMatch: RegExpExecArray | null
+
+  while ((caseMatch = caseRegex.exec(fileContent)) !== null) {
+    const opId = caseMatch[1]
+    if (mapping.has(opId)) continue
+
+    const searchStart = caseMatch.index + caseMatch[0].length
+    const searchEnd = Math.min(searchStart + 300, fileContent.length)
+    const segment = fileContent.substring(searchStart, searchEnd)
+
+    const returnIdx = segment.search(/\breturn\b/)
+    if (returnIdx === -1) continue
+
+    const afterReturn = segment.substring(returnIdx + 'return'.length)
+    // Limit scope to before the next case/default to avoid capturing sibling cases
+    const nextCaseIdx = afterReturn.search(/\bcase\b|\bdefault\b/)
+    const returnScope = nextCaseIdx > 0 ? afterReturn.substring(0, nextCaseIdx) : afterReturn
+
+    const toolMatches = [...returnScope.matchAll(/['"]([a-z][a-z0-9_]+)['"]/g)]
+    // Take the last tool-like string (underscore = tool ID pattern); for ternaries this
+    // is the fallback/list variant
+    const toolId = toolMatches
+      .map((m) => m[1])
+      .filter((id) => id.includes('_'))
+      .pop()
+    if (toolId) {
+      mapping.set(opId, toolId)
+    }
+  }
+
+  return mapping
+}
+
+/**
+ * Scan all tool files under apps/sim/tools/ and build a map from tool ID to description.
+ * Used to enrich operation entries with descriptions.
+ */
+interface ToolMaps {
+  desc: Map<string, string>
+  name: Map<string, string>
+}
+
+async function buildToolDescriptionMap(): Promise<ToolMaps> {
+  const toolsDir = path.join(rootDir, 'apps/sim/tools')
+  const desc = new Map<string, string>()
+  const name = new Map<string, string>()
+  try {
+    const toolFiles = await glob(`${toolsDir}/**/*.ts`)
+    for (const file of toolFiles) {
+      const basename = path.basename(file)
+      if (basename === 'index.ts' || basename === 'types.ts') continue
+      const content = fs.readFileSync(file, 'utf-8')
+
+      // Find every `id: 'tool_id'` occurrence in the file. For each, search
+      // the next ~600 characters for `name:` and `description:` fields, cutting
+      // off at the first `params:` block within that window. This handles both
+      // the simple inline pattern (id → description → params in one object) and
+      // the two-step pattern (base object holds params, ToolConfig export holds
+      // id + description after the base object).
+      const idRegex = /\bid\s*:\s*['"]([^'"]+)['"]/g
+      let idMatch: RegExpExecArray | null
+      while ((idMatch = idRegex.exec(content)) !== null) {
+        const toolId = idMatch[1]
+        if (desc.has(toolId)) continue
+        const windowStart = idMatch.index
+        const windowEnd = Math.min(windowStart + 600, content.length)
+        const window = content.substring(windowStart, windowEnd)
+        // Stop before any params block so we don't pick up param-level values
+        const paramsOffset = window.search(/\bparams\s*:\s*\{/)
+        const searchWindow = paramsOffset > 0 ? window.substring(0, paramsOffset) : window
+        const descMatch = searchWindow.match(/\bdescription\s*:\s*['"]([^'"]{5,})['"]/)
+        const nameMatch = searchWindow.match(/\bname\s*:\s*['"]([^'"]+)['"]/)
+        if (descMatch) desc.set(toolId, descMatch[1])
+        if (nameMatch) name.set(toolId, nameMatch[1])
+      }
+    }
+  } catch {
+    // Non-fatal: descriptions will be empty strings
+  }
+  return { desc, name }
+}
+
+/**
+ * Detect the authentication type from block content.
+ * Returns 'oauth' if the block uses oauth-input credentials,
+ * 'api-key' if it uses a plain API key field, or 'none' otherwise.
+ */
+function extractAuthType(blockContent: string): 'oauth' | 'api-key' | 'none' {
+  if (/type\s*:\s*['"]oauth-input['"]/.test(blockContent)) return 'oauth'
+  if (/\bid\s*:\s*['"](?:apiKey|api_key|accessToken)['"]/.test(blockContent)) return 'api-key'
+  return 'none'
+}
+
+/**
+ * Extract the list of trigger IDs from the block's `triggers.available` array.
+ * Handles blocks that declare `triggers: { enabled: true, available: [...] }`.
+ */
+function extractTriggersAvailable(blockContent: string): string[] {
+  const triggersMatch = /\btriggers\s*:\s*\{/.exec(blockContent)
+  if (!triggersMatch) return []
+
+  const start = triggersMatch.index + triggersMatch[0].length - 1
+  let braceCount = 1
+  let pos = start + 1
+  while (pos < blockContent.length && braceCount > 0) {
+    if (blockContent[pos] === '{') braceCount++
+    else if (blockContent[pos] === '}') braceCount--
+    pos++
+  }
+  const triggersContent = blockContent.substring(start, pos)
+
+  if (!/enabled\s*:\s*true/.test(triggersContent)) return []
+
+  const availableMatch = /available\s*:\s*\[/.exec(triggersContent)
+  if (!availableMatch) return []
+
+  const arrayStart = availableMatch.index + availableMatch[0].length - 1
+  let bracketCount = 1
+  let ap = arrayStart + 1
+  while (ap < triggersContent.length && bracketCount > 0) {
+    if (triggersContent[ap] === '[') bracketCount++
+    else if (triggersContent[ap] === ']') bracketCount--
+    ap++
+  }
+  const arrayContent = triggersContent.substring(arrayStart + 1, ap - 1)
+
+  const ids: string[] = []
+  const idRegex = /['"]([^'"]+)['"]/g
+  let m
+  while ((m = idRegex.exec(arrayContent)) !== null) {
+    ids.push(m[1])
+  }
+  return ids
+}
+
+/**
+ * Scan all trigger definition files and build a registry mapping trigger IDs
+ * to their human-readable name and description.
+ */
+async function buildTriggerRegistry(): Promise<Map<string, TriggerInfo>> {
+  const registry = new Map<string, TriggerInfo>()
+  const SKIP = new Set(['index.ts', 'registry.ts', 'types.ts', 'constants.ts', 'utils.ts'])
+
+  const triggerFiles = (await glob(`${TRIGGERS_PATH}/**/*.ts`)).filter(
+    (f) => !SKIP.has(path.basename(f)) && !f.includes('.test.')
+  )
+
+  for (const file of triggerFiles) {
+    try {
+      const content = fs.readFileSync(file, 'utf-8')
+
+      // Each trigger file exports a single TriggerConfig with id, name, description
+      const idMatch = /\bid\s*:\s*['"]([^'"]+)['"]/.exec(content)
+      const nameMatch = /\bname\s*:\s*['"]([^'"]+)['"]/.exec(content)
+      const descMatch = /\bdescription\s*:\s*['"]([^'"]+)['"]/.exec(content)
+
+      if (idMatch && nameMatch) {
+        registry.set(idMatch[1], {
+          id: idMatch[1],
+          name: nameMatch[1],
+          description: descMatch?.[1] ?? '',
+        })
+      }
+    } catch {
+      // skip unreadable files silently
+    }
+  }
+
+  console.log(`✓ Loaded ${registry.size} trigger definitions`)
+  return registry
+}
+
+/**
+ * Write the icon mapping TypeScript file for the landing integrations page.
+ * Mirrors writeIconMapping but targets the sim app so it imports from @/components/icons.
+ */
+function writeIntegrationsIconMapping(iconMapping: Record<string, string>): void {
+  try {
+    if (!fs.existsSync(LANDING_INTEGRATIONS_DATA_PATH)) {
+      fs.mkdirSync(LANDING_INTEGRATIONS_DATA_PATH, { recursive: true })
+    }
+    const iconMappingPath = path.join(LANDING_INTEGRATIONS_DATA_PATH, 'icon-mapping.ts')
+
+    const iconNames = [...new Set(Object.values(iconMapping))].sort()
+    const imports = iconNames.map((icon) => `  ${icon},`).join('\n')
+    const mappingEntries = Object.entries(iconMapping)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([blockType, iconName]) => `  ${blockType}: ${iconName},`)
+      .join('\n')
+
+    const content = `// Auto-generated file - do not edit manually
+// Generated by scripts/generate-docs.ts
+// Maps block types to their icon component references for the integrations page
+
+import type { ComponentType, SVGProps } from 'react'
+import {
+${imports}
+} from '@/components/icons'
+
+type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
+
+export const blockTypeToIconMap: Record<string, IconComponent> = {
+${mappingEntries}
+}
+`
+    fs.writeFileSync(iconMappingPath, content)
+    console.log('✓ Integration icon mapping written to landing app')
+  } catch (error) {
+    console.error('Error writing integration icon mapping:', error)
+  }
+}
+
+/**
+ * Collect all integration entries from block definitions and write integrations.json
+ * to the landing integrations page data directory.
+ * Applies the same visibility filters as the docs generation pipeline.
+ */
+async function writeIntegrationsJson(iconMapping: Record<string, string>): Promise<void> {
+  try {
+    if (!fs.existsSync(LANDING_INTEGRATIONS_DATA_PATH)) {
+      fs.mkdirSync(LANDING_INTEGRATIONS_DATA_PATH, { recursive: true })
+    }
+
+    const triggerRegistry = await buildTriggerRegistry()
+    const { desc: toolDescMap, name: toolNameMap } = await buildToolDescriptionMap()
+    const integrations: IntegrationEntry[] = []
+    const seenBaseTypes = new Set<string>()
+    const blockFiles = (await glob(`${BLOCKS_PATH}/*.ts`)).sort()
+
+    for (const blockFile of blockFiles) {
+      const fileContent = fs.readFileSync(blockFile, 'utf-8')
+      const switchCaseMap = extractSwitchCaseToolMapping(fileContent)
+      const configs = extractAllBlockConfigs(fileContent)
+
+      for (const config of configs) {
+        const blockType = config.type
+
+        // Apply the same filters as docs/icon-mapping generation
+        if (
+          blockType.includes('_trigger') ||
+          blockType.includes('_webhook') ||
+          blockType.includes('rss') ||
+          (config.category === 'blocks' && blockType !== 'memory' && blockType !== 'knowledge') ||
+          blockType === 'evaluator' ||
+          blockType === 'number' ||
+          blockType === 'webhook' ||
+          blockType === 'schedule' ||
+          blockType === 'mcp' ||
+          blockType === 'generic_webhook'
+        ) {
+          continue
+        }
+
+        // Deduplicate by stripped base type
+        const baseType = stripVersionSuffix(blockType)
+        if (seenBaseTypes.has(baseType)) continue
+        seenBaseTypes.add(baseType)
+
+        const iconName = (config as any).iconName || iconMapping[blockType] || ''
+        const rawOps: { label: string; id: string }[] = (config as any).operations || []
+
+        // Enrich each operation with a description from the tool registry.
+        // Lookup order:
+        // 1. Derive toolId as `{baseType}_{operationId}` and check directly.
+        // 2. Check switch/case mapping parsed from tools.config.tool (handles
+        //    cases where op IDs differ from tool IDs, e.g. get_carts → list_carts,
+        //    or send_gmail → gmail_send).
+        // 3. Find the tool in tools.access whose name exactly matches the label.
+        const toolsAccess: string[] = (config as any).tools?.access || []
+        const operations: OperationInfo[] = rawOps.map(({ label, id }) => {
+          const toolId = `${baseType}_${id}`
+          let opDesc = toolDescMap.get(toolId) || toolDescMap.get(id) || ''
+
+          if (!opDesc) {
+            const switchMappedId = switchCaseMap.get(id)
+            if (switchMappedId) {
+              opDesc = toolDescMap.get(switchMappedId) || ''
+              // Also check versioned variants in tools.access (e.g. gmail_send_v2)
+              if (!opDesc) {
+                for (const tId of toolsAccess) {
+                  if (tId === switchMappedId || tId.startsWith(`${switchMappedId}_v`)) {
+                    opDesc = toolDescMap.get(tId) || ''
+                    if (opDesc) break
+                  }
+                }
+              }
+            }
+          }
+
+          if (!opDesc && toolsAccess.length > 0) {
+            for (const tId of toolsAccess) {
+              if (toolNameMap.get(tId)?.toLowerCase() === label.toLowerCase()) {
+                opDesc = toolDescMap.get(tId) || ''
+                if (opDesc) break
+              }
+            }
+          }
+
+          return { name: label, description: opDesc }
+        })
+
+        const triggerIds: string[] = (config as any).triggerIds || []
+        const triggers: TriggerInfo[] = triggerIds
+          .map((id) => triggerRegistry.get(id))
+          .filter((t): t is TriggerInfo => t !== undefined)
+        const docsUrl = (config as any).docsLink || `https://docs.sim.ai/tools/${baseType}`
+
+        const slug = config.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+
+        const authType = extractAuthType(fileContent)
+
+        integrations.push({
+          type: blockType,
+          slug,
+          name: config.name,
+          description: config.description,
+          longDescription: config.longDescription || '',
+          bgColor: config.bgColor || '#6B7280',
+          iconName,
+          docsUrl,
+          operations,
+          operationCount: operations.length,
+          triggers,
+          triggerCount: triggers.length,
+          authType,
+          category: config.category,
+          ...(config.integrationType ? { integrationType: config.integrationType } : {}),
+          ...(config.tags ? { tags: config.tags } : {}),
+        })
+      }
+    }
+
+    // Sort alphabetically by name for a predictable, crawl-friendly order
+    integrations.sort((a, b) => a.name.localeCompare(b.name))
+
+    const jsonPath = path.join(LANDING_INTEGRATIONS_DATA_PATH, 'integrations.json')
+    fs.writeFileSync(jsonPath, JSON.stringify(integrations, null, 2))
+    console.log(`✓ Integration data written: ${integrations.length} integrations → ${jsonPath}`)
+  } catch (error) {
+    console.error('Error writing integrations JSON:', error)
+  }
+}
+
+/**
  * Extract ALL block configs from a file, filtering out hidden blocks
  */
 function extractAllBlockConfigs(fileContent: string): BlockConfig[] {
   const configs: BlockConfig[] = []
 
   // First, extract the primary icon from the file (for V2 blocks that inherit via spread)
-  const primaryIcon = extractIconName(fileContent)
+  const primaryIcon = extractIconNameFromContent(fileContent)
 
   // Find all block exports in the file
   const exportRegex = /export\s+const\s+(\w+)Block\s*:\s*BlockConfig[^=]*=\s*\{/g
@@ -348,6 +819,19 @@ function extractBlockConfigFromContent(
       }
     }
 
+    const operations = extractOperationsFromContent(blockContent)
+    const triggerIds = extractTriggersAvailable(blockContent)
+    const docsLink =
+      extractStringPropertyFromContent(blockContent, 'docsLink', true) ||
+      baseConfig?.docsLink ||
+      `https://docs.sim.ai/tools/${stripVersionSuffix(blockType)}`
+
+    const integrationType =
+      extractEnumPropertyFromContent(blockContent, 'integrationType') ||
+      baseConfig?.integrationType ||
+      null
+    const tags = extractArrayPropertyFromContent(blockContent, 'tags') || baseConfig?.tags || null
+
     return {
       type: blockType,
       name,
@@ -360,6 +844,11 @@ function extractBlockConfigFromContent(
       tools: {
         access: finalToolsAccess.length > 0 ? finalToolsAccess : baseConfig?.tools?.access || [],
       },
+      operations: operations.length > 0 ? operations : (baseConfig as any)?.operations || [],
+      triggerIds: triggerIds.length > 0 ? triggerIds : (baseConfig as any)?.triggerIds || [],
+      docsLink,
+      ...(integrationType ? { integrationType } : {}),
+      ...(tags ? { tags } : {}),
     }
   } catch (error) {
     console.error(`Error extracting block configuration for ${blockName}:`, error)
@@ -424,6 +913,54 @@ function extractStringPropertyFromContent(
   return null
 }
 
+/**
+ * Extract an enum property value from block content.
+ * Matches patterns like `integrationType: IntegrationType.DeveloperTools`
+ * and returns the string value (e.g., 'developer-tools').
+ */
+function extractEnumPropertyFromContent(content: string, propName: string): string | null {
+  const match = content.match(new RegExp(`${propName}\\s*:\\s*IntegrationType\\.(\\w+)`))
+  if (!match) return null
+  const enumKey = match[1]
+  // Convert enum key to kebab-case value (e.g., DeveloperTools -> developer-tools)
+  const ENUM_MAP: Record<string, string> = {
+    AI: 'ai',
+    Analytics: 'analytics',
+    Automation: 'automation',
+    Communication: 'communication',
+    CRM: 'crm',
+    CustomerSupport: 'customer-support',
+    Databases: 'databases',
+    Design: 'design',
+    DeveloperTools: 'developer-tools',
+    Documents: 'documents',
+    Ecommerce: 'ecommerce',
+    Email: 'email',
+    FileStorage: 'file-storage',
+    HR: 'hr',
+    Media: 'media',
+    Other: 'other',
+    Productivity: 'productivity',
+    SalesIntelligence: 'sales-intelligence',
+    Search: 'search',
+    Security: 'security',
+    Social: 'social',
+  }
+  return ENUM_MAP[enumKey] || enumKey.toLowerCase()
+}
+
+/**
+ * Extract a string array property from block content.
+ * Matches patterns like `tags: ['api', 'oauth', 'webhooks']`
+ */
+function extractArrayPropertyFromContent(content: string, propName: string): string[] | null {
+  const match = content.match(new RegExp(`${propName}\\s*:\\s*\\[([^\\]]+)\\]`))
+  if (!match) return null
+  const items = match[1].match(/'([^']+)'|"([^"]+)"/g)
+  if (!items) return null
+  return items.map((item) => item.replace(/['"]/g, ''))
+}
+
 function extractIconNameFromContent(content: string): string | null {
   const iconMatch = content.match(/icon\s*:\s*(\w+Icon)/)
   return iconMatch ? iconMatch[1] : null
@@ -475,14 +1012,12 @@ function extractOutputsFromContent(content: string): Record<string, any> {
         const fieldContent = outputsContent.substring(startPos + 1, endPos - 1).trim()
 
         const typeMatch = fieldContent.match(/type\s*:\s*['"](.*?)['"]/)
-        const descriptionMatch = fieldContent.match(/description\s*:\s*['"](.*?)['"]/)
+        const description = extractDescription(fieldContent)
 
         if (typeMatch) {
           outputs[field.name] = {
             type: typeMatch[1],
-            description: descriptionMatch
-              ? descriptionMatch[1]
-              : `${field.name} output from the block`,
+            description: description || `${field.name} output from the block`,
           }
         }
       }
@@ -499,211 +1034,444 @@ function extractOutputsFromContent(content: string): Record<string, any> {
 function extractToolsAccessFromContent(content: string): string[] {
   const accessMatch = content.match(/access\s*:\s*\[\s*([^\]]+)\s*\]/)
   if (!accessMatch) return []
+  return [...accessMatch[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1])
+}
 
-  const accessContent = accessMatch[1]
-  const tools: string[] = []
+/**
+ * Get the tool prefix (service name) from a tool name.
+ * e.g., "calcom_list_schedules" -> "calcom"
+ */
+function getToolPrefixFromName(toolName: string): string {
+  const parts = toolName.split('_')
 
-  const toolMatches = accessContent.match(/['"]([^'"]+)['"]/g)
-  if (toolMatches) {
-    toolMatches.forEach((toolText) => {
-      const match = toolText.match(/['"]([^'"]+)['"]/)
-      if (match) {
-        tools.push(match[1])
-      }
-    })
+  // Try to find a valid tool directory
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const possiblePrefix = parts.slice(0, i).join('_')
+    const toolDirPath = path.join(rootDir, `apps/sim/tools/${possiblePrefix}`)
+
+    if (fs.existsSync(toolDirPath) && fs.statSync(toolDirPath).isDirectory()) {
+      return possiblePrefix
+    }
   }
 
-  return tools
+  return parts[0]
 }
 
-// Legacy function for backward compatibility (icon mapping, etc.)
-function extractBlockConfig(fileContent: string): BlockConfig | null {
-  const configs = extractAllBlockConfigs(fileContent)
-  // Return first non-hidden block for legacy code paths
-  return configs.length > 0 ? configs[0] : null
-}
+/**
+ * Resolve a const reference from a types file.
+ * Handles nested const references recursively.
+ *
+ * @param constName - The const name to resolve (e.g., "SCHEDULE_DATA_OUTPUT_PROPERTIES")
+ * @param toolPrefix - The tool prefix/service name (e.g., "calcom")
+ * @param depth - Recursion depth to prevent infinite loops
+ * @returns Resolved properties object or null if not found
+ */
+function resolveConstReference(
+  constName: string,
+  toolPrefix: string,
+  depth = 0
+): Record<string, any> | null {
+  // Prevent infinite recursion
+  if (depth > 10) {
+    console.warn(`Max recursion depth reached resolving const: ${constName}`)
+    return null
+  }
 
-function findBlockType(content: string, blockName: string): string {
-  const blockExportRegex = new RegExp(
-    `export\\s+const\\s+${blockName}Block\\s*:[^{]*{[\\s\\S]*?type\\s*:\\s*['"]([^'"]+)['"][\\s\\S]*?}`,
-    'i'
+  // Check cache first
+  const cacheKey = `${toolPrefix}:${constName}`
+  if (constResolutionCache.has(cacheKey)) {
+    return constResolutionCache.get(cacheKey)!
+  }
+
+  // Read the types file for this tool
+  const typesFilePath = path.join(rootDir, `apps/sim/tools/${toolPrefix}/types.ts`)
+  if (!fs.existsSync(typesFilePath)) {
+    // Try to find const in the tool file itself
+    return null
+  }
+
+  const typesContent = fs.readFileSync(typesFilePath, 'utf-8')
+
+  // Find the const definition
+  // Pattern: export const CONST_NAME = { ... } as const
+  const constRegex = new RegExp(
+    `export\\s+const\\s+${constName}\\s*(?::\\s*[^=]+)?\\s*=\\s*\\{`,
+    'g'
   )
-  const blockExportMatch = content.match(blockExportRegex)
-  if (blockExportMatch) return blockExportMatch[1]
+  const constMatch = constRegex.exec(typesContent)
 
-  const exportMatch = content.match(new RegExp(`export\\s+const\\s+${blockName}Block\\s*:`))
-  if (exportMatch) {
-    const afterExport = content.substring(exportMatch.index! + exportMatch[0].length)
-
-    const blockStartMatch = afterExport.match(/{/)
-    if (blockStartMatch) {
-      const blockStart = blockStartMatch.index!
-
-      let braceCount = 1
-      let blockEnd = blockStart + 1
-
-      while (blockEnd < afterExport.length && braceCount > 0) {
-        if (afterExport[blockEnd] === '{') braceCount++
-        else if (afterExport[blockEnd] === '}') braceCount--
-        blockEnd++
-      }
-
-      const blockContent = afterExport.substring(blockStart, blockEnd)
-      const typeMatch = blockContent.match(/type\s*:\s*['"]([^'"]+)['"]/)
-      if (typeMatch) return typeMatch[1]
-    }
+  if (!constMatch) {
+    return null
   }
 
-  return blockName
-    .replace(/([A-Z])/g, '_$1')
-    .toLowerCase()
-    .replace(/^_/, '')
-}
-
-function extractStringProperty(content: string, propName: string): string | null {
-  const singleQuoteMatch = content.match(new RegExp(`${propName}\\s*:\\s*'(.*?)'`, 'm'))
-  if (singleQuoteMatch) return singleQuoteMatch[1]
-
-  const doubleQuoteMatch = content.match(new RegExp(`${propName}\\s*:\\s*"(.*?)"`, 'm'))
-  if (doubleQuoteMatch) return doubleQuoteMatch[1]
-
-  const templateMatch = content.match(new RegExp(`${propName}\\s*:\\s*\`([^\`]+)\``, 's'))
-  if (templateMatch) {
-    let templateContent = templateMatch[1]
-
-    templateContent = templateContent.replace(
-      /\$\{[^}]*shouldEnableURLInput[^}]*\?[^:]*:[^}]*\}/g,
-      'Upload files directly. '
-    )
-    templateContent = templateContent.replace(/\$\{[^}]*shouldEnableURLInput[^}]*\}/g, 'false')
-
-    templateContent = templateContent.replace(/\$\{[^}]+\}/g, '')
-
-    templateContent = templateContent.replace(/\s+/g, ' ').trim()
-
-    return templateContent
-  }
-
-  return null
-}
-
-function extractIconName(content: string): string | null {
-  const iconMatch = content.match(/icon\s*:\s*(\w+Icon)/)
-  return iconMatch ? iconMatch[1] : null
-}
-
-function extractOutputs(content: string): Record<string, any> {
-  const outputsStart = content.search(/outputs\s*:\s*{/)
-  if (outputsStart === -1) return {}
-
-  const openBracePos = content.indexOf('{', outputsStart)
-  if (openBracePos === -1) return {}
-
+  // Extract the const content
+  const startIndex = constMatch.index + constMatch[0].length - 1
   let braceCount = 1
-  let pos = openBracePos + 1
+  let endIndex = startIndex + 1
 
-  while (pos < content.length && braceCount > 0) {
-    if (content[pos] === '{') {
-      braceCount++
-    } else if (content[pos] === '}') {
-      braceCount--
-    }
-    pos++
+  while (endIndex < typesContent.length && braceCount > 0) {
+    if (typesContent[endIndex] === '{') braceCount++
+    else if (typesContent[endIndex] === '}') braceCount--
+    endIndex++
   }
 
-  if (braceCount === 0) {
-    const outputsContent = content.substring(openBracePos + 1, pos - 1).trim()
-    const outputs: Record<string, any> = {}
+  if (braceCount !== 0) {
+    return null
+  }
 
-    const fieldRegex = /(\w+)\s*:\s*{/g
-    let match
-    const fieldPositions: Array<{ name: string; start: number }> = []
+  const constContent = typesContent.substring(startIndex + 1, endIndex - 1).trim()
 
-    while ((match = fieldRegex.exec(outputsContent)) !== null) {
-      fieldPositions.push({
-        name: match[1],
-        start: match.index + match[0].length - 1,
-      })
+  // Check if this const defines a complete output field (has type property)
+  // like EVENT_TYPE_OUTPUT = { type: 'object', description: '...', properties: {...} }
+  const typeMatch = constContent.match(/^\s*type\s*:\s*['"]([^'"]+)['"]/)
+  if (typeMatch) {
+    // This is a complete output definition - use parseConstFieldContent
+    const result = parseConstFieldContent(constContent, toolPrefix, typesContent, depth + 1)
+    if (result) {
+      constResolutionCache.set(cacheKey, result)
+    }
+    return result
+  }
+
+  // Otherwise, this is a properties object - use parseConstProperties
+  const properties = parseConstProperties(constContent, toolPrefix, typesContent, depth + 1)
+
+  // Cache the result
+  constResolutionCache.set(cacheKey, properties)
+
+  return properties
+}
+
+/**
+ * Parse properties from a const definition, resolving nested const references.
+ */
+function parseConstProperties(
+  content: string,
+  toolPrefix: string,
+  typesContent: string,
+  depth: number
+): Record<string, any> {
+  const properties: Record<string, any> = {}
+
+  // First, handle spread operators (e.g., "...COMMENT_OUTPUT_PROPERTIES,")
+  const spreadRegex = /\.\.\.([A-Z][A-Z_0-9]+)\s*(?:,|$)/g
+  let spreadMatch
+  while ((spreadMatch = spreadRegex.exec(content)) !== null) {
+    const constName = spreadMatch[1]
+
+    // Check if at depth 0
+    const beforeMatch = content.substring(0, spreadMatch.index)
+    const openBraces = (beforeMatch.match(/\{/g) || []).length
+    const closeBraces = (beforeMatch.match(/\}/g) || []).length
+    if (openBraces !== closeBraces) {
+      continue
     }
 
-    fieldPositions.forEach((field) => {
-      const startPos = field.start
+    const resolvedConst = resolveConstFromTypesContent(constName, typesContent, toolPrefix, depth)
+    if (resolvedConst && typeof resolvedConst === 'object') {
+      // Spread all properties from the resolved const
+      Object.assign(properties, resolvedConst)
+    }
+  }
+
+  // Find all top-level property definitions
+  const propRegex = /(\w+)\s*:\s*(?:\{|([A-Z][A-Z_0-9]+)(?:\s*,|\s*$))/g
+  let match
+
+  while ((match = propRegex.exec(content)) !== null) {
+    const propName = match[1]
+    const constRef = match[2]
+
+    // Skip 'items' keyword (always a nested structure, never a field name)
+    if (propName === 'items') {
+      continue
+    }
+
+    // Check if this match is at depth 0 (not inside nested braces)
+    const beforeMatch = content.substring(0, match.index)
+    const openBraces = (beforeMatch.match(/\{/g) || []).length
+    const closeBraces = (beforeMatch.match(/\}/g) || []).length
+    if (openBraces !== closeBraces) {
+      continue // Skip - this is a nested property
+    }
+
+    // For 'properties' or 'type', check if it's an output field definition vs a keyword
+    // Output field definitions have 'type:' inside (e.g., { type: 'string', description: '...' })
+    if ((propName === 'properties' || propName === 'type') && !constRef) {
+      // Peek at what's inside the braces
+      const startPos = match.index + match[0].length - 1
+      let braceCount = 1
+      let endPos = startPos + 1
+      while (endPos < content.length && braceCount > 0) {
+        if (content[endPos] === '{') braceCount++
+        else if (content[endPos] === '}') braceCount--
+        endPos++
+      }
+      if (braceCount === 0) {
+        const propContent = content.substring(startPos + 1, endPos - 1).trim()
+        // If it starts with 'type:', it's an output field definition - process it
+        if (propContent.match(/^\s*type\s*:/)) {
+          const parsedProp = parseConstFieldContent(propContent, toolPrefix, typesContent, depth)
+          if (parsedProp) {
+            properties[propName] = parsedProp
+          }
+        }
+        // Otherwise, it's a keyword usage (nested properties block or type specifier) - skip it
+      }
+      continue
+    }
+
+    if (constRef) {
+      // This property references a const (e.g., "attendees: ATTENDEES_OUTPUT")
+      const resolvedConst = resolveConstFromTypesContent(constRef, typesContent, toolPrefix, depth)
+      if (resolvedConst) {
+        properties[propName] = resolvedConst
+      }
+    } else {
+      // This property has inline definition
+      const startPos = match.index + match[0].length - 1
+
       let braceCount = 1
       let endPos = startPos + 1
 
-      while (endPos < outputsContent.length && braceCount > 0) {
-        if (outputsContent[endPos] === '{') {
-          braceCount++
-        } else if (outputsContent[endPos] === '}') {
-          braceCount--
-        }
+      while (endPos < content.length && braceCount > 0) {
+        if (content[endPos] === '{') braceCount++
+        else if (content[endPos] === '}') braceCount--
         endPos++
       }
 
       if (braceCount === 0) {
-        const fieldContent = outputsContent.substring(startPos + 1, endPos - 1).trim()
-
-        const typeMatch = fieldContent.match(/type\s*:\s*['"](.*?)['"]/)
-        const descriptionMatch = fieldContent.match(/description\s*:\s*['"](.*?)['"]/)
-
-        if (typeMatch) {
-          outputs[field.name] = {
-            type: typeMatch[1],
-            description: descriptionMatch
-              ? descriptionMatch[1]
-              : `${field.name} output from the block`,
-          }
+        const propContent = content.substring(startPos + 1, endPos - 1).trim()
+        const parsedProp = parseConstFieldContent(propContent, toolPrefix, typesContent, depth)
+        if (parsedProp) {
+          properties[propName] = parsedProp
         }
-      }
-    })
-
-    if (Object.keys(outputs).length > 0) {
-      return outputs
-    }
-
-    const flatFieldMatches = outputsContent.match(/(\w+)\s*:\s*['"](.*?)['"]/g)
-
-    if (flatFieldMatches && flatFieldMatches.length > 0) {
-      flatFieldMatches.forEach((fieldMatch) => {
-        const fieldParts = fieldMatch.match(/(\w+)\s*:\s*['"](.*?)['"]/)
-        if (fieldParts) {
-          const fieldName = fieldParts[1]
-          const fieldType = fieldParts[2]
-
-          outputs[fieldName] = {
-            type: fieldType,
-            description: `${fieldName} output from the block`,
-          }
-        }
-      })
-
-      if (Object.keys(outputs).length > 0) {
-        return outputs
       }
     }
   }
 
-  return {}
+  return properties
 }
 
-function extractToolsAccess(content: string): string[] {
-  const accessMatch = content.match(/access\s*:\s*\[\s*([^\]]+)\s*\]/)
-  if (!accessMatch) return []
+/**
+ * Resolve a const from the types content (for nested references within the same file).
+ */
+function resolveConstFromTypesContent(
+  constName: string,
+  typesContent: string,
+  toolPrefix: string,
+  depth: number
+): Record<string, any> | null {
+  if (depth > 10) return null
 
-  const accessContent = accessMatch[1]
-  const tools: string[] = []
-
-  const toolMatches = accessContent.match(/['"]([^'"]+)['"]/g)
-  if (toolMatches) {
-    toolMatches.forEach((toolText) => {
-      const match = toolText.match(/['"]([^'"]+)['"]/)
-      if (match) {
-        tools.push(match[1])
-      }
-    })
+  // Check cache
+  const cacheKey = `${toolPrefix}:${constName}`
+  if (constResolutionCache.has(cacheKey)) {
+    return constResolutionCache.get(cacheKey)!
   }
 
-  return tools
+  // Find the const definition in typesContent
+  const constRegex = new RegExp(
+    `export\\s+const\\s+${constName}\\s*(?::\\s*[^=]+)?\\s*=\\s*\\{`,
+    'g'
+  )
+  const constMatch = constRegex.exec(typesContent)
+
+  if (!constMatch) {
+    return null
+  }
+
+  const startIndex = constMatch.index + constMatch[0].length - 1
+  let braceCount = 1
+  let endIndex = startIndex + 1
+
+  while (endIndex < typesContent.length && braceCount > 0) {
+    if (typesContent[endIndex] === '{') braceCount++
+    else if (typesContent[endIndex] === '}') braceCount--
+    endIndex++
+  }
+
+  if (braceCount !== 0) return null
+
+  const constContent = typesContent.substring(startIndex + 1, endIndex - 1).trim()
+
+  // Check if this const defines a complete output field (has type property)
+  const typeMatch = constContent.match(/^\s*type\s*:\s*['"]([^'"]+)['"]/)
+  if (typeMatch) {
+    // This is a complete output definition (like ATTENDEES_OUTPUT)
+    const result = parseConstFieldContent(constContent, toolPrefix, typesContent, depth)
+    if (result) {
+      constResolutionCache.set(cacheKey, result)
+    }
+    return result
+  }
+
+  // This is a properties object (like ATTENDEE_OUTPUT_PROPERTIES)
+  const properties = parseConstProperties(constContent, toolPrefix, typesContent, depth + 1)
+  constResolutionCache.set(cacheKey, properties)
+  return properties
+}
+
+/**
+ * Parse a field content from a const, resolving nested const references.
+ */
+/**
+ * Extract description from field content, handling quoted strings properly.
+ * Handles single quotes, double quotes, and backticks, preserving internal quotes.
+ */
+function extractDescription(fieldContent: string): string | null {
+  // Try single-quoted string (can contain double quotes)
+  const singleQuoteMatch = fieldContent.match(/description\s*:\s*'([^']*)'/)
+  if (singleQuoteMatch) return singleQuoteMatch[1]
+
+  // Try double-quoted string (can contain single quotes)
+  const doubleQuoteMatch = fieldContent.match(/description\s*:\s*"([^"]*)"/)
+  if (doubleQuoteMatch) return doubleQuoteMatch[1]
+
+  // Try backtick string
+  const backtickMatch = fieldContent.match(/description\s*:\s*`([^`]*)`/)
+  if (backtickMatch) return backtickMatch[1]
+
+  return null
+}
+
+function parseConstFieldContent(
+  fieldContent: string,
+  toolPrefix: string,
+  typesContent: string,
+  depth: number
+): any {
+  const typeMatch = fieldContent.match(/type\s*:\s*['"]([^'"]+)['"]/)
+  const description = extractDescription(fieldContent)
+
+  if (!typeMatch) return null
+
+  const fieldType = typeMatch[1]
+
+  const result: any = {
+    type: fieldType,
+    description: description || '',
+  }
+
+  // Check for properties - either inline or const reference
+  if (fieldType === 'object' || fieldType === 'json') {
+    // Check for const reference first
+    const propsConstMatch = fieldContent.match(/properties\s*:\s*([A-Z][A-Z_0-9]+)/)
+    if (propsConstMatch) {
+      const resolvedProps = resolveConstFromTypesContent(
+        propsConstMatch[1],
+        typesContent,
+        toolPrefix,
+        depth + 1
+      )
+      if (resolvedProps) {
+        result.properties = resolvedProps
+      }
+    } else {
+      // Check for inline properties
+      const propertiesStart = fieldContent.search(/properties\s*:\s*\{/)
+      if (propertiesStart !== -1) {
+        const braceStart = fieldContent.indexOf('{', propertiesStart)
+        let braceCount = 1
+        let braceEnd = braceStart + 1
+
+        while (braceEnd < fieldContent.length && braceCount > 0) {
+          if (fieldContent[braceEnd] === '{') braceCount++
+          else if (fieldContent[braceEnd] === '}') braceCount--
+          braceEnd++
+        }
+
+        if (braceCount === 0) {
+          const propertiesContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
+          result.properties = parseConstProperties(
+            propertiesContent,
+            toolPrefix,
+            typesContent,
+            depth + 1
+          )
+        }
+      }
+    }
+  }
+
+  // Check for items (arrays)
+  const itemsConstMatch = fieldContent.match(/items\s*:\s*([A-Z][A-Z_0-9]+)/)
+  if (itemsConstMatch) {
+    const resolvedItems = resolveConstFromTypesContent(
+      itemsConstMatch[1],
+      typesContent,
+      toolPrefix,
+      depth + 1
+    )
+    if (resolvedItems) {
+      result.items = resolvedItems
+    }
+  } else {
+    const itemsStart = fieldContent.search(/items\s*:\s*\{/)
+    if (itemsStart !== -1) {
+      const braceStart = fieldContent.indexOf('{', itemsStart)
+      let braceCount = 1
+      let braceEnd = braceStart + 1
+
+      while (braceEnd < fieldContent.length && braceCount > 0) {
+        if (fieldContent[braceEnd] === '{') braceCount++
+        else if (fieldContent[braceEnd] === '}') braceCount--
+        braceEnd++
+      }
+
+      if (braceCount === 0) {
+        const itemsContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
+        const itemsType = itemsContent.match(/type\s*:\s*['"]([^'"]+)['"]/)
+        const itemsDesc = extractDescription(itemsContent)
+
+        result.items = {
+          type: itemsType ? itemsType[1] : 'object',
+          description: itemsDesc || '',
+        }
+
+        // Check for properties in items - either inline or const reference
+        const itemsPropsConstMatch = itemsContent.match(/properties\s*:\s*([A-Z][A-Z_0-9]+)/)
+        if (itemsPropsConstMatch) {
+          const resolvedProps = resolveConstFromTypesContent(
+            itemsPropsConstMatch[1],
+            typesContent,
+            toolPrefix,
+            depth + 1
+          )
+          if (resolvedProps) {
+            result.items.properties = resolvedProps
+          }
+        } else {
+          const itemsPropsStart = itemsContent.search(/properties\s*:\s*\{/)
+          if (itemsPropsStart !== -1) {
+            const propsBraceStart = itemsContent.indexOf('{', itemsPropsStart)
+            let propsBraceCount = 1
+            let propsBraceEnd = propsBraceStart + 1
+
+            while (propsBraceEnd < itemsContent.length && propsBraceCount > 0) {
+              if (itemsContent[propsBraceEnd] === '{') propsBraceCount++
+              else if (itemsContent[propsBraceEnd] === '}') propsBraceCount--
+              propsBraceEnd++
+            }
+
+            if (propsBraceCount === 0) {
+              const itemsPropsContent = itemsContent
+                .substring(propsBraceStart + 1, propsBraceEnd - 1)
+                .trim()
+              result.items.properties = parseConstProperties(
+                itemsPropsContent,
+                toolPrefix,
+                typesContent,
+                depth + 1
+              )
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return result
 }
 
 function extractToolInfo(
@@ -803,9 +1571,42 @@ function extractToolInfo(
       let paramMatch
       const paramPositions: Array<{ name: string; start: number; content: string }> = []
 
+      /**
+       * Checks if a position in the string is inside a quoted string.
+       * This prevents matching patterns like "Example: {" inside description strings.
+       */
+      const isInsideString = (content: string, position: number): boolean => {
+        let inSingleQuote = false
+        let inDoubleQuote = false
+        let inBacktick = false
+
+        for (let i = 0; i < position; i++) {
+          const char = content[i]
+          const prevChar = i > 0 ? content[i - 1] : ''
+
+          // Skip escaped quotes
+          if (prevChar === '\\') continue
+
+          if (char === "'" && !inDoubleQuote && !inBacktick) {
+            inSingleQuote = !inSingleQuote
+          } else if (char === '"' && !inSingleQuote && !inBacktick) {
+            inDoubleQuote = !inDoubleQuote
+          } else if (char === '`' && !inSingleQuote && !inDoubleQuote) {
+            inBacktick = !inBacktick
+          }
+        }
+
+        return inSingleQuote || inDoubleQuote || inBacktick
+      }
+
       while ((paramMatch = paramBlocksRegex.exec(paramsContent)) !== null) {
         const paramName = paramMatch[1]
         const startPos = paramMatch.index + paramMatch[0].length - 1
+
+        // Skip matches that are inside string literals (e.g., "Example: {" in descriptions)
+        if (isInsideString(paramsContent, paramMatch.index)) {
+          continue
+        }
 
         let braceCount = 1
         let endPos = startPos + 1
@@ -858,22 +1659,40 @@ function extractToolInfo(
       }
     }
 
+    // Get the tool prefix for resolving const references
+    const toolPrefix = getToolPrefixFromName(toolName)
+
     let outputs: Record<string, any> = {}
-    // Use word boundary to avoid matching 'run_outputs' or similar param names
-    const outputsStart = toolContent.search(/(?<![a-zA-Z_])outputs\s*:\s*{/)
-    if (outputsStart !== -1) {
-      const openBracePos = toolContent.indexOf('{', outputsStart)
-      if (openBracePos !== -1) {
-        let braceCount = 1
-        let pos = openBracePos + 1
-        while (pos < toolContent.length && braceCount > 0) {
-          if (toolContent[pos] === '{') braceCount++
-          else if (toolContent[pos] === '}') braceCount--
-          pos++
-        }
-        if (braceCount === 0) {
-          const outputsContent = toolContent.substring(openBracePos + 1, pos - 1).trim()
-          outputs = parseToolOutputsField(outputsContent)
+
+    // Pattern 1: outputs directly assigned to a const (e.g., "outputs: GIT_REF_OUTPUT_PROPERTIES,")
+    const directConstMatch = toolContent.match(
+      /(?<![a-zA-Z_])outputs\s*:\s*([A-Z][A-Z_0-9]+)\s*(?:,|\}|$)/
+    )
+    if (directConstMatch) {
+      const constName = directConstMatch[1]
+      const resolvedConst = resolveConstReference(constName, toolPrefix)
+      if (resolvedConst && typeof resolvedConst === 'object') {
+        outputs = resolvedConst
+      }
+    }
+
+    // Pattern 2: outputs is an object with properties (e.g., "outputs: { ... }")
+    if (Object.keys(outputs).length === 0) {
+      const outputsStart = toolContent.search(/(?<![a-zA-Z_])outputs\s*:\s*{/)
+      if (outputsStart !== -1) {
+        const openBracePos = toolContent.indexOf('{', outputsStart)
+        if (openBracePos !== -1) {
+          let braceCount = 1
+          let pos = openBracePos + 1
+          while (pos < toolContent.length && braceCount > 0) {
+            if (toolContent[pos] === '{') braceCount++
+            else if (toolContent[pos] === '}') braceCount--
+            pos++
+          }
+          if (braceCount === 0) {
+            const outputsContent = toolContent.substring(openBracePos + 1, pos - 1).trim()
+            outputs = parseToolOutputsField(outputsContent, toolPrefix)
+          }
         }
       }
     }
@@ -917,18 +1736,18 @@ function formatOutputStructure(outputs: Record<string, any>, indentLevel = 0): s
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
 
+    // Build prefix based on indent level - each level adds 2 spaces before the arrow
     let prefix = ''
-    if (indentLevel === 1) {
-      prefix = '↳ '
-    } else if (indentLevel >= 2) {
-      prefix = '  ↳ '
+    if (indentLevel > 0) {
+      const spaces = '  '.repeat(indentLevel)
+      prefix = `${spaces}↳ `
     }
 
     if (typeof output === 'object' && output !== null && output.type === 'array') {
       result += `| ${prefix}\`${key}\` | ${type} | ${escapedDescription} |\n`
 
       if (output.items?.properties) {
-        const arrayItemsResult = formatOutputStructure(output.items.properties, indentLevel + 2)
+        const arrayItemsResult = formatOutputStructure(output.items.properties, indentLevel + 1)
         result += arrayItemsResult
       }
     } else if (
@@ -949,8 +1768,81 @@ function formatOutputStructure(outputs: Record<string, any>, indentLevel = 0): s
   return result
 }
 
-function parseToolOutputsField(outputsContent: string): Record<string, any> {
+function parseToolOutputsField(outputsContent: string, toolPrefix?: string): Record<string, any> {
   const outputs: Record<string, any> = {}
+
+  // First, handle top-level const references
+  // Patterns: "data: BOOKING_DATA_OUTPUT_PROPERTIES" or "pagination: PAGINATION_OUTPUT"
+  if (toolPrefix) {
+    // Pattern 1: Direct const reference
+    const constRefRegex = /(\w+)\s*:\s*([A-Z][A-Z_0-9]+)\s*(?:,|$)/g
+    let constMatch
+    while ((constMatch = constRefRegex.exec(outputsContent)) !== null) {
+      const propName = constMatch[1]
+      const constName = constMatch[2]
+
+      // Check if at depth 0
+      const beforeMatch = outputsContent.substring(0, constMatch.index)
+      const openBraces = (beforeMatch.match(/\{/g) || []).length
+      const closeBraces = (beforeMatch.match(/\}/g) || []).length
+      if (openBraces !== closeBraces) {
+        continue
+      }
+
+      const resolvedConst = resolveConstReference(constName, toolPrefix)
+      if (resolvedConst) {
+        outputs[propName] = resolvedConst
+      }
+    }
+
+    // Pattern 2: Property access on const (e.g., "status: BOOKING_DATA_OUTPUT_PROPERTIES.status,")
+    const propAccessRegex = /(\w+)\s*:\s*([A-Z][A-Z_0-9]+)\.(\w+)\s*(?:,|$)/g
+    let propAccessMatch
+    while ((propAccessMatch = propAccessRegex.exec(outputsContent)) !== null) {
+      const propName = propAccessMatch[1]
+      const constName = propAccessMatch[2]
+      const accessedProp = propAccessMatch[3]
+
+      // Skip if already resolved
+      if (outputs[propName]) {
+        continue
+      }
+
+      // Check if at depth 0
+      const beforeMatch = outputsContent.substring(0, propAccessMatch.index)
+      const openBraces = (beforeMatch.match(/\{/g) || []).length
+      const closeBraces = (beforeMatch.match(/\}/g) || []).length
+      if (openBraces !== closeBraces) {
+        continue
+      }
+
+      const resolvedConst = resolveConstReference(constName, toolPrefix)
+      if (resolvedConst?.[accessedProp]) {
+        outputs[propName] = resolvedConst[accessedProp]
+      }
+    }
+
+    // Pattern 3: Spread operator (e.g., "...COMMENT_OUTPUT_PROPERTIES,")
+    const spreadRegex = /\.\.\.([A-Z][A-Z_0-9]+)\s*(?:,|$)/g
+    let spreadMatch
+    while ((spreadMatch = spreadRegex.exec(outputsContent)) !== null) {
+      const constName = spreadMatch[1]
+
+      // Check if at depth 0 (not inside nested braces)
+      const beforeMatch = outputsContent.substring(0, spreadMatch.index)
+      const openBraces = (beforeMatch.match(/\{/g) || []).length
+      const closeBraces = (beforeMatch.match(/\}/g) || []).length
+      if (openBraces !== closeBraces) {
+        continue
+      }
+
+      const resolvedConst = resolveConstReference(constName, toolPrefix)
+      if (resolvedConst && typeof resolvedConst === 'object') {
+        // Spread all properties from the resolved const
+        Object.assign(outputs, resolvedConst)
+      }
+    }
+  }
 
   const braces: Array<{ type: 'open' | 'close'; pos: number; level: number }> = []
   for (let i = 0; i < outputsContent.length; i++) {
@@ -980,6 +1872,11 @@ function parseToolOutputsField(outputsContent: string): Record<string, any> {
     const fieldName = match[1]
     const bracePos = match.index + match[0].length - 1
 
+    // Skip if already resolved as const reference
+    if (outputs[fieldName]) {
+      continue
+    }
+
     const openBrace = braces.find((b) => b.type === 'open' && b.pos === bracePos)
     if (openBrace) {
       let braceCount = 1
@@ -1008,7 +1905,7 @@ function parseToolOutputsField(outputsContent: string): Record<string, any> {
   topLevelFields.forEach((field) => {
     const fieldContent = outputsContent.substring(field.start + 1, field.end - 1).trim()
 
-    const parsedField = parseFieldContent(fieldContent)
+    const parsedField = parseFieldContent(fieldContent, toolPrefix)
     if (parsedField) {
       outputs[field.name] = parsedField
     }
@@ -1017,26 +1914,81 @@ function parseToolOutputsField(outputsContent: string): Record<string, any> {
   return outputs
 }
 
-function parseFieldContent(fieldContent: string): any {
+function parseFieldContent(fieldContent: string, toolPrefix?: string): any {
   const typeMatch = fieldContent.match(/type\s*:\s*['"]([^'"]+)['"]/)
-  const descMatch = fieldContent.match(/description\s*:\s*['"`]([^'"`\n]+)['"`]/)
+  const description = extractDescription(fieldContent)
+
+  // Check for spread operator at the start of field content (e.g., ...SUBSCRIPTION_OUTPUT)
+  // This pattern is used when a field spreads a complete output definition and optionally overrides properties
+  const spreadMatch = fieldContent.match(/^\s*\.\.\.([A-Z][A-Z_0-9]+)\s*,/)
+  if (spreadMatch && toolPrefix && !typeMatch) {
+    const constName = spreadMatch[1]
+    const resolvedConst = resolveConstReference(constName, toolPrefix)
+    if (resolvedConst && typeof resolvedConst === 'object') {
+      // Start with the resolved const and override with inline properties
+      const result: any = { ...resolvedConst }
+      // Override description if provided inline
+      if (description) {
+        result.description = description
+      }
+      return result
+    }
+  }
 
   if (!typeMatch) return null
 
   const fieldType = typeMatch[1]
-  const description = descMatch ? descMatch[1] : ''
 
   const result: any = {
     type: fieldType,
-    description: description,
+    description: description || '',
   }
 
   if (fieldType === 'object' || fieldType === 'json') {
-    const propertiesRegex = /properties\s*:\s*{/
-    const propertiesStart = fieldContent.search(propertiesRegex)
+    // Check for const reference first (e.g., properties: SCHEDULE_DATA_OUTPUT_PROPERTIES)
+    const propsConstMatch = fieldContent.match(/properties\s*:\s*([A-Z][A-Z_0-9]+)/)
+    if (propsConstMatch && toolPrefix) {
+      const resolvedProps = resolveConstReference(propsConstMatch[1], toolPrefix)
+      if (resolvedProps) {
+        result.properties = resolvedProps
+      }
+    } else {
+      // Check for inline properties
+      const propertiesRegex = /properties\s*:\s*{/
+      const propertiesStart = fieldContent.search(propertiesRegex)
 
-    if (propertiesStart !== -1) {
-      const braceStart = fieldContent.indexOf('{', propertiesStart)
+      if (propertiesStart !== -1) {
+        const braceStart = fieldContent.indexOf('{', propertiesStart)
+        let braceCount = 1
+        let braceEnd = braceStart + 1
+
+        while (braceEnd < fieldContent.length && braceCount > 0) {
+          if (fieldContent[braceEnd] === '{') braceCount++
+          else if (fieldContent[braceEnd] === '}') braceCount--
+          braceEnd++
+        }
+
+        if (braceCount === 0) {
+          const propertiesContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
+          result.properties = parsePropertiesContent(propertiesContent, toolPrefix)
+        }
+      }
+    }
+  }
+
+  // Check for items const reference (e.g., items: ATTENDEES_OUTPUT)
+  const itemsConstMatch = fieldContent.match(/items\s*:\s*([A-Z][A-Z_0-9]+)/)
+  if (itemsConstMatch && toolPrefix) {
+    const resolvedItems = resolveConstReference(itemsConstMatch[1], toolPrefix)
+    if (resolvedItems) {
+      result.items = resolvedItems
+    }
+  } else {
+    const itemsRegex = /items\s*:\s*{/
+    const itemsStart = fieldContent.search(itemsRegex)
+
+    if (itemsStart !== -1) {
+      const braceStart = fieldContent.indexOf('{', itemsStart)
       let braceCount = 1
       let braceEnd = braceStart + 1
 
@@ -1047,59 +1999,54 @@ function parseFieldContent(fieldContent: string): any {
       }
 
       if (braceCount === 0) {
-        const propertiesContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
-        result.properties = parsePropertiesContent(propertiesContent)
-      }
-    }
-  }
+        const itemsContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
+        const itemsType = itemsContent.match(/type\s*:\s*['"]([^'"]+)['"]/)
 
-  const itemsRegex = /items\s*:\s*{/
-  const itemsStart = fieldContent.search(itemsRegex)
+        // Check for inline properties FIRST (properties: {), then const reference
+        const propertiesInlineStart = itemsContent.search(/properties\s*:\s*{/)
+        // Only match const reference if it's at the TOP level (before any {)
+        const itemsPropsConstMatch =
+          propertiesInlineStart === -1
+            ? itemsContent.match(/properties\s*:\s*([A-Z][A-Z_0-9]+)/)
+            : null
+        const searchContent =
+          propertiesInlineStart >= 0
+            ? itemsContent.substring(0, propertiesInlineStart)
+            : itemsContent
+        const itemsDesc = extractDescription(searchContent)
 
-  if (itemsStart !== -1) {
-    const braceStart = fieldContent.indexOf('{', itemsStart)
-    let braceCount = 1
-    let braceEnd = braceStart + 1
-
-    while (braceEnd < fieldContent.length && braceCount > 0) {
-      if (fieldContent[braceEnd] === '{') braceCount++
-      else if (fieldContent[braceEnd] === '}') braceCount--
-      braceEnd++
-    }
-
-    if (braceCount === 0) {
-      const itemsContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
-      const itemsType = itemsContent.match(/type\s*:\s*['"]([^'"]+)['"]/)
-
-      const propertiesStart = itemsContent.search(/properties\s*:\s*{/)
-      const searchContent =
-        propertiesStart >= 0 ? itemsContent.substring(0, propertiesStart) : itemsContent
-      const itemsDesc = searchContent.match(/description\s*:\s*['"`]([^'"`\n]+)['"`]/)
-
-      result.items = {
-        type: itemsType ? itemsType[1] : 'object',
-        description: itemsDesc ? itemsDesc[1] : '',
-      }
-
-      const itemsPropertiesRegex = /properties\s*:\s*{/
-      const itemsPropsStart = itemsContent.search(itemsPropertiesRegex)
-
-      if (itemsPropsStart !== -1) {
-        const propsBraceStart = itemsContent.indexOf('{', itemsPropsStart)
-        let propsBraceCount = 1
-        let propsBraceEnd = propsBraceStart + 1
-
-        while (propsBraceEnd < itemsContent.length && propsBraceCount > 0) {
-          if (itemsContent[propsBraceEnd] === '{') propsBraceCount++
-          else if (itemsContent[propsBraceEnd] === '}') propsBraceCount--
-          propsBraceEnd++
+        result.items = {
+          type: itemsType ? itemsType[1] : 'object',
+          description: itemsDesc || '',
         }
 
-        if (propsBraceCount === 0) {
-          const itemsPropsContent = itemsContent
-            .substring(propsBraceStart + 1, propsBraceEnd - 1)
-            .trim()
-          result.items.properties = parsePropertiesContent(itemsPropsContent)
+        if (itemsPropsConstMatch && toolPrefix) {
+          const resolvedProps = resolveConstReference(itemsPropsConstMatch[1], toolPrefix)
+          if (resolvedProps) {
+            result.items.properties = resolvedProps
+          }
+        } else if (propertiesInlineStart !== -1) {
+          const itemsPropertiesRegex = /properties\s*:\s*{/
+          const itemsPropsStart = itemsContent.search(itemsPropertiesRegex)
+
+          if (itemsPropsStart !== -1) {
+            const propsBraceStart = itemsContent.indexOf('{', itemsPropsStart)
+            let propsBraceCount = 1
+            let propsBraceEnd = propsBraceStart + 1
+
+            while (propsBraceEnd < itemsContent.length && propsBraceCount > 0) {
+              if (itemsContent[propsBraceEnd] === '{') propsBraceCount++
+              else if (itemsContent[propsBraceEnd] === '}') propsBraceCount--
+              propsBraceEnd++
+            }
+
+            if (propsBraceCount === 0) {
+              const itemsPropsContent = itemsContent
+                .substring(propsBraceStart + 1, propsBraceEnd - 1)
+                .trim()
+              result.items.properties = parsePropertiesContent(itemsPropsContent, toolPrefix)
+            }
+          }
         }
       }
     }
@@ -1108,8 +2055,94 @@ function parseFieldContent(fieldContent: string): any {
   return result
 }
 
-function parsePropertiesContent(propertiesContent: string): Record<string, any> {
+function parsePropertiesContent(
+  propertiesContent: string,
+  toolPrefix?: string
+): Record<string, any> {
   const properties: Record<string, any> = {}
+
+  // First, handle const references at the property level
+  // Patterns: "attendees: ATTENDEES_OUTPUT" or "id: BOOKING_DATA_OUTPUT_PROPERTIES.id"
+  if (toolPrefix) {
+    // Pattern 1: Direct const reference (e.g., "eventType: EVENT_TYPE_OUTPUT,")
+    const constRefRegex = /(\w+)\s*:\s*([A-Z][A-Z_0-9]+)\s*(?:,|$)/g
+    let constMatch
+    while ((constMatch = constRefRegex.exec(propertiesContent)) !== null) {
+      const propName = constMatch[1]
+      const constName = constMatch[2]
+
+      // Skip keywords
+      if (propName === 'items' || propName === 'properties' || propName === 'type') {
+        continue
+      }
+
+      // Check if at depth 0
+      const beforeMatch = propertiesContent.substring(0, constMatch.index)
+      const openBraces = (beforeMatch.match(/\{/g) || []).length
+      const closeBraces = (beforeMatch.match(/\}/g) || []).length
+      if (openBraces !== closeBraces) {
+        continue
+      }
+
+      const resolvedConst = resolveConstReference(constName, toolPrefix)
+      if (resolvedConst) {
+        properties[propName] = resolvedConst
+      }
+    }
+
+    // Pattern 2: Property access on const (e.g., "id: BOOKING_DATA_OUTPUT_PROPERTIES.id,")
+    const propAccessRegex = /(\w+)\s*:\s*([A-Z][A-Z_0-9]+)\.(\w+)\s*(?:,|$)/g
+    let propAccessMatch
+    while ((propAccessMatch = propAccessRegex.exec(propertiesContent)) !== null) {
+      const propName = propAccessMatch[1]
+      const constName = propAccessMatch[2]
+      const accessedProp = propAccessMatch[3]
+
+      // Skip keywords
+      if (propName === 'items' || propName === 'properties' || propName === 'type') {
+        continue
+      }
+
+      // Skip if already resolved
+      if (properties[propName]) {
+        continue
+      }
+
+      // Check if at depth 0
+      const beforeMatch = propertiesContent.substring(0, propAccessMatch.index)
+      const openBraces = (beforeMatch.match(/\{/g) || []).length
+      const closeBraces = (beforeMatch.match(/\}/g) || []).length
+      if (openBraces !== closeBraces) {
+        continue
+      }
+
+      const resolvedConst = resolveConstReference(constName, toolPrefix)
+      if (resolvedConst?.[accessedProp]) {
+        properties[propName] = resolvedConst[accessedProp]
+      }
+    }
+
+    // Pattern 3: Spread operator (e.g., "...COMMENT_OUTPUT_PROPERTIES,")
+    const spreadRegex = /\.\.\.([A-Z][A-Z_0-9]+)\s*(?:,|$)/g
+    let spreadMatch
+    while ((spreadMatch = spreadRegex.exec(propertiesContent)) !== null) {
+      const constName = spreadMatch[1]
+
+      // Check if at depth 0
+      const beforeMatch = propertiesContent.substring(0, spreadMatch.index)
+      const openBraces = (beforeMatch.match(/\{/g) || []).length
+      const closeBraces = (beforeMatch.match(/\}/g) || []).length
+      if (openBraces !== closeBraces) {
+        continue
+      }
+
+      const resolvedConst = resolveConstReference(constName, toolPrefix)
+      if (resolvedConst && typeof resolvedConst === 'object') {
+        // Spread all properties from the resolved const
+        Object.assign(properties, resolvedConst)
+      }
+    }
+  }
 
   const propStartRegex = /(\w+)\s*:\s*{/g
   let match
@@ -1120,6 +2153,20 @@ function parsePropertiesContent(propertiesContent: string): Record<string, any> 
 
     if (propName === 'items' || propName === 'properties') {
       continue
+    }
+
+    // Skip if already resolved as const reference
+    if (properties[propName]) {
+      continue
+    }
+
+    // Check if this match is at depth 0 (not inside nested braces)
+    // Only process top-level properties, skip nested ones
+    const beforeMatch = propertiesContent.substring(0, match.index)
+    const openBraces = (beforeMatch.match(/{/g) || []).length
+    const closeBraces = (beforeMatch.match(/}/g) || []).length
+    if (openBraces !== closeBraces) {
+      continue // Skip - this is a nested property
     }
 
     const startPos = match.index + match[0].length - 1
@@ -1140,8 +2187,8 @@ function parsePropertiesContent(propertiesContent: string): Record<string, any> 
       const propContent = propertiesContent.substring(startPos + 1, endPos - 1).trim()
 
       const hasDescription = /description\s*:\s*/.test(propContent)
-      const hasProperties = /properties\s*:\s*{/.test(propContent)
-      const hasItems = /items\s*:\s*{/.test(propContent)
+      const hasProperties = /properties\s*:\s*[{A-Z]/.test(propContent)
+      const hasItems = /items\s*:\s*[{A-Z]/.test(propContent)
       const isTypeOnly =
         !hasDescription &&
         !hasProperties &&
@@ -1159,7 +2206,7 @@ function parsePropertiesContent(propertiesContent: string): Record<string, any> 
   }
 
   propPositions.forEach((prop) => {
-    const parsedProp = parseFieldContent(prop.content)
+    const parsedProp = parseFieldContent(prop.content, toolPrefix)
     if (parsedProp) {
       properties[prop.name] = parsedProp
     }
@@ -1722,6 +2769,10 @@ async function generateAllBlockDocs() {
     // Generate icon mapping from block definitions
     const iconMapping = await generateIconMapping()
     writeIconMapping(iconMapping)
+
+    // Generate landing integrations page data (JSON + icon mapping)
+    await writeIntegrationsJson(iconMapping)
+    writeIntegrationsIconMapping(iconMapping)
 
     // Get hidden and visible block types before generating docs
     const { hiddenTypes, visibleDisplayNames } = await getHiddenAndVisibleBlockTypes()

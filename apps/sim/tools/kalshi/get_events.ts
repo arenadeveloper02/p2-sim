@@ -1,6 +1,10 @@
+import type { KalshiEvent, KalshiPaginationParams, KalshiPagingInfo } from '@/tools/kalshi/types'
+import {
+  buildKalshiUrl,
+  handleKalshiError,
+  KALSHI_EVENT_OUTPUT_PROPERTIES,
+} from '@/tools/kalshi/types'
 import type { ToolConfig } from '@/tools/types'
-import type { KalshiEvent, KalshiPaginationParams, KalshiPagingInfo } from './types'
-import { buildKalshiUrl, handleKalshiError } from './types'
 
 export interface KalshiGetEventsParams extends KalshiPaginationParams {
   status?: string // open, closed, settled
@@ -27,31 +31,31 @@ export const kalshiGetEventsTool: ToolConfig<KalshiGetEventsParams, KalshiGetEve
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by status (open, closed, settled)',
+      description: 'Filter by event status: "open", "closed", or "settled"',
     },
     seriesTicker: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter by series ticker',
+      description: 'Filter by series ticker (e.g., "KXBTC", "INX", "FED-RATE")',
     },
     withNestedMarkets: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Include nested markets in response (true/false)',
+      description: 'Include nested markets in response: "true" or "false"',
     },
     limit: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Number of results (1-200, default: 200)',
+      description: 'Number of results to return (1-200, default: 200)',
     },
     cursor: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Pagination cursor for next page',
+      description: 'Pagination cursor from previous response for fetching next page',
     },
   },
 
@@ -99,6 +103,10 @@ export const kalshiGetEventsTool: ToolConfig<KalshiGetEventsParams, KalshiGetEve
     events: {
       type: 'array',
       description: 'Array of event objects',
+      items: {
+        type: 'object',
+        properties: KALSHI_EVENT_OUTPUT_PROPERTIES,
+      },
     },
     paging: {
       type: 'object',
@@ -161,43 +169,43 @@ export const kalshiGetEventsV2Tool: ToolConfig<KalshiGetEventsV2Params, KalshiGe
         type: 'string',
         required: false,
         visibility: 'user-or-llm',
-        description: 'Filter by status (open, closed, settled)',
+        description: 'Filter by event status: "open", "closed", or "settled"',
       },
       seriesTicker: {
         type: 'string',
         required: false,
         visibility: 'user-or-llm',
-        description: 'Filter by series ticker',
+        description: 'Filter by series ticker (e.g., "KXBTC", "INX", "FED-RATE")',
       },
       withNestedMarkets: {
         type: 'string',
         required: false,
         visibility: 'user-or-llm',
-        description: 'Include nested markets in response (true/false)',
+        description: 'Include nested markets in response: "true" or "false"',
       },
       withMilestones: {
         type: 'string',
         required: false,
         visibility: 'user-or-llm',
-        description: 'Include milestones in response (true/false)',
+        description: 'Include milestones in response: "true" or "false"',
       },
       minCloseTs: {
         type: 'number',
         required: false,
         visibility: 'user-or-llm',
-        description: 'Minimum close timestamp (Unix seconds)',
+        description: 'Minimum close timestamp in Unix seconds (e.g., 1704067200)',
       },
       limit: {
         type: 'string',
         required: false,
         visibility: 'user-or-llm',
-        description: 'Number of results (1-200, default: 200)',
+        description: 'Number of results to return (1-200, default: 200)',
       },
       cursor: {
         type: 'string',
         required: false,
         visibility: 'user-or-llm',
-        description: 'Pagination cursor for next page',
+        description: 'Pagination cursor from previous response for fetching next page',
       },
     },
 
@@ -269,29 +277,22 @@ export const kalshiGetEventsV2Tool: ToolConfig<KalshiGetEventsV2Params, KalshiGe
       events: {
         type: 'array',
         description: 'Array of event objects',
-        properties: {
-          event_ticker: { type: 'string', description: 'Event ticker' },
-          series_ticker: { type: 'string', description: 'Series ticker' },
-          title: { type: 'string', description: 'Event title' },
-          sub_title: { type: 'string', description: 'Event subtitle' },
-          mutually_exclusive: { type: 'boolean', description: 'Mutually exclusive markets' },
-          category: { type: 'string', description: 'Event category' },
-          collateral_return_type: { type: 'string', description: 'Collateral return type' },
-          strike_date: { type: 'string', description: 'Strike date' },
-          strike_period: { type: 'string', description: 'Strike period' },
-          available_on_brokers: { type: 'boolean', description: 'Available on brokers' },
-          product_metadata: { type: 'object', description: 'Product metadata' },
-          markets: { type: 'array', description: 'Nested markets (if requested)' },
+        items: {
+          type: 'object',
+          properties: KALSHI_EVENT_OUTPUT_PROPERTIES,
         },
       },
       milestones: {
         type: 'array',
         description: 'Array of milestone objects (if requested)',
-        properties: {
-          event_ticker: { type: 'string', description: 'Event ticker' },
-          milestone_type: { type: 'string', description: 'Milestone type' },
-          milestone_date: { type: 'string', description: 'Milestone date' },
-          milestone_title: { type: 'string', description: 'Milestone title' },
+        items: {
+          type: 'object',
+          properties: {
+            event_ticker: { type: 'string', description: 'Event ticker' },
+            milestone_type: { type: 'string', description: 'Milestone type' },
+            milestone_date: { type: 'string', description: 'Milestone date' },
+            milestone_title: { type: 'string', description: 'Milestone title' },
+          },
         },
       },
       cursor: {

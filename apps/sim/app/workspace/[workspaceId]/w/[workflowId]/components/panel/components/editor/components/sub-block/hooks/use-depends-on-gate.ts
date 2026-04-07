@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useMemo } from 'react'
-import { isEqual } from 'lodash'
+import { isEqual } from 'es-toolkit'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import {
   buildCanonicalIndex,
@@ -178,5 +178,6 @@ export function useDependsOnGate(
     blocked,
     finalDisabled,
     dependencyValues: dependencyValuesMap,
+    canonicalIndex,
   }
 }

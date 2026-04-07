@@ -19,11 +19,11 @@ interface TableProps {
   subBlockId: string
   columns: string[]
   isPreview?: boolean
-  previewValue?: TableRow[] | null
+  previewValue?: WorkflowTableRow[] | null
   disabled?: boolean
 }
 
-interface TableRow {
+interface WorkflowTableRow {
   id: string
   cells: Record<string, string>
 }
@@ -38,7 +38,7 @@ export function Table({
 }: TableProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
-  const [storeValue, setStoreValue] = useSubBlockValue<TableRow[]>(blockId, subBlockId)
+  const [storeValue, setStoreValue] = useSubBlockValue<WorkflowTableRow[]>(blockId, subBlockId)
   const accessiblePrefixes = useAccessibleReferencePrefixes(blockId)
 
   // Use the extended hook for field-level management
@@ -73,7 +73,7 @@ export function Table({
    */
   useEffect(() => {
     if (!isPreview && !disabled && (!Array.isArray(storeValue) || storeValue.length === 0)) {
-      const initialRow: TableRow = {
+      const initialRow: WorkflowTableRow = {
         id: crypto.randomUUID(),
         cells: { ...emptyCellsTemplate },
       }
@@ -110,7 +110,7 @@ export function Table({
       }
     })
 
-    return validatedRows as TableRow[]
+    return validatedRows as WorkflowTableRow[]
   }, [value, emptyCellsTemplate])
 
   // Helper to update a cell value
@@ -153,7 +153,7 @@ export function Table({
           <th
             key={column}
             className={cn(
-              'bg-transparent px-[10px] py-[5px] text-left font-medium text-[14px] text-[var(--text-tertiary)]',
+              'bg-transparent px-2.5 py-[5px] text-left font-medium text-[var(--text-tertiary)] text-sm',
               index < columns.length - 1 && 'border-[var(--border-1)] border-r'
             )}
           >
@@ -164,7 +164,12 @@ export function Table({
     </thead>
   )
 
-  const renderCell = (row: TableRow, rowIndex: number, column: string, cellIndex: number) => {
+  const renderCell = (
+    row: WorkflowTableRow,
+    rowIndex: number,
+    column: string,
+    cellIndex: number
+  ) => {
     // Defensive programming: ensure row.cells exists and has the expected structure
     const hasValidCells = row.cells && typeof row.cells === 'object'
     if (!hasValidCells) logger.warn('Table row has malformed cells data:', row)
@@ -241,7 +246,7 @@ export function Table({
             onFocus={handlers.onFocus}
             disabled={isPreview || disabled}
             autoComplete='off'
-            className='w-full border-0 bg-transparent px-[10px] py-[8px] font-medium text-sm text-transparent leading-[21px] caret-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0'
+            className='w-full border-0 bg-transparent px-2.5 py-2 font-medium text-sm text-transparent leading-[21px] caret-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0'
           />
           <div
             ref={(el) => {
@@ -250,7 +255,7 @@ export function Table({
             data-overlay={cellKey}
             className='scrollbar-hide pointer-events-none absolute top-0 right-[10px] bottom-0 left-[10px] overflow-x-auto overflow-y-hidden bg-transparent'
           >
-            <div className='whitespace-pre py-[8px] font-medium text-[var(--text-primary)] text-sm leading-[21px]'>
+            <div className='whitespace-pre py-2 font-medium text-[var(--text-primary)] text-sm leading-[21px]'>
               {formatDisplayText(cellValue, {
                 accessiblePrefixes,
                 highlightAll: !accessiblePrefixes,
@@ -311,7 +316,7 @@ export function Table({
 
   return (
     <div className='relative'>
-      <div className='overflow-visible rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-2)] dark:bg-[#1F1F1F]'>
+      <div className='overflow-visible rounded-sm border border-[var(--border-1)] bg-[var(--surface-2)] dark:bg-[var(--code-bg)]'>
         <table className='w-full bg-transparent'>
           {renderHeader()}
           <tbody className='bg-transparent'>

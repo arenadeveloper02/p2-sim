@@ -60,7 +60,11 @@ export function useImportWorkspace({ onSuccess }: UseImportWorkspaceProps = {}) 
         const createResponse = await fetch('/api/workspaces', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: workspaceName, skipDefaultWorkflow: true }),
+          body: JSON.stringify({
+            name: workspaceName,
+            ...(metadata?.workspaceColor && { color: metadata.workspaceColor }),
+            skipDefaultWorkflow: true,
+          }),
         })
 
         if (!createResponse.ok) {
@@ -160,9 +164,8 @@ export function useImportWorkspace({ onSuccess }: UseImportWorkspaceProps = {}) 
             const workflowName = extractWorkflowName(workflow.content, workflow.name)
             clearDiff()
 
-            const parsedContent = JSON.parse(workflow.content)
             const workflowColor =
-              parsedContent.state?.metadata?.color || parsedContent.metadata?.color || '#3972F6'
+              (workflowData.metadata as { color?: string } | undefined)?.color || '#3972F6'
 
             const createWorkflowResponse = await fetch('/api/workflows', {
               method: 'POST',
@@ -216,11 +219,18 @@ export function useImportWorkspace({ onSuccess }: UseImportWorkspaceProps = {}) 
                   }
                 }
 
-                await fetch(`/api/workflows/${newWorkflow.id}/variables`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ variables: variablesRecord }),
-                })
+                const variablesResponse = await fetch(
+                  `/api/workflows/${newWorkflow.id}/variables`,
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ variables: variablesRecord }),
+                  }
+                )
+
+                if (!variablesResponse.ok) {
+                  logger.error(`Failed to save variables for ${newWorkflow.id}`)
+                }
               }
             }
 
@@ -232,7 +242,7 @@ export function useImportWorkspace({ onSuccess }: UseImportWorkspaceProps = {}) 
 
         logger.info(`Workspace import complete. Imported ${extractedWorkflows.length} workflows`)
 
-        router.push(`/workspace/${newWorkspace.id}/w`)
+        router.push(`/workspace/${newWorkspace.id}/home`)
 
         onSuccess?.()
       } catch (error) {

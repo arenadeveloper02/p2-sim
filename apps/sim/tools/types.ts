@@ -1,14 +1,51 @@
+import type { HostedKeyRateLimitConfig } from '@/lib/core/rate-limiter'
 import type { OAuthService } from '@/lib/oauth'
+
+export type BYOKProviderId =
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'mistral'
+  | 'firecrawl'
+  | 'exa'
+  | 'serper'
+  | 'jina'
+  | 'perplexity'
+  | 'google_cloud'
+  | 'linkup'
+  | 'brandfetch'
+  | 'parallel_ai'
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD'
 
+/**
+ * Minimal execution context injected into tool params at runtime.
+ * This is a subset of the full ExecutionContext from executor/types.ts.
+ */
+export type WorkflowToolExecutionContext = {
+  workspaceId?: string
+  workflowId?: string
+  executionId?: string
+  userId?: string
+}
+
+export type OutputType =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'json'
+  | 'file'
+  | 'file[]'
+  | 'array'
+  | 'object'
+
 export interface OutputProperty {
-  type: string
+  type: OutputType
   description?: string
   optional?: boolean
   properties?: Record<string, OutputProperty>
   items?: {
-    type: string
+    type: OutputType
     description?: string
     properties?: Record<string, OutputProperty>
   }
@@ -38,6 +75,14 @@ export interface OAuthConfig {
   useUserToken?: boolean // Indicates if the tool requires a user token (xoxp-) instead of a bot token (xoxb-)
 }
 
+export interface ToolRetryConfig {
+  enabled: boolean
+  maxRetries?: number
+  initialDelayMs?: number
+  maxDelayMs?: number
+  retryIdempotentOnly?: boolean
+}
+
 export interface ToolConfig<P = any, R = any> {
   // Basic tool identification
   id: string
@@ -61,19 +106,20 @@ export interface ToolConfig<P = any, R = any> {
       }
     }
   >
-
+  // Output schema - what this tool produces
   outputs?: Record<
     string,
     {
-      type: 'string' | 'number' | 'boolean' | 'json' | 'file' | 'file[]' | 'array' | 'object'
+      type: OutputType
       description?: string
       optional?: boolean
       fileConfig?: {
-        mimeType?: string
-        extension?: string
+        mimeType?: string // Expected MIME type for file outputs
+        extension?: string // Expected file extension
       }
       items?: {
-        type: string
+        type: OutputType
+        description?: string
         properties?: Record<string, OutputProperty>
       }
       properties?: Record<string, OutputProperty>
@@ -96,6 +142,7 @@ export interface ToolConfig<P = any, R = any> {
     body?: (params: P) => Record<string, any> | string | FormData | undefined
     /** Timeout in ms for external HTTP requests (default 30000). Use higher values for slow APIs (e.g. image generation). */
     timeout?: number
+    retry?: ToolRetryConfig
   }
 
   // Post-processing (optional) - allows additional processing after the initial request
@@ -119,6 +166,18 @@ export interface ToolConfig<P = any, R = any> {
    * Maps param IDs to their enrichment configuration.
    */
   schemaEnrichment?: Record<string, SchemaEnrichmentConfig>
+  /**
+   * Optional tool-level enrichment that modifies description and all parameters.
+   * Use when multiple params depend on a single runtime value.
+   */
+  toolEnrichment?: ToolEnrichmentConfig
+
+  /**
+   * Hosted API key configuration for this tool.
+   * When configured, the tool can use Sim's hosted API keys if user doesn't provide their own.
+   * Usage is billed according to the pricing config.
+   */
+  hosting?: ToolHostingConfig<P>
 }
 
 export interface TableRow {
@@ -161,4 +220,99 @@ export interface SchemaEnrichmentConfig {
     description?: string
     required?: string[]
   } | null>
+}
+
+/**
+ * Configuration for enriching an entire tool (description + all parameters) at runtime.
+ * Used when multiple parameters and the description depend on a single runtime value (e.g., tableId).
+ */
+export interface ToolEnrichmentConfig {
+  /** The param ID that this enrichment depends on (e.g., 'tableId') */
+  dependsOn: string
+  /** Function to enrich the tool's description and parameter schema */
+  enrichTool: (
+    dependencyValue: string,
+    originalSchema: {
+      type: 'object'
+      properties: Record<string, unknown>
+      required: string[]
+    },
+    originalDescription: string
+  ) => Promise<{
+    description: string
+    parameters: {
+      type: 'object'
+      properties: Record<string, unknown>
+      required: string[]
+    }
+  } | null>
+}
+
+/**
+ * Pricing models for hosted API key usage
+ */
+/** Flat fee per API call (e.g., Serper search) */
+export interface PerRequestPricing {
+  type: 'per_request'
+  /** Cost per request in dollars */
+  cost: number
+}
+
+/** Result from custom pricing calculation */
+export interface CustomPricingResult {
+  /** Cost in dollars */
+  cost: number
+  /** Optional metadata about the cost calculation (e.g., breakdown from API) */
+  metadata?: Record<string, unknown>
+}
+
+/** Custom pricing calculated from params and response (e.g., Exa with different modes/result counts) */
+export interface CustomPricing<P = Record<string, unknown>> {
+  type: 'custom'
+  /** Calculate cost based on request params and response output. Fields starting with _ are internal. */
+  getCost: (params: P, output: Record<string, unknown>) => number | CustomPricingResult
+}
+
+/** Union of all pricing models */
+export type ToolHostingPricing<P = Record<string, unknown>> = PerRequestPricing | CustomPricing<P>
+
+/**
+ * Configuration for hosted API key support.
+ * When configured, the tool can use Sim's hosted API keys if user doesn't provide their own.
+ *
+ * ### Hosted key env var convention
+ *
+ * Keys follow a numbered naming convention driven by a count env var:
+ *
+ * 1. Set `{envKeyPrefix}_COUNT` to the number of keys available.
+ * 2. Provide each key as `{envKeyPrefix}_1`, `{envKeyPrefix}_2`, ..., `{envKeyPrefix}_N`.
+ *
+ * **Example** — for `envKeyPrefix: 'EXA_API_KEY'` with 5 keys:
+ * ```
+ * EXA_API_KEY_COUNT=5
+ * EXA_API_KEY_1=sk-...
+ * EXA_API_KEY_2=sk-...
+ * EXA_API_KEY_3=sk-...
+ * EXA_API_KEY_4=sk-...
+ * EXA_API_KEY_5=sk-...
+ * ```
+ *
+ * Adding more keys only requires updating the count and adding the new env var —
+ * no code changes needed.
+ */
+export interface ToolHostingConfig<P = Record<string, unknown>> {
+  /**
+   * Env var name prefix for hosted keys.
+   * At runtime, `{envKeyPrefix}_COUNT` is read to determine how many keys exist,
+   * then `{envKeyPrefix}_1` through `{envKeyPrefix}_N` are resolved.
+   */
+  envKeyPrefix: string
+  /** The parameter name that receives the API key */
+  apiKeyParam: string
+  /** BYOK provider ID for workspace key lookup */
+  byokProviderId?: BYOKProviderId
+  /** Pricing when using hosted key */
+  pricing: ToolHostingPricing<P>
+  /** Hosted key rate limit configuration (required for hosted key distribution) */
+  rateLimit: HostedKeyRateLimitConfig
 }

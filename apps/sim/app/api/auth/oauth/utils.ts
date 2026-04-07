@@ -1,8 +1,7 @@
 import { db } from '@sim/db'
-import { account, accountTokens, credentialSetMember, workflow } from '@sim/db/schema'
+import { account, accountTokens, credential, credentialSetMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
-import { getSession } from '@/lib/auth'
 import { refreshOAuthToken } from '@/lib/oauth'
 import {
   getMicrosoftRefreshTokenExpiry,
@@ -24,6 +23,38 @@ interface AccountInsertData {
   refreshToken?: string
   idToken?: string
   accessTokenExpiresAt?: Date
+}
+
+/**
+ * Resolves a credential ID to its underlying account ID.
+ * If `credentialId` matches a `credential` row, returns its `accountId` and `workspaceId`.
+ * Otherwise assumes `credentialId` is already a raw `account.id` (legacy).
+ */
+export async function resolveOAuthAccountId(
+  credentialId: string
+): Promise<{ accountId: string; workspaceId?: string; usedCredentialTable: boolean } | null> {
+  const [credentialRow] = await db
+    .select({
+      type: credential.type,
+      accountId: credential.accountId,
+      workspaceId: credential.workspaceId,
+    })
+    .from(credential)
+    .where(eq(credential.id, credentialId))
+    .limit(1)
+
+  if (credentialRow) {
+    if (credentialRow.type !== 'oauth' || !credentialRow.accountId) {
+      return null
+    }
+    return {
+      accountId: credentialRow.accountId,
+      workspaceId: credentialRow.workspaceId,
+      usedCredentialTable: true,
+    }
+  }
+
+  return { accountId: credentialId, usedCredentialTable: false }
 }
 
 /**
@@ -56,56 +87,24 @@ export async function safeAccountInsert(
 }
 
 /**
- * Get the user ID based on either a session or a workflow ID
- */
-export async function getUserId(
-  requestId: string,
-  workflowId?: string
-): Promise<string | undefined> {
-  // If workflowId is provided, this is a server-side request
-  if (workflowId) {
-    // Get the workflow to verify the user ID
-    const workflows = await db
-      .select({ userId: workflow.userId })
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .limit(1)
-
-    if (!workflows.length) {
-      logger.warn(`[${requestId}] Workflow not found`)
-      return undefined
-    }
-
-    return workflows[0].userId
-  }
-  // This is a client-side request, use the session
-  const session = await getSession()
-
-  // Check if the user is authenticated
-  if (!session?.user?.id) {
-    logger.warn(`[${requestId}] Unauthenticated request rejected`)
-    return undefined
-  }
-
-  return session.user.id
-}
-
-/**
- * Get a credential by ID and verify it belongs to the user
+ * Get a credential by ID and verify it belongs to the user.
+ *
+ * Resolution order:
+ * 1. Legacy `account` row by id + userId (user-owned OAuth connection).
+ * 2. HubSpot shared tenants (`accountTokens.alias` — e.g. `northstar_anesthesia`) — matches legacy branch behavior.
+ * 3. Workspace `credential` row → underlying `account.id` via {@link resolveOAuthAccountId}.
  */
 export async function getCredential(requestId: string, credentialId: string, userId: string) {
-  // First attempt ID lookup
-  const credentials = await db
+  const directAccount = await db
     .select()
     .from(account)
     .where(and(eq(account.id, credentialId), eq(account.userId, userId)))
     .limit(1)
 
-  if (credentials.length > 0) {
-    return credentials[0]
+  if (directAccount.length > 0) {
+    return directAccount[0]
   }
 
-  // If not found in account table, attempt HubSpot alias lookup in accountTokens table
   const manualAliasCredentials = await db
     .select()
     .from(accountTokens)
@@ -117,6 +116,22 @@ export async function getCredential(requestId: string, credentialId: string, use
       alias: credentialId,
     })
     return manualAliasCredentials[0]
+  }
+
+  const resolved = await resolveOAuthAccountId(credentialId)
+  if (!resolved) {
+    logger.warn(`[${requestId}] Credential is not an OAuth credential`)
+    return undefined
+  }
+
+  const credentials = await db
+    .select()
+    .from(account)
+    .where(and(eq(account.id, resolved.accountId), eq(account.userId, userId)))
+    .limit(1)
+
+  if (credentials.length > 0) {
+    return credentials[0]
   }
 
   logger.warn(`[${requestId}] Credential not found for ID or alias: ${credentialId}`)
@@ -392,6 +407,8 @@ export async function refreshTokenIfNeeded(
   credential: any,
   credentialId: string
 ): Promise<{ accessToken: string; refreshed: boolean }> {
+  const resolvedCredentialId = credential.resolvedCredentialId ?? credentialId
+
   // Decide if we should refresh: token missing OR expired
   const accessTokenExpiresAt = credential.accessTokenExpiresAt
   const refreshTokenExpiresAt = credential.refreshTokenExpiresAt
@@ -542,7 +559,7 @@ export async function refreshTokenIfNeeded(
       `[${requestId}] Refresh attempt failed, checking if another concurrent request succeeded`
     )
 
-    const freshCredential = await getCredential(requestId, credentialId, credential.userId)
+    const freshCredential = await getCredential(requestId, resolvedCredentialId, credential.userId)
     if (freshCredential?.accessToken) {
       const freshExpiresAt = freshCredential.accessTokenExpiresAt
       const stillValid = !freshExpiresAt || freshExpiresAt > new Date()

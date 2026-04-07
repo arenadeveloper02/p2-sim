@@ -1,7 +1,8 @@
-import { getEnv } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import type { SearchParams, SearchResponse } from '@/tools/firecrawl/types'
+import { SEARCH_RESULT_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
+
+const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
 
 export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
   id: 'firecrawl_search',
@@ -18,7 +19,7 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -27,9 +28,9 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
   request: {
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/search',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
+      Authorization: `Bearer ${firecrawlApiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -66,20 +67,10 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
   outputs: {
     data: {
       type: 'array',
-      description: 'Search results data',
+      description: 'Search results data with scraped content and metadata',
       items: {
         type: 'object',
-        properties: {
-          title: { type: 'string' },
-          description: { type: 'string' },
-          url: { type: 'string' },
-          markdown: { type: 'string' },
-          html: { type: 'string' },
-          rawHtml: { type: 'string' },
-          links: { type: 'array' },
-          screenshot: { type: 'string' },
-          metadata: { type: 'object' },
-        },
+        properties: SEARCH_RESULT_OUTPUT_PROPERTIES,
       },
     },
   },

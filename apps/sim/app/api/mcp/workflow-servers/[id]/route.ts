@@ -1,9 +1,11 @@
 import { db } from '@sim/db'
 import { workflowMcpServer, workflowMcpTool } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
+import { mcpPubSub } from '@/lib/mcp/pubsub'
 import { createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
 
 const logger = createLogger('WorkflowMcpServerAPI')
@@ -37,7 +39,11 @@ export const GET = withMcpAuth<RouteParams>('read')(
         })
         .from(workflowMcpServer)
         .where(
-          and(eq(workflowMcpServer.id, serverId), eq(workflowMcpServer.workspaceId, workspaceId))
+          and(
+            eq(workflowMcpServer.id, serverId),
+            eq(workflowMcpServer.workspaceId, workspaceId),
+            isNull(workflowMcpServer.deletedAt)
+          )
         )
         .limit(1)
 
@@ -48,7 +54,7 @@ export const GET = withMcpAuth<RouteParams>('read')(
       const tools = await db
         .select()
         .from(workflowMcpTool)
-        .where(eq(workflowMcpTool.serverId, serverId))
+        .where(and(eq(workflowMcpTool.serverId, serverId), isNull(workflowMcpTool.archivedAt)))
 
       logger.info(
         `[${requestId}] Found workflow MCP server: ${server.name} with ${tools.length} tools`
@@ -70,7 +76,11 @@ export const GET = withMcpAuth<RouteParams>('read')(
  * PATCH - Update a workflow MCP server
  */
 export const PATCH = withMcpAuth<RouteParams>('write')(
-  async (request: NextRequest, { userId, workspaceId, requestId }, { params }) => {
+  async (
+    request: NextRequest,
+    { userId, userName, userEmail, workspaceId, requestId },
+    { params }
+  ) => {
     try {
       const { id: serverId } = await params
       const body = getParsedBody(request) || (await request.json())
@@ -81,7 +91,11 @@ export const PATCH = withMcpAuth<RouteParams>('write')(
         .select({ id: workflowMcpServer.id })
         .from(workflowMcpServer)
         .where(
-          and(eq(workflowMcpServer.id, serverId), eq(workflowMcpServer.workspaceId, workspaceId))
+          and(
+            eq(workflowMcpServer.id, serverId),
+            eq(workflowMcpServer.workspaceId, workspaceId),
+            isNull(workflowMcpServer.deletedAt)
+          )
         )
         .limit(1)
 
@@ -106,10 +120,23 @@ export const PATCH = withMcpAuth<RouteParams>('write')(
       const [updatedServer] = await db
         .update(workflowMcpServer)
         .set(updateData)
-        .where(eq(workflowMcpServer.id, serverId))
+        .where(and(eq(workflowMcpServer.id, serverId), isNull(workflowMcpServer.deletedAt)))
         .returning()
 
       logger.info(`[${requestId}] Successfully updated workflow MCP server: ${serverId}`)
+
+      recordAudit({
+        workspaceId,
+        actorId: userId,
+        actorName: userName,
+        actorEmail: userEmail,
+        action: AuditAction.MCP_SERVER_UPDATED,
+        resourceType: AuditResourceType.MCP_SERVER,
+        resourceId: serverId,
+        resourceName: updatedServer.name,
+        description: `Updated workflow MCP server "${updatedServer.name}"`,
+        request,
+      })
 
       return createMcpSuccessResponse({ server: updatedServer })
     } catch (error) {
@@ -127,7 +154,11 @@ export const PATCH = withMcpAuth<RouteParams>('write')(
  * DELETE - Delete a workflow MCP server and all its tools
  */
 export const DELETE = withMcpAuth<RouteParams>('admin')(
-  async (request: NextRequest, { userId, workspaceId, requestId }, { params }) => {
+  async (
+    request: NextRequest,
+    { userId, userName, userEmail, workspaceId, requestId },
+    { params }
+  ) => {
     try {
       const { id: serverId } = await params
 
@@ -145,6 +176,21 @@ export const DELETE = withMcpAuth<RouteParams>('admin')(
       }
 
       logger.info(`[${requestId}] Successfully deleted workflow MCP server: ${serverId}`)
+
+      mcpPubSub?.publishWorkflowToolsChanged({ serverId, workspaceId })
+
+      recordAudit({
+        workspaceId,
+        actorId: userId,
+        actorName: userName,
+        actorEmail: userEmail,
+        action: AuditAction.MCP_SERVER_REMOVED,
+        resourceType: AuditResourceType.MCP_SERVER,
+        resourceId: serverId,
+        resourceName: deletedServer.name,
+        description: `Unpublished workflow MCP server "${deletedServer.name}"`,
+        request,
+      })
 
       return createMcpSuccessResponse({ message: `Server ${serverId} deleted successfully` })
     } catch (error) {

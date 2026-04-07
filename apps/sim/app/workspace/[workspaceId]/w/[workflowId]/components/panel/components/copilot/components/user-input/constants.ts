@@ -243,18 +243,6 @@ export function getCommandDisplayLabel(commandId: string): string {
 }
 
 /**
- * Model configuration options
- */
-export const MODEL_OPTIONS = [
-  { value: 'claude-4.5-opus', label: 'Claude 4.5 Opus' },
-  { value: 'claude-4.5-sonnet', label: 'Claude 4.5 Sonnet' },
-  { value: 'claude-4.5-haiku', label: 'Claude 4.5 Haiku' },
-  { value: 'gpt-5.2-codex', label: 'GPT 5.2 Codex' },
-  { value: 'gpt-5.2-pro', label: 'GPT 5.2 Pro' },
-  { value: 'gemini-3-pro', label: 'Gemini 3 Pro' },
-] as const
-
-/**
  * Threshold for considering input "near top" of viewport (in pixels)
  */
 export const NEAR_TOP_THRESHOLD = 300
@@ -267,7 +255,7 @@ export const SCROLL_TOLERANCE = 8
 /**
  * Shared CSS classes for menu state text (loading, empty states)
  */
-export const MENU_STATE_TEXT_CLASSES = 'px-[8px] py-[8px] text-[12px] text-[var(--text-muted)]'
+export const MENU_STATE_TEXT_CLASSES = 'px-2 py-2 text-caption text-[var(--text-muted)]'
 
 /**
  * Calculates the next index for circular navigation (wraps around at bounds)

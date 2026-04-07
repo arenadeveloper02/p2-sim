@@ -2,14 +2,14 @@
 
 import { useCallback } from 'react'
 import { createLogger } from '@sim/logger'
-import { Layout, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import { Button, Library } from '@/components/emcn'
 import { AgentIcon } from '@/components/icons'
-import { getBrandConfig } from '@/lib/branding/branding'
 import { cn } from '@/lib/core/utils/cn'
 import { usePreventZoom } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import { useBrandConfig } from '@/ee/whitelabeling'
 import { useSearchModalStore } from '@/stores/modals/search/store'
 
 const logger = createLogger('WorkflowCommandList')
@@ -30,11 +30,11 @@ interface CommandItem {
  * Available commands list
  */
 const commands: CommandItem[] = [
-  {
-    label: 'Templates',
-    icon: Layout,
-    shortcut: 'Y',
-  },
+  // {
+  //   label: 'Templates',
+  //   icon: Layout,
+  //   shortcut: 'Y',
+  // },
   {
     label: 'New Agent',
     icon: AgentIcon,
@@ -59,7 +59,7 @@ const commands: CommandItem[] = [
 export function CommandList() {
   const params = useParams()
   const router = useRouter()
-  const { open: openSearchModal } = useSearchModalStore()
+  const openSearchModal = useSearchModalStore((s) => s.open)
   const preventZoomRef = usePreventZoom()
 
   const workspaceId = params.workspaceId as string | undefined
@@ -79,14 +79,14 @@ export function CommandList() {
     (label: string) => {
       try {
         switch (label) {
-          case 'Templates': {
-            if (!workspaceId) {
-              logger.warn('No workspace ID found, cannot navigate to templates from command list')
-              return
-            }
-            router.push(`/workspace/${workspaceId}/templates`)
-            return
-          }
+          // case 'Templates': {
+          //   if (!workspaceId) {
+          //     logger.warn('No workspace ID found, cannot navigate to templates from command list')
+          //     return
+          //   }
+          //   router.push(`/workspace/${workspaceId}/templates`)
+          //   return
+          // }
           case 'New Agent': {
             const event = new CustomEvent('add-block-from-toolbar', {
               detail: { type: 'agent', enableTriggerMode: false },
@@ -180,19 +180,24 @@ export function CommandList() {
       )}
     >
       <div
-        className='pointer-events-auto flex flex-col gap-[8px]'
+        data-tour='command-list'
+        className='pointer-events-auto flex flex-col gap-2'
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
         {/* Logo */}
-        <div className='mb-[20px] flex justify-center'>
+        <div className='mb-5 flex justify-center'>
           <Image
-            src={getBrandConfig().logoUrl || ''}
+            src={useBrandConfig().logoUrl || ''}
             alt='Sim'
             width={99.56}
             height={48.56}
             className='opacity-70'
             priority
+            style={{
+              filter:
+                'brightness(0) saturate(100%) invert(69%) sepia(0%) saturate(0%) hue-rotate(202deg) brightness(94%) contrast(89%)',
+            }}
           />
         </div>
 
@@ -224,9 +229,9 @@ export function CommandList() {
               </div>
 
               {/* Right side: Keyboard Shortcut */}
-              <div className='flex items-center gap-[4px]'>
+              <div className='flex items-center gap-1'>
                 <Button
-                  className='group-hover:-translate-y-0.5 w-[26px] py-[3px] text-[12px] hover:translate-y-0 hover:text-[var(--text-tertiary)] hover:shadow-[0_2px_0_0_rgba(48,48,48,1)] group-hover:text-[var(--text-primary)] group-hover:shadow-[0_4px_0_0_rgba(48,48,48,1)]'
+                  className='group-hover:-translate-y-0.5 w-[26px] py-[3px] text-caption hover-hover:translate-y-0 hover-hover:text-[var(--text-tertiary)] hover-hover:shadow-kbd-sm group-hover:text-[var(--text-primary)] group-hover:shadow-kbd'
                   variant='3d'
                 >
                   <span>⌘</span>
@@ -234,7 +239,7 @@ export function CommandList() {
                 {shortcuts.map((key, index) => (
                   <Button
                     key={index}
-                    className='group-hover:-translate-y-0.5 w-[26px] py-[3px] text-[12px] hover:translate-y-0 hover:text-[var(--text-tertiary)] hover:shadow-[0_2px_0_0_rgba(48,48,48,1)] group-hover:text-[var(--text-primary)] group-hover:shadow-[0_4px_0_0_rgba(48,48,48,1)]'
+                    className='group-hover:-translate-y-0.5 w-[26px] py-[3px] text-caption hover-hover:translate-y-0 hover-hover:text-[var(--text-tertiary)] hover-hover:shadow-kbd-sm group-hover:text-[var(--text-primary)] group-hover:shadow-kbd'
                     variant='3d'
                   >
                     {key}

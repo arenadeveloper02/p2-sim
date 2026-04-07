@@ -31,6 +31,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import type { WandControlHandlers } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block'
+import { restoreCursorAfterInsertion } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/utils'
 import { WandPromptBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/wand-prompt-bar/wand-prompt-bar'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useWand } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-wand'
@@ -259,6 +260,7 @@ export const Code = memo(function Code({
       case 'json-schema':
         return 'Describe the JSON schema to generate...'
       case 'json-object':
+      case 'table-schema':
         return 'Describe the JSON object to generate...'
       default:
         return 'Describe the JavaScript code to generate...'
@@ -283,9 +285,14 @@ export const Code = memo(function Code({
     return wandConfig
   }, [wandConfig, languageValue])
 
+  const [tableIdValue] = useSubBlockValue<string>(blockId, 'tableId')
+
   const wandHook = useWand({
     wandConfig: dynamicWandConfig || { enabled: false, prompt: '' },
     currentValue: code,
+    contextParams: {
+      tableId: typeof tableIdValue === 'string' ? tableIdValue : null,
+    },
     onStreamStart: () => handleStreamStartRef.current?.(),
     onStreamChunk: (chunk: string) => handleStreamChunkRef.current?.(chunk),
     onGeneratedContent: (content: string) => handleGeneratedContentRef.current?.(content),
@@ -531,36 +538,40 @@ export const Code = memo(function Code({
   /**
    * Handles selection of a tag from the tag dropdown.
    * @param newValue - The new code value with the selected tag inserted
+   * @param newCursorPosition - The cursor position after the inserted tag
    */
-  const handleTagSelect = (newValue: string) => {
+  const handleTagSelect = (newValue: string, newCursorPosition: number) => {
+    const textarea = editorRef.current?.querySelector('textarea') as HTMLTextAreaElement | null
+
     if (!isPreview && !readOnly) {
       setCode(newValue)
       emitTagSelection(newValue)
       recordChange(newValue)
+      restoreCursorAfterInsertion(textarea, newCursorPosition)
+    } else {
+      setTimeout(() => textarea?.focus(), 0)
     }
     setShowTags(false)
     setActiveSourceBlockId(null)
-
-    setTimeout(() => {
-      editorRef.current?.querySelector('textarea')?.focus()
-    }, 0)
   }
 
   /**
    * Handles selection of an environment variable from the dropdown.
    * @param newValue - The new code value with the selected env var inserted
+   * @param newCursorPosition - The cursor position after the inserted env var
    */
-  const handleEnvVarSelect = (newValue: string) => {
+  const handleEnvVarSelect = (newValue: string, newCursorPosition: number) => {
+    const textarea = editorRef.current?.querySelector('textarea') as HTMLTextAreaElement | null
+
     if (!isPreview && !readOnly) {
       setCode(newValue)
       emitTagSelection(newValue)
       recordChange(newValue)
+      restoreCursorAfterInsertion(textarea, newCursorPosition)
+    } else {
+      setTimeout(() => textarea?.focus(), 0)
     }
     setShowEnvVars(false)
-
-    setTimeout(() => {
-      editorRef.current?.querySelector('textarea')?.focus()
-    }, 0)
   }
 
   /**
@@ -722,8 +733,8 @@ export const Code = memo(function Code({
           className={cn(
             'text-right text-xs tabular-nums leading-[21px]',
             isActive
-              ? 'text-[var(--text-primary)] dark:text-[#eeeeee]'
-              : 'text-[var(--text-muted)] dark:text-[#a8a8a8]'
+              ? 'text-[var(--text-primary)] dark:text-[var(--code-foreground)]'
+              : 'text-[var(--text-muted)] dark:text-[var(--code-line-number)]'
           )}
         >
           {lineNumber}
@@ -770,7 +781,7 @@ export const Code = memo(function Code({
           className={cn(
             'h-8 w-8 p-0',
             'text-muted-foreground/60 transition-all duration-200',
-            'hover:scale-105 hover:bg-muted/50 hover:text-foreground',
+            'hover-hover:scale-105 hover-hover:bg-muted/50 hover-hover:text-foreground',
             'active:scale-95'
           )}
           aria-label='Copy code'
@@ -804,7 +815,7 @@ export const Code = memo(function Code({
                 onClick={isPromptVisible ? hidePromptInline : showPromptInline}
                 disabled={isAiLoading || isAiStreaming}
                 aria-label='Generate code with AI'
-                className='h-8 w-8 rounded-full border border-transparent bg-muted/80 text-muted-foreground shadow-sm transition-all duration-200 hover:border-primary/20 hover:bg-muted hover:text-foreground hover:shadow'
+                className='h-8 w-8 rounded-full border border-transparent bg-muted/80 text-muted-foreground shadow-sm transition-all duration-200 hover-hover:border-primary/20 hover-hover:bg-muted hover-hover:text-foreground hover-hover:shadow'
               >
                 <Wand2 className='h-4 w-4' />
               </Button>

@@ -239,4 +239,7 @@ async function startLocalScheduler() {
 export async function register() {
   await initializeOpenTelemetry()
   await startLocalScheduler()
+
+  const { startMemoryTelemetry } = await import('./lib/monitoring/memory-telemetry')
+  startMemoryTelemetry()
 }

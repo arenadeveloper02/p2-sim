@@ -1,8 +1,9 @@
-import { getEnv } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
+import { PAGE_METADATA_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import { safeAssign } from '@/tools/safe-assign'
 import type { ToolConfig } from '@/tools/types'
+
+const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
 
 export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
   id: 'firecrawl_scrape',
@@ -16,7 +17,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The URL to scrape content from',
+      description: 'The URL to scrape content from (e.g., "https://example.com/page")',
     },
     scrapeOptions: {
       type: 'json',
@@ -26,7 +27,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -35,9 +36,9 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
   request: {
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/scrape',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
+      Authorization: `Bearer ${firecrawlApiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -89,10 +90,11 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
 
   outputs: {
     markdown: { type: 'string', description: 'Page content in markdown format' },
-    html: { type: 'string', description: 'Raw HTML content of the page' },
+    html: { type: 'string', description: 'Raw HTML content of the page', optional: true },
     metadata: {
       type: 'object',
       description: 'Page metadata including SEO and Open Graph information',
+      properties: PAGE_METADATA_OUTPUT_PROPERTIES,
     },
   },
 }

@@ -1,9 +1,11 @@
 import { db } from '@sim/db'
-import { subscription, user, workflow, workflowExecutionLogs } from '@sim/db/schema'
+import { subscription, user, workflowExecutionLogs, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, lt } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
+import { sqlIsPaid } from '@/lib/billing/plan-helpers'
+import { ENTITLED_SUBSCRIPTION_STATUSES } from '@/lib/billing/subscriptions/utils'
 import { env } from '@/lib/core/config/env'
 import { snapshotService } from '@/lib/logs/execution/snapshot/service'
 import { isUsingCloudStorage, StorageService } from '@/lib/uploads'
@@ -29,9 +31,13 @@ export async function GET(request: NextRequest) {
       .from(user)
       .leftJoin(
         subscription,
-        sql`${user.id} = ${subscription.referenceId} AND ${subscription.status} = 'active' AND ${subscription.plan} IN ('pro', 'team', 'enterprise')`
+        and(
+          eq(user.id, subscription.referenceId),
+          inArray(subscription.status, ENTITLED_SUBSCRIPTION_STATUSES),
+          sqlIsPaid(subscription.plan)
+        )
       )
-      .where(sql`${subscription.id} IS NULL`)
+      .where(isNull(subscription.id))
 
     if (freeUsers.length === 0) {
       logger.info('No free users found for log cleanup')
@@ -40,17 +46,17 @@ export async function GET(request: NextRequest) {
 
     const freeUserIds = freeUsers.map((u) => u.userId)
 
-    const workflowsQuery = await db
-      .select({ id: workflow.id })
-      .from(workflow)
-      .where(inArray(workflow.userId, freeUserIds))
+    const workspacesQuery = await db
+      .select({ id: workspace.id })
+      .from(workspace)
+      .where(inArray(workspace.billedAccountUserId, freeUserIds))
 
-    if (workflowsQuery.length === 0) {
-      logger.info('No workflows found for free users')
-      return NextResponse.json({ message: 'No workflows found for cleanup' })
+    if (workspacesQuery.length === 0) {
+      logger.info('No workspaces found for free users')
+      return NextResponse.json({ message: 'No workspaces found for cleanup' })
     }
 
-    const workflowIds = workflowsQuery.map((w) => w.id)
+    const workspaceIds = workspacesQuery.map((w) => w.id)
 
     const results = {
       enhancedLogs: {
@@ -77,7 +83,7 @@ export async function GET(request: NextRequest) {
     let batchesProcessed = 0
     let hasMoreLogs = true
 
-    logger.info(`Starting enhanced logs cleanup for ${workflowIds.length} workflows`)
+    logger.info(`Starting enhanced logs cleanup for ${workspaceIds.length} workspaces`)
 
     while (hasMoreLogs && batchesProcessed < MAX_BATCHES) {
       const oldEnhancedLogs = await db
@@ -99,7 +105,7 @@ export async function GET(request: NextRequest) {
         .from(workflowExecutionLogs)
         .where(
           and(
-            inArray(workflowExecutionLogs.workflowId, workflowIds),
+            inArray(workflowExecutionLogs.workspaceId, workspaceIds),
             lt(workflowExecutionLogs.createdAt, retentionDate)
           )
         )
@@ -127,7 +133,7 @@ export async function GET(request: NextRequest) {
             customKey: enhancedLogKey,
             metadata: {
               logId: String(log.id),
-              workflowId: String(log.workflowId),
+              workflowId: String(log.workflowId ?? ''),
               executionId: String(log.executionId),
               logType: 'enhanced',
               archivedAt: new Date().toISOString(),

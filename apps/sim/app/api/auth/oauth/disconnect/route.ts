@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, like, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
@@ -15,6 +16,7 @@ const logger = createLogger('OAuthDisconnectAPI')
 const disconnectSchema = z.object({
   provider: z.string({ required_error: 'Provider is required' }).min(1, 'Provider is required'),
   providerId: z.string().optional(),
+  accountId: z.string().optional(),
 })
 
 /**
@@ -50,15 +52,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { provider, providerId } = parseResult.data
+    const { provider, providerId, accountId } = parseResult.data
 
     logger.info(`[${requestId}] Processing OAuth disconnect request`, {
       provider,
       hasProviderId: !!providerId,
     })
 
-    // If a specific providerId is provided, delete only that account
-    if (providerId) {
+    // If a specific account row ID is provided, delete that exact account
+    if (accountId) {
+      await db
+        .delete(account)
+        .where(and(eq(account.userId, session.user.id), eq(account.id, accountId)))
+    } else if (providerId) {
+      // If a specific providerId is provided, delete accounts for that provider ID
       await db
         .delete(account)
         .where(and(eq(account.userId, session.user.id), eq(account.providerId, providerId)))
@@ -117,6 +124,20 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    recordAudit({
+      workspaceId: null,
+      actorId: session.user.id,
+      action: AuditAction.OAUTH_DISCONNECTED,
+      resourceType: AuditResourceType.OAUTH,
+      resourceId: providerId ?? provider,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      resourceName: provider,
+      description: `Disconnected OAuth provider: ${provider}`,
+      metadata: { provider, providerId },
+      request,
+    })
 
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {

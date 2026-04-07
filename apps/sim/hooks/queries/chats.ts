@@ -109,7 +109,7 @@ function buildChatPayload(
     description: formData.description.trim(),
     department: formData.department?.trim() ?? '',
     customizations: {
-      primaryColor: 'var(--brand-primary-hover-hex)',
+      primaryColor: 'var(--brand-hover)',
       welcomeMessage: formData.welcomeMessage.trim(),
       goldenQueries: formData.goldenQueries.map((query) => query.trim()).filter(Boolean),
       ...(imageUrl && { imageUrl }),

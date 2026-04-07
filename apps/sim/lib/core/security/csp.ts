@@ -209,15 +209,35 @@ export function getWorkflowExecutionCSPPolicy(): string {
 }
 
 /**
- * CSP for embeddable form pages
+ * Shared CSP for embeddable pages (chat, forms)
  * Allows embedding in iframes from any origin while maintaining other security policies
  */
-export function getFormEmbedCSPPolicy(): string {
-  const basePolicy = buildCSPString({
+function getEmbedCSPPolicy(options?: { allowPublicImageUrls?: boolean }): string {
+  const allowPublicImageUrls = options?.allowPublicImageUrls === true
+
+  return buildCSPString({
     ...buildTimeCSPDirectives,
+    ...(allowPublicImageUrls
+      ? {
+          'img-src': ["'self'", 'data:', 'blob:', 'https:', 'http:', ...(isDev ? ['*'] : [])],
+        }
+      : {}),
     'frame-ancestors': ['*'],
   })
-  return basePolicy
+}
+
+/**
+ * CSP for embeddable chat pages
+ */
+export function getChatEmbedCSPPolicy(): string {
+  return getEmbedCSPPolicy({ allowPublicImageUrls: true })
+}
+
+/**
+ * CSP for embeddable form pages
+ */
+export function getFormEmbedCSPPolicy(): string {
+  return getEmbedCSPPolicy()
 }
 
 /**

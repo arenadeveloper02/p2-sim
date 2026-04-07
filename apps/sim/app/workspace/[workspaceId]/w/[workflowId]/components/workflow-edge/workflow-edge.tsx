@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getSmoothStepPath } from 'reactflow'
 import { useShallow } from 'zustand/react/shallow'
 import type { EdgeDiffStatus } from '@/lib/workflows/diff/types'
-import { useExecutionStore } from '@/stores/execution'
+import { useLastRunEdges } from '@/stores/execution'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff'
 
 /** Extended edge props with optional handle identifiers */
@@ -49,7 +49,7 @@ const WorkflowEdgeComponent = ({
       isDiffReady: state.isDiffReady,
     }))
   )
-  const lastRunEdges = useExecutionStore((state) => state.lastRunEdges)
+  const lastRunEdges = useLastRunEdges()
 
   const dataSourceHandle = (data as { sourceHandle?: string } | undefined)?.sourceHandle
   const isErrorEdge = (sourceHandle ?? dataSourceHandle) === 'error'
@@ -92,11 +92,10 @@ const WorkflowEdgeComponent = ({
       color = 'var(--text-error)'
       opacity = 0.7
     } else if (edgeDiffStatus === 'new') {
-      color = 'var(--brand-tertiary-2)'
+      color = 'var(--brand-accent)'
     } else if (edgeRunStatus === 'success') {
       // Use green for preview mode, default for canvas execution
-      // This also applies to error edges that were taken (error path executed)
-      color = previewExecutionStatus ? 'var(--brand-tertiary-2)' : 'var(--border-success)'
+      color = previewExecutionStatus ? 'var(--brand-accent)' : 'var(--border-success)'
     } else if (edgeRunStatus === 'error') {
       color = 'var(--text-error)'
     } else if (isErrorEdge) {
@@ -146,7 +145,7 @@ const WorkflowEdgeComponent = ({
               }
             }}
           >
-            <X className='h-4 w-4 text-[var(--text-error)] transition-colors group-hover:text-[var(--text-error)]/80' />
+            <X className='h-4 w-4 text-[var(--text-error)] transition-colors group-hover:text-[color-mix(in_srgb,var(--text-error)_80%,transparent)]' />
           </div>
         </EdgeLabelRenderer>
       )}

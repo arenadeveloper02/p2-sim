@@ -3,48 +3,50 @@
  *
  * @vitest-environment node
  */
-import { loggerMock } from '@sim/testing'
+import { auditMock, databaseMock, loggerMock, requestUtilsMock } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetSession, mockGetUserEntityPermissions, mockDbSelect, mockDbUpdate } = vi.hoisted(
-  () => ({
-    mockGetSession: vi.fn(),
-    mockGetUserEntityPermissions: vi.fn(),
-    mockDbSelect: vi.fn(),
-    mockDbUpdate: vi.fn(),
-  })
-)
+const { mockGetSession, mockAuthorizeWorkflowByWorkspacePermission } = vi.hoisted(() => ({
+  mockGetSession: vi.fn(),
+  mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
+}))
 
 vi.mock('@/lib/auth', () => ({
   getSession: mockGetSession,
 }))
 
-vi.mock('@/lib/workspaces/permissions/utils', () => ({
-  getUserEntityPermissions: mockGetUserEntityPermissions,
+vi.mock('@/lib/workflows/utils', () => ({
+  authorizeWorkflowByWorkspacePermission: mockAuthorizeWorkflowByWorkspacePermission,
 }))
 
-vi.mock('@sim/db', () => ({
-  db: {
-    select: mockDbSelect,
-    update: mockDbUpdate,
-  },
-}))
+vi.mock('@sim/db', () => databaseMock)
 
 vi.mock('@sim/db/schema', () => ({
   workflow: { id: 'id', userId: 'userId', workspaceId: 'workspaceId' },
-  workflowSchedule: { id: 'id', workflowId: 'workflowId', status: 'status' },
+  workflowSchedule: {
+    id: 'id',
+    workflowId: 'workflowId',
+    status: 'status',
+    cronExpression: 'cronExpression',
+    timezone: 'timezone',
+    sourceType: 'sourceType',
+    sourceWorkspaceId: 'sourceWorkspaceId',
+    archivedAt: 'archivedAt',
+  },
 }))
 
 vi.mock('drizzle-orm', () => ({
+  and: vi.fn(),
   eq: vi.fn(),
+  isNull: vi.fn(),
 }))
 
-vi.mock('@/lib/core/utils/request', () => ({
-  generateRequestId: () => 'test-request-id',
-}))
+vi.mock('@/lib/core/utils/request', () => requestUtilsMock)
 
 vi.mock('@sim/logger', () => loggerMock)
+
+vi.mock('@/lib/audit/log', () => auditMock)
 
 import { PUT } from './route'
 
@@ -59,6 +61,9 @@ function createRequest(body: Record<string, unknown>): NextRequest {
 function createParams(id: string): { params: Promise<{ id: string }> } {
   return { params: Promise.resolve({ id }) }
 }
+
+const mockDbSelect = databaseMock.db.select as ReturnType<typeof vi.fn>
+const mockDbUpdate = databaseMock.db.update as ReturnType<typeof vi.fn>
 
 function mockDbChain(selectResults: unknown[][]) {
   let selectCallIndex = 0
@@ -81,7 +86,12 @@ describe('Schedule PUT API (Reactivate)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
-    mockGetUserEntityPermissions.mockResolvedValue('write')
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: true,
+      status: 200,
+      workflow: { id: 'wf-1', workspaceId: 'ws-1' },
+      workspacePermission: 'write',
+    })
   })
 
   afterEach(() => {
@@ -101,13 +111,13 @@ describe('Schedule PUT API (Reactivate)', () => {
   })
 
   describe('Request Validation', () => {
-    it('returns 400 when action is not reactivate', async () => {
+    it('returns 400 when action is not a valid enum value', async () => {
       mockDbChain([
         [{ id: 'sched-1', workflowId: 'wf-1', status: 'disabled' }],
         [{ userId: 'user-1', workspaceId: null }],
       ])
 
-      const res = await PUT(createRequest({ action: 'disable' }), createParams('sched-1'))
+      const res = await PUT(createRequest({ action: 'invalid-action' }), createParams('sched-1'))
 
       expect(res.status).toBe(400)
       const data = await res.json()
@@ -140,6 +150,13 @@ describe('Schedule PUT API (Reactivate)', () => {
     })
 
     it('returns 404 when workflow does not exist for schedule', async () => {
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: false,
+        status: 404,
+        workflow: null,
+        workspacePermission: null,
+        message: 'Workflow not found',
+      })
       mockDbChain([[{ id: 'sched-1', workflowId: 'wf-1', status: 'disabled' }], []])
 
       const res = await PUT(createRequest({ action: 'reactivate' }), createParams('sched-1'))
@@ -152,6 +169,14 @@ describe('Schedule PUT API (Reactivate)', () => {
 
   describe('Authorization', () => {
     it('returns 403 when user is not workflow owner', async () => {
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: false,
+        status: 403,
+        workflow: { id: 'wf-1', workspaceId: null },
+        workspacePermission: null,
+        message:
+          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+      })
       mockDbChain([
         [{ id: 'sched-1', workflowId: 'wf-1', status: 'disabled' }],
         [{ userId: 'other-user', workspaceId: null }],
@@ -161,11 +186,17 @@ describe('Schedule PUT API (Reactivate)', () => {
 
       expect(res.status).toBe(403)
       const data = await res.json()
-      expect(data.error).toBe('Not authorized to modify this schedule')
+      expect(data.error).toContain('Personal workflows are deprecated')
     })
 
     it('returns 403 for workspace member with only read permission', async () => {
-      mockGetUserEntityPermissions.mockResolvedValue('read')
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: false,
+        status: 403,
+        workflow: { id: 'wf-1', workspaceId: 'ws-1' },
+        workspacePermission: 'read',
+        message: 'Unauthorized: Access denied to write this workflow',
+      })
       mockDbChain([
         [{ id: 'sched-1', workflowId: 'wf-1', status: 'disabled' }],
         [{ userId: 'other-user', workspaceId: 'ws-1' }],
@@ -198,7 +229,6 @@ describe('Schedule PUT API (Reactivate)', () => {
     })
 
     it('allows workspace member with write permission to reactivate', async () => {
-      mockGetUserEntityPermissions.mockResolvedValue('write')
       mockDbChain([
         [
           {
@@ -218,7 +248,6 @@ describe('Schedule PUT API (Reactivate)', () => {
     })
 
     it('allows workspace admin to reactivate', async () => {
-      mockGetUserEntityPermissions.mockResolvedValue('admin')
       mockDbChain([
         [
           {
@@ -344,7 +373,7 @@ describe('Schedule PUT API (Reactivate)', () => {
       expect(nextRunAt).toBeGreaterThan(beforeCall)
       expect(nextRunAt).toBeLessThanOrEqual(afterCall + 5 * 60 * 1000 + 1000)
       // Should align with 5-minute intervals (minute divisible by 5)
-      expect(new Date(nextRunAt).getMinutes() % 5).toBe(0)
+      expect(new Date(nextRunAt).getUTCMinutes() % 5).toBe(0)
     })
 
     it('calculates nextRunAt from daily cron expression', async () => {
@@ -572,7 +601,7 @@ describe('Schedule PUT API (Reactivate)', () => {
       expect(nextRunAt.getTime()).toBeGreaterThan(beforeCall)
       expect(nextRunAt.getTime()).toBeLessThanOrEqual(beforeCall + 10 * 60 * 1000 + 1000)
       // Should align with 10-minute intervals
-      expect(nextRunAt.getMinutes() % 10).toBe(0)
+      expect(nextRunAt.getUTCMinutes() % 10).toBe(0)
     })
 
     it('handles hourly schedules with timezone correctly', async () => {
@@ -598,8 +627,8 @@ describe('Schedule PUT API (Reactivate)', () => {
 
       // Should be a future date at minute 15
       expect(nextRunAt.getTime()).toBeGreaterThan(beforeCall)
-      expect(nextRunAt.getMinutes()).toBe(15)
-      expect(nextRunAt.getSeconds()).toBe(0)
+      expect(nextRunAt.getUTCMinutes()).toBe(15)
+      expect(nextRunAt.getUTCSeconds()).toBe(0)
     })
 
     it('handles custom cron expressions with complex patterns and timezone', async () => {

@@ -12,12 +12,12 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   TagInput,
   type TagItem,
   Textarea,
   Tooltip,
 } from '@/components/emcn'
-import { Alert, AlertDescription, Skeleton } from '@/components/ui'
 import { CustomSelect } from '@/components/ui/native-select'
 import { useSession } from '@/lib/auth/auth-client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
@@ -35,6 +35,12 @@ import {
 } from '@/hooks/queries/chats'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { useIdentifierValidation } from './hooks'
+import {
+  getPasswordHelperText,
+  getPasswordPlaceholder,
+  hasExistingPassword,
+  isPasswordRequired,
+} from './utils'
 
 const logger = createLogger('ChatDeploy')
 
@@ -74,6 +80,7 @@ export interface ExistingChat {
     imageUrl?: string
     goldenQueries?: string[]
   }
+  hasPassword: boolean
   isActive: boolean
 }
 
@@ -131,7 +138,6 @@ export function ChatDeploy({
   chatAlreadyExists,
 }: ChatDeployProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
   const [internalShowDeleteConfirmation, setInternalShowDeleteConfirmation] = useState(false)
 
   const showDeleteConfirmation =
@@ -156,6 +162,7 @@ export function ChatDeploy({
 
   const [showUnselectKnowledgeConfirm, setShowUnselectKnowledgeConfirm] = useState(false)
   const [pendingOutputSelection, setPendingOutputSelection] = useState<string[] | null>(null)
+  const [formInitCounter, setFormInitCounter] = useState(0)
 
   const createChatMutation = useCreateChat()
   const updateChatMutation = useUpdateChat()
@@ -163,6 +170,7 @@ export function ChatDeploy({
   const [isIdentifierValid, setIsIdentifierValid] = useState(false)
   const [hasInvalidEmails, setHasInvalidEmails] = useState(false)
   const [hasInitializedForm, setHasInitializedForm] = useState(false)
+  const existingPassword = hasExistingPassword(existingChat)
 
   const updateField = <K extends keyof ChatFormData>(field: K, value: ChatFormData[K]) => {
     setFormData((prev) => ({ ...prev, identifier: workflowId, [field]: value }))
@@ -175,7 +183,7 @@ export function ChatDeploy({
     setErrors((prev) => ({ ...prev, [field]: message }))
   }
 
-  const validateForm = (isExistingChat: boolean): boolean => {
+  const validateForm = (): boolean => {
     const newErrors: FormErrors = {}
 
     // if (!formData.identifier.trim()) {
@@ -192,7 +200,7 @@ export function ChatDeploy({
       newErrors.description = 'Description is required'
     }
 
-    if (formData.authType === 'password' && !isExistingChat && !formData.password.trim()) {
+    if (isPasswordRequired(formData.authType, formData.password, existingPassword)) {
       newErrors.password = 'Password is required when using password protection'
     }
 
@@ -333,8 +341,10 @@ export function ChatDeploy({
 
     setChatSubmitting(true)
 
+    const isNewChat = !existingChat?.id
+
     try {
-      if (!validateForm(!!existingChat)) {
+      if (!validateForm()) {
         setChatSubmitting(false)
         return
       }
@@ -368,12 +378,14 @@ export function ChatDeploy({
       onDeployed?.()
       onVersionActivated?.()
 
-      if (chatUrl && !chatAlreadyExists) {
-        window.open(`${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`, '_blank')
+      if (isNewChat && chatUrl) {
+        const url = `${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`
+        window.open(url, '_blank', 'noopener,noreferrer')
       }
 
       await onRefetchChat()
       setHasInitializedForm(false)
+      setFormInitCounter((c) => c + 1)
     } catch (error: any) {
       if (error.message?.includes('identifier')) {
         setError('identifier', error.message)
@@ -389,8 +401,6 @@ export function ChatDeploy({
     if (!existingChat || !existingChat.id) return
 
     try {
-      setIsDeleting(true)
-
       await deleteChatMutation.mutateAsync({
         chatId: existingChat.id,
         workflowId,
@@ -398,6 +408,7 @@ export function ChatDeploy({
 
       setImageUrl(null)
       setHasInitializedForm(false)
+      setFormInitCounter((c) => c + 1)
       await onRefetchChat()
 
       onDeploymentComplete?.()
@@ -405,7 +416,6 @@ export function ChatDeploy({
       logger.error('Failed to delete chat:', error)
       setError('general', error.message || 'An unexpected error occurred while deleting')
     } finally {
-      setIsDeleting(false)
       setShowDeleteConfirmation(false)
     }
   }
@@ -423,10 +433,10 @@ export function ChatDeploy({
         className='-mx-1 space-y-4 overflow-y-auto px-1'
       >
         {errors.general && (
-          <Alert variant='destructive'>
-            <AlertTriangle className='h-4 w-4' />
-            <AlertDescription>{errors.general}</AlertDescription>
-          </Alert>
+          <div className='flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-red-400 text-small'>
+            <AlertTriangle className='h-4 w-4 flex-shrink-0' />
+            <span>{errors.general}</span>
+          </div>
         )}
 
         {/* <IdentifierInput
@@ -491,7 +501,7 @@ export function ChatDeploy({
           </div>
 
           <div>
-            <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+            <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
               Output
             </Label>
             <OutputSelect
@@ -507,7 +517,8 @@ export function ChatDeploy({
           </div>
 
           <AuthSelector
-            key={existingChat?.id ?? 'new'}
+            isExistingChat={!!existingChat}
+            key={`${existingChat?.id ?? 'new'}-${formInitCounter}`}
             authType={formData.authType}
             password={formData.password}
             emails={formData.emails}
@@ -516,13 +527,13 @@ export function ChatDeploy({
             onEmailsChange={(emails) => updateField('emails', emails)}
             onInvalidEmailsChange={setHasInvalidEmails}
             disabled={chatSubmitting}
-            isExistingChat={!!existingChat}
+            hasExistingPassword={existingPassword}
             error={errors.password || errors.emails}
           />
           <div>
             <Label
               htmlFor='welcomeMessage'
-              className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+              className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'
             >
               Welcome message
             </Label>
@@ -535,7 +546,7 @@ export function ChatDeploy({
               disabled={chatSubmitting}
               className='min-h-[80px] resize-none'
             />
-            <p className='mt-[6.5px] text-[11px] text-[var(--text-secondary)]'>
+            <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
               This message will be displayed when users first open the chat
             </p>
           </div>
@@ -579,7 +590,7 @@ export function ChatDeploy({
         <ModalContent size='sm'>
           <ModalHeader>Delete Chat</ModalHeader>
           <ModalBody>
-            <p className='text-[12px] text-[var(--text-secondary)]'>
+            <p className='text-[var(--text-secondary)]'>
               Are you sure you want to delete{' '}
               <span className='font-medium text-[var(--text-primary)]'>
                 {existingChat?.title || 'this chat'}
@@ -595,12 +606,16 @@ export function ChatDeploy({
             <Button
               variant='default'
               onClick={() => setShowDeleteConfirmation(false)}
-              disabled={isDeleting}
+              disabled={deleteChatMutation.isPending}
             >
               Cancel
             </Button>
-            <Button variant='destructive' onClick={handleDelete} disabled={isDeleting}>
-              {isDeleting ? 'Deleting...' : 'Delete'}
+            <Button
+              variant='destructive'
+              onClick={handleDelete}
+              disabled={deleteChatMutation.isPending}
+            >
+              {deleteChatMutation.isPending ? 'Deleting...' : 'Delete'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -636,27 +651,27 @@ export function ChatDeploy({
 function LoadingSkeleton() {
   return (
     <div className='-mx-1 space-y-4 px-1'>
-      <div className='space-y-[12px]'>
+      <div className='space-y-3'>
         <div>
           <Skeleton className='mb-[6.5px] h-[16px] w-[26px]' />
-          <Skeleton className='h-[34px] w-full rounded-[4px]' />
+          <Skeleton className='h-[34px] w-full rounded-sm' />
           <Skeleton className='mt-[6.5px] h-[14px] w-[320px]' />
         </div>
         <div>
           <Skeleton className='mb-[6.5px] h-[16px] w-[30px]' />
-          <Skeleton className='h-[34px] w-full rounded-[4px]' />
+          <Skeleton className='h-[34px] w-full rounded-sm' />
         </div>
         <div>
           <Skeleton className='mb-[6.5px] h-[16px] w-[46px]' />
-          <Skeleton className='h-[34px] w-full rounded-[4px]' />
+          <Skeleton className='h-[34px] w-full rounded-sm' />
         </div>
         <div>
           <Skeleton className='mb-[6.5px] h-[16px] w-[95px]' />
-          <Skeleton className='h-[28px] w-[170px] rounded-[4px]' />
+          <Skeleton className='h-[28px] w-[170px] rounded-sm' />
         </div>
         <div>
           <Skeleton className='mb-[6.5px] h-[16px] w-[115px]' />
-          <Skeleton className='h-[80px] w-full rounded-[4px]' />
+          <Skeleton className='h-[80px] w-full rounded-sm' />
           <Skeleton className='mt-[6.5px] h-[14px] w-[340px]' />
         </div>
       </div>
@@ -708,17 +723,17 @@ function IdentifierInput({
     <div>
       <Label
         htmlFor='chat-url'
-        className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+        className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'
       >
         URL
       </Label>
       <div
         className={cn(
-          'relative flex items-stretch overflow-hidden rounded-[4px] border border-[var(--border-1)]',
+          'relative flex items-stretch overflow-hidden rounded-sm border border-[var(--border-1)]',
           error && 'border-[var(--text-error)]'
         )}
       >
-        <div className='flex items-center whitespace-nowrap bg-[var(--surface-5)] pr-[6px] pl-[8px] font-medium text-[var(--text-secondary)] text-sm dark:bg-[var(--surface-5)]'>
+        <div className='flex items-center whitespace-nowrap bg-[var(--surface-5)] pr-1.5 pl-2 font-medium text-[var(--text-secondary)] text-sm dark:bg-[var(--surface-5)]'>
           {getDomainPrefix()}
         </div>
         <div className='relative flex-1'>
@@ -731,7 +746,7 @@ function IdentifierInput({
             disabled={disabled}
             className={cn(
               'rounded-none border-0 pl-0 shadow-none disabled:bg-transparent disabled:opacity-100',
-              (isChecking || (isValid && value)) && 'pr-[32px]'
+              (isChecking || (isValid && value)) && 'pr-8'
             )}
           />
           {isChecking ? (
@@ -745,7 +760,7 @@ function IdentifierInput({
               <Tooltip.Root>
                 <Tooltip.Trigger asChild>
                   <div className='-translate-y-1/2 absolute top-1/2 right-2'>
-                    <Check className='h-4 w-4 text-[var(--brand-tertiary-2)]' />
+                    <Check className='h-4 w-4 text-[var(--brand-accent)]' />
                   </div>
                 </Tooltip.Trigger>
                 <Tooltip.Content>
@@ -756,8 +771,8 @@ function IdentifierInput({
           )}
         </div>
       </div>
-      {error && <p className='mt-[6.5px] text-[12px] text-[var(--text-error)]'>{error}</p>}
-      <p className='mt-[6.5px] truncate text-[11px] text-[var(--text-secondary)]'>
+      {error && <p className='mt-[6.5px] text-[var(--text-error)] text-caption'>{error}</p>}
+      <p className='mt-[6.5px] truncate text-[var(--text-secondary)] text-xs'>
         {isEditingExisting && value ? (
           <>
             Live at:{' '}
@@ -765,7 +780,7 @@ function IdentifierInput({
               href={fullUrl}
               target='_blank'
               rel='noopener noreferrer'
-              className='text-[var(--text-primary)] hover:underline'
+              className='text-[var(--text-primary)] hover-hover:underline'
             >
               {displayUrl}
             </a>
@@ -787,8 +802,9 @@ interface AuthSelectorProps {
   onEmailsChange: (emails: string[]) => void
   onInvalidEmailsChange?: (hasInvalidEmails: boolean) => void
   disabled?: boolean
-  isExistingChat?: boolean
+  hasExistingPassword?: boolean
   error?: string
+  isExistingChat?: boolean
 }
 
 const AUTH_LABELS: Record<AuthType, string> = {
@@ -807,8 +823,9 @@ function AuthSelector({
   onEmailsChange,
   onInvalidEmailsChange,
   disabled = false,
-  isExistingChat = false,
+  hasExistingPassword = false,
   error,
+  isExistingChat = false,
 }: AuthSelectorProps) {
   const { data: session } = useSession()
   const [showPassword, setShowPassword] = useState(false)
@@ -861,6 +878,11 @@ function AuthSelector({
       )
     }
   }, [emails, invalidEmails])
+  useEffect(() => {
+    if (!copySuccess) return
+    const timer = setTimeout(() => setCopySuccess(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copySuccess])
 
   const handleGeneratePassword = () => {
     const newPassword = generatePassword(24)
@@ -870,7 +892,6 @@ function AuthSelector({
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     setCopySuccess(true)
-    setTimeout(() => setCopySuccess(false), 2000)
   }
 
   const addEmail = async (email: string): Promise<boolean> => {
@@ -1125,18 +1146,18 @@ function AuthSelector({
 
       {authType === 'password' && (
         <div>
-          <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+          <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
             Password
           </Label>
           <div className='relative'>
             <Input
               type={showPassword ? 'text' : 'password'}
-              placeholder={isExistingChat ? 'Enter new password to change' : 'Enter password'}
+              placeholder={getPasswordPlaceholder(hasExistingPassword)}
               value={password}
               onChange={(e) => onPasswordChange(e.target.value)}
               disabled={disabled}
               className='pr-[88px]'
-              required={!isExistingChat}
+              required={!hasExistingPassword}
               autoComplete='new-password'
             />
             <div className='-translate-y-1/2 absolute top-1/2 right-[4px] flex items-center'>
@@ -1197,17 +1218,15 @@ function AuthSelector({
               </Tooltip.Root>
             </div>
           </div>
-          <p className='mt-[6.5px] text-[11px] text-[var(--text-secondary)]'>
-            {isExistingChat
-              ? 'Leave empty to keep the current password'
-              : 'This password will be required to access your chat'}
+          <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
+            {getPasswordHelperText(hasExistingPassword)}
           </p>
         </div>
       )}
 
       {(authType === 'email' || authType === 'sso') && (
         <div>
-          <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+          <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
             {authType === 'email' ? 'Allowed emails' : 'Allowed SSO emails'}
           </Label>
           <TagInput
@@ -1226,9 +1245,9 @@ function AuthSelector({
             disabled={disabled}
           />
           {emailError && (
-            <p className='mt-[6.5px] text-[12px] text-[var(--text-error)]'>{emailError}</p>
+            <p className='mt-[6.5px] text-[var(--text-error)] text-caption'>{emailError}</p>
           )}
-          <p className='mt-[6.5px] text-[11px] text-[var(--text-secondary)]'>
+          <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
             {authType === 'email'
               ? 'Add specific emails or entire domains (@example.com)'
               : 'Add emails or domains that can access via SSO'}
@@ -1236,7 +1255,7 @@ function AuthSelector({
         </div>
       )}
 
-      {error && <p className='mt-[6.5px] text-[12px] text-[var(--text-error)]'>{error}</p>}
+      {error && <p className='mt-[6.5px] text-[var(--text-error)] text-caption'>{error}</p>}
     </div>
   )
 }

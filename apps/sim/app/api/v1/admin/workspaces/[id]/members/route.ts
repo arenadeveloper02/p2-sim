@@ -32,9 +32,11 @@
 
 import crypto from 'crypto'
 import { db } from '@sim/db'
-import { permissions, user, workspace } from '@sim/db/schema'
+import { permissions, user, workspaceEnvironment } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, count, eq } from 'drizzle-orm'
+import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
+import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
   badRequestResponse,
@@ -61,11 +63,7 @@ export const GET = withAdminAuthParams<RouteParams>(async (request, context) => 
   const { limit, offset } = parsePaginationParams(url)
 
   try {
-    const [workspaceData] = await db
-      .select({ id: workspace.id })
-      .from(workspace)
-      .where(eq(workspace.id, workspaceId))
-      .limit(1)
+    const workspaceData = await getWorkspaceById(workspaceId)
 
     if (!workspaceData) {
       return notFoundResponse('Workspace')
@@ -133,11 +131,7 @@ export const POST = withAdminAuthParams<RouteParams>(async (request, context) =>
       return badRequestResponse('permissions must be "admin", "write", or "read"')
     }
 
-    const [workspaceData] = await db
-      .select({ id: workspace.id, name: workspace.name })
-      .from(workspace)
-      .where(eq(workspace.id, workspaceId))
-      .limit(1)
+    const workspaceData = await getWorkspaceById(workspaceId)
 
     if (!workspaceData) {
       return notFoundResponse('Workspace')
@@ -232,6 +226,20 @@ export const POST = withAdminAuthParams<RouteParams>(async (request, context) =>
       permissionId,
     })
 
+    const [wsEnvRow] = await db
+      .select({ variables: workspaceEnvironment.variables })
+      .from(workspaceEnvironment)
+      .where(eq(workspaceEnvironment.workspaceId, workspaceId))
+      .limit(1)
+    const wsEnvKeys = Object.keys((wsEnvRow?.variables as Record<string, string>) || {})
+    if (wsEnvKeys.length > 0) {
+      await syncWorkspaceEnvCredentials({
+        workspaceId,
+        envKeys: wsEnvKeys,
+        actingUserId: body.userId,
+      })
+    }
+
     return singleResponse({
       id: permissionId,
       workspaceId,
@@ -260,11 +268,7 @@ export const DELETE = withAdminAuthParams<RouteParams>(async (request, context) 
       return badRequestResponse('userId query parameter is required')
     }
 
-    const [workspaceData] = await db
-      .select({ id: workspace.id })
-      .from(workspace)
-      .where(eq(workspace.id, workspaceId))
-      .limit(1)
+    const workspaceData = await getWorkspaceById(workspaceId)
 
     if (!workspaceData) {
       return notFoundResponse('Workspace')

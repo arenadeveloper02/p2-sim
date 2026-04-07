@@ -1,6 +1,6 @@
 import { GitLabIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { GitLabResponse } from '@/tools/gitlab/types'
 
 export const GitLabBlock: BlockConfig<GitLabResponse> = {
@@ -13,6 +13,8 @@ export const GitLabBlock: BlockConfig<GitLabResponse> = {
     'Integrate GitLab into the workflow. Can manage projects, issues, merge requests, pipelines, and add comments. Supports all core GitLab DevOps operations.',
   docsLink: 'https://docs.sim.ai/tools/gitlab',
   category: 'tools',
+  integrationType: IntegrationType.DeveloperTools,
+  tags: ['version-control', 'ci-cd'],
   icon: GitLabIcon,
   bgColor: '#E0E0E0',
   subBlocks: [
@@ -245,6 +247,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
       title: 'Labels',
       type: 'short-input',
       placeholder: 'Enter labels (comma-separated)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -263,6 +266,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
       title: 'Assignee IDs',
       type: 'short-input',
       placeholder: 'Enter assignee user IDs (comma-separated)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -279,6 +283,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
       title: 'Milestone ID',
       type: 'short-input',
       placeholder: 'Enter milestone ID',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['gitlab_create_issue', 'gitlab_update_issue'],
@@ -295,6 +300,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
         { label: 'Closed', id: 'closed' },
       ],
       value: () => 'all',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['gitlab_list_issues'],
@@ -312,6 +318,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
         { label: 'Merged', id: 'merged' },
       ],
       value: () => 'all',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['gitlab_list_merge_requests'],
@@ -328,6 +335,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
         { label: 'Reopen', id: 'reopen' },
       ],
       value: () => '',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['gitlab_update_issue', 'gitlab_update_merge_request'],
@@ -348,6 +356,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
         { label: 'Skipped', id: 'skipped' },
       ],
       value: () => '',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['gitlab_list_pipelines'],
@@ -358,6 +367,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
       id: 'removeSourceBranch',
       title: 'Remove Source Branch',
       type: 'switch',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['gitlab_create_merge_request', 'gitlab_merge_merge_request'],
@@ -368,6 +378,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
       id: 'squash',
       title: 'Squash Commits',
       type: 'switch',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['gitlab_merge_merge_request'],
@@ -379,6 +390,7 @@ Return ONLY the comment text - no explanations, no extra formatting.`,
       title: 'Merge Commit Message',
       type: 'long-input',
       placeholder: 'Enter custom merge commit message (optional)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['gitlab_merge_merge_request'],
@@ -398,6 +410,7 @@ Return ONLY the commit message - no explanations, no extra text.`,
       title: 'Results Per Page',
       type: 'short-input',
       placeholder: 'Number of results per page (default: 20, max: 100)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -414,6 +427,7 @@ Return ONLY the commit message - no explanations, no extra text.`,
       title: 'Page Number',
       type: 'short-input',
       placeholder: 'Page number (default: 1)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [

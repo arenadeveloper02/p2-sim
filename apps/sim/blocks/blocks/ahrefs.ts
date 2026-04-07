@@ -1,6 +1,6 @@
 import { AhrefsIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { AhrefsResponse } from '@/tools/ahrefs/types'
 
 export const AhrefsBlock: BlockConfig<AhrefsResponse> = {
@@ -12,6 +12,8 @@ export const AhrefsBlock: BlockConfig<AhrefsResponse> = {
     'Integrate Ahrefs SEO tools into your workflow. Analyze domain ratings, backlinks, organic keywords, top pages, and more. Requires an Ahrefs Enterprise plan with API access.',
   docsLink: 'https://docs.ahrefs.com/docs/api/reference/introduction',
   category: 'tools',
+  integrationType: IntegrationType.Analytics,
+  tags: ['seo', 'marketing', 'data-analytics'],
   bgColor: '#E0E0E0',
   icon: AhrefsIcon,
   subBlocks: [
@@ -46,6 +48,7 @@ export const AhrefsBlock: BlockConfig<AhrefsResponse> = {
       type: 'short-input',
       placeholder: 'YYYY-MM-DD (defaults to today)',
       condition: { field: 'operation', value: 'ahrefs_domain_rating' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a date in YYYY-MM-DD format based on the user's description.
@@ -81,6 +84,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'domain',
       condition: { field: 'operation', value: 'ahrefs_backlinks' },
+      mode: 'advanced',
     },
     {
       id: 'limit',
@@ -88,6 +92,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '100',
       condition: { field: 'operation', value: 'ahrefs_backlinks' },
+      mode: 'advanced',
     },
     {
       id: 'offset',
@@ -95,6 +100,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '0',
       condition: { field: 'operation', value: 'ahrefs_backlinks' },
+      mode: 'advanced',
     },
     {
       id: 'date',
@@ -102,6 +108,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'YYYY-MM-DD (defaults to today)',
       condition: { field: 'operation', value: 'ahrefs_backlinks' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a date in YYYY-MM-DD format based on the user's description.
@@ -137,6 +144,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'domain',
       condition: { field: 'operation', value: 'ahrefs_backlinks_stats' },
+      mode: 'advanced',
     },
     {
       id: 'date',
@@ -144,6 +152,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'YYYY-MM-DD (defaults to today)',
       condition: { field: 'operation', value: 'ahrefs_backlinks_stats' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a date in YYYY-MM-DD format based on the user's description.
@@ -179,6 +188,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'domain',
       condition: { field: 'operation', value: 'ahrefs_referring_domains' },
+      mode: 'advanced',
     },
     {
       id: 'limit',
@@ -186,6 +196,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '100',
       condition: { field: 'operation', value: 'ahrefs_referring_domains' },
+      mode: 'advanced',
     },
     {
       id: 'offset',
@@ -193,6 +204,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '0',
       condition: { field: 'operation', value: 'ahrefs_referring_domains' },
+      mode: 'advanced',
     },
     {
       id: 'date',
@@ -200,6 +212,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'YYYY-MM-DD (defaults to today)',
       condition: { field: 'operation', value: 'ahrefs_referring_domains' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a date in YYYY-MM-DD format based on the user's description.
@@ -246,6 +259,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'us',
       condition: { field: 'operation', value: 'ahrefs_organic_keywords' },
+      mode: 'advanced',
     },
     {
       id: 'mode',
@@ -259,6 +273,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'domain',
       condition: { field: 'operation', value: 'ahrefs_organic_keywords' },
+      mode: 'advanced',
     },
     {
       id: 'limit',
@@ -266,6 +281,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '100',
       condition: { field: 'operation', value: 'ahrefs_organic_keywords' },
+      mode: 'advanced',
     },
     {
       id: 'offset',
@@ -273,6 +289,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '0',
       condition: { field: 'operation', value: 'ahrefs_organic_keywords' },
+      mode: 'advanced',
     },
     {
       id: 'date',
@@ -280,6 +297,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'YYYY-MM-DD (defaults to today)',
       condition: { field: 'operation', value: 'ahrefs_organic_keywords' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a date in YYYY-MM-DD format based on the user's description.
@@ -326,6 +344,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'us',
       condition: { field: 'operation', value: 'ahrefs_top_pages' },
+      mode: 'advanced',
     },
     {
       id: 'mode',
@@ -338,6 +357,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'domain',
       condition: { field: 'operation', value: 'ahrefs_top_pages' },
+      mode: 'advanced',
     },
     {
       id: 'limit',
@@ -345,6 +365,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '100',
       condition: { field: 'operation', value: 'ahrefs_top_pages' },
+      mode: 'advanced',
     },
     {
       id: 'offset',
@@ -352,6 +373,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '0',
       condition: { field: 'operation', value: 'ahrefs_top_pages' },
+      mode: 'advanced',
     },
     {
       id: 'date',
@@ -359,6 +381,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'YYYY-MM-DD (defaults to today)',
       condition: { field: 'operation', value: 'ahrefs_top_pages' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a date in YYYY-MM-DD format based on the user's description.
@@ -405,6 +428,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'us',
       condition: { field: 'operation', value: 'ahrefs_keyword_overview' },
+      mode: 'advanced',
     },
     // Broken Backlinks operation inputs
     {
@@ -427,6 +451,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'domain',
       condition: { field: 'operation', value: 'ahrefs_broken_backlinks' },
+      mode: 'advanced',
     },
     {
       id: 'limit',
@@ -434,6 +459,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '100',
       condition: { field: 'operation', value: 'ahrefs_broken_backlinks' },
+      mode: 'advanced',
     },
     {
       id: 'offset',
@@ -441,6 +467,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: '0',
       condition: { field: 'operation', value: 'ahrefs_broken_backlinks' },
+      mode: 'advanced',
     },
     {
       id: 'date',
@@ -448,6 +475,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'YYYY-MM-DD (defaults to today)',
       condition: { field: 'operation', value: 'ahrefs_broken_backlinks' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a date in YYYY-MM-DD format based on the user's description.
@@ -485,14 +513,6 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
     ],
     config: {
       tool: (params) => {
-        // Convert numeric string inputs to numbers
-        if (params.limit) {
-          params.limit = Number(params.limit)
-        }
-        if (params.offset) {
-          params.offset = Number(params.offset)
-        }
-
         switch (params.operation) {
           case 'ahrefs_domain_rating':
             return 'ahrefs_domain_rating'
@@ -513,6 +533,12 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
           default:
             return 'ahrefs_domain_rating'
         }
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.limit) result.limit = Number(params.limit)
+        if (params.offset) result.offset = Number(params.offset)
+        return result
       },
     },
   },

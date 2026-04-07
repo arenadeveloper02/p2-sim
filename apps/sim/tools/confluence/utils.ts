@@ -1,11 +1,22 @@
-export async function getConfluenceCloudId(domain: string, accessToken: string): Promise<string> {
-  const response = await fetch('https://api.atlassian.com/oauth/token/accessible-resources', {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: 'application/json',
+import type { RetryOptions } from '@/lib/knowledge/documents/utils'
+import { fetchWithRetry } from '@/lib/knowledge/documents/utils'
+
+export async function getConfluenceCloudId(
+  domain: string,
+  accessToken: string,
+  retryOptions?: RetryOptions
+): Promise<string> {
+  const response = await fetchWithRetry(
+    'https://api.atlassian.com/oauth/token/accessible-resources',
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
     },
-  })
+    retryOptions
+  )
 
   const resources = await response.json()
 
@@ -56,26 +67,37 @@ function stripHtmlTags(html: string): string {
   return text.trim()
 }
 
-export function transformPageData(data: any) {
-  const content =
-    data.body?.view?.value ||
-    data.body?.storage?.value ||
-    data.body?.atlas_doc_format?.value ||
-    data.content ||
-    data.description ||
-    `Content for page ${data.title || 'Unknown'}`
+/**
+ * Strips HTML tags and decodes HTML entities from raw Confluence content.
+ */
+export function cleanHtmlContent(rawContent: string): string {
+  let content = stripHtmlTags(rawContent)
+  content = decodeHtmlEntities(content)
+  content = content.replace(/\s+/g, ' ').trim()
+  return content
+}
 
-  let cleanContent = stripHtmlTags(content)
-  cleanContent = decodeHtmlEntities(cleanContent)
-  cleanContent = cleanContent.replace(/\s+/g, ' ').trim()
+export function transformPageData(data: any) {
+  const rawContent =
+    data.body?.storage?.value || data.body?.view?.value || data.body?.atlas_doc_format?.value || ''
+
+  const cleanContent = cleanHtmlContent(rawContent)
 
   return {
     success: true,
     output: {
       ts: new Date().toISOString(),
-      pageId: data.id || '',
+      pageId: data.id ?? '',
+      title: data.title ?? '',
       content: cleanContent,
-      title: data.title || '',
+      status: data.status ?? null,
+      spaceId: data.spaceId ?? null,
+      parentId: data.parentId ?? null,
+      authorId: data.authorId ?? null,
+      createdAt: data.createdAt ?? null,
+      url: data._links?.webui ?? null,
+      body: data.body ?? null,
+      version: data.version ?? null,
     },
   }
 }

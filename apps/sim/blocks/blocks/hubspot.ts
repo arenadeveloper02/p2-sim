@@ -1,6 +1,7 @@
 import { HubspotIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { HubSpotResponse } from '@/tools/hubspot/types'
 import { getTrigger } from '@/triggers'
 import { hubspotAllTriggerOptions } from '@/triggers/hubspot/utils'
@@ -29,11 +30,7 @@ const fetchCampaignOptions = async (
     const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
     const blockValues = workflowValues?.[blockId]
 
-    const accounts = blockValues?.accounts
-    const credential = blockValues?.credential
-
-    const useSharedAccount = accounts && accounts !== 'manual'
-    const credentialId = (useSharedAccount ? accounts : credential) as string
+    const credentialId = blockValues?.accounts as string
 
     if (!credentialId) {
       return []
@@ -103,10 +100,7 @@ const fetchCampaignOptions = async (
       if (activeWorkflowId) {
         const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
         const blockValues = workflowValues?.[blockId]
-        const accounts = blockValues?.accounts
-        const credential = blockValues?.credential
-        const useSharedAccount = accounts && accounts !== 'manual'
-        const credentialId = (useSharedAccount ? accounts : credential) as string
+        const credentialId = blockValues?.accounts as string
 
         if (credentialId) {
           const cached = campaignCache.get(credentialId)
@@ -137,6 +131,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
     'Integrate HubSpot into your workflow. Manage contacts, companies, deals, tickets, and other CRM objects with powerful automation capabilities. Can be used in trigger mode to start workflows when contacts are created, deleted, or updated.',
   docsLink: 'https://docs.sim.ai/tools/hubspot',
   category: 'tools',
+  integrationType: IntegrationType.CRM,
+  tags: ['marketing', 'sales-engagement', 'customer-support'],
   bgColor: '#FF7A59',
   icon: HubspotIcon,
   subBlocks: [
@@ -145,7 +141,6 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       title: 'Operation',
       type: 'dropdown',
       options: [
-        { label: 'Get Users', id: 'get_users' },
         { label: 'Get Contacts', id: 'get_contacts' },
         { label: 'Create Contact', id: 'create_contact' },
         { label: 'Update Contact', id: 'update_contact' },
@@ -171,7 +166,6 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Get CRM Object', id: 'get_object' },
         { label: 'List Association Types', id: 'list_association_types' },
         { label: 'List Associations', id: 'list_associations' },
-        { label: 'Get Carts', id: 'get_carts' },
         { label: 'Get Commerce Payments', id: 'get_commerce_payments' },
         { label: 'Get Subscriptions', id: 'get_subscriptions' },
         { label: 'List Imports', id: 'list_imports' },
@@ -180,6 +174,26 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Get Pipeline', id: 'get_pipeline' },
         { label: 'List Properties', id: 'list_properties' },
         { label: 'Get Property', id: 'get_property' },
+        { label: 'Create Deal', id: 'create_deal' },
+        { label: 'Update Deal', id: 'update_deal' },
+        { label: 'Search Deals', id: 'search_deals' },
+        { label: 'Get Tickets', id: 'get_tickets' },
+        { label: 'Create Ticket', id: 'create_ticket' },
+        { label: 'Update Ticket', id: 'update_ticket' },
+        { label: 'Search Tickets', id: 'search_tickets' },
+        { label: 'Get Line Items', id: 'get_line_items' },
+        { label: 'Create Line Item', id: 'create_line_item' },
+        { label: 'Update Line Item', id: 'update_line_item' },
+        { label: 'Get Quotes', id: 'get_quotes' },
+        { label: 'Get Appointments', id: 'get_appointments' },
+        { label: 'Create Appointment', id: 'create_appointment' },
+        { label: 'Update Appointment', id: 'update_appointment' },
+        { label: 'Get Carts', id: 'get_carts' },
+        { label: 'List Owners', id: 'list_owners' },
+        { label: 'Get Marketing Events', id: 'get_marketing_events' },
+        { label: 'Get Lists', id: 'get_lists' },
+        { label: 'Create List', id: 'create_list' },
+        { label: 'Get Users', id: 'get_users' },
       ],
       value: () => 'get_contacts',
     },
@@ -198,151 +212,24 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       id: 'credential',
       title: 'HubSpot Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       serviceId: 'hubspot',
-      hidden: true,
-      requiredScopes: [
-        'crm.objects.contacts.read',
-        'crm.objects.contacts.write',
-        'crm.objects.companies.read',
-        'crm.objects.companies.write',
-        'crm.objects.deals.read',
-        'crm.objects.deals.write',
-        'crm.objects.owners.read',
-        'crm.objects.users.read',
-        'crm.objects.users.write',
-        'crm.objects.marketing_events.read',
-        'crm.objects.marketing_events.write',
-        'crm.objects.line_items.read',
-        'crm.objects.line_items.write',
-        'crm.objects.quotes.read',
-        'crm.objects.quotes.write',
-        'crm.objects.appointments.read',
-        'crm.objects.appointments.write',
-        'crm.objects.carts.read',
-        'crm.objects.carts.write',
-        'crm.import',
-        'crm.lists.read',
-        'crm.lists.write',
-        'tickets',
-        'crm.objects.subscriptions.write',
-        'crm.schemas.subscriptions.write',
-        'crm.schemas.invoices.write',
-        'content',
-        'tax_rates.read',
-        'social',
-        'crm.objects.goals.write',
-        'automation',
-        'actions',
-        'timeline',
-        'business-intelligence',
-        'forms',
-        'files',
-        'record_images.signed_urls.read',
-        'crm.objects.products.read',
-        'integration-sync',
-        'crm.objects.products.write',
-        'e-commerce',
-        'accounting',
-        'sales-email-read',
-        'crm.objects.commercepayments.write',
-        'crm.objects.projects.write',
-        'crm.schemas.commercepayments.write',
-        'crm.objects.projects.read',
-        'forms-uploaded-files',
-        'communication_preferences.read_write',
-        'crm.objects.partner-services.read',
-        'crm.objects.partner-services.write',
-        'crm.schemas.projects.read',
-        'crm.extensions_calling_transcripts.read',
-        'crm.extensions_calling_transcripts.write',
-        'crm.schemas.projects.write',
-        'communication_preferences.read',
-        'communication_preferences.write',
-        'settings.users.write',
-        'conversations.visitor_identification.tokens.create',
-        'files.ui_hidden.read',
-        'crm.schemas.custom.read',
-        'crm.objects.custom.read',
-        'crm.objects.custom.write',
-        'settings.users.read',
-        'crm.schemas.contacts.read',
-        'cms.domains.read',
-        'cms.domains.write',
-        'media_bridge.read',
-        'media_bridge.write',
-        'settings.billing.write',
-        'crm.objects.feedback_submissions.read',
-        'crm.schemas.companies.read',
-        'crm.schemas.companies.write',
-        'crm.schemas.contacts.write',
-        'crm.schemas.deals.read',
-        'crm.schemas.deals.write',
-        'cms.knowledge_base.articles.publish',
-        'cms.knowledge_base.articles.write',
-        'cms.knowledge_base.articles.read',
-        'cms.knowledge_base.settings.read',
-        'cms.knowledge_base.settings.write',
-        'settings.users.teams.write',
-        'settings.users.teams.read',
-        'conversations.read',
-        'conversations.write',
-        'crm.schemas.quotes.read',
-        'crm.schemas.line_items.read',
-        'account-info.security.read',
-        'crm.export',
-        'integrations.zoom-app.playbooks.read',
-        'settings.currencies.read',
-        'settings.currencies.write',
-        'external_integrations.forms.access',
-        'crm.objects.goals.read',
-        'ctas.read',
-        'crm.objects.subscriptions.read',
-        'crm.schemas.subscriptions.read',
-        'crm.schemas.commercepayments.read',
-        'crm.objects.commercepayments.read',
-        'crm.objects.invoices.read',
-        'crm.schemas.invoices.read',
-        'settings.security.security_health.read',
-        'crm.schemas.carts.write',
-        'crm.schemas.carts.read',
-        'crm.pipelines.orders.write',
-        'crm.pipelines.orders.read',
-        'crm.schemas.orders.write',
-        'crm.schemas.orders.read',
-        'crm.objects.orders.write',
-        'crm.objects.orders.read',
-        'conversations.custom_channels.read',
-        'conversations.custom_channels.write',
-        'crm.objects.leads.read',
-        'crm.objects.leads.write',
-        'crm.objects.partner-clients.read',
-        'crm.objects.partner-clients.write',
-        'marketing.campaigns.read',
-        'marketing.campaigns.write',
-        'marketing.campaigns.revenue.read',
-        'automation.sequences.enrollments.write',
-        'automation.sequences.read',
-        'cms.membership.access_groups.read',
-        'cms.membership.access_groups.write',
-        'crm.objects.courses.read',
-        'crm.objects.courses.write',
-        'crm.objects.listings.read',
-        'crm.objects.listings.write',
-        'crm.objects.services.read',
-        'crm.objects.services.write',
-        'scheduler.meetings.meeting-link.read',
-        'crm.objects.invoices.write',
-        'crm.schemas.services.read',
-        'crm.schemas.services.write',
-        'crm.schemas.courses.read',
-        'crm.schemas.courses.write',
-        'crm.schemas.listings.read',
-        'crm.schemas.listings.write',
-        'crm.schemas.appointments.read',
-        'crm.schemas.appointments.write',
-      ],
+      requiredScopes: getScopesForService('hubspot'),
       placeholder: 'Select HubSpot account',
-      required: true,
+      /** Auth is resolved from `accounts` only; this field is not user-edited. */
+      required: false,
+      hidden: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'HubSpot Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      /** Not used when only shared `accounts` options are supported. */
+      required: false,
     },
     {
       id: 'contactId',
@@ -670,6 +557,73 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       required: true,
     },
     {
+      id: 'dealId',
+      title: 'Deal ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all deals',
+      condition: { field: 'operation', value: 'get_deals' },
+    },
+    {
+      id: 'dealId',
+      title: 'Deal ID',
+      type: 'short-input',
+      placeholder: 'Numeric ID, or custom ID (requires ID Property below)',
+      condition: { field: 'operation', value: 'update_deal' },
+      required: true,
+    },
+    {
+      id: 'ticketId',
+      title: 'Ticket ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all tickets',
+      condition: { field: 'operation', value: 'get_tickets' },
+    },
+    {
+      id: 'ticketId',
+      title: 'Ticket ID',
+      type: 'short-input',
+      placeholder: 'Numeric ID, or custom ID (requires ID Property below)',
+      condition: { field: 'operation', value: 'update_ticket' },
+      required: true,
+    },
+    {
+      id: 'lineItemId',
+      title: 'Line Item ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all line items',
+      condition: { field: 'operation', value: 'get_line_items' },
+    },
+    {
+      id: 'lineItemId',
+      title: 'Line Item ID',
+      type: 'short-input',
+      placeholder: 'Numeric ID, or custom ID (requires ID Property below)',
+      condition: { field: 'operation', value: 'update_line_item' },
+      required: true,
+    },
+    {
+      id: 'quoteId',
+      title: 'Quote ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all quotes',
+      condition: { field: 'operation', value: 'get_quotes' },
+    },
+    {
+      id: 'appointmentId',
+      title: 'Appointment ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all appointments',
+      condition: { field: 'operation', value: 'get_appointments' },
+    },
+    {
+      id: 'appointmentId',
+      title: 'Appointment ID',
+      type: 'short-input',
+      placeholder: 'Numeric ID, or custom ID (requires ID Property below)',
+      condition: { field: 'operation', value: 'update_appointment' },
+      required: true,
+    },
+    {
       id: 'cartId',
       title: 'Cart ID',
       type: 'short-input',
@@ -738,13 +692,69 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       condition: { field: 'operation', value: ['list_properties', 'get_property'] },
     },
     {
+      id: 'eventId',
+      title: 'Marketing Event ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all marketing events',
+      condition: { field: 'operation', value: 'get_marketing_events' },
+    },
+    {
+      id: 'listId',
+      title: 'List ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to search all lists',
+      condition: { field: 'operation', value: 'get_lists' },
+    },
+    {
+      id: 'listName',
+      title: 'List Name',
+      type: 'short-input',
+      placeholder: 'Name for the new list',
+      condition: { field: 'operation', value: 'create_list' },
+      required: true,
+    },
+    {
+      id: 'objectTypeId',
+      title: 'Object Type ID',
+      type: 'short-input',
+      placeholder: 'e.g., "0-1" for contacts, "0-2" for companies',
+      condition: { field: 'operation', value: 'create_list' },
+      required: true,
+    },
+    {
+      id: 'processingType',
+      title: 'Processing Type',
+      type: 'dropdown',
+      options: [
+        { label: 'Manual (Static)', id: 'MANUAL' },
+        { label: 'Dynamic (Active)', id: 'DYNAMIC' },
+      ],
+      condition: { field: 'operation', value: 'create_list' },
+      required: true,
+    },
+    {
       id: 'idProperty',
       title: 'ID Property',
       type: 'short-input',
       placeholder: 'Required if using email/domain (e.g., "email" or "domain")',
       condition: {
         field: 'operation',
-        value: ['get_contacts', 'update_contact', 'get_companies', 'update_company', 'get_object'],
+        value: [
+          'get_contacts',
+          'update_contact',
+          'get_companies',
+          'update_company',
+          'get_object',
+          'get_deals',
+          'update_deal',
+          'get_tickets',
+          'update_ticket',
+          'get_line_items',
+          'update_line_item',
+          'get_quotes',
+          'get_appointments',
+          'update_appointment',
+        ],
       },
     },
     {
@@ -755,7 +765,20 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         'JSON object with properties (e.g., {"email": "test@example.com", "firstname": "John"})',
       condition: {
         field: 'operation',
-        value: ['create_contact', 'update_contact', 'create_company', 'update_company'],
+        value: [
+          'create_contact',
+          'update_contact',
+          'create_company',
+          'update_company',
+          'create_deal',
+          'update_deal',
+          'create_ticket',
+          'update_ticket',
+          'create_line_item',
+          'update_line_item',
+          'create_appointment',
+          'update_appointment',
+        ],
       },
       wandConfig: {
         enabled: true,
@@ -884,6 +907,7 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
       title: 'Properties to Return',
       type: 'short-input',
       placeholder: 'Comma-separated list (e.g., "email,firstname,lastname")',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -892,9 +916,13 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_deals',
           'list_objects',
           'get_object',
-          'get_carts',
           'get_commerce_payments',
           'get_subscriptions',
+          'get_tickets',
+          'get_line_items',
+          'get_quotes',
+          'get_appointments',
+          'get_carts',
         ],
       },
     },
@@ -903,27 +931,37 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
       title: 'Associations',
       type: 'short-input',
       placeholder: 'Comma-separated object types (e.g., "companies,deals")',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
           'get_contacts',
           'get_companies',
           'get_deals',
-          'create_contact',
-          'create_company',
           'list_objects',
           'get_object',
-          'get_carts',
           'get_commerce_payments',
           'get_subscriptions',
+          'get_tickets',
+          'get_line_items',
+          'get_quotes',
+          'get_appointments',
+          'get_carts',
+          'create_contact',
+          'create_company',
+          'create_deal',
+          'create_ticket',
+          'create_line_item',
+          'create_appointment',
         ],
       },
     },
     {
       id: 'limit',
-      title: 'Limit',
+      title: 'Results Per Page',
       type: 'short-input',
       placeholder: 'Max results (list: 100, search: 200)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -931,6 +969,14 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_contacts',
           'get_companies',
           'get_deals',
+          'get_tickets',
+          'get_line_items',
+          'get_quotes',
+          'get_appointments',
+          'get_carts',
+          'list_owners',
+          'get_marketing_events',
+          'get_lists',
           'search_contacts',
           'search_companies',
           'list_campaigns',
@@ -940,20 +986,32 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'list_commerce_payments',
           'list_subscriptions',
           'list_imports',
+          'search_deals',
+          'search_tickets',
         ],
       },
     },
     {
       id: 'after',
-      title: 'After (Pagination)',
+      title: 'Pagination Cursor',
       type: 'short-input',
-      placeholder: 'Pagination cursor from previous response',
+      placeholder: 'Cursor from previous response paging.next.after',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
           'get_contacts',
           'get_companies',
           'get_deals',
+          'get_tickets',
+          'get_line_items',
+          'get_quotes',
+          'get_appointments',
+          'get_carts',
+          'list_owners',
+          'get_users',
+          'get_marketing_events',
+          'get_lists',
           'search_contacts',
           'search_companies',
           'list_campaigns',
@@ -965,6 +1023,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'list_commerce_payments',
           'list_subscriptions',
           'list_imports',
+          'search_deals',
+          'search_tickets',
         ],
       },
     },
@@ -973,7 +1033,16 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
       title: 'Search Query',
       type: 'short-input',
       placeholder: 'Search term (e.g., company name, contact email)',
-      condition: { field: 'operation', value: ['search_contacts', 'search_companies'] },
+      condition: {
+        field: 'operation',
+        value: [
+          'search_contacts',
+          'search_companies',
+          'search_deals',
+          'search_tickets',
+          'get_lists',
+        ],
+      },
     },
     {
       id: 'filterGroups',
@@ -981,7 +1050,10 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
       type: 'long-input',
       placeholder:
         'JSON array of filter groups (e.g., [{"filters":[{"propertyName":"email","operator":"EQ","value":"test@example.com"}]}])',
-      condition: { field: 'operation', value: ['search_contacts', 'search_companies'] },
+      condition: {
+        field: 'operation',
+        value: ['search_contacts', 'search_companies', 'search_deals', 'search_tickets'],
+      },
       wandConfig: {
         enabled: true,
         maintainHistory: true,
@@ -1181,7 +1253,11 @@ Return ONLY the JSON array of filter groups - no explanations, no markdown, no e
       type: 'long-input',
       placeholder:
         'JSON array of sort objects (e.g., [{"propertyName":"createdate","direction":"DESCENDING"}])',
-      condition: { field: 'operation', value: ['search_contacts', 'search_companies'] },
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: ['search_contacts', 'search_companies', 'search_deals', 'search_tickets'],
+      },
       wandConfig: {
         enabled: true,
         maintainHistory: true,
@@ -1302,7 +1378,11 @@ Return ONLY the JSON array of sort objects - no explanations, no markdown, no ex
       title: 'Properties to Return',
       type: 'long-input',
       placeholder: 'JSON array of properties (e.g., ["email","firstname","lastname"])',
-      condition: { field: 'operation', value: ['search_contacts', 'search_companies'] },
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: ['search_contacts', 'search_companies', 'search_deals', 'search_tickets'],
+      },
       wandConfig: {
         enabled: true,
         maintainHistory: true,
@@ -1499,6 +1579,31 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       'hubspot_get_pipeline',
       'hubspot_list_properties',
       'hubspot_get_property',
+      'hubspot_get_deal',
+      'hubspot_create_deal',
+      'hubspot_update_deal',
+      'hubspot_search_deals',
+      'hubspot_list_tickets',
+      'hubspot_get_ticket',
+      'hubspot_create_ticket',
+      'hubspot_update_ticket',
+      'hubspot_search_tickets',
+      'hubspot_list_line_items',
+      'hubspot_get_line_item',
+      'hubspot_create_line_item',
+      'hubspot_update_line_item',
+      'hubspot_list_quotes',
+      'hubspot_get_quote',
+      'hubspot_list_appointments',
+      'hubspot_get_appointment',
+      'hubspot_create_appointment',
+      'hubspot_update_appointment',
+      'hubspot_list_owners',
+      'hubspot_list_marketing_events',
+      'hubspot_get_marketing_event',
+      'hubspot_list_lists',
+      'hubspot_get_list',
+      'hubspot_create_list',
     ],
     config: {
       tool: (params) => {
@@ -1522,7 +1627,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           case 'search_companies':
             return 'hubspot_search_companies'
           case 'get_deals':
-            return 'hubspot_list_deals'
+            return params.dealId ? 'hubspot_get_deal' : 'hubspot_list_deals'
           case 'list_campaigns':
             return 'hubspot_list_campaigns'
           case 'get_campaign':
@@ -1555,8 +1660,6 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_list_association_types'
           case 'list_associations':
             return 'hubspot_list_associations'
-          case 'get_carts':
-            return params.cartId ? 'hubspot_get_cart' : 'hubspot_list_carts'
           case 'get_commerce_payments':
             return params.commercePaymentId
               ? 'hubspot_get_commerce_payment'
@@ -1575,6 +1678,44 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_list_properties'
           case 'get_property':
             return 'hubspot_get_property'
+          case 'create_deal':
+            return 'hubspot_create_deal'
+          case 'update_deal':
+            return 'hubspot_update_deal'
+          case 'search_deals':
+            return 'hubspot_search_deals'
+          case 'get_tickets':
+            return params.ticketId ? 'hubspot_get_ticket' : 'hubspot_list_tickets'
+          case 'create_ticket':
+            return 'hubspot_create_ticket'
+          case 'update_ticket':
+            return 'hubspot_update_ticket'
+          case 'search_tickets':
+            return 'hubspot_search_tickets'
+          case 'get_line_items':
+            return params.lineItemId ? 'hubspot_get_line_item' : 'hubspot_list_line_items'
+          case 'create_line_item':
+            return 'hubspot_create_line_item'
+          case 'update_line_item':
+            return 'hubspot_update_line_item'
+          case 'get_quotes':
+            return params.quoteId ? 'hubspot_get_quote' : 'hubspot_list_quotes'
+          case 'get_appointments':
+            return params.appointmentId ? 'hubspot_get_appointment' : 'hubspot_list_appointments'
+          case 'create_appointment':
+            return 'hubspot_create_appointment'
+          case 'update_appointment':
+            return 'hubspot_update_appointment'
+          case 'get_carts':
+            return params.cartId ? 'hubspot_get_cart' : 'hubspot_list_carts'
+          case 'list_owners':
+            return 'hubspot_list_owners'
+          case 'get_marketing_events':
+            return params.eventId ? 'hubspot_get_marketing_event' : 'hubspot_list_marketing_events'
+          case 'get_lists':
+            return params.listId ? 'hubspot_get_list' : 'hubspot_list_lists'
+          case 'create_list':
+            return 'hubspot_create_list'
           default:
             throw new Error(`Unknown operation: ${params.operation}`)
         }
@@ -1582,7 +1723,6 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       params: (params) => {
         const {
           accounts,
-          credential,
           operation,
           propertiesToSet,
           properties,
@@ -1590,14 +1730,12 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           filterGroups,
           sorts,
           associations,
+          listName,
           ...rest
         } = params
 
-        const useSharedAccount = accounts && accounts !== 'manual'
-        const effectiveCredential = useSharedAccount ? (accounts as string) : (credential as string)
-
         const cleanParams: Record<string, any> = {
-          credential: effectiveCredential,
+          oauthCredential: accounts as string,
         }
 
         const createUpdateOps = [
@@ -1605,6 +1743,14 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'update_contact',
           'create_company',
           'update_company',
+          'create_deal',
+          'update_deal',
+          'create_ticket',
+          'update_ticket',
+          'create_line_item',
+          'update_line_item',
+          'create_appointment',
+          'update_appointment',
         ]
         if (propertiesToSet && createUpdateOps.includes(operation as string)) {
           cleanParams.properties = propertiesToSet
@@ -1616,15 +1762,19 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'get_deals',
           'list_objects',
           'get_object',
-          'get_carts',
           'get_commerce_payments',
           'get_subscriptions',
+          'get_tickets',
+          'get_line_items',
+          'get_quotes',
+          'get_appointments',
+          'get_carts',
         ]
         if (properties && !searchProperties && getListOps.includes(operation as string)) {
           cleanParams.properties = properties
         }
 
-        const searchOps = ['search_contacts', 'search_companies']
+        const searchOps = ['search_contacts', 'search_companies', 'search_deals', 'search_tickets']
         if (searchProperties && searchOps.includes(operation as string)) {
           cleanParams.properties = searchProperties
         }
@@ -1637,8 +1787,32 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           cleanParams.sorts = sorts
         }
 
-        if (associations && ['create_contact', 'create_company'].includes(operation as string)) {
+        const associationOps = [
+          ...getListOps,
+          'create_contact',
+          'create_company',
+          'create_deal',
+          'create_ticket',
+          'create_line_item',
+          'create_appointment',
+        ]
+        if (associations && associationOps.includes(operation as string)) {
           cleanParams.associations = associations
+        }
+
+        if (listName && operation === 'create_list') {
+          cleanParams.name = listName
+        }
+
+        if (operation === 'get_lists') {
+          if (rest.limit) {
+            cleanParams.count = rest.limit
+            rest.limit = undefined
+          }
+          if (rest.after) {
+            cleanParams.offset = rest.after
+            rest.after = undefined
+          }
         }
 
         const excludeKeys = [
@@ -1648,6 +1822,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'filterGroups',
           'sorts',
           'associations',
+          'listName',
         ]
         Object.entries(rest).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== '' && !excludeKeys.includes(key)) {
@@ -1667,7 +1842,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
     accounts: { type: 'string', description: 'Selected shared account' },
-    credential: { type: 'string', description: 'HubSpot access token' },
+    oauthCredential: { type: 'string', description: 'HubSpot access token' },
     contactId: { type: 'string', description: 'Contact ID or email' },
     companyId: { type: 'string', description: 'Company ID or domain' },
     campaignGuid: {
@@ -1720,6 +1895,14 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       type: 'string',
       description: 'The end timestamp of the time span, in ISO8601 representation',
     },
+    dealId: { type: 'string', description: 'Deal ID' },
+    ticketId: { type: 'string', description: 'Ticket ID' },
+    lineItemId: { type: 'string', description: 'Line item ID' },
+    quoteId: { type: 'string', description: 'Quote ID' },
+    appointmentId: { type: 'string', description: 'Appointment ID' },
+    cartId: { type: 'string', description: 'Cart ID' },
+    eventId: { type: 'string', description: 'Marketing event ID' },
+    listId: { type: 'string', description: 'List ID' },
     idProperty: { type: 'string', description: 'Property name to use as unique identifier' },
     propertiesToSet: { type: 'json', description: 'Properties to create/update (JSON object)' },
     properties: {
@@ -1727,10 +1910,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       description: 'Comma-separated properties to return (for list/get)',
     },
     associations: { type: 'string', description: 'Comma-separated object types for associations' },
-    limit: {
-      type: 'string',
-      description: 'Maximum results (list: 100, search: 200, emails: default 10)',
-    },
+    limit: { type: 'string', description: 'Maximum results per page' },
     after: { type: 'string', description: 'Pagination cursor' },
     query: { type: 'string', description: 'Search query string' },
     filterGroups: { type: 'json', description: 'Filter groups for search (JSON array)' },
@@ -1747,13 +1927,15 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     },
     fromObjectType: { type: 'string', description: 'Source object type for association types' },
     toObjectType: { type: 'string', description: 'Target object type for associations' },
-    cartId: { type: 'string', description: 'Cart ID (empty to list all carts)' },
     commercePaymentId: { type: 'string', description: 'Commerce payment ID (empty to list all)' },
     subscriptionId: { type: 'string', description: 'Subscription ID (empty to list all)' },
     importId: { type: 'string', description: 'CRM import ID for Get Import' },
     pipelineId: { type: 'string', description: 'Pipeline ID for Get Pipeline' },
     propertyName: { type: 'string', description: 'Property name for Get Property' },
     dataSensitivity: { type: 'string', description: 'Data sensitivity filter for properties API' },
+    listName: { type: 'string', description: 'Name for new list' },
+    objectTypeId: { type: 'string', description: 'Object type ID for list' },
+    processingType: { type: 'string', description: 'List processing type (MANUAL or DYNAMIC)' },
   },
   outputs: {
     users: { type: 'json', description: 'Array of user objects' },
@@ -1782,6 +1964,22 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     histogram: { type: 'json', description: 'Email statistics histogram data' },
     email: { type: 'json', description: 'Email object with all properties' },
     emails: { type: 'json', description: 'Array of email objects' },
+    deal: { type: 'json', description: 'Single deal object' },
+    tickets: { type: 'json', description: 'Array of ticket objects' },
+    ticket: { type: 'json', description: 'Single ticket object' },
+    lineItems: { type: 'json', description: 'Array of line item objects' },
+    lineItem: { type: 'json', description: 'Single line item object' },
+    quotes: { type: 'json', description: 'Array of quote objects' },
+    quote: { type: 'json', description: 'Single quote object' },
+    appointments: { type: 'json', description: 'Array of appointment objects' },
+    appointment: { type: 'json', description: 'Single appointment object' },
+    carts: { type: 'json', description: 'Array of cart objects' },
+    cart: { type: 'json', description: 'Single cart object' },
+    owners: { type: 'json', description: 'Array of owner objects' },
+    events: { type: 'json', description: 'Array of marketing event objects' },
+    event: { type: 'json', description: 'Single marketing event object' },
+    lists: { type: 'json', description: 'Array of list objects' },
+    list: { type: 'json', description: 'Single list object' },
     total: { type: 'number', description: 'Total number of matching results (for search)' },
     paging: { type: 'json', description: 'Pagination info with next/prev cursors' },
     metadata: { type: 'json', description: 'Operation metadata' },

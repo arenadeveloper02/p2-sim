@@ -85,7 +85,7 @@ export function VariablesInput({
   const params = useParams()
   const workflowId = params.workflowId as string
   const [storeValue, setStoreValue] = useSubBlockValue<VariableAssignment[]>(blockId, subBlockId)
-  const { variables: workflowVariables } = useVariablesStore()
+  const workflowVariables = useVariablesStore((s) => s.variables)
   const accessiblePrefixes = useAccessibleReferencePrefixes(blockId)
 
   const [showTags, setShowTags] = useState(false)
@@ -321,9 +321,9 @@ export function VariablesInput({
   }
 
   return (
-    <div className='space-y-[8px]'>
+    <div className='space-y-2'>
       {assignments.length > 0 && (
-        <div className='space-y-[8px]'>
+        <div className='space-y-2'>
           {assignments.map((assignment, index) => {
             const collapsed = collapsedAssignments[assignment.id] || false
             const availableVars = getAvailableVariablesFor(assignment.id)
@@ -333,22 +333,26 @@ export function VariablesInput({
                 key={assignment.id}
                 data-assignment-id={assignment.id}
                 className={cn(
-                  'rounded-[4px] border border-[var(--border-1)]',
+                  'rounded-sm border border-[var(--border-1)]',
                   collapsed ? 'overflow-hidden' : 'overflow-visible'
                 )}
               >
                 <div
-                  className='flex cursor-pointer items-center justify-between rounded-t-[4px] bg-[var(--surface-4)] px-[10px] py-[5px]'
+                  className='flex cursor-pointer items-center justify-between rounded-t-[4px] bg-[var(--surface-4)] px-2.5 py-[5px]'
                   onClick={() => toggleCollapse(assignment.id)}
                 >
-                  <div className='flex min-w-0 flex-1 items-center gap-[8px]'>
-                    <span className='block truncate font-medium text-[14px] text-[var(--text-tertiary)]'>
+                  <div className='flex min-w-0 flex-1 items-center gap-2'>
+                    <span className='block truncate font-medium text-[var(--text-tertiary)] text-sm'>
                       {assignment.variableName || `Variable ${index + 1}`}
                     </span>
-                    {assignment.variableName && <Badge size='sm'>{assignment.type}</Badge>}
+                    {assignment.variableName && (
+                      <Badge variant='type' size='sm'>
+                        {assignment.type}
+                      </Badge>
+                    )}
                   </div>
                   <div
-                    className='flex items-center gap-[8px] pl-[8px]'
+                    className='flex items-center gap-2 pl-2'
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Button
@@ -364,7 +368,7 @@ export function VariablesInput({
                       variant='ghost'
                       onClick={() => removeAssignment(assignment.id)}
                       disabled={isReadOnly}
-                      className='h-auto p-0 text-[var(--text-error)] hover:text-[var(--text-error)]'
+                      className='h-auto p-0 text-[var(--text-error)] hover-hover:text-[var(--text-error)]'
                     >
                       <Trash className='h-[14px] w-[14px]' />
                       <span className='sr-only'>Delete Variable</span>
@@ -373,9 +377,9 @@ export function VariablesInput({
                 </div>
 
                 {!collapsed && (
-                  <div className='flex flex-col gap-[8px] border-[var(--border-1)] border-t px-[10px] pt-[6px] pb-[10px]'>
-                    <div className='flex flex-col gap-[6px]'>
-                      <Label className='text-[13px]'>Variable</Label>
+                  <div className='flex flex-col gap-2 rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-2.5 pt-1.5 pb-2.5'>
+                    <div className='flex flex-col gap-1.5'>
+                      <Label className='text-small'>Variable</Label>
                       <Combobox
                         options={availableVars.map((v) => ({ label: v.name, value: v.id }))}
                         value={assignment.variableId || ''}
@@ -385,8 +389,8 @@ export function VariablesInput({
                       />
                     </div>
 
-                    <div className='flex flex-col gap-[6px]'>
-                      <Label className='text-[13px]'>Value</Label>
+                    <div className='flex flex-col gap-1.5'>
+                      <Label className='text-small'>Value</Label>
                       {assignment.type === 'boolean' ? (
                         <Combobox
                           options={BOOLEAN_OPTIONS}
@@ -448,7 +452,10 @@ export function VariablesInput({
                             ref={(el) => {
                               if (el) overlayRefs.current[assignment.id] = el
                             }}
-                            className='pointer-events-none absolute inset-0 flex items-start overflow-auto bg-transparent px-3 py-2 font-mono text-sm'
+                            className={cn(
+                              'absolute inset-0 flex items-start overflow-auto bg-transparent px-3 py-2 font-mono text-sm',
+                              !isReadOnly && 'pointer-events-none'
+                            )}
                             style={{ scrollbarWidth: 'none' }}
                           >
                             <div className='w-full whitespace-pre-wrap break-words'>
@@ -510,7 +517,10 @@ export function VariablesInput({
                             ref={(el) => {
                               if (el) overlayRefs.current[assignment.id] = el
                             }}
-                            className='pointer-events-none absolute inset-0 flex items-center overflow-x-auto bg-transparent px-[8px] py-[6px] font-medium font-sans text-sm'
+                            className={cn(
+                              'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-2 py-1.5 font-medium font-sans text-sm',
+                              !isReadOnly && 'pointer-events-none'
+                            )}
                             style={{ scrollbarWidth: 'none' }}
                           >
                             <div

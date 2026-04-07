@@ -1,6 +1,8 @@
 import type { ExaAnswerParams, ExaAnswerResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 
+const exaApiKey = process.env.EXA_API_KEY
+
 export const answerTool: ToolConfig<ExaAnswerParams, ExaAnswerResponse> = {
   id: 'exa_answer',
   name: 'Exa Answer',
@@ -22,7 +24,7 @@ export const answerTool: ToolConfig<ExaAnswerParams, ExaAnswerResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Exa AI API Key',
     },
@@ -31,9 +33,9 @@ export const answerTool: ToolConfig<ExaAnswerParams, ExaAnswerResponse> = {
   request: {
     url: 'https://api.exa.ai/answer',
     method: 'POST',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      'x-api-key': params.apiKey,
+      'x-api-key': exaApiKey ?? '',
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -61,6 +63,7 @@ export const answerTool: ToolConfig<ExaAnswerParams, ExaAnswerResponse> = {
             url: citation.url,
             text: citation.text || '',
           })) || [],
+        __costDollars: data.costDollars,
       },
     }
   },

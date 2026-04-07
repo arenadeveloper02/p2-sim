@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { isEqual } from 'lodash'
+import { isEqual } from 'es-toolkit'
 import { useReactFlow } from 'reactflow'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { Combobox, type ComboboxOption } from '@/components/emcn/components'
@@ -120,7 +120,6 @@ export const ComboBox = memo(function ComboBox({
   )
 
   // State management
-  const [storeInitialized, setStoreInitialized] = useState(false)
   const [fetchedOptions, setFetchedOptions] = useState<Array<{ label: string; id: string }>>([])
   const [isLoadingOptions, setIsLoadingOptions] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
@@ -239,7 +238,12 @@ export const ComboBox = memo(function ComboBox({
    */
   const defaultOptionValue = useMemo(() => {
     if (defaultValue !== undefined) {
-      return defaultValue
+      // Validate that the default value exists in the available (filtered) options
+      const defaultInOptions = evaluatedOptions.find((opt) => getOptionValue(opt) === defaultValue)
+      if (defaultInOptions) {
+        return defaultValue
+      }
+      // Default not available (e.g. provider disabled) — fall through to other fallbacks
     }
 
     // For model field, default to gpt-5 if available
@@ -275,27 +279,22 @@ export const ComboBox = memo(function ComboBox({
   }, [value, evaluatedOptions])
 
   const [inputValue, setInputValue] = useState(displayValue)
-
-  useEffect(() => {
+  const [prevDisplayValue, setPrevDisplayValue] = useState(displayValue)
+  if (displayValue !== prevDisplayValue) {
+    setPrevDisplayValue(displayValue)
     setInputValue(displayValue)
-  }, [displayValue])
+  }
 
-  // Mark store as initialized on first render
-  useEffect(() => {
-    setStoreInitialized(true)
-  }, [])
-
-  // Set default value once store is initialized and permissions are loaded
+  // Set default value once permissions are loaded
   useEffect(() => {
     if (isPermissionLoading) return
-    if (!storeInitialized) return
     if (defaultOptionValue === undefined) return
 
     // Only set default when no value exists (initial block add)
     if (value === null || value === undefined) {
       setStoreValue(defaultOptionValue)
     }
-  }, [storeInitialized, value, defaultOptionValue, setStoreValue, isPermissionLoading])
+  }, [value, defaultOptionValue, setStoreValue, isPermissionLoading])
 
   // Clear fetched options and hydrated option when dependencies change
   useEffect(() => {
@@ -454,7 +453,7 @@ export const ComboBox = memo(function ComboBox({
     const displayLabel = inputValue
     return (
       <div className='flex w-full items-center truncate [scrollbar-width:none]'>
-        {SelectedIcon && <SelectedIcon className='mr-[8px] h-3 w-3 flex-shrink-0' />}
+        {SelectedIcon && <SelectedIcon className='mr-2 h-3 w-3 flex-shrink-0' />}
         <div className='truncate'>
           {formatDisplayText(displayLabel, {
             accessiblePrefixes,
@@ -569,7 +568,7 @@ export const ComboBox = memo(function ComboBox({
               inputRef={ref as React.RefObject<HTMLInputElement>}
               filterOptions
               searchable={config.searchable}
-              className={cn('allow-scroll overflow-x-auto', selectedOptionIcon && 'pl-[28px]')}
+              className={cn('allow-scroll overflow-x-auto', selectedOptionIcon && 'pl-7')}
               inputProps={comboboxInputProps}
               isLoading={isLoadingOptions}
               error={fetchError}

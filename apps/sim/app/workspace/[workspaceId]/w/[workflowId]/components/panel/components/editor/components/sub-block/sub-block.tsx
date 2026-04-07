@@ -1,9 +1,17 @@
-import { type JSX, type MouseEvent, memo, useRef, useState } from 'react'
-import { isEqual } from 'lodash'
-import { AlertTriangle, ArrowLeftRight, ArrowUp } from 'lucide-react'
+import { type JSX, type MouseEvent, memo, useCallback, useMemo, useRef, useState } from 'react'
+import { isEqual } from 'es-toolkit'
+import {
+  AlertTriangle,
+  ArrowLeftRight,
+  ArrowUp,
+  Check,
+  Clipboard,
+  ExternalLink,
+} from 'lucide-react'
+import { useParams } from 'next/navigation'
 import { Button, Input, Label, Tooltip } from '@/components/emcn/components'
 import { cn } from '@/lib/core/utils/cn'
-import type { FieldDiffStatus } from '@/lib/workflows/diff/types'
+import type { FilterRule, SortRule } from '@/lib/table/query-builder/constants'
 import {
   CheckboxList,
   Code,
@@ -11,13 +19,11 @@ import {
   ConditionInput,
   CredentialSelector,
   DateInput,
-  DocumentSelector,
   DocumentTagEntry,
   Dropdown,
   EvalInput,
-  FileSelectorInput,
   FileUpload,
-  FolderSelectorInput,
+  FilterBuilder,
   GroupedCheckboxList,
   InputFormat,
   InputMapping,
@@ -28,17 +34,19 @@ import {
   McpServerSelector,
   McpToolSelector,
   MessagesInput,
-  ProjectSelectorInput,
   ResponseFormat,
   ScheduleInfo,
-  SheetSelectorInput,
+  SelectorInput,
+  type SelectorOverrides,
   ShortInput,
+  SkillInput,
   SlackDateInput,
   SlackDateRangeSelector,
-  SlackSelectorInput,
   SliderInput,
+  SortBuilder,
   Switch,
   Table,
+  TableSelector,
   Text,
   TimeInput,
   ToolInput,
@@ -48,6 +56,7 @@ import {
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
+import { useWebhookManagement } from '@/hooks/use-webhook-management'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
@@ -59,6 +68,23 @@ import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-s
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { SlackClientSelector } from './components/slack-client-selector'
+
+const SLACK_OVERRIDES: SelectorOverrides = {
+  transformContext: (context, deps) => {
+    const authMethod = deps.authMethod as string
+    const oauthCredential =
+      authMethod === 'bot_token' ? String(deps.botToken ?? '') : String(deps.credential ?? '')
+    return { ...context, oauthCredential }
+  },
+}
+
+const FOLDER_OVERRIDES: SelectorOverrides = {
+  getDefaultValue: (subBlock) => {
+    const isGmail = subBlock.serviceId === 'gmail'
+    const isCopyDest = subBlock.canonicalParamId === 'copyDestinationId'
+    return isGmail && !isCopyDest ? 'INBOX' : null
+  },
+}
 
 /**
  * Interface for wand control handlers exposed by sub-block inputs
@@ -82,13 +108,15 @@ interface SubBlockProps {
   isPreview?: boolean
   subBlockValues?: Record<string, any>
   disabled?: boolean
-  fieldDiffStatus?: FieldDiffStatus
   allowExpandInPreview?: boolean
   canonicalToggle?: {
     mode: 'basic' | 'advanced'
     disabled?: boolean
     onToggle?: () => void
   }
+  labelSuffix?: React.ReactNode
+  /** Provides sibling values for dependency resolution in non-preview contexts (e.g. tool-input) */
+  dependencyContext?: Record<string, unknown>
 }
 
 /**
@@ -175,16 +203,14 @@ const getPreviewValue = (
 /**
  * Renders the label with optional validation and description tooltips.
  *
- * @remarks
- * Handles JSON validation indicators for code blocks and required field markers.
- * Includes inline AI generate button when wand is enabled.
- *
  * @param config - The sub-block configuration defining the label content
  * @param isValidJson - Whether the JSON content is valid (for code blocks)
  * @param subBlockValues - Current values of all subblocks for evaluating conditional requirements
- * @param wandState - Optional state and handlers for the AI wand feature
- * @param canonicalToggle - Optional canonical toggle metadata and handlers
- * @param canonicalToggleIsDisabled - Whether the canonical toggle is disabled
+ * @param wandState - State and handlers for the inline AI generate feature
+ * @param canonicalToggle - Metadata and handlers for the basic/advanced mode toggle
+ * @param canonicalToggleIsDisabled - Whether the canonical toggle is disabled (includes dependsOn gating)
+ * @param copyState - State and handler for the copy-to-clipboard button
+ * @param labelSuffix - Additional content rendered after the label text
  * @returns The label JSX element, or `null` for switch types or when no title is defined
  */
 const renderLabel = (
@@ -210,7 +236,18 @@ const renderLabel = (
     disabled?: boolean
     onToggle?: () => void
   },
-  canonicalToggleIsDisabled?: boolean
+  canonicalToggleIsDisabled?: boolean,
+  copyState?: {
+    showCopyButton: boolean
+    copied: boolean
+    onCopy: () => void
+  },
+  labelSuffix?: React.ReactNode,
+  externalLink?: {
+    show: boolean
+    onClick: () => void
+    tooltip: string
+  }
 ): JSX.Element | null => {
   if (config.type === 'switch') return null
   if (!config.title) return null
@@ -218,13 +255,16 @@ const renderLabel = (
   const required = isFieldRequired(config, subBlockValues)
   const showWand = wandState?.isWandEnabled && !wandState.isPreview && !wandState.disabled
   const showCanonicalToggle = !!canonicalToggle && !wandState?.isPreview
+  const showCopy = copyState?.showCopyButton && !wandState?.isPreview
+  const showExternalLink = externalLink?.show && !wandState?.isPreview
   const canonicalToggleDisabledResolved = canonicalToggleIsDisabled ?? canonicalToggle?.disabled
 
   return (
-    <div className='flex items-center justify-between gap-[6px] pl-[2px]'>
-      <Label className='flex items-center gap-[6px] whitespace-nowrap'>
+    <div className='flex items-center justify-between gap-1.5 pl-0.5'>
+      <Label className='flex items-baseline gap-1.5 whitespace-nowrap'>
         {config.title}
         {required && <span className='ml-0.5'>*</span>}
+        {labelSuffix}
         {config.type === 'code' &&
           config.language === 'json' &&
           !isValidJson &&
@@ -241,26 +281,52 @@ const renderLabel = (
             </Tooltip.Root>
           )}
       </Label>
-      <div className='flex items-center gap-[6px]'>
+      <div className='flex min-w-0 flex-1 items-center justify-end gap-1.5'>
+        {showCopy && (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <button
+                type='button'
+                onClick={copyState.onCopy}
+                className='-my-1 flex h-5 w-5 items-center justify-center'
+                aria-label='Copy value'
+              >
+                {copyState.copied ? (
+                  <Check className='h-3 w-3 text-green-500' />
+                ) : (
+                  <Clipboard className='h-3 w-3 text-muted-foreground' />
+                )}
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>
+              <p>{copyState.copied ? 'Copied!' : 'Copy'}</p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        )}
         {showWand && (
           <>
             {!wandState.isSearchActive ? (
               <Button
                 variant='active'
-                className='-my-1 h-5 px-2 py-0 text-[11px]'
+                className='-my-1 h-5 px-2 py-0 text-xs'
                 onClick={wandState.onSearchClick}
               >
                 Generate
               </Button>
             ) : (
-              <div className='-my-1 flex items-center gap-[4px]'>
+              <div className='-my-1 flex min-w-[120px] max-w-[280px] flex-1 items-center gap-1'>
                 <Input
                   ref={wandState.searchInputRef}
                   value={wandState.isStreaming ? 'Generating...' : wandState.searchQuery}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     wandState.onSearchChange(e.target.value)
                   }
-                  onBlur={wandState.onSearchBlur}
+                  onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
+                    // Only close if clicking outside the input container (not on the submit button)
+                    const relatedTarget = e.relatedTarget as HTMLElement | null
+                    if (relatedTarget?.closest('button')) return
+                    wandState.onSearchBlur()
+                  }}
                   onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                     if (
                       e.key === 'Enter' &&
@@ -274,13 +340,13 @@ const renderLabel = (
                   }}
                   disabled={wandState.isStreaming}
                   className={cn(
-                    'h-5 max-w-[200px] flex-1 text-[11px]',
+                    'h-5 min-w-[80px] flex-1 text-xs',
                     wandState.isStreaming && 'text-muted-foreground'
                   )}
                   placeholder='Generate with AI...'
                 />
                 <Button
-                  variant='tertiary'
+                  variant='primary'
                   disabled={!wandState.searchQuery.trim() || wandState.isStreaming}
                   onMouseDown={(e: React.MouseEvent) => {
                     e.preventDefault()
@@ -297,6 +363,23 @@ const renderLabel = (
               </div>
             )}
           </>
+        )}
+        {showExternalLink && (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <button
+                type='button'
+                className='flex h-[12px] w-[12px] flex-shrink-0 items-center justify-center bg-transparent p-0'
+                onClick={externalLink?.onClick}
+                aria-label={externalLink?.tooltip}
+              >
+                <ExternalLink className='!h-[12px] !w-[12px] text-[var(--text-secondary)]' />
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>
+              <p>{externalLink?.tooltip}</p>
+            </Tooltip.Content>
+          </Tooltip.Root>
         )}
         {showCanonicalToggle && (
           <Tooltip.Root>
@@ -364,28 +447,25 @@ const arePropsEqual = (prevProps: SubBlockProps, nextProps: SubBlockProps): bool
     prevProps.isPreview === nextProps.isPreview &&
     valueEqual &&
     prevProps.disabled === nextProps.disabled &&
-    prevProps.fieldDiffStatus === nextProps.fieldDiffStatus &&
     prevProps.allowExpandInPreview === nextProps.allowExpandInPreview &&
-    canonicalToggleEqual
+    canonicalToggleEqual &&
+    prevProps.labelSuffix === nextProps.labelSuffix &&
+    prevProps.dependencyContext === nextProps.dependencyContext
   )
 }
 
 /**
  * Renders a single workflow sub-block input based on config.type.
  *
- * @remarks
- * Supports multiple input types including short-input, long-input, dropdown,
- * combobox, slider, table, code, switch, tool-input, and many more.
- * Handles preview mode, disabled states, and AI wand generation.
- *
  * @param blockId - The parent block identifier
  * @param config - Configuration defining the input type and properties
  * @param isPreview - Whether to render in preview mode
  * @param subBlockValues - Current values of all subblocks
  * @param disabled - Whether the input is disabled
- * @param fieldDiffStatus - Optional diff status for visual indicators
  * @param allowExpandInPreview - Whether to allow expanding in preview mode
- * @returns The rendered sub-block input component
+ * @param canonicalToggle - Metadata and handlers for the basic/advanced mode toggle
+ * @param labelSuffix - Additional content rendered after the label text
+ * @param dependencyContext - Sibling values for dependency resolution in non-preview contexts (e.g. tool-input)
  */
 function SubBlockComponent({
   blockId,
@@ -393,18 +473,29 @@ function SubBlockComponent({
   isPreview = false,
   subBlockValues,
   disabled = false,
-  fieldDiffStatus,
   allowExpandInPreview,
   canonicalToggle,
+  labelSuffix,
+  dependencyContext,
 }: SubBlockProps): JSX.Element {
+  const params = useParams()
+  const workspaceId = params.workspaceId as string
+
   const [isValidJson, setIsValidJson] = useState(true)
   const [isSearchActive, setIsSearchActive] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [copied, setCopied] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const wandControlRef = useRef<WandControlHandlers | null>(null)
 
   // Get block type to determine if this is a Slack block
   const blockType = useWorkflowStore((state) => state.blocks?.[blockId]?.type)
+  const webhookManagement = useWebhookManagement({
+    blockId,
+    triggerId: undefined,
+    isPreview,
+    useWebhookUrl: config.useWebhookUrl,
+  })
 
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
     e.stopPropagation()
@@ -415,6 +506,66 @@ function SubBlockComponent({
   }
 
   const isWandEnabled = config.wandConfig?.enabled ?? false
+
+  /**
+   * Handles copying the webhook URL to clipboard.
+   */
+  const handleCopy = useCallback(() => {
+    const textToCopy = webhookManagement?.webhookUrl
+    if (textToCopy) {
+      navigator.clipboard.writeText(textToCopy)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }, [webhookManagement?.webhookUrl])
+
+  const tableId =
+    config.type === 'table-selector' && subBlockValues
+      ? (subBlockValues[config.id]?.value as string | null)
+      : null
+  const hasSelectedTable = tableId && !tableId.startsWith('<')
+
+  const knowledgeBaseId =
+    config.type === 'knowledge-base-selector' && subBlockValues
+      ? (subBlockValues[config.id]?.value as string | null)
+      : null
+  const hasSelectedKnowledgeBase = knowledgeBaseId && !knowledgeBaseId.startsWith('<')
+
+  const handleNavigateToTable = useCallback(() => {
+    if (tableId && workspaceId) {
+      window.open(`/workspace/${workspaceId}/tables/${tableId}`, '_blank')
+    }
+  }, [workspaceId, tableId])
+
+  const handleNavigateToKnowledgeBase = useCallback(() => {
+    if (knowledgeBaseId && workspaceId) {
+      window.open(`/workspace/${workspaceId}/knowledge/${knowledgeBaseId}`, '_blank')
+    }
+  }, [workspaceId, knowledgeBaseId])
+
+  const externalLink = useMemo(() => {
+    if (config.type === 'table-selector' && hasSelectedTable) {
+      return {
+        show: true,
+        onClick: handleNavigateToTable,
+        tooltip: 'View table',
+      }
+    }
+    if (config.type === 'knowledge-base-selector' && hasSelectedKnowledgeBase) {
+      return {
+        show: true,
+        onClick: handleNavigateToKnowledgeBase,
+        tooltip: 'View knowledge base',
+      }
+    }
+    return undefined
+  }, [
+    config.type,
+    hasSelectedTable,
+    handleNavigateToTable,
+    hasSelectedKnowledgeBase,
+    handleNavigateToKnowledgeBase,
+  ])
 
   /**
    * Handles wand icon click to activate inline prompt mode.
@@ -473,10 +624,12 @@ function SubBlockComponent({
     | null
     | undefined
 
+  const contextValues = dependencyContext ?? (isPreview ? subBlockValues : undefined)
+
   const { finalDisabled: gatedDisabled } = useDependsOnGate(blockId, config, {
     disabled,
     isPreview,
-    previewContextValues: isPreview ? subBlockValues : undefined,
+    previewContextValues: contextValues,
   })
 
   const isDisabled = gatedDisabled
@@ -500,7 +653,6 @@ function SubBlockComponent({
             placeholder={config.placeholder}
             password={config.password}
             readOnly={config.readOnly}
-            showCopyButton={config.showCopyButton}
             useWebhookUrl={config.useWebhookUrl}
             config={config}
             isPreview={isPreview}
@@ -588,6 +740,19 @@ function SubBlockComponent({
               fetchOptionById={config.fetchOptionById}
               dependsOn={config.dependsOn}
               searchable={config.searchable}
+            />
+          </div>
+        )
+
+      case 'table-selector':
+        return (
+          <div onMouseDown={handleMouseDown}>
+            <TableSelector
+              blockId={blockId}
+              subBlock={config}
+              disabled={isDisabled}
+              isPreview={isPreview}
+              previewValue={previewValue as string | null}
             />
           </div>
         )
@@ -701,6 +866,17 @@ function SubBlockComponent({
           />
         )
 
+      case 'skill-input':
+        return (
+          <SkillInput
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue}
+            disabled={isDisabled}
+          />
+        )
+
       case 'checkbox-list':
         return (
           <CheckboxList
@@ -807,6 +983,8 @@ function SubBlockComponent({
             acceptedTypes={config.acceptedTypes || '*'}
             multiple={config.multiple === true}
             maxSize={config.maxSize}
+            uploadContext={config.uploadContext}
+            allowStartFilesReference={config.allowStartFilesReference}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -824,52 +1002,34 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={contextValues}
           />
         )
 
       case 'file-selector':
-        return (
-          <FileSelectorInput
-            blockId={blockId}
-            subBlock={config}
-            disabled={isDisabled}
-            isPreview={isPreview}
-            previewValue={previewValue}
-            previewContextValues={isPreview ? subBlockValues : undefined}
-          />
-        )
-
       case 'sheet-selector':
-        return (
-          <SheetSelectorInput
-            blockId={blockId}
-            subBlock={config}
-            disabled={isDisabled}
-            isPreview={isPreview}
-            previewValue={previewValue}
-            previewContextValues={isPreview ? subBlockValues : undefined}
-          />
-        )
-
       case 'project-selector':
         return (
-          <ProjectSelectorInput
+          <SelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={contextValues}
           />
         )
 
       case 'folder-selector':
         return (
-          <FolderSelectorInput
+          <SelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={contextValues}
+            overrides={FOLDER_OVERRIDES}
           />
         )
 
@@ -892,6 +1052,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue as any}
+            previewContextValues={contextValues}
           />
         )
 
@@ -903,17 +1064,19 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue as any}
+            previewContextValues={contextValues}
           />
         )
 
       case 'document-selector':
         return (
-          <DocumentSelector
+          <SelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}
             isPreview={isPreview}
-            previewValue={previewValue as any}
+            previewValue={previewValue}
+            previewContextValues={contextValues}
           />
         )
 
@@ -938,6 +1101,7 @@ function SubBlockComponent({
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
+            previewContextValues={contextValues}
           />
         )
 
@@ -964,15 +1128,39 @@ function SubBlockComponent({
           />
         )
 
+      case 'filter-builder':
+        return (
+          <FilterBuilder
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue as FilterRule[] | null | undefined}
+            disabled={isDisabled}
+          />
+        )
+
+      case 'sort-builder':
+        return (
+          <SortBuilder
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue as SortRule[] | null | undefined}
+            disabled={isDisabled}
+          />
+        )
+
       case 'channel-selector':
       case 'user-selector':
         return (
-          <SlackSelectorInput
+          <SelectorInput
             blockId={blockId}
             subBlock={config}
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={contextValues}
+            overrides={SLACK_OVERRIDES}
           />
         )
 
@@ -1006,6 +1194,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue as any}
+            previewContextValues={contextValues}
           />
         )
 
@@ -1017,6 +1206,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            previewContextValues={contextValues}
           />
         )
 
@@ -1169,7 +1359,7 @@ function SubBlockComponent({
   }
 
   return (
-    <div onMouseDown={handleMouseDown} className='subblock-content flex flex-col gap-[10px]'>
+    <div onMouseDown={handleMouseDown} className='subblock-content flex flex-col gap-2.5'>
       {renderLabel(
         config,
         isValidJson,
@@ -1189,7 +1379,14 @@ function SubBlockComponent({
           searchInputRef,
         },
         canonicalToggle,
-        Boolean(canonicalToggle?.disabled || disabled || isPreview)
+        Boolean(canonicalToggle?.disabled || disabled || isPreview),
+        {
+          showCopyButton: Boolean(config.showCopyButton && config.useWebhookUrl),
+          copied,
+          onCopy: handleCopy,
+        },
+        labelSuffix,
+        externalLink
       )}
       {renderInput()}
     </div>

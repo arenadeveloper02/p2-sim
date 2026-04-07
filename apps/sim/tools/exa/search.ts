@@ -1,7 +1,7 @@
-import { env } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ExaSearchParams, ExaSearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
+
+const exaApiKey = process.env.EXA_API_KEY
 
 export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
   id: 'exa_search',
@@ -20,32 +20,34 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
     numResults: {
       type: 'number',
       required: false,
-      visibility: 'user-only',
-      description: 'Number of results to return (default: 10, max: 25)',
+      visibility: 'user-or-llm',
+      description: 'Number of results to return (e.g., 5, 10, 25). Default: 10, max: 25',
     },
     useAutoprompt: {
       type: 'boolean',
       required: false,
-      visibility: 'user-only',
-      description: 'Whether to use autoprompt to improve the query (default: false)',
+      visibility: 'user-or-llm',
+      description: 'Whether to use autoprompt to improve the query (true or false). Default: false',
     },
     type: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Search type: neural, keyword, auto or fast (default: auto)',
+      visibility: 'user-or-llm',
+      description: 'Search type: "neural", "keyword", "auto", or "fast". Default: "auto"',
     },
     includeDomains: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Comma-separated list of domains to include in results',
+      visibility: 'user-or-llm',
+      description:
+        'Comma-separated list of domains to include in results (e.g., "github.com, stackoverflow.com")',
     },
     excludeDomains: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Comma-separated list of domains to exclude from results',
+      visibility: 'user-or-llm',
+      description:
+        'Comma-separated list of domains to exclude from results (e.g., "reddit.com, pinterest.com")',
     },
     category: {
       type: 'string',
@@ -81,7 +83,7 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Exa AI API Key',
     },
@@ -90,9 +92,9 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
   request: {
     url: 'https://api.exa.ai/search',
     method: 'POST',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
+      'x-api-key': exaApiKey ?? '',
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -167,6 +169,7 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
           highlights: result.highlights,
           score: result.score,
         })),
+        __costDollars: data.costDollars,
       },
     }
   },

@@ -1,7 +1,7 @@
-import { env } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ExaGetContentsParams, ExaGetContentsResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
+
+const exaApiKey = process.env.EXA_API_KEY
 
 export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsResponse> = {
   id: 'exa_get_contents',
@@ -58,7 +58,7 @@ export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsRes
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Exa AI API Key',
     },
@@ -67,9 +67,9 @@ export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsRes
   request: {
     url: 'https://api.exa.ai/contents',
     method: 'POST',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
+      'x-api-key': exaApiKey ?? '',
     }),
     body: (params) => {
       // Parse the comma-separated URLs into an array
@@ -134,6 +134,7 @@ export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsRes
           summary: result.summary || '',
           highlights: result.highlights,
         })),
+        __costDollars: data.costDollars,
       },
     }
   },

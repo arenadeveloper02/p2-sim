@@ -1,13 +1,20 @@
 import { db } from '@sim/db'
-import { member, subscription } from '@sim/db/schema'
+import { member, organization, subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray } from 'drizzle-orm'
-import { checkEnterprisePlan, checkProPlan, checkTeamPlan } from '@/lib/billing/subscriptions/utils'
+import {
+  checkEnterprisePlan,
+  checkProPlan,
+  checkTeamPlan,
+  ENTITLED_SUBSCRIPTION_STATUSES,
+} from '@/lib/billing/subscriptions/utils'
 
 const logger = createLogger('PlanLookup')
 
+export type HighestPrioritySubscription = Awaited<ReturnType<typeof getHighestPrioritySubscription>>
+
 /**
- * Get the highest priority active subscription for a user
+ * Get the highest priority paid subscription for a user.
  * Priority: Enterprise > Team > Pro > Free
  */
 export async function getHighestPrioritySubscription(userId: string) {
@@ -15,7 +22,12 @@ export async function getHighestPrioritySubscription(userId: string) {
     const personalSubs = await db
       .select()
       .from(subscription)
-      .where(and(eq(subscription.referenceId, userId), eq(subscription.status, 'active')))
+      .where(
+        and(
+          eq(subscription.referenceId, userId),
+          inArray(subscription.status, ENTITLED_SUBSCRIPTION_STATUSES)
+        )
+      )
 
     const memberships = await db
       .select({ organizationId: member.organizationId })
@@ -26,10 +38,25 @@ export async function getHighestPrioritySubscription(userId: string) {
 
     let orgSubs: typeof personalSubs = []
     if (orgIds.length > 0) {
-      orgSubs = await db
-        .select()
-        .from(subscription)
-        .where(and(inArray(subscription.referenceId, orgIds), eq(subscription.status, 'active')))
+      // Verify orgs exist to filter out orphaned subscriptions
+      const existingOrgs = await db
+        .select({ id: organization.id })
+        .from(organization)
+        .where(inArray(organization.id, orgIds))
+
+      const validOrgIds = existingOrgs.map((o) => o.id)
+
+      if (validOrgIds.length > 0) {
+        orgSubs = await db
+          .select()
+          .from(subscription)
+          .where(
+            and(
+              inArray(subscription.referenceId, validOrgIds),
+              inArray(subscription.status, ENTITLED_SUBSCRIPTION_STATUSES)
+            )
+          )
+      }
     }
 
     const allSubs = [...personalSubs, ...orgSubs]

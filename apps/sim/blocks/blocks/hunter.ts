@@ -1,5 +1,5 @@
 import { HunterIOIcon } from '@/components/icons'
-import { AuthMode, type BlockConfig } from '@/blocks/types'
+import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import type { HunterResponse } from '@/tools/hunter/types'
 
 export const HunterBlock: BlockConfig<HunterResponse> = {
@@ -11,6 +11,8 @@ export const HunterBlock: BlockConfig<HunterResponse> = {
     'Integrate Hunter into the workflow. Can search domains, find email addresses, verify email addresses, discover companies, find companies, and count email addresses.',
   docsLink: 'https://docs.sim.ai/tools/hunter',
   category: 'tools',
+  integrationType: IntegrationType.SalesIntelligence,
+  tags: ['enrichment', 'sales-engagement'],
   bgColor: '#E0E0E0',
   icon: HunterIOIcon,
   subBlocks: [
@@ -204,11 +206,6 @@ Return ONLY the search query text - no explanations.`,
     ],
     config: {
       tool: (params) => {
-        // Convert numeric parameters
-        if (params.limit) {
-          params.limit = Number(params.limit)
-        }
-
         switch (params.operation) {
           case 'hunter_discover':
             return 'hunter_discover'
@@ -225,6 +222,11 @@ Return ONLY the search query text - no explanations.`,
           default:
             return 'hunter_domain_search'
         }
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.limit) result.limit = Number(params.limit)
+        return result
       },
     },
   },

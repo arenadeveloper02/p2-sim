@@ -1,5 +1,6 @@
 import { ApiIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { IntegrationType } from '@/blocks/types'
 import type { RequestResponse } from '@/tools/http/types'
 
 export const ApiBlock: BlockConfig<RequestResponse> = {
@@ -13,6 +14,8 @@ export const ApiBlock: BlockConfig<RequestResponse> = {
   - Curl the endpoint yourself before filling out the API block to make sure it's working IF you have the necessary authentication headers. Clarify with the user if you need any additional headers.
   `,
   category: 'blocks',
+  integrationType: IntegrationType.DeveloperTools,
+  tags: ['automation', 'webhooks'],
   bgColor: '#2F55FF',
   icon: ApiIcon,
   subBlocks: [
@@ -80,6 +83,47 @@ Example:
         generationType: 'json-object',
       },
     },
+    {
+      id: 'timeout',
+      title: 'Timeout (ms)',
+      type: 'short-input',
+      placeholder: '300000',
+      description:
+        'Request timeout in milliseconds (default: 300000 = 5 minutes, max: 600000 = 10 minutes)',
+      mode: 'advanced',
+    },
+    {
+      id: 'retries',
+      title: 'Retries',
+      type: 'short-input',
+      placeholder: '0',
+      description:
+        'Number of retry attempts for timeouts, 429 responses, and 5xx errors (default: 0, no retries)',
+      mode: 'advanced',
+    },
+    {
+      id: 'retryDelayMs',
+      title: 'Retry delay (ms)',
+      type: 'short-input',
+      placeholder: '500',
+      description: 'Initial retry delay in milliseconds (exponential backoff)',
+      mode: 'advanced',
+    },
+    {
+      id: 'retryMaxDelayMs',
+      title: 'Max retry delay (ms)',
+      type: 'short-input',
+      placeholder: '30000',
+      description: 'Maximum delay between retries in milliseconds',
+      mode: 'advanced',
+    },
+    {
+      id: 'retryNonIdempotent',
+      title: 'Retry non-idempotent methods',
+      type: 'switch',
+      description: 'Allow retries for POST/PATCH requests (may create duplicate requests)',
+      mode: 'advanced',
+    },
   ],
   tools: {
     access: ['http_request'],
@@ -90,6 +134,17 @@ Example:
     headers: { type: 'json', description: 'Request headers' },
     body: { type: 'json', description: 'Request body data' },
     params: { type: 'json', description: 'URL query parameters' },
+    timeout: { type: 'number', description: 'Request timeout in milliseconds' },
+    retries: { type: 'number', description: 'Number of retry attempts for retryable failures' },
+    retryDelayMs: { type: 'number', description: 'Initial retry delay in milliseconds' },
+    retryMaxDelayMs: {
+      type: 'number',
+      description: 'Maximum delay between retries in milliseconds',
+    },
+    retryNonIdempotent: {
+      type: 'boolean',
+      description: 'Allow retries for non-idempotent methods like POST/PATCH',
+    },
   },
   outputs: {
     data: { type: 'json', description: 'API response data (JSON, text, or other formats)' },

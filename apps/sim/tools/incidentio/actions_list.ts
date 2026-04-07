@@ -24,13 +24,7 @@ export const actionsListTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Filter actions by incident ID',
-    },
-    page_size: {
-      type: 'number',
-      required: false,
-      visibility: 'user-only',
-      description: 'Number of actions to return per page',
+      description: 'Filter actions by incident ID (e.g., "01FCNDV6P870EA6S7TK1DSYDG0")',
     },
   },
 
@@ -40,10 +34,6 @@ export const actionsListTool: ToolConfig<
 
       if (params.incident_id) {
         url.searchParams.append('incident_id', params.incident_id)
-      }
-
-      if (params.page_size) {
-        url.searchParams.append('page_size', params.page_size.toString())
       }
 
       return url.toString()

@@ -10,10 +10,12 @@ import type {
   ProviderResponse,
   TimeSegment,
 } from '@/providers/types'
+import { ProviderError } from '@/providers/types'
 import {
   calculateCost,
   prepareToolExecution,
   prepareToolsWithUsageControl,
+  sumToolCosts,
   trackForcedToolUsage,
 } from '@/providers/utils'
 import { executeTool } from '@/tools'
@@ -81,9 +83,7 @@ export const deepseekProvider: ProviderConfig = {
       }
 
       if (request.temperature !== undefined) payload.temperature = request.temperature
-      if (request.maxTokens !== undefined) {
-        payload.max_tokens = Number(request.maxTokens)
-      }
+      if (request.maxTokens != null) payload.max_tokens = request.maxTokens
 
       let preparedTools: ReturnType<typeof prepareToolsWithUsageControl> | null = null
 
@@ -115,10 +115,13 @@ export const deepseekProvider: ProviderConfig = {
       if (request.stream && (!tools || tools.length === 0)) {
         logger.info('Using streaming response for DeepSeek request (no tools)')
 
-        const streamResponse = await deepseek.chat.completions.create({
-          ...payload,
-          stream: true,
-        })
+        const streamResponse = await deepseek.chat.completions.create(
+          {
+            ...payload,
+            stream: true,
+          },
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const streamingResult = {
           stream: createReadableStreamFromDeepseekStream(
@@ -184,7 +187,10 @@ export const deepseekProvider: ProviderConfig = {
       const forcedTools = preparedTools?.forcedTools || []
       let usedForcedTools: string[] = []
 
-      let currentResponse = await deepseek.chat.completions.create(payload)
+      let currentResponse = await deepseek.chat.completions.create(
+        payload,
+        request.abortSignal ? { signal: request.abortSignal } : undefined
+      )
       const firstResponseTime = Date.now() - initialCallTime
 
       let content = currentResponse.choices[0]?.message?.content || ''
@@ -200,7 +206,7 @@ export const deepseekProvider: ProviderConfig = {
         total: currentResponse.usage?.total_tokens || 0,
       }
       const toolCalls = []
-      const toolResults = []
+      const toolResults: Record<string, unknown>[] = []
       const currentMessages = [...allMessages]
       let iterationCount = 0
       let hasUsedForcedTool = false
@@ -320,7 +326,7 @@ export const deepseekProvider: ProviderConfig = {
             })
 
             let resultContent: any
-            if (result.success) {
+            if (result.success && result.output) {
               toolResults.push(result.output)
               resultContent = result.output
             } else {
@@ -376,7 +382,10 @@ export const deepseekProvider: ProviderConfig = {
           }
 
           const nextModelStartTime = Date.now()
-          currentResponse = await deepseek.chat.completions.create(nextPayload)
+          currentResponse = await deepseek.chat.completions.create(
+            nextPayload,
+            request.abortSignal ? { signal: request.abortSignal } : undefined
+          )
 
           if (
             typeof nextPayload.tool_choice === 'object' &&
@@ -440,7 +449,10 @@ export const deepseekProvider: ProviderConfig = {
           stream: true,
         }
 
-        const streamResponse = await deepseek.chat.completions.create(streamingPayload)
+        const streamResponse = await deepseek.chat.completions.create(
+          streamingPayload,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
 
@@ -460,10 +472,12 @@ export const deepseekProvider: ProviderConfig = {
                 usage.prompt_tokens,
                 usage.completion_tokens
               )
+              const tc = sumToolCosts(toolResults)
               streamingResult.execution.output.cost = {
                 input: accumulatedCost.input + streamCost.input,
                 output: accumulatedCost.output + streamCost.output,
-                total: accumulatedCost.total + streamCost.total,
+                toolCost: tc || undefined,
+                total: accumulatedCost.total + streamCost.total + tc,
               }
             }
           ),
@@ -497,6 +511,7 @@ export const deepseekProvider: ProviderConfig = {
               cost: {
                 input: accumulatedCost.input,
                 output: accumulatedCost.output,
+                toolCost: undefined as number | undefined,
                 total: accumulatedCost.total,
               },
             },
@@ -540,15 +555,11 @@ export const deepseekProvider: ProviderConfig = {
         duration: totalDuration,
       })
 
-      const enhancedError = new Error(error instanceof Error ? error.message : String(error))
-      // @ts-ignore
-      enhancedError.timing = {
+      throw new ProviderError(error instanceof Error ? error.message : String(error), {
         startTime: providerStartTimeISO,
         endTime: providerEndTimeISO,
         duration: totalDuration,
-      }
-
-      throw enhancedError
+      })
     }
   },
 }

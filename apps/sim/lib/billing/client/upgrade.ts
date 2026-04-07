@@ -2,6 +2,8 @@ import { useCallback } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
 import { client, useSession, useSubscription } from '@/lib/auth/auth-client'
+import { buildPlanName, isOrgPlan } from '@/lib/billing/plan-helpers'
+import { hasPaidSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
 import { organizationKeys } from '@/hooks/queries/organization'
 
 const logger = createLogger('SubscriptionUpgrade')
@@ -10,7 +12,14 @@ type TargetPlan = 'pro' | 'team'
 
 const CONSTANTS = {
   INITIAL_TEAM_SEATS: 1,
+  DEFAULT_CREDIT_TIER: 6000,
 } as const
+
+interface UpgradeOptions {
+  creditTier?: number
+  annual?: boolean
+  seats?: number
+}
 
 export function useSubscriptionUpgrade() {
   const { data: session } = useSession()
@@ -18,17 +27,22 @@ export function useSubscriptionUpgrade() {
   const queryClient = useQueryClient()
 
   const handleUpgrade = useCallback(
-    async (targetPlan: TargetPlan) => {
+    async (targetPlan: TargetPlan, options?: UpgradeOptions) => {
+      const creditTier = options?.creditTier ?? CONSTANTS.DEFAULT_CREDIT_TIER
+      const annual = options?.annual ?? false
+      const planName = buildPlanName(targetPlan, creditTier)
       const userId = session?.user?.id
       if (!userId) {
         throw new Error('User not authenticated')
       }
 
       let currentSubscriptionId: string | undefined
+      let allSubscriptions: any[] = []
       try {
         const listResult = await client.subscription.list()
-        const activePersonalSub = listResult.data?.find(
-          (sub: any) => sub.status === 'active' && sub.referenceId === userId
+        allSubscriptions = listResult.data || []
+        const activePersonalSub = allSubscriptions.find(
+          (sub: any) => hasPaidSubscriptionStatus(sub.status) && sub.referenceId === userId
         )
         currentSubscriptionId = activePersonalSub?.id
       } catch (_e) {
@@ -41,6 +55,7 @@ export function useSubscriptionUpgrade() {
         try {
           const orgsResponse = await fetch('/api/organizations')
           if (!orgsResponse.ok) {
+            await orgsResponse.text().catch(() => {})
             throw new Error('Failed to check organization status')
           }
 
@@ -50,6 +65,25 @@ export function useSubscriptionUpgrade() {
           )
 
           if (existingOrg) {
+            // Check if this org already has an active team subscription
+            const existingTeamSub = allSubscriptions.find(
+              (sub: any) =>
+                hasPaidSubscriptionStatus(sub.status) &&
+                sub.referenceId === existingOrg.id &&
+                isOrgPlan(sub.plan)
+            )
+
+            if (existingTeamSub) {
+              logger.warn('Organization already has an active team subscription', {
+                userId,
+                organizationId: existingOrg.id,
+                existingSubscriptionId: existingTeamSub.id,
+              })
+              throw new Error(
+                'This organization already has an active team subscription. Please manage it from the billing settings.'
+              )
+            }
+
             logger.info('Using existing organization for team plan upgrade', {
               userId,
               organizationId: existingOrg.id,
@@ -87,11 +121,12 @@ export function useSubscriptionUpgrade() {
 
       try {
         const upgradeParams = {
-          plan: targetPlan,
+          plan: planName,
           referenceId,
           successUrl,
           cancelUrl: currentUrl,
-          ...(targetPlan === 'team' && { seats: CONSTANTS.INITIAL_TEAM_SEATS }),
+          ...(targetPlan === 'team' && { seats: options?.seats ?? CONSTANTS.INITIAL_TEAM_SEATS }),
+          ...(annual && { annual: true }),
         } as const
 
         const finalParams = currentSubscriptionId
@@ -100,7 +135,7 @@ export function useSubscriptionUpgrade() {
 
         logger.info(
           currentSubscriptionId ? 'Upgrading existing subscription' : 'Creating new subscription',
-          { targetPlan, currentSubscriptionId, referenceId }
+          { targetPlan, planName, annual, currentSubscriptionId, referenceId }
         )
 
         await betterAuthSubscription.upgrade(finalParams)

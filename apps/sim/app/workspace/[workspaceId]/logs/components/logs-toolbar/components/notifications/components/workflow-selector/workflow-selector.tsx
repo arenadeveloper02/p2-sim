@@ -2,8 +2,7 @@
 
 import { useMemo } from 'react'
 import { X } from 'lucide-react'
-import { Badge, Combobox, type ComboboxOption } from '@/components/emcn'
-import { Skeleton } from '@/components/ui'
+import { Badge, Combobox, type ComboboxOption, Label, Skeleton } from '@/components/emcn'
 import { useWorkflows } from '@/hooks/queries/workflows'
 
 interface WorkflowSelectorProps {
@@ -80,20 +79,20 @@ export function WorkflowSelector({
     }
 
     return (
-      <div className='flex items-center gap-[4px] overflow-hidden'>
+      <div className='flex items-center gap-1 overflow-hidden'>
         {selectedWorkflows.slice(0, 2).map((w) => (
           <Badge
             key={w.id}
             variant='outline'
-            className='pointer-events-auto cursor-pointer gap-[4px] rounded-[6px] px-[8px] py-[2px] text-[11px]'
+            className='pointer-events-auto cursor-pointer gap-1 rounded-md px-2 py-0.5 text-xs'
             onMouseDown={(e) => handleRemove(e, w.id)}
           >
             {w.name}
-            <X className='h-3 w-3' />
+            <X className='!text-[var(--text-primary)] h-4 w-4 flex-shrink-0 opacity-50' />
           </Badge>
         ))}
         {selectedWorkflows.length > 2 && (
-          <Badge variant='outline' className='rounded-[6px] px-[8px] py-[2px] text-[11px]'>
+          <Badge variant='outline' className='rounded-md px-2 py-0.5 text-xs'>
             +{selectedWorkflows.length - 2}
           </Badge>
         )}
@@ -103,16 +102,16 @@ export function WorkflowSelector({
 
   if (isLoading) {
     return (
-      <div className='flex flex-col gap-[4px]'>
-        <span className='font-medium text-[13px] text-[var(--text-secondary)]'>Workflows</span>
-        <Skeleton className='h-[34px] w-full rounded-[6px]' />
+      <div className='flex flex-col gap-2'>
+        <Label>Workflows</Label>
+        <Skeleton className='h-[34px] w-full rounded-md' />
       </div>
     )
   }
 
   return (
-    <div className='flex flex-col gap-[4px]'>
-      <span className='font-medium text-[13px] text-[var(--text-secondary)]'>Workflows</span>
+    <div className='flex flex-col gap-2'>
+      <Label>Workflows</Label>
       <Combobox
         options={options}
         multiSelect

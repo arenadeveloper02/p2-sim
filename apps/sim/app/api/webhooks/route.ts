@@ -1,9 +1,10 @@
 import { db } from '@sim/db'
-import { webhook, workflow, workflowDeploymentVersion } from '@sim/db/schema'
+import { permissions, webhook, workflow, workflowDeploymentVersion } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, desc, eq, isNull, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { type NextRequest, NextResponse } from 'next/server'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -12,6 +13,7 @@ import { resolveEnvVarsInObject } from '@/lib/webhooks/env-resolver'
 import {
   cleanupExternalWebhook,
   createExternalWebhookSubscription,
+  shouldRecreateExternalWebhookSubscription,
 } from '@/lib/webhooks/provider-subscriptions'
 import { mergeNonUserFields } from '@/lib/webhooks/utils'
 import {
@@ -20,12 +22,41 @@ import {
   configureRssPolling,
   syncWebhooksForCredentialSet,
 } from '@/lib/webhooks/utils.server'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import { extractCredentialSetId, isCredentialSetValue } from '@/executor/constants'
 
 const logger = createLogger('WebhooksAPI')
 
 export const dynamic = 'force-dynamic'
+
+async function revertSavedWebhook(
+  savedWebhook: any,
+  existingWebhook: any,
+  requestId: string
+): Promise<void> {
+  if (existingWebhook) {
+    await db
+      .update(webhook)
+      .set({
+        workflowId: existingWebhook.workflowId,
+        blockId: existingWebhook.blockId,
+        path: existingWebhook.path,
+        provider: existingWebhook.provider,
+        providerConfig: existingWebhook.providerConfig,
+        credentialSetId: existingWebhook.credentialSetId,
+        isActive: existingWebhook.isActive,
+        archivedAt: existingWebhook.archivedAt,
+        updatedAt: existingWebhook.updatedAt,
+      })
+      .where(eq(webhook.id, savedWebhook.id))
+    logger.info(`[${requestId}] Restored previous webhook configuration after failed re-save`, {
+      webhookId: savedWebhook.id,
+    })
+    return
+  }
+
+  await db.delete(webhook).where(eq(webhook.id, savedWebhook.id))
+}
 
 // Get all webhooks for the current user
 export async function GET(request: NextRequest) {
@@ -57,15 +88,12 @@ export async function GET(request: NextRequest) {
       }
 
       const wfRecord = wf[0]
-      let canRead = wfRecord.userId === session.user.id
-      if (!canRead && wfRecord.workspaceId) {
-        const permission = await getUserEntityPermissions(
-          session.user.id,
-          'workspace',
-          wfRecord.workspaceId
-        )
-        canRead = permission === 'read' || permission === 'write' || permission === 'admin'
-      }
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId: wfRecord.id,
+        userId: session.user.id,
+        action: 'read',
+      })
+      const canRead = authorization.allowed
 
       if (!canRead) {
         logger.warn(
@@ -95,6 +123,7 @@ export async function GET(request: NextRequest) {
           and(
             eq(webhook.workflowId, workflowId),
             eq(webhook.blockId, blockId),
+            isNull(webhook.archivedAt),
             or(
               eq(webhook.deploymentVersionId, workflowDeploymentVersion.id),
               and(isNull(workflowDeploymentVersion.id), isNull(webhook.deploymentVersionId))
@@ -114,8 +143,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ webhooks: [] }, { status: 200 })
     }
 
-    // Default: list webhooks owned by the session user
-    logger.debug(`[${requestId}] Fetching user-owned webhooks for ${session.user.id}`)
+    const workspacePermissionRows = await db
+      .select({ workspaceId: permissions.entityId })
+      .from(permissions)
+      .where(and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace')))
+
+    const workspaceIds = workspacePermissionRows.map((row) => row.workspaceId)
+    if (workspaceIds.length === 0) {
+      return NextResponse.json({ webhooks: [] }, { status: 200 })
+    }
+
     const webhooks = await db
       .select({
         webhook: webhook,
@@ -126,9 +163,9 @@ export async function GET(request: NextRequest) {
       })
       .from(webhook)
       .innerJoin(workflow, eq(webhook.workflowId, workflow.id))
-      .where(eq(workflow.userId, session.user.id))
+      .where(and(inArray(workflow.workspaceId, workspaceIds), isNull(webhook.archivedAt)))
 
-    logger.info(`[${requestId}] Retrieved ${webhooks.length} user-owned webhooks`)
+    logger.info(`[${requestId}] Retrieved ${webhooks.length} workspace-accessible webhooks`)
     return NextResponse.json({ webhooks }, { status: 200 })
   } catch (error) {
     logger.error(`[${requestId}] Error fetching webhooks`, error)
@@ -139,7 +176,8 @@ export async function GET(request: NextRequest) {
 // Create or Update a webhook
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
-  const userId = (await getSession())?.user?.id
+  const session = await getSession()
+  const userId = session?.user?.id
 
   if (!userId) {
     logger.warn(`[${requestId}] Unauthorized webhook creation attempt`)
@@ -189,6 +227,7 @@ export async function POST(request: NextRequest) {
               and(
                 eq(webhook.workflowId, workflowId),
                 eq(webhook.blockId, blockId),
+                isNull(webhook.archivedAt),
                 or(
                   eq(webhook.deploymentVersionId, workflowDeploymentVersion.id),
                   and(isNull(workflowDeploymentVersion.id), isNull(webhook.deploymentVersionId))
@@ -237,25 +276,12 @@ export async function POST(request: NextRequest) {
 
     const workflowRecord = workflowData[0]
 
-    // Check if user has permission to modify this workflow
-    let canModify = false
-
-    // Case 1: User owns the workflow
-    if (workflowRecord.userId === userId) {
-      canModify = true
-    }
-
-    // Case 2: Workflow belongs to a workspace and user has write or admin permission
-    if (!canModify && workflowRecord.workspaceId) {
-      const userPermission = await getUserEntityPermissions(
-        userId,
-        'workspace',
-        workflowRecord.workspaceId
-      )
-      if (userPermission === 'write' || userPermission === 'admin') {
-        canModify = true
-      }
-    }
+    const authorization = await authorizeWorkflowByWorkspacePermission({
+      workflowId,
+      userId,
+      action: 'write',
+    })
+    const canModify = authorization.allowed
 
     if (!canModify) {
       logger.warn(
@@ -281,6 +307,7 @@ export async function POST(request: NextRequest) {
           and(
             eq(webhook.workflowId, workflowId),
             eq(webhook.blockId, blockId),
+            isNull(webhook.archivedAt),
             or(
               eq(webhook.deploymentVersionId, workflowDeploymentVersion.id),
               and(isNull(workflowDeploymentVersion.id), isNull(webhook.deploymentVersionId))
@@ -296,7 +323,7 @@ export async function POST(request: NextRequest) {
       const existingByPath = await db
         .select({ id: webhook.id, workflowId: webhook.workflowId })
         .from(webhook)
-        .where(eq(webhook.path, finalPath))
+        .where(and(eq(webhook.path, finalPath), isNull(webhook.archivedAt)))
         .limit(1)
       if (existingByPath.length > 0) {
         // If a webhook with the same path exists but belongs to a different workflow, return an error
@@ -312,6 +339,7 @@ export async function POST(request: NextRequest) {
     }
 
     let savedWebhook: any = null
+    let existingWebhook: any = null
     const originalProviderConfig = providerConfig || {}
     let resolvedProviderConfig = await resolveEnvVarsInObject(
       originalProviderConfig,
@@ -373,9 +401,7 @@ export async function POST(request: NextRequest) {
             )
           }
 
-          // Configure each new webhook (for providers that need configuration)
-          const pollingProviders = ['gmail', 'outlook']
-          const needsConfiguration = pollingProviders.includes(provider)
+          const needsConfiguration = provider === 'gmail' || provider === 'outlook'
 
           if (needsConfiguration) {
             const configureFunc =
@@ -388,7 +414,7 @@ export async function POST(request: NextRequest) {
                 const webhookRows = await db
                   .select()
                   .from(webhook)
-                  .where(eq(webhook.id, wh.id))
+                  .where(and(eq(webhook.id, wh.id), isNull(webhook.archivedAt)))
                   .limit(1)
 
                 if (webhookRows.length > 0) {
@@ -433,7 +459,7 @@ export async function POST(request: NextRequest) {
           const primaryWebhookRows = await db
             .select()
             .from(webhook)
-            .where(eq(webhook.id, syncResult.webhooks[0].id))
+            .where(and(eq(webhook.id, syncResult.webhooks[0].id), isNull(webhook.archivedAt)))
             .limit(1)
 
           return NextResponse.json(
@@ -474,26 +500,53 @@ export async function POST(request: NextRequest) {
     const userProvided = originalProviderConfig as Record<string, unknown>
     const configToSave: Record<string, unknown> = { ...userProvided }
 
-    try {
-      const result = await createExternalWebhookSubscription(
-        request,
-        createTempWebhookData(),
-        workflowRecord,
-        userId,
-        requestId
-      )
-      const updatedConfig = result.updatedProviderConfig as Record<string, unknown>
-      mergeNonUserFields(configToSave, updatedConfig, userProvided)
-      resolvedProviderConfig = updatedConfig
-      externalSubscriptionCreated = result.externalSubscriptionCreated
-    } catch (err) {
-      logger.error(`[${requestId}] Error creating external webhook subscription`, err)
-      return NextResponse.json(
-        {
-          error: 'Failed to create external webhook subscription',
-          details: err instanceof Error ? err.message : 'Unknown error',
-        },
-        { status: 500 }
+    if (targetWebhookId) {
+      const existingRows = await db
+        .select()
+        .from(webhook)
+        .where(eq(webhook.id, targetWebhookId))
+        .limit(1)
+      existingWebhook = existingRows[0] || null
+    }
+
+    const shouldRecreateSubscription =
+      existingWebhook &&
+      shouldRecreateExternalWebhookSubscription({
+        previousProvider: existingWebhook.provider as string,
+        nextProvider: provider,
+        previousConfig: ((existingWebhook.providerConfig as Record<string, unknown>) ||
+          {}) as Record<string, unknown>,
+        nextConfig: resolvedProviderConfig,
+      })
+
+    if (!existingWebhook || shouldRecreateSubscription) {
+      try {
+        const result = await createExternalWebhookSubscription(
+          request,
+          createTempWebhookData(),
+          workflowRecord,
+          userId,
+          requestId
+        )
+        const updatedConfig = result.updatedProviderConfig as Record<string, unknown>
+        mergeNonUserFields(configToSave, updatedConfig, userProvided)
+        resolvedProviderConfig = updatedConfig
+        externalSubscriptionCreated = result.externalSubscriptionCreated
+      } catch (err) {
+        logger.error(`[${requestId}] Error creating external webhook subscription`, err)
+        return NextResponse.json(
+          {
+            error: 'Failed to create external webhook subscription',
+            details: err instanceof Error ? err.message : 'Unknown error',
+          },
+          { status: 500 }
+        )
+      }
+    } else {
+      mergeNonUserFields(
+        configToSave,
+        (existingWebhook.providerConfig as Record<string, unknown>) || {},
+        userProvided
       )
     }
 
@@ -564,6 +617,17 @@ export async function POST(request: NextRequest) {
       throw dbError
     }
 
+    if (existingWebhook && shouldRecreateSubscription) {
+      try {
+        await cleanupExternalWebhook(existingWebhook, workflowRecord, requestId)
+      } catch (cleanupError) {
+        logger.warn(
+          `[${requestId}] Failed to cleanup previous external webhook subscription ${existingWebhook.id}`,
+          cleanupError
+        )
+      }
+    }
+
     // --- Gmail/Outlook webhook setup (these don't require external subscriptions, configure after DB save) ---
     if (savedWebhook && provider === 'gmail') {
       logger.info(`[${requestId}] Gmail provider detected. Setting up Gmail webhook configuration.`)
@@ -572,7 +636,7 @@ export async function POST(request: NextRequest) {
 
         if (!success) {
           logger.error(`[${requestId}] Failed to configure Gmail polling, rolling back webhook`)
-          await db.delete(webhook).where(eq(webhook.id, savedWebhook.id))
+          await revertSavedWebhook(savedWebhook, existingWebhook, requestId)
           return NextResponse.json(
             {
               error: 'Failed to configure Gmail polling',
@@ -588,7 +652,7 @@ export async function POST(request: NextRequest) {
           `[${requestId}] Error setting up Gmail webhook configuration, rolling back webhook`,
           err
         )
-        await db.delete(webhook).where(eq(webhook.id, savedWebhook.id))
+        await revertSavedWebhook(savedWebhook, existingWebhook, requestId)
         return NextResponse.json(
           {
             error: 'Failed to configure Gmail webhook',
@@ -610,7 +674,7 @@ export async function POST(request: NextRequest) {
 
         if (!success) {
           logger.error(`[${requestId}] Failed to configure Outlook polling, rolling back webhook`)
-          await db.delete(webhook).where(eq(webhook.id, savedWebhook.id))
+          await revertSavedWebhook(savedWebhook, existingWebhook, requestId)
           return NextResponse.json(
             {
               error: 'Failed to configure Outlook polling',
@@ -626,7 +690,7 @@ export async function POST(request: NextRequest) {
           `[${requestId}] Error setting up Outlook webhook configuration, rolling back webhook`,
           err
         )
-        await db.delete(webhook).where(eq(webhook.id, savedWebhook.id))
+        await revertSavedWebhook(savedWebhook, existingWebhook, requestId)
         return NextResponse.json(
           {
             error: 'Failed to configure Outlook webhook',
@@ -646,7 +710,7 @@ export async function POST(request: NextRequest) {
 
         if (!success) {
           logger.error(`[${requestId}] Failed to configure RSS polling, rolling back webhook`)
-          await db.delete(webhook).where(eq(webhook.id, savedWebhook.id))
+          await revertSavedWebhook(savedWebhook, existingWebhook, requestId)
           return NextResponse.json(
             {
               error: 'Failed to configure RSS polling',
@@ -662,7 +726,7 @@ export async function POST(request: NextRequest) {
           `[${requestId}] Error setting up RSS webhook configuration, rolling back webhook`,
           err
         )
-        await db.delete(webhook).where(eq(webhook.id, savedWebhook.id))
+        await revertSavedWebhook(savedWebhook, existingWebhook, requestId)
         return NextResponse.json(
           {
             error: 'Failed to configure RSS webhook',
@@ -685,6 +749,20 @@ export async function POST(request: NextRequest) {
       } catch {
         // Telemetry should not fail the operation
       }
+
+      recordAudit({
+        workspaceId: workflowRecord.workspaceId || null,
+        actorId: userId,
+        actorName: session?.user?.name ?? undefined,
+        actorEmail: session?.user?.email ?? undefined,
+        action: AuditAction.WEBHOOK_CREATED,
+        resourceType: AuditResourceType.WEBHOOK,
+        resourceId: savedWebhook.id,
+        resourceName: provider || 'generic',
+        description: `Created ${provider || 'generic'} webhook`,
+        metadata: { provider, workflowId },
+        request,
+      })
     }
 
     const status = targetWebhookId ? 200 : 201

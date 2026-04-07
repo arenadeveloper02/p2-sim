@@ -10,7 +10,7 @@ import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
+import { getFormattedGitHubStars } from '@/app/(home)/actions/github'
 import {
   deployedChatPromptSentEvent,
   deployedChatThreadSelectedEvent,
@@ -25,7 +25,7 @@ import {
   EmailAuth,
   GoldenQueriesModal,
   PasswordAuth,
-  SSOAuth,
+  // SSOAuth,
   UnauthorizedEmailError,
   VoiceInterface,
 } from '@/app/chat/components'
@@ -1311,9 +1311,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     if (authRequired === 'email') {
       return <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
     }
-    if (authRequired === 'sso') {
-      return <SSOAuth identifier={identifier} />
-    }
+    // if (authRequired === 'sso') {
+    //   return <SSOAuth identifier={identifier} />
+    // }
   }
 
   // Loading state while fetching config using the extracted component
@@ -1427,7 +1427,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                 ) => {
                   void handleSendMessage(value, isVoiceInput, files)
                 }}
-                isStreaming={isStreamingResponse}
+                isStreaming={isLoading || isStreamingResponse}
                 onStopStreaming={() => stopStreaming(setMessages)}
                 onVoiceStart={handleVoiceStart}
               />

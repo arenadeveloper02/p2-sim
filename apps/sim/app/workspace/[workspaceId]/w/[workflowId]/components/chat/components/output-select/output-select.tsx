@@ -3,12 +3,10 @@
 import type React from 'react'
 import { useMemo } from 'react'
 import { RepeatIcon, SplitIcon } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 import { Combobox, type ComboboxOptionGroup } from '@/components/emcn'
-import {
-  extractFieldsFromSchema,
-  parseResponseFormatSafely,
-} from '@/lib/core/utils/response-format'
-import { getToolOutputs } from '@/lib/workflows/blocks/block-outputs'
+import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
+import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
 import { getBlock } from '@/blocks'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
@@ -30,7 +28,7 @@ const TagIcon: React.FC<{
     style={{ background: color }}
   >
     {typeof icon === 'string' ? (
-      <span className='!text-white font-bold text-[10px]'>{icon}</span>
+      <span className='!text-white font-bold text-micro'>{icon}</span>
     ) : (
       (() => {
         const IconComponent = icon
@@ -89,7 +87,14 @@ export function OutputSelect({
   maxHeight = 200,
 }: OutputSelectProps) {
   const blocks = useWorkflowStore((state) => state.blocks)
-  const { isShowingDiff, isDiffReady, hasActiveDiff, baselineWorkflow } = useWorkflowDiffStore()
+  const { isShowingDiff, isDiffReady, hasActiveDiff, baselineWorkflow } = useWorkflowDiffStore(
+    useShallow((s) => ({
+      isShowingDiff: s.isShowingDiff,
+      isDiffReady: s.isDiffReady,
+      hasActiveDiff: s.hasActiveDiff,
+      baselineWorkflow: s.baselineWorkflow,
+    }))
+  )
   const subBlockValues = useSubBlockStore((state) =>
     workflowId ? state.workflowValues[workflowId] : null
   )
@@ -130,47 +135,26 @@ export function OutputSelect({
           : `block-${block.id}`
 
       const blockConfig = getBlock(block.type)
-      const responseFormatValue =
-        shouldUseBaseline && baselineWorkflow
-          ? baselineWorkflow.blocks?.[block.id]?.subBlocks?.responseFormat?.value
-          : subBlockValues?.[block.id]?.responseFormat
-      const responseFormat = parseResponseFormatSafely(responseFormatValue, block.id)
+      const isTriggerCapable = blockConfig ? hasTriggerCapability(blockConfig) : false
+      const effectiveTriggerMode = Boolean(block.triggerMode && isTriggerCapable)
 
       let outputsToProcess: Record<string, unknown> = {}
-
-      if (responseFormat) {
-        const schemaFields = extractFieldsFromSchema(responseFormat)
-        if (schemaFields.length > 0) {
-          schemaFields.forEach((field) => {
-            outputsToProcess[field.name] = { type: field.type }
-          })
-        } else {
-          outputsToProcess = blockConfig?.outputs || {}
+      const rawSubBlockValues =
+        shouldUseBaseline && baselineWorkflow
+          ? baselineWorkflow.blocks?.[block.id]?.subBlocks
+          : subBlockValues?.[block.id]
+      const subBlocks: Record<string, { value: unknown }> = {}
+      if (rawSubBlockValues && typeof rawSubBlockValues === 'object') {
+        for (const [key, val] of Object.entries(rawSubBlockValues)) {
+          // Handle both { value: ... } and raw value formats
+          subBlocks[key] = val && typeof val === 'object' && 'value' in val ? val : { value: val }
         }
-      } else {
-        // Build subBlocks object for tool selector
-        const rawSubBlockValues =
-          shouldUseBaseline && baselineWorkflow
-            ? baselineWorkflow.blocks?.[block.id]?.subBlocks
-            : subBlockValues?.[block.id]
-        const subBlocks: Record<string, { value: unknown }> = {}
-        if (rawSubBlockValues && typeof rawSubBlockValues === 'object') {
-          for (const [key, val] of Object.entries(rawSubBlockValues)) {
-            // Handle both { value: ... } and raw value formats
-            subBlocks[key] = val && typeof val === 'object' && 'value' in val ? val : { value: val }
-          }
-        }
-
-        const toolOutputs = blockConfig ? getToolOutputs(blockConfig, subBlocks) : {}
-        // Prefer block outputs when they exist, as they define the user-facing API
-        // Fall back to tool outputs only if block outputs are not defined
-        outputsToProcess =
-          blockConfig?.outputs && Object.keys(blockConfig.outputs).length > 0
-            ? blockConfig.outputs
-            : Object.keys(toolOutputs).length > 0
-              ? toolOutputs
-              : {}
       }
+
+      outputsToProcess = getEffectiveBlockOutputs(block.type, subBlocks, {
+        triggerMode: effectiveTriggerMode,
+        preferToolOutputs: !effectiveTriggerMode,
+      }) as Record<string, unknown>
 
       if (Object.keys(outputsToProcess).length === 0) return
 
@@ -318,9 +302,9 @@ export function OutputSelect({
 
       return {
         sectionElement: (
-          <div className='flex items-center gap-1.5 px-[6px] py-[4px]'>
+          <div className='flex items-center gap-1.5 px-1.5 py-1'>
             <TagIcon icon={blockIcon} color={blockColor} />
-            <span className='font-medium text-[13px]'>{blockName}</span>
+            <span className='font-medium text-small'>{blockName}</span>
           </div>
         ),
         items: outputs.map((output) => ({
@@ -349,7 +333,7 @@ export function OutputSelect({
   return (
     <Combobox
       size='sm'
-      className='!w-fit !py-[2px] min-w-[100px] rounded-[6px] px-[9px]'
+      className='!w-fit !py-0.5 min-w-[100px] rounded-md px-2.5'
       groups={comboboxGroups}
       options={[]}
       multiSelect

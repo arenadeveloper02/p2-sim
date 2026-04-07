@@ -139,14 +139,16 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
       {/* Scrollable Messages Area */}
       <div
         ref={messagesContainerRef}
-        className='!scroll-smooth absolute inset-0 h-[calc(100%-50px)] touch-pan-y overflow-y-auto overscroll-auto'
+        className='!scroll-smooth absolute inset-0 h-[calc(100%-65px)] touch-pan-y overflow-y-auto overscroll-auto'
       >
         <div className='ml-64 w-[calc(100%-270px)] px-4 pb-8'>
           {messages.length === 0 ? (
             <div className='flex flex-col items-center justify-center py-10'>
               <div className='space-y-2 text-center'>
-                <h3 className='font-medium text-lg'>How can I help you today?</h3>
-                <p className='text-muted-foreground text-sm'>
+                <h3 className='font-medium text-[var(--landing-text)] text-lg'>
+                  How can I help you today?
+                </h3>
+                <p className='text-[var(--landing-text-muted)] text-sm'>
                   {chatConfig?.description || 'Ask me anything.'}
                 </p>
               </div>
@@ -202,7 +204,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
             onClick={scrollToBottom}
             size='sm'
             variant='outline'
-            className='flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 shadow-lg transition-all hover:bg-gray-50'
+            className='flex items-center gap-1 rounded-full border border-[var(--border-1)] px-3 py-1 shadow-lg transition-all hover:opacity-80 dark:bg-[var(--landing-bg-elevated)]'
           >
             <ArrowDown className='h-3.5 w-3.5' />
             <span className='sr-only'>Scroll to bottom</span>

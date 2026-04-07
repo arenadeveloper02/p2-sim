@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { create } from 'zustand'
-import { createJSONStorage, devtools, type PersistStorage, persist } from 'zustand/middleware'
+import { devtools, type PersistStorage } from 'zustand/middleware'
+import { useShallow } from 'zustand/react/shallow'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { getQueryClient } from '@/app/_shell/providers/query-provider'
 import { truncateLargeBase64Data } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
@@ -8,8 +9,20 @@ import type { NormalizedBlockOutput } from '@/executor/types'
 import { type GeneralSettings, generalSettingsKeys } from '@/hooks/queries/general-settings'
 import { useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
-import { indexedDBStorage } from '@/stores/terminal/console/storage'
-import type { ConsoleEntry, ConsoleStore, ConsoleUpdate } from '@/stores/terminal/console/types'
+import { consolePersistence, loadConsoleData } from '@/stores/terminal/console/storage'
+import type {
+  ConsoleEntry,
+  ConsoleEntryLocation,
+  ConsoleStore,
+  ConsoleUpdate,
+} from '@/stores/terminal/console/types'
+import {
+  normalizeConsoleError,
+  normalizeConsoleInput,
+  normalizeConsoleOutput,
+  safeConsoleStringify,
+  trimWorkflowConsoleEntries,
+} from '@/stores/terminal/console/utils'
 
 const logger = createLogger('TerminalConsoleStore')
 
@@ -74,7 +87,8 @@ const safeStorageAdapter: PersistStorage<ConsoleStore> = {
 /**
  * Updates a NormalizedBlockOutput with new content
  */
-const MAX_ENTRIES_PER_WORKFLOW = 1000
+const MAX_ENTRIES_PER_WORKFLOW = 5000
+const EMPTY_CONSOLE_ENTRIES: ConsoleEntry[] = []
 
 const updateBlockOutput = (
   existingOutput: NormalizedBlockOutput | undefined,
@@ -120,327 +134,693 @@ const shouldSkipEntry = (output: any): boolean => {
   return false
 }
 
-export const useTerminalConsoleStore = create<ConsoleStore>()(
-  devtools(
-    persist(
-      (set, get) => ({
-        entries: [],
-        isOpen: false,
-        _hasHydrated: false,
+const getBlockExecutionKey = (blockId: string, executionId?: string): string =>
+  `${executionId ?? 'no-execution'}:${blockId}`
 
-        setHasHydrated: (hasHydrated) => set({ _hasHydrated: hasHydrated }),
+const matchesEntryForUpdate = (
+  entry: ConsoleEntry,
+  blockId: string,
+  executionId: string | undefined,
+  update: string | ConsoleUpdate
+): boolean => {
+  if (entry.blockId !== blockId || entry.executionId !== executionId) {
+    return false
+  }
 
-        addConsole: (entry: Omit<ConsoleEntry, 'id' | 'timestamp'>) => {
-          set((state) => {
-            if (shouldSkipEntry(entry.output)) {
-              return { entries: state.entries }
-            }
+  if (typeof update !== 'object') {
+    return true
+  }
 
-            // Redact API keys from output
-            let redactedEntry = { ...entry }
-            if (
-              !isStreamingOutput(entry.output) &&
-              redactedEntry.output &&
-              typeof redactedEntry.output === 'object'
-            ) {
-              redactedEntry.output = redactApiKeys(redactedEntry.output)
-            }
-            if (redactedEntry.input && typeof redactedEntry.input === 'object') {
-              redactedEntry.input = redactApiKeys(redactedEntry.input)
-            }
+  if (update.executionOrder !== undefined && entry.executionOrder !== update.executionOrder) {
+    return false
+  }
 
-            // Truncate large base64 image data to prevent localStorage quota issues
-            redactedEntry = {
-              ...redactedEntry,
-              output: truncateLargeBase64Data(redactedEntry.output),
-              input: truncateLargeBase64Data(redactedEntry.input),
-            }
+  if (update.iterationCurrent !== undefined && entry.iterationCurrent !== update.iterationCurrent) {
+    return false
+  }
 
-            // Create new entry with ID and timestamp
-            const newEntry: ConsoleEntry = {
-              ...redactedEntry,
-              id: crypto.randomUUID(),
-              timestamp: new Date().toISOString(),
-            }
+  if (
+    update.iterationContainerId !== undefined &&
+    entry.iterationContainerId !== update.iterationContainerId
+  ) {
+    return false
+  }
 
-            const newEntries = [newEntry, ...state.entries]
+  if (
+    update.childWorkflowBlockId !== undefined &&
+    entry.childWorkflowBlockId !== update.childWorkflowBlockId
+  ) {
+    return false
+  }
 
-            const executionsToRemove = new Set<string>()
+  return true
+}
 
-            const workflowGroups = new Map<string, ConsoleEntry[]>()
-            for (const e of newEntries) {
-              const group = workflowGroups.get(e.workflowId) || []
-              group.push(e)
-              workflowGroups.set(e.workflowId, group)
-            }
+function cloneWorkflowEntries(
+  workflowEntries: Record<string, ConsoleEntry[]>
+): Record<string, ConsoleEntry[]> {
+  return { ...workflowEntries }
+}
 
-            for (const [workflowId, entries] of workflowGroups) {
-              if (entries.length <= MAX_ENTRIES_PER_WORKFLOW) continue
+function removeWorkflowIndexes(
+  workflowId: string,
+  entries: ConsoleEntry[],
+  entryIdsByBlockExecution: Record<string, string[]>,
+  entryLocationById: Record<string, ConsoleEntryLocation>
+): void {
+  for (const entry of entries) {
+    delete entryLocationById[entry.id]
+    const blockExecutionKey = getBlockExecutionKey(entry.blockId, entry.executionId)
+    const existingIds = entryIdsByBlockExecution[blockExecutionKey]
+    if (!existingIds) {
+      continue
+    }
 
-              const execOrder: string[] = []
-              const seen = new Set<string>()
-              for (const e of entries) {
-                const execId = e.executionId ?? e.id
-                if (!seen.has(execId)) {
-                  execOrder.push(execId)
-                  seen.add(execId)
-                }
-              }
+    const nextIds = existingIds.filter((entryId) => entryId !== entry.id)
+    if (nextIds.length === 0) {
+      delete entryIdsByBlockExecution[blockExecutionKey]
+    } else {
+      entryIdsByBlockExecution[blockExecutionKey] = nextIds
+    }
+  }
+}
 
-              const counts = new Map<string, number>()
-              for (const e of entries) {
-                const execId = e.executionId ?? e.id
-                counts.set(execId, (counts.get(execId) || 0) + 1)
-              }
+function indexWorkflowEntries(
+  workflowId: string,
+  entries: ConsoleEntry[],
+  entryIdsByBlockExecution: Record<string, string[]>,
+  entryLocationById: Record<string, ConsoleEntryLocation>
+): void {
+  entries.forEach((entry, index) => {
+    entryLocationById[entry.id] = { workflowId, index }
+    const blockExecutionKey = getBlockExecutionKey(entry.blockId, entry.executionId)
+    const existingIds = entryIdsByBlockExecution[blockExecutionKey]
+    if (existingIds) {
+      entryIdsByBlockExecution[blockExecutionKey] = [...existingIds, entry.id]
+    } else {
+      entryIdsByBlockExecution[blockExecutionKey] = [entry.id]
+    }
+  })
+}
 
-              let total = 0
-              const toKeep = new Set<string>()
-              for (const execId of execOrder) {
-                const c = counts.get(execId) || 0
-                if (total + c <= MAX_ENTRIES_PER_WORKFLOW) {
-                  toKeep.add(execId)
-                  total += c
-                }
-              }
+function rebuildWorkflowStateMaps(workflowEntries: Record<string, ConsoleEntry[]>) {
+  const entryIdsByBlockExecution: Record<string, string[]> = {}
+  const entryLocationById: Record<string, ConsoleEntryLocation> = {}
 
-              for (const execId of execOrder) {
-                if (!toKeep.has(execId)) {
-                  executionsToRemove.add(`${workflowId}:${execId}`)
-                }
-              }
-            }
-
-            const trimmedEntries = newEntries.filter((e) => {
-              const key = `${e.workflowId}:${e.executionId ?? e.id}`
-              return !executionsToRemove.has(key)
-            })
-
-            return { entries: trimmedEntries }
-          })
-
-          const newEntry = get().entries[0]
-
-          if (newEntry?.error) {
-            const settings = getQueryClient().getQueryData<GeneralSettings>(
-              generalSettingsKeys.settings()
-            )
-            const isErrorNotificationsEnabled = settings?.errorNotificationsEnabled ?? true
-
-            if (isErrorNotificationsEnabled) {
-              try {
-                const errorMessage = String(newEntry.error)
-                const blockName = newEntry.blockName || 'Unknown Block'
-                const displayMessage = `${blockName}: ${errorMessage}`
-
-                const copilotMessage = `${errorMessage}\n\nError in ${blockName}.\n\nPlease fix this.`
-
-                useNotificationStore.getState().addNotification({
-                  level: 'error',
-                  message: displayMessage,
-                  workflowId: entry.workflowId,
-                  action: {
-                    type: 'copilot',
-                    message: copilotMessage,
-                  },
-                })
-              } catch (notificationError) {
-                logger.error('Failed to create block error notification', {
-                  entryId: newEntry.id,
-                  error: notificationError,
-                })
-              }
-            }
-          }
-
-          return newEntry
-        },
-
-        clearWorkflowConsole: (workflowId: string) => {
-          set((state) => ({
-            entries: state.entries.filter((entry) => entry.workflowId !== workflowId),
-          }))
-          useExecutionStore.getState().clearRunPath()
-        },
-
-        exportConsoleCSV: (workflowId: string) => {
-          const entries = get().entries.filter((entry) => entry.workflowId === workflowId)
-
-          if (entries.length === 0) {
-            return
-          }
-
-          const formatCSVValue = (value: any): string => {
-            if (value === null || value === undefined) {
-              return ''
-            }
-
-            let stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
-
-            if (
-              stringValue.includes('"') ||
-              stringValue.includes(',') ||
-              stringValue.includes('\n')
-            ) {
-              stringValue = `"${stringValue.replace(/"/g, '""')}"`
-            }
-
-            return stringValue
-          }
-
-          const headers = [
-            'timestamp',
-            'blockName',
-            'blockType',
-            'startedAt',
-            'endedAt',
-            'durationMs',
-            'success',
-            'input',
-            'output',
-            'error',
-            'warning',
-          ]
-
-          const csvRows = [
-            headers.join(','),
-            ...entries.map((entry) =>
-              [
-                formatCSVValue(entry.timestamp),
-                formatCSVValue(entry.blockName),
-                formatCSVValue(entry.blockType),
-                formatCSVValue(entry.startedAt),
-                formatCSVValue(entry.endedAt),
-                formatCSVValue(entry.durationMs),
-                formatCSVValue(entry.success),
-                formatCSVValue(entry.input),
-                formatCSVValue(entry.output),
-                formatCSVValue(entry.error),
-                formatCSVValue(entry.warning),
-              ].join(',')
-            ),
-          ]
-
-          const csvContent = csvRows.join('\n')
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-          const filename = `terminal-console-${workflowId}-${timestamp}.csv`
-
-          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-          const link = document.createElement('a')
-
-          if (link.download !== undefined) {
-            const url = URL.createObjectURL(blob)
-            link.setAttribute('href', url)
-            link.setAttribute('download', filename)
-            link.style.visibility = 'hidden'
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
-            URL.revokeObjectURL(url)
-          }
-        },
-
-        getWorkflowEntries: (workflowId) => {
-          return get().entries.filter((entry) => entry.workflowId === workflowId)
-        },
-
-        toggleConsole: () => {
-          set((state) => ({ isOpen: !state.isOpen }))
-        },
-
-        updateConsole: (blockId: string, update: string | ConsoleUpdate, executionId?: string) => {
-          set((state) => {
-            const updatedEntries = state.entries.map((entry) => {
-              if (entry.blockId !== blockId || entry.executionId !== executionId) {
-                return entry
-              }
-
-              if (typeof update === 'string') {
-                const newOutput = updateBlockOutput(entry.output, update)
-                return {
-                  ...entry,
-                  output: truncateLargeBase64Data(newOutput),
-                }
-              }
-
-              const updatedEntry = { ...entry }
-
-              if (update.content !== undefined) {
-                updatedEntry.output = truncateLargeBase64Data(
-                  updateBlockOutput(entry.output, update.content)
-                )
-              }
-
-              if (update.replaceOutput !== undefined) {
-                updatedEntry.output = truncateLargeBase64Data(update.replaceOutput)
-              } else if (update.output !== undefined) {
-                updatedEntry.output = truncateLargeBase64Data({
-                  ...(entry.output || {}),
-                  ...update.output,
-                })
-              }
-
-              if (update.error !== undefined) {
-                updatedEntry.error = update.error
-              }
-
-              if (update.warning !== undefined) {
-                updatedEntry.warning = update.warning
-              }
-
-              if (update.success !== undefined) {
-                updatedEntry.success = update.success
-              }
-
-              if (update.endedAt !== undefined) {
-                updatedEntry.endedAt = update.endedAt
-              }
-
-              if (update.durationMs !== undefined) {
-                updatedEntry.durationMs = update.durationMs
-              }
-
-              if (update.input !== undefined) {
-                updatedEntry.input = truncateLargeBase64Data(update.input)
-              }
-
-              return updatedEntry
-            })
-
-            return { entries: updatedEntries }
-          })
-        },
-      }),
-      {
-        name: 'terminal-console-store',
-        storage: createJSONStorage(() => indexedDBStorage),
-        partialize: (state) => ({
-          entries: state.entries,
-          isOpen: state.isOpen,
-        }),
-        onRehydrateStorage: () => (_state, error) => {
-          if (error) {
-            logger.error('Failed to rehydrate console store', { error })
-          }
-        },
-        merge: (persistedState, currentState) => {
-          const persisted = persistedState as Partial<ConsoleStore> | undefined
-          return {
-            ...currentState,
-            entries: persisted?.entries ?? currentState.entries,
-            isOpen: persisted?.isOpen ?? currentState.isOpen,
-          }
-        },
-      }
-    )
-  )
-)
-
-if (typeof window !== 'undefined') {
-  useTerminalConsoleStore.persist.onFinishHydration(() => {
-    useTerminalConsoleStore.setState({ _hasHydrated: true })
+  Object.entries(workflowEntries).forEach(([workflowId, entries]) => {
+    indexWorkflowEntries(workflowId, entries, entryIdsByBlockExecution, entryLocationById)
   })
 
-  if (useTerminalConsoleStore.persist.hasHydrated()) {
+  return { entryIdsByBlockExecution, entryLocationById }
+}
+
+function replaceWorkflowEntries(
+  state: ConsoleStore,
+  workflowId: string,
+  nextEntries: ConsoleEntry[]
+): Pick<ConsoleStore, 'workflowEntries' | 'entryIdsByBlockExecution' | 'entryLocationById'> {
+  const workflowEntries = cloneWorkflowEntries(state.workflowEntries)
+  const entryIdsByBlockExecution = { ...state.entryIdsByBlockExecution }
+  const entryLocationById = { ...state.entryLocationById }
+  const previousEntries = workflowEntries[workflowId] ?? EMPTY_CONSOLE_ENTRIES
+
+  removeWorkflowIndexes(workflowId, previousEntries, entryIdsByBlockExecution, entryLocationById)
+
+  if (nextEntries.length === 0) {
+    delete workflowEntries[workflowId]
+  } else {
+    workflowEntries[workflowId] = nextEntries
+    indexWorkflowEntries(workflowId, nextEntries, entryIdsByBlockExecution, entryLocationById)
+  }
+
+  return { workflowEntries, entryIdsByBlockExecution, entryLocationById }
+}
+
+function appendWorkflowEntry(
+  state: ConsoleStore,
+  workflowId: string,
+  newEntry: ConsoleEntry,
+  trimmedEntries: ConsoleEntry[]
+): Pick<ConsoleStore, 'workflowEntries' | 'entryIdsByBlockExecution' | 'entryLocationById'> {
+  const workflowEntries = cloneWorkflowEntries(state.workflowEntries)
+  const previousEntries = workflowEntries[workflowId] ?? EMPTY_CONSOLE_ENTRIES
+  workflowEntries[workflowId] = trimmedEntries
+
+  const entryLocationById = { ...state.entryLocationById }
+  const entryIdsByBlockExecution = { ...state.entryIdsByBlockExecution }
+
+  const survivingIds = new Set(trimmedEntries.map((e) => e.id))
+  const droppedEntries = previousEntries.filter((e) => !survivingIds.has(e.id))
+  if (droppedEntries.length > 0) {
+    removeWorkflowIndexes(workflowId, droppedEntries, entryIdsByBlockExecution, entryLocationById)
+  }
+
+  trimmedEntries.forEach((entry, index) => {
+    entryLocationById[entry.id] = { workflowId, index }
+  })
+
+  const blockExecutionKey = getBlockExecutionKey(newEntry.blockId, newEntry.executionId)
+  const existingIds = entryIdsByBlockExecution[blockExecutionKey]
+  if (existingIds) {
+    if (!existingIds.includes(newEntry.id)) {
+      entryIdsByBlockExecution[blockExecutionKey] = [...existingIds, newEntry.id]
+    }
+  } else {
+    entryIdsByBlockExecution[blockExecutionKey] = [newEntry.id]
+  }
+
+  return { workflowEntries, entryIdsByBlockExecution, entryLocationById }
+}
+
+interface NotifyBlockErrorParams {
+  error: unknown
+  blockName: string
+  workflowId?: string
+  logContext: Record<string, unknown>
+}
+
+const notifyBlockError = ({ error, blockName, workflowId, logContext }: NotifyBlockErrorParams) => {
+  const settings = getQueryClient().getQueryData<GeneralSettings>(generalSettingsKeys.settings())
+  const isErrorNotificationsEnabled = settings?.errorNotificationsEnabled ?? true
+
+  if (!isErrorNotificationsEnabled) return
+
+  try {
+    const errorMessage = String(error)
+    const displayName = blockName || 'Unknown Block'
+    const displayMessage = `${displayName}: ${errorMessage}`
+    const copilotMessage = `${errorMessage}\n\nError in ${displayName}.\n\nPlease fix this.`
+
+    useNotificationStore.getState().addNotification({
+      level: 'error',
+      message: displayMessage,
+      workflowId,
+      action: {
+        type: 'copilot',
+        message: copilotMessage,
+      },
+    })
+  } catch (notificationError) {
+    logger.error('Failed to create block error notification', {
+      ...logContext,
+      error: notificationError,
+    })
+  }
+}
+
+export const useTerminalConsoleStore = create<ConsoleStore>()(
+  devtools((set, get) => ({
+    workflowEntries: {},
+    entryIdsByBlockExecution: {},
+    entryLocationById: {},
+    isOpen: false,
+    _hasHydrated: false,
+
+    addConsole: (entry: Omit<ConsoleEntry, 'id' | 'timestamp'>) => {
+      if (shouldSkipEntry(entry.output)) {
+        return get().getWorkflowEntries(entry.workflowId)[0] as ConsoleEntry | undefined
+      }
+
+      const redactedEntry = { ...entry }
+      if (
+        !isStreamingOutput(entry.output) &&
+        redactedEntry.output &&
+        typeof redactedEntry.output === 'object'
+      ) {
+        redactedEntry.output = redactApiKeys(redactedEntry.output)
+      }
+      if (redactedEntry.input && typeof redactedEntry.input === 'object') {
+        redactedEntry.input = redactApiKeys(redactedEntry.input)
+      }
+
+      const truncatedEntry = {
+        ...redactedEntry,
+        output: truncateLargeBase64Data(redactedEntry.output),
+        input: truncateLargeBase64Data(redactedEntry.input),
+      }
+
+      const createdEntry: ConsoleEntry = {
+        ...truncatedEntry,
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        input: normalizeConsoleInput(truncatedEntry.input),
+        output: normalizeConsoleOutput(truncatedEntry.output),
+        error: normalizeConsoleError(truncatedEntry.error),
+        warning:
+          typeof truncatedEntry.warning === 'string'
+            ? (normalizeConsoleError(truncatedEntry.warning) ?? undefined)
+            : truncatedEntry.warning,
+      }
+
+      set((state) => {
+        const workflowEntries = state.workflowEntries[entry.workflowId] ?? EMPTY_CONSOLE_ENTRIES
+        const nextWorkflowEntries = trimWorkflowConsoleEntries([createdEntry, ...workflowEntries])
+        return appendWorkflowEntry(state, entry.workflowId, createdEntry, nextWorkflowEntries)
+      })
+
+      if (createdEntry.isRunning) {
+        consolePersistence.onRunningEntryAdded()
+      }
+
+      if (createdEntry.error && createdEntry.blockType !== 'cancelled') {
+        notifyBlockError({
+          error: createdEntry.error,
+          blockName: createdEntry.blockName || 'Unknown Block',
+          workflowId: entry.workflowId,
+          logContext: { entryId: createdEntry.id },
+        })
+      }
+
+      return createdEntry
+    },
+
+    clearWorkflowConsole: (workflowId: string) => {
+      set((state) => replaceWorkflowEntries(state, workflowId, EMPTY_CONSOLE_ENTRIES))
+      useExecutionStore.getState().clearRunPath(workflowId)
+      consolePersistence.persist()
+    },
+
+    clearExecutionEntries: (executionId: string) =>
+      set((state) => {
+        const nextWorkflowEntries = cloneWorkflowEntries(state.workflowEntries)
+        let didChange = false
+
+        Object.entries(nextWorkflowEntries).forEach(([workflowId, entries]) => {
+          const filteredEntries = entries.filter((entry) => entry.executionId !== executionId)
+          if (filteredEntries.length !== entries.length) {
+            nextWorkflowEntries[workflowId] = filteredEntries
+            didChange = true
+          }
+        })
+
+        if (!didChange) {
+          return state
+        }
+
+        const normalizedEntries = Object.fromEntries(
+          Object.entries(nextWorkflowEntries).filter(([, entries]) => entries.length > 0)
+        )
+
+        return {
+          workflowEntries: normalizedEntries,
+          ...rebuildWorkflowStateMaps(normalizedEntries),
+        }
+      }),
+
+    exportConsoleCSV: (workflowId: string) => {
+      const entries = get().getWorkflowEntries(workflowId)
+
+      if (entries.length === 0) {
+        return
+      }
+
+      const formatCSVValue = (value: any): string => {
+        if (value === null || value === undefined) {
+          return ''
+        }
+
+        let stringValue = typeof value === 'object' ? safeConsoleStringify(value) : String(value)
+
+        if (stringValue.includes('"') || stringValue.includes(',') || stringValue.includes('\n')) {
+          stringValue = `"${stringValue.replace(/"/g, '""')}"`
+        }
+
+        return stringValue
+      }
+
+      const headers = [
+        'timestamp',
+        'blockName',
+        'blockType',
+        'startedAt',
+        'endedAt',
+        'durationMs',
+        'success',
+        'input',
+        'output',
+        'error',
+        'warning',
+      ]
+
+      const csvRows = [
+        headers.join(','),
+        ...entries.map((entry) =>
+          [
+            formatCSVValue(entry.timestamp),
+            formatCSVValue(entry.blockName),
+            formatCSVValue(entry.blockType),
+            formatCSVValue(entry.startedAt),
+            formatCSVValue(entry.endedAt),
+            formatCSVValue(entry.durationMs),
+            formatCSVValue(entry.success),
+            formatCSVValue(entry.input),
+            formatCSVValue(entry.output),
+            formatCSVValue(entry.error),
+            formatCSVValue(entry.warning),
+          ].join(',')
+        ),
+      ]
+
+      const csvContent = csvRows.join('\n')
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const filename = `terminal-console-${workflowId}-${timestamp}.csv`
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob)
+        link.setAttribute('href', url)
+        link.setAttribute('download', filename)
+        link.style.visibility = 'hidden'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+      }
+    },
+
+    getWorkflowEntries: (workflowId) => {
+      return get().workflowEntries[workflowId] ?? EMPTY_CONSOLE_ENTRIES
+    },
+
+    toggleConsole: () => {
+      set((state) => ({ isOpen: !state.isOpen }))
+    },
+
+    updateConsole: (blockId: string, update: string | ConsoleUpdate, executionId?: string) => {
+      set((state) => {
+        const candidateIds =
+          state.entryIdsByBlockExecution[getBlockExecutionKey(blockId, executionId)] ?? []
+        if (candidateIds.length === 0) {
+          return state
+        }
+
+        const workflowId = state.entryLocationById[candidateIds[0]]?.workflowId
+        if (!workflowId) {
+          return state
+        }
+
+        const currentEntries = state.workflowEntries[workflowId] ?? EMPTY_CONSOLE_ENTRIES
+        let nextEntries: ConsoleEntry[] | null = null
+
+        for (const candidateId of candidateIds) {
+          const location = state.entryLocationById[candidateId]
+          if (!location || location.workflowId !== workflowId) continue
+
+          const source = nextEntries ?? currentEntries
+          const entry = source[location.index]
+          if (!entry || entry.id !== candidateId) continue
+          if (!matchesEntryForUpdate(entry, blockId, executionId, update)) continue
+
+          if (!nextEntries) {
+            nextEntries = [...currentEntries]
+          }
+
+          if (typeof update === 'string') {
+            const newOutput = normalizeConsoleOutput(updateBlockOutput(entry.output, update))
+            nextEntries[location.index] = { ...entry, output: newOutput }
+            continue
+          }
+
+          const updatedEntry = { ...entry }
+
+          if (update.content !== undefined) {
+            updatedEntry.output = normalizeConsoleOutput(
+              updateBlockOutput(entry.output, update.content)
+            )
+          }
+
+          if (update.replaceOutput !== undefined) {
+            const redactedOutput =
+              typeof update.replaceOutput === 'object' && update.replaceOutput !== null
+                ? redactApiKeys(update.replaceOutput)
+                : update.replaceOutput
+            updatedEntry.output = normalizeConsoleOutput(redactedOutput)
+          } else if (update.output !== undefined) {
+            const mergedOutput = {
+              ...(entry.output || {}),
+              ...update.output,
+            }
+            updatedEntry.output =
+              typeof mergedOutput === 'object'
+                ? normalizeConsoleOutput(redactApiKeys(mergedOutput))
+                : normalizeConsoleOutput(mergedOutput)
+          }
+
+          if (update.error !== undefined) {
+            updatedEntry.error = normalizeConsoleError(update.error)
+          }
+
+          if (update.warning !== undefined) {
+            updatedEntry.warning = normalizeConsoleError(update.warning) ?? undefined
+          }
+
+          if (update.success !== undefined) {
+            updatedEntry.success = update.success
+          }
+
+          if (update.startedAt !== undefined) {
+            updatedEntry.startedAt = update.startedAt
+          }
+
+          if (update.endedAt !== undefined) {
+            updatedEntry.endedAt = update.endedAt
+          }
+
+          if (update.durationMs !== undefined) {
+            updatedEntry.durationMs = update.durationMs
+          }
+
+          if (update.input !== undefined) {
+            updatedEntry.input =
+              typeof update.input === 'object' && update.input !== null
+                ? normalizeConsoleInput(redactApiKeys(update.input))
+                : normalizeConsoleInput(update.input)
+          }
+
+          if (update.isRunning !== undefined) {
+            updatedEntry.isRunning = update.isRunning
+          }
+
+          if (update.isCanceled !== undefined) {
+            updatedEntry.isCanceled = update.isCanceled
+          }
+
+          if (update.iterationCurrent !== undefined) {
+            updatedEntry.iterationCurrent = update.iterationCurrent
+          }
+
+          if (update.iterationTotal !== undefined) {
+            updatedEntry.iterationTotal = update.iterationTotal
+          }
+
+          if (update.iterationType !== undefined) {
+            updatedEntry.iterationType = update.iterationType
+          }
+
+          if (update.iterationContainerId !== undefined) {
+            updatedEntry.iterationContainerId = update.iterationContainerId
+          }
+
+          if (update.parentIterations !== undefined) {
+            updatedEntry.parentIterations = update.parentIterations
+          }
+
+          if (update.childWorkflowBlockId !== undefined) {
+            updatedEntry.childWorkflowBlockId = update.childWorkflowBlockId
+          }
+
+          if (update.childWorkflowName !== undefined) {
+            updatedEntry.childWorkflowName = update.childWorkflowName
+          }
+
+          if (update.childWorkflowInstanceId !== undefined) {
+            updatedEntry.childWorkflowInstanceId = update.childWorkflowInstanceId
+          }
+
+          nextEntries[location.index] = updatedEntry
+        }
+
+        if (!nextEntries) {
+          return state
+        }
+
+        const workflowEntriesClone = cloneWorkflowEntries(state.workflowEntries)
+        workflowEntriesClone[workflowId] = nextEntries
+        return {
+          workflowEntries: workflowEntriesClone,
+          entryIdsByBlockExecution: state.entryIdsByBlockExecution,
+          entryLocationById: state.entryLocationById,
+        }
+      })
+
+      if (typeof update === 'object' && update.error) {
+        const matchingEntry = get()
+          .getWorkflowEntries(
+            get().entryLocationById[
+              (get().entryIdsByBlockExecution[getBlockExecutionKey(blockId, executionId)] ??
+                [])[0] ?? ''
+            ]?.workflowId ?? ''
+          )
+          .find((entry) => matchesEntryForUpdate(entry, blockId, executionId, update))
+        notifyBlockError({
+          error: update.error,
+          blockName: matchingEntry?.blockName || 'Unknown Block',
+          workflowId: matchingEntry?.workflowId,
+          logContext: { blockId },
+        })
+      }
+    },
+
+    cancelRunningEntries: (workflowId: string) => {
+      set((state) => {
+        const now = new Date()
+        const workflowEntries = state.workflowEntries[workflowId] ?? EMPTY_CONSOLE_ENTRIES
+        let didChange = false
+        const updatedEntries = workflowEntries.map((entry) => {
+          if (entry.workflowId === workflowId && entry.isRunning) {
+            didChange = true
+            const durationMs = entry.startedAt
+              ? now.getTime() - new Date(entry.startedAt).getTime()
+              : entry.durationMs
+            return {
+              ...entry,
+              isRunning: false,
+              isCanceled: true,
+              endedAt: now.toISOString(),
+              durationMs,
+            }
+          }
+          return entry
+        })
+        if (!didChange) {
+          return state
+        }
+        return replaceWorkflowEntries(state, workflowId, updatedEntries)
+      })
+    },
+  }))
+)
+
+/**
+ * Hydrates the console store from IndexedDB on startup.
+ * Applies the same normalization and trimming as the old persist merge.
+ */
+async function hydrateConsoleStore(): Promise<void> {
+  try {
+    const data = await loadConsoleData()
+
+    if (!data) {
+      useTerminalConsoleStore.setState({ _hasHydrated: true })
+      return
+    }
+
+    const oneHourAgo = Date.now() - 60 * 60 * 1000
+
+    const workflowEntries = Object.fromEntries(
+      Object.entries(data.workflowEntries).map(([workflowId, entries]) => [
+        workflowId,
+        trimWorkflowConsoleEntries(
+          entries.map((entry, index) => {
+            let updated = entry
+            if (entry.executionOrder === undefined) {
+              updated = { ...updated, executionOrder: index + 1 }
+            }
+            if (
+              entry.isRunning &&
+              entry.startedAt &&
+              new Date(entry.startedAt).getTime() < oneHourAgo
+            ) {
+              updated = { ...updated, isRunning: false }
+            }
+            updated = {
+              ...updated,
+              input: normalizeConsoleInput(updated.input),
+              output: normalizeConsoleOutput(updated.output),
+              error: normalizeConsoleError(updated.error),
+              warning:
+                typeof updated.warning === 'string'
+                  ? (normalizeConsoleError(updated.warning) ?? undefined)
+                  : updated.warning,
+            }
+            return updated
+          })
+        ),
+      ])
+    )
+
+    const currentState = useTerminalConsoleStore.getState()
+    const mergedWorkflowEntries = { ...workflowEntries }
+
+    for (const [wfId, currentEntries] of Object.entries(currentState.workflowEntries)) {
+      if (currentEntries.length > 0) {
+        const persistedEntries = mergedWorkflowEntries[wfId] ?? []
+        const persistedIds = new Set(persistedEntries.map((e) => e.id))
+        const newEntries = currentEntries.filter((e) => !persistedIds.has(e.id))
+        if (newEntries.length > 0) {
+          mergedWorkflowEntries[wfId] = trimWorkflowConsoleEntries([
+            ...newEntries,
+            ...persistedEntries,
+          ])
+        }
+      }
+    }
+
+    useTerminalConsoleStore.setState({
+      workflowEntries: mergedWorkflowEntries,
+      ...rebuildWorkflowStateMaps(mergedWorkflowEntries),
+      isOpen: data.isOpen,
+      _hasHydrated: true,
+    })
+  } catch (error) {
+    logger.error('Failed to hydrate console store', { error })
     useTerminalConsoleStore.setState({ _hasHydrated: true })
   }
+}
+
+if (typeof window !== 'undefined') {
+  consolePersistence.bind(() => {
+    const state = useTerminalConsoleStore.getState()
+    return {
+      workflowEntries: state.workflowEntries,
+      isOpen: state.isOpen,
+    }
+  })
+
+  hydrateConsoleStore()
+
+  window.addEventListener('pagehide', () => consolePersistence.persist())
+}
+
+export function useWorkflowConsoleEntries(workflowId?: string): ConsoleEntry[] {
+  return useTerminalConsoleStore(
+    useShallow((state) => {
+      if (!workflowId) {
+        return EMPTY_CONSOLE_ENTRIES
+      }
+
+      return state.workflowEntries[workflowId] ?? EMPTY_CONSOLE_ENTRIES
+    })
+  )
+}
+
+export function useConsoleEntry(entryId?: string | null): ConsoleEntry | null {
+  return useTerminalConsoleStore((state) => {
+    if (!entryId) {
+      return null
+    }
+
+    const location = state.entryLocationById[entryId]
+    if (!location) {
+      return null
+    }
+
+    const entry = state.workflowEntries[location.workflowId]?.[location.index]
+    if (!entry || entry.id !== entryId) {
+      return null
+    }
+
+    return entry
+  })
 }

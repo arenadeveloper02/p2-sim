@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Check, Copy, Wand2 } from 'lucide-react'
+import { Wand2 } from 'lucide-react'
 import { useReactFlow } from 'reactflow'
 import { Input } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
@@ -40,8 +40,6 @@ interface ShortInputProps {
   disabled?: boolean
   /** Whether the input is read-only */
   readOnly?: boolean
-  /** Whether to show a copy button */
-  showCopyButton?: boolean
   /** Whether to use webhook URL as value */
   useWebhookUrl?: boolean
   /** Ref to expose wand control handlers to parent */
@@ -59,7 +57,6 @@ interface ShortInputProps {
  * - Handles drag-and-drop for connections and variable references
  * - Provides environment variable and tag autocomplete
  * - Password masking with reveal on focus
- * - Copy to clipboard functionality
  * - Integrates with ReactFlow for zoom control
  */
 export const ShortInput = memo(function ShortInput({
@@ -74,14 +71,12 @@ export const ShortInput = memo(function ShortInput({
   previewValue,
   disabled = false,
   readOnly = false,
-  showCopyButton = false,
   useWebhookUrl = false,
   wandControlRef,
   hideInternalWand = false,
 }: ShortInputProps) {
   const [localContent, setLocalContent] = useState<string>('')
   const [isFocused, setIsFocused] = useState(false)
-  const [copied, setCopied] = useState(false)
   const persistSubBlockValueRef = useRef<(value: string) => void>(() => {})
 
   const justPastedRef = useRef(false)
@@ -114,11 +109,9 @@ export const ShortInput = memo(function ShortInput({
     isStreaming: wandHook.isStreaming,
   })
 
-  useEffect(() => {
-    persistSubBlockValueRef.current = (value: string) => {
-      setSubBlockValue(value)
-    }
-  }, [setSubBlockValue])
+  persistSubBlockValueRef.current = (value: string) => {
+    setSubBlockValue(value)
+  }
 
   const isWandEnabled = config.wandConfig?.enabled ?? false
 
@@ -219,12 +212,12 @@ export const ShortInput = memo(function ShortInput({
 
   useEffect(() => {
     if (!wandHook.isStreaming) {
-      const baseValueString = baseValue?.toString() ?? ''
-      if (baseValueString !== localContent) {
-        setLocalContent(baseValueString)
-      }
+      setLocalContent((prev) => {
+        const baseValueString = baseValue?.toString() ?? ''
+        return baseValueString !== prev ? baseValueString : prev
+      })
     }
-  }, [baseValue, wandHook.isStreaming, localContent])
+  }, [baseValue, wandHook.isStreaming])
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLInputElement>) => {
     if (overlayRef.current) {
@@ -277,18 +270,6 @@ export const ShortInput = memo(function ShortInput({
     },
     [reactFlowInstance]
   )
-
-  /**
-   * Handles copying the value to the clipboard.
-   */
-  const handleCopy = useCallback(() => {
-    const textToCopy = useWebhookUrl ? webhookManagement?.webhookUrl : value?.toString()
-    if (textToCopy) {
-      navigator.clipboard.writeText(textToCopy)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
-  }, [useWebhookUrl, webhookManagement?.webhookUrl, value])
 
   const handleBlur = useCallback(() => {
     setIsFocused(false)
@@ -366,10 +347,7 @@ export const ShortInput = memo(function ShortInput({
               <>
                 <Input
                   ref={ref as React.RefObject<HTMLInputElement>}
-                  className={cn(
-                    'allow-scroll w-full overflow-auto text-transparent caret-foreground [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-muted-foreground/50 [&::-webkit-scrollbar]:hidden',
-                    showCopyButton && 'pr-14'
-                  )}
+                  className='allow-scroll w-full overflow-auto text-transparent caret-foreground [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-muted-foreground/50 [&::-webkit-scrollbar]:hidden'
                   readOnly={readOnly}
                   placeholder={placeholder ?? ''}
                   type='text'
@@ -392,9 +370,9 @@ export const ShortInput = memo(function ShortInput({
                 <div
                   ref={overlayRef}
                   className={cn(
-                    'pointer-events-none absolute inset-0 flex items-center overflow-x-auto bg-transparent px-[8px] py-[6px] font-medium font-sans text-foreground text-sm [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-                    showCopyButton ? 'pr-14' : 'pr-3',
-                    (isPreview || disabled) && 'opacity-50'
+                    'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-2 py-1.5 pr-3 font-medium font-sans text-foreground text-sm [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+                    (isPreview || disabled) && 'opacity-50',
+                    !(isPreview || disabled) && 'pointer-events-none'
                   )}
                 >
                   <div className='min-w-fit whitespace-pre'>{formattedText}</div>
@@ -403,27 +381,6 @@ export const ShortInput = memo(function ShortInput({
             )
           }}
         </SubBlockInputController>
-
-        {/* Copy Button */}
-        {showCopyButton && value && (
-          <div className='pointer-events-none absolute top-0 right-0 bottom-0 z-10 flex w-14 items-center justify-end pr-2 opacity-0 transition-opacity group-hover:opacity-100'>
-            <Button
-              type='button'
-              variant='ghost'
-              size='icon'
-              onClick={handleCopy}
-              disabled={!value}
-              className='pointer-events-auto h-6 w-6 p-0'
-              aria-label='Copy value'
-            >
-              {copied ? (
-                <Check className='h-3.5 w-3.5 text-green-500' />
-              ) : (
-                <Copy className='h-3.5 w-3.5 text-muted-foreground' />
-              )}
-            </Button>
-          </div>
-        )}
 
         {/* Wand Button - only show if not hidden by parent */}
         {isWandEnabled && !isPreview && !wandHook.isStreaming && !hideInternalWand && (
@@ -436,7 +393,7 @@ export const ShortInput = memo(function ShortInput({
               }
               disabled={wandHook.isLoading || wandHook.isStreaming || disabled}
               aria-label='Generate content with AI'
-              className='h-8 w-8 rounded-full border border-transparent bg-muted/80 text-muted-foreground shadow-sm transition-all duration-200 hover:border-primary/20 hover:bg-muted hover:text-foreground hover:shadow'
+              className='h-8 w-8 rounded-full border border-transparent bg-muted/80 text-muted-foreground shadow-sm transition-all duration-200 hover-hover:border-primary/20 hover-hover:bg-muted hover-hover:text-foreground hover-hover:shadow'
             >
               <Wand2 className='h-4 w-4' />
             </Button>

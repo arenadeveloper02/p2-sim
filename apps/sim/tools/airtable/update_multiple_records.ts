@@ -28,14 +28,14 @@ export const airtableUpdateMultipleRecordsTool: ToolConfig<
     baseId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID of the Airtable base',
+      visibility: 'user-or-llm',
+      description: 'Airtable base ID (starts with "app", e.g., "appXXXXXXXXXXXXXX")',
     },
     tableId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID or name of the table',
+      visibility: 'user-or-llm',
+      description: 'Table ID (starts with "tbl") or table name',
     },
     records: {
       type: 'json',
@@ -46,8 +46,8 @@ export const airtableUpdateMultipleRecordsTool: ToolConfig<
   },
 
   request: {
-    // The API endpoint uses PATCH for multiple record updates as well
-    url: (params) => `https://api.airtable.com/v0/${params.baseId}/${params.tableId}`,
+    url: (params) =>
+      `https://api.airtable.com/v0/${params.baseId?.trim()}/${params.tableId?.trim()}`,
     method: 'PATCH',
     headers: (params) => ({
       Authorization: `Bearer ${params.accessToken}`,
@@ -58,13 +58,14 @@ export const airtableUpdateMultipleRecordsTool: ToolConfig<
 
   transformResponse: async (response) => {
     const data = await response.json()
+    const records = data.records ?? []
     return {
       success: true,
       output: {
-        records: data.records || [], // API returns an array of updated records
+        records,
         metadata: {
-          recordCount: (data.records || []).length,
-          updatedRecordIds: (data.records || []).map((r: any) => r.id),
+          recordCount: records.length,
+          updatedRecordIds: records.map((r: { id: string }) => r.id),
         },
       },
     }
@@ -72,20 +73,24 @@ export const airtableUpdateMultipleRecordsTool: ToolConfig<
 
   outputs: {
     records: {
-      type: 'json',
+      type: 'array',
       description: 'Array of updated Airtable records',
       items: {
         type: 'object',
         properties: {
-          id: { type: 'string' },
-          createdTime: { type: 'string' },
-          fields: { type: 'object' },
+          id: { type: 'string', description: 'Record ID' },
+          createdTime: { type: 'string', description: 'Record creation timestamp' },
+          fields: { type: 'json', description: 'Record field values' },
         },
       },
     },
     metadata: {
       type: 'json',
-      description: 'Operation metadata including record count and updated record IDs',
+      description: 'Operation metadata',
+      properties: {
+        recordCount: { type: 'number', description: 'Number of records updated' },
+        updatedRecordIds: { type: 'array', description: 'List of updated record IDs' },
+      },
     },
   },
 }

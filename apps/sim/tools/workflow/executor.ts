@@ -18,7 +18,7 @@ export const workflowExecutorTool: ToolConfig<
     workflowId: {
       type: 'string',
       required: true,
-      visibility: 'user-or-llm',
+      visibility: 'user-only',
       description: 'The ID of the workflow to execute',
     },
     inputMapping: {
@@ -46,7 +46,7 @@ export const workflowExecutorTool: ToolConfig<
       const isDeployedContext = params._context?.isDeployedContext
       return {
         input: inputData,
-        triggerType: 'api',
+        triggerType: 'workflow',
         useDraftState: !isDeployedContext,
       }
     },

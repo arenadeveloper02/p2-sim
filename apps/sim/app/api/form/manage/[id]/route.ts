@@ -1,9 +1,10 @@
 import { db } from '@sim/db'
 import { form } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { checkFormAccess, DEFAULT_FORM_CUSTOMIZATIONS } from '@/app/api/form/utils'
@@ -102,7 +103,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const { id } = await params
 
-    const { hasAccess, form: formRecord } = await checkFormAccess(id, session.user.id)
+    const {
+      hasAccess,
+      form: formRecord,
+      workspaceId: formWorkspaceId,
+    } = await checkFormAccess(id, session.user.id)
 
     if (!hasAccess || !formRecord) {
       return createErrorResponse('Form not found or access denied', 404)
@@ -129,7 +134,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const existingIdentifier = await db
           .select()
           .from(form)
-          .where(eq(form.identifier, identifier))
+          .where(and(eq(form.identifier, identifier), isNull(form.archivedAt)))
           .limit(1)
 
         if (existingIdentifier.length > 0) {
@@ -184,6 +189,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       logger.info(`Form ${id} updated successfully`)
 
+      recordAudit({
+        workspaceId: formWorkspaceId ?? null,
+        actorId: session.user.id,
+        action: AuditAction.FORM_UPDATED,
+        resourceType: AuditResourceType.FORM,
+        resourceId: id,
+        actorName: session.user.name ?? undefined,
+        actorEmail: session.user.email ?? undefined,
+        resourceName: formRecord.title ?? undefined,
+        description: `Updated form "${formRecord.title}"`,
+        request,
+      })
+
       return createSuccessResponse({
         message: 'Form updated successfully',
       })
@@ -213,15 +231,32 @@ export async function DELETE(
 
     const { id } = await params
 
-    const { hasAccess, form: formRecord } = await checkFormAccess(id, session.user.id)
+    const {
+      hasAccess,
+      form: formRecord,
+      workspaceId: formWorkspaceId,
+    } = await checkFormAccess(id, session.user.id)
 
     if (!hasAccess || !formRecord) {
       return createErrorResponse('Form not found or access denied', 404)
     }
 
-    await db.update(form).set({ isActive: false, updatedAt: new Date() }).where(eq(form.id, id))
+    await db.delete(form).where(eq(form.id, id))
 
     logger.info(`Form ${id} deleted (soft delete)`)
+
+    recordAudit({
+      workspaceId: formWorkspaceId ?? null,
+      actorId: session.user.id,
+      action: AuditAction.FORM_DELETED,
+      resourceType: AuditResourceType.FORM,
+      resourceId: id,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      resourceName: formRecord.title ?? undefined,
+      description: `Deleted form "${formRecord.title}"`,
+      request,
+    })
 
     return createSuccessResponse({
       message: 'Form deleted successfully',

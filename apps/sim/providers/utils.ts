@@ -1,8 +1,16 @@
 import { createLogger, type Logger } from '@sim/logger'
+import type OpenAI from 'openai'
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
+import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { env } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
+import {
+  buildCanonicalIndex,
+  type CanonicalGroup,
+  getCanonicalValues,
+  isCanonicalPair,
+} from '@/lib/workflows/subblocks/visibility'
 import { isCustomTool } from '@/executor/constants'
 import {
   getComputerUseModels,
@@ -11,6 +19,8 @@ import {
   getMaxOutputTokensForModel as getMaxOutputTokensForModelFromDefinitions,
   getMaxTemperature as getMaxTempFromDefinitions,
   getModelPricing as getModelPricingFromDefinitions,
+  getModelsWithDeepResearch,
+  getModelsWithoutMemory,
   getModelsWithReasoningEffort,
   getModelsWithTemperatureSupport,
   getModelsWithTempRange01,
@@ -28,7 +38,6 @@ import {
   supportsToolUsageControl as supportsToolUsageControlFromDefinitions,
   updateOllamaModels as updateOllamaModelsInDefinitions,
 } from '@/providers/models'
-import { sambanovaProvider } from '@/providers/sambanova'
 import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useProvidersStore } from '@/stores/providers/store'
 import { mergeToolParameters } from '@/tools/params'
@@ -65,6 +74,7 @@ async function fetchWorkflowMetadata(
 
     const response = await fetch(url.toString(), { headers })
     if (!response.ok) {
+      await response.text().catch(() => {})
       logger.warn(`Failed to fetch workflow metadata for ${workflowId}`)
       return null
     }
@@ -114,6 +124,8 @@ function buildProviderMetadata(providerId: ProviderId): ProviderMetadata {
 }
 
 export const providers: Record<ProviderId, ProviderMetadata> = {
+  ollama: buildProviderMetadata('ollama'),
+  vllm: buildProviderMetadata('vllm'),
   openai: {
     ...buildProviderMetadata('openai'),
     computerUseModels: ['computer-use-preview'],
@@ -124,23 +136,18 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
       getProviderModelsFromDefinitions('anthropic').includes(model)
     ),
   },
-  sambanova: {
-    ...sambanovaProvider,
-    models: getProviderModelsFromDefinitions('sambanova'),
-    modelPatterns: PROVIDER_DEFINITIONS.sambanova.modelPatterns,
-  },
+  sambanova: buildProviderMetadata('sambanova'),
   google: buildProviderMetadata('google'),
   vertex: buildProviderMetadata('vertex'),
+  'azure-openai': buildProviderMetadata('azure-openai'),
+  'azure-anthropic': buildProviderMetadata('azure-anthropic'),
   deepseek: buildProviderMetadata('deepseek'),
   xai: buildProviderMetadata('xai'),
   cerebras: buildProviderMetadata('cerebras'),
   groq: buildProviderMetadata('groq'),
-  vllm: buildProviderMetadata('vllm'),
   mistral: buildProviderMetadata('mistral'),
-  'azure-openai': buildProviderMetadata('azure-openai'),
-  openrouter: buildProviderMetadata('openrouter'),
-  ollama: buildProviderMetadata('ollama'),
   bedrock: buildProviderMetadata('bedrock'),
+  openrouter: buildProviderMetadata('openrouter'),
 }
 
 export function updateOllamaProviderModels(models: string[]): void {
@@ -444,9 +451,10 @@ export async function transformBlockTool(
     getAllBlocks: () => any[]
     getTool: (toolId: string) => any
     getToolAsync?: (toolId: string) => Promise<any>
+    canonicalModes?: Record<string, 'basic' | 'advanced'>
   }
 ): Promise<ProviderToolConfig | null> {
-  const { selectedOperation, getAllBlocks, getTool, getToolAsync } = options
+  const { selectedOperation, getAllBlocks, getTool, getToolAsync, canonicalModes } = options
 
   let blockDef = getAllBlocks().find((b: any) => b.type === block.type)
 
@@ -521,11 +529,14 @@ export async function transformBlockTool(
 
   const userProvidedParams = block.params || {}
 
-  const llmSchema = await createLLMToolSchema(toolConfig, userProvidedParams)
+  const { schema: llmSchema, enrichedDescription } = await createLLMToolSchema(
+    toolConfig,
+    userProvidedParams
+  )
 
   let uniqueToolId = toolConfig.id
   let toolName = toolConfig.name
-  let toolDescription = toolConfig.description
+  let toolDescription = enrichedDescription || toolConfig.description
 
   if (toolId === 'workflow_executor' && userProvidedParams.workflowId) {
     uniqueToolId = `${toolConfig.id}_${userProvidedParams.workflowId}`
@@ -542,7 +553,62 @@ export async function transformBlockTool(
     }
   } else if (toolId.startsWith('knowledge_') && userProvidedParams.knowledgeBaseId) {
     uniqueToolId = `${toolConfig.id}_${userProvidedParams.knowledgeBaseId}`
+  } else if (toolId.startsWith('table_') && userProvidedParams.tableId) {
+    uniqueToolId = `${toolConfig.id}_${userProvidedParams.tableId}`
   }
+
+  const blockParamsFn = blockDef?.tools?.config?.params as
+    | ((p: Record<string, any>) => Record<string, any>)
+    | undefined
+  const blockInputDefs = blockDef?.inputs as Record<string, any> | undefined
+
+  const canonicalGroups: CanonicalGroup[] = blockDef?.subBlocks
+    ? Object.values(buildCanonicalIndex(blockDef.subBlocks).groupsById).filter(isCanonicalPair)
+    : []
+
+  const needsTransform = blockParamsFn || blockInputDefs || canonicalGroups.length > 0
+  const paramsTransform = needsTransform
+    ? (params: Record<string, any>): Record<string, any> => {
+        let result = { ...params }
+
+        for (const group of canonicalGroups) {
+          const { basicValue, advancedValue } = getCanonicalValues(group, result)
+          const scopedKey = `${block.type}:${group.canonicalId}`
+          const pairMode = canonicalModes?.[scopedKey] ?? 'basic'
+          const chosen = pairMode === 'advanced' ? advancedValue : basicValue
+
+          const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
+          sourceIds.forEach((id) => delete result[id])
+
+          if (chosen !== undefined) {
+            result[group.canonicalId] = chosen
+          }
+        }
+
+        if (blockParamsFn) {
+          const transformed = blockParamsFn(result)
+          result = { ...result, ...transformed }
+        }
+
+        if (blockInputDefs) {
+          for (const [key, schema] of Object.entries(blockInputDefs)) {
+            const value = result[key]
+            if (typeof value === 'string' && value.trim().length > 0) {
+              const inputType = typeof schema === 'object' ? schema.type : schema
+              if (inputType === 'json' || inputType === 'array') {
+                try {
+                  result[key] = JSON.parse(value.trim())
+                } catch {
+                  // Not valid JSON — keep as string
+                }
+              }
+            }
+          }
+        }
+
+        return result
+      }
+    : undefined
 
   return {
     id: uniqueToolId,
@@ -550,6 +616,7 @@ export async function transformBlockTool(
     description: toolDescription,
     params: userProvidedParams,
     parameters: llmSchema,
+    paramsTransform,
   }
 }
 
@@ -611,6 +678,20 @@ export function calculateCost(
   }
 }
 
+/**
+ * Sums the `cost.total` from each tool result returned during a provider tool loop.
+ * Tool results may carry a `cost` object injected by `applyHostedKeyCostToResult`.
+ */
+export function sumToolCosts(toolResults?: Record<string, unknown>[]): number {
+  if (!toolResults?.length) return 0
+  let total = 0
+  for (const tr of toolResults) {
+    const cost = tr?.cost as Record<string, unknown> | undefined
+    if (cost?.total && typeof cost.total === 'number') total += cost.total
+  }
+  return total
+}
+
 export function getModelPricing(modelId: string): any {
   const embeddingPricing = getEmbeddingModelPricing(modelId)
   if (embeddingPricing) {
@@ -621,28 +702,18 @@ export function getModelPricing(modelId: string): any {
 }
 
 /**
- * Format cost as a currency string
+ * Format cost as a credit string for display.
+ * Internally cost is in USD; this converts to credits (1 USD = 200 credits).
  *
  * @param cost Cost in USD
- * @returns Formatted cost string
+ * @returns Formatted credit string (e.g. "200 credits", "<1 credit", "0 credits")
  */
 export function formatCost(cost: number): string {
   if (cost === undefined || cost === null) return '—'
-
-  if (cost >= 1) {
-    return `$${cost.toFixed(2)}`
-  }
-  if (cost >= 0.01) {
-    return `$${cost.toFixed(3)}`
-  }
-  if (cost >= 0.001) {
-    return `$${cost.toFixed(4)}`
-  }
-  if (cost > 0) {
-    const places = Math.max(4, Math.abs(Math.floor(Math.log10(cost))) + 3)
-    return `$${cost.toFixed(places)}`
-  }
-  return '$0'
+  const credits = dollarsToCredits(cost)
+  if (credits <= 0 && cost > 0) return '<1 credit'
+  if (credits <= 0) return '0 credits'
+  return `${credits.toLocaleString()} credits`
 }
 
 /**
@@ -706,6 +777,7 @@ export function getApiKey(
   const isGeminiModel = provider === 'google'
   const isSambaNovaModel = provider === 'sambanova'
   const isXaiModel = provider === 'xai'
+  const isOpenRouterModel = provider === 'openrouter'
 
   if (
     isHosted &&
@@ -749,6 +821,8 @@ export function getApiKey(
       envVarName = 'SAMBANOVA_API_KEY'
     } else if (isXaiModel) {
       envVarName = 'XAI_API_KEY'
+    } else if (isOpenRouterModel) {
+      envVarName = 'OPENROUTER_API_KEY'
     }
 
     if (envVarName && environmentVariables[envVarName]) {
@@ -770,6 +844,8 @@ export function getApiKey(
       serverEnvVarName = 'SAMBANOVA_API_KEY'
     } else if (isXaiModel) {
       serverEnvVarName = 'XAI_API_KEY'
+    } else if (isOpenRouterModel) {
+      serverEnvVarName = 'OPENROUTER_API_KEY'
     }
 
     if (serverEnvVarName && env[serverEnvVarName as keyof typeof env]) {
@@ -981,13 +1057,15 @@ export function trackForcedToolUsage(
   if (forcedToolNames.length > 0 && toolCallsResponse && toolCallsResponse.length > 0) {
     const toolNames = toolCallsResponse.map((tc) => tc.function?.name || tc.name || tc.id)
 
-    const usedTools = forcedToolNames.filter((toolName) => toolNames.includes(toolName))
+    const toolNameSet = new Set(toolNames)
+    const usedTools = forcedToolNames.filter((toolName) => toolNameSet.has(toolName))
 
     if (usedTools.length > 0) {
       hasUsedForcedTool = true
       updatedUsedForcedTools.push(...usedTools)
 
-      const remainingTools = forcedTools.filter((tool) => !updatedUsedForcedTools.includes(tool))
+      const usedSet = new Set(updatedUsedForcedTools)
+      const remainingTools = forcedTools.filter((tool) => !usedSet.has(tool))
 
       if (remainingTools.length > 0) {
         const nextToolToForce = remainingTools[0]
@@ -1047,10 +1125,28 @@ export const MODELS_WITH_TEMPERATURE_SUPPORT = getModelsWithTemperatureSupport()
 export const MODELS_WITH_REASONING_EFFORT = getModelsWithReasoningEffort()
 export const MODELS_WITH_VERBOSITY = getModelsWithVerbosity()
 export const MODELS_WITH_THINKING = getModelsWithThinking()
+export const MODELS_WITH_DEEP_RESEARCH = getModelsWithDeepResearch()
+export const MODELS_WITHOUT_MEMORY = getModelsWithoutMemory()
 export const PROVIDERS_WITH_TOOL_USAGE_CONTROL = getProvidersWithToolUsageControl()
 
 export function supportsTemperature(model: string): boolean {
   return supportsTemperatureFromDefinitions(model)
+}
+
+export function supportsReasoningEffort(model: string): boolean {
+  return MODELS_WITH_REASONING_EFFORT.includes(model.toLowerCase())
+}
+
+export function supportsVerbosity(model: string): boolean {
+  return MODELS_WITH_VERBOSITY.includes(model.toLowerCase())
+}
+
+export function supportsThinking(model: string): boolean {
+  return MODELS_WITH_THINKING.includes(model.toLowerCase())
+}
+
+export function isDeepResearchModel(model: string): boolean {
+  return MODELS_WITH_DEEP_RESEARCH.includes(model.toLowerCase())
 }
 
 /**
@@ -1090,22 +1186,23 @@ export function getThinkingLevelsForModel(model: string): string[] | null {
 }
 
 /**
- * Get max output tokens for a specific model
- * Returns the model's maxOutputTokens capability for streaming requests,
- * or a conservative default (8192) for non-streaming requests to avoid timeout issues.
+ * Get max output tokens for a specific model.
  *
  * @param model - The model ID
- * @param streaming - Whether the request is streaming (default: false)
  */
-export function getMaxOutputTokensForModel(model: string, streaming = false): number {
-  return getMaxOutputTokensForModelFromDefinitions(model, streaming)
+export function getMaxOutputTokensForModel(model: string): number {
+  return getMaxOutputTokensForModelFromDefinitions(model)
 }
 
 /**
  * Prepare tool execution parameters, separating tool parameters from system parameters
  */
 export function prepareToolExecution(
-  tool: { params?: Record<string, any>; parameters?: Record<string, any> },
+  tool: {
+    params?: Record<string, any>
+    parameters?: Record<string, any>
+    paramsTransform?: (params: Record<string, any>) => Record<string, any>
+  },
   llmArgs: Record<string, any>,
   request: {
     workflowId?: string
@@ -1117,13 +1214,21 @@ export function prepareToolExecution(
     blockData?: Record<string, any>
     blockNameMapping?: Record<string, string>
     isDeployedContext?: boolean
+    callChain?: string[]
   }
 ): {
   toolParams: Record<string, any>
   executionParams: Record<string, any>
 } {
-  // Use centralized merge logic from tools/params
-  const toolParams = mergeToolParameters(tool.params || {}, llmArgs) as Record<string, any>
+  let toolParams = mergeToolParameters(tool.params || {}, llmArgs) as Record<string, any>
+
+  if (tool.paramsTransform) {
+    try {
+      toolParams = tool.paramsTransform(toolParams)
+    } catch (err) {
+      logger.warn('paramsTransform failed, using raw params', { error: err })
+    }
+  }
 
   const executionParams = {
     ...toolParams,
@@ -1137,6 +1242,7 @@ export function prepareToolExecution(
             ...(request.isDeployedContext !== undefined
               ? { isDeployedContext: request.isDeployedContext }
               : {}),
+            ...(request.callChain ? { callChain: request.callChain } : {}),
           },
         }
       : {}),
@@ -1221,8 +1327,8 @@ export function createOpenAICompatibleStream(
  * @returns Object with hasUsedForcedTool flag and updated usedForcedTools array
  */
 export function checkForForcedToolUsageOpenAI(
-  response: any,
-  toolChoice: string | { type: string; function?: { name: string }; name?: string; any?: any },
+  response: OpenAI.Chat.Completions.ChatCompletion,
+  toolChoice: string | { type: string; function?: { name: string }; name?: string },
   providerName: string,
   forcedTools: string[],
   usedForcedTools: string[],

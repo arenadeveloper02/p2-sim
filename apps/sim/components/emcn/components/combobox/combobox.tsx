@@ -9,6 +9,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -20,15 +21,15 @@ import { Input } from '../input/input'
 import { Popover, PopoverAnchor, PopoverContent, PopoverScrollArea } from '../popover/popover'
 
 const comboboxVariants = cva(
-  'flex w-full rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[8px] font-sans font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[var(--surface-7)] dark:hover:border-[var(--surface-7)] dark:hover:bg-[var(--border-1)]',
+  'flex w-full rounded-sm border border-[var(--border-1)] bg-[var(--surface-5)] px-2 font-sans font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {
       variant: {
         default: '',
       },
       size: {
-        sm: 'py-[5px] text-[12px]',
-        md: 'py-[6px] text-sm',
+        sm: 'py-1.5 text-caption',
+        md: 'py-1.5 text-sm',
       },
     },
     defaultVariants: {
@@ -44,6 +45,8 @@ const comboboxVariants = cva(
 export type ComboboxOption = {
   label: string
   value: string
+  /** When true, hidden from the picker list but still resolves for display */
+  hidden?: boolean
   /** Icon component to render */
   icon?: React.ComponentType<{ className?: string }>
   /** Pre-rendered icon element (alternative to icon component) */
@@ -52,6 +55,10 @@ export type ComboboxOption = {
   onSelect?: () => void
   /** Whether this option is disabled */
   disabled?: boolean
+  /** When true, keep the dropdown open after selecting this option */
+  keepOpen?: boolean
+  /** Optional element rendered at the trailing end of the option (e.g. chevron for folders) */
+  suffixElement?: ReactNode
 }
 
 /**
@@ -106,6 +113,8 @@ export interface ComboboxProps
   error?: string | null
   /** Callback when popover open state changes */
   onOpenChange?: (open: boolean) => void
+  /** Callback when ArrowLeft is pressed while dropdown is open (for folder back-navigation) */
+  onArrowLeft?: () => void
   /** Enable search input in dropdown (useful for multiselect) */
   searchable?: boolean
   /** Placeholder for search input */
@@ -157,6 +166,7 @@ const Combobox = memo(
         isLoading = false,
         error = null,
         onOpenChange,
+        onArrowLeft,
         searchable = false,
         searchPlaceholder = 'Search...',
         align = 'start',
@@ -170,16 +180,25 @@ const Combobox = memo(
       },
       ref
     ) => {
+      const listboxId = useId()
       const [open, setOpen] = useState(false)
       const [highlightedIndex, setHighlightedIndex] = useState(-1)
       const [searchQuery, setSearchQuery] = useState('')
       const searchInputRef = useRef<HTMLInputElement>(null)
       const containerRef = useRef<HTMLDivElement>(null)
       const dropdownRef = useRef<HTMLDivElement>(null)
+      const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null)
       const internalInputRef = useRef<HTMLInputElement>(null)
       const inputRef = externalInputRef || internalInputRef
 
       const effectiveSelectedValue = selectedValue ?? value
+
+      // Cleanup blur timeout on unmount
+      useEffect(() => {
+        return () => {
+          if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current)
+        }
+      }, [])
 
       // Flatten groups into options if groups are provided
       const allOptions = useMemo(() => {
@@ -198,12 +217,11 @@ const Combobox = memo(
        * Filter options based on current value or search query
        */
       const filteredOptions = useMemo(() => {
-        let result = allOptions
+        let result = allOptions.filter((opt) => !opt.hidden)
 
-        // Filter by editable input value
         if (filterOptions && value && open) {
           const currentValue = value.toString().toLowerCase()
-          const exactMatch = allOptions.find(
+          const exactMatch = result.find(
             (opt) => opt.value === value || opt.label.toLowerCase() === currentValue
           )
           if (!exactMatch) {
@@ -215,7 +233,6 @@ const Combobox = memo(
           }
         }
 
-        // Filter by search query (for searchable mode)
         if (searchable && searchQuery) {
           const query = searchQuery.toLowerCase()
           result = result.filter((option) => {
@@ -233,10 +250,18 @@ const Combobox = memo(
        */
       const filteredGroups = useMemo(() => {
         if (!groups) return null
-        if (!searchable || !searchQuery) return groups
+
+        const baseGroups = groups
+          .map((group) => ({
+            ...group,
+            items: group.items.filter((opt) => !opt.hidden),
+          }))
+          .filter((group) => group.items.length > 0)
+
+        if (!searchable || !searchQuery) return baseGroups
 
         const query = searchQuery.toLowerCase()
-        return groups
+        return baseGroups
           .map((group) => ({
             ...group,
             items: group.items.filter((option) => {
@@ -252,13 +277,16 @@ const Combobox = memo(
        * Handles selection of an option
        */
       const handleSelect = useCallback(
-        (selectedValue: string, customOnSelect?: () => void) => {
+        (selectedValue: string, customOnSelect?: () => void, keepOpen?: boolean) => {
           // If option has custom onSelect, use it instead
           if (customOnSelect) {
             customOnSelect()
-            setOpen(false)
-            setHighlightedIndex(-1)
+            // Always reset search/highlight so stale queries don't filter new options
             setSearchQuery('')
+            setHighlightedIndex(-1)
+            if (!keepOpen) {
+              setOpen(false)
+            }
             return
           }
 
@@ -270,11 +298,13 @@ const Combobox = memo(
             onMultiSelectChange(newValues)
           } else {
             onChange?.(selectedValue)
-            setOpen(false)
-            setHighlightedIndex(-1)
-            setSearchQuery('')
-            if (editable && inputRef.current) {
-              inputRef.current.blur()
+            if (!keepOpen) {
+              setOpen(false)
+              setHighlightedIndex(-1)
+              setSearchQuery('')
+              if (editable && inputRef.current) {
+                inputRef.current.blur()
+              }
             }
           }
         },
@@ -306,8 +336,10 @@ const Combobox = memo(
        * Handles blur for editable mode
        */
       const handleBlur = useCallback(() => {
+        // Clear any pending blur timeout
+        if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current)
         // Delay to allow dropdown clicks
-        setTimeout(() => {
+        blurTimeoutRef.current = setTimeout(() => {
           const activeElement = document.activeElement
           // Check if focus is in the container, dropdown, or search input
           const isInContainer = containerRef.current?.contains(activeElement)
@@ -343,7 +375,7 @@ const Combobox = memo(
               e.preventDefault()
               const selectedOption = filteredOptions[highlightedIndex]
               if (selectedOption && !selectedOption.disabled) {
-                handleSelect(selectedOption.value, selectedOption.onSelect)
+                handleSelect(selectedOption.value, selectedOption.onSelect, selectedOption.keepOpen)
               }
             } else if (!editable) {
               e.preventDefault()
@@ -378,8 +410,36 @@ const Combobox = memo(
               setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : filteredOptions.length - 1))
             }
           }
+
+          if (e.key === 'ArrowRight') {
+            if (open && highlightedIndex >= 0) {
+              const highlightedOption = filteredOptions[highlightedIndex]
+              if (highlightedOption?.keepOpen && highlightedOption?.onSelect) {
+                e.preventDefault()
+                handleSelect(highlightedOption.value, highlightedOption.onSelect, true)
+              }
+            }
+          }
+
+          if (e.key === 'ArrowLeft') {
+            if (open && onArrowLeft) {
+              e.preventDefault()
+              onArrowLeft()
+              setSearchQuery('')
+              setHighlightedIndex(-1)
+            }
+          }
         },
-        [disabled, open, highlightedIndex, filteredOptions, handleSelect, editable, inputRef]
+        [
+          disabled,
+          open,
+          highlightedIndex,
+          filteredOptions,
+          handleSelect,
+          editable,
+          inputRef,
+          onArrowLeft,
+        ]
       )
 
       /**
@@ -412,13 +472,25 @@ const Combobox = memo(
         [disabled, editable, inputRef]
       )
 
+      const effectiveHighlightedIndex =
+        highlightedIndex >= 0 && highlightedIndex < filteredOptions.length ? highlightedIndex : -1
+
+      /**
+       * Reset highlighted index when filtered options change and index is out of bounds
+       */
+      useEffect(() => {
+        if (highlightedIndex >= 0 && highlightedIndex >= filteredOptions.length) {
+          setHighlightedIndex(-1)
+        }
+      }, [filteredOptions, highlightedIndex])
+
       /**
        * Scroll highlighted option into view
        */
       useEffect(() => {
-        if (highlightedIndex >= 0 && dropdownRef.current) {
+        if (effectiveHighlightedIndex >= 0 && dropdownRef.current) {
           const highlightedElement = dropdownRef.current.querySelector(
-            `[data-option-index="${highlightedIndex}"]`
+            `[data-option-index="${effectiveHighlightedIndex}"]`
           )
           if (highlightedElement) {
             highlightedElement.scrollIntoView({
@@ -427,19 +499,7 @@ const Combobox = memo(
             })
           }
         }
-      }, [highlightedIndex])
-
-      /**
-       * Adjust highlighted index when filtered options change
-       */
-      useEffect(() => {
-        setHighlightedIndex((prev) => {
-          if (prev >= 0 && prev < filteredOptions.length) {
-            return prev
-          }
-          return -1
-        })
-      }, [filteredOptions])
+      }, [effectiveHighlightedIndex])
 
       const SelectedIcon = selectedOption?.icon
 
@@ -460,9 +520,10 @@ const Combobox = memo(
                     <Input
                       ref={inputRef}
                       className={cn(
-                        'w-full pr-[40px] font-medium transition-colors hover:bg-[var(--surface-7)] dark:hover:border-[var(--surface-7)] dark:hover:bg-[var(--border-1)]',
+                        'w-full pr-10 font-medium transition-colors',
                         (overlayContent || SelectedIcon) && 'text-transparent caret-foreground',
-                        SelectedIcon && !overlayContent && 'pl-[28px]',
+                        SelectedIcon && !overlayContent && 'pl-7',
+                        open && 'focus-visible:border-[var(--border-1)]',
                         className
                       )}
                       placeholder={placeholder}
@@ -477,7 +538,7 @@ const Combobox = memo(
                     {(overlayContent || SelectedIcon) && (
                       <div
                         className={cn(
-                          'pointer-events-none absolute top-0 right-[42px] bottom-0 left-0 flex items-center bg-transparent px-[8px] py-[6px] font-medium font-sans text-sm',
+                          'pointer-events-none absolute top-0 right-[42px] bottom-0 left-0 flex items-center bg-transparent px-2 py-1.5 font-medium font-sans text-sm',
                           disabled && 'opacity-50'
                         )}
                       >
@@ -486,7 +547,7 @@ const Combobox = memo(
                         ) : (
                           <>
                             {SelectedIcon && (
-                              <SelectedIcon className='mr-[8px] h-3 w-3 flex-shrink-0' />
+                              <SelectedIcon className='mr-2 h-3 w-3 flex-shrink-0' />
                             )}
                             <span className='truncate text-[var(--text-primary)]'>
                               {selectedOption?.label}
@@ -513,6 +574,7 @@ const Combobox = memo(
                     role='combobox'
                     aria-expanded={open}
                     aria-haspopup='listbox'
+                    aria-controls={listboxId}
                     aria-disabled={disabled}
                     tabIndex={disabled ? -1 : 0}
                     className={cn(
@@ -535,12 +597,12 @@ const Combobox = memo(
                     </span>
                     <ChevronDown
                       className={cn(
-                        'ml-[8px] h-4 w-4 flex-shrink-0 opacity-50 transition-transform',
+                        'ml-2 h-4 w-4 flex-shrink-0 opacity-50 transition-transform',
                         open && 'rotate-180'
                       )}
                     />
                     {overlayContent && (
-                      <div className='pointer-events-none absolute inset-y-0 right-[24px] left-0 flex items-center px-[8px]'>
+                      <div className='pointer-events-none absolute inset-y-0 right-[24px] left-0 flex items-center px-2'>
                         <div className='w-full truncate'>{overlayContent}</div>
                       </div>
                     )}
@@ -554,7 +616,7 @@ const Combobox = memo(
               align={align}
               sideOffset={4}
               className={cn(
-                'rounded-[6px] border border-[var(--border-1)] p-0',
+                'rounded-md border border-[var(--border-1)] p-0',
                 dropdownWidth === 'trigger' && 'w-[var(--radix-popover-trigger-width)]'
               )}
               style={
@@ -578,19 +640,27 @@ const Combobox = memo(
               }}
             >
               {searchable && (
-                <div className='flex items-center px-[10px] pt-[8px] pb-[4px]'>
+                <div className='flex items-center px-2.5 pt-2 pb-1'>
                   <Search className='mr-[7px] ml-[1px] h-[13px] w-[13px] shrink-0 text-[var(--text-muted)]' />
                   <input
                     ref={searchInputRef}
-                    className='w-full bg-transparent font-base text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none'
+                    className='w-full bg-transparent font-base text-[var(--text-primary)] text-small placeholder:text-[var(--text-muted)] focus:outline-none'
                     placeholder={searchPlaceholder}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => {
                       // Forward navigation keys to main handler
+                      // Only forward ArrowLeft/ArrowRight when cursor is at the boundary
+                      // so normal text cursor movement still works in the search input
+                      const input = e.currentTarget
+                      const forwardArrowLeft = e.key === 'ArrowLeft' && input.selectionStart === 0
+                      const forwardArrowRight =
+                        e.key === 'ArrowRight' && input.selectionStart === input.value.length
                       if (
                         e.key === 'ArrowDown' ||
                         e.key === 'ArrowUp' ||
+                        forwardArrowRight ||
+                        forwardArrowLeft ||
                         e.key === 'Enter' ||
                         e.key === 'Escape'
                       ) {
@@ -601,7 +671,7 @@ const Combobox = memo(
                 </div>
               )}
               <PopoverScrollArea
-                className='!flex-none p-[4px]'
+                className='!flex-none p-1'
                 style={{ maxHeight: `${maxHeight}px` }}
                 onWheelCapture={(e) => {
                   const target = e.currentTarget
@@ -616,20 +686,20 @@ const Combobox = memo(
                   }
                 }}
               >
-                <div ref={dropdownRef} role='listbox'>
+                <div ref={dropdownRef} role='listbox' id={listboxId}>
                   {isLoading ? (
-                    <div className='flex items-center justify-center py-[14px]'>
+                    <div className='flex items-center justify-center py-3.5'>
                       <Loader2 className='h-[16px] w-[16px] animate-spin text-[var(--text-muted)]' />
-                      <span className='ml-[8px] font-base text-[12px] text-[var(--text-muted)]'>
+                      <span className='ml-2 font-base text-[var(--text-muted)] text-caption'>
                         Loading options...
                       </span>
                     </div>
                   ) : error ? (
-                    <div className='px-[6px] py-[14px] text-center font-base text-[12px] text-red-500'>
+                    <div className='px-1.5 py-3.5 text-center font-base text-caption text-red-500'>
                       {error}
                     </div>
                   ) : filteredOptions.length === 0 ? (
-                    <div className='py-[14px] text-center font-base text-[12px] text-[var(--text-muted)]'>
+                    <div className='py-3.5 text-center font-base text-[var(--text-muted)] text-caption'>
                       {emptyMessage ||
                         (searchQuery || (editable && value)
                           ? 'No matching options found'
@@ -637,13 +707,13 @@ const Combobox = memo(
                     </div>
                   ) : filteredGroups ? (
                     // Render grouped options with section headers
-                    <div className='space-y-[2px]'>
+                    <div className='space-y-0.5'>
                       {filteredGroups.map((group, groupIndex) => (
                         <div key={group.section || `group-${groupIndex}`}>
                           {group.sectionElement
                             ? group.sectionElement
                             : group.section && (
-                                <div className='px-[6px] py-[4px] font-base text-[11px] text-[var(--text-tertiary)] first:pt-[4px]'>
+                                <div className='px-1.5 py-1 font-base text-[var(--text-tertiary)] text-xs first:pt-1'>
                                   {group.section}
                                 </div>
                               )}
@@ -654,7 +724,7 @@ const Combobox = memo(
                             const globalIndex = filteredOptions.findIndex(
                               (o) => o.value === option.value
                             )
-                            const isHighlighted = globalIndex === highlightedIndex
+                            const isHighlighted = globalIndex === effectiveHighlightedIndex
                             const OptionIcon = option.icon
 
                             return (
@@ -668,17 +738,17 @@ const Combobox = memo(
                                   e.preventDefault()
                                   e.stopPropagation()
                                   if (!option.disabled) {
-                                    handleSelect(option.value, option.onSelect)
+                                    handleSelect(option.value, option.onSelect, option.keepOpen)
                                   }
                                 }}
                                 onMouseEnter={() =>
                                   !option.disabled && setHighlightedIndex(globalIndex)
                                 }
                                 className={cn(
-                                  'relative flex cursor-pointer select-none items-center gap-[8px] rounded-[4px] px-[6px] font-medium font-sans',
-                                  size === 'sm' ? 'py-[5px] text-[12px]' : 'py-[6px] text-sm',
-                                  'hover:bg-[var(--border-1)]',
-                                  (isHighlighted || isSelected) && 'bg-[var(--border-1)]',
+                                  'relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-1.5 font-medium font-sans',
+                                  size === 'sm' ? 'py-[5px] text-caption' : 'py-1.5 text-sm',
+                                  'hover-hover:bg-[var(--surface-active)]',
+                                  (isHighlighted || isSelected) && 'bg-[var(--surface-active)]',
                                   option.disabled && 'cursor-not-allowed opacity-50'
                                 )}
                               >
@@ -690,8 +760,9 @@ const Combobox = memo(
                                 <span className='flex-1 truncate text-[var(--text-primary)]'>
                                   {option.label}
                                 </span>
+                                {option.suffixElement}
                                 {multiSelect && isSelected && (
-                                  <Check className='ml-[8px] h-[12px] w-[12px] flex-shrink-0 text-[var(--text-primary)]' />
+                                  <Check className='ml-2 h-[12px] w-[12px] flex-shrink-0 text-[var(--text-primary)]' />
                                 )}
                               </div>
                             )
@@ -701,7 +772,7 @@ const Combobox = memo(
                     </div>
                   ) : (
                     // Render flat options (no groups)
-                    <div className='space-y-[2px]'>
+                    <div className='space-y-0.5'>
                       {showAllOption && multiSelect && (
                         <div
                           role='option'
@@ -714,10 +785,10 @@ const Combobox = memo(
                           }}
                           onMouseEnter={() => setHighlightedIndex(-1)}
                           className={cn(
-                            'relative flex cursor-pointer select-none items-center rounded-[4px] px-[6px] font-medium font-sans',
-                            size === 'sm' ? 'py-[5px] text-[12px]' : 'py-[6px] text-sm',
-                            'hover:bg-[var(--border-1)]',
-                            !multiSelectValues?.length && 'bg-[var(--border-1)]'
+                            'relative flex cursor-pointer select-none items-center rounded-sm px-1.5 font-medium font-sans',
+                            size === 'sm' ? 'py-[5px] text-caption' : 'py-1.5 text-sm',
+                            'hover-hover:bg-[var(--surface-active)]',
+                            !multiSelectValues?.length && 'bg-[var(--surface-active)]'
                           )}
                         >
                           <span className='flex-1 truncate text-[var(--text-primary)]'>
@@ -729,7 +800,7 @@ const Combobox = memo(
                         const isSelected = multiSelect
                           ? multiSelectValues?.includes(option.value)
                           : effectiveSelectedValue === option.value
-                        const isHighlighted = index === highlightedIndex
+                        const isHighlighted = index === effectiveHighlightedIndex
                         const OptionIcon = option.icon
 
                         return (
@@ -743,15 +814,15 @@ const Combobox = memo(
                               e.preventDefault()
                               e.stopPropagation()
                               if (!option.disabled) {
-                                handleSelect(option.value, option.onSelect)
+                                handleSelect(option.value, option.onSelect, option.keepOpen)
                               }
                             }}
                             onMouseEnter={() => !option.disabled && setHighlightedIndex(index)}
                             className={cn(
-                              'relative flex cursor-pointer select-none items-center gap-[8px] rounded-[4px] px-[6px] font-medium font-sans',
-                              size === 'sm' ? 'py-[5px] text-[12px]' : 'py-[6px] text-sm',
-                              'hover:bg-[var(--border-1)]',
-                              (isHighlighted || isSelected) && 'bg-[var(--border-1)]',
+                              'relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-1.5 font-medium font-sans',
+                              size === 'sm' ? 'py-[5px] text-caption' : 'py-1.5 text-sm',
+                              'hover-hover:bg-[var(--surface-active)]',
+                              (isHighlighted || isSelected) && 'bg-[var(--surface-active)]',
                               option.disabled && 'cursor-not-allowed opacity-50'
                             )}
                           >
@@ -763,8 +834,9 @@ const Combobox = memo(
                             <span className='flex-1 truncate text-[var(--text-primary)]'>
                               {option.label}
                             </span>
+                            {option.suffixElement}
                             {multiSelect && isSelected && (
-                              <Check className='ml-[8px] h-[12px] w-[12px] flex-shrink-0 text-[var(--text-primary)]' />
+                              <Check className='ml-2 h-[12px] w-[12px] flex-shrink-0 text-[var(--text-primary)]' />
                             )}
                           </div>
                         )

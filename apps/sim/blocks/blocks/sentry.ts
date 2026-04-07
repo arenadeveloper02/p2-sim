@@ -1,6 +1,6 @@
 import { SentryIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { SentryResponse } from '@/tools/sentry/types'
 
 export const SentryBlock: BlockConfig<SentryResponse> = {
@@ -12,6 +12,8 @@ export const SentryBlock: BlockConfig<SentryResponse> = {
     'Integrate Sentry into the workflow. Monitor issues, manage projects, track events, and coordinate releases across your applications.',
   docsLink: 'https://docs.sim.ai/tools/sentry',
   category: 'tools',
+  integrationType: IntegrationType.DeveloperTools,
+  tags: ['error-tracking', 'monitoring'],
   bgColor: '#E0E0E0',
   icon: SentryIcon,
   subBlocks: [
@@ -602,11 +604,6 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
     ],
     config: {
       tool: (params) => {
-        // Convert numeric fields
-        if (params.limit) {
-          params.limit = Number(params.limit)
-        }
-
         // Return the appropriate tool based on operation
         switch (params.operation) {
           case 'sentry_issues_list':
@@ -636,6 +633,11 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
           default:
             return 'sentry_issues_list'
         }
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.limit) result.limit = Number(params.limit)
+        return result
       },
     },
   },

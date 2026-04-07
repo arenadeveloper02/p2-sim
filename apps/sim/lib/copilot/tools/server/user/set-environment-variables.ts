@@ -1,11 +1,11 @@
 import { db } from '@sim/db'
-import { workspaceEnvironment } from '@sim/db/schema'
+import { credential } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
-import { createPermissionError, verifyWorkflowAccess } from '@/lib/copilot/auth/permissions'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
-import { decryptSecret, encryptSecret } from '@/lib/core/security/encryption'
+import { upsertPersonalEnvVars, upsertWorkspaceEnvVars } from '@/lib/environment/utils'
+import { getWorkflowById } from '@/lib/workflows/utils'
 
 interface SetEnvironmentVariablesParams {
   variables: Record<string, any> | Array<{ name: string; value: string }>
@@ -50,100 +50,83 @@ export const setEnvironmentVariablesServerTool: BaseServerTool<SetEnvironmentVar
       }
 
       const authenticatedUserId = context.userId
-      const { variables, workflowId } = params || ({} as SetEnvironmentVariablesParams)
-
-      if (!workflowId) {
-        throw new Error('workflowId is required to set workspace environment variables')
-      }
-
-      const { hasAccess, workspaceId } = await verifyWorkflowAccess(authenticatedUserId, workflowId)
-
-      if (!hasAccess) {
-        const errorMessage = createPermissionError('modify environment variables in')
-        logger.error('Unauthorized attempt to set environment variables', {
-          workflowId,
-          authenticatedUserId,
-        })
-        throw new Error(errorMessage)
-      }
-
-      if (!workspaceId) {
-        throw new Error('Could not determine workspace for this workflow')
-      }
+      const { variables } = params || ({} as SetEnvironmentVariablesParams)
 
       const normalized = normalizeVariables(variables || {})
       const { variables: validatedVariables } = EnvVarSchema.parse({ variables: normalized })
 
-      // Fetch existing workspace environment variables
-      const existingData = await db
-        .select()
-        .from(workspaceEnvironment)
-        .where(eq(workspaceEnvironment.workspaceId, workspaceId))
-        .limit(1)
-      const existingEncrypted = (existingData[0]?.variables as Record<string, string>) || {}
+      const requestedKeys = Object.keys(validatedVariables)
+      const workflowId = params.workflowId
 
-      const toEncrypt: Record<string, string> = {}
-      const added: string[] = []
-      const updated: string[] = []
-      for (const [key, newVal] of Object.entries(validatedVariables)) {
-        if (!(key in existingEncrypted)) {
-          toEncrypt[key] = newVal
-          added.push(key)
-        } else {
-          try {
-            const { decrypted } = await decryptSecret(existingEncrypted[key])
-            if (decrypted !== newVal) {
-              toEncrypt[key] = newVal
-              updated.push(key)
-            }
-          } catch {
-            toEncrypt[key] = newVal
-            updated.push(key)
+      const workspaceKeySet = new Set<string>()
+      let resolvedWorkspaceId: string | null = null
+
+      if (requestedKeys.length > 0 && workflowId) {
+        const wf = await getWorkflowById(workflowId)
+
+        if (wf?.workspaceId) {
+          resolvedWorkspaceId = wf.workspaceId
+          const existingWorkspaceCredentials = await db
+            .select({ envKey: credential.envKey })
+            .from(credential)
+            .where(
+              and(
+                eq(credential.workspaceId, wf.workspaceId),
+                eq(credential.type, 'env_workspace'),
+                inArray(credential.envKey, requestedKeys)
+              )
+            )
+
+          for (const row of existingWorkspaceCredentials) {
+            if (row.envKey) workspaceKeySet.add(row.envKey)
           }
         }
       }
 
-      const newlyEncrypted = await Object.entries(toEncrypt).reduce(
-        async (accP, [key, val]) => {
-          const acc = await accP
-          const { encrypted } = await encryptSecret(val)
-          return { ...acc, [key]: encrypted }
-        },
-        Promise.resolve({} as Record<string, string>)
-      )
+      const personalVars: Record<string, string> = {}
+      const workspaceVars: Record<string, string> = {}
 
-      const finalEncrypted = { ...existingEncrypted, ...newlyEncrypted }
+      for (const [key, value] of Object.entries(validatedVariables)) {
+        if (workspaceKeySet.has(key)) {
+          workspaceVars[key] = value
+        } else {
+          personalVars[key] = value
+        }
+      }
 
-      // Save to workspace environment variables
-      await db
-        .insert(workspaceEnvironment)
-        .values({
-          id: crypto.randomUUID(),
-          workspaceId,
-          variables: finalEncrypted,
-          updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [workspaceEnvironment.workspaceId],
-          set: { variables: finalEncrypted, updatedAt: new Date() },
-        })
+      const { added, updated } = await upsertPersonalEnvVars(authenticatedUserId, personalVars)
 
-      logger.info('Saved workspace environment variables', {
-        workspaceId,
-        workflowId,
+      let workspaceUpdated: string[] = []
+      if (Object.keys(workspaceVars).length > 0 && resolvedWorkspaceId) {
+        workspaceUpdated = await upsertWorkspaceEnvVars(
+          resolvedWorkspaceId,
+          workspaceVars,
+          authenticatedUserId
+        )
+      }
+
+      const totalProcessed = added.length + updated.length + workspaceUpdated.length
+
+      logger.info('Saved environment variables', {
+        userId: authenticatedUserId,
         addedCount: added.length,
         updatedCount: updated.length,
-        totalCount: Object.keys(finalEncrypted).length,
+        workspaceUpdatedCount: workspaceUpdated.length,
       })
 
+      const parts: string[] = []
+      if (added.length > 0) parts.push(`${added.length} personal secret(s) added`)
+      if (updated.length > 0) parts.push(`${updated.length} personal secret(s) updated`)
+      if (workspaceUpdated.length > 0)
+        parts.push(`${workspaceUpdated.length} workspace secret(s) updated`)
+
       return {
-        message: `Successfully processed ${Object.keys(validatedVariables).length} workspace environment variable(s): ${added.length} added, ${updated.length} updated`,
+        message: `Successfully processed ${totalProcessed} secret(s): ${parts.join(', ')}`,
         variableCount: Object.keys(validatedVariables).length,
         variableNames: Object.keys(validatedVariables),
-        totalVariableCount: Object.keys(finalEncrypted).length,
         addedVariables: added,
         updatedVariables: updated,
-        workspaceId,
+        workspaceUpdatedVariables: workspaceUpdated,
       }
     },
   }

@@ -6,7 +6,7 @@ description: Extraer texto de documentos PDF
 import { BlockInfoCard } from "@/components/ui/block-info-card"
 
 <BlockInfoCard 
-  type="mistral_parse"
+  type="mistral_parse_v3"
   color="#000000"
 />
 
@@ -48,14 +48,3 @@ Analizar documentos PDF utilizando la API de OCR de Mistral
 | `apiKey` | string | Sí | Clave API de Mistral \(MISTRAL_API_KEY\) |
 
 #### Salida
-
-| Parámetro | Tipo | Descripción |
-| --------- | ---- | ----------- |
-| `success` | boolean | Indica si el PDF se analizó correctamente |
-| `content` | string | Contenido extraído en el formato solicitado \(markdown, texto o JSON\) |
-| `metadata` | object | Metadatos de procesamiento que incluyen jobId, fileType, pageCount e información de uso |
-
-## Notas
-
-- Categoría: `tools`
-- Tipo: `mistral_parse`

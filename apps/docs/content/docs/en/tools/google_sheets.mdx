@@ -11,18 +11,20 @@ import { BlockInfoCard } from "@/components/ui/block-info-card"
 />
 
 {/* MANUAL-CONTENT-START:intro */}
-[Google Sheets](https://www.google.com/sheets/about/) is a powerful, cloud-based spreadsheet platform that allows teams and individuals to create, edit, and collaborate on spreadsheets in real-time. Widely used for data tracking, reporting, and lightweight database needs, Google Sheets seamlessly integrates with many tools and services to empower workflow automation and data-driven operations.
+[Google Sheets](https://www.google.com/sheets/about/) is a cloud-based spreadsheet platform that allows teams and individuals to create, edit, and collaborate on spreadsheets in real-time. Widely used for data tracking, reporting, and lightweight database needs, Google Sheets integrates with many tools and services.
 
-Google Sheets offers an extensive feature set for managing and analyzing tabular data, supporting everything from basic calculations to complex reporting and collaborative editing. Its robust API and integration capabilities enable automated access, updates, and reporting from agents and external services.
+With the Google Sheets integration in Sim, you can:
 
-Key features of Google Sheets include:
+- **Read data**: Retrieve cell values from specific ranges in a spreadsheet
+- **Write data**: Write values to specific cell ranges
+- **Update data**: Modify existing cell values in a spreadsheet
+- **Append rows**: Add new rows of data to the end of a sheet
+- **Clear ranges**: Remove data from specific cell ranges
+- **Manage spreadsheets**: Create new spreadsheets or retrieve metadata about existing ones
+- **Batch operations**: Perform batch read, update, and clear operations across multiple ranges
+- **Copy sheets**: Duplicate sheets within or between spreadsheets
 
-- Real-Time Collaboration: Multiple users can edit and view spreadsheets simultaneously from anywhere.
-- Rich Data Manipulation: Support for formulas, charts, pivots, and add-ons to analyze and visualize data.
-- Easy Data Import/Export: Ability to connect and sync data from various sources using integrations and APIs.
-- Powerful Permissions: Fine-grained sharing, access controls, and version history for team management.
-
-In Sim, the Google Sheets integration empowers your agents to automate reading from, writing to, and updating specific sheets within spreadsheets. Agents can interact programmatically with Google Sheets to retrieve or modify data, manage collaborative documents, and automate reporting or record-keeping as part of your AI workflows. By connecting Sim with Google Sheets, you can build intelligent agents that manage, analyze, and update your data dynamically—streamlining operations, enhancing productivity, and ensuring up-to-date data access across your organization.
+In Sim, the Google Sheets integration enables your agents to read from, write to, and manage spreadsheets as part of automated workflows. This is ideal for automated reporting, data synchronization, record-keeping, and building data pipelines that use spreadsheets as a collaborative data layer.
 {/* MANUAL-CONTENT-END */}
 
 
@@ -53,8 +55,8 @@ Read data from a specific sheet in a Google Sheets spreadsheet
 | `range` | string | The range of cells that was read |
 | `values` | array | The cell values as a 2D array |
 | `metadata` | json | Spreadsheet metadata including ID and URL |
-| ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
-| ↳ `spreadsheetUrl` | string | Spreadsheet URL |
+|   ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
+|   ↳ `spreadsheetUrl` | string | Spreadsheet URL |
 
 ### `google_sheets_write`
 
@@ -79,8 +81,8 @@ Write data to a specific sheet in a Google Sheets spreadsheet
 | `updatedColumns` | number | Number of columns updated |
 | `updatedCells` | number | Number of cells updated |
 | `metadata` | json | Spreadsheet metadata including ID and URL |
-| ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
-| ↳ `spreadsheetUrl` | string | Spreadsheet URL |
+|   ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
+|   ↳ `spreadsheetUrl` | string | Spreadsheet URL |
 
 ### `google_sheets_update`
 
@@ -105,8 +107,8 @@ Update data in a specific sheet in a Google Sheets spreadsheet
 | `updatedColumns` | number | Number of columns updated |
 | `updatedCells` | number | Number of cells updated |
 | `metadata` | json | Spreadsheet metadata including ID and URL |
-| ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
-| ↳ `spreadsheetUrl` | string | Spreadsheet URL |
+|   ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
+|   ↳ `spreadsheetUrl` | string | Spreadsheet URL |
 
 ### `google_sheets_append`
 
@@ -133,8 +135,8 @@ Append data to the end of a specific sheet in a Google Sheets spreadsheet
 | `updatedColumns` | number | Number of columns updated |
 | `updatedCells` | number | Number of cells updated |
 | `metadata` | json | Spreadsheet metadata including ID and URL |
-| ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
-| ↳ `spreadsheetUrl` | string | Spreadsheet URL |
+|   ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
+|   ↳ `spreadsheetUrl` | string | Spreadsheet URL |
 
 ### `google_sheets_clear`
 
@@ -144,7 +146,7 @@ Clear values from a specific range in a Google Sheets spreadsheet
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| `spreadsheetId` | string | Yes | The ID of the spreadsheet |
+| `spreadsheetId` | string | Yes | Google Sheets spreadsheet ID |
 | `sheetName` | string | Yes | The name of the sheet/tab to clear |
 | `cellRange` | string | No | The cell range to clear \(e.g. "A1:D10"\). Clears entire sheet if not specified. |
 
@@ -155,8 +157,8 @@ Clear values from a specific range in a Google Sheets spreadsheet
 | `clearedRange` | string | The range that was cleared |
 | `sheetName` | string | Name of the sheet that was cleared |
 | `metadata` | json | Spreadsheet metadata including ID and URL |
-| ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
-| ↳ `spreadsheetUrl` | string | Spreadsheet URL |
+|   ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
+|   ↳ `spreadsheetUrl` | string | Spreadsheet URL |
 
 ### `google_sheets_get_spreadsheet`
 
@@ -166,7 +168,7 @@ Get metadata about a Google Sheets spreadsheet including title and sheet list
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| `spreadsheetId` | string | Yes | The ID of the spreadsheet |
+| `spreadsheetId` | string | Yes | Google Sheets spreadsheet ID |
 | `includeGridData` | boolean | No | Whether to include grid data \(cell values\). Defaults to false. |
 
 #### Output
@@ -219,7 +221,7 @@ Read multiple ranges from a Google Sheets spreadsheet in a single request
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| `spreadsheetId` | string | Yes | The ID of the spreadsheet |
+| `spreadsheetId` | string | Yes | Google Sheets spreadsheet ID |
 | `ranges` | json | Yes | Array of ranges to read \(e.g., \["Sheet1!A1:D10", "Sheet2!A1:B5"\]\). Each range should include sheet name. |
 | `majorDimension` | string | No | The major dimension of values: "ROWS" \(default\) or "COLUMNS" |
 | `valueRenderOption` | string | No | How values should be rendered: "FORMATTED_VALUE" \(default\), "UNFORMATTED_VALUE", or "FORMULA" |
@@ -234,8 +236,8 @@ Read multiple ranges from a Google Sheets spreadsheet in a single request
 |   ↳ `majorDimension` | string | Major dimension \(ROWS or COLUMNS\) |
 |   ↳ `values` | array | The cell values as a 2D array |
 | `metadata` | json | Spreadsheet metadata including ID and URL |
-| ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
-| ↳ `spreadsheetUrl` | string | Spreadsheet URL |
+|   ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
+|   ↳ `spreadsheetUrl` | string | Spreadsheet URL |
 
 ### `google_sheets_batch_update`
 
@@ -245,7 +247,7 @@ Update multiple ranges in a Google Sheets spreadsheet in a single request
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| `spreadsheetId` | string | Yes | The ID of the spreadsheet |
+| `spreadsheetId` | string | Yes | Google Sheets spreadsheet ID |
 | `data` | json | Yes | Array of value ranges to update. Each item should have "range" \(e.g., "Sheet1!A1:D10"\) and "values" \(2D array\). |
 | `valueInputOption` | string | No | How input data should be interpreted: "RAW" or "USER_ENTERED" \(default\). USER_ENTERED parses formulas. |
 
@@ -265,8 +267,8 @@ Update multiple ranges in a Google Sheets spreadsheet in a single request
 |   ↳ `updatedColumns` | number | Number of columns updated in this range |
 |   ↳ `updatedCells` | number | Number of cells updated in this range |
 | `metadata` | json | Spreadsheet metadata including ID and URL |
-| ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
-| ↳ `spreadsheetUrl` | string | Spreadsheet URL |
+|   ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
+|   ↳ `spreadsheetUrl` | string | Spreadsheet URL |
 
 ### `google_sheets_batch_clear`
 
@@ -276,7 +278,7 @@ Clear multiple ranges in a Google Sheets spreadsheet in a single request
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| `spreadsheetId` | string | Yes | The ID of the spreadsheet |
+| `spreadsheetId` | string | Yes | Google Sheets spreadsheet ID |
 | `ranges` | json | Yes | Array of ranges to clear \(e.g., \["Sheet1!A1:D10", "Sheet2!A1:B5"\]\). Each range should include sheet name. |
 
 #### Output
@@ -286,8 +288,8 @@ Clear multiple ranges in a Google Sheets spreadsheet in a single request
 | `spreadsheetId` | string | The spreadsheet ID |
 | `clearedRanges` | array | Array of ranges that were cleared |
 | `metadata` | json | Spreadsheet metadata including ID and URL |
-| ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
-| ↳ `spreadsheetUrl` | string | Spreadsheet URL |
+|   ↳ `spreadsheetId` | string | Google Sheets spreadsheet ID |
+|   ↳ `spreadsheetUrl` | string | Spreadsheet URL |
 
 ### `google_sheets_copy_sheet`
 
@@ -297,7 +299,7 @@ Copy a sheet from one spreadsheet to another
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| `sourceSpreadsheetId` | string | Yes | The ID of the source spreadsheet |
+| `sourceSpreadsheetId` | string | Yes | Source Google Sheets spreadsheet ID |
 | `sheetId` | number | Yes | The ID of the sheet to copy \(numeric ID, not the sheet name\). Use Get Spreadsheet to find sheet IDs. |
 | `destinationSpreadsheetId` | string | Yes | The ID of the destination spreadsheet where the sheet will be copied |
 

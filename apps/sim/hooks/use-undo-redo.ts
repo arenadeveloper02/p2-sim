@@ -1,5 +1,12 @@
 import { useCallback } from 'react'
 import { createLogger } from '@sim/logger'
+
+declare global {
+  interface Window {
+    __skipDiffRecording?: boolean
+  }
+}
+
 import type { Edge } from 'reactflow'
 import { useSession } from '@/lib/auth/auth-client'
 import { enqueueReplaceWorkflowState } from '@/lib/workflows/operations/socket-operations'
@@ -20,6 +27,7 @@ import {
   type BatchRemoveEdgesOperation,
   type BatchToggleEnabledOperation,
   type BatchToggleHandlesOperation,
+  type BatchToggleLockedOperation,
   type BatchUpdateParentOperation,
   captureLatestEdges,
   captureLatestSubBlockValues,
@@ -29,7 +37,6 @@ import {
   useUndoRedoStore,
 } from '@/stores/undo-redo'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
@@ -416,6 +423,36 @@ export function useUndoRedo() {
     [activeWorkflowId, userId]
   )
 
+  const recordBatchToggleLocked = useCallback(
+    (blockIds: string[], previousStates: Record<string, boolean>) => {
+      if (!activeWorkflowId || blockIds.length === 0) return
+
+      const operation: BatchToggleLockedOperation = {
+        id: crypto.randomUUID(),
+        type: UNDO_REDO_OPERATIONS.BATCH_TOGGLE_LOCKED,
+        timestamp: Date.now(),
+        workflowId: activeWorkflowId,
+        userId,
+        data: { blockIds, previousStates },
+      }
+
+      const inverse: BatchToggleLockedOperation = {
+        id: crypto.randomUUID(),
+        type: UNDO_REDO_OPERATIONS.BATCH_TOGGLE_LOCKED,
+        timestamp: Date.now(),
+        workflowId: activeWorkflowId,
+        userId,
+        data: { blockIds, previousStates },
+      }
+
+      const entry = createOperationEntry(operation, inverse)
+      useUndoRedoStore.getState().push(activeWorkflowId, userId, entry)
+
+      logger.debug('Recorded batch toggle locked', { blockIds, previousStates })
+    },
+    [activeWorkflowId, userId]
+  )
+
   const undo = useCallback(async () => {
     if (!activeWorkflowId) return
 
@@ -504,47 +541,9 @@ export function useUndoRedo() {
             userId,
           })
 
-          blocksToAdd.forEach((block) => {
-            useWorkflowStore
-              .getState()
-              .addBlock(
-                block.id,
-                block.type,
-                block.name,
-                block.position,
-                block.data,
-                block.data?.parentId,
-                block.data?.extent,
-                {
-                  enabled: block.enabled,
-                  horizontalHandles: block.horizontalHandles,
-                  advancedMode: block.advancedMode,
-                  triggerMode: block.triggerMode,
-                  height: block.height,
-                }
-              )
-          })
-
-          if (subBlockValues && Object.keys(subBlockValues).length > 0) {
-            useSubBlockStore.setState((state) => ({
-              workflowValues: {
-                ...state.workflowValues,
-                [activeWorkflowId]: {
-                  ...state.workflowValues[activeWorkflowId],
-                  ...subBlockValues,
-                },
-              },
-            }))
-          }
-
-          if (edgeSnapshots && edgeSnapshots.length > 0) {
-            const edgesToAdd = edgeSnapshots.filter(
-              (edge) => !useWorkflowStore.getState().edges.find((e) => e.id === edge.id)
-            )
-            if (edgesToAdd.length > 0) {
-              useWorkflowStore.getState().batchAddEdges(edgesToAdd)
-            }
-          }
+          useWorkflowStore
+            .getState()
+            .batchAddBlocks(blocksToAdd, edgeSnapshots || [], subBlockValues || {})
           break
         }
         case UNDO_REDO_OPERATIONS.BATCH_REMOVE_EDGES: {
@@ -552,8 +551,9 @@ export function useUndoRedo() {
           const batchRemoveInverse = entry.inverse as BatchRemoveEdgesOperation
           const { edgeSnapshots } = batchRemoveInverse.data
 
+          const existingEdgeIds = new Set(useWorkflowStore.getState().edges.map((edge) => edge.id))
           const edgesToRemove = edgeSnapshots
-            .filter((e) => useWorkflowStore.getState().edges.find((edge) => edge.id === e.id))
+            .filter((e) => existingEdgeIds.has(e.id))
             .map((e) => e.id)
 
           if (edgesToRemove.length > 0) {
@@ -577,9 +577,8 @@ export function useUndoRedo() {
           const batchAddInverse = entry.inverse as BatchAddEdgesOperation
           const { edgeSnapshots } = batchAddInverse.data
 
-          const edgesToAdd = edgeSnapshots.filter(
-            (e) => !useWorkflowStore.getState().edges.find((edge) => edge.id === e.id)
-          )
+          const existingEdgeIds = new Set(useWorkflowStore.getState().edges.map((edge) => edge.id))
+          const edgesToAdd = edgeSnapshots.filter((e) => !existingEdgeIds.has(e.id))
 
           if (edgesToAdd.length > 0) {
             addToQueue({
@@ -632,9 +631,10 @@ export function useUndoRedo() {
 
           if (useWorkflowStore.getState().blocks[blockId]) {
             if (newParentId && affectedEdges && affectedEdges.length > 0) {
-              const edgesToAdd = affectedEdges.filter(
-                (e) => !useWorkflowStore.getState().edges.find((edge) => edge.id === e.id)
+              const existingEdgeIds = new Set(
+                useWorkflowStore.getState().edges.map((edge) => edge.id)
               )
+              const edgesToAdd = affectedEdges.filter((e) => !existingEdgeIds.has(e.id))
               if (edgesToAdd.length > 0) {
                 addToQueue({
                   id: crypto.randomUUID(),
@@ -696,8 +696,11 @@ export function useUndoRedo() {
 
             // If we're removing FROM a subflow (undo of add to subflow), remove edges after
             if (!newParentId && affectedEdges && affectedEdges.length > 0) {
+              const existingEdgeIds = new Set(
+                useWorkflowStore.getState().edges.map((edge) => edge.id)
+              )
               const edgeIdsToRemove = affectedEdges
-                .filter((edge) => useWorkflowStore.getState().edges.find((e) => e.id === edge.id))
+                .filter((edge) => existingEdgeIds.has(edge.id))
                 .map((edge) => edge.id)
               if (edgeIdsToRemove.length > 0) {
                 useWorkflowStore.getState().batchRemoveEdges(edgeIdsToRemove)
@@ -733,22 +736,21 @@ export function useUndoRedo() {
           // Collect all edge operations first
           const allEdgesToAdd: Edge[] = []
           const allEdgeIdsToRemove: string[] = []
+          const existingEdgeIds = new Set(useWorkflowStore.getState().edges.map((edge) => edge.id))
 
           for (const update of validUpdates) {
             const { newParentId, affectedEdges } = update
 
             // Moving OUT of subflow (undoing insert) → restore edges first
             if (!newParentId && affectedEdges && affectedEdges.length > 0) {
-              const edgesToAdd = affectedEdges.filter(
-                (e) => !useWorkflowStore.getState().edges.find((edge) => edge.id === e.id)
-              )
+              const edgesToAdd = affectedEdges.filter((e) => !existingEdgeIds.has(e.id))
               allEdgesToAdd.push(...edgesToAdd)
             }
 
             // Moving INTO subflow (undoing removal) → remove edges first
             if (newParentId && affectedEdges && affectedEdges.length > 0) {
               const edgeIds = affectedEdges
-                .filter((edge) => useWorkflowStore.getState().edges.find((e) => e.id === edge.id))
+                .filter((edge) => existingEdgeIds.has(edge.id))
                 .map((edge) => edge.id)
               allEdgeIdsToRemove.push(...edgeIds)
             }
@@ -816,7 +818,9 @@ export function useUndoRedo() {
           const toggleOp = entry.inverse as BatchToggleEnabledOperation
           const { blockIds, previousStates } = toggleOp.data
 
-          const validBlockIds = blockIds.filter((id) => useWorkflowStore.getState().blocks[id])
+          // Restore all blocks in previousStates (includes children of containers)
+          const allBlockIds = Object.keys(previousStates)
+          const validBlockIds = allBlockIds.filter((id) => useWorkflowStore.getState().blocks[id])
           if (validBlockIds.length === 0) {
             logger.debug('Undo batch-toggle-enabled skipped; no blocks exist')
             break
@@ -827,14 +831,14 @@ export function useUndoRedo() {
             operation: {
               operation: BLOCKS_OPERATIONS.BATCH_TOGGLE_ENABLED,
               target: OPERATION_TARGETS.BLOCKS,
-              payload: { blockIds: validBlockIds, previousStates },
+              payload: { blockIds, previousStates },
             },
             workflowId: activeWorkflowId,
             userId,
           })
 
           // Use setBlockEnabled to directly restore to previous state
-          // This is more robust than conditional toggle in collaborative scenarios
+          // This restores all affected blocks including children of containers
           validBlockIds.forEach((blockId) => {
             useWorkflowStore.getState().setBlockEnabled(blockId, previousStates[blockId])
           })
@@ -868,6 +872,36 @@ export function useUndoRedo() {
           })
           break
         }
+        case UNDO_REDO_OPERATIONS.BATCH_TOGGLE_LOCKED: {
+          const toggleOp = entry.inverse as BatchToggleLockedOperation
+          const { blockIds, previousStates } = toggleOp.data
+
+          // Restore all blocks in previousStates (includes children of containers)
+          const allBlockIds = Object.keys(previousStates)
+          const validBlockIds = allBlockIds.filter((id) => useWorkflowStore.getState().blocks[id])
+          if (validBlockIds.length === 0) {
+            logger.debug('Undo batch-toggle-locked skipped; no blocks exist')
+            break
+          }
+
+          addToQueue({
+            id: opId,
+            operation: {
+              operation: BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED,
+              target: OPERATION_TARGETS.BLOCKS,
+              payload: { blockIds, previousStates },
+            },
+            workflowId: activeWorkflowId,
+            userId,
+          })
+
+          // Use setBlockLocked to directly restore to previous state
+          // This restores all affected blocks including children of containers
+          validBlockIds.forEach((blockId) => {
+            useWorkflowStore.getState().setBlockLocked(blockId, previousStates[blockId])
+          })
+          break
+        }
         case UNDO_REDO_OPERATIONS.APPLY_DIFF: {
           const applyDiffInverse = entry.inverse as any
           const { baselineSnapshot } = applyDiffInverse.data
@@ -884,7 +918,7 @@ export function useUndoRedo() {
 
           // Set flag to skip recording during this operation
 
-          ;(window as any).__skipDiffRecording = true
+          window.__skipDiffRecording = true
           try {
             // Restore baseline state and broadcast to everyone
             if (baselineSnapshot && activeWorkflowId) {
@@ -921,7 +955,7 @@ export function useUndoRedo() {
             logger.info('Clearing diff UI state')
             useWorkflowDiffStore.getState().clearDiff({ restoreBaseline: false })
           } finally {
-            ;(window as any).__skipDiffRecording = false
+            window.__skipDiffRecording = false
           }
 
           logger.info('Undid apply-diff operation successfully')
@@ -941,7 +975,7 @@ export function useUndoRedo() {
 
           // Set flag to skip recording during this operation
 
-          ;(window as any).__skipDiffRecording = true
+          window.__skipDiffRecording = true
           try {
             // Apply the before-accept state (with markers for this user)
             useWorkflowStore.getState().replaceWorkflowState(beforeAccept)
@@ -980,7 +1014,7 @@ export function useUndoRedo() {
               diffAnalysis: diffAnalysis,
             })
           } finally {
-            ;(window as any).__skipDiffRecording = false
+            window.__skipDiffRecording = false
           }
 
           logger.info('Undid accept-diff operation - restored diff view')
@@ -994,7 +1028,7 @@ export function useUndoRedo() {
           const { useWorkflowStore } = await import('@/stores/workflows/workflow/store')
           const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
 
-          ;(window as any).__skipDiffRecording = true
+          window.__skipDiffRecording = true
           try {
             // Apply the before-reject state (with markers for this user)
             useWorkflowStore.getState().replaceWorkflowState(beforeReject)
@@ -1031,7 +1065,7 @@ export function useUndoRedo() {
               diffAnalysis: diffAnalysis,
             })
           } finally {
-            ;(window as any).__skipDiffRecording = false
+            window.__skipDiffRecording = false
           }
 
           logger.info('Undid reject-diff operation - restored diff view')
@@ -1085,47 +1119,9 @@ export function useUndoRedo() {
             userId,
           })
 
-          blocksToAdd.forEach((block) => {
-            useWorkflowStore
-              .getState()
-              .addBlock(
-                block.id,
-                block.type,
-                block.name,
-                block.position,
-                block.data,
-                block.data?.parentId,
-                block.data?.extent,
-                {
-                  enabled: block.enabled,
-                  horizontalHandles: block.horizontalHandles,
-                  advancedMode: block.advancedMode,
-                  triggerMode: block.triggerMode,
-                  height: block.height,
-                }
-              )
-          })
-
-          if (subBlockValues && Object.keys(subBlockValues).length > 0) {
-            useSubBlockStore.setState((state) => ({
-              workflowValues: {
-                ...state.workflowValues,
-                [activeWorkflowId]: {
-                  ...state.workflowValues[activeWorkflowId],
-                  ...subBlockValues,
-                },
-              },
-            }))
-          }
-
-          if (edgeSnapshots && edgeSnapshots.length > 0) {
-            const edgesToAdd = edgeSnapshots.filter(
-              (edge) => !useWorkflowStore.getState().edges.find((e) => e.id === edge.id)
-            )
-            if (edgesToAdd.length > 0) {
-              useWorkflowStore.getState().batchAddEdges(edgesToAdd)
-            }
-          }
+          useWorkflowStore
+            .getState()
+            .batchAddBlocks(blocksToAdd, edgeSnapshots || [], subBlockValues || {})
           break
         }
         case UNDO_REDO_OPERATIONS.BATCH_REMOVE_BLOCKS: {
@@ -1172,8 +1168,9 @@ export function useUndoRedo() {
           const batchRemoveOp = entry.operation as BatchRemoveEdgesOperation
           const { edgeSnapshots } = batchRemoveOp.data
 
+          const existingEdgeIds = new Set(useWorkflowStore.getState().edges.map((edge) => edge.id))
           const edgesToRemove = edgeSnapshots
-            .filter((e) => useWorkflowStore.getState().edges.find((edge) => edge.id === e.id))
+            .filter((e) => existingEdgeIds.has(e.id))
             .map((e) => e.id)
 
           if (edgesToRemove.length > 0) {
@@ -1198,9 +1195,8 @@ export function useUndoRedo() {
           const batchAddOp = entry.operation as BatchAddEdgesOperation
           const { edgeSnapshots } = batchAddOp.data
 
-          const edgesToAdd = edgeSnapshots.filter(
-            (e) => !useWorkflowStore.getState().edges.find((edge) => edge.id === e.id)
-          )
+          const existingEdgeIds = new Set(useWorkflowStore.getState().edges.map((edge) => edge.id))
+          const edgesToAdd = edgeSnapshots.filter((e) => !existingEdgeIds.has(e.id))
 
           if (edgesToAdd.length > 0) {
             addToQueue({
@@ -1256,8 +1252,11 @@ export function useUndoRedo() {
           if (useWorkflowStore.getState().blocks[blockId]) {
             // If we're removing FROM a subflow, remove edges first
             if (!newParentId && affectedEdges && affectedEdges.length > 0) {
+              const existingEdgeIds = new Set(
+                useWorkflowStore.getState().edges.map((edge) => edge.id)
+              )
               const edgeIdsToRemove = affectedEdges
-                .filter((edge) => useWorkflowStore.getState().edges.find((e) => e.id === edge.id))
+                .filter((edge) => existingEdgeIds.has(edge.id))
                 .map((edge) => edge.id)
               if (edgeIdsToRemove.length > 0) {
                 useWorkflowStore.getState().batchRemoveEdges(edgeIdsToRemove)
@@ -1323,9 +1322,10 @@ export function useUndoRedo() {
 
             // If we're adding TO a subflow, restore edges after
             if (newParentId && affectedEdges && affectedEdges.length > 0) {
-              const edgesToAdd = affectedEdges.filter(
-                (e) => !useWorkflowStore.getState().edges.find((edge) => edge.id === e.id)
+              const existingEdgeIds = new Set(
+                useWorkflowStore.getState().edges.map((edge) => edge.id)
               )
+              const edgesToAdd = affectedEdges.filter((e) => !existingEdgeIds.has(e.id))
               if (edgesToAdd.length > 0) {
                 addToQueue({
                   id: crypto.randomUUID(),
@@ -1358,6 +1358,7 @@ export function useUndoRedo() {
           // Collect all edge operations first
           const allEdgesToAdd: Edge[] = []
           const allEdgeIdsToRemove: string[] = []
+          const existingEdgeIds = new Set(useWorkflowStore.getState().edges.map((edge) => edge.id))
 
           for (const update of validUpdates) {
             const { newParentId, affectedEdges } = update
@@ -1365,16 +1366,14 @@ export function useUndoRedo() {
             // Moving INTO subflow (redoing insert) → remove edges first
             if (newParentId && affectedEdges && affectedEdges.length > 0) {
               const edgeIds = affectedEdges
-                .filter((edge) => useWorkflowStore.getState().edges.find((e) => e.id === edge.id))
+                .filter((edge) => existingEdgeIds.has(edge.id))
                 .map((edge) => edge.id)
               allEdgeIdsToRemove.push(...edgeIds)
             }
 
             // Moving OUT of subflow (redoing removal) → restore edges after
             if (!newParentId && affectedEdges && affectedEdges.length > 0) {
-              const edgesToAdd = affectedEdges.filter(
-                (e) => !useWorkflowStore.getState().edges.find((edge) => edge.id === e.id)
-              )
+              const edgesToAdd = affectedEdges.filter((e) => !existingEdgeIds.has(e.id))
               allEdgesToAdd.push(...edgesToAdd)
             }
           }
@@ -1442,7 +1441,9 @@ export function useUndoRedo() {
           const toggleOp = entry.operation as BatchToggleEnabledOperation
           const { blockIds, previousStates } = toggleOp.data
 
-          const validBlockIds = blockIds.filter((id) => useWorkflowStore.getState().blocks[id])
+          // Process all blocks in previousStates (includes children of containers)
+          const allBlockIds = Object.keys(previousStates)
+          const validBlockIds = allBlockIds.filter((id) => useWorkflowStore.getState().blocks[id])
           if (validBlockIds.length === 0) {
             logger.debug('Redo batch-toggle-enabled skipped; no blocks exist')
             break
@@ -1453,16 +1454,18 @@ export function useUndoRedo() {
             operation: {
               operation: BLOCKS_OPERATIONS.BATCH_TOGGLE_ENABLED,
               target: OPERATION_TARGETS.BLOCKS,
-              payload: { blockIds: validBlockIds, previousStates },
+              payload: { blockIds, previousStates },
             },
             workflowId: activeWorkflowId,
             userId,
           })
 
-          // Use setBlockEnabled to directly set to toggled state
-          // Redo sets to !previousStates (the state after the original toggle)
+          // Compute target state the same way batchToggleEnabled does:
+          // use !firstBlock.enabled, where firstBlock is blockIds[0]
+          const firstBlockId = blockIds[0]
+          const targetEnabled = !previousStates[firstBlockId]
           validBlockIds.forEach((blockId) => {
-            useWorkflowStore.getState().setBlockEnabled(blockId, !previousStates[blockId])
+            useWorkflowStore.getState().setBlockEnabled(blockId, targetEnabled)
           })
           break
         }
@@ -1494,6 +1497,38 @@ export function useUndoRedo() {
           })
           break
         }
+        case UNDO_REDO_OPERATIONS.BATCH_TOGGLE_LOCKED: {
+          const toggleOp = entry.operation as BatchToggleLockedOperation
+          const { blockIds, previousStates } = toggleOp.data
+
+          // Process all blocks in previousStates (includes children of containers)
+          const allBlockIds = Object.keys(previousStates)
+          const validBlockIds = allBlockIds.filter((id) => useWorkflowStore.getState().blocks[id])
+          if (validBlockIds.length === 0) {
+            logger.debug('Redo batch-toggle-locked skipped; no blocks exist')
+            break
+          }
+
+          addToQueue({
+            id: opId,
+            operation: {
+              operation: BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED,
+              target: OPERATION_TARGETS.BLOCKS,
+              payload: { blockIds, previousStates },
+            },
+            workflowId: activeWorkflowId,
+            userId,
+          })
+
+          // Compute target state the same way batchToggleLocked does:
+          // use !firstBlock.locked, where firstBlock is blockIds[0]
+          const firstBlockId = blockIds[0]
+          const targetLocked = !previousStates[firstBlockId]
+          validBlockIds.forEach((blockId) => {
+            useWorkflowStore.getState().setBlockLocked(blockId, targetLocked)
+          })
+          break
+        }
         case UNDO_REDO_OPERATIONS.APPLY_DIFF: {
           // Redo apply-diff means re-applying the proposed state with diff markers
           const applyDiffOp = entry.operation as any
@@ -1504,7 +1539,7 @@ export function useUndoRedo() {
 
           // Set flag to skip recording during this operation
 
-          ;(window as any).__skipDiffRecording = true
+          window.__skipDiffRecording = true
           try {
             // Manually apply the proposed state and set up diff store (similar to setProposedChanges but with original baseline)
             const diffStore = useWorkflowDiffStore.getState()
@@ -1545,7 +1580,7 @@ export function useUndoRedo() {
               diffAnalysis: diffAnalysis,
             })
           } finally {
-            ;(window as any).__skipDiffRecording = false
+            window.__skipDiffRecording = false
           }
 
           logger.info('Redid apply-diff operation')
@@ -1561,7 +1596,7 @@ export function useUndoRedo() {
 
           // Set flag to skip recording during this operation
 
-          ;(window as any).__skipDiffRecording = true
+          window.__skipDiffRecording = true
           try {
             // Clear diff state FIRST to prevent flash of colors (local UI only)
             // Use setState directly to ensure synchronous clearing
@@ -1599,7 +1634,7 @@ export function useUndoRedo() {
               operationId: opId,
             })
           } finally {
-            ;(window as any).__skipDiffRecording = false
+            window.__skipDiffRecording = false
           }
 
           logger.info('Redid accept-diff operation - cleared diff view')
@@ -1613,7 +1648,7 @@ export function useUndoRedo() {
           const { useWorkflowStore } = await import('@/stores/workflows/workflow/store')
           const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
 
-          ;(window as any).__skipDiffRecording = true
+          window.__skipDiffRecording = true
           try {
             // Clear diff state FIRST to prevent flash of colors (local UI only)
             // Use setState directly to ensure synchronous clearing
@@ -1651,7 +1686,7 @@ export function useUndoRedo() {
               operationId: opId,
             })
           } finally {
-            ;(window as any).__skipDiffRecording = false
+            window.__skipDiffRecording = false
           }
 
           logger.info('Redid reject-diff operation - cleared diff view')
@@ -1815,6 +1850,7 @@ export function useUndoRedo() {
     recordBatchUpdateParent,
     recordBatchToggleEnabled,
     recordBatchToggleHandles,
+    recordBatchToggleLocked,
     recordApplyDiff,
     recordAcceptDiff,
     recordRejectDiff,

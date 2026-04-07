@@ -292,7 +292,6 @@ Example 2 - Product Data:
           onlyMainContent,
           mobile,
           prompt,
-          apiKey,
           agentPrompt,
           agentUrls,
           schema,
@@ -300,7 +299,7 @@ Example 2 - Product Data:
           strictConstrainToURLs,
         } = params
 
-        const result: Record<string, any> = { apiKey }
+        const result: Record<string, any> = {}
 
         switch (operation) {
           case 'scrape':

@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { knowledgeKeys, useUserAccessKnowledgeBasesQuery } from '@/hooks/queries/knowledge'
+import { knowledgeKeys, useUserAccessKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
 
 /**
  * Hook to fetch knowledge bases that user has access to via workspace permissions

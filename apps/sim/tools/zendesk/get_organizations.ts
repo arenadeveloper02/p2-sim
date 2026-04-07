@@ -1,15 +1,20 @@
-import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
-import { buildZendeskUrl, handleZendeskError } from './types'
-
-const logger = createLogger('ZendeskGetOrganizations')
+import {
+  appendCursorPaginationParams,
+  buildZendeskUrl,
+  extractCursorPagingInfo,
+  handleZendeskError,
+  METADATA_OUTPUT,
+  ORGANIZATIONS_ARRAY_OUTPUT,
+  PAGING_OUTPUT,
+} from '@/tools/zendesk/types'
 
 export interface ZendeskGetOrganizationsParams {
   email: string
   apiToken: string
   subdomain: string
   perPage?: string
-  page?: string
+  pageAfter?: string
 }
 
 export interface ZendeskGetOrganizationsResponse {
@@ -17,9 +22,8 @@ export interface ZendeskGetOrganizationsResponse {
   output: {
     organizations: any[]
     paging?: {
-      next_page?: string | null
-      previous_page?: string | null
-      count: number
+      after_cursor: string | null
+      has_more: boolean
     }
     metadata: {
       total_returned: number
@@ -60,22 +64,21 @@ export const zendeskGetOrganizationsTool: ToolConfig<
     perPage: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Results per page (default: 100, max: 100)',
+      visibility: 'user-or-llm',
+      description: 'Results per page as a number string (default: "100", max: "100")',
     },
-    page: {
+    pageAfter: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Page number',
+      visibility: 'user-or-llm',
+      description: 'Cursor from a previous response to fetch the next page of results',
     },
   },
 
   request: {
     url: (params) => {
       const queryParams = new URLSearchParams()
-      if (params.page) queryParams.append('page', params.page)
-      if (params.perPage) queryParams.append('per_page', params.perPage)
+      appendCursorPaginationParams(queryParams, params)
 
       const query = queryParams.toString()
       const url = buildZendeskUrl(params.subdomain, '/organizations')
@@ -100,19 +103,16 @@ export const zendeskGetOrganizationsTool: ToolConfig<
 
     const data = await response.json()
     const organizations = data.organizations || []
+    const paging = extractCursorPagingInfo(data)
 
     return {
       success: true,
       output: {
         organizations,
-        paging: {
-          next_page: data.next_page ?? null,
-          previous_page: data.previous_page ?? null,
-          count: data.count || organizations.length,
-        },
+        paging,
         metadata: {
           total_returned: organizations.length,
-          has_more: !!data.next_page,
+          has_more: paging.has_more,
         },
         success: true,
       },
@@ -120,30 +120,8 @@ export const zendeskGetOrganizationsTool: ToolConfig<
   },
 
   outputs: {
-    organizations: { type: 'array', description: 'Array of organization objects' },
-    paging: {
-      type: 'object',
-      description: 'Pagination information',
-      properties: {
-        next_page: { type: 'string', description: 'URL for next page of results', optional: true },
-        previous_page: {
-          type: 'string',
-          description: 'URL for previous page of results',
-          optional: true,
-        },
-        count: { type: 'number', description: 'Total count of organizations' },
-      },
-    },
-    metadata: {
-      type: 'object',
-      description: 'Response metadata',
-      properties: {
-        total_returned: {
-          type: 'number',
-          description: 'Number of organizations returned in this response',
-        },
-        has_more: { type: 'boolean', description: 'Whether more organizations are available' },
-      },
-    },
+    organizations: ORGANIZATIONS_ARRAY_OUTPUT,
+    paging: PAGING_OUTPUT,
+    metadata: METADATA_OUTPUT,
   },
 }

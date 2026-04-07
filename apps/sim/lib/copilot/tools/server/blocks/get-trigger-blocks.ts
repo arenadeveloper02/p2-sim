@@ -1,9 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { z } from 'zod'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
+import { getAllowedIntegrationsFromEnv } from '@/lib/core/config/feature-flags'
 import { registry as blockRegistry } from '@/blocks/registry'
 import type { BlockConfig } from '@/blocks/types'
-import { getUserPermissionConfig } from '@/executor/utils/permission-check'
+import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 
 export const GetTriggerBlocksInput = z.object({})
 export const GetTriggerBlocksResult = z.object({
@@ -15,18 +16,22 @@ export const getTriggerBlocksServerTool: BaseServerTool<
   ReturnType<typeof GetTriggerBlocksResult.parse>
 > = {
   name: 'get_trigger_blocks',
+  inputSchema: GetTriggerBlocksInput,
+  outputSchema: GetTriggerBlocksResult,
   async execute(_args: unknown, context?: { userId: string }) {
     const logger = createLogger('GetTriggerBlocksServerTool')
     logger.debug('Executing get_trigger_blocks')
 
     const permissionConfig = context?.userId ? await getUserPermissionConfig(context.userId) : null
-    const allowedIntegrations = permissionConfig?.allowedIntegrations
+    const allowedIntegrations =
+      permissionConfig?.allowedIntegrations ?? getAllowedIntegrationsFromEnv()
 
     const triggerBlockIds: string[] = []
 
     Object.entries(blockRegistry).forEach(([blockType, blockConfig]: [string, BlockConfig]) => {
       if (blockConfig.hideFromToolbar) return
-      if (allowedIntegrations != null && !allowedIntegrations.includes(blockType)) return
+      if (allowedIntegrations != null && !allowedIntegrations.includes(blockType.toLowerCase()))
+        return
 
       if (blockConfig.category === 'triggers') {
         triggerBlockIds.push(blockType)

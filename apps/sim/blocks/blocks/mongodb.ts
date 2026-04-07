@@ -1,5 +1,6 @@
 import { MongoDBIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { IntegrationType } from '@/blocks/types'
 import type { MongoDBIntrospectResponse, MongoDBResponse } from '@/tools/mongodb/types'
 
 export const MongoDBBlock: BlockConfig<MongoDBResponse | MongoDBIntrospectResponse> = {
@@ -10,6 +11,8 @@ export const MongoDBBlock: BlockConfig<MongoDBResponse | MongoDBIntrospectRespon
     'Integrate MongoDB into the workflow. Can find, insert, update, delete, and aggregate data.',
   docsLink: 'https://docs.sim.ai/tools/mongodb',
   category: 'tools',
+  integrationType: IntegrationType.Databases,
+  tags: ['data-warehouse', 'cloud'],
   bgColor: '#E0E0E0',
   icon: MongoDBIcon,
   subBlocks: [
@@ -69,6 +72,7 @@ export const MongoDBBlock: BlockConfig<MongoDBResponse | MongoDBIntrospectRespon
       title: 'Auth Source',
       type: 'short-input',
       placeholder: 'admin',
+      mode: 'advanced',
     },
     {
       id: 'ssl',
@@ -80,6 +84,7 @@ export const MongoDBBlock: BlockConfig<MongoDBResponse | MongoDBIntrospectRespon
         { label: 'Preferred', id: 'preferred' },
       ],
       value: () => 'preferred',
+      mode: 'advanced',
     },
     {
       id: 'collection',
@@ -451,6 +456,7 @@ Return ONLY the JSON array pipeline - no explanations, no markdown, no extra tex
       type: 'short-input',
       placeholder: '100',
       condition: { field: 'operation', value: 'query' },
+      mode: 'advanced',
     },
     {
       id: 'sort',
@@ -458,6 +464,7 @@ Return ONLY the JSON array pipeline - no explanations, no markdown, no extra tex
       type: 'code',
       placeholder: '{"createdAt": -1}',
       condition: { field: 'operation', value: 'query' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         maintainHistory: true,
@@ -680,6 +687,7 @@ Generate the MongoDB update operation that safely and accurately fulfills the us
       ],
       value: () => 'false',
       condition: { field: 'operation', value: 'update' },
+      mode: 'advanced',
     },
     {
       id: 'multi',
@@ -691,6 +699,7 @@ Generate the MongoDB update operation that safely and accurately fulfills the us
       ],
       value: () => 'false',
       condition: { field: 'operation', value: 'update' },
+      mode: 'advanced',
     },
     {
       id: 'filter',
@@ -796,6 +805,7 @@ Return ONLY the MongoDB query filter as valid JSON - no explanations, no markdow
       ],
       value: () => 'false',
       condition: { field: 'operation', value: 'delete' },
+      mode: 'advanced',
     },
   ],
   tools: {

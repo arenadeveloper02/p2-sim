@@ -1,19 +1,24 @@
 import { FirefliesIcon } from '@/components/icons'
+import { resolveHttpsUrlFromFileInput } from '@/lib/uploads/utils/file-utils'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import type { FirefliesResponse } from '@/tools/fireflies/types'
 import { getTrigger } from '@/triggers'
 
 export const FirefliesBlock: BlockConfig<FirefliesResponse> = {
   type: 'fireflies',
-  name: 'Fireflies',
+  name: 'Fireflies (Legacy)',
   description: 'Interact with Fireflies.ai meeting transcripts and recordings',
+  hideFromToolbar: true,
   authMode: AuthMode.ApiKey,
   triggerAllowed: true,
   longDescription:
     'Integrate Fireflies.ai into the workflow. Manage meeting transcripts, add bot to live meetings, create soundbites, and more. Can also trigger workflows when transcriptions complete.',
   docsLink: 'https://docs.sim.ai/tools/fireflies',
   category: 'tools',
+  integrationType: IntegrationType.Media,
+  tags: ['meeting', 'speech-to-text', 'note-taking'],
   icon: FirefliesIcon,
   bgColor: '#100730',
   subBlocks: [
@@ -93,6 +98,7 @@ export const FirefliesBlock: BlockConfig<FirefliesResponse> = {
       type: 'short-input',
       placeholder: 'e.g., 2024-01-01T00:00:00Z',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_list_transcripts',
@@ -118,6 +124,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       placeholder: 'e.g., 2024-12-31T23:59:59Z',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_list_transcripts',
@@ -143,6 +150,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       placeholder: 'Filter by host email',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_list_transcripts',
@@ -154,6 +162,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       placeholder: 'Comma-separated participant emails',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_list_transcripts',
@@ -165,6 +174,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       placeholder: 'Max 50 (default: 50)',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['fireflies_list_transcripts', 'fireflies_list_bites'],
@@ -245,6 +255,7 @@ Return ONLY the title - no quotes, no explanations.`,
       type: 'short-input',
       placeholder: 'e.g., es, de, fr (default: English)',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['fireflies_upload_audio', 'fireflies_add_to_live_meeting'],
@@ -276,6 +287,7 @@ Return ONLY the two-letter language code - no explanations, no quotes.`,
       placeholder: '[{"displayName": "John", "email": "john@example.com"}]',
       description: 'JSON array of attendees',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_upload_audio',
@@ -302,6 +314,7 @@ Return ONLY the valid JSON array - no explanations, no markdown code blocks.`,
       type: 'short-input',
       placeholder: 'Custom tracking ID',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_upload_audio',
@@ -327,6 +340,7 @@ Return ONLY the valid JSON array - no explanations, no markdown code blocks.`,
       placeholder: 'Optional meeting password',
       password: true,
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_add_to_live_meeting',
@@ -338,6 +352,7 @@ Return ONLY the valid JSON array - no explanations, no markdown code blocks.`,
       type: 'short-input',
       placeholder: '60 (15-120 minutes)',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_add_to_live_meeting',
@@ -372,6 +387,7 @@ Return ONLY the valid JSON array - no explanations, no markdown code blocks.`,
       type: 'short-input',
       placeholder: 'Name for this highlight',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_create_bite',
@@ -383,6 +399,7 @@ Return ONLY the valid JSON array - no explanations, no markdown code blocks.`,
       type: 'long-input',
       placeholder: 'Brief description of the highlight',
       required: false,
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: 'fireflies_create_bite',
@@ -458,12 +475,11 @@ Return ONLY the summary text - no quotes, no labels.`,
             return baseParams
 
           case 'fireflies_upload_audio': {
-            // Support both file upload and URL
+            // Support both file upload and URL - use canonical 'audioFile' param
             const audioUrl = params.audioUrl?.trim()
             const audioFile = params.audioFile
-            const audioFileReference = params.audioFileReference
 
-            if (!audioUrl && !audioFile && !audioFileReference) {
+            if (!audioUrl && !audioFile) {
               throw new Error('Either audio file or audio URL is required.')
             }
 
@@ -471,7 +487,6 @@ Return ONLY the summary text - no quotes, no labels.`,
               ...baseParams,
               audioUrl: audioUrl || undefined,
               audioFile: audioFile || undefined,
-              audioFileReference: audioFileReference || undefined,
               title: params.title?.trim() || undefined,
               language: params.language?.trim() || undefined,
               attendees: params.attendees?.trim() || undefined,
@@ -545,8 +560,7 @@ Return ONLY the summary text - no quotes, no labels.`,
     hostEmail: { type: 'string', description: 'Filter by host email' },
     participants: { type: 'string', description: 'Filter by participants (comma-separated)' },
     limit: { type: 'number', description: 'Maximum results to return' },
-    audioFile: { type: 'json', description: 'Audio/video file (UserFile)' },
-    audioFileReference: { type: 'json', description: 'Audio/video file reference' },
+    audioFile: { type: 'json', description: 'Audio/video file (canonical param)' },
     audioUrl: { type: 'string', description: 'Public URL to audio file' },
     title: { type: 'string', description: 'Meeting title' },
     language: { type: 'string', description: 'Language code for transcription' },
@@ -586,4 +600,59 @@ Return ONLY the summary text - no quotes, no labels.`,
     enabled: true,
     available: ['fireflies_transcription_complete'],
   },
+}
+
+const firefliesV2SubBlocks = (FirefliesBlock.subBlocks || []).filter(
+  (subBlock) => subBlock.id !== 'audioUrl'
+)
+const firefliesV2Inputs = FirefliesBlock.inputs
+  ? Object.fromEntries(Object.entries(FirefliesBlock.inputs).filter(([key]) => key !== 'audioUrl'))
+  : {}
+
+export const FirefliesV2Block: BlockConfig<FirefliesResponse> = {
+  ...FirefliesBlock,
+  type: 'fireflies_v2',
+  name: 'Fireflies',
+  description: 'Interact with Fireflies.ai meeting transcripts and recordings',
+  hideFromToolbar: false,
+  integrationType: IntegrationType.Media,
+  tags: ['meeting', 'speech-to-text', 'note-taking'],
+  subBlocks: firefliesV2SubBlocks,
+  tools: {
+    ...FirefliesBlock.tools,
+    config: {
+      ...FirefliesBlock.tools?.config,
+      tool: (params) =>
+        FirefliesBlock.tools?.config?.tool
+          ? FirefliesBlock.tools.config.tool(params)
+          : params.operation || 'fireflies_list_transcripts',
+      params: (params) => {
+        const baseParams = FirefliesBlock.tools?.config?.params
+        if (!baseParams) {
+          return params
+        }
+
+        if (params.operation === 'fireflies_upload_audio') {
+          // Use canonical 'audioFile' param directly
+          const audioFile = normalizeFileInput(params.audioFile, { single: true })
+          if (!audioFile) {
+            throw new Error('Audio file is required.')
+          }
+          const audioUrl = resolveHttpsUrlFromFileInput(audioFile)
+          if (!audioUrl) {
+            throw new Error('Audio file must include a https URL.')
+          }
+
+          return baseParams({
+            ...params,
+            audioUrl,
+            audioFile: undefined,
+          })
+        }
+
+        return baseParams(params)
+      },
+    },
+  },
+  inputs: firefliesV2Inputs,
 }

@@ -1,4 +1,6 @@
 import type { Edge } from 'reactflow'
+import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
+import type { ParentIteration, SerializableExecutionState } from '@/executor/execution/types'
 import type { BlockLog, NormalizedBlockOutput } from '@/executor/types'
 import type { DeploymentStatus } from '@/stores/workflows/registry/types'
 import type { Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
@@ -56,7 +58,9 @@ import type { CoreTriggerType } from '@/stores/logs/filters/types'
 export interface ExecutionTrigger {
   type: CoreTriggerType | string
   source: string
-  data?: Record<string, unknown>
+  data?: Record<string, unknown> & {
+    correlation?: AsyncExecutionCorrelation
+  }
   timestamp: string
 }
 
@@ -67,9 +71,34 @@ export interface ExecutionStatus {
   durationMs?: number
 }
 
+export const EXECUTION_FINALIZATION_PATHS = [
+  'completed',
+  'fallback_completed',
+  'force_failed',
+  'cancelled',
+  'paused',
+] as const
+
+export type ExecutionFinalizationPath = (typeof EXECUTION_FINALIZATION_PATHS)[number]
+
+export interface ExecutionLastStartedBlock {
+  blockId: string
+  blockName: string
+  blockType: string
+  startedAt: string
+}
+
+export interface ExecutionLastCompletedBlock {
+  blockId: string
+  blockName: string
+  blockType: string
+  endedAt: string
+  success: boolean
+}
+
 export interface WorkflowExecutionSnapshot {
   id: string
-  workflowId: string
+  workflowId: string | null
   stateHash: string
   stateData: WorkflowState
   createdAt: string
@@ -80,7 +109,7 @@ export type WorkflowExecutionSnapshotSelect = WorkflowExecutionSnapshot
 
 export interface WorkflowExecutionLog {
   id: string
-  workflowId: string
+  workflowId: string | null
   executionId: string
   stateSnapshotId: string
   level: 'info' | 'error'
@@ -100,6 +129,14 @@ export interface WorkflowExecutionLog {
   executionData: {
     environment?: ExecutionEnvironment
     trigger?: ExecutionTrigger
+    correlation?: AsyncExecutionCorrelation
+    error?: string
+    lastStartedBlock?: ExecutionLastStartedBlock
+    lastCompletedBlock?: ExecutionLastCompletedBlock
+    hasTraceSpans?: boolean
+    traceSpanCount?: number
+    completionFailure?: string
+    finalizationPath?: ExecutionFinalizationPath
     traceSpans?: TraceSpan[]
     tokens?: { input?: number; output?: number; total?: number }
     models?: Record<
@@ -111,6 +148,7 @@ export interface WorkflowExecutionLog {
         tokens?: { input?: number; output?: number; total?: number }
       }
     >
+    executionState?: SerializableExecutionState
     finalOutput?: any
     errorDetails?: {
       blockId: string
@@ -173,11 +211,15 @@ export interface TraceSpan {
   children?: TraceSpan[]
   toolCalls?: ToolCall[]
   status?: 'success' | 'error'
+  /** Whether this block's error was handled by an error handler path */
+  errorHandled?: boolean
   tokens?: number | TokenInfo
   relativeStartMs?: number
   blockId?: string
   input?: Record<string, unknown>
   output?: Record<string, unknown>
+  childWorkflowSnapshotId?: string
+  childWorkflowId?: string
   model?: string
   cost?: {
     input?: number
@@ -188,6 +230,7 @@ export interface TraceSpan {
   loopId?: string
   parallelId?: string
   iterationIndex?: number
+  parentIterations?: ParentIteration[]
 }
 
 export interface WorkflowExecutionSummary {
@@ -331,7 +374,6 @@ export interface BatchInsertResult<T> {
 export interface SnapshotService {
   createSnapshot(workflowId: string, state: WorkflowState): Promise<WorkflowExecutionSnapshot>
   getSnapshot(id: string): Promise<WorkflowExecutionSnapshot | null>
-  getSnapshotByHash(workflowId: string, hash: string): Promise<WorkflowExecutionSnapshot | null>
   computeStateHash(state: WorkflowState): string
   cleanupOrphanedSnapshots(olderThanDays: number): Promise<number>
 }
@@ -368,6 +410,9 @@ export interface ExecutionLoggerService {
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
     workflowInput?: any
+    executionState?: SerializableExecutionState
+    finalizationPath?: ExecutionFinalizationPath
+    completionFailure?: string
     isResume?: boolean
     level?: 'info' | 'error'
     status?: 'completed' | 'failed' | 'cancelled' | 'pending'

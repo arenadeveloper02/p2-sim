@@ -1,7 +1,7 @@
-import { getEnv } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import type { MapParams, MapResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
+
+const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
 
 export const mapTool: ToolConfig<MapParams, MapResponse> = {
   id: 'firecrawl_map',
@@ -15,7 +15,7 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'The base URL to map and discover links from',
+      description: 'The base URL to map and discover links from (e.g., "https://example.com")',
     },
     search: {
       type: 'string',
@@ -44,8 +44,9 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
     limit: {
       type: 'number',
       required: false,
-      visibility: 'user-only',
-      description: 'Maximum number of links to return (max: 100,000, default: 5,000)',
+      visibility: 'user-or-llm',
+      description:
+        'Maximum number of links to return (e.g., 100, 1000, 5000). Max: 100,000, default: 5,000',
     },
     timeout: {
       type: 'number',
@@ -61,7 +62,7 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -70,9 +71,9 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
   request: {
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/map',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${isHosted ? getEnv('FIRECRAWL_API_KEY') || getEnv('NEXT_PUBLIC_FIRECRAWL_API_KEY') : params.apiKey}`,
+      Authorization: `Bearer ${firecrawlApiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {

@@ -1,14 +1,14 @@
 import { generateInternalToken } from '@/lib/auth/internal'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { HTTP } from '@/executor/constants'
 
-export async function buildAuthHeaders(): Promise<Record<string, string>> {
+export async function buildAuthHeaders(userId?: string): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'Content-Type': HTTP.CONTENT_TYPE.JSON,
   }
 
   if (typeof window === 'undefined') {
-    const token = await generateInternalToken()
+    const token = await generateInternalToken(userId)
     headers.Authorization = `Bearer ${token}`
   }
 
@@ -16,7 +16,8 @@ export async function buildAuthHeaders(): Promise<Record<string, string>> {
 }
 
 export function buildAPIUrl(path: string, params?: Record<string, string>): URL {
-  const url = new URL(path, getBaseUrl())
+  const baseUrl = path.startsWith('/api/') ? getInternalApiBaseUrl() : getBaseUrl()
+  const url = new URL(path, baseUrl)
 
   if (params) {
     for (const [key, value] of Object.entries(params)) {

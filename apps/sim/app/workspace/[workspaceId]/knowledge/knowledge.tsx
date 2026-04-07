@@ -1,118 +1,170 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { ChevronDown, Database, Search } from 'lucide-react'
-import { useParams } from 'next/navigation'
-import {
-  Button,
-  Popover,
-  PopoverContent,
-  PopoverItem,
-  PopoverTrigger,
-  Tooltip,
-} from '@/components/emcn'
-import { Input } from '@/components/ui/input'
+import { useParams, useRouter } from 'next/navigation'
+import { Tooltip } from '@/components/emcn'
+import { Database } from '@/components/emcn/icons'
 import type { KnowledgeBaseData } from '@/lib/knowledge/types'
+import type {
+  CreateAction,
+  ResourceCell,
+  ResourceColumn,
+  ResourceRow,
+  SearchConfig,
+} from '@/app/workspace/[workspaceId]/components'
+import { ownerCell, Resource, timeCell } from '@/app/workspace/[workspaceId]/components'
+import { BaseTagsModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
 import {
-  BaseCard,
-  BaseCardSkeletonGrid,
   CreateBaseModal,
+  DeleteKnowledgeBaseModal,
+  EditKnowledgeBaseModal,
+  KnowledgeBaseContextMenu,
   KnowledgeListContextMenu,
 } from '@/app/workspace/[workspaceId]/knowledge/components'
-import {
-  SORT_OPTIONS,
-  type SortOption,
-  type SortOrder,
-} from '@/app/workspace/[workspaceId]/knowledge/components/constants'
-import {
-  filterKnowledgeBases,
-  sortKnowledgeBases,
-} from '@/app/workspace/[workspaceId]/knowledge/utils/sort'
+import { filterKnowledgeBases } from '@/app/workspace/[workspaceId]/knowledge/utils/sort'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
+import { CONNECTOR_REGISTRY } from '@/connectors/registry'
 import { useKnowledgeBasesList } from '@/hooks/kb/use-knowledge'
-import { useDeleteKnowledgeBase, useUpdateKnowledgeBase } from '@/hooks/queries/knowledge'
-import { useDebounce } from '@/hooks/use-debounce'
+import { useDeleteKnowledgeBase, useUpdateKnowledgeBase } from '@/hooks/queries/kb/knowledge'
+import { useWorkspaceMembersQuery } from '@/hooks/queries/workspace'
 
 const logger = createLogger('Knowledge')
 
-/**
- * Extended knowledge base data with document count
- */
 interface KnowledgeBaseWithDocCount extends KnowledgeBaseData {
   docCount?: number
 }
 
-/**
- * Knowledge base list component displaying all knowledge bases in a workspace
- * Supports filtering by search query and sorting options
- */
+const COLUMNS: ResourceColumn[] = [
+  { id: 'name', header: 'Name' },
+  { id: 'documents', header: 'Documents' },
+  { id: 'tokens', header: 'Tokens' },
+  { id: 'connectors', header: 'Connectors' },
+  { id: 'created', header: 'Created' },
+  { id: 'owner', header: 'Owner' },
+  { id: 'updated', header: 'Last Updated' },
+]
+
+const DATABASE_ICON = <Database className='h-[14px] w-[14px]' />
+
+function connectorCell(connectorTypes?: string[]): ResourceCell {
+  if (!connectorTypes || connectorTypes.length === 0) {
+    return { label: '—' }
+  }
+
+  const entries = connectorTypes
+    .map((type) => ({ type, def: CONNECTOR_REGISTRY[type] }))
+    .filter((e): e is { type: string; def: NonNullable<(typeof CONNECTOR_REGISTRY)[string]> } =>
+      Boolean(e.def?.icon)
+    )
+
+  if (entries.length === 0) return { label: '—' }
+
+  return {
+    content: (
+      <div className='flex items-center gap-1'>
+        {entries.map(({ type, def }) => {
+          const Icon = def.icon
+          return (
+            <Tooltip.Root key={type}>
+              <Tooltip.Trigger asChild>
+                <span className='flex-shrink-0'>
+                  <Icon className='h-3.5 w-3.5' />
+                </span>
+              </Tooltip.Trigger>
+              <Tooltip.Content>{def.name}</Tooltip.Content>
+            </Tooltip.Root>
+          )
+        })}
+      </div>
+    ),
+  }
+}
+
 export function Knowledge() {
   const params = useParams()
+  const router = useRouter()
   const workspaceId = params.workspaceId as string
 
   const { knowledgeBases, isLoading, error } = useKnowledgeBasesList(workspaceId)
+  const { data: members } = useWorkspaceMembersQuery(workspaceId)
+
+  if (error) {
+    logger.error('Failed to load knowledge bases:', error)
+  }
   const userPermissions = useUserPermissionsContext()
 
   const { mutateAsync: updateKnowledgeBaseMutation } = useUpdateKnowledgeBase(workspaceId)
   const { mutateAsync: deleteKnowledgeBaseMutation } = useDeleteKnowledgeBase(workspaceId)
 
-  const [searchQuery, setSearchQuery] = useState('')
-  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const [searchInputValue, setSearchInputValue] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(null)
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchInputValue(value)
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearchQuery(value)
+    }, 300)
+  }, [])
+
+  const handleSearchClearAll = useCallback(() => {
+    handleSearchChange('')
+  }, [handleSearchChange])
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [isSortPopoverOpen, setIsSortPopoverOpen] = useState(false)
-  const [sortBy, setSortBy] = useState<SortOption>('updatedAt')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+
+  const [activeKnowledgeBase, setActiveKnowledgeBase] = useState<KnowledgeBaseWithDocCount | null>(
+    null
+  )
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [isTagsModalOpen, setIsTagsModalOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const {
     isOpen: isListContextMenuOpen,
     position: listContextMenuPosition,
-    menuRef: listMenuRef,
     handleContextMenu: handleListContextMenu,
     closeMenu: closeListContextMenu,
   } = useContextMenu()
 
-  /**
-   * Handle context menu on the content area - only show menu when clicking on empty space
-   */
+  const {
+    isOpen: isRowContextMenuOpen,
+    position: rowContextMenuPosition,
+    handleContextMenu: handleRowCtxMenu,
+    closeMenu: closeRowContextMenu,
+  } = useContextMenu()
+
+  const isRowContextMenuOpenRef = useRef(isRowContextMenuOpen)
+  isRowContextMenuOpenRef.current = isRowContextMenuOpen
+
+  const knowledgeBasesRef = useRef(knowledgeBases)
+  knowledgeBasesRef.current = knowledgeBases
+
+  const activeKnowledgeBaseRef = useRef(activeKnowledgeBase)
+  activeKnowledgeBaseRef.current = activeKnowledgeBase
+
   const handleContentContextMenu = useCallback(
     (e: React.MouseEvent) => {
       const target = e.target as HTMLElement
-      const isOnCard = target.closest('[data-kb-card]')
-      const isOnInteractive = target.closest('button, input, a, [role="button"]')
-
-      if (!isOnCard && !isOnInteractive) {
-        handleListContextMenu(e)
+      if (
+        target.closest('[data-resource-row]') ||
+        target.closest('button, input, a, [role="button"]')
+      ) {
+        return
       }
+      handleListContextMenu(e)
     },
     [handleListContextMenu]
   )
 
-  /**
-   * Handle add knowledge base from context menu
-   */
-  const handleAddKnowledgeBase = useCallback(() => {
+  const handleOpenCreateModal = useCallback(() => {
     setIsCreateModalOpen(true)
   }, [])
 
-  const currentSortValue = `${sortBy}-${sortOrder}`
-  const currentSortLabel =
-    SORT_OPTIONS.find((opt) => opt.value === currentSortValue)?.label || 'Last Updated'
-
-  /**
-   * Handles sort option change from dropdown
-   */
-  const handleSortChange = (value: string) => {
-    const [field, order] = value.split('-') as [SortOption, SortOrder]
-    setSortBy(field)
-    setSortOrder(order)
-    setIsSortPopoverOpen(false)
-  }
-
-  /**
-   * Updates a knowledge base name and description
-   */
   const handleUpdateKnowledgeBase = useCallback(
     async (id: string, name: string, description: string) => {
       await updateKnowledgeBaseMutation({
@@ -124,9 +176,6 @@ export function Knowledge() {
     [updateKnowledgeBaseMutation]
   )
 
-  /**
-   * Deletes a knowledge base
-   */
   const handleDeleteKnowledgeBase = useCallback(
     async (id: string) => {
       await deleteKnowledgeBaseMutation({ knowledgeBaseId: id })
@@ -135,176 +184,203 @@ export function Knowledge() {
     [deleteKnowledgeBaseMutation]
   )
 
-  /**
-   * Filter and sort knowledge bases based on search query and sort options
-   */
-  const filteredAndSortedKnowledgeBases = useMemo(() => {
-    const filtered = filterKnowledgeBases(knowledgeBases, debouncedSearchQuery)
-    return sortKnowledgeBases(filtered, sortBy, sortOrder)
-  }, [knowledgeBases, debouncedSearchQuery, sortBy, sortOrder])
+  const filteredKnowledgeBases = useMemo(
+    () => filterKnowledgeBases(knowledgeBases, debouncedSearchQuery),
+    [knowledgeBases, debouncedSearchQuery]
+  )
 
-  /**
-   * Format knowledge base data for display in the card
-   */
-  const formatKnowledgeBaseForDisplay = (kb: KnowledgeBaseWithDocCount) => ({
-    id: kb.id,
-    title: kb.name,
-    docCount: kb.docCount || 0,
-    description: kb.description || 'No description provided',
-    createdAt: kb.createdAt,
-    updatedAt: kb.updatedAt,
-  })
+  const rows: ResourceRow[] = useMemo(
+    () =>
+      filteredKnowledgeBases.map((kb) => {
+        const kbWithCount = kb as KnowledgeBaseWithDocCount
+        return {
+          id: kb.id,
+          cells: {
+            name: {
+              icon: DATABASE_ICON,
+              label: kb.name,
+            },
+            documents: {
+              label: String(kbWithCount.docCount || 0),
+            },
+            tokens: {
+              label: kb.tokenCount ? kb.tokenCount.toLocaleString() : '0',
+            },
+            connectors: connectorCell(kb.connectorTypes),
+            created: timeCell(kb.createdAt),
+            owner: ownerCell(kb.userId, members),
+            updated: timeCell(kb.updatedAt),
+          },
+          sortValues: {
+            documents: kbWithCount.docCount || 0,
+            tokens: kb.tokenCount || 0,
+            connectors: kb.connectorTypes?.length || 0,
+            created: -new Date(kb.createdAt).getTime(),
+            updated: -new Date(kb.updatedAt).getTime(),
+          },
+        }
+      }),
+    [filteredKnowledgeBases, members]
+  )
 
-  /**
-   * Get empty state content based on current filters
-   */
-  const emptyState = useMemo(() => {
-    if (debouncedSearchQuery) {
-      return {
-        title: 'No knowledge bases found',
-        description: 'Try a different search term',
-      }
+  const handleRowClick = useCallback(
+    (rowId: string) => {
+      if (isRowContextMenuOpenRef.current) return
+      const kb = knowledgeBasesRef.current.find((k) => k.id === rowId)
+      if (!kb) return
+      const urlParams = new URLSearchParams({ kbName: kb.name })
+      router.push(`/workspace/${workspaceId}/knowledge/${rowId}?${urlParams.toString()}`)
+    },
+    [router, workspaceId]
+  )
+
+  const handleRowContextMenu = useCallback(
+    (e: React.MouseEvent, rowId: string) => {
+      const kb = knowledgeBasesRef.current.find((k) => k.id === rowId) as
+        | KnowledgeBaseWithDocCount
+        | undefined
+      setActiveKnowledgeBase(kb ?? null)
+      handleRowCtxMenu(e)
+    },
+    [handleRowCtxMenu]
+  )
+
+  const handleConfirmDelete = useCallback(async () => {
+    const kb = activeKnowledgeBaseRef.current
+    if (!kb) return
+    setIsDeleting(true)
+    try {
+      await handleDeleteKnowledgeBase(kb.id)
+      setIsDeleteModalOpen(false)
+      setActiveKnowledgeBase(null)
+    } finally {
+      setIsDeleting(false)
     }
+  }, [handleDeleteKnowledgeBase])
 
-    return {
-      title: 'No knowledge bases yet',
-      description:
-        userPermissions.canEdit === true
-          ? 'Create a knowledge base to get started'
-          : 'Knowledge bases will appear here once created',
+  const handleCloseDeleteModal = useCallback(() => {
+    setIsDeleteModalOpen(false)
+    setActiveKnowledgeBase(null)
+  }, [])
+
+  const handleOpenInNewTab = useCallback(() => {
+    const kb = activeKnowledgeBaseRef.current
+    if (!kb) return
+    const urlParams = new URLSearchParams({ kbName: kb.name })
+    window.open(`/workspace/${workspaceId}/knowledge/${kb.id}?${urlParams.toString()}`, '_blank')
+  }, [workspaceId])
+
+  const handleViewTags = useCallback(() => {
+    setIsTagsModalOpen(true)
+  }, [])
+
+  const handleCopyId = useCallback(() => {
+    const kb = activeKnowledgeBaseRef.current
+    if (kb) {
+      navigator.clipboard.writeText(kb.id)
     }
-  }, [debouncedSearchQuery, userPermissions.canEdit])
+  }, [])
+
+  const handleEdit = useCallback(() => {
+    setIsEditModalOpen(true)
+  }, [])
+
+  const handleDelete = useCallback(() => {
+    setIsDeleteModalOpen(true)
+  }, [])
+
+  const canEdit = userPermissions.canEdit === true
+
+  const createAction: CreateAction = useMemo(
+    () => ({
+      label: 'New base',
+      onClick: handleOpenCreateModal,
+      disabled: !canEdit,
+    }),
+    [handleOpenCreateModal, canEdit]
+  )
+
+  const searchConfig: SearchConfig = useMemo(
+    () => ({
+      value: searchInputValue,
+      onChange: handleSearchChange,
+      onClearAll: handleSearchClearAll,
+      placeholder: 'Search knowledge bases...',
+    }),
+    [searchInputValue, handleSearchChange, handleSearchClearAll]
+  )
 
   return (
     <>
-      <div className='flex h-full flex-1 flex-col'>
-        <div className='flex flex-1 overflow-hidden'>
-          <div
-            className='flex flex-1 flex-col overflow-auto bg-white px-[24px] pt-[28px] pb-[24px] dark:bg-[var(--bg)]'
-            onContextMenu={handleContentContextMenu}
-          >
-            <div>
-              <div className='flex items-start gap-[12px]'>
-                <div className='flex h-[26px] w-[26px] items-center justify-center rounded-[6px] border border-[#5BB377] bg-[#E8F7EE] dark:border-[#1E5A3E] dark:bg-[#0F3D2C]'>
-                  <Database className='h-[14px] w-[14px] text-[#5BB377] dark:text-[#34D399]' />
-                </div>
-                <h1 className='font-medium text-[18px]'>Knowledge Base</h1>
-              </div>
-              <p className='mt-[10px] text-[14px] text-[var(--text-tertiary)]'>
-                Create and manage knowledge bases with custom files.
-              </p>
-            </div>
-
-            <div className='mt-[14px] flex items-center justify-between'>
-              <div className='flex h-[32px] w-[400px] items-center gap-[6px] rounded-[8px] bg-[var(--surface-4)] px-[8px]'>
-                <Search className='h-[14px] w-[14px] text-[var(--text-subtle)]' />
-                <Input
-                  placeholder='Search'
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className='flex-1 border-0 bg-transparent px-0 font-medium text-[var(--text-secondary)] text-small leading-none placeholder:text-[var(--text-subtle)] focus-visible:ring-0 focus-visible:ring-offset-0'
-                />
-              </div>
-              <div className='flex items-center gap-[8px]'>
-                {knowledgeBases.length > 0 && (
-                  <Popover open={isSortPopoverOpen} onOpenChange={setIsSortPopoverOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant='default' className='h-[32px] rounded-[6px]'>
-                        {currentSortLabel}
-                        <ChevronDown className='ml-2 h-4 w-4 text-muted-foreground' />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align='end' side='bottom' sideOffset={4}>
-                      <div className='flex flex-col gap-[2px]'>
-                        {SORT_OPTIONS.map((option) => (
-                          <PopoverItem
-                            key={option.value}
-                            active={currentSortValue === option.value}
-                            onClick={() => handleSortChange(option.value)}
-                          >
-                            {option.label}
-                          </PopoverItem>
-                        ))}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                )}
-
-                <Tooltip.Root>
-                  <Tooltip.Trigger asChild>
-                    <Button
-                      onClick={() => setIsCreateModalOpen(true)}
-                      disabled={userPermissions.canEdit !== true}
-                      variant='tertiary'
-                      className='h-[32px] rounded-[6px]'
-                    >
-                      Create
-                    </Button>
-                  </Tooltip.Trigger>
-                  {userPermissions.canEdit !== true && (
-                    <Tooltip.Content>
-                      Write permission required to create knowledge bases
-                    </Tooltip.Content>
-                  )}
-                </Tooltip.Root>
-              </div>
-            </div>
-
-            <div className='mt-[24px] grid grid-cols-1 gap-[20px] md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
-              {isLoading ? (
-                <BaseCardSkeletonGrid count={8} />
-              ) : filteredAndSortedKnowledgeBases.length === 0 ? (
-                <div className='col-span-full flex h-64 items-center justify-center rounded-lg border border-muted-foreground/25 bg-muted/20'>
-                  <div className='text-center'>
-                    <p className='font-medium text-[var(--text-secondary)] text-sm'>
-                      {emptyState.title}
-                    </p>
-                    <p className='mt-1 text-[var(--text-muted)] text-xs'>
-                      {emptyState.description}
-                    </p>
-                  </div>
-                </div>
-              ) : error ? (
-                <div className='col-span-full flex h-64 items-center justify-center rounded-lg border border-muted-foreground/25 bg-muted/20'>
-                  <div className='text-center'>
-                    <p className='font-medium text-[var(--text-secondary)] text-sm'>
-                      Error loading knowledge bases
-                    </p>
-                    <p className='mt-1 text-[var(--text-muted)] text-xs'>{error}</p>
-                  </div>
-                </div>
-              ) : (
-                filteredAndSortedKnowledgeBases.map((kb) => {
-                  const displayData = formatKnowledgeBaseForDisplay(kb as KnowledgeBaseWithDocCount)
-                  return (
-                    <BaseCard
-                      key={kb.id}
-                      id={displayData.id}
-                      title={displayData.title}
-                      docCount={displayData.docCount}
-                      description={displayData.description}
-                      createdAt={displayData.createdAt}
-                      updatedAt={displayData.updatedAt}
-                      searchQuery={searchQuery}
-                      onUpdate={handleUpdateKnowledgeBase}
-                      onDelete={handleDeleteKnowledgeBase}
-                    />
-                  )
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <Resource
+        icon={Database}
+        title='Knowledge Base'
+        create={createAction}
+        search={searchConfig}
+        defaultSort='created'
+        columns={COLUMNS}
+        rows={rows}
+        onRowClick={handleRowClick}
+        onRowContextMenu={handleRowContextMenu}
+        isLoading={isLoading}
+        onContextMenu={handleContentContextMenu}
+      />
 
       <KnowledgeListContextMenu
         isOpen={isListContextMenuOpen}
         position={listContextMenuPosition}
-        menuRef={listMenuRef}
         onClose={closeListContextMenu}
-        onAddKnowledgeBase={handleAddKnowledgeBase}
-        disableAdd={userPermissions.canEdit !== true}
+        onAddKnowledgeBase={handleOpenCreateModal}
+        disableAdd={!canEdit}
       />
+
+      {activeKnowledgeBase && (
+        <KnowledgeBaseContextMenu
+          isOpen={isRowContextMenuOpen}
+          position={rowContextMenuPosition}
+          onClose={closeRowContextMenu}
+          onOpenInNewTab={handleOpenInNewTab}
+          onViewTags={handleViewTags}
+          onCopyId={handleCopyId}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          showOpenInNewTab
+          showViewTags
+          showEdit
+          showDelete
+          disableEdit={!canEdit}
+          disableDelete={!canEdit}
+        />
+      )}
+
+      {activeKnowledgeBase && (
+        <EditKnowledgeBaseModal
+          open={isEditModalOpen}
+          onOpenChange={setIsEditModalOpen}
+          knowledgeBaseId={activeKnowledgeBase.id}
+          initialName={activeKnowledgeBase.name}
+          initialDescription={activeKnowledgeBase.description || ''}
+          onSave={handleUpdateKnowledgeBase}
+        />
+      )}
+
+      {activeKnowledgeBase && (
+        <DeleteKnowledgeBaseModal
+          isOpen={isDeleteModalOpen}
+          onClose={handleCloseDeleteModal}
+          onConfirm={handleConfirmDelete}
+          isDeleting={isDeleting}
+          knowledgeBaseName={activeKnowledgeBase.name}
+        />
+      )}
+
+      {activeKnowledgeBase && (
+        <BaseTagsModal
+          open={isTagsModalOpen}
+          onOpenChange={setIsTagsModalOpen}
+          knowledgeBaseId={activeKnowledgeBase.id}
+        />
+      )}
 
       <CreateBaseModal open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen} />
     </>

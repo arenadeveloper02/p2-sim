@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, not } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
@@ -31,7 +32,7 @@ export async function PUT(
     const userId = session.user.id
 
     const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-    if (!permission || (permission !== 'admin' && permission !== 'write')) {
+    if (permission !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -86,6 +87,19 @@ export async function PUT(
         updatedAt: apiKey.updatedAt,
       })
 
+    recordAudit({
+      workspaceId,
+      actorId: userId,
+      action: AuditAction.API_KEY_UPDATED,
+      resourceType: AuditResourceType.API_KEY,
+      resourceId: keyId,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      resourceName: name,
+      description: `Updated workspace API key: ${name}`,
+      request,
+    })
+
     logger.info(`[${requestId}] Updated workspace API key: ${keyId} in workspace ${workspaceId}`)
     return NextResponse.json({ key: updatedKey })
   } catch (error: unknown) {
@@ -114,7 +128,7 @@ export async function DELETE(
     const userId = session.user.id
 
     const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-    if (!permission || (permission !== 'admin' && permission !== 'write')) {
+    if (permission !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -123,11 +137,27 @@ export async function DELETE(
       .where(
         and(eq(apiKey.workspaceId, workspaceId), eq(apiKey.id, keyId), eq(apiKey.type, 'workspace'))
       )
-      .returning({ id: apiKey.id })
+      .returning({ id: apiKey.id, name: apiKey.name, lastUsed: apiKey.lastUsed })
 
     if (deletedRows.length === 0) {
       return NextResponse.json({ error: 'API key not found' }, { status: 404 })
     }
+
+    const deletedKey = deletedRows[0]
+
+    recordAudit({
+      workspaceId,
+      actorId: userId,
+      action: AuditAction.API_KEY_REVOKED,
+      resourceType: AuditResourceType.API_KEY,
+      resourceId: keyId,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      resourceName: deletedKey.name,
+      description: `Revoked workspace API key: ${deletedKey.name}`,
+      metadata: { lastUsed: deletedKey.lastUsed?.toISOString() ?? null },
+      request,
+    })
 
     logger.info(`[${requestId}] Deleted workspace API key: ${keyId} from workspace ${workspaceId}`)
     return NextResponse.json({ success: true })

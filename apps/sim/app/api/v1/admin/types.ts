@@ -6,6 +6,7 @@
  */
 
 import type {
+  auditLog,
   member,
   organization,
   subscription,
@@ -645,4 +646,46 @@ export interface AdminDeployResult {
 
 export interface AdminUndeployResult {
   isDeployed: boolean
+}
+
+// =============================================================================
+// Audit Log Types
+// =============================================================================
+
+export type DbAuditLog = InferSelectModel<typeof auditLog>
+
+export interface AdminAuditLog {
+  id: string
+  workspaceId: string | null
+  actorId: string | null
+  actorName: string | null
+  actorEmail: string | null
+  action: string
+  resourceType: string
+  resourceId: string | null
+  resourceName: string | null
+  description: string | null
+  metadata: unknown
+  ipAddress: string | null
+  userAgent: string | null
+  createdAt: string
+}
+
+export function toAdminAuditLog(dbLog: DbAuditLog): AdminAuditLog {
+  return {
+    id: dbLog.id,
+    workspaceId: dbLog.workspaceId,
+    actorId: dbLog.actorId,
+    actorName: dbLog.actorName,
+    actorEmail: dbLog.actorEmail,
+    action: dbLog.action,
+    resourceType: dbLog.resourceType,
+    resourceId: dbLog.resourceId,
+    resourceName: dbLog.resourceName,
+    description: dbLog.description,
+    metadata: dbLog.metadata,
+    ipAddress: dbLog.ipAddress,
+    userAgent: dbLog.userAgent,
+    createdAt: dbLog.createdAt.toISOString(),
+  }
 }

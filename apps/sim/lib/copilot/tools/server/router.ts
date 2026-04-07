@@ -1,113 +1,154 @@
 import { createLogger } from '@sim/logger'
-import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
-import { getBlockConfigServerTool } from '@/lib/copilot/tools/server/blocks/get-block-config'
-import { getBlockOptionsServerTool } from '@/lib/copilot/tools/server/blocks/get-block-options'
-import { getBlocksAndToolsServerTool } from '@/lib/copilot/tools/server/blocks/get-blocks-and-tools'
+import { appendCopilotLogContext } from '@/lib/copilot/logging'
+import {
+  assertServerToolNotAborted,
+  type BaseServerTool,
+  type ServerToolContext,
+} from '@/lib/copilot/tools/server/base-tool'
 import { getBlocksMetadataServerTool } from '@/lib/copilot/tools/server/blocks/get-blocks-metadata-tool'
 import { getTriggerBlocksServerTool } from '@/lib/copilot/tools/server/blocks/get-trigger-blocks'
 import { searchDocumentationServerTool } from '@/lib/copilot/tools/server/docs/search-documentation'
+import { downloadToWorkspaceFileServerTool } from '@/lib/copilot/tools/server/files/download-to-workspace-file'
+import { workspaceFileServerTool } from '@/lib/copilot/tools/server/files/workspace-file'
+import { generateImageServerTool } from '@/lib/copilot/tools/server/image/generate-image'
+import { getJobLogsServerTool } from '@/lib/copilot/tools/server/jobs/get-job-logs'
 import { knowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/knowledge-base'
 import { makeApiRequestServerTool } from '@/lib/copilot/tools/server/other/make-api-request'
 import { searchOnlineServerTool } from '@/lib/copilot/tools/server/other/search-online'
+import { userTableServerTool } from '@/lib/copilot/tools/server/table/user-table'
 import { getCredentialsServerTool } from '@/lib/copilot/tools/server/user/get-credentials'
 import { setEnvironmentVariablesServerTool } from '@/lib/copilot/tools/server/user/set-environment-variables'
+import { generateVisualizationServerTool } from '@/lib/copilot/tools/server/visualization/generate-visualization'
 import { editWorkflowServerTool } from '@/lib/copilot/tools/server/workflow/edit-workflow'
-import { getWorkflowConsoleServerTool } from '@/lib/copilot/tools/server/workflow/get-workflow-console'
-import {
-  ExecuteResponseSuccessSchema,
-  GetBlockConfigInput,
-  GetBlockConfigResult,
-  GetBlockOptionsInput,
-  GetBlockOptionsResult,
-  GetBlocksAndToolsInput,
-  GetBlocksAndToolsResult,
-  GetBlocksMetadataInput,
-  GetBlocksMetadataResult,
-  GetTriggerBlocksInput,
-  GetTriggerBlocksResult,
-  KnowledgeBaseArgsSchema,
-} from '@/lib/copilot/tools/shared/schemas'
+import { getExecutionSummaryServerTool } from '@/lib/copilot/tools/server/workflow/get-execution-summary'
+import { getWorkflowLogsServerTool } from '@/lib/copilot/tools/server/workflow/get-workflow-logs'
+import { ExecuteResponseSuccessSchema } from '@/lib/copilot/tools/shared/schemas'
 
-// Generic execute response schemas (success path only for this route; errors handled via HTTP status)
 export { ExecuteResponseSuccessSchema }
 export type ExecuteResponseSuccess = (typeof ExecuteResponseSuccessSchema)['_type']
 
-// Define server tool registry for the new copilot runtime
-const serverToolRegistry: Record<string, BaseServerTool<any, any>> = {}
 const logger = createLogger('ServerToolRouter')
 
-// Register tools
-serverToolRegistry[getBlocksAndToolsServerTool.name] = getBlocksAndToolsServerTool
-serverToolRegistry[getBlocksMetadataServerTool.name] = getBlocksMetadataServerTool
-serverToolRegistry[getBlockOptionsServerTool.name] = getBlockOptionsServerTool
-serverToolRegistry[getBlockConfigServerTool.name] = getBlockConfigServerTool
-serverToolRegistry[getTriggerBlocksServerTool.name] = getTriggerBlocksServerTool
-serverToolRegistry[editWorkflowServerTool.name] = editWorkflowServerTool
-serverToolRegistry[getWorkflowConsoleServerTool.name] = getWorkflowConsoleServerTool
-serverToolRegistry[searchDocumentationServerTool.name] = searchDocumentationServerTool
-serverToolRegistry[searchOnlineServerTool.name] = searchOnlineServerTool
-serverToolRegistry[setEnvironmentVariablesServerTool.name] = setEnvironmentVariablesServerTool
-serverToolRegistry[getCredentialsServerTool.name] = getCredentialsServerTool
-serverToolRegistry[makeApiRequestServerTool.name] = makeApiRequestServerTool
-serverToolRegistry[knowledgeBaseServerTool.name] = knowledgeBaseServerTool
+const WRITE_ACTIONS: Record<string, string[]> = {
+  knowledge_base: [
+    'create',
+    'add_file',
+    'update',
+    'delete',
+    'delete_document',
+    'update_document',
+    'create_tag',
+    'update_tag',
+    'delete_tag',
+    'add_connector',
+    'update_connector',
+    'delete_connector',
+    'sync_connector',
+  ],
+  user_table: [
+    'create',
+    'create_from_file',
+    'import_file',
+    'delete',
+    'insert_row',
+    'batch_insert_rows',
+    'update_row',
+    'delete_row',
+    'update_rows_by_filter',
+    'delete_rows_by_filter',
+    'add_column',
+    'rename_column',
+    'delete_column',
+    'update_column',
+  ],
+  manage_custom_tool: ['add', 'edit', 'delete'],
+  manage_mcp_tool: ['add', 'edit', 'delete'],
+  manage_skill: ['add', 'edit', 'delete'],
+  manage_credential: ['rename', 'delete'],
+  workspace_file: ['write', 'update', 'delete', 'rename', 'patch'],
+  download_to_workspace_file: ['*'],
+  generate_visualization: ['generate'],
+  generate_image: ['generate'],
+}
 
+function isWritePermission(userPermission: string): boolean {
+  return userPermission === 'write' || userPermission === 'admin'
+}
+
+function isActionAllowed(
+  toolName: string,
+  action: string | undefined,
+  userPermission: string
+): boolean {
+  const writeActions = WRITE_ACTIONS[toolName]
+  if (!writeActions) return true
+  // '*' means the tool is always a write operation regardless of action field
+  if (writeActions.includes('*')) return isWritePermission(userPermission)
+  if (action && writeActions.includes(action)) return isWritePermission(userPermission)
+  return true
+}
+
+/** Registry of all server tools. Tools self-declare their validation schemas. */
+const serverToolRegistry: Record<string, BaseServerTool> = {
+  [getBlocksMetadataServerTool.name]: getBlocksMetadataServerTool,
+  [getTriggerBlocksServerTool.name]: getTriggerBlocksServerTool,
+  [editWorkflowServerTool.name]: editWorkflowServerTool,
+  [getExecutionSummaryServerTool.name]: getExecutionSummaryServerTool,
+  [getWorkflowLogsServerTool.name]: getWorkflowLogsServerTool,
+  [getJobLogsServerTool.name]: getJobLogsServerTool,
+  [searchDocumentationServerTool.name]: searchDocumentationServerTool,
+  [searchOnlineServerTool.name]: searchOnlineServerTool,
+  [setEnvironmentVariablesServerTool.name]: setEnvironmentVariablesServerTool,
+  [getCredentialsServerTool.name]: getCredentialsServerTool,
+  [makeApiRequestServerTool.name]: makeApiRequestServerTool,
+  [knowledgeBaseServerTool.name]: knowledgeBaseServerTool,
+  [userTableServerTool.name]: userTableServerTool,
+  [workspaceFileServerTool.name]: workspaceFileServerTool,
+  [downloadToWorkspaceFileServerTool.name]: downloadToWorkspaceFileServerTool,
+  [generateVisualizationServerTool.name]: generateVisualizationServerTool,
+  [generateImageServerTool.name]: generateImageServerTool,
+}
+
+/**
+ * Route a tool execution request to the appropriate server tool.
+ * Validates input/output using the tool's declared Zod schemas if present.
+ */
 export async function routeExecution(
   toolName: string,
   payload: unknown,
-  context?: { userId: string }
-): Promise<any> {
+  context?: ServerToolContext
+): Promise<unknown> {
   const tool = serverToolRegistry[toolName]
   if (!tool) {
     throw new Error(`Unknown server tool: ${toolName}`)
   }
-  logger.debug('Routing to tool', {
+
+  logger.debug(appendCopilotLogContext('Routing to tool', { messageId: context?.messageId }), {
     toolName,
-    payloadPreview: (() => {
-      try {
-        return JSON.stringify(payload).slice(0, 200)
-      } catch {
-        return undefined
-      }
-    })(),
   })
 
-  let args: any = payload || {}
-  if (toolName === 'get_blocks_and_tools') {
-    args = GetBlocksAndToolsInput.parse(args)
-  }
-  if (toolName === 'get_blocks_metadata') {
-    args = GetBlocksMetadataInput.parse(args)
-  }
-  if (toolName === 'get_block_options') {
-    args = GetBlockOptionsInput.parse(args)
-  }
-  if (toolName === 'get_block_config') {
-    args = GetBlockConfigInput.parse(args)
-  }
-  if (toolName === 'get_trigger_blocks') {
-    args = GetTriggerBlocksInput.parse(args)
-  }
-  if (toolName === 'knowledge_base') {
-    args = KnowledgeBaseArgsSchema.parse(args)
+  // Action-level permission enforcement for mixed read/write tools
+  if (context?.userPermission && WRITE_ACTIONS[toolName]) {
+    const p = payload as Record<string, unknown>
+    const action = (p?.operation ?? p?.action) as string | undefined
+    if (!isActionAllowed(toolName, action, context.userPermission)) {
+      const actionLabel = action ? `'${action}' on ` : ''
+      throw new Error(
+        `Permission denied: ${actionLabel}${toolName} requires write access. You have '${context.userPermission}' permission.`
+      )
+    }
   }
 
+  assertServerToolNotAborted(context)
+
+  // Validate input if tool declares a schema
+  const args = tool.inputSchema ? tool.inputSchema.parse(payload ?? {}) : (payload ?? {})
+
+  assertServerToolNotAborted(context)
+
+  // Execute
   const result = await tool.execute(args, context)
 
-  if (toolName === 'get_blocks_and_tools') {
-    return GetBlocksAndToolsResult.parse(result)
-  }
-  if (toolName === 'get_blocks_metadata') {
-    return GetBlocksMetadataResult.parse(result)
-  }
-  if (toolName === 'get_block_options') {
-    return GetBlockOptionsResult.parse(result)
-  }
-  if (toolName === 'get_block_config') {
-    return GetBlockConfigResult.parse(result)
-  }
-  if (toolName === 'get_trigger_blocks') {
-    return GetTriggerBlocksResult.parse(result)
-  }
-
-  return result
+  // Validate output if tool declares a schema
+  return tool.outputSchema ? tool.outputSchema.parse(result) : result
 }

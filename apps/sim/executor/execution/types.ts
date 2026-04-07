@@ -1,5 +1,13 @@
 import type { Edge } from 'reactflow'
-import type { BlockLog, BlockState, NormalizedBlockOutput } from '@/executor/types'
+import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
+import type { NodeMetadata } from '@/executor/dag/types'
+import type {
+  BlockLog,
+  BlockState,
+  NormalizedBlockOutput,
+  StreamingExecution,
+} from '@/executor/types'
+import type { RunFromBlockContext } from '@/executor/utils/run-from-block'
 import type { SubflowType } from '@/stores/workflows/workflow/types'
 
 export interface ExecutionMetadata {
@@ -15,6 +23,7 @@ export interface ExecutionMetadata {
   useDraftState: boolean
   startTime: string
   isClientSession?: boolean
+  enforceCredentialAccess?: boolean
   pendingBlocks?: string[]
   resumeFromSnapshot?: boolean
   credentialAccountUserId?: string
@@ -25,6 +34,8 @@ export interface ExecutionMetadata {
     parallels?: Record<string, any>
     deploymentVersionId?: string
   }
+  callChain?: string[]
+  correlation?: AsyncExecutionCorrelation
 }
 
 export interface SerializableExecutionState {
@@ -46,22 +57,83 @@ export interface SerializableExecutionState {
   completedPauseContexts?: string[]
 }
 
+/**
+ * Represents the iteration state of an ancestor subflow in a nested chain.
+ * Used to propagate parent iteration context through SSE events for both
+ * loop-in-loop and parallel-in-parallel nesting hierarchies.
+ */
+export interface ParentIteration {
+  iterationCurrent: number
+  iterationTotal?: number
+  iterationType: SubflowType
+  iterationContainerId: string
+}
+
 export interface IterationContext {
   iterationCurrent: number
-  iterationTotal: number
+  iterationTotal?: number
   iterationType: SubflowType
+  /**
+   * Block ID of the loop or parallel container owning this iteration.
+   * Optional because generic `<loop.index>` references may resolve before
+   * the container ID is known (e.g., via `context.loopScope` fallback).
+   * Always present on {@link ParentIteration} entries since those are built
+   * from fully resolved ancestor loops.
+   */
+  iterationContainerId?: string
+  parentIterations?: ParentIteration[]
+}
+
+/**
+ * Metadata passed to block handlers that execute within subflow contexts
+ * (loops, parallels, child workflows). Extends the DAG node metadata with
+ * runtime identifiers needed for execution tracking.
+ */
+export interface WorkflowNodeMetadata
+  extends Pick<
+    NodeMetadata,
+    'loopId' | 'parallelId' | 'branchIndex' | 'branchTotal' | 'originalBlockId' | 'isLoopNode'
+  > {
+  nodeId: string
+  executionOrder?: number
+}
+
+export interface ChildWorkflowContext {
+  /** The workflow block's ID in the parent execution */
+  parentBlockId: string
+  /** Display name of the child workflow */
+  workflowName: string
+  /** Child workflow ID */
+  workflowId: string
+  /** Nesting depth (1 = first level child) */
+  depth: number
 }
 
 export interface ExecutionCallbacks {
-  onStream?: (streamingExec: any) => Promise<void>
-  onBlockStart?: (blockId: string, blockName: string, blockType: string) => Promise<void>
+  onStream?: (streamingExec: StreamingExecution) => Promise<void>
+  onBlockStart?: (
+    blockId: string,
+    blockName: string,
+    blockType: string,
+    executionOrder: number,
+    iterationContext?: IterationContext,
+    childWorkflowContext?: ChildWorkflowContext
+  ) => Promise<void>
   onBlockComplete?: (
     blockId: string,
     blockName: string,
     blockType: string,
     output: any,
-    iterationContext?: IterationContext
+    iterationContext?: IterationContext,
+    childWorkflowContext?: ChildWorkflowContext
   ) => Promise<void>
+  /** Fires immediately after instanceId is generated, before child execution begins. */
+  onChildWorkflowInstanceReady?: (
+    blockId: string,
+    childWorkflowInstanceId: string,
+    iterationContext?: IterationContext,
+    executionOrder?: number
+  ) => void
 }
 
 export interface ContextExtensions {
@@ -72,6 +144,7 @@ export interface ContextExtensions {
   selectedOutputs?: string[]
   edges?: Array<{ source: string; target: string }>
   isDeployedContext?: boolean
+  enforceCredentialAccess?: boolean
   isChildExecution?: boolean
   resumeFromSnapshot?: boolean
   resumePendingQueue?: string[]
@@ -91,20 +164,60 @@ export interface ContextExtensions {
   abortSignal?: AbortSignal
   includeFileBase64?: boolean
   base64MaxBytes?: number
-  onStream?: (streamingExecution: unknown) => Promise<void>
+  onStream?: (streamingExecution: StreamingExecution) => Promise<void>
   onBlockStart?: (
     blockId: string,
     blockName: string,
     blockType: string,
-    iterationContext?: IterationContext
+    executionOrder: number,
+    iterationContext?: IterationContext,
+    childWorkflowContext?: ChildWorkflowContext
   ) => Promise<void>
   onBlockComplete?: (
     blockId: string,
     blockName: string,
     blockType: string,
-    output: { input?: any; output: NormalizedBlockOutput; executionTime: number },
-    iterationContext?: IterationContext
+    output: {
+      input?: any
+      output: NormalizedBlockOutput
+      executionTime: number
+      startedAt: string
+      executionOrder: number
+      endedAt: string
+      /** Per-invocation unique ID linking this workflow block execution to its child block events. */
+      childWorkflowInstanceId?: string
+    },
+    iterationContext?: IterationContext,
+    childWorkflowContext?: ChildWorkflowContext
   ) => Promise<void>
+
+  /** Context identifying this execution as a child of a workflow block */
+  childWorkflowContext?: ChildWorkflowContext
+
+  /** Fires immediately after instanceId is generated, before child execution begins. */
+  onChildWorkflowInstanceReady?: (
+    blockId: string,
+    childWorkflowInstanceId: string,
+    iterationContext?: IterationContext,
+    executionOrder?: number
+  ) => void
+
+  /**
+   * Run-from-block configuration. When provided, executor runs in partial
+   * execution mode starting from the specified block.
+   */
+  runFromBlockContext?: RunFromBlockContext
+
+  /**
+   * Stop execution after this block completes. Used for "run until block" feature.
+   */
+  stopAfterBlockId?: string
+
+  /**
+   * Ordered list of workflow IDs in the current call chain, used for cycle detection.
+   * Each hop appends the current workflow ID before making outgoing requests.
+   */
+  callChain?: string[]
 }
 
 export interface WorkflowInput {

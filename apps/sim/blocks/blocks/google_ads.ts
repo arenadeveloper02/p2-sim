@@ -1,143 +1,296 @@
-import { GoogleIcon } from '@/components/icons'
+import { GoogleAdsIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
-import type { GoogleAdsResponse } from '@/tools/google_ads/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 
-export const GoogleAdsBlock: BlockConfig<GoogleAdsResponse> = {
+export const GoogleAdsBlock: BlockConfig = {
   type: 'google_ads',
   name: 'Google Ads',
-  description: 'Query Google Ads campaign data and analytics',
+  description: 'Query campaigns, ad groups, and performance metrics',
   longDescription:
-    'The Google Ads block allows you to query comprehensive campaign performance data including clicks, impressions, costs, conversions, and other key metrics. Supports flexible date ranges, account filtering, and various query types including campaigns, performance, and cost analysis.',
-  docsLink: 'https://docs.sim.ai/tools/google-ads',
+    'Connect to Google Ads to list accessible accounts, list campaigns, view ad group details, get performance metrics, and run custom GAQL queries.',
+  docsLink: 'https://docs.sim.ai/tools/google_ads',
   category: 'tools',
-  bgColor: '#4285f4',
-  icon: GoogleIcon,
+  integrationType: IntegrationType.Analytics,
+  tags: ['marketing', 'google-workspace', 'data-analytics'],
+  bgColor: '#E0E0E0',
+  icon: GoogleAdsIcon,
+  authMode: AuthMode.OAuth,
   subBlocks: [
-    // Google Ads Account (basic mode - dropdown)
     {
-      id: 'accounts',
-      title: 'Google Ads Account',
+      id: 'operation',
+      title: 'Operation',
       type: 'dropdown',
-      options: [],
-      fetchOptions: async () => {
-        try {
-          const response = await fetch('/api/google-ads/accounts')
-          const data = await response.json()
-
-          console.log('Google Ads API response:', data)
-
-          if (data.success && data.accounts) {
-            const accounts = data.accounts as Record<string, { id: string; name: string }>
-            const options = Object.entries(accounts).map(([key, account]) => ({
-              id: key,
-              label: account.name,
-              value: key,
-            }))
-            console.log('Google Ads options:', options)
-            return options
-          }
-          console.log('Google Ads: No success or no accounts')
-          return []
-        } catch (error) {
-          console.error('Failed to fetch Google Ads accounts:', error)
-          return []
-        }
-      },
-      fetchOptionById: async (optionId: string) => {
-        try {
-          const response = await fetch('/api/google-ads/accounts')
-          const data = await response.json()
-
-          if (data.success && data.accounts[optionId]) {
-            const account = data.accounts[optionId] as { id: string; name: string }
-            return {
-              id: optionId,
-              label: account.name,
-              value: optionId,
-            }
-          }
-          return null
-        } catch (error) {
-          console.error('Failed to fetch Google Ads account:', error)
-          return null
-        }
-      },
-      placeholder: 'Select account...',
-      required: true,
-      mode: 'basic',
-      canonicalParamId: 'accounts',
+      options: [
+        { label: 'List Customers', id: 'list_customers' },
+        { label: 'List Campaigns', id: 'list_campaigns' },
+        { label: 'Campaign Performance', id: 'campaign_performance' },
+        { label: 'List Ad Groups', id: 'list_ad_groups' },
+        { label: 'Ad Performance', id: 'ad_performance' },
+        { label: 'Custom Query (GAQL)', id: 'search' },
+      ],
+      value: () => 'list_campaigns',
     },
-    // Google Ads Account (advanced mode - text input)
+
     {
-      id: 'accountsAdvanced',
+      id: 'credential',
+      title: 'Google Ads Account',
+      type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
+      required: true,
+      serviceId: 'google-ads',
+      requiredScopes: getScopesForService('google-ads'),
+      placeholder: 'Select Google Ads account',
+    },
+    {
+      id: 'manualCredential',
       title: 'Google Ads Account',
       type: 'short-input',
-      canonicalParamId: 'accounts',
-      placeholder: 'Enter account key (e.g., ami, heartland) or numeric ID',
-      required: true,
+      canonicalParamId: 'oauthCredential',
       mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
+
     {
-      id: 'question',
-      title: 'Question / Query',
+      id: 'developerToken',
+      title: 'Developer Token',
+      type: 'short-input',
+      placeholder: 'Enter your Google Ads API developer token',
+      required: true,
+      password: true,
+    },
+
+    {
+      id: 'customerId',
+      title: 'Customer ID',
+      type: 'short-input',
+      placeholder: 'Google Ads customer ID (no dashes)',
+      condition: {
+        field: 'operation',
+        value: 'list_customers',
+        not: true,
+      },
+      required: {
+        field: 'operation',
+        value: 'list_customers',
+        not: true,
+      },
+    },
+
+    {
+      id: 'managerCustomerId',
+      title: 'Manager Customer ID',
+      type: 'short-input',
+      placeholder: 'Manager account ID (optional)',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: 'list_customers',
+        not: true,
+      },
+    },
+
+    {
+      id: 'query',
+      title: 'GAQL Query',
       type: 'long-input',
       placeholder:
-        'Ask any question about Google Ads data, e.g., "Show me campaign performance for last 30 days", "What are my top spending campaigns this month?", "How many conversions did I get last week?"',
-      rows: 3,
-      required: true,
+        "SELECT campaign.id, campaign.name, metrics.impressions FROM campaign WHERE campaign.status = 'ENABLED'",
+      condition: { field: 'operation', value: 'search' },
+      required: { field: 'operation', value: 'search' },
       wandConfig: {
         enabled: true,
-        prompt: `You are a Google Ads query assistant. Help users create effective questions for Google Ads data analysis.
+        prompt: `Generate a Google Ads Query Language (GAQL) query based on the user's description.
+The query should:
+- Use valid GAQL syntax
+- Include relevant metrics when asking about performance
+- Include segments.date with a date range when using metrics
+- Be efficient and well-formatted
 
-### EXAMPLES OF GOOD QUESTIONS
-- "Show me campaign performance for last 30 days"
-- "What are my top spending campaigns this month?"
-- "How many conversions did I get last week?"
-- "Which campaigns have the highest CTR?"
-- "Show me cost analysis for the last 15 days"
-- "What's my impression share for active campaigns?"
-- "Compare this month vs last month performance"
-- "Show me keyword performance data"
+Common resources: campaign, ad_group, ad_group_ad, keyword_view, search_term_view
+Common metrics: metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.ctr, metrics.conversions
+Date ranges: LAST_7_DAYS, LAST_30_DAYS, THIS_MONTH, YESTERDAY
 
-### AVAILABLE METRICS
-- Clicks, Impressions, Cost, Conversions
-- CTR (Click-through rate), CPC (Cost per click)
-- Conversion rate, Cost per conversion
-- Impression share, Budget lost share
-- ROAS (Return on ad spend)
+Examples:
+- "active campaigns" -> SELECT campaign.id, campaign.name, campaign.status FROM campaign WHERE campaign.status = 'ENABLED'
+- "campaign spend last week" -> SELECT campaign.name, metrics.cost_micros, segments.date FROM campaign WHERE segments.date DURING LAST_7_DAYS AND campaign.status != 'REMOVED'
 
-### TIME PERIODS
-- Last 7/15/30 days
-- This/Last month, This/Last week
-- Yesterday, Today
-- Specific date ranges
+Return ONLY the GAQL query - no explanations, no quotes, no extra text.`,
+        placeholder: 'Describe the query you want to run...',
+      },
+    },
 
-Generate a clear, specific question about Google Ads performance based on the user's request.`,
+    {
+      id: 'campaignId',
+      title: 'Campaign ID',
+      type: 'short-input',
+      placeholder: 'Campaign ID to filter by',
+      condition: {
+        field: 'operation',
+        value: ['campaign_performance', 'list_ad_groups', 'ad_performance'],
+      },
+      required: { field: 'operation', value: 'list_ad_groups' },
+    },
+
+    {
+      id: 'adGroupId',
+      title: 'Ad Group ID',
+      type: 'short-input',
+      placeholder: 'Ad group ID to filter by',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'ad_performance' },
+    },
+
+    {
+      id: 'status',
+      title: 'Status Filter',
+      type: 'dropdown',
+      options: [
+        { label: 'All (except removed)', id: '' },
+        { label: 'Enabled', id: 'ENABLED' },
+        { label: 'Paused', id: 'PAUSED' },
+      ],
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['list_campaigns', 'list_ad_groups'] },
+    },
+
+    {
+      id: 'dateRange',
+      title: 'Date Range',
+      type: 'dropdown',
+      options: [
+        { label: 'Last 30 Days', id: 'LAST_30_DAYS' },
+        { label: 'Last 7 Days', id: 'LAST_7_DAYS' },
+        { label: 'Today', id: 'TODAY' },
+        { label: 'Yesterday', id: 'YESTERDAY' },
+        { label: 'This Month', id: 'THIS_MONTH' },
+        { label: 'Last Month', id: 'LAST_MONTH' },
+        { label: 'Custom', id: 'CUSTOM' },
+      ],
+      condition: { field: 'operation', value: ['campaign_performance', 'ad_performance'] },
+      value: () => 'LAST_30_DAYS',
+    },
+
+    {
+      id: 'startDate',
+      title: 'Start Date',
+      type: 'short-input',
+      placeholder: 'YYYY-MM-DD',
+      condition: { field: 'dateRange', value: 'CUSTOM' },
+      required: { field: 'dateRange', value: 'CUSTOM' },
+    },
+
+    {
+      id: 'endDate',
+      title: 'End Date',
+      type: 'short-input',
+      placeholder: 'YYYY-MM-DD',
+      condition: { field: 'dateRange', value: 'CUSTOM' },
+      required: { field: 'dateRange', value: 'CUSTOM' },
+    },
+
+    {
+      id: 'pageToken',
+      title: 'Page Token',
+      type: 'short-input',
+      placeholder: 'Pagination token',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'search' },
+    },
+
+    {
+      id: 'limit',
+      title: 'Limit',
+      type: 'short-input',
+      placeholder: 'Maximum results to return',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: ['list_campaigns', 'list_ad_groups', 'ad_performance'],
       },
     },
   ],
   tools: {
-    access: ['google_ads_query'],
+    access: [
+      'google_ads_list_customers',
+      'google_ads_search',
+      'google_ads_list_campaigns',
+      'google_ads_campaign_performance',
+      'google_ads_list_ad_groups',
+      'google_ads_ad_performance',
+    ],
     config: {
-      tool: () => 'google_ads_query',
-      params: (params) => ({
-        accounts: params.accounts,
-        question: params.question, // Pass the user's question
-        query_type: 'campaigns', // Default fallback
-        period_type: 'last_30_days', // Default fallback
-        output_format: 'detailed',
-        sort_by: 'cost_desc',
-      }),
+      tool: (params) => `google_ads_${params.operation}`,
+      params: (params) => {
+        const { oauthCredential, dateRange, limit, ...rest } = params
+
+        const result: Record<string, unknown> = {
+          ...rest,
+          oauthCredential,
+        }
+
+        if (dateRange && dateRange !== 'CUSTOM') {
+          result.dateRange = dateRange
+        }
+
+        if (limit !== undefined && limit !== '') {
+          result.limit = Number(limit)
+        }
+
+        return result
+      },
     },
   },
   inputs: {
-    question: { type: 'string', description: 'User question about Google Ads data' },
-    accounts: { type: 'string', description: 'Selected Google Ads account' },
+    operation: { type: 'string', description: 'Operation to perform' },
+    oauthCredential: { type: 'string', description: 'Google Ads OAuth credential' },
+    developerToken: { type: 'string', description: 'Google Ads API developer token' },
+    customerId: { type: 'string', description: 'Google Ads customer ID (numeric, no dashes)' },
+    managerCustomerId: { type: 'string', description: 'Manager account customer ID' },
+    query: { type: 'string', description: 'GAQL query to execute' },
+    campaignId: { type: 'string', description: 'Campaign ID to filter by' },
+    adGroupId: { type: 'string', description: 'Ad group ID to filter by' },
+    status: { type: 'string', description: 'Status filter (ENABLED, PAUSED)' },
+    dateRange: { type: 'string', description: 'Date range for performance queries' },
+    startDate: { type: 'string', description: 'Custom start date (YYYY-MM-DD)' },
+    endDate: { type: 'string', description: 'Custom end date (YYYY-MM-DD)' },
+    pageToken: { type: 'string', description: 'Pagination token' },
+    limit: { type: 'number', description: 'Maximum results to return' },
   },
   outputs: {
-    query: { type: 'string', description: 'Executed query' },
-    results: { type: 'json', description: 'Google Ads campaign data and analytics' },
-    grand_totals: { type: 'json', description: 'Aggregated totals across all accounts' },
-    data_availability: { type: 'json', description: 'Data availability information' },
+    customerIds: {
+      type: 'json',
+      description: 'List of accessible customer IDs (list_customers)',
+    },
+    results: {
+      type: 'json',
+      description: 'Query results (search)',
+    },
+    campaigns: {
+      type: 'json',
+      description: 'Campaign data (list_campaigns, campaign_performance)',
+    },
+    adGroups: {
+      type: 'json',
+      description: 'Ad group data (list_ad_groups)',
+    },
+    ads: {
+      type: 'json',
+      description: 'Ad performance data (ad_performance)',
+    },
+    totalCount: {
+      type: 'number',
+      description: 'Total number of results',
+    },
+    totalResultsCount: {
+      type: 'number',
+      description: 'Total results count (search)',
+    },
+    nextPageToken: {
+      type: 'string',
+      description: 'Token for next page of results',
+    },
   },
 }

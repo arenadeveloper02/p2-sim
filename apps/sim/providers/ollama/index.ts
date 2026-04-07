@@ -12,7 +12,8 @@ import type {
   ProviderResponse,
   TimeSegment,
 } from '@/providers/types'
-import { calculateCost, prepareToolExecution } from '@/providers/utils'
+import { ProviderError } from '@/providers/types'
+import { calculateCost, prepareToolExecution, sumToolCosts } from '@/providers/utils'
 import { useProvidersStore } from '@/stores/providers'
 import { executeTool } from '@/tools'
 
@@ -36,6 +37,7 @@ export const ollamaProvider: ProviderConfig = {
     try {
       const response = await fetch(`${OLLAMA_HOST}/api/tags`)
       if (!response.ok) {
+        await response.text().catch(() => {})
         useProvidersStore.getState().setProviderModels('ollama', [])
         logger.warn('Ollama service is not available. The provider will be disabled.')
         return
@@ -105,7 +107,7 @@ export const ollamaProvider: ProviderConfig = {
     }
 
     if (request.temperature !== undefined) payload.temperature = request.temperature
-    if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+    if (request.maxTokens != null) payload.max_tokens = request.maxTokens
 
     if (request.responseFormat) {
       payload.response_format = {
@@ -165,7 +167,10 @@ export const ollamaProvider: ProviderConfig = {
           stream: true,
           stream_options: { include_usage: true },
         }
-        const streamResponse = await ollama.chat.completions.create(streamingParams)
+        const streamResponse = await ollama.chat.completions.create(
+          streamingParams,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const streamingResult = {
           stream: createReadableStreamFromOllamaStream(streamResponse, (content, usage) => {
@@ -247,7 +252,10 @@ export const ollamaProvider: ProviderConfig = {
 
       const initialCallTime = Date.now()
 
-      let currentResponse = await ollama.chat.completions.create(payload)
+      let currentResponse = await ollama.chat.completions.create(
+        payload,
+        request.abortSignal ? { signal: request.abortSignal } : undefined
+      )
       const firstResponseTime = Date.now() - initialCallTime
 
       let content = currentResponse.choices[0]?.message?.content || ''
@@ -263,7 +271,7 @@ export const ollamaProvider: ProviderConfig = {
         total: currentResponse.usage?.total_tokens || 0,
       }
       const toolCalls = []
-      const toolResults = []
+      const toolResults: Record<string, unknown>[] = []
       const currentMessages = [...allMessages]
       let iterationCount = 0
 
@@ -369,7 +377,7 @@ export const ollamaProvider: ProviderConfig = {
           })
 
           let resultContent: any
-          if (result.success) {
+          if (result.success && result.output) {
             toolResults.push(result.output)
             resultContent = result.output
           } else {
@@ -407,7 +415,10 @@ export const ollamaProvider: ProviderConfig = {
 
         const nextModelStartTime = Date.now()
 
-        currentResponse = await ollama.chat.completions.create(nextPayload)
+        currentResponse = await ollama.chat.completions.create(
+          nextPayload,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const nextModelEndTime = Date.now()
         const thisModelTime = nextModelEndTime - nextModelStartTime
@@ -449,7 +460,10 @@ export const ollamaProvider: ProviderConfig = {
           stream: true,
           stream_options: { include_usage: true },
         }
-        const streamResponse = await ollama.chat.completions.create(streamingParams)
+        const streamResponse = await ollama.chat.completions.create(
+          streamingParams,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const streamingResult = {
           stream: createReadableStreamFromOllamaStream(streamResponse, (content, usage) => {
@@ -472,10 +486,12 @@ export const ollamaProvider: ProviderConfig = {
               usage.prompt_tokens,
               usage.completion_tokens
             )
+            const tc = sumToolCosts(toolResults)
             streamingResult.execution.output.cost = {
               input: accumulatedCost.input + streamCost.input,
               output: accumulatedCost.output + streamCost.output,
-              total: accumulatedCost.total + streamCost.total,
+              toolCost: tc || undefined,
+              total: accumulatedCost.total + streamCost.total + tc,
             }
           }),
           execution: {
@@ -554,15 +570,11 @@ export const ollamaProvider: ProviderConfig = {
         duration: totalDuration,
       })
 
-      const enhancedError = new Error(error instanceof Error ? error.message : String(error))
-      // @ts-ignore
-      enhancedError.timing = {
+      throw new ProviderError(error instanceof Error ? error.message : String(error), {
         startTime: providerStartTimeISO,
         endTime: providerEndTimeISO,
         duration: totalDuration,
-      }
-
-      throw enhancedError
+      })
     }
   },
 }

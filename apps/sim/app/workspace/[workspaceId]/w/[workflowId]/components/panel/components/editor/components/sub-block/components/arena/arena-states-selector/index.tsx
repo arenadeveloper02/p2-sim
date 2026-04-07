@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { createLogger } from '@sim/logger'
 import axios from 'axios'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
@@ -24,6 +25,8 @@ interface ArenaState {
   name: string
 }
 
+const logger = createLogger('ArenaStatesSelector')
+
 interface ArenaStatesSelectorProps {
   blockId: string
   subBlockId: string
@@ -45,7 +48,6 @@ export function ArenaStatesSelector({
 }: ArenaStatesSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
 
-  // Expecting array for multiselect
   const previewValue = isPreview && subBlockValues ? subBlockValues[subBlockId]?.value : undefined
   const selectedValues: string[] = isPreview
     ? previewValue || []
@@ -72,9 +74,20 @@ export function ArenaStatesSelector({
           },
         })
 
-        setStates(response.data || [])
+        const payload = response.data
+        const nextStates = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.states)
+            ? payload.states
+            : Array.isArray(payload?.data)
+              ? payload.data
+              : []
+
+        setStates(nextStates)
       } catch (error) {
-        console.error('Error fetching states:', error)
+        logger.error('Failed to fetch Arena states', {
+          error: error instanceof Error ? error.message : String(error),
+        })
         setStates([])
       }
     }

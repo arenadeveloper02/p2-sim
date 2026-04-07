@@ -8,7 +8,7 @@ export interface StatusBarSegment {
   timestamp: string
 }
 
-export function StatusBar({
+function StatusBarInner({
   segments,
   selectedSegmentIndices,
   onSegmentClick,
@@ -48,7 +48,7 @@ export function StatusBar({
   return (
     <div className='relative'>
       <div
-        className='flex select-none items-stretch gap-[2px]'
+        className='flex select-none items-stretch gap-0.5'
         onMouseLeave={() => setHoverIndex(null)}
       >
         {segments.map((segment, i) => {
@@ -60,16 +60,16 @@ export function StatusBar({
           let hoverBrightness: string
           if (!segment.hasExecutions) {
             color = 'bg-gray-300/60 dark:bg-gray-500/40'
-            hoverBrightness = 'hover:brightness-200'
+            hoverBrightness = 'hover-hover:brightness-200'
           } else if (segment.successRate === 100) {
             color = 'bg-emerald-400/90'
-            hoverBrightness = 'hover:brightness-106'
+            hoverBrightness = 'hover-hover:brightness-106'
           } else if (segment.successRate >= 95) {
             color = 'bg-amber-400/90'
-            hoverBrightness = 'hover:brightness-106'
+            hoverBrightness = 'hover-hover:brightness-106'
           } else {
             color = 'bg-red-400/90'
-            hoverBrightness = 'hover:brightness-106'
+            hoverBrightness = 'hover-hover:brightness-106'
           }
 
           return (
@@ -97,7 +97,7 @@ export function StatusBar({
 
       {hoverIndex !== null && segments[hoverIndex] && (
         <div
-          className={`-translate-x-1/2 pointer-events-none absolute z-20 w-max whitespace-nowrap rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-1)] px-[8px] py-[6px] text-center text-[11px] shadow-lg ${
+          className={`-translate-x-1/2 pointer-events-none absolute z-20 w-max whitespace-nowrap rounded-lg border border-[var(--border-1)] bg-[var(--surface-1)] px-2 py-1.5 text-center text-xs shadow-lg ${
             preferBelow ? '' : '-translate-y-full'
           }`}
           style={{
@@ -127,4 +127,45 @@ export function StatusBar({
   )
 }
 
-export default memo(StatusBar)
+/**
+ * Custom equality function for StatusBar memo.
+ * Performs structural comparison of segments array to avoid re-renders
+ * when poll data returns new object references with identical content.
+ */
+function areStatusBarPropsEqual(
+  prev: Parameters<typeof StatusBarInner>[0],
+  next: Parameters<typeof StatusBarInner>[0]
+): boolean {
+  if (prev.workflowId !== next.workflowId) return false
+  if (prev.segmentDurationMs !== next.segmentDurationMs) return false
+  if (prev.preferBelow !== next.preferBelow) return false
+
+  if (prev.selectedSegmentIndices !== next.selectedSegmentIndices) {
+    if (!prev.selectedSegmentIndices || !next.selectedSegmentIndices) return false
+    if (prev.selectedSegmentIndices.length !== next.selectedSegmentIndices.length) return false
+    for (let i = 0; i < prev.selectedSegmentIndices.length; i++) {
+      if (prev.selectedSegmentIndices[i] !== next.selectedSegmentIndices[i]) return false
+    }
+  }
+
+  if (prev.segments !== next.segments) {
+    if (prev.segments.length !== next.segments.length) return false
+    for (let i = 0; i < prev.segments.length; i++) {
+      const ps = prev.segments[i]
+      const ns = next.segments[i]
+      if (
+        ps.successRate !== ns.successRate ||
+        ps.hasExecutions !== ns.hasExecutions ||
+        ps.totalExecutions !== ns.totalExecutions ||
+        ps.successfulExecutions !== ns.successfulExecutions ||
+        ps.timestamp !== ns.timestamp
+      ) {
+        return false
+      }
+    }
+  }
+
+  return true
+}
+
+export const StatusBar = memo(StatusBarInner, areStatusBarPropsEqual)

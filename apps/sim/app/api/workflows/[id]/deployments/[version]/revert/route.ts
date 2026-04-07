@@ -2,9 +2,9 @@ import { db, workflow, workflowDeploymentVersion } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
@@ -22,7 +22,11 @@ export async function POST(
   const { id, version } = await params
 
   try {
-    const { error } = await validateWorkflowPermissions(id, requestId, 'admin')
+    const {
+      error,
+      session,
+      workflow: workflowRecord,
+    } = await validateWorkflowPermissions(id, requestId, 'admin')
     if (error) {
       return createErrorResponse(error.message, error.status)
     }
@@ -86,23 +90,32 @@ export async function POST(
       .set({ lastSynced: new Date(), updatedAt: new Date() })
       .where(eq(workflow.id, id))
 
-    await syncMcpToolsForWorkflow({
-      workflowId: id,
-      requestId,
-      state: deployedState,
-      context: 'revert',
-    })
-
     try {
       const socketServerUrl = env.SOCKET_SERVER_URL || 'http://localhost:3002'
       await fetch(`${socketServerUrl}/api/workflow-reverted`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': env.INTERNAL_API_SECRET,
+        },
         body: JSON.stringify({ workflowId: id, timestamp: Date.now() }),
       })
     } catch (e) {
       logger.error('Error sending workflow reverted event to socket server', e)
     }
+
+    recordAudit({
+      workspaceId: workflowRecord?.workspaceId ?? null,
+      actorId: session!.user.id,
+      action: AuditAction.WORKFLOW_DEPLOYMENT_REVERTED,
+      resourceType: AuditResourceType.WORKFLOW,
+      resourceId: id,
+      actorName: session!.user.name ?? undefined,
+      actorEmail: session!.user.email ?? undefined,
+      resourceName: workflowRecord?.name ?? undefined,
+      description: `Reverted workflow to deployment version ${version}`,
+      request,
+    })
 
     return createSuccessResponse({
       message: 'Reverted to deployment version',

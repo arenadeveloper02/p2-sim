@@ -25,8 +25,8 @@ export function StructuredData({
     headline: title,
     description: description,
     url: url,
-    datePublished: dateModified || new Date().toISOString(),
-    dateModified: dateModified || new Date().toISOString(),
+    ...(dateModified && { datePublished: dateModified }),
+    ...(dateModified && { dateModified }),
     author: {
       '@type': 'Organization',
       name: 'Sim Team',
@@ -74,7 +74,7 @@ export function StructuredData({
     name: 'Sim Documentation',
     url: baseUrl,
     description:
-      'Comprehensive documentation for Sim visual workflow builder for AI applications. Create powerful AI agents, automation workflows, and data processing pipelines.',
+      'Documentation for Sim — the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to deploy and orchestrate agentic workflows.',
     publisher: {
       '@type': 'Organization',
       name: 'Sim',
@@ -91,12 +91,6 @@ export function StructuredData({
     inLanguage: ['en', 'es', 'fr', 'de', 'ja', 'zh'],
   }
 
-  const faqStructuredData = title.toLowerCase().includes('faq') && {
-    '@context': 'https://schema.org',
-    '@type': 'FAQPage',
-    mainEntity: [],
-  }
-
   const softwareStructuredData = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -104,7 +98,7 @@ export function StructuredData({
     applicationCategory: 'DeveloperApplication',
     operatingSystem: 'Any',
     description:
-      'Visual workflow builder for AI applications. Create powerful AI agents, automation workflows, and data processing pipelines by connecting blocks on a canvas—no coding required.',
+      'Sim is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to deploy and orchestrate agentic workflows. Create agents, workflows, knowledge bases, tables, and docs.',
     url: baseUrl,
     author: {
       '@type': 'Organization',
@@ -115,12 +109,13 @@ export function StructuredData({
       category: 'Developer Tools',
     },
     featureList: [
-      'Visual workflow builder with drag-and-drop interface',
-      'AI agent creation and automation',
-      '80+ built-in integrations',
-      'Real-time team collaboration',
-      'Multiple deployment options',
-      'Custom integrations via MCP protocol',
+      'AI agent creation',
+      'Agentic workflow orchestration',
+      '1,000+ integrations',
+      'LLM orchestration (OpenAI, Anthropic, Google, xAI, Mistral, Perplexity)',
+      'Knowledge base creation',
+      'Table creation',
+      'Document creation',
     ],
   }
 
@@ -148,15 +143,6 @@ export function StructuredData({
           type='application/ld+json'
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(websiteStructuredData),
-          }}
-        />
-      )}
-      {faqStructuredData && (
-        <Script
-          id='faq-structured-data'
-          type='application/ld+json'
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(faqStructuredData),
           }}
         />
       )}

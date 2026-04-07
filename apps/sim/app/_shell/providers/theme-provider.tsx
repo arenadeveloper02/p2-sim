@@ -18,12 +18,12 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
     pathname.startsWith('/privacy') ||
     pathname.startsWith('/invite') ||
     pathname.startsWith('/verify') ||
-    pathname.startsWith('/careers') ||
     pathname.startsWith('/changelog') ||
     pathname.startsWith('/chat') ||
-    pathname.startsWith('/studio') ||
+    pathname.startsWith('/blog') ||
     pathname.startsWith('/resume') ||
-    pathname.startsWith('/form')
+    pathname.startsWith('/form') ||
+    pathname.startsWith('/oauth')
 
   return (
     <NextThemesProvider

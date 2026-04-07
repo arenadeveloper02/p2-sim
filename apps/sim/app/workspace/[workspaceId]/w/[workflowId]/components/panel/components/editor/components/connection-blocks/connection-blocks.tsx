@@ -3,8 +3,9 @@
 import { useCallback, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import clsx from 'clsx'
-import { ChevronDown, RepeatIcon, SplitIcon } from 'lucide-react'
+import { RepeatIcon, SplitIcon } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
+import { ChevronDown } from '@/components/emcn'
 import {
   FieldItem,
   type SchemaField,
@@ -60,8 +61,6 @@ function ConnectionItem({
     blockId: connection.id,
     blockType: connection.type,
     mergedSubBlocks,
-    responseFormat: connection.responseFormat,
-    operation: connection.operation,
     triggerMode: sourceBlock?.triggerMode,
   })
   const hasFields = fields.length > 0
@@ -80,18 +79,18 @@ function ConnectionItem({
   }
 
   return (
-    <div className='mb-[2px] last:mb-0' ref={connectionRef}>
+    <div className='mb-0.5 last:mb-0' ref={connectionRef}>
       <div
         draggable
         onDragStart={(e) => onConnectionDragStart(e, connection)}
         className={clsx(
-          'group flex h-[26px] cursor-grab items-center gap-[8px] rounded-[8px] px-[6px] text-[14px] hover:bg-[var(--surface-6)] active:cursor-grabbing dark:hover:bg-[var(--surface-5)]',
+          'group flex h-[26px] cursor-grab items-center gap-2 rounded-lg px-1.5 text-sm hover-hover:bg-[var(--surface-6)] active:cursor-grabbing dark:hover-hover:bg-[var(--surface-5)]',
           hasFields && 'cursor-pointer'
         )}
         onClick={() => hasFields && onToggleExpand(connection.id)}
       >
         <div
-          className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
+          className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-sm'
           style={{ background: bgColor }}
         >
           {Icon && (
@@ -115,17 +114,16 @@ function ConnectionItem({
         {hasFields && (
           <ChevronDown
             className={clsx(
-              'h-3.5 w-3.5 flex-shrink-0 transition-transform duration-100',
-              'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]',
-              isExpanded && 'rotate-180'
+              'h-[8px] w-[8px] flex-shrink-0 text-[var(--text-tertiary)] transition-transform duration-100 group-hover:text-[var(--text-primary)]',
+              !isExpanded && '-rotate-90'
             )}
           />
         )}
       </div>
 
       {isExpanded && hasFields && (
-        <div className='relative mt-[2px] ml-[12px] space-y-[2px] pl-[10px]'>
-          <div className='pointer-events-none absolute top-[4px] bottom-[4px] left-0 w-px bg-[var(--border)]' />
+        <div className='relative mt-0.5 ml-3 space-y-0.5 pl-2.5'>
+          <div className='pointer-events-none absolute top-1 bottom-1 left-0 w-px bg-[var(--border)]' />
           {renderFieldTree(fields, '', 0, connection)}
         </div>
       )}
@@ -137,8 +135,8 @@ function ConnectionItem({
  * Connection blocks component that displays incoming connections with their schemas
  */
 export function ConnectionBlocks({ connections, currentBlockId }: ConnectionBlocksProps) {
-  const [expandedConnections, setExpandedConnections] = useState<Set<string>>(new Set())
-  const [expandedFieldPaths, setExpandedFieldPaths] = useState<Set<string>>(new Set())
+  const [expandedConnections, setExpandedConnections] = useState<Set<string>>(() => new Set())
+  const [expandedFieldPaths, setExpandedFieldPaths] = useState<Set<string>>(() => new Set())
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const connectionRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -264,8 +262,8 @@ export function ConnectionBlocks({ connections, currentBlockId }: ConnectionBloc
               onToggleExpand={(p) => toggleFieldExpansion(connection.id, p)}
             />
             {hasChildren && expanded && (
-              <div className='relative mt-[2px] ml-[6px] space-y-[2px] pl-[10px]'>
-                <div className='pointer-events-none absolute top-[4px] bottom-[4px] left-0 w-px bg-[var(--border)]' />
+              <div className='relative mt-0.5 ml-1.5 space-y-0.5 pl-2.5'>
+                <div className='pointer-events-none absolute top-1 bottom-1 left-0 w-px bg-[var(--border)]' />
                 {renderFieldTree(field.children!, fieldPath, level + 1, connection)}
               </div>
             )}
@@ -281,7 +279,7 @@ export function ConnectionBlocks({ connections, currentBlockId }: ConnectionBloc
   }
 
   return (
-    <div ref={scrollContainerRef} className='space-y-[2px]'>
+    <div ref={scrollContainerRef} className='space-y-0.5'>
       {connections.map((connection) => {
         const mergedSubBlocks = getMergedSubBlocks(connection.id)
         const sourceBlock = blocks[connection.id]

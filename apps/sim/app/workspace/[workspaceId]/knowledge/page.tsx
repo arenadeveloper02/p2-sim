@@ -1,8 +1,13 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
-import { getUserPermissionConfig } from '@/executor/utils/permission-check'
+import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 import { Knowledge } from './knowledge'
+
+export const metadata: Metadata = {
+  title: 'Knowledge Base',
+}
 
 interface KnowledgePageProps {
   params: Promise<{
@@ -23,7 +28,6 @@ export default async function KnowledgePage({ params }: KnowledgePageProps) {
     redirect('/')
   }
 
-  // Check permission group restrictions
   const permissionConfig = await getUserPermissionConfig(session.user.id)
   if (permissionConfig?.hideKnowledgeBaseTab) {
     redirect(`/workspace/${workspaceId}`)

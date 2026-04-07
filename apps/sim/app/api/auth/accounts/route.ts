@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
-import { account } from '@sim/db/schema'
+import { account, credential } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 
@@ -28,18 +28,25 @@ export async function GET(request: NextRequest) {
         id: account.id,
         accountId: account.accountId,
         providerId: account.providerId,
+        credentialDisplayName: credential.displayName,
       })
       .from(account)
+      .leftJoin(credential, eq(credential.accountId, account.id))
       .where(and(...whereConditions))
+      .orderBy(desc(account.updatedAt))
 
-    // Use the user's email as the display name (consistent with credential selector)
-    const userEmail = session.user.email
+    const seen = new Map<string, (typeof accounts)[number]>()
+    for (const acc of accounts) {
+      if (!seen.has(acc.id)) {
+        seen.set(acc.id, acc)
+      }
+    }
 
-    const accountsWithDisplayName = accounts.map((acc) => ({
+    const accountsWithDisplayName = Array.from(seen.values()).map((acc) => ({
       id: acc.id,
       accountId: acc.accountId,
       providerId: acc.providerId,
-      displayName: userEmail || acc.providerId,
+      displayName: acc.credentialDisplayName || acc.accountId || acc.providerId,
     }))
 
     return NextResponse.json({ accounts: accountsWithDisplayName })

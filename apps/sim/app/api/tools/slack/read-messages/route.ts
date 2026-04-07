@@ -256,8 +256,18 @@ const SlackReadMessagesSchema = z
       .nullable(),
     oldest: z.string().optional().nullable(),
     latest: z.string().optional().nullable(),
-    fromDate: z.string().optional().nullable(),
-    toDate: z.string().optional().nullable(),
+    fromDate: z.preprocess((val) => {
+      if (val === '' || val === null || val === undefined) {
+        return undefined
+      }
+      return val
+    }, z.string().optional().nullable()),
+    toDate: z.preprocess((val) => {
+      if (val === '' || val === null || val === undefined) {
+        return undefined
+      }
+      return val
+    }, z.string().optional().nullable()),
     cursor: z.string().optional().nullable(),
     autoPaginate: z.boolean().optional().default(true),
     includeThreads: z.boolean().optional().default(true),
@@ -722,7 +732,7 @@ export async function POST(request: NextRequest) {
           {
             success: false,
             error:
-              'Bot is not in the channel. Please invite the Sim bot to your Slack channel by typing: /invite @Sim Studio',
+              'Bot is not in the channel. Please invite the Arena bot to your Slack channel by typing: /invite @bot',
           },
           { status: 400 }
         )

@@ -27,6 +27,13 @@ import { sanitizeFileName } from '@/executor/constants'
 let _s3Client: S3Client | null = null
 const _s3ClientsByRegion = new Map<string, S3Client>()
 
+/**
+ * Reset the cached S3 client. Only intended for use in tests.
+ */
+export function resetS3ClientForTesting(): void {
+  _s3Client = null
+}
+
 export function getS3Client(): S3Client {
   if (_s3Client) return _s3Client
 

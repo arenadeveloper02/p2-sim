@@ -1,10 +1,11 @@
 import { db } from '@sim/db'
 import { webhook } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { NextRequest } from 'next/server'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
+import { PendingWebhookVerificationTracker } from '@/lib/webhooks/pending-verification'
 import {
   cleanupExternalWebhook,
   createExternalWebhookSubscription,
@@ -111,6 +112,16 @@ function isFieldRequired(
 }
 
 function resolveTriggerId(block: BlockState): string | undefined {
+  const blockConfig = getBlock(block.type)
+
+  if (blockConfig?.category === 'triggers' && isTriggerValid(block.type)) {
+    return block.type
+  }
+
+  if (!block.triggerMode) {
+    return undefined
+  }
+
   const selectedTriggerId = getSubBlockValue(block, 'selectedTriggerId')
   if (typeof selectedTriggerId === 'string' && isTriggerValid(selectedTriggerId)) {
     return selectedTriggerId
@@ -121,12 +132,7 @@ function resolveTriggerId(block: BlockState): string | undefined {
     return storedTriggerId
   }
 
-  const blockConfig = getBlock(block.type)
-  if (blockConfig?.category === 'triggers' && isTriggerValid(block.type)) {
-    return block.type
-  }
-
-  if (block.triggerMode && blockConfig?.triggers?.enabled) {
+  if (blockConfig?.triggers?.enabled) {
     const configuredTriggerId =
       typeof selectedTriggerId === 'string' ? selectedTriggerId : undefined
     if (configuredTriggerId && isTriggerValid(configuredTriggerId)) {
@@ -363,7 +369,7 @@ export async function saveTriggerWebhooksForDeploy({
   const allWorkflowWebhooks = await db
     .select()
     .from(webhook)
-    .where(eq(webhook.workflowId, workflowId))
+    .where(and(eq(webhook.workflowId, workflowId), isNull(webhook.archivedAt)))
 
   // Separate webhooks by version: current deployment vs others
   const existingWebhooks: typeof allWorkflowWebhooks = []
@@ -575,6 +581,7 @@ export async function saveTriggerWebhooksForDeploy({
     updatedProviderConfig: Record<string, unknown>
     externalSubscriptionCreated: boolean
   }> = []
+  const pendingVerificationTracker = new PendingWebhookVerificationTracker()
 
   for (const block of blocksNeedingWebhook) {
     const config = webhookConfigs.get(block.id)
@@ -590,6 +597,14 @@ export async function saveTriggerWebhooksForDeploy({
     }
 
     try {
+      await pendingVerificationTracker.register({
+        path: triggerPath,
+        provider,
+        workflowId,
+        blockId: block.id,
+        metadata: providerConfig,
+      })
+
       const result = await createExternalWebhookSubscription(
         request,
         createPayload,
@@ -608,6 +623,7 @@ export async function saveTriggerWebhooksForDeploy({
       })
     } catch (error: any) {
       logger.error(`[${requestId}] Failed to create external subscription for ${block.id}`, error)
+      await pendingVerificationTracker.clearAll()
       for (const sub of createdSubscriptions) {
         if (sub.externalSubscriptionCreated) {
           try {
@@ -661,6 +677,8 @@ export async function saveTriggerWebhooksForDeploy({
       }
     })
 
+    await pendingVerificationTracker.clearAll()
+
     for (const sub of createdSubscriptions) {
       const pollingError = await configurePollingIfNeeded(
         sub.provider,
@@ -705,6 +723,7 @@ export async function saveTriggerWebhooksForDeploy({
       }
     }
   } catch (error: any) {
+    await pendingVerificationTracker.clearAll()
     logger.error(`[${requestId}] Failed to insert webhook records`, error)
     for (const sub of createdSubscriptions) {
       if (sub.externalSubscriptionCreated) {
@@ -760,13 +779,13 @@ export async function cleanupWebhooksForWorkflow(
       deploymentVersionId
         ? and(
             eq(webhook.workflowId, workflowId),
-            eq(webhook.deploymentVersionId, deploymentVersionId)
+            eq(webhook.deploymentVersionId, deploymentVersionId),
+            isNull(webhook.archivedAt)
           )
-        : eq(webhook.workflowId, workflowId)
+        : and(eq(webhook.workflowId, workflowId), isNull(webhook.archivedAt))
     )
 
   if (existingWebhooks.length === 0) {
-    logger.debug(`[${requestId}] No webhooks to clean up for workflow ${workflowId}`)
     return
   }
 
@@ -825,10 +844,9 @@ export async function restorePreviousVersionWebhooks(params: {
   const previousWebhooks = await db
     .select()
     .from(webhook)
-    .where(eq(webhook.deploymentVersionId, previousVersionId))
+    .where(and(eq(webhook.deploymentVersionId, previousVersionId), isNull(webhook.archivedAt)))
 
   if (previousWebhooks.length === 0) {
-    logger.debug(`[${requestId}] No previous webhooks to restore for version ${previousVersionId}`)
     return
   }
 
@@ -838,7 +856,7 @@ export async function restorePreviousVersionWebhooks(params: {
 
   for (const wh of previousWebhooks) {
     try {
-      await createExternalWebhookSubscription(
+      const result = await createExternalWebhookSubscription(
         request,
         {
           id: wh.id,
@@ -850,6 +868,13 @@ export async function restorePreviousVersionWebhooks(params: {
         userId,
         requestId
       )
+      await db
+        .update(webhook)
+        .set({
+          providerConfig: result.updatedProviderConfig,
+          updatedAt: new Date(),
+        })
+        .where(eq(webhook.id, wh.id))
       logger.info(`[${requestId}] Restored external subscription for webhook ${wh.id}`)
     } catch (restoreError) {
       logger.error(

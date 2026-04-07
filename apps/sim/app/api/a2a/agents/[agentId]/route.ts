@@ -1,11 +1,11 @@
 import { db } from '@sim/db'
 import { a2aAgent, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateAgentCard, generateSkillsFromWorkflow } from '@/lib/a2a/agent-card'
 import type { AgentCapabilities, AgentSkill } from '@/lib/a2a/types'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { getRedisClient } from '@/lib/core/config/redis'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
@@ -31,8 +31,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<Ro
         workflow: workflow,
       })
       .from(a2aAgent)
-      .innerJoin(workflow, eq(a2aAgent.workflowId, workflow.id))
-      .where(eq(a2aAgent.id, agentId))
+      .innerJoin(workflow, and(eq(a2aAgent.workflowId, workflow.id), isNull(workflow.archivedAt)))
+      .where(and(eq(a2aAgent.id, agentId), isNull(a2aAgent.archivedAt)))
       .limit(1)
 
     if (!agent) {
@@ -40,8 +40,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<Ro
     }
 
     if (!agent.agent.isPublished) {
-      const auth = await checkHybridAuth(request, { requireWorkflowId: false })
-      if (!auth.success) {
+      const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+      if (!auth.success || !auth.userId) {
+        return NextResponse.json({ error: 'Agent not published' }, { status: 404 })
+      }
+
+      const workspaceAccess = await checkWorkspaceAccess(agent.agent.workspaceId, auth.userId)
+      if (!workspaceAccess.exists || !workspaceAccess.hasAccess) {
         return NextResponse.json({ error: 'Agent not published' }, { status: 404 })
       }
     }
@@ -81,7 +86,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<Ro
   const { agentId } = await params
 
   try {
-    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -89,7 +94,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<Ro
     const [existingAgent] = await db
       .select()
       .from(a2aAgent)
-      .where(eq(a2aAgent.id, agentId))
+      .where(and(eq(a2aAgent.id, agentId), isNull(a2aAgent.archivedAt)))
       .limit(1)
 
     if (!existingAgent) {
@@ -151,7 +156,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const { agentId } = await params
 
   try {
-    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -159,7 +164,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const [existingAgent] = await db
       .select()
       .from(a2aAgent)
-      .where(eq(a2aAgent.id, agentId))
+      .where(and(eq(a2aAgent.id, agentId), isNull(a2aAgent.archivedAt)))
       .limit(1)
 
     if (!existingAgent) {
@@ -189,7 +194,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<R
   const { agentId } = await params
 
   try {
-    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
       logger.warn('A2A agent publish auth failed:', { error: auth.error, hasUserId: !!auth.userId })
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
@@ -198,7 +203,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<R
     const [existingAgent] = await db
       .select()
       .from(a2aAgent)
-      .where(eq(a2aAgent.id, agentId))
+      .where(and(eq(a2aAgent.id, agentId), isNull(a2aAgent.archivedAt)))
       .limit(1)
 
     if (!existingAgent) {

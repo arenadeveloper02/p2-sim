@@ -1,16 +1,32 @@
 import { db, workflowDeploymentVersion, workflowSchedule } from '@sim/db'
 import { createLogger } from '@sim/logger'
-import { tasks } from '@trigger.dev/sdk'
-import { and, eq, isNull, lt, lte, not, or, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, lte, ne, not, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { v4 as uuidv4 } from 'uuid'
 import { verifyCronAuth } from '@/lib/auth/internal'
-import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
+import { getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { executeScheduleJob } from '@/background/schedule-execution'
+import {
+  executeJobInline,
+  executeScheduleJob,
+  releaseScheduleLock,
+} from '@/background/schedule-execution'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('ScheduledExecuteAPI')
+
+const dueFilter = (queuedAt: Date) =>
+  and(
+    isNull(workflowSchedule.archivedAt),
+    lte(workflowSchedule.nextRunAt, queuedAt),
+    not(eq(workflowSchedule.status, 'disabled')),
+    ne(workflowSchedule.status, 'completed'),
+    or(
+      isNull(workflowSchedule.lastQueuedAt),
+      lt(workflowSchedule.lastQueuedAt, workflowSchedule.nextRunAt)
+    )
+  )
 
 export async function GET(request: NextRequest) {
   const requestId = generateRequestId()
@@ -24,20 +40,14 @@ export async function GET(request: NextRequest) {
   const queuedAt = new Date()
 
   try {
+    // Workflow schedules (require active deployment)
     const dueSchedules = await db
       .update(workflowSchedule)
-      .set({
-        lastQueuedAt: queuedAt,
-        updatedAt: queuedAt,
-      })
+      .set({ lastQueuedAt: queuedAt, updatedAt: queuedAt })
       .where(
         and(
-          lte(workflowSchedule.nextRunAt, queuedAt),
-          not(eq(workflowSchedule.status, 'disabled')),
-          or(
-            isNull(workflowSchedule.lastQueuedAt),
-            lt(workflowSchedule.lastQueuedAt, workflowSchedule.nextRunAt)
-          ),
+          dueFilter(queuedAt),
+          or(eq(workflowSchedule.sourceType, 'workflow'), isNull(workflowSchedule.sourceType)),
           sql`${workflowSchedule.deploymentVersionId} = (select ${workflowDeploymentVersion.id} from ${workflowDeploymentVersion} where ${workflowDeploymentVersion.workflowId} = ${workflowSchedule.workflowId} and ${workflowDeploymentVersion.isActive} = true)`
         )
       )
@@ -50,81 +60,143 @@ export async function GET(request: NextRequest) {
         failedCount: workflowSchedule.failedCount,
         nextRunAt: workflowSchedule.nextRunAt,
         lastQueuedAt: workflowSchedule.lastQueuedAt,
+        sourceType: workflowSchedule.sourceType,
       })
 
-    logger.debug(`[${requestId}] Successfully queried schedules: ${dueSchedules.length} found`)
-    logger.info(`[${requestId}] Processing ${dueSchedules.length} due scheduled workflows`)
-
-    if (isTriggerDevEnabled) {
-      const triggerPromises = dueSchedules.map(async (schedule) => {
-        const queueTime = schedule.lastQueuedAt ?? queuedAt
-
-        try {
-          const payload = {
-            scheduleId: schedule.id,
-            workflowId: schedule.workflowId,
-            blockId: schedule.blockId || undefined,
-            cronExpression: schedule.cronExpression || undefined,
-            lastRanAt: schedule.lastRanAt?.toISOString(),
-            failedCount: schedule.failedCount || 0,
-            now: queueTime.toISOString(),
-            scheduledFor: schedule.nextRunAt?.toISOString(),
-          }
-
-          const handle = await tasks.trigger('schedule-execution', payload)
-          logger.info(
-            `[${requestId}] Queued schedule execution task ${handle.id} for workflow ${schedule.workflowId}`
-          )
-          return handle
-        } catch (error) {
-          logger.error(
-            `[${requestId}] Failed to trigger schedule execution for workflow ${schedule.workflowId}`,
-            error
-          )
-          return null
-        }
+    // Jobs (no deployment, dispatch inline)
+    const dueJobs = await db
+      .update(workflowSchedule)
+      .set({ lastQueuedAt: queuedAt, updatedAt: queuedAt })
+      .where(and(dueFilter(queuedAt), eq(workflowSchedule.sourceType, 'job')))
+      .returning({
+        id: workflowSchedule.id,
+        cronExpression: workflowSchedule.cronExpression,
+        failedCount: workflowSchedule.failedCount,
+        lastQueuedAt: workflowSchedule.lastQueuedAt,
+        sourceType: workflowSchedule.sourceType,
       })
 
-      await Promise.allSettled(triggerPromises)
+    const totalCount = dueSchedules.length + dueJobs.length
+    logger.info(
+      `[${requestId}] Processing ${totalCount} due items (${dueSchedules.length} schedules, ${dueJobs.length} jobs)`
+    )
 
-      logger.info(`[${requestId}] Queued ${dueSchedules.length} schedule executions to Trigger.dev`)
-    } else {
-      const directExecutionPromises = dueSchedules.map(async (schedule) => {
-        const queueTime = schedule.lastQueuedAt ?? queuedAt
+    const jobQueue = await getJobQueue()
 
-        const payload = {
-          scheduleId: schedule.id,
-          workflowId: schedule.workflowId,
-          blockId: schedule.blockId || undefined,
-          cronExpression: schedule.cronExpression || undefined,
-          lastRanAt: schedule.lastRanAt?.toISOString(),
-          failedCount: schedule.failedCount || 0,
-          now: queueTime.toISOString(),
-          scheduledFor: schedule.nextRunAt?.toISOString(),
-        }
+    const schedulePromises = dueSchedules.map(async (schedule) => {
+      const queueTime = schedule.lastQueuedAt ?? queuedAt
+      const executionId = uuidv4()
+      const correlation = {
+        executionId,
+        requestId,
+        source: 'schedule' as const,
+        workflowId: schedule.workflowId!,
+        scheduleId: schedule.id,
+        triggerType: 'schedule',
+        scheduledFor: schedule.nextRunAt?.toISOString(),
+      }
 
-        void executeScheduleJob(payload).catch((error) => {
-          logger.error(
-            `[${requestId}] Direct schedule execution failed for workflow ${schedule.workflowId}`,
-            error
-          )
+      const payload = {
+        scheduleId: schedule.id,
+        workflowId: schedule.workflowId!,
+        executionId,
+        requestId,
+        correlation,
+        blockId: schedule.blockId || undefined,
+        cronExpression: schedule.cronExpression || undefined,
+        lastRanAt: schedule.lastRanAt?.toISOString(),
+        failedCount: schedule.failedCount || 0,
+        now: queueTime.toISOString(),
+        scheduledFor: schedule.nextRunAt?.toISOString(),
+      }
+
+      try {
+        const jobId = await jobQueue.enqueue('schedule-execution', payload, {
+          metadata: { workflowId: schedule.workflowId ?? undefined, correlation },
         })
-
         logger.info(
-          `[${requestId}] Queued direct schedule execution for workflow ${schedule.workflowId} (Trigger.dev disabled)`
+          `[${requestId}] Queued schedule execution task ${jobId} for workflow ${schedule.workflowId}`
         )
-      })
 
-      await Promise.allSettled(directExecutionPromises)
+        if (shouldExecuteInline()) {
+          try {
+            await jobQueue.startJob(jobId)
+            const output = await executeScheduleJob(payload)
+            await jobQueue.completeJob(jobId, output)
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error)
+            logger.error(
+              `[${requestId}] Schedule execution failed for workflow ${schedule.workflowId}`,
+              {
+                jobId,
+                error: errorMessage,
+              }
+            )
+            try {
+              await jobQueue.markJobFailed(jobId, errorMessage)
+            } catch (markFailedError) {
+              logger.error(`[${requestId}] Failed to mark job as failed`, {
+                jobId,
+                error:
+                  markFailedError instanceof Error
+                    ? markFailedError.message
+                    : String(markFailedError),
+              })
+            }
+            await releaseScheduleLock(
+              schedule.id,
+              requestId,
+              queuedAt,
+              `Failed to release lock for schedule ${schedule.id} after inline execution failure`
+            )
+          }
+        }
+      } catch (error) {
+        logger.error(
+          `[${requestId}] Failed to queue schedule execution for workflow ${schedule.workflowId}`,
+          error
+        )
+        await releaseScheduleLock(
+          schedule.id,
+          requestId,
+          queuedAt,
+          `Failed to release lock for schedule ${schedule.id} after queue failure`
+        )
+      }
+    })
 
-      logger.info(
-        `[${requestId}] Queued ${dueSchedules.length} direct schedule executions (Trigger.dev disabled)`
-      )
-    }
+    // Jobs always execute inline (no TriggerDev)
+    const jobPromises = dueJobs.map(async (job) => {
+      const queueTime = job.lastQueuedAt ?? queuedAt
+      const payload = {
+        scheduleId: job.id,
+        cronExpression: job.cronExpression || undefined,
+        failedCount: job.failedCount || 0,
+        now: queueTime.toISOString(),
+      }
+
+      try {
+        await executeJobInline(payload)
+      } catch (error) {
+        logger.error(`[${requestId}] Job execution failed for ${job.id}`, {
+          error: error instanceof Error ? error.message : String(error),
+        })
+        await releaseScheduleLock(
+          job.id,
+          requestId,
+          queuedAt,
+          `Failed to release lock for job ${job.id}`
+        )
+      }
+    })
+
+    await Promise.allSettled([...schedulePromises, ...jobPromises])
+
+    logger.info(`[${requestId}] Processed ${totalCount} items`)
 
     return NextResponse.json({
       message: 'Scheduled workflow executions processed',
-      executedCount: dueSchedules.length,
+      executedCount: totalCount,
     })
   } catch (error: any) {
     logger.error(`[${requestId}] Error in scheduled execution handler`, error)

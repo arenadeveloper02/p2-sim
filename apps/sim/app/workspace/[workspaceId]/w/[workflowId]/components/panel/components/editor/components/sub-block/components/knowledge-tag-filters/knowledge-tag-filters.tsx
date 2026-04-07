@@ -16,6 +16,7 @@ import { FIELD_TYPE_LABELS, getPlaceholderForFieldType } from '@/lib/knowledge/c
 import { type FilterFieldType, getOperatorsForFieldType } from '@/lib/knowledge/filters/types'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
+import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import type { SubBlockConfig } from '@/blocks/types'
@@ -68,8 +69,12 @@ export function KnowledgeTagFilters({
   const valueInputRefs = useRef<Record<string, HTMLInputElement>>({})
   const overlayRefs = useRef<Record<string, HTMLDivElement>>({})
 
-  const [knowledgeBaseIdFromStore] = useSubBlockValue(blockId, 'knowledgeBaseId')
-  const knowledgeBaseIdValue = previewContextValues?.knowledgeBaseId ?? knowledgeBaseIdFromStore
+  const { dependencyValues } = useDependsOnGate(blockId, subBlock, {
+    disabled,
+    isPreview,
+    previewContextValues,
+  })
+  const knowledgeBaseIdValue = dependencyValues.knowledgeBaseSelector
   const knowledgeBaseId =
     typeof knowledgeBaseIdValue === 'string' && knowledgeBaseIdValue.trim().length > 0
       ? knowledgeBaseIdValue
@@ -230,18 +235,20 @@ export function KnowledgeTagFilters({
    */
   const renderFilterHeader = (filter: TagFilter, index: number) => (
     <div
-      className='flex cursor-pointer items-center justify-between rounded-t-[4px] bg-[var(--surface-4)] px-[10px] py-[5px]'
+      className='flex cursor-pointer items-center justify-between rounded-t-[4px] bg-[var(--surface-4)] px-2.5 py-[5px]'
       onClick={() => toggleCollapse(filter.id)}
     >
-      <div className='flex min-w-0 flex-1 items-center gap-[8px]'>
-        <span className='block truncate font-medium text-[14px] text-[var(--text-tertiary)]'>
+      <div className='flex min-w-0 flex-1 items-center gap-2'>
+        <span className='block truncate font-medium text-[var(--text-tertiary)] text-sm'>
           {filter.collapsed ? filter.tagName || `Filter ${index + 1}` : `Filter ${index + 1}`}
         </span>
         {filter.collapsed && filter.tagName && (
-          <Badge size='sm'>{FIELD_TYPE_LABELS[filter.fieldType] || 'Text'}</Badge>
+          <Badge variant='type' size='sm'>
+            {FIELD_TYPE_LABELS[filter.fieldType] || 'Text'}
+          </Badge>
         )}
       </div>
-      <div className='flex items-center gap-[8px] pl-[8px]' onClick={(e) => e.stopPropagation()}>
+      <div className='flex items-center gap-2 pl-2' onClick={(e) => e.stopPropagation()}>
         <Button variant='ghost' onClick={addFilter} disabled={isReadOnly} className='h-auto p-0'>
           <Plus className='h-[14px] w-[14px]' />
           <span className='sr-only'>Add Filter</span>
@@ -250,7 +257,7 @@ export function KnowledgeTagFilters({
           variant='ghost'
           onClick={() => removeFilter(filter.id)}
           disabled={isReadOnly}
-          className='h-auto p-0 text-[var(--text-error)] hover:text-[var(--text-error)]'
+          className='h-auto p-0 text-[var(--text-error)] hover-hover:text-[var(--text-error)]'
         >
           <Trash className='h-[14px] w-[14px]' />
           <span className='sr-only'>Delete Filter</span>
@@ -307,7 +314,10 @@ export function KnowledgeTagFilters({
           ref={(el) => {
             if (el) overlayRefs.current[cellKey] = el
           }}
-          className='pointer-events-none absolute inset-0 flex items-center overflow-x-auto bg-transparent px-[8px] py-[6px] font-medium font-sans text-sm'
+          className={cn(
+            'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-2 py-1.5 font-medium font-sans text-sm',
+            !isReadOnly && 'pointer-events-none'
+          )}
         >
           <div className='w-full whitespace-pre' style={{ minWidth: 'fit-content' }}>
             {formatDisplayText(
@@ -350,9 +360,9 @@ export function KnowledgeTagFilters({
     const isBetween = filter.operator === 'between'
 
     return (
-      <div className='flex flex-col gap-[8px] border-[var(--border-1)] border-t px-[10px] pt-[6px] pb-[10px]'>
-        <div className='flex flex-col gap-[6px]'>
-          <Label className='text-[13px]'>Tag</Label>
+      <div className='flex flex-col gap-2 rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-2.5 pt-1.5 pb-2.5'>
+        <div className='flex flex-col gap-1.5'>
+          <Label className='text-small'>Tag</Label>
           <Combobox
             options={tagOptions}
             value={filter.tagName}
@@ -362,8 +372,8 @@ export function KnowledgeTagFilters({
           />
         </div>
 
-        <div className='flex flex-col gap-[6px]'>
-          <Label className='text-[13px]'>Operator</Label>
+        <div className='flex flex-col gap-1.5'>
+          <Label className='text-small'>Operator</Label>
           <Combobox
             options={operatorOptions}
             value={filter.operator}
@@ -373,8 +383,8 @@ export function KnowledgeTagFilters({
           />
         </div>
 
-        <div className='flex flex-col gap-[6px]'>
-          <Label className='text-[13px]'>Value</Label>
+        <div className='flex flex-col gap-1.5'>
+          <Label className='text-small'>Value</Label>
           {isBetween ? (
             <div className='flex items-center gap-2'>
               <div className='flex-1'>{renderValueInput(filter, 'tagValue')}</div>
@@ -390,13 +400,13 @@ export function KnowledgeTagFilters({
   }
 
   return (
-    <div className='space-y-[8px]'>
+    <div className='space-y-2'>
       {filters.map((filter, index) => (
         <div
           key={filter.id}
           data-filter-id={filter.id}
           className={cn(
-            'rounded-[4px] border border-[var(--border-1)]',
+            'rounded-sm border border-[var(--border-1)]',
             filter.collapsed ? 'overflow-hidden' : 'overflow-visible'
           )}
         >

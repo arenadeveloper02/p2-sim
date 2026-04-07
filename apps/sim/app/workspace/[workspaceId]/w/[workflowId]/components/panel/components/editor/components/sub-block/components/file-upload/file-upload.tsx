@@ -10,6 +10,7 @@ import { cn } from '@/lib/core/utils/cn'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { getExtensionFromMimeType } from '@/lib/uploads/utils/file-utils'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { START_FILES_REF } from '@/executor/constants'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -21,6 +22,10 @@ interface FileUploadProps {
   maxSize?: number // in MB
   acceptedTypes?: string // comma separated MIME types
   multiple?: boolean // whether to allow multiple file uploads
+  /** When 'image-fusion', API validates against all image extensions (e.g. svg, webp). */
+  uploadContext?: 'image-fusion'
+  /** When true, show option to use Start block files (e.g. chat-uploaded images) via <start.files>. */
+  allowStartFilesReference?: boolean
   isPreview?: boolean
   previewValue?: any | null
   disabled?: boolean
@@ -32,6 +37,103 @@ interface UploadedFile {
   key?: string
   size: number
   type: string
+}
+
+interface SingleFileSelectorProps {
+  file: UploadedFile
+  options: Array<{ label: string; value: string; disabled?: boolean }>
+  selectedValue: string
+  inputValue: string
+  onInputChange: (value: string) => void
+  onClear: (e: React.MouseEvent) => void
+  onOpenChange: (open: boolean) => void
+  disabled: boolean
+  isLoading: boolean
+  formatFileSize: (bytes: number) => string
+  truncateMiddle: (text: string, start?: number, end?: number) => string
+  isDeleting: boolean
+}
+
+/**
+ * Single file selector component that shows the selected file with both
+ * a clear button (X) and a chevron to change the selection.
+ * Follows the same pattern as SelectorCombobox for consistency.
+ */
+function SingleFileSelector({
+  file,
+  options,
+  selectedValue,
+  inputValue,
+  onInputChange,
+  onClear,
+  onOpenChange,
+  disabled,
+  isLoading,
+  formatFileSize,
+  truncateMiddle,
+  isDeleting,
+}: SingleFileSelectorProps) {
+  const displayLabel = `${truncateMiddle(file.name, 20, 12)} (${formatFileSize(file.size)})`
+  const [localInputValue, setLocalInputValue] = useState(displayLabel)
+  const [isEditing, setIsEditing] = useState(false)
+
+  // Sync display label when file changes
+  useEffect(() => {
+    if (!isEditing) {
+      setLocalInputValue(displayLabel)
+    }
+  }, [displayLabel, isEditing])
+
+  return (
+    <div className='relative w-full'>
+      <Combobox
+        options={options}
+        value={localInputValue}
+        selectedValue={selectedValue}
+        onChange={(newValue) => {
+          // Check if user selected an option
+          const matched = options.find((opt) => opt.value === newValue || opt.label === newValue)
+          if (matched) {
+            setIsEditing(false)
+            setLocalInputValue(displayLabel)
+            onInputChange(matched.value)
+            return
+          }
+          // User is typing to search
+          setIsEditing(true)
+          setLocalInputValue(newValue)
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsEditing(false)
+            setLocalInputValue(displayLabel)
+          }
+          onOpenChange(open)
+        }}
+        placeholder={isLoading ? 'Loading files...' : 'Select or upload file'}
+        disabled={disabled || isDeleting}
+        editable={true}
+        filterOptions={isEditing}
+        isLoading={isLoading}
+        inputProps={{
+          className: 'pr-[60px]',
+        }}
+      />
+      <Button
+        type='button'
+        variant='ghost'
+        className='-translate-y-1/2 absolute top-1/2 right-[28px] z-10 h-6 w-6 p-0'
+        onClick={onClear}
+        disabled={isDeleting}
+      >
+        {isDeleting ? (
+          <div className='h-4 w-4 animate-spin rounded-full border-[1.5px] border-current border-t-transparent' />
+        ) : (
+          <X className='h-4 w-4 opacity-50 hover-hover:opacity-100' />
+        )}
+      </Button>
+    </div>
+  )
 }
 
 interface UploadingFile {
@@ -46,6 +148,8 @@ export function FileUpload({
   maxSize = 10, // Default 10MB
   acceptedTypes = '*',
   multiple = false, // Default to single file for backward compatibility
+  uploadContext,
+  allowStartFilesReference = false,
   isPreview = false,
   previewValue,
   disabled = false,
@@ -236,7 +340,9 @@ export function FileUpload({
           const formData = new FormData()
           formData.append('file', file)
           formData.append('context', 'workspace')
-
+          if (uploadContext) {
+            formData.append('uploadContext', uploadContext)
+          }
           if (workspaceId) {
             formData.append('workspaceId', workspaceId)
           }
@@ -368,6 +474,7 @@ export function FileUpload({
     const uploadedFile: UploadedFile = {
       name: selectedFile.name,
       path: selectedFile.path,
+      key: selectedFile.key,
       size: selectedFile.size,
       type: selectedFile.type,
     }
@@ -455,9 +562,9 @@ export function FileUpload({
     return (
       <div
         key={fileKey}
-        className='relative rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[8px] py-[6px] hover:border-[var(--surface-7)] hover:bg-[var(--surface-5)] dark:bg-[var(--surface-5)] dark:hover:bg-[var(--border-1)]'
+        className='relative rounded-sm border border-[var(--border-1)] bg-[var(--surface-5)] px-2 py-1.5 hover-hover:bg-[var(--surface-active)] dark:bg-[var(--surface-5)]'
       >
-        <div className='truncate pr-[24px] text-sm' title={file.name}>
+        <div className='truncate pr-6 text-sm' title={file.name}>
           <span className='text-[var(--text-primary)]'>{truncateMiddle(file.name)}</span>
           <span className='ml-2 text-[var(--text-muted)]'>({formatFileSize(file.size)})</span>
         </div>
@@ -482,7 +589,7 @@ export function FileUpload({
     return (
       <div
         key={file.id}
-        className='flex items-center justify-between rounded-[4px] border border-[var(--border-1)] bg-[var(--surface-5)] px-[8px] py-[6px] dark:bg-[var(--surface-5)]'
+        className='flex items-center justify-between rounded-sm border border-[var(--border-1)] bg-[var(--surface-5)] px-2 py-1.5 dark:bg-[var(--surface-5)]'
       >
         <div className='flex-1 truncate pr-2 text-sm'>
           <span className='text-[var(--text-primary)]'>{file.name}</span>
@@ -495,9 +602,15 @@ export function FileUpload({
     )
   }
 
-  const filesArray = Array.isArray(value) ? value : value ? [value] : []
+  const isUsingStartFiles = value === START_FILES_REF
+  const filesArray = isUsingStartFiles ? [] : Array.isArray(value) ? value : value ? [value] : []
   const hasFiles = filesArray.length > 0
   const isUploading = uploadingFiles.length > 0
+
+  const handleSetUseStartFiles = (use: boolean) => {
+    setStoreValue(use ? START_FILES_REF : null)
+    useWorkflowStore.getState().triggerUpdate()
+  }
 
   const comboboxOptions = useMemo(
     () => [
@@ -515,10 +628,43 @@ export function FileUpload({
     [availableWorkspaceFiles, acceptedTypes]
   )
 
+  // Options for single file mode (includes all files, selected one will be highlighted)
+  const singleFileOptions = useMemo(
+    () => [
+      { label: 'Upload New File', value: '__upload_new__' },
+      ...workspaceFiles.map((file) => {
+        const isAccepted =
+          !acceptedTypes || acceptedTypes === '*' || isFileTypeAccepted(file.type, acceptedTypes)
+        return {
+          label: file.name,
+          value: file.id,
+          disabled: !isAccepted,
+        }
+      }),
+    ],
+    [workspaceFiles, acceptedTypes]
+  )
+
+  // Find the selected file's workspace ID for highlighting in single file mode
+  const selectedFileId = useMemo(() => {
+    if (!hasFiles || multiple) return ''
+    const currentFile = filesArray[0]
+    if (!currentFile) return ''
+    // Match by key or path
+    const matchedWorkspaceFile = workspaceFiles.find(
+      (wf) =>
+        wf.key === currentFile.key ||
+        wf.name === currentFile.name ||
+        currentFile.path?.includes(wf.key)
+    )
+    return matchedWorkspaceFile?.id || ''
+  }, [filesArray, workspaceFiles, hasFiles, multiple])
+
   const handleComboboxChange = (value: string) => {
     setInputValue(value)
 
-    const selectedFile = availableWorkspaceFiles.find((file) => file.id === value)
+    // Look in full workspaceFiles list (not filtered) to allow re-selecting same file in single mode
+    const selectedFile = workspaceFiles.find((file) => file.id === value)
     const isAcceptedType =
       selectedFile &&
       (!acceptedTypes ||
@@ -555,19 +701,40 @@ export function FileUpload({
         data-testid='file-input-element'
       />
 
+      {allowStartFilesReference && (
+        <label className='mb-2 flex cursor-pointer items-center gap-2 text-sm'>
+          <input
+            type='checkbox'
+            checked={isUsingStartFiles}
+            onChange={(e) => handleSetUseStartFiles(e.target.checked)}
+            disabled={disabled}
+            className='h-4 w-4 rounded border-[var(--border-1)]'
+          />
+          <span className='text-[var(--text-primary)]'>Use Start block files (chat uploads)</span>
+        </label>
+      )}
+
+      {isUsingStartFiles && (
+        <p className='mb-2 text-[var(--text-muted)] text-xs'>
+          Files attached in deployed chat will be passed as input. Leave unchecked to upload or
+          select files here.
+        </p>
+      )}
+
       {/* Error message */}
       {uploadError && <div className='mb-2 text-red-600 text-sm'>{uploadError}</div>}
 
       {/* File list with consistent spacing */}
-      {(hasFiles || isUploading) && (
+      {!isUsingStartFiles && (hasFiles || isUploading) && (
         <div className={cn('space-y-2', multiple && 'mb-2')}>
-          {/* Only show files that aren't currently uploading */}
-          {filesArray.map((file) => {
-            const isCurrentlyUploading = uploadingFiles.some(
-              (uploadingFile) => uploadingFile.name === file.name
-            )
-            return !isCurrentlyUploading && renderFileItem(file)
-          })}
+          {/* Only show files that aren't currently uploading (for multiple mode only) */}
+          {multiple &&
+            filesArray.map((file) => {
+              const isCurrentlyUploading = uploadingFiles.some(
+                (uploadingFile) => uploadingFile.name === file.name
+              )
+              return !isCurrentlyUploading && renderFileItem(file)
+            })}
           {isUploading && (
             <>
               {uploadingFiles.map(renderUploadingItem)}
@@ -587,7 +754,7 @@ export function FileUpload({
       )}
 
       {/* Add More dropdown for multiple files */}
-      {hasFiles && multiple && !isUploading && (
+      {!isUsingStartFiles && hasFiles && multiple && !isUploading && (
         <Combobox
           options={comboboxOptions}
           value={inputValue}
@@ -603,8 +770,28 @@ export function FileUpload({
         />
       )}
 
+      {/* Single file mode with file selected: show combobox-style UI with X and chevron */}
+      {hasFiles && !multiple && !isUploading && (
+        <SingleFileSelector
+          file={filesArray[0]}
+          options={singleFileOptions}
+          selectedValue={selectedFileId}
+          inputValue={inputValue}
+          onInputChange={handleComboboxChange}
+          onClear={(e) => handleRemoveFile(filesArray[0], e)}
+          onOpenChange={(open) => {
+            if (open) void loadWorkspaceFiles()
+          }}
+          disabled={disabled}
+          isLoading={loadingWorkspaceFiles}
+          formatFileSize={formatFileSize}
+          truncateMiddle={truncateMiddle}
+          isDeleting={deletingFiles[filesArray[0]?.path || '']}
+        />
+      )}
+
       {/* Show dropdown selector if no files and not uploading */}
-      {!hasFiles && !isUploading && (
+      {!isUsingStartFiles && !hasFiles && !isUploading && (
         <Combobox
           options={comboboxOptions}
           value={inputValue}

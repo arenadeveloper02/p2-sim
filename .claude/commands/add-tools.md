@@ -55,21 +55,21 @@ export const {serviceName}{Action}Tool: ToolConfig<
   },
 
   params: {
-    // Hidden params (system-injected)
+    // Hidden params (system-injected, only use hidden for oauth accessToken)
     accessToken: {
       type: 'string',
       required: true,
       visibility: 'hidden',
       description: 'OAuth access token',
     },
-    // User-only params (credentials, IDs user must provide)
+    // User-only params (credentials, api key, IDs user must provide)
     someId: {
       type: 'string',
       required: true,
       visibility: 'user-only',
       description: 'The ID of the resource',
     },
-    // User-or-LLM params (can be provided by user OR computed by LLM)
+    // User-or-LLM params (everything else, can be provided by user OR computed by LLM)
     query: {
       type: 'string',
       required: false,                // Use false for optional
@@ -114,8 +114,8 @@ export const {serviceName}{Action}Tool: ToolConfig<
 
 ### Visibility Options
 - `'hidden'` - System-injected (OAuth tokens, internal params). User never sees.
-- `'user-only'` - User must provide (credentials, account-specific IDs)
-- `'user-or-llm'` - User provides OR LLM can compute (search queries, content, filters)
+- `'user-only'` - User must provide (credentials, api keys, account-specific IDs)
+- `'user-or-llm'` - User provides OR LLM can compute (search queries, content, filters, most fall into this category)
 
 ### Parameter Types
 - `'string'` - Text values
@@ -147,9 +147,18 @@ closedAt: {
 },
 ```
 
-### Nested Properties
-For complex outputs, define nested structure:
+### Typed JSON Outputs
+
+When using `type: 'json'` and you know the object shape in advance, **always define the inner structure** using `properties` so downstream consumers know what fields are available:
+
 ```typescript
+// BAD: Opaque json with no info about what's inside
+metadata: {
+  type: 'json',
+  description: 'Response metadata',
+},
+
+// GOOD: Define the known properties
 metadata: {
   type: 'json',
   description: 'Response metadata',
@@ -159,7 +168,10 @@ metadata: {
     count: { type: 'number', description: 'Total count' },
   },
 },
+```
 
+For arrays of objects, define the item structure:
+```typescript
 items: {
   type: 'array',
   description: 'List of items',
@@ -172,6 +184,8 @@ items: {
   },
 },
 ```
+
+Only use bare `type: 'json'` without `properties` when the shape is truly dynamic or unknown.
 
 ## Critical Rules for transformResponse
 
@@ -272,8 +286,13 @@ If creating V2 tools (API-aligned outputs), use `_v2` suffix:
 - Version: `'2.0.0'`
 - Outputs: Flat, API-aligned (no content/metadata wrapper)
 
+## Naming Convention
+
+All tool IDs MUST use `snake_case`: `{service}_{action}` (e.g., `x_create_tweet`, `slack_send_message`). Never use camelCase or PascalCase for tool IDs.
+
 ## Checklist Before Finishing
 
+- [ ] All tool IDs use snake_case
 - [ ] All params have explicit `required: true` or `required: false`
 - [ ] All params have appropriate `visibility`
 - [ ] All nullable response fields use `?? null`
@@ -281,4 +300,22 @@ If creating V2 tools (API-aligned outputs), use `_v2` suffix:
 - [ ] No raw JSON dumps in outputs
 - [ ] Types file has all interfaces
 - [ ] Index.ts exports all tools
-- [ ] Tool IDs use snake_case
+
+## Final Validation (Required)
+
+After creating all tools, you MUST validate every tool before finishing:
+
+1. **Read every tool file** you created — do not skip any
+2. **Cross-reference with the API docs** to verify:
+   - All required params are marked `required: true`
+   - All optional params are marked `required: false`
+   - Param types match the API (string, number, boolean, json)
+   - Request URL, method, headers, and body match the API spec
+   - `transformResponse` extracts the correct fields from the API response
+   - All output fields match what the API actually returns
+   - No fields are missing from outputs that the API provides
+   - No extra fields are defined in outputs that the API doesn't return
+3. **Verify consistency** across tools:
+   - Shared types in `types.ts` match all tools that use them
+   - Tool IDs in the barrel export match the tool file definitions
+   - Error handling is consistent (error checks, meaningful messages)

@@ -5,17 +5,17 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
-import { CORE_TRIGGER_TYPES } from '@/stores/logs/filters/types'
 import { MAX_EMAIL_RECIPIENTS, MAX_NOTIFICATIONS_PER_TYPE, MAX_WORKFLOW_IDS } from './constants'
 
 const logger = createLogger('WorkspaceNotificationsAPI')
 
 const notificationTypeSchema = z.enum(['webhook', 'email', 'slack'])
 const levelFilterSchema = z.array(z.enum(['info', 'error']))
-const triggerFilterSchema = z.array(z.enum(CORE_TRIGGER_TYPES))
+const triggerFilterSchema = z.array(z.string().min(1))
 
 const alertRuleSchema = z.enum([
   'consecutive_failures',
@@ -81,7 +81,7 @@ const createNotificationSchema = z
     workflowIds: z.array(z.string()).max(MAX_WORKFLOW_IDS).default([]),
     allWorkflows: z.boolean().default(false),
     levelFilter: levelFilterSchema.default(['info', 'error']),
-    triggerFilter: triggerFilterSchema.default([...CORE_TRIGGER_TYPES]),
+    triggerFilter: triggerFilterSchema.default([]),
     includeFinalOutput: z.boolean().default(false),
     includeTraceSpans: z.boolean().default(false),
     includeRateLimits: z.boolean().default(false),
@@ -254,6 +254,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       workspaceId,
       subscriptionId: subscription.id,
       type: data.notificationType,
+    })
+
+    recordAudit({
+      workspaceId,
+      actorId: session.user.id,
+      action: AuditAction.NOTIFICATION_CREATED,
+      resourceType: AuditResourceType.NOTIFICATION,
+      resourceId: subscription.id,
+      resourceName: data.notificationType,
+      actorName: session.user.name ?? undefined,
+      actorEmail: session.user.email ?? undefined,
+      description: `Created ${data.notificationType} notification subscription`,
+      request,
     })
 
     return NextResponse.json({

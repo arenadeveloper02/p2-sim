@@ -74,8 +74,7 @@ function FileCard({ file, isExecutionFile = false, workspaceId }: FileCardProps)
       }
 
       if (isExecutionFile) {
-        const serveUrl =
-          file.url || `/api/files/serve/${encodeURIComponent(file.key)}?context=execution`
+        const serveUrl = `/api/files/serve/${encodeURIComponent(file.key)}?context=execution`
         window.open(serveUrl, '_blank')
         logger.info(`Opened execution file serve URL: ${serveUrl}`)
       } else {
@@ -88,46 +87,40 @@ function FileCard({ file, isExecutionFile = false, workspaceId }: FileCardProps)
           logger.warn(
             `Could not construct viewer URL for file: ${file.name}, falling back to serve URL`
           )
-          const serveUrl =
-            file.url || `/api/files/serve/${encodeURIComponent(file.key)}?context=workspace`
+          const serveUrl = `/api/files/serve/${encodeURIComponent(file.key)}?context=workspace`
           window.open(serveUrl, '_blank')
         }
       }
     } catch (error) {
       logger.error(`Failed to download file ${file.name}:`, error)
-      if (file.url) {
-        window.open(file.url, '_blank')
-      }
     } finally {
       setIsDownloading(false)
     }
   }
 
   return (
-    <div className='flex flex-col gap-[8px] rounded-[6px] bg-[var(--surface-1)] px-[10px] py-[8px]'>
-      <div className='flex items-center justify-between'>
-        <div className='flex items-center gap-[8px]'>
-          <span className='truncate font-medium text-[12px] text-[var(--text-secondary)]'>
-            {file.name}
-          </span>
-        </div>
-        <span className='font-medium text-[12px] text-[var(--text-tertiary)]'>
+    <div className='flex flex-col gap-1 rounded-md bg-[var(--surface-1)] px-2 py-1.5'>
+      <div className='flex min-w-0 items-center justify-between gap-2'>
+        <span className='min-w-0 flex-1 truncate font-medium text-[var(--text-secondary)] text-caption'>
+          {file.name}
+        </span>
+        <span className='flex-shrink-0 font-medium text-[var(--text-tertiary)] text-caption'>
           {formatFileSize(file.size)}
         </span>
       </div>
 
       <div className='flex items-center justify-between'>
-        <span className='font-medium text-[11px] text-[var(--text-subtle)]'>{file.type}</span>
+        <span className='font-medium text-[var(--text-subtle)] text-xs'>{file.type}</span>
         <Button
           variant='ghost'
-          className='!h-[20px] !px-[6px] !py-0 text-[11px]'
+          className='!h-[20px] !px-1.5 !py-0 text-xs'
           onClick={handleDownload}
           disabled={isDownloading}
         >
           {isDownloading ? (
-            <Loader2 className='mr-[4px] h-[10px] w-[10px] animate-spin' />
+            <Loader2 className='mr-1 h-[10px] w-[10px] animate-spin' />
           ) : (
-            <ArrowDown className='mr-[4px] h-[10px] w-[10px]' />
+            <ArrowDown className='mr-1 h-[10px] w-[10px]' />
           )}
           {isDownloading ? 'Opening...' : 'Download'}
         </Button>
@@ -142,20 +135,18 @@ export function FileCards({ files, isExecutionFile = false, workspaceId }: FileC
   }
 
   return (
-    <div className='flex w-full flex-col gap-[6px] rounded-[6px] bg-[var(--surface-2)] px-[10px] py-[8px]'>
-      <span className='font-medium text-[12px] text-[var(--text-tertiary)]'>
+    <div className='mt-1 flex flex-col gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 dark:bg-transparent'>
+      <span className='font-medium text-[var(--text-tertiary)] text-caption'>
         Files ({files.length})
       </span>
-      <div className='flex flex-col gap-[8px]'>
-        {files.map((file, index) => (
-          <FileCard
-            key={file.id || `file-${index}`}
-            file={file}
-            isExecutionFile={isExecutionFile}
-            workspaceId={workspaceId}
-          />
-        ))}
-      </div>
+      {files.map((file, index) => (
+        <FileCard
+          key={file.id || `file-${index}`}
+          file={file}
+          isExecutionFile={isExecutionFile}
+          workspaceId={workspaceId}
+        />
+      ))}
     </div>
   )
 }
@@ -202,8 +193,7 @@ export function FileDownload({
       }
 
       if (isExecutionFile) {
-        const serveUrl =
-          file.url || `/api/files/serve/${encodeURIComponent(file.key)}?context=execution`
+        const serveUrl = `/api/files/serve/${encodeURIComponent(file.key)}?context=execution`
         window.open(serveUrl, '_blank')
         logger.info(`Opened execution file serve URL: ${serveUrl}`)
       } else {
@@ -216,16 +206,12 @@ export function FileDownload({
           logger.warn(
             `Could not construct viewer URL for file: ${file.name}, falling back to serve URL`
           )
-          const serveUrl =
-            file.url || `/api/files/serve/${encodeURIComponent(file.key)}?context=workspace`
+          const serveUrl = `/api/files/serve/${encodeURIComponent(file.key)}?context=workspace`
           window.open(serveUrl, '_blank')
         }
       }
     } catch (error) {
       logger.error(`Failed to download file ${file.name}:`, error)
-      if (file.url) {
-        window.open(file.url, '_blank')
-      }
     } finally {
       setIsDownloading(false)
     }

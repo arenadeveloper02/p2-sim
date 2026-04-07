@@ -1,6 +1,19 @@
 import { getEnv } from '@/lib/core/config/env'
 import { isProd } from '@/lib/core/config/feature-flags'
 
+function hasHttpProtocol(url: string): boolean {
+  return /^https?:\/\//i.test(url)
+}
+
+function normalizeBaseUrl(url: string): string {
+  if (hasHttpProtocol(url)) {
+    return url
+  }
+
+  const protocol = isProd ? 'https://' : 'http://'
+  return `${protocol}${url}`
+}
+
 /**
  * Returns the base URL of the application from NEXT_PUBLIC_APP_URL
  * This ensures webhooks, callbacks, and other integrations always use the correct public URL
@@ -8,20 +21,58 @@ import { isProd } from '@/lib/core/config/feature-flags'
  * @throws Error if NEXT_PUBLIC_APP_URL is not configured
  */
 export function getBaseUrl(): string {
-  const baseUrl = getEnv('NEXT_PUBLIC_APP_URL')
+  const baseUrl = getEnv('NEXT_PUBLIC_APP_URL')?.trim()
 
-  if (!baseUrl) {
+  if (baseUrl) {
+    return normalizeBaseUrl(baseUrl)
+  }
+
+  if (!isProd) {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin
+    }
+
+    return 'http://localhost:3000'
+  }
+
+  throw new Error(
+    'NEXT_PUBLIC_APP_URL must be configured for webhooks and callbacks to work correctly'
+  )
+}
+
+/**
+ * Returns the base URL used by server-side internal API calls.
+ * Falls back to NEXT_PUBLIC_APP_URL when INTERNAL_API_BASE_URL is not set.
+ */
+export function getInternalApiBaseUrl(): string {
+  const internalBaseUrl = getEnv('INTERNAL_API_BASE_URL')?.trim()
+  if (!internalBaseUrl) {
+    return getBaseUrl()
+  }
+
+  if (!hasHttpProtocol(internalBaseUrl)) {
     throw new Error(
-      'NEXT_PUBLIC_APP_URL must be configured for webhooks and callbacks to work correctly'
+      'INTERNAL_API_BASE_URL must include protocol (http:// or https://), e.g. http://sim-app.default.svc.cluster.local:3000'
     )
   }
 
-  if (baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) {
-    return baseUrl
+  return internalBaseUrl
+}
+
+/**
+ * Ensures a URL is absolute by prefixing the base URL when a relative path is provided.
+ * @param pathOrUrl - Relative path (e.g., /api/files/serve/...) or absolute URL
+ */
+export function ensureAbsoluteUrl(pathOrUrl: string): string {
+  if (!pathOrUrl) {
+    throw new Error('URL is required')
   }
 
-  const protocol = isProd ? 'https://' : 'http://'
-  return `${protocol}${baseUrl}`
+  if (pathOrUrl.startsWith('/')) {
+    return `${getBaseUrl()}${pathOrUrl}`
+  }
+
+  return pathOrUrl
 }
 
 /**

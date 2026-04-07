@@ -1,7 +1,7 @@
-import { env } from '@/lib/core/config/env'
-import { isHosted } from '@/lib/core/config/feature-flags'
 import type { ExaFindSimilarLinksParams, ExaFindSimilarLinksResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
+
+const exaApiKey = process.env.EXA_API_KEY
 
 export const findSimilarLinksTool: ToolConfig<
   ExaFindSimilarLinksParams,
@@ -23,8 +23,8 @@ export const findSimilarLinksTool: ToolConfig<
     numResults: {
       type: 'number',
       required: false,
-      visibility: 'user-only',
-      description: 'Number of similar links to return (default: 10, max: 25)',
+      visibility: 'user-or-llm',
+      description: 'Number of similar links to return (e.g., 5, 10, 25). Default: 10, max: 25',
     },
     text: {
       type: 'boolean',
@@ -35,14 +35,16 @@ export const findSimilarLinksTool: ToolConfig<
     includeDomains: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Comma-separated list of domains to include in results',
+      visibility: 'user-or-llm',
+      description:
+        'Comma-separated list of domains to include in results (e.g., "github.com, stackoverflow.com")',
     },
     excludeDomains: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Comma-separated list of domains to exclude from results',
+      visibility: 'user-or-llm',
+      description:
+        'Comma-separated list of domains to exclude from results (e.g., "reddit.com, pinterest.com")',
     },
     excludeSourceDomain: {
       type: 'boolean',
@@ -71,7 +73,7 @@ export const findSimilarLinksTool: ToolConfig<
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Exa AI API Key',
     },
@@ -80,9 +82,9 @@ export const findSimilarLinksTool: ToolConfig<
   request: {
     url: 'https://api.exa.ai/findSimilar',
     method: 'POST',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      'x-api-key': isHosted ? env.EXA_API_KEY! : params.apiKey,
+      'x-api-key': exaApiKey ?? '',
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -140,6 +142,7 @@ export const findSimilarLinksTool: ToolConfig<
           highlights: result.highlights,
           score: result.score || 0,
         })),
+        __costDollars: data.costDollars,
       },
     }
   },

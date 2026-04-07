@@ -1,5 +1,6 @@
 import { ApifyIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
+import { IntegrationType } from '@/blocks/types'
 import type { RunActorResult } from '@/tools/apify/types'
 
 export const ApifyBlock: BlockConfig<RunActorResult> = {
@@ -10,6 +11,8 @@ export const ApifyBlock: BlockConfig<RunActorResult> = {
     'Integrate Apify into your workflow. Run any Apify actor with custom input and retrieve results. Supports both synchronous and asynchronous execution with automatic dataset fetching.',
   docsLink: 'https://docs.sim.ai/tools/apify',
   category: 'tools',
+  integrationType: IntegrationType.Automation,
+  tags: ['web-scraping', 'automation', 'data-analytics'],
   bgColor: '#E0E0E0',
   icon: ApifyIcon,
 
@@ -74,17 +77,24 @@ Return ONLY the valid JSON object - no explanations, no markdown.`,
       },
     },
     {
+      id: 'memory',
+      title: 'Memory (MB)',
+      type: 'short-input',
+      placeholder: 'Memory in MB (e.g., 1024 for 1GB, 2048 for 2GB)',
+      required: false,
+    },
+    {
       id: 'timeout',
       title: 'Timeout',
       type: 'short-input',
-      placeholder: 'Actor timeout in seconds',
+      placeholder: 'Timeout in seconds (e.g., 300 for 5 min)',
       required: false,
     },
     {
       id: 'build',
       title: 'Build',
       type: 'short-input',
-      placeholder: 'Actor build (e.g., "latest", "beta", or build tag)',
+      placeholder: 'Build version (e.g., "latest", "beta", "1.2.3")',
       required: false,
     },
     {
@@ -126,6 +136,10 @@ Return ONLY the valid JSON object - no explanations, no markdown.`,
           result.input = rest.input
         }
 
+        if (rest.memory) {
+          result.memory = Number(rest.memory)
+        }
+
         if (rest.timeout) {
           result.timeout = Number(rest.timeout)
         }
@@ -152,6 +166,7 @@ Return ONLY the valid JSON object - no explanations, no markdown.`,
     apiKey: { type: 'string', description: 'Apify API token' },
     actorId: { type: 'string', description: 'Actor ID or username/actor-name' },
     input: { type: 'string', description: 'Actor input as JSON string' },
+    memory: { type: 'number', description: 'Memory in MB (128-32768)' },
     timeout: { type: 'number', description: 'Timeout in seconds' },
     build: { type: 'string', description: 'Actor build version' },
     waitForFinish: { type: 'number', description: 'Initial wait time in seconds' },

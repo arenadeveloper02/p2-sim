@@ -4,6 +4,9 @@ import {
   CONTAINER_PADDING,
   CONTAINER_PADDING_X,
   CONTAINER_PADDING_Y,
+  ESTIMATED_BLOCK_BOTTOM_PADDING,
+  ESTIMATED_SUBBLOCK_HEIGHT,
+  MAX_ESTIMATED_BLOCK_HEIGHT,
   ROOT_PADDING_X,
   ROOT_PADDING_Y,
 } from '@/lib/workflows/autolayout/constants'
@@ -16,6 +19,61 @@ import type { BlockState } from '@/stores/workflows/workflow/types'
  */
 function resolveNumeric(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+/**
+ * Snaps a single coordinate value to the nearest grid position
+ */
+function snapToGrid(value: number, gridSize: number): number {
+  return Math.round(value / gridSize) * gridSize
+}
+
+/**
+ * Snaps a position to the nearest grid point.
+ * Returns the original position if gridSize is 0 or not provided.
+ */
+export function snapPositionToGrid(
+  position: { x: number; y: number },
+  gridSize: number | undefined
+): { x: number; y: number } {
+  if (!gridSize || gridSize <= 0) {
+    return position
+  }
+  return {
+    x: snapToGrid(position.x, gridSize),
+    y: snapToGrid(position.y, gridSize),
+  }
+}
+
+/**
+ * Snaps all node positions in a graph to grid positions and returns updated dimensions.
+ * Returns null if gridSize is not set or no snapping was needed.
+ */
+export function snapNodesToGrid(
+  nodes: Map<string, GraphNode>,
+  gridSize: number | undefined
+): { width: number; height: number } | null {
+  if (!gridSize || gridSize <= 0 || nodes.size === 0) {
+    return null
+  }
+
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+
+  for (const node of nodes.values()) {
+    node.position = snapPositionToGrid(node.position, gridSize)
+    minX = Math.min(minX, node.position.x)
+    minY = Math.min(minY, node.position.y)
+    maxX = Math.max(maxX, node.position.x + node.metrics.width)
+    maxY = Math.max(maxY, node.position.y + node.metrics.height)
+  }
+
+  return {
+    width: maxX - minX + CONTAINER_PADDING * 2,
+    height: maxY - minY + CONTAINER_PADDING * 2,
+  }
 }
 
 /**
@@ -76,7 +134,30 @@ function getContainerMetrics(block: BlockState): BlockMetrics {
 }
 
 /**
- * Gets metrics for a regular (non-container) block
+ * Estimates block height from subblock count when no measurement is available.
+ * Only counts subblocks with non-null values to avoid over-counting conditional
+ * fields (e.g. agent blocks define ~20 subblocks but only ~5 are typically visible).
+ * The result is capped at MAX_ESTIMATED_BLOCK_HEIGHT to prevent massive layout gaps.
+ */
+function estimateBlockHeight(block: BlockState): number {
+  const subBlocks = block.subBlocks || {}
+  const visibleCount = Object.values(subBlocks).filter(
+    (sb) => sb && sb.value !== null && sb.value !== undefined
+  ).length
+  if (visibleCount === 0) return BLOCK_DIMENSIONS.MIN_HEIGHT
+
+  const estimated =
+    BLOCK_DIMENSIONS.HEADER_HEIGHT +
+    visibleCount * ESTIMATED_SUBBLOCK_HEIGHT +
+    ESTIMATED_BLOCK_BOTTOM_PADDING
+
+  return Math.min(Math.max(estimated, BLOCK_DIMENSIONS.MIN_HEIGHT), MAX_ESTIMATED_BLOCK_HEIGHT)
+}
+
+/**
+ * Gets metrics for a regular (non-container) block.
+ * Falls back to subblock-based height estimation when no measurement exists,
+ * which prevents overlaps for newly added blocks that haven't been rendered.
  */
 function getRegularBlockMetrics(block: BlockState): BlockMetrics {
   const minWidth = BLOCK_DIMENSIONS.FIXED_WIDTH
@@ -84,8 +165,9 @@ function getRegularBlockMetrics(block: BlockState): BlockMetrics {
   const measuredH = block.layout?.measuredHeight ?? block.height
   const measuredW = block.layout?.measuredWidth
 
+  const hasMeasurement = typeof measuredH === 'number' && measuredH > 0
+  const height = hasMeasurement ? Math.max(measuredH, minHeight) : estimateBlockHeight(block)
   const width = Math.max(measuredW ?? minWidth, minWidth)
-  const height = Math.max(measuredH ?? minHeight, minHeight)
 
   return {
     width,
@@ -314,6 +396,7 @@ export type LayoutFunction = (
       horizontalSpacing?: number
       verticalSpacing?: number
       padding?: { x: number; y: number }
+      gridSize?: number
     }
     subflowDepths?: Map<string, number>
   }
@@ -329,13 +412,15 @@ export type LayoutFunction = (
  * @param layoutFn - The layout function to use for calculating dimensions
  * @param horizontalSpacing - Horizontal spacing between blocks
  * @param verticalSpacing - Vertical spacing between blocks
+ * @param gridSize - Optional grid size for snap-to-grid
  */
 export function prepareContainerDimensions(
   blocks: Record<string, BlockState>,
   edges: Edge[],
   layoutFn: LayoutFunction,
   horizontalSpacing: number,
-  verticalSpacing: number
+  verticalSpacing: number,
+  gridSize?: number
 ): void {
   const { children } = getBlocksByParent(blocks)
 
@@ -402,6 +487,7 @@ export function prepareContainerDimensions(
       layoutOptions: {
         horizontalSpacing: horizontalSpacing * 0.85,
         verticalSpacing,
+        gridSize,
       },
     })
 

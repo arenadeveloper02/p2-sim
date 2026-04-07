@@ -1,6 +1,7 @@
 import { WealthboxIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { WealthboxResponse } from '@/tools/wealthbox/types'
 
 export const WealthboxBlock: BlockConfig<WealthboxResponse> = {
@@ -12,6 +13,8 @@ export const WealthboxBlock: BlockConfig<WealthboxResponse> = {
     'Integrate Wealthbox into the workflow. Can read and write notes, read and write contacts, and read and write tasks.',
   docsLink: 'https://docs.sim.ai/tools/wealthbox',
   category: 'tools',
+  integrationType: IntegrationType.CRM,
+  tags: ['sales-engagement', 'customer-support'],
   bgColor: '#E0E0E0',
   icon: WealthboxIcon,
   subBlocks: [
@@ -33,9 +36,20 @@ export const WealthboxBlock: BlockConfig<WealthboxResponse> = {
       id: 'credential',
       title: 'Wealthbox Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       serviceId: 'wealthbox',
-      requiredScopes: ['login', 'data'],
+      requiredScopes: getScopesForService('wealthbox'),
       placeholder: 'Select Wealthbox account',
+      required: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'Wealthbox Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
     },
     {
@@ -50,7 +64,8 @@ export const WealthboxBlock: BlockConfig<WealthboxResponse> = {
       title: 'Select Contact',
       type: 'file-selector',
       serviceId: 'wealthbox',
-      requiredScopes: ['login', 'data'],
+      selectorKey: 'wealthbox.contacts',
+      requiredScopes: getScopesForService('wealthbox'),
       placeholder: 'Enter Contact ID',
       mode: 'basic',
       canonicalParamId: 'contactId',
@@ -169,13 +184,14 @@ Return ONLY the date/time string - no explanations, no quotes, no extra text.`,
         }
       },
       params: (params) => {
-        const { credential, operation, contactId, manualContactId, taskId, ...rest } = params
+        const { oauthCredential, operation, contactId, taskId, ...rest } = params
 
-        const effectiveContactId = (contactId || manualContactId || '').trim()
+        // contactId is the canonical param for both basic (file-selector) and advanced (manualContactId) modes
+        const effectiveContactId = contactId ? String(contactId).trim() : ''
 
         const baseParams = {
           ...rest,
-          credential,
+          credential: oauthCredential,
         }
 
         if (operation === 'read_note' || operation === 'write_note') {
@@ -219,10 +235,9 @@ Return ONLY the date/time string - no explanations, no quotes, no extra text.`,
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Wealthbox access token' },
+    oauthCredential: { type: 'string', description: 'Wealthbox access token' },
     noteId: { type: 'string', description: 'Note identifier' },
     contactId: { type: 'string', description: 'Contact identifier' },
-    manualContactId: { type: 'string', description: 'Manual contact identifier' },
     taskId: { type: 'string', description: 'Task identifier' },
     content: { type: 'string', description: 'Content text' },
     firstName: { type: 'string', description: 'First name' },

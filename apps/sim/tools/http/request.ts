@@ -48,12 +48,38 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
       visibility: 'user-or-llm',
       description: 'Form data to send (will set appropriate Content-Type)',
     },
+    timeout: {
+      type: 'number',
+      visibility: 'user-only',
+      description: 'Request timeout in milliseconds (default: 300000 = 5 minutes)',
+    },
+    retries: {
+      type: 'number',
+      visibility: 'hidden',
+      description:
+        'Number of retry attempts for retryable failures (timeouts, 429, 5xx). Default: 0 (no retries).',
+    },
+    retryDelayMs: {
+      type: 'number',
+      visibility: 'hidden',
+      description: 'Initial retry delay in milliseconds (default: 500)',
+    },
+    retryMaxDelayMs: {
+      type: 'number',
+      visibility: 'hidden',
+      description: 'Maximum delay between retries in milliseconds (default: 30000)',
+    },
+    retryNonIdempotent: {
+      type: 'boolean',
+      visibility: 'hidden',
+      description:
+        'Allow retries for non-idempotent methods like POST/PATCH (may create duplicate requests).',
+    },
   },
 
   request: {
     timeout: 600000, // 10 minutes for API block requests
     url: (params: RequestParams) => {
-      // Process the URL once and cache the result
       return processUrl(params.url, params.pathParams, params.params)
     },
 
@@ -89,7 +115,6 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
       }
 
       if (params.body) {
-        // Check if user wants URL-encoded form data
         const headers = transformTable(params.headers || null)
         const contentType = headers['Content-Type'] || headers['content-type']
 
@@ -101,7 +126,10 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
           const urlencoded = new URLSearchParams()
           Object.entries(params.body as Record<string, unknown>).forEach(([key, value]) => {
             if (value !== undefined && value !== null) {
-              urlencoded.append(key, String(value))
+              urlencoded.append(
+                key,
+                typeof value === 'object' ? JSON.stringify(value) : String(value)
+              )
             }
           })
           return urlencoded.toString()
@@ -112,6 +140,14 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
 
       return undefined
     }) as (params: RequestParams) => Record<string, any> | string | FormData | undefined,
+
+    retry: {
+      enabled: true,
+      maxRetries: 0,
+      initialDelayMs: 500,
+      maxDelayMs: 30000,
+      retryIdempotentOnly: true,
+    },
   },
 
   transformResponse: async (response: Response) => {

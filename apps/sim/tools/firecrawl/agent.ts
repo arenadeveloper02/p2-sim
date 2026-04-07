@@ -1,11 +1,13 @@
 import { createLogger } from '@sim/logger'
+import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
 import type { AgentParams, AgentResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('FirecrawlAgentTool')
+const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
 
-const POLL_INTERVAL_MS = 5000 // 5 seconds between polls
-const MAX_POLL_TIME_MS = 300000 // 5 minutes maximum polling time
+const POLL_INTERVAL_MS = 5000
+const MAX_POLL_TIME_MS = DEFAULT_EXECUTION_TIMEOUT_MS
 
 export const agentTool: ToolConfig<AgentParams, AgentResponse> = {
   id: 'firecrawl_agent',
@@ -25,7 +27,8 @@ export const agentTool: ToolConfig<AgentParams, AgentResponse> = {
       type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Optional array of URLs to focus the agent on',
+      description:
+        'Optional array of URLs to focus the agent on (e.g., ["https://example.com", "https://docs.example.com"])',
     },
     schema: {
       type: 'json',
@@ -47,7 +50,7 @@ export const agentTool: ToolConfig<AgentParams, AgentResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -56,9 +59,9 @@ export const agentTool: ToolConfig<AgentParams, AgentResponse> = {
   request: {
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/agent',
-    headers: (params) => ({
+    headers: () => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${firecrawlApiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -115,7 +118,7 @@ export const agentTool: ToolConfig<AgentParams, AgentResponse> = {
         const statusResponse = await fetch(`https://api.firecrawl.dev/v2/agent/${jobId}`, {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${params.apiKey}`,
+            Authorization: `Bearer ${firecrawlApiKey}`,
             'Content-Type': 'application/json',
           },
         })

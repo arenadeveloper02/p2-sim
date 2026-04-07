@@ -10,7 +10,7 @@ import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
+import { getFormattedGitHubStars } from '@/app/(home)/actions/github'
 import {
   ChatErrorState,
   ChatHeader,
@@ -21,12 +21,12 @@ import {
   EmailAuth,
   GoldenQueriesModal,
   PasswordAuth,
-  SSOAuth,
   VoiceInterface,
 } from '@/app/chat/components'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
+import SSOAuth from '@/ee/sso/components/sso-auth'
 import LeftNavThread from './leftNavThread'
 
 const logger = createLogger('ChatClient')
@@ -962,7 +962,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   if (authRequired) {
     // const title = new URLSearchParams(window.location.search).get('title') || 'chat'
     // const primaryColor =
-    //   new URLSearchParams(window.location.search).get('color') || 'var(--brand-primary-hover-hex)'
+    //   new URLSearchParams(window.location.search).get('color') || 'var(--brand-hover)'
 
     if (authRequired === 'password') {
       return <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
@@ -999,13 +999,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }
 
   return (
-    <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
+    <div className='fixed inset-0 z-[100] flex flex-col text-[var(--landing-text)] dark:bg-[var(--landing-bg)]'>
       {isHistoryLoading && (
         <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
           <LoadingAgentP2 size='lg' />
         </div>
       )}
-
       {/* Header component */}
       <ChatHeader chatConfig={chatConfig} starCount={starCount} />
 

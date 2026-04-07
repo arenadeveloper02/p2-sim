@@ -17,33 +17,40 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
       id: 'account',
       title: 'Facebook Ad Account',
       type: 'dropdown',
-      options: [
-        { label: '42 North Dental', id: '42_north_dental' },
-        { label: 'AMI', id: 'ami' },
-        { label: 'AUHI', id: 'auhi' },
-        { label: 'Acalvio Technologies', id: 'acalvio' },
-        { label: 'Capital City Nurses', id: 'capital_city_nurses' },
-        { label: 'Care Advantage', id: 'care_advantage' },
-        { label: 'Eventgroove', id: 'eventgroove' },
-        { label: 'Great Hill Dental Partners', id: 'great_hill_dental' },
-        { label: 'HEART HOLM', id: 'heart_holm' },
-        { label: 'HOLM', id: 'holm' },
-        { label: 'Health Rhythms', id: 'health_rhythms' },
-        { label: 'IDI', id: 'idi' },
-        { label: 'MSRN', id: 'msrn' },
-        { label: 'NHI', id: 'nhi' },
-        { label: 'ODC AL', id: 'odc_al' },
-        { label: 'OIA', id: 'oia' },
-        { label: 'SMI', id: 'smi' },
-        { label: 'Silver Lining Home Healthcare', id: 'silver_lining' },
-        { label: 'UCONN', id: 'uconn' },
-        { label: 'UD', id: 'ud' },
-        { label: 'UVA', id: 'uva' },
-        { label: 'WFBI', id: 'wfbi' },
-        { label: 'Youngs Healthcare, Inc.', id: 'youngs_healthcare' },
-      ],
+      options: [],
+      fetchOptions: async (_blockId: string, _subBlockId: string) => {
+        try {
+          const response = await fetch('/api/facebook-ads/accounts')
+          const data = await response.json()
+
+          if (data?.success && data.accounts && typeof data.accounts === 'object') {
+            const accounts = data.accounts as Record<string, { id: string; name: string }>
+            return Object.entries(accounts)
+              .map(([key, account]) => ({
+                id: key,
+                label: account.name,
+              }))
+              .sort((a, b) => a.label.localeCompare(b.label))
+          }
+          return []
+        } catch (error) {
+          console.error('Failed to fetch Facebook Ads accounts:', error)
+          return []
+        }
+      },
       placeholder: 'Select Facebook ad account...',
       required: true,
+      mode: 'basic',
+      canonicalParamId: 'account',
+    },
+    {
+      id: 'accountAdvanced',
+      title: 'Facebook Ad Account',
+      type: 'short-input',
+      canonicalParamId: 'account',
+      placeholder: 'Enter account key (e.g., ami, holm)',
+      required: true,
+      mode: 'advanced',
     },
     {
       id: 'query',

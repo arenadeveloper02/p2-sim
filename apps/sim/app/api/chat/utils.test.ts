@@ -1,11 +1,29 @@
-import { databaseMock, loggerMock } from '@sim/testing'
-import type { NextResponse } from 'next/server'
 /**
  * Tests for chat API utils
  *
  * @vitest-environment node
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { databaseMock, loggerMock, requestUtilsMock } from '@sim/testing'
+import type { NextResponse } from 'next/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const {
+  mockDecryptSecret,
+  mockMergeSubblockStateWithValues,
+  mockMergeSubBlockValues,
+  mockValidateAuthToken,
+  mockSetDeploymentAuthCookie,
+  mockAddCorsHeaders,
+  mockIsEmailAllowed,
+} = vi.hoisted(() => ({
+  mockDecryptSecret: vi.fn(),
+  mockMergeSubblockStateWithValues: vi.fn().mockReturnValue({}),
+  mockMergeSubBlockValues: vi.fn().mockReturnValue({}),
+  mockValidateAuthToken: vi.fn().mockReturnValue(false),
+  mockSetDeploymentAuthCookie: vi.fn(),
+  mockAddCorsHeaders: vi.fn((response: unknown) => response),
+  mockIsEmailAllowed: vi.fn(),
+}))
 
 vi.mock('@sim/db', () => databaseMock)
 vi.mock('@sim/logger', () => loggerMock)
@@ -26,18 +44,22 @@ vi.mock('@/serializer', () => ({
   Serializer: vi.fn(),
 }))
 
-vi.mock('@/stores/workflows/server-utils', () => ({
-  mergeSubblockState: vi.fn().mockReturnValue({}),
+vi.mock('@/lib/workflows/subblocks', () => ({
+  mergeSubblockStateWithValues: mockMergeSubblockStateWithValues,
+  mergeSubBlockValues: mockMergeSubBlockValues,
 }))
-
-const mockDecryptSecret = vi.fn()
 
 vi.mock('@/lib/core/security/encryption', () => ({
   decryptSecret: mockDecryptSecret,
 }))
 
-vi.mock('@/lib/core/utils/request', () => ({
-  generateRequestId: vi.fn(),
+vi.mock('@/lib/core/utils/request', () => requestUtilsMock)
+
+vi.mock('@/lib/core/security/deployment', () => ({
+  validateAuthToken: mockValidateAuthToken,
+  setDeploymentAuthCookie: mockSetDeploymentAuthCookie,
+  addCorsHeaders: mockAddCorsHeaders,
+  isEmailAllowed: mockIsEmailAllowed,
 }))
 
 vi.mock('@/lib/core/config/feature-flags', () => ({
@@ -46,8 +68,16 @@ vi.mock('@/lib/core/config/feature-flags', () => ({
   isProd: false,
 }))
 
+vi.mock('@/lib/workflows/utils', () => ({
+  authorizeWorkflowByWorkspacePermission: vi.fn(),
+}))
+
+import { decryptSecret } from '@/lib/core/security/encryption'
+import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
+
 describe('Chat API Utils', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     vi.stubGlobal('process', {
       ...process,
       env: {
@@ -57,130 +87,77 @@ describe('Chat API Utils', () => {
     })
   })
 
-  afterEach(() => {
-    vi.clearAllMocks()
-  })
-
   describe('Auth token utils', () => {
-    it.concurrent('should validate auth tokens', async () => {
-      const { validateAuthToken } = await import('@/lib/core/security/deployment')
+    it('should accept valid auth cookie via validateChatAuth', async () => {
+      mockValidateAuthToken.mockReturnValue(true)
 
-      const chatId = 'test-chat-id'
-      const type = 'password'
+      const deployment = {
+        id: 'chat-id',
+        authType: 'password',
+        password: 'encrypted-password',
+      }
 
-      const token = Buffer.from(`${chatId}:${type}:${Date.now()}`).toString('base64')
-      expect(typeof token).toBe('string')
-      expect(token.length).toBeGreaterThan(0)
+      const mockRequest = {
+        method: 'POST',
+        cookies: {
+          get: vi.fn().mockReturnValue({ value: 'valid-token' }),
+        },
+      } as any
 
-      const isValid = validateAuthToken(token, chatId)
-      expect(isValid).toBe(true)
-
-      const isInvalidChat = validateAuthToken(token, 'wrong-chat-id')
-      expect(isInvalidChat).toBe(false)
+      const result = await validateChatAuth('request-id', deployment, mockRequest)
+      expect(mockValidateAuthToken).toHaveBeenCalledWith(
+        'valid-token',
+        'chat-id',
+        'encrypted-password'
+      )
+      expect(result.authorized).toBe(true)
     })
 
-    it.concurrent('should reject expired tokens', async () => {
-      const { validateAuthToken } = await import('@/lib/core/security/deployment')
+    it('should reject invalid auth cookie via validateChatAuth', async () => {
+      mockValidateAuthToken.mockReturnValue(false)
 
-      const chatId = 'test-chat-id'
-      const expiredToken = Buffer.from(
-        `${chatId}:password:${Date.now() - 25 * 60 * 60 * 1000}`
-      ).toString('base64')
+      const deployment = {
+        id: 'chat-id',
+        authType: 'password',
+        password: 'encrypted-password',
+      }
 
-      const isValid = validateAuthToken(expiredToken, chatId)
-      expect(isValid).toBe(false)
+      const mockRequest = {
+        method: 'GET',
+        cookies: {
+          get: vi.fn().mockReturnValue({ value: 'invalid-token' }),
+        },
+      } as any
+
+      const result = await validateChatAuth('request-id', deployment, mockRequest)
+      expect(result.authorized).toBe(false)
     })
   })
 
   describe('Cookie handling', () => {
-    it('should set auth cookie correctly', async () => {
-      const { setChatAuthCookie } = await import('@/app/api/chat/utils')
-
-      const mockSet = vi.fn()
+    it('should delegate to setDeploymentAuthCookie', () => {
       const mockResponse = {
-        cookies: {
-          set: mockSet,
-        },
+        cookies: { set: vi.fn() },
       } as unknown as NextResponse
 
-      const chatId = 'test-chat-id'
-      const type = 'password'
+      setChatAuthCookie(mockResponse, 'test-chat-id', 'password')
 
-      setChatAuthCookie(mockResponse, chatId, type)
-
-      expect(mockSet).toHaveBeenCalledWith({
-        name: `chat_auth_${chatId}`,
-        value: expect.any(String),
-        httpOnly: true,
-        secure: false, // Development mode
-        sameSite: 'lax',
-        path: '/',
-        domain: undefined, // Development mode
-        maxAge: 60 * 60 * 24,
-      })
-    })
-  })
-
-  describe('CORS handling', () => {
-    it('should add CORS headers for localhost in development', async () => {
-      const { addCorsHeaders } = await import('@/lib/core/security/deployment')
-
-      const mockRequest = {
-        headers: {
-          get: vi.fn().mockReturnValue('http://localhost:3000'),
-        },
-      } as any
-
-      const mockResponse = {
-        headers: {
-          set: vi.fn(),
-        },
-      } as unknown as NextResponse
-
-      addCorsHeaders(mockResponse, mockRequest)
-
-      expect(mockResponse.headers.set).toHaveBeenCalledWith(
-        'Access-Control-Allow-Origin',
-        'http://localhost:3000'
-      )
-      expect(mockResponse.headers.set).toHaveBeenCalledWith(
-        'Access-Control-Allow-Credentials',
-        'true'
-      )
-      expect(mockResponse.headers.set).toHaveBeenCalledWith(
-        'Access-Control-Allow-Methods',
-        'GET, POST, OPTIONS'
-      )
-      expect(mockResponse.headers.set).toHaveBeenCalledWith(
-        'Access-Control-Allow-Headers',
-        'Content-Type, X-Requested-With'
+      expect(mockSetDeploymentAuthCookie).toHaveBeenCalledWith(
+        mockResponse,
+        'chat',
+        'test-chat-id',
+        'password',
+        undefined
       )
     })
   })
 
   describe('Chat auth validation', () => {
-    beforeEach(async () => {
-      vi.clearAllMocks()
+    beforeEach(() => {
       mockDecryptSecret.mockResolvedValue({ decrypted: 'correct-password' })
-
-      vi.doMock('@/app/api/chat/utils', async (importOriginal) => {
-        const original = (await importOriginal()) as any
-        return {
-          ...original,
-          validateAuthToken: vi.fn((token, id) => {
-            if (token === 'valid-token' && id === 'chat-id') {
-              return true
-            }
-            return false
-          }),
-        }
-      })
     })
 
     it('should allow access to public chats', async () => {
-      const utils = await import('@/app/api/chat/utils')
-      const { validateChatAuth } = utils
-
       const deployment = {
         id: 'chat-id',
         authType: 'public',
@@ -198,8 +175,6 @@ describe('Chat API Utils', () => {
     })
 
     it('should request password auth for GET requests', async () => {
-      const { validateChatAuth } = await import('@/app/api/chat/utils')
-
       const deployment = {
         id: 'chat-id',
         authType: 'password',
@@ -219,9 +194,6 @@ describe('Chat API Utils', () => {
     })
 
     it('should validate password for POST requests', async () => {
-      const { validateChatAuth } = await import('@/app/api/chat/utils')
-      const { decryptSecret } = await import('@/lib/core/security/encryption')
-
       const deployment = {
         id: 'chat-id',
         authType: 'password',
@@ -246,8 +218,6 @@ describe('Chat API Utils', () => {
     })
 
     it('should reject incorrect password', async () => {
-      const { validateChatAuth } = await import('@/app/api/chat/utils')
-
       const deployment = {
         id: 'chat-id',
         authType: 'password',
@@ -272,8 +242,6 @@ describe('Chat API Utils', () => {
     })
 
     it('should request email auth for email-protected chats', async () => {
-      const { validateChatAuth } = await import('@/app/api/chat/utils')
-
       const deployment = {
         id: 'chat-id',
         authType: 'email',
@@ -294,8 +262,6 @@ describe('Chat API Utils', () => {
     })
 
     it('should check allowed emails for email auth', async () => {
-      const { validateChatAuth } = await import('@/app/api/chat/utils')
-
       const deployment = {
         id: 'chat-id',
         authType: 'email',
@@ -309,6 +275,7 @@ describe('Chat API Utils', () => {
         },
       } as any
 
+      mockIsEmailAllowed.mockReturnValue(true)
       const result1 = await validateChatAuth('request-id', deployment, mockRequest, {
         email: 'user@example.com',
       })
@@ -321,6 +288,7 @@ describe('Chat API Utils', () => {
       expect(result2.authorized).toBe(false)
       expect(result2.error).toBe('otp_required')
 
+      mockIsEmailAllowed.mockReturnValue(false)
       const result3 = await validateChatAuth('request-id', deployment, mockRequest, {
         email: 'user@unknown.com',
       })

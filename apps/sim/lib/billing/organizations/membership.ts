@@ -15,12 +15,87 @@ import {
   userStats,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
+import { isOrgPlan, sqlIsPro } from '@/lib/billing/plan-helpers'
 import { requireStripeClient } from '@/lib/billing/stripe-client'
+import { ENTITLED_SUBSCRIPTION_STATUSES } from '@/lib/billing/subscriptions/utils'
 import { validateSeatAvailability } from '@/lib/billing/validation/seat-management'
 
 const logger = createLogger('OrganizationMembership')
+
+export type BillingBlockReason = 'payment_failed' | 'dispute'
+
+/**
+ * Get all member user IDs for an organization
+ */
+export async function getOrgMemberIds(organizationId: string): Promise<string[]> {
+  const members = await db
+    .select({ userId: member.userId })
+    .from(member)
+    .where(eq(member.organizationId, organizationId))
+
+  return members.map((m) => m.userId)
+}
+
+/**
+ * Block all members of an organization for billing reasons
+ * Returns the number of members actually blocked
+ *
+ * Reason priority: dispute > payment_failed
+ * A payment_failed block won't overwrite an existing dispute block
+ */
+export async function blockOrgMembers(
+  organizationId: string,
+  reason: BillingBlockReason
+): Promise<number> {
+  const memberIds = await getOrgMemberIds(organizationId)
+
+  if (memberIds.length === 0) {
+    return 0
+  }
+
+  // Don't overwrite dispute blocks with payment_failed (dispute is higher priority)
+  const whereClause =
+    reason === 'payment_failed'
+      ? and(
+          inArray(userStats.userId, memberIds),
+          or(ne(userStats.billingBlockedReason, 'dispute'), isNull(userStats.billingBlockedReason))
+        )
+      : inArray(userStats.userId, memberIds)
+
+  const result = await db
+    .update(userStats)
+    .set({ billingBlocked: true, billingBlockedReason: reason })
+    .where(whereClause)
+    .returning({ userId: userStats.userId })
+
+  return result.length
+}
+
+/**
+ * Unblock all members of an organization blocked for a specific reason
+ * Only unblocks members blocked for the specified reason (not other reasons)
+ * Returns the number of members actually unblocked
+ */
+export async function unblockOrgMembers(
+  organizationId: string,
+  reason: BillingBlockReason
+): Promise<number> {
+  const memberIds = await getOrgMemberIds(organizationId)
+
+  if (memberIds.length === 0) {
+    return 0
+  }
+
+  const result = await db
+    .update(userStats)
+    .set({ billingBlocked: false, billingBlockedReason: null })
+    .where(and(inArray(userStats.userId, memberIds), eq(userStats.billingBlockedReason, reason)))
+    .returning({ userId: userStats.userId })
+
+  return result.length
+}
 
 export interface RestoreProResult {
   restored: boolean
@@ -49,8 +124,8 @@ export async function restoreUserProSubscription(userId: string): Promise<Restor
       .where(
         and(
           eq(subscriptionTable.referenceId, userId),
-          eq(subscriptionTable.status, 'active'),
-          eq(subscriptionTable.plan, 'pro')
+          inArray(subscriptionTable.status, ENTITLED_SUBSCRIPTION_STATUSES),
+          sqlIsPro(subscriptionTable.plan)
         )
       )
       .limit(1)
@@ -81,7 +156,6 @@ export async function restoreUserProSubscription(userId: string): Promise<Restor
         .where(eq(subscriptionTable.id, personalPro.id))
 
       result.restored = true
-
       logger.info('Restored personal Pro subscription', {
         userId,
         subscriptionId: personalPro.id,
@@ -335,12 +409,12 @@ export async function addUserToOrganization(params: AddMemberParams): Promise<Ad
       .where(
         and(
           eq(subscriptionTable.referenceId, organizationId),
-          eq(subscriptionTable.status, 'active')
+          inArray(subscriptionTable.status, ENTITLED_SUBSCRIPTION_STATUSES)
         )
       )
       .limit(1)
 
-    const orgIsPaid = orgSub && (orgSub.plan === 'team' || orgSub.plan === 'enterprise')
+    const orgIsPaid = orgSub && isOrgPlan(orgSub.plan)
 
     let memberId = ''
 
@@ -363,8 +437,8 @@ export async function addUserToOrganization(params: AddMemberParams): Promise<Ad
           .where(
             and(
               eq(subscriptionTable.referenceId, userId),
-              eq(subscriptionTable.status, 'active'),
-              eq(subscriptionTable.plan, 'pro')
+              inArray(subscriptionTable.status, ENTITLED_SUBSCRIPTION_STATUSES),
+              sqlIsPro(subscriptionTable.plan)
             )
           )
           .limit(1)
@@ -546,11 +620,14 @@ export async function removeUserFromOrganization(
           const orgPaidSubs = await db
             .select()
             .from(subscriptionTable)
-            .where(eq(subscriptionTable.status, 'active'))
+            .where(
+              and(
+                inArray(subscriptionTable.referenceId, orgIds),
+                inArray(subscriptionTable.status, ENTITLED_SUBSCRIPTION_STATUSES)
+              )
+            )
 
-          hasAnyPaidTeam = orgPaidSubs.some(
-            (s) => orgIds.includes(s.referenceId) && ['team', 'enterprise'].includes(s.plan ?? '')
-          )
+          hasAnyPaidTeam = orgPaidSubs.some((s) => isOrgPlan(s.plan))
         }
 
         if (!hasAnyPaidTeam) {

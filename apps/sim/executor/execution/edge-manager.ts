@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { EDGE } from '@/executor/constants'
 import type { DAG, DAGNode } from '@/executor/dag/builder'
 import type { DAGEdge } from '@/executor/dag/types'
-import type { ExecutionContext, NormalizedBlockOutput } from '@/executor/types'
+import type { NormalizedBlockOutput } from '@/executor/types'
 
 const logger = createLogger('EdgeManager')
 
@@ -15,8 +15,7 @@ export class EdgeManager {
   processOutgoingEdges(
     node: DAGNode,
     output: NormalizedBlockOutput,
-    skipBackwardsEdge = false,
-    ctx?: ExecutionContext
+    skipBackwardsEdge = false
   ): string[] {
     const readyNodes: string[] = []
     const activatedTargets: string[] = []
@@ -27,7 +26,7 @@ export class EdgeManager {
         continue
       }
 
-      if (!this.shouldActivateEdge(edge, output, node, ctx)) {
+      if (!this.shouldActivateEdge(edge, output)) {
         if (!this.isLoopEdge(edge.sourceHandle)) {
           edgesToDeactivate.push({ target: edge.target, handle: edge.sourceHandle })
         }
@@ -70,23 +69,38 @@ export class EdgeManager {
       }
     }
 
+    const isDeadEnd = activatedTargets.length === 0
+    const isRoutedDeadEnd = isDeadEnd && !!(output.selectedOption || output.selectedRoute)
+
     for (const targetId of cascadeTargets) {
       if (!readyNodes.includes(targetId) && !activatedTargets.includes(targetId)) {
-        if (this.isTargetReady(targetId)) {
+        if (!isDeadEnd || !this.isTargetReady(targetId)) continue
+
+        if (isRoutedDeadEnd) {
+          // A condition/router deliberately selected a dead-end path.
+          // Only queue the sentinel if it belongs to the SAME subflow as the
+          // current node (the condition is inside the loop/parallel and the
+          // loop still needs to continue/exit). Downstream subflow sentinels
+          // should NOT fire.
+          if (this.isEnclosingSentinel(node, targetId)) {
+            readyNodes.push(targetId)
+          }
+        } else {
           readyNodes.push(targetId)
         }
       }
     }
 
-    // Check if any deactivation targets that previously received an activated edge are now ready
-    for (const { target } of edgesToDeactivate) {
-      if (
-        !readyNodes.includes(target) &&
-        !activatedTargets.includes(target) &&
-        this.nodesWithActivatedEdge.has(target) &&
-        this.isTargetReady(target)
-      ) {
-        readyNodes.push(target)
+    if (output.selectedRoute !== EDGE.LOOP_EXIT && output.selectedRoute !== EDGE.PARALLEL_EXIT) {
+      for (const { target } of edgesToDeactivate) {
+        if (
+          !readyNodes.includes(target) &&
+          !activatedTargets.includes(target) &&
+          this.nodesWithActivatedEdge.has(target) &&
+          this.isTargetReady(target)
+        ) {
+          readyNodes.push(target)
+        }
       }
     }
 
@@ -139,43 +153,25 @@ export class EdgeManager {
     return targetNode ? this.isNodeReady(targetNode) : false
   }
 
-  public isNodeSkipped(nodeId: string): boolean {
-    const node = this.dag.nodes.get(nodeId)
-    if (!node) return false
+  /**
+   * Checks if the cascade target sentinel belongs to the same subflow as the source node.
+   * A condition inside a loop that hits a dead-end should still allow the enclosing
+   * loop's sentinel to fire so the loop can continue or exit.
+   */
+  private isEnclosingSentinel(sourceNode: DAGNode, sentinelId: string): boolean {
+    const sentinel = this.dag.nodes.get(sentinelId)
+    if (!sentinel?.metadata.isSentinel) return false
 
-    // If node has already executed, it wasn't skipped
-    // (Note: caller should verify execution state first if relevant, but this is safe)
+    const sourceLoopId = sourceNode.metadata.loopId
+    const sourceParallelId = sourceNode.metadata.parallelId
+    const sentinelLoopId = sentinel.metadata.loopId
+    const sentinelParallelId = sentinel.metadata.parallelId
 
-    // If it has active incoming edges (count > 0, excluding deactivated), it's not skipped
-    // If incomingEdges is empty, it's either a start node or already ready/executed
-    if (node.incomingEdges.size === 0) return false
+    if (sourceLoopId && sentinelLoopId && sourceLoopId === sentinelLoopId) return true
+    if (sourceParallelId && sentinelParallelId && sourceParallelId === sentinelParallelId)
+      return true
 
-    // Check if ALL remaining incoming edges are deactivated
-    // If even one is potential (not in deactivated set), the node is NOT skipped (yet)
-    // Note: incomingEdges contains sourceNodeIds
-    for (const sourceId of node.incomingEdges) {
-      const sourceNode = this.dag.nodes.get(sourceId)
-      if (!sourceNode) continue
-
-      let allEdgesFromSourceDeactivated = true
-      // We must check ALL edges from this source to this target
-      for (const [, edge] of sourceNode.outgoingEdges) {
-        if (edge.target === nodeId) {
-          const edgeKey = this.createEdgeKey(sourceId, nodeId, edge.sourceHandle)
-          if (!this.deactivatedEdges.has(edgeKey)) {
-            allEdgesFromSourceDeactivated = false
-            break
-          }
-        }
-      }
-
-      if (!allEdgesFromSourceDeactivated) {
-        return false // Found a potential incoming edge
-      }
-    }
-
-    // All incoming connections are deactivated
-    return true
+    return false
   }
 
   private isLoopEdge(handle?: string): boolean {
@@ -211,58 +207,22 @@ export class EdgeManager {
     return true
   }
 
-  private shouldActivateEdge(
-    edge: DAGEdge,
-    output: NormalizedBlockOutput,
-    sourceNode: DAGNode,
-    ctx?: ExecutionContext
-  ): boolean {
+  private shouldActivateEdge(edge: DAGEdge, output: NormalizedBlockOutput): boolean {
     const handle = edge.sourceHandle
 
-    // CRITICAL: For LOOP_EXIT edges, only activate when shouldExit is explicitly true
-    // This prevents blocks from executing prematurely when loops continue or wait for nested loops
-    // Check handle first to catch all LOOP_EXIT edges regardless of selectedRoute value
-    if (handle === EDGE.LOOP_EXIT) {
-      // Only activate if both conditions are met:
-      // 1. shouldExit is explicitly true (loop has actually exited)
-      // 2. selectedRoute matches LOOP_EXIT (confirming this is an exit, not a continue)
-      return output?.shouldExit === true && output?.selectedRoute === EDGE.LOOP_EXIT
+    if (output.selectedRoute === EDGE.LOOP_EXIT) {
+      return handle === EDGE.LOOP_EXIT
     }
 
-    // CRITICAL: For LOOP_CONTINUE edges, only activate when selectedRoute is LOOP_CONTINUE
-    // This prevents LOOP_CONTINUE edges from activating when the loop is exiting
-    // Check by handle first to explicitly block LOOP_CONTINUE edges when route is LOOP_EXIT
-    if (handle === EDGE.LOOP_CONTINUE || handle === EDGE.LOOP_CONTINUE_ALT) {
-      return output?.selectedRoute === EDGE.LOOP_CONTINUE
+    if (output.selectedRoute === EDGE.LOOP_CONTINUE) {
+      return handle === EDGE.LOOP_CONTINUE || handle === EDGE.LOOP_CONTINUE_ALT
     }
 
     if (output.selectedRoute === EDGE.PARALLEL_EXIT) {
       return handle === EDGE.PARALLEL_EXIT
     }
 
-    // CRITICAL: If sentinel start is exiting (shouldExit: true), deactivate all regular edges
-    // to nodes inside the loop body. This prevents loop body nodes from executing when
-    // the loop should be skipped (e.g., empty forEach collection).
     if (!handle) {
-      // Check if source is a sentinel start that's exiting
-      const isSentinelStartExiting =
-        sourceNode.metadata.isSentinel &&
-        sourceNode.metadata.sentinelType === 'start' &&
-        output?.shouldExit === true &&
-        output?.selectedRoute === EDGE.LOOP_EXIT
-
-      if (isSentinelStartExiting) {
-        // Check if target node is inside the loop (has the same loopId)
-        const targetNode = this.dag.nodes.get(edge.target)
-        const sourceLoopId = sourceNode.metadata.loopId
-        const targetLoopId = targetNode?.metadata.loopId
-
-        // If target is inside the loop, deactivate this edge
-        if (sourceLoopId && targetLoopId === sourceLoopId) {
-          return false
-        }
-      }
-
       return true
     }
 
@@ -318,7 +278,7 @@ export class EdgeManager {
     }
 
     for (const [, outgoingEdge] of targetNode.outgoingEdges) {
-      if (!this.isControlEdge(outgoingEdge.sourceHandle)) {
+      if (!this.isBackwardsEdge(outgoingEdge.sourceHandle)) {
         this.deactivateEdgeAndDescendants(
           targetId,
           outgoingEdge.target,

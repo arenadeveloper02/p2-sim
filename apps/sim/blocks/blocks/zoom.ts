@@ -1,6 +1,7 @@
 import { ZoomIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { ZoomResponse } from '@/tools/zoom/types'
 
 export const ZoomBlock: BlockConfig<ZoomResponse> = {
@@ -12,6 +13,8 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
     'Integrate Zoom into workflows. Create, list, update, and delete Zoom meetings. Get meeting details, invitations, recordings, and participants. Manage cloud recordings programmatically.',
   docsLink: 'https://docs.sim.ai/tools/zoom',
   category: 'tools',
+  integrationType: IntegrationType.Communication,
+  tags: ['meeting', 'calendar', 'scheduling'],
   bgColor: '#2D8CFF',
   icon: ZoomIcon,
   subBlocks: [
@@ -44,22 +47,19 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       title: 'Zoom Account',
       type: 'oauth-input',
       serviceId: 'zoom',
-      requiredScopes: [
-        'user:read:user',
-        'meeting:write:meeting',
-        'meeting:read:meeting',
-        'meeting:read:list_meetings',
-        'meeting:update:meeting',
-        'meeting:delete:meeting',
-        'meeting:read:invitation',
-        'meeting:read:list_past_participants',
-        'cloud_recording:read:list_user_recordings',
-        'recording:read:list_account_recordings',
-        'recording:read:admin',
-        'cloud_recording:read:list_recording_files',
-        'cloud_recording:delete:recording_file',
-      ],
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
+      requiredScopes: getScopesForService('zoom'),
       placeholder: 'Select Zoom account',
+      required: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'Zoom Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
     },
     // User ID for create/list operations
@@ -74,12 +74,39 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
         value: ['zoom_create_meeting', 'zoom_list_meetings', 'zoom_list_recordings'],
       },
     },
-    // Meeting ID for get/update/delete/invitation/recordings/participants operations
+    // Meeting selector for get/update/delete/invitation/recordings/participants operations
+    {
+      id: 'meetingSelector',
+      title: 'Meeting',
+      type: 'project-selector',
+      canonicalParamId: 'meetingId',
+      serviceId: 'zoom',
+      selectorKey: 'zoom.meetings',
+      selectorAllowSearch: true,
+      placeholder: 'Select Zoom meeting',
+      dependsOn: ['credential'],
+      mode: 'basic',
+      required: true,
+      condition: {
+        field: 'operation',
+        value: [
+          'zoom_get_meeting',
+          'zoom_update_meeting',
+          'zoom_delete_meeting',
+          'zoom_get_meeting_invitation',
+          'zoom_get_meeting_recordings',
+          'zoom_delete_recording',
+          'zoom_list_past_participants',
+        ],
+      },
+    },
     {
       id: 'meetingId',
       title: 'Meeting ID',
       type: 'short-input',
+      canonicalParamId: 'meetingId',
       placeholder: 'Enter meeting ID',
+      mode: 'advanced',
       required: true,
       condition: {
         field: 'operation',
@@ -177,6 +204,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       title: 'Timezone',
       type: 'short-input',
       placeholder: 'America/Los_Angeles',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
@@ -188,6 +216,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       title: 'Password',
       type: 'short-input',
       placeholder: 'Meeting password',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
@@ -199,6 +228,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       title: 'Agenda',
       type: 'long-input',
       placeholder: 'Meeting agenda',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
@@ -209,6 +239,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'hostVideo',
       title: 'Host Video',
       type: 'switch',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
@@ -218,6 +249,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'participantVideo',
       title: 'Participant Video',
       type: 'switch',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
@@ -227,6 +259,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'joinBeforeHost',
       title: 'Join Before Host',
       type: 'switch',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
@@ -236,6 +269,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'muteUponEntry',
       title: 'Mute Upon Entry',
       type: 'switch',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
@@ -245,6 +279,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'waitingRoom',
       title: 'Waiting Room',
       type: 'switch',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
@@ -260,6 +295,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         { label: 'Cloud', id: 'cloud' },
       ],
       value: () => 'none',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
@@ -278,6 +314,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         { label: 'Previous Meetings', id: 'previous_meetings' },
       ],
       value: () => 'scheduled',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_list_meetings'],
@@ -289,6 +326,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       title: 'Page Size',
       type: 'short-input',
       placeholder: 'Number of results (max 300)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -304,6 +342,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       title: 'Page Token',
       type: 'short-input',
       placeholder: 'Token for next page',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -320,6 +359,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       title: 'From Date',
       type: 'short-input',
       placeholder: 'yyyy-mm-dd (within last 6 months, max 30 days from "To Date")',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -349,6 +389,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       title: 'To Date',
       type: 'short-input',
       placeholder: 'yyyy-mm-dd (date range must not exceed 30 days)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -390,6 +431,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       title: 'Recording ID',
       type: 'short-input',
       placeholder: 'Specific recording file ID (optional)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_delete_recording'],
@@ -405,6 +447,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
         { label: 'Permanently Delete', id: 'delete' },
       ],
       value: () => 'trash',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_delete_recording'],
@@ -416,6 +459,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       title: 'Occurrence ID',
       type: 'short-input',
       placeholder: 'For recurring meetings',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_get_meeting', 'zoom_delete_meeting'],
@@ -425,6 +469,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       id: 'cancelMeetingReminder',
       title: 'Send Cancellation Email',
       type: 'switch',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: ['zoom_delete_meeting'],
@@ -465,7 +510,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
       },
       params: (params) => {
         const baseParams: Record<string, any> = {
-          credential: params.credential,
+          credential: params.oauthCredential,
         }
 
         switch (params.operation) {
@@ -638,7 +683,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Zoom access token' },
+    oauthCredential: { type: 'string', description: 'Zoom access token' },
     userId: { type: 'string', description: 'User ID or email (use "me" for authenticated user)' },
     meetingId: { type: 'string', description: 'Meeting ID' },
     topic: { type: 'string', description: 'Meeting topic' },

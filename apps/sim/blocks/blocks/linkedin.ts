@@ -1,6 +1,7 @@
 import { LinkedInIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { LinkedInResponse } from '@/tools/linkedin/types'
 
 export const LinkedInBlock: BlockConfig<LinkedInResponse> = {
@@ -12,6 +13,8 @@ export const LinkedInBlock: BlockConfig<LinkedInResponse> = {
     'Integrate LinkedIn into workflows. Share posts to your personal feed and access your LinkedIn profile information.',
   docsLink: 'https://docs.sim.ai/tools/linkedin',
   category: 'tools',
+  integrationType: IntegrationType.Social,
+  tags: ['marketing', 'sales-engagement', 'enrichment'],
   bgColor: '#0072B1',
   icon: LinkedInIcon,
   subBlocks: [
@@ -33,8 +36,19 @@ export const LinkedInBlock: BlockConfig<LinkedInResponse> = {
       title: 'LinkedIn Account',
       type: 'oauth-input',
       serviceId: 'linkedin',
-      requiredScopes: ['profile', 'openid', 'email', 'w_member_social'],
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
+      requiredScopes: getScopesForService('linkedin'),
       placeholder: 'Select LinkedIn account',
+      required: true,
+    },
+    {
+      id: 'manualCredential',
+      title: 'LinkedIn Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
     },
 
@@ -80,25 +94,25 @@ export const LinkedInBlock: BlockConfig<LinkedInResponse> = {
       },
       params: (inputs) => {
         const operation = inputs.operation || 'share_post'
-        const { credential, ...rest } = inputs
+        const { oauthCredential, ...rest } = inputs
 
         if (operation === 'get_profile') {
           return {
-            accessToken: credential,
+            accessToken: oauthCredential,
           }
         }
 
         return {
           text: rest.text,
           visibility: rest.visibility || 'PUBLIC',
-          accessToken: credential,
+          accessToken: oauthCredential,
         }
       },
     },
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'LinkedIn access token' },
+    oauthCredential: { type: 'string', description: 'LinkedIn access token' },
     text: { type: 'string', description: 'Post text content' },
     visibility: { type: 'string', description: 'Post visibility (PUBLIC or CONNECTIONS)' },
   },

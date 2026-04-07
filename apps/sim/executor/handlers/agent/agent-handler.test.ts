@@ -1,3 +1,4 @@
+import { setupGlobalFetchMock } from '@sim/testing'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { getAllBlocks } from '@/blocks'
 import { BlockType, isMcpTool } from '@/executor/constants'
@@ -16,6 +17,7 @@ vi.mock('@/lib/core/config/feature-flags', () => ({
   isDev: true,
   isTest: false,
   getCostMultiplier: vi.fn().mockReturnValue(1),
+  getAllowedIntegrationsFromEnv: vi.fn().mockReturnValue(null),
   isEmailVerificationEnabled: false,
   isBillingEnabled: false,
   isOrganizationsEnabled: false,
@@ -61,6 +63,30 @@ vi.mock('@/providers', () => ({
   }),
 }))
 
+vi.mock('@/executor/utils/http', () => ({
+  buildAuthHeaders: vi.fn().mockResolvedValue({ 'Content-Type': 'application/json' }),
+  buildAPIUrl: vi.fn((path: string, params?: Record<string, string>) => {
+    const url = new URL(path, 'http://localhost:3000')
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) {
+          url.searchParams.set(key, value)
+        }
+      }
+    }
+    return url
+  }),
+  extractAPIErrorMessage: vi.fn(async (response: Response) => {
+    const defaultMessage = `API request failed with status ${response.status}`
+    try {
+      const errorData = await response.json()
+      return errorData.error || defaultMessage
+    } catch {
+      return defaultMessage
+    }
+  }),
+}))
+
 vi.mock('@sim/db', () => ({
   db: {
     select: vi.fn().mockReturnValue({
@@ -84,7 +110,7 @@ vi.mock('@sim/db/schema', () => ({
   },
 }))
 
-global.fetch = Object.assign(vi.fn(), { preconnect: vi.fn() }) as typeof fetch
+setupGlobalFetchMock()
 
 const mockGetAllBlocks = getAllBlocks as Mock
 const mockExecuteTool = executeTool as Mock
@@ -97,7 +123,6 @@ describe('AgentBlockHandler', () => {
   let handler: AgentBlockHandler
   let mockBlock: SerializedBlock
   let mockContext: ExecutionContext
-  let originalPromiseAll: any
 
   beforeEach(() => {
     handler = new AgentBlockHandler()
@@ -108,8 +133,6 @@ describe('AgentBlockHandler', () => {
       writable: true,
       configurable: true,
     })
-
-    originalPromiseAll = Promise.all
 
     mockBlock = {
       id: 'test-agent-block',
@@ -163,7 +186,7 @@ describe('AgentBlockHandler', () => {
       })
     })
 
-    mockTransformBlockTool.mockImplementation((tool: any) => ({
+    mockTransformBlockTool.mockImplementation((tool: { id?: string; operation?: string }) => ({
       id: `transformed_${tool.id}`,
       name: `${tool.id}_${tool.operation}`,
       description: 'Transformed tool',
@@ -183,8 +206,6 @@ describe('AgentBlockHandler', () => {
   })
 
   afterEach(() => {
-    Promise.all = originalPromiseAll
-
     try {
       Object.defineProperty(global, 'window', {
         value: undefined,
@@ -245,38 +266,7 @@ describe('AgentBlockHandler', () => {
       expect(result).toEqual(expectedOutput)
     })
 
-    it('should preserve executeFunction for custom tools with different usageControl settings', async () => {
-      let capturedTools: any[] = []
-
-      Promise.all = vi.fn().mockImplementation((promises: Promise<any>[]) => {
-        const result = originalPromiseAll.call(Promise, promises)
-
-        result.then((tools: any[]) => {
-          if (tools?.length) {
-            capturedTools = tools.filter((t) => t !== null)
-          }
-        })
-
-        return result
-      })
-
-      mockExecuteProviderRequest.mockResolvedValueOnce({
-        content: 'Using tools to respond',
-        model: 'mock-model',
-        tokens: { input: 10, output: 20, total: 30 },
-        toolCalls: [
-          {
-            name: 'auto_tool',
-            arguments: { input: 'test input for auto tool' },
-          },
-          {
-            name: 'force_tool',
-            arguments: { input: 'test input for force tool' },
-          },
-        ],
-        timing: { total: 100 },
-      })
-
+    it('should preserve usageControl for custom tools and filter out "none"', async () => {
       const inputs = {
         model: 'gpt-4o',
         userPrompt: 'Test custom tools with different usageControl settings',
@@ -346,13 +336,20 @@ describe('AgentBlockHandler', () => {
 
       await handler.execute(mockContext, mockBlock, inputs)
 
-      expect(Promise.all).toHaveBeenCalled()
+      const providerCall = mockExecuteProviderRequest.mock.calls[0]
+      const tools = providerCall[1].tools
 
-      expect(capturedTools.length).toBe(2)
+      expect(tools.length).toBe(2)
 
-      const autoTool = capturedTools.find((t) => t.name === 'auto_tool')
-      const forceTool = capturedTools.find((t) => t.name === 'force_tool')
-      const noneTool = capturedTools.find((t) => t.name === 'none_tool')
+      const autoTool = tools.find(
+        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'auto_tool'
+      )
+      const forceTool = tools.find(
+        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'force_tool'
+      )
+      const noneTool = tools.find(
+        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'none_tool'
+      )
 
       expect(autoTool).toBeDefined()
       expect(forceTool).toBeDefined()
@@ -360,37 +357,6 @@ describe('AgentBlockHandler', () => {
 
       expect(autoTool.usageControl).toBe('auto')
       expect(forceTool.usageControl).toBe('force')
-
-      expect(typeof autoTool.executeFunction).toBe('function')
-      expect(typeof forceTool.executeFunction).toBe('function')
-
-      await autoTool.executeFunction({ input: 'test input' })
-      expect(mockExecuteTool).toHaveBeenCalledWith(
-        'function_execute',
-        expect.objectContaining({
-          code: 'return { result: "auto tool executed", input }',
-          input: 'test input',
-        }),
-        false, // skipPostProcess
-        expect.any(Object) // execution context
-      )
-
-      await forceTool.executeFunction({ input: 'another test' })
-      expect(mockExecuteTool).toHaveBeenNthCalledWith(
-        2, // Check the 2nd call
-        'function_execute',
-        expect.objectContaining({
-          code: 'return { result: "force tool executed", input }',
-          input: 'another test',
-        }),
-        false, // skipPostProcess
-        expect.any(Object) // execution context
-      )
-
-      const providerCall = mockExecuteProviderRequest.mock.calls[0]
-      const requestBody = providerCall[1]
-
-      expect(requestBody.tools.length).toBe(2)
     })
 
     it('should filter out tools with usageControl set to "none"', async () => {
@@ -432,7 +398,9 @@ describe('AgentBlockHandler', () => {
 
       expect(requestBody.tools.length).toBe(2)
 
-      const toolIds = requestBody.tools.map((t: any) => t.id)
+      const toolIds = requestBody.tools.map(
+        (t: { name?: string; id?: string; usageControl?: string }) => t.id
+      )
       expect(toolIds).toContain('transformed_tool_1')
       expect(toolIds).toContain('transformed_tool_3')
       expect(toolIds).not.toContain('transformed_tool_2')
@@ -461,7 +429,7 @@ describe('AgentBlockHandler', () => {
         ],
       }
 
-      mockTransformBlockTool.mockImplementation((tool: any) => ({
+      mockTransformBlockTool.mockImplementation((tool: { id?: string; operation?: string }) => ({
         id: `transformed_${tool.id}`,
         name: `${tool.id}_${tool.operation}`,
         description: 'Transformed tool',
@@ -542,13 +510,19 @@ describe('AgentBlockHandler', () => {
 
       expect(requestBody.tools.length).toBe(2)
 
-      const toolNames = requestBody.tools.map((t: any) => t.name)
+      const toolNames = requestBody.tools.map(
+        (t: { name?: string; id?: string; usageControl?: string }) => t.name
+      )
       expect(toolNames).toContain('custom_tool_auto')
       expect(toolNames).toContain('custom_tool_force')
       expect(toolNames).not.toContain('custom_tool_none')
 
-      const autoTool = requestBody.tools.find((t: any) => t.name === 'custom_tool_auto')
-      const forceTool = requestBody.tools.find((t: any) => t.name === 'custom_tool_force')
+      const autoTool = requestBody.tools.find(
+        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'custom_tool_auto'
+      )
+      const forceTool = requestBody.tools.find(
+        (t: { name?: string; id?: string; usageControl?: string }) => t.name === 'custom_tool_force'
+      )
 
       expect(autoTool.usageControl).toBe('auto')
       expect(forceTool.usageControl).toBe('force')
@@ -1513,7 +1487,7 @@ describe('AgentBlockHandler', () => {
         timing: { total: 200 },
       })
 
-      mockTransformBlockTool.mockImplementation((tool: any) => ({
+      mockTransformBlockTool.mockImplementation((tool: { id?: string; operation?: string }) => ({
         id: tool.schema?.function?.name || `mcp-${tool.title.toLowerCase().replace(' ', '-')}`,
         name: tool.schema?.function?.name || tool.title,
         description: tool.schema?.function?.description || `MCP tool: ${tool.title}`,
@@ -1737,6 +1711,52 @@ describe('AgentBlockHandler', () => {
       expect(providerCallArgs[1].tools[0].name).toBe('search_files')
     })
 
+    it('should pass callChain to executeProviderRequest for MCP cycle detection', async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve({ ok: true, json: () => Promise.resolve({}) })
+      )
+
+      const inputs = {
+        model: 'gpt-4o',
+        userPrompt: 'Search for files',
+        apiKey: 'test-api-key',
+        tools: [
+          {
+            type: 'mcp',
+            title: 'search_files',
+            schema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'Search query' },
+              },
+              required: ['query'],
+            },
+            params: {
+              serverId: 'mcp-search-server',
+              toolName: 'search_files',
+              serverName: 'search',
+            },
+            usageControl: 'auto' as const,
+          },
+        ],
+      }
+
+      const contextWithCallChain = {
+        ...mockContext,
+        workspaceId: 'test-workspace-123',
+        workflowId: 'test-workflow-456',
+        callChain: ['wf-parent', 'test-workflow-456'],
+      }
+
+      mockGetProviderFromModel.mockReturnValue('openai')
+
+      await handler.execute(contextWithCallChain, mockBlock, inputs)
+
+      expect(mockExecuteProviderRequest).toHaveBeenCalled()
+      const providerCallArgs = mockExecuteProviderRequest.mock.calls[0][1]
+      expect(providerCallArgs.callChain).toEqual(['wf-parent', 'test-workflow-456'])
+    })
+
     it('should handle multiple MCP tools from the same server efficiently', async () => {
       const fetchCalls: any[] = []
 
@@ -1900,6 +1920,284 @@ describe('AgentBlockHandler', () => {
       expect(discoveryCalls.length).toBe(1)
 
       expect(discoveryCalls[0].url).toContain('serverId=mcp-legacy-server')
+    })
+
+    describe('customToolId resolution - DB as source of truth', () => {
+      const staleInlineSchema = {
+        function: {
+          name: 'formatReport',
+          description: 'Formats a report',
+          parameters: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Report title' },
+              content: { type: 'string', description: 'Report content' },
+            },
+            required: ['title', 'content'],
+          },
+        },
+      }
+
+      const dbSchema = {
+        function: {
+          name: 'formatReport',
+          description: 'Formats a report',
+          parameters: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Report title' },
+              content: { type: 'string', description: 'Report content' },
+              format: { type: 'string', description: 'Output format' },
+            },
+            required: ['title', 'content', 'format'],
+          },
+        },
+      }
+
+      const staleInlineCode = 'return { title, content };'
+      const dbCode = 'return { title, content, format };'
+
+      function mockFetchForCustomTool(toolId: string) {
+        mockFetch.mockImplementation((url: string) => {
+          if (typeof url === 'string' && url.includes('/api/tools/custom')) {
+            return Promise.resolve({
+              ok: true,
+              headers: { get: () => null },
+              json: () =>
+                Promise.resolve({
+                  data: [
+                    {
+                      id: toolId,
+                      title: 'formatReport',
+                      schema: dbSchema,
+                      code: dbCode,
+                    },
+                  ],
+                }),
+            })
+          }
+          return Promise.resolve({
+            ok: true,
+            headers: { get: () => null },
+            json: () => Promise.resolve({}),
+          })
+        })
+      }
+
+      function mockFetchFailure() {
+        mockFetch.mockImplementation((url: string) => {
+          if (typeof url === 'string' && url.includes('/api/tools/custom')) {
+            return Promise.resolve({
+              ok: false,
+              status: 500,
+              headers: { get: () => null },
+              json: () => Promise.resolve({}),
+            })
+          }
+          return Promise.resolve({
+            ok: true,
+            headers: { get: () => null },
+            json: () => Promise.resolve({}),
+          })
+        })
+      }
+
+      beforeEach(() => {
+        Object.defineProperty(global, 'window', {
+          value: undefined,
+          writable: true,
+          configurable: true,
+        })
+      })
+
+      it('should always fetch latest schema from DB when customToolId is present', async () => {
+        const toolId = 'custom-tool-123'
+        mockFetchForCustomTool(toolId)
+
+        const inputs = {
+          model: 'gpt-4o',
+          userPrompt: 'Format a report',
+          apiKey: 'test-api-key',
+          tools: [
+            {
+              type: 'custom-tool',
+              customToolId: toolId,
+              title: 'formatReport',
+              schema: staleInlineSchema,
+              code: staleInlineCode,
+              usageControl: 'auto' as const,
+            },
+          ],
+        }
+
+        mockGetProviderFromModel.mockReturnValue('openai')
+
+        await handler.execute(mockContext, mockBlock, inputs)
+
+        expect(mockExecuteProviderRequest).toHaveBeenCalled()
+        const providerCall = mockExecuteProviderRequest.mock.calls[0]
+        const tools = providerCall[1].tools
+
+        expect(tools.length).toBe(1)
+        // DB schema wins over stale inline — includes format param
+        expect(tools[0].parameters.required).toContain('format')
+        expect(tools[0].parameters.properties).toHaveProperty('format')
+      })
+
+      it('should fetch from DB when customToolId has no inline schema', async () => {
+        const toolId = 'custom-tool-123'
+        mockFetchForCustomTool(toolId)
+
+        const inputs = {
+          model: 'gpt-4o',
+          userPrompt: 'Format a report',
+          apiKey: 'test-api-key',
+          tools: [
+            {
+              type: 'custom-tool',
+              customToolId: toolId,
+              usageControl: 'auto' as const,
+            },
+          ],
+        }
+
+        mockGetProviderFromModel.mockReturnValue('openai')
+
+        await handler.execute(mockContext, mockBlock, inputs)
+
+        expect(mockExecuteProviderRequest).toHaveBeenCalled()
+        const providerCall = mockExecuteProviderRequest.mock.calls[0]
+        const tools = providerCall[1].tools
+
+        expect(tools.length).toBe(1)
+        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].parameters.required).toContain('format')
+      })
+
+      it('should fall back to inline schema when DB fetch fails and inline exists', async () => {
+        mockFetchFailure()
+
+        const inputs = {
+          model: 'gpt-4o',
+          userPrompt: 'Format a report',
+          apiKey: 'test-api-key',
+          tools: [
+            {
+              type: 'custom-tool',
+              customToolId: 'custom-tool-123',
+              title: 'formatReport',
+              schema: staleInlineSchema,
+              code: staleInlineCode,
+              usageControl: 'auto' as const,
+            },
+          ],
+        }
+
+        mockGetProviderFromModel.mockReturnValue('openai')
+
+        await handler.execute(mockContext, mockBlock, inputs)
+
+        expect(mockExecuteProviderRequest).toHaveBeenCalled()
+        const providerCall = mockExecuteProviderRequest.mock.calls[0]
+        const tools = providerCall[1].tools
+
+        expect(tools.length).toBe(1)
+        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].parameters.required).not.toContain('format')
+      })
+
+      it('should return null when DB fetch fails and no inline schema exists', async () => {
+        mockFetchFailure()
+
+        const inputs = {
+          model: 'gpt-4o',
+          userPrompt: 'Format a report',
+          apiKey: 'test-api-key',
+          tools: [
+            {
+              type: 'custom-tool',
+              customToolId: 'custom-tool-123',
+              usageControl: 'auto' as const,
+            },
+          ],
+        }
+
+        mockGetProviderFromModel.mockReturnValue('openai')
+
+        await handler.execute(mockContext, mockBlock, inputs)
+
+        expect(mockExecuteProviderRequest).toHaveBeenCalled()
+        const providerCall = mockExecuteProviderRequest.mock.calls[0]
+        const tools = providerCall[1].tools
+
+        expect(tools.length).toBe(0)
+      })
+
+      it('should use DB schema when customToolId resolves', async () => {
+        const toolId = 'custom-tool-123'
+        mockFetchForCustomTool(toolId)
+
+        const inputs = {
+          model: 'gpt-4o',
+          userPrompt: 'Format a report',
+          apiKey: 'test-api-key',
+          tools: [
+            {
+              type: 'custom-tool',
+              customToolId: toolId,
+              title: 'formatReport',
+              schema: staleInlineSchema,
+              code: staleInlineCode,
+              usageControl: 'auto' as const,
+            },
+          ],
+        }
+
+        mockGetProviderFromModel.mockReturnValue('openai')
+
+        await handler.execute(mockContext, mockBlock, inputs)
+
+        expect(mockExecuteProviderRequest).toHaveBeenCalled()
+        const providerCall = mockExecuteProviderRequest.mock.calls[0]
+        const tools = providerCall[1].tools
+
+        expect(tools.length).toBe(1)
+        expect(tools[0].name).toBe('formatReport')
+      })
+
+      it('should not fetch from DB when no customToolId is present', async () => {
+        const inputs = {
+          model: 'gpt-4o',
+          userPrompt: 'Use the tool',
+          apiKey: 'test-api-key',
+          tools: [
+            {
+              type: 'custom-tool',
+              title: 'formatReport',
+              schema: staleInlineSchema,
+              code: staleInlineCode,
+              usageControl: 'auto' as const,
+            },
+          ],
+        }
+
+        mockGetProviderFromModel.mockReturnValue('openai')
+
+        await handler.execute(mockContext, mockBlock, inputs)
+
+        const customToolFetches = mockFetch.mock.calls.filter(
+          (call: any[]) => typeof call[0] === 'string' && call[0].includes('/api/tools/custom')
+        )
+        expect(customToolFetches.length).toBe(0)
+
+        expect(mockExecuteProviderRequest).toHaveBeenCalled()
+        const providerCall = mockExecuteProviderRequest.mock.calls[0]
+        const tools = providerCall[1].tools
+
+        expect(tools.length).toBe(1)
+        expect(tools[0].name).toBe('formatReport')
+        expect(tools[0].parameters.required).not.toContain('format')
+      })
     })
   })
 })

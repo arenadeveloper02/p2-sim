@@ -70,9 +70,6 @@ const ToolbarItem = memo(function ToolbarItem({
 
   const handleDragStart = useCallback(
     (e: React.DragEvent<HTMLElement>) => {
-      if (!isTrigger && (item.type === 'loop' || item.type === 'parallel')) {
-        document.body.classList.add('sim-drag-subflow')
-      }
       const iconElement = e.currentTarget.querySelector('.toolbar-item-icon')
       onDragStart(e, item.type, isTriggerCapable, {
         name: item.name,
@@ -91,12 +88,6 @@ const ToolbarItem = memo(function ToolbarItem({
     },
     [item.type, item.name, item.bgColor, isTriggerCapable, onDragStart, isTrigger]
   )
-
-  const handleDragEnd = useCallback(() => {
-    if (!isTrigger) {
-      document.body.classList.remove('sim-drag-subflow')
-    }
-  }, [isTrigger])
 
   const handleClick = useCallback(() => {
     onClick(item.type, isTriggerCapable)
@@ -144,18 +135,17 @@ const ToolbarItem = memo(function ToolbarItem({
       tabIndex={-1}
       draggable
       onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       className={clsx(
-        'group flex h-[28px] items-center gap-[8px] rounded-[8px] px-[6px] text-[14px]',
-        'cursor-pointer hover:bg-[var(--surface-6)] active:cursor-grabbing dark:hover:bg-[var(--surface-5)]',
+        'group flex h-[28px] items-center gap-2 rounded-lg px-1.5 text-sm',
+        'cursor-pointer hover-hover:bg-[var(--surface-6)] active:cursor-grabbing dark:hover-hover:bg-[var(--surface-5)]',
         'focus-visible:bg-[var(--surface-6)] focus-visible:outline-none dark:focus-visible:bg-[var(--surface-5)]'
       )}
       onKeyDown={handleKeyDown}
     >
       <div
-        className='relative flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
+        className='relative flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center overflow-hidden rounded-sm'
         style={{ background: item.bgColor }}
       >
         {Icon && (
@@ -350,6 +340,14 @@ export const Toolbar = memo(
     // Search state
     const [isSearchActive, setIsSearchActive] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
+    const [prevIsActive, setPrevIsActive] = useState(isActive)
+    if (isActive !== prevIsActive) {
+      setPrevIsActive(isActive)
+      if (!isActive) {
+        setIsSearchActive(false)
+        setSearchQuery('')
+      }
+    }
 
     // Toggle animation state
     const [isToggling, setIsToggling] = useState(false)
@@ -390,14 +388,8 @@ export const Toolbar = memo(
     const isTriggersAtMinimum = toolbarTriggersHeight <= TRIGGERS_MIN_THRESHOLD
 
     /**
-     * Clear search when tab becomes inactive
+     * Filter items based on search query
      */
-    useEffect(() => {
-      if (!isActive) {
-        setIsSearchActive(false)
-        setSearchQuery('')
-      }
-    }, [isActive])
 
     /**
      * Filter items based on search query
@@ -745,11 +737,11 @@ export const Toolbar = memo(
       >
         {/* Header */}
         <div
-          className='mx-[-1px] flex flex-shrink-0 cursor-pointer items-center justify-between rounded-[4px] border border-[var(--border)] bg-[var(--surface-4)] px-[12px] py-[6px]'
+          className='mx-[-1px] flex flex-shrink-0 cursor-pointer items-center justify-between border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'
           onClick={handleSearchClick}
         >
-          <h2 className='font-medium text-[14px] text-[var(--text-primary)]'>Toolbar</h2>
-          <div className='flex shrink-0 items-center gap-[8px]'>
+          <h2 className='font-medium text-[var(--text-primary)] text-sm'>Toolbar</h2>
+          <div className='flex shrink-0 items-center gap-2'>
             {!isSearchActive ? (
               <Button
                 variant='ghost'
@@ -766,7 +758,7 @@ export const Toolbar = memo(
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onBlur={handleSearchBlur}
-                className='w-full border-none bg-transparent pr-[2px] text-right font-medium text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none dark:text-[var(--text-primary)]'
+                className='w-full border-none bg-transparent pr-0.5 text-right font-medium text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none dark:text-[var(--text-primary)]'
               />
             )}
           </div>
@@ -784,12 +776,12 @@ export const Toolbar = memo(
           >
             <div
               ref={triggersHeaderRef}
-              className='px-[10px] pt-[5px] pb-[5px] font-medium text-[13px] text-[var(--text-primary)]'
+              className='px-2.5 pt-1.5 pb-1.5 font-medium text-[var(--text-primary)] text-small'
             >
               Triggers
             </div>
-            <div className='flex-1 overflow-y-auto overflow-x-hidden px-[6px]'>
-              <div ref={triggersContentRef} className='space-y-[2px] pb-[8px]'>
+            <div className='flex-1 overflow-y-auto overflow-x-hidden px-1.5'>
+              <div ref={triggersContentRef} className='space-y-1 pb-2'>
                 {filteredTriggers.map((trigger, index) => (
                   <ToolbarItem
                     key={trigger.type}
@@ -819,12 +811,12 @@ export const Toolbar = memo(
             <div
               ref={blocksHeaderRef}
               onClick={handleBlocksHeaderClick}
-              className='cursor-pointer px-[10px] pt-[5px] pb-[5px] font-medium text-[13px] text-[var(--text-primary)]'
+              className='cursor-pointer px-2.5 pt-1.5 pb-1.5 font-medium text-[var(--text-primary)] text-small'
             >
               Blocks
             </div>
-            <div className='flex-1 overflow-y-auto overflow-x-hidden px-[6px]'>
-              <div className='space-y-[2px] pb-[8px]'>
+            <div className='flex-1 overflow-y-auto overflow-x-hidden px-1.5'>
+              <div className='space-y-1 pb-2'>
                 {filteredBlocks.map((block, index) => (
                   <ToolbarItem
                     key={block.type}

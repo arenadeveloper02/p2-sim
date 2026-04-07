@@ -1,28 +1,95 @@
-import { NextRequest } from 'next/server'
 /**
  * Tests for chat API route
  *
  * @vitest-environment node
  */
+import { auditMock, createEnvMock } from '@sim/testing'
+import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const {
+  mockSelect,
+  mockFrom,
+  mockWhere,
+  mockLimit,
+  mockInsert,
+  mockValues,
+  mockReturning,
+  mockCreateSuccessResponse,
+  mockCreateErrorResponse,
+  mockEncryptSecret,
+  mockCheckWorkflowAccessForChatCreation,
+  mockDeployWorkflow,
+  mockGetSession,
+  mockUuidV4,
+} = vi.hoisted(() => ({
+  mockSelect: vi.fn(),
+  mockFrom: vi.fn(),
+  mockWhere: vi.fn(),
+  mockLimit: vi.fn(),
+  mockInsert: vi.fn(),
+  mockValues: vi.fn(),
+  mockReturning: vi.fn(),
+  mockCreateSuccessResponse: vi.fn(),
+  mockCreateErrorResponse: vi.fn(),
+  mockEncryptSecret: vi.fn(),
+  mockCheckWorkflowAccessForChatCreation: vi.fn(),
+  mockDeployWorkflow: vi.fn(),
+  mockGetSession: vi.fn(),
+  mockUuidV4: vi.fn(),
+}))
+
+vi.mock('@/lib/audit/log', () => auditMock)
+
+vi.mock('@sim/db', () => ({
+  db: {
+    select: mockSelect,
+    insert: mockInsert,
+  },
+}))
+
+vi.mock('@sim/db/schema', () => ({
+  chat: { userId: 'userId', identifier: 'identifier' },
+  workflow: { id: 'id', userId: 'userId', isDeployed: 'isDeployed' },
+}))
+
+vi.mock('@/app/api/workflows/utils', () => ({
+  createSuccessResponse: mockCreateSuccessResponse,
+  createErrorResponse: mockCreateErrorResponse,
+}))
+
+vi.mock('@/lib/core/security/encryption', () => ({
+  encryptSecret: mockEncryptSecret,
+}))
+
+vi.mock('uuid', () => ({
+  v4: mockUuidV4,
+}))
+
+vi.mock('@/app/api/chat/utils', () => ({
+  checkWorkflowAccessForChatCreation: mockCheckWorkflowAccessForChatCreation,
+}))
+
+vi.mock('@/lib/workflows/persistence/utils', () => ({
+  deployWorkflow: mockDeployWorkflow,
+}))
+
+vi.mock('@/lib/auth', () => ({
+  getSession: mockGetSession,
+}))
+
+vi.mock('@/lib/core/config/env', () =>
+  createEnvMock({
+    NODE_ENV: 'development',
+    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+  })
+)
+
+import { GET, POST } from '@/app/api/chat/route'
+
 describe('Chat API Route', () => {
-  const mockSelect = vi.fn()
-  const mockFrom = vi.fn()
-  const mockWhere = vi.fn()
-  const mockLimit = vi.fn()
-  const mockInsert = vi.fn()
-  const mockValues = vi.fn()
-  const mockReturning = vi.fn()
-
-  const mockCreateSuccessResponse = vi.fn()
-  const mockCreateErrorResponse = vi.fn()
-  const mockEncryptSecret = vi.fn()
-  const mockCheckWorkflowAccessForChatCreation = vi.fn()
-  const mockDeployWorkflow = vi.fn()
-
   beforeEach(() => {
-    vi.resetModules()
+    vi.clearAllMocks()
 
     mockSelect.mockReturnValue({ from: mockFrom })
     mockFrom.mockReturnValue({ where: mockWhere })
@@ -30,61 +97,29 @@ describe('Chat API Route', () => {
     mockInsert.mockReturnValue({ values: mockValues })
     mockValues.mockReturnValue({ returning: mockReturning })
 
-    vi.doMock('@sim/db', () => ({
-      db: {
-        select: mockSelect,
-        insert: mockInsert,
-      },
-    }))
+    mockUuidV4.mockReturnValue('test-uuid')
 
-    vi.doMock('@sim/db/schema', () => ({
-      chat: { userId: 'userId', identifier: 'identifier' },
-      workflow: { id: 'id', userId: 'userId', isDeployed: 'isDeployed' },
-    }))
+    mockCreateSuccessResponse.mockImplementation((data) => {
+      return new Response(JSON.stringify(data), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
 
-    vi.doMock('@sim/logger', () => ({
-      createLogger: vi.fn().mockReturnValue({
-        info: vi.fn(),
-        error: vi.fn(),
-        warn: vi.fn(),
-        debug: vi.fn(),
-      }),
-    }))
+    mockCreateErrorResponse.mockImplementation((message, status = 500) => {
+      return new Response(JSON.stringify({ error: message }), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
 
-    vi.doMock('@/app/api/workflows/utils', () => ({
-      createSuccessResponse: mockCreateSuccessResponse.mockImplementation((data) => {
-        return new Response(JSON.stringify(data), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      }),
-      createErrorResponse: mockCreateErrorResponse.mockImplementation((message, status = 500) => {
-        return new Response(JSON.stringify({ error: message }), {
-          status,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      }),
-    }))
+    mockEncryptSecret.mockResolvedValue({ encrypted: 'encrypted-password' })
 
-    vi.doMock('@/lib/core/security/encryption', () => ({
-      encryptSecret: mockEncryptSecret.mockResolvedValue({ encrypted: 'encrypted-password' }),
-    }))
-
-    vi.doMock('uuid', () => ({
-      v4: vi.fn().mockReturnValue('test-uuid'),
-    }))
-
-    vi.doMock('@/app/api/chat/utils', () => ({
-      checkWorkflowAccessForChatCreation: mockCheckWorkflowAccessForChatCreation,
-    }))
-
-    vi.doMock('@/lib/workflows/persistence/utils', () => ({
-      deployWorkflow: mockDeployWorkflow.mockResolvedValue({
-        success: true,
-        version: 1,
-        deployedAt: new Date(),
-      }),
-    }))
+    mockDeployWorkflow.mockResolvedValue({
+      success: true,
+      version: 1,
+      deployedAt: new Date(),
+    })
   })
 
   afterEach(() => {
@@ -93,12 +128,9 @@ describe('Chat API Route', () => {
 
   describe('GET', () => {
     it('should return 401 when user is not authenticated', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue(null),
-      }))
+      mockGetSession.mockResolvedValue(null)
 
       const req = new NextRequest('http://localhost:3000/api/chat')
-      const { GET } = await import('@/app/api/chat/route')
       const response = await GET(req)
 
       expect(response.status).toBe(401)
@@ -106,17 +138,14 @@ describe('Chat API Route', () => {
     })
 
     it('should return chat deployments for authenticated user', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id' },
-        }),
-      }))
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id' },
+      })
 
       const mockDeployments = [{ id: 'deployment-1' }, { id: 'deployment-2' }]
       mockWhere.mockResolvedValue(mockDeployments)
 
       const req = new NextRequest('http://localhost:3000/api/chat')
-      const { GET } = await import('@/app/api/chat/route')
       const response = await GET(req)
 
       expect(response.status).toBe(200)
@@ -125,16 +154,13 @@ describe('Chat API Route', () => {
     })
 
     it('should handle errors when fetching deployments', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id' },
-        }),
-      }))
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id' },
+      })
 
       mockWhere.mockRejectedValue(new Error('Database error'))
 
       const req = new NextRequest('http://localhost:3000/api/chat')
-      const { GET } = await import('@/app/api/chat/route')
       const response = await GET(req)
 
       expect(response.status).toBe(500)
@@ -144,15 +170,12 @@ describe('Chat API Route', () => {
 
   describe('POST', () => {
     it('should return 401 when user is not authenticated', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue(null),
-      }))
+      mockGetSession.mockResolvedValue(null)
 
       const req = new NextRequest('http://localhost:3000/api/chat', {
         method: 'POST',
         body: JSON.stringify({}),
       })
-      const { POST } = await import('@/app/api/chat/route')
       const response = await POST(req)
 
       expect(response.status).toBe(401)
@@ -160,11 +183,9 @@ describe('Chat API Route', () => {
     })
 
     it('should validate request data', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id' },
-        }),
-      }))
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id' },
+      })
 
       const invalidData = { title: 'Test Chat' } // Missing required fields
 
@@ -172,18 +193,15 @@ describe('Chat API Route', () => {
         method: 'POST',
         body: JSON.stringify(invalidData),
       })
-      const { POST } = await import('@/app/api/chat/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
     })
 
     it('should reject if identifier already exists', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id' },
-        }),
-      }))
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id' },
+      })
 
       const validData = {
         workflowId: 'workflow-123',
@@ -196,12 +214,12 @@ describe('Chat API Route', () => {
       }
 
       mockLimit.mockResolvedValueOnce([{ id: 'existing-chat' }]) // Identifier exists
+      mockCheckWorkflowAccessForChatCreation.mockResolvedValue({ hasAccess: false })
 
       const req = new NextRequest('http://localhost:3000/api/chat', {
         method: 'POST',
         body: JSON.stringify(validData),
       })
-      const { POST } = await import('@/app/api/chat/route')
       const response = await POST(req)
 
       expect(response.status).toBe(400)
@@ -209,11 +227,9 @@ describe('Chat API Route', () => {
     })
 
     it('should reject if workflow not found', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id' },
-        }),
-      }))
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id' },
+      })
 
       const validData = {
         workflowId: 'workflow-123',
@@ -232,7 +248,6 @@ describe('Chat API Route', () => {
         method: 'POST',
         body: JSON.stringify(validData),
       })
-      const { POST } = await import('@/app/api/chat/route')
       const response = await POST(req)
 
       expect(response.status).toBe(404)
@@ -243,18 +258,8 @@ describe('Chat API Route', () => {
     })
 
     it('should allow chat deployment when user owns workflow directly', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id', email: 'user@example.com' },
-        }),
-      }))
-
-      vi.doMock('@/lib/core/config/env', async () => {
-        const { createEnvMock } = await import('@sim/testing')
-        return createEnvMock({
-          NODE_ENV: 'development',
-          NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
-        })
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id', email: 'user@example.com' },
       })
 
       const validData = {
@@ -278,7 +283,6 @@ describe('Chat API Route', () => {
         method: 'POST',
         body: JSON.stringify(validData),
       })
-      const { POST } = await import('@/app/api/chat/route')
       const response = await POST(req)
 
       expect(response.status).toBe(200)
@@ -286,18 +290,8 @@ describe('Chat API Route', () => {
     })
 
     it('should allow chat deployment when user has workspace admin permission', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id', email: 'user@example.com' },
-        }),
-      }))
-
-      vi.doMock('@/lib/core/config/env', async () => {
-        const { createEnvMock } = await import('@sim/testing')
-        return createEnvMock({
-          NODE_ENV: 'development',
-          NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
-        })
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id', email: 'user@example.com' },
       })
 
       const validData = {
@@ -321,7 +315,6 @@ describe('Chat API Route', () => {
         method: 'POST',
         body: JSON.stringify(validData),
       })
-      const { POST } = await import('@/app/api/chat/route')
       const response = await POST(req)
 
       expect(response.status).toBe(200)
@@ -329,11 +322,9 @@ describe('Chat API Route', () => {
     })
 
     it('should reject when workflow is in workspace but user lacks admin permission', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id' },
-        }),
-      }))
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id' },
+      })
 
       const validData = {
         workflowId: 'workflow-123',
@@ -354,7 +345,6 @@ describe('Chat API Route', () => {
         method: 'POST',
         body: JSON.stringify(validData),
       })
-      const { POST } = await import('@/app/api/chat/route')
       const response = await POST(req)
 
       expect(response.status).toBe(404)
@@ -366,11 +356,9 @@ describe('Chat API Route', () => {
     })
 
     it('should handle workspace permission check errors gracefully', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id' },
-        }),
-      }))
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id' },
+      })
 
       const validData = {
         workflowId: 'workflow-123',
@@ -389,7 +377,6 @@ describe('Chat API Route', () => {
         method: 'POST',
         body: JSON.stringify(validData),
       })
-      const { POST } = await import('@/app/api/chat/route')
       const response = await POST(req)
 
       expect(response.status).toBe(500)
@@ -397,11 +384,9 @@ describe('Chat API Route', () => {
     })
 
     it('should auto-deploy workflow if not already deployed', async () => {
-      vi.doMock('@/lib/auth', () => ({
-        getSession: vi.fn().mockResolvedValue({
-          user: { id: 'user-id', email: 'user@example.com' },
-        }),
-      }))
+      mockGetSession.mockResolvedValue({
+        user: { id: 'user-id', email: 'user@example.com' },
+      })
 
       const validData = {
         workflowId: 'workflow-123',
@@ -424,7 +409,6 @@ describe('Chat API Route', () => {
         method: 'POST',
         body: JSON.stringify(validData),
       })
-      const { POST } = await import('@/app/api/chat/route')
       const response = await POST(req)
 
       expect(response.status).toBe(200)

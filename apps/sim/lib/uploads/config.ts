@@ -104,6 +104,7 @@ function getS3Config(context: StorageContext): StorageConfig {
         bucket: S3_EXECUTION_FILES_CONFIG.bucket,
         region: S3_EXECUTION_FILES_CONFIG.region,
       }
+    case 'mothership':
     case 'workspace':
       return {
         bucket: S3_CONFIG.bucket,
@@ -133,9 +134,73 @@ function getS3Config(context: StorageContext): StorageConfig {
 }
 
 /**
- * Check if a specific storage context is configured for cloud storage.
- * Returns true if the context has its own bucket configured (e.g. agent-generated-images S3 bucket)
- * or if global S3 is on and the context has config.
+ * Get Azure Blob configuration for a given context
+ */
+// function getBlobConfig(context: StorageContext): StorageConfig {
+//   switch (context) {
+//     case 'knowledge-base':
+//       return {
+//         accountName: BLOB_KB_CONFIG.accountName,
+//         accountKey: BLOB_KB_CONFIG.accountKey,
+//         connectionString: BLOB_KB_CONFIG.connectionString,
+//         containerName: BLOB_KB_CONFIG.containerName,
+//       }
+//     case 'chat':
+//       return {
+//         accountName: BLOB_CHAT_CONFIG.accountName,
+//         accountKey: BLOB_CHAT_CONFIG.accountKey,
+//         connectionString: BLOB_CHAT_CONFIG.connectionString,
+//         containerName: BLOB_CHAT_CONFIG.containerName,
+//       }
+//     case 'copilot':
+//       return {
+//         accountName: BLOB_COPILOT_CONFIG.accountName,
+//         accountKey: BLOB_COPILOT_CONFIG.accountKey,
+//         connectionString: BLOB_COPILOT_CONFIG.connectionString,
+//         containerName: BLOB_COPILOT_CONFIG.containerName,
+//       }
+//     case 'execution':
+//       return {
+//         accountName: BLOB_EXECUTION_FILES_CONFIG.accountName,
+//         accountKey: BLOB_EXECUTION_FILES_CONFIG.accountKey,
+//         connectionString: BLOB_EXECUTION_FILES_CONFIG.connectionString,
+//         containerName: BLOB_EXECUTION_FILES_CONFIG.containerName,
+//       }
+//     case 'mothership':
+//     case 'workspace':
+//       return {
+//         accountName: BLOB_CONFIG.accountName,
+//         accountKey: BLOB_CONFIG.accountKey,
+//         connectionString: BLOB_CONFIG.connectionString,
+//         containerName: BLOB_CONFIG.containerName,
+//       }
+//     case 'profile-pictures':
+//       return {
+//         accountName: BLOB_PROFILE_PICTURES_CONFIG.accountName,
+//         accountKey: BLOB_PROFILE_PICTURES_CONFIG.accountKey,
+//         connectionString: BLOB_PROFILE_PICTURES_CONFIG.connectionString,
+//         containerName: BLOB_PROFILE_PICTURES_CONFIG.containerName,
+//       }
+//     case 'og-images':
+//       return {
+//         accountName: BLOB_OG_IMAGES_CONFIG.accountName || BLOB_CONFIG.accountName,
+//         accountKey: BLOB_OG_IMAGES_CONFIG.accountKey || BLOB_CONFIG.accountKey,
+//         connectionString: BLOB_OG_IMAGES_CONFIG.connectionString || BLOB_CONFIG.connectionString,
+//         containerName: BLOB_OG_IMAGES_CONFIG.containerName || BLOB_CONFIG.containerName,
+//       }
+//     default:
+//       return {
+//         accountName: BLOB_CONFIG.accountName,
+//         accountKey: BLOB_CONFIG.accountKey,
+//         connectionString: BLOB_CONFIG.connectionString,
+//         containerName: BLOB_CONFIG.containerName,
+//       }
+//   }
+// }
+
+/**
+ * Check if a specific storage context is configured
+ * Returns false if the context would fall back to general config but general isn't configured
  */
 export function isStorageContextConfigured(context: StorageContext): boolean {
   const config = getStorageConfig(context)

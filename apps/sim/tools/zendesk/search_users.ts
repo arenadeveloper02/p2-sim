@@ -1,8 +1,11 @@
-import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
-import { buildZendeskUrl, handleZendeskError } from './types'
-
-const logger = createLogger('ZendeskSearchUsers')
+import {
+  buildZendeskUrl,
+  handleZendeskError,
+  METADATA_OUTPUT,
+  PAGING_OUTPUT,
+  USERS_ARRAY_OUTPUT,
+} from '@/tools/zendesk/types'
 
 export interface ZendeskSearchUsersParams {
   email: string
@@ -19,9 +22,9 @@ export interface ZendeskSearchUsersResponse {
   output: {
     users: any[]
     paging?: {
+      after_cursor: string | null
+      has_more: boolean
       next_page?: string | null
-      previous_page?: string | null
-      count: number
     }
     metadata: {
       total_returned: number
@@ -62,26 +65,26 @@ export const zendeskSearchUsersTool: ToolConfig<
     query: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Search query string',
+      visibility: 'user-or-llm',
+      description: 'Search query string (e.g., user name or email)',
     },
     externalId: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'External ID to search by',
+      visibility: 'user-or-llm',
+      description: 'External ID to search by (your system identifier)',
     },
     perPage: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Results per page (default: 100, max: 100)',
+      visibility: 'user-or-llm',
+      description: 'Results per page as a number string (default: "100", max: "100")',
     },
     page: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Page number',
+      visibility: 'user-or-llm',
+      description: 'Page number for pagination (1-based)',
     },
   },
 
@@ -90,8 +93,8 @@ export const zendeskSearchUsersTool: ToolConfig<
       const queryParams = new URLSearchParams()
       if (params.query) queryParams.append('query', params.query)
       if (params.externalId) queryParams.append('external_id', params.externalId)
-      if (params.page) queryParams.append('page', params.page)
       if (params.perPage) queryParams.append('per_page', params.perPage)
+      if (params.page) queryParams.append('page', params.page)
 
       const query = queryParams.toString()
       const url = buildZendeskUrl(params.subdomain, '/users/search')
@@ -116,19 +119,22 @@ export const zendeskSearchUsersTool: ToolConfig<
 
     const data = await response.json()
     const users = data.users || []
+    const hasMore = data.next_page !== null && data.next_page !== undefined
 
     return {
       success: true,
       output: {
         users,
+        // /users/search uses offset pagination (page/per_page), not cursor pagination.
+        // after_cursor is always null; use next_page URL or page param for subsequent pages.
         paging: {
+          after_cursor: null,
+          has_more: hasMore,
           next_page: data.next_page ?? null,
-          previous_page: data.previous_page ?? null,
-          count: data.count || users.length,
         },
         metadata: {
           total_returned: users.length,
-          has_more: !!data.next_page,
+          has_more: hasMore,
         },
         success: true,
       },
@@ -136,30 +142,8 @@ export const zendeskSearchUsersTool: ToolConfig<
   },
 
   outputs: {
-    users: { type: 'array', description: 'Array of user objects' },
-    paging: {
-      type: 'object',
-      description: 'Pagination information',
-      properties: {
-        next_page: { type: 'string', description: 'URL for next page of results', optional: true },
-        previous_page: {
-          type: 'string',
-          description: 'URL for previous page of results',
-          optional: true,
-        },
-        count: { type: 'number', description: 'Total count of users' },
-      },
-    },
-    metadata: {
-      type: 'object',
-      description: 'Response metadata',
-      properties: {
-        total_returned: {
-          type: 'number',
-          description: 'Number of users returned in this response',
-        },
-        has_more: { type: 'boolean', description: 'Whether more users are available' },
-      },
-    },
+    users: USERS_ARRAY_OUTPUT,
+    paging: PAGING_OUTPUT,
+    metadata: METADATA_OUTPUT,
   },
 }

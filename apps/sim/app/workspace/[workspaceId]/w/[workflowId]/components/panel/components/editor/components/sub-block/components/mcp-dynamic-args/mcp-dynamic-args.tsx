@@ -1,11 +1,11 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { Combobox, Label, Slider, Switch } from '@/components/emcn/components'
-import { cn } from '@/lib/core/utils/cn'
 import { LongInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/long-input/long-input'
 import { ShortInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/short-input/short-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { resolvePreviewContextValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/utils'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useMcpTools } from '@/hooks/mcp/use-mcp-tools'
 import { formatParameterLabel } from '@/tools/params'
@@ -18,6 +18,7 @@ interface McpDynamicArgsProps {
   disabled?: boolean
   isPreview?: boolean
   previewValue?: any
+  previewContextValues?: Record<string, unknown>
 }
 
 /**
@@ -47,12 +48,19 @@ export function McpDynamicArgs({
   disabled = false,
   isPreview = false,
   previewValue,
+  previewContextValues,
 }: McpDynamicArgsProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const { mcpTools, isLoading } = useMcpTools(workspaceId)
-  const [selectedTool] = useSubBlockValue(blockId, 'tool')
-  const [cachedSchema] = useSubBlockValue(blockId, '_toolSchema')
+  const [toolFromStore] = useSubBlockValue(blockId, 'tool')
+  const selectedTool = previewContextValues
+    ? resolvePreviewContextValue(previewContextValues.tool)
+    : toolFromStore
+  const [schemaFromStore] = useSubBlockValue(blockId, '_toolSchema')
+  const cachedSchema = previewContextValues
+    ? resolvePreviewContextValue(previewContextValues._toolSchema)
+    : schemaFromStore
   const [toolArgs, setToolArgs] = useSubBlockValue(blockId, subBlockId)
 
   const selectedToolConfig = mcpTools.find((tool) => tool.id === selectedTool)
@@ -138,7 +146,7 @@ export function McpDynamicArgs({
             />
             <Label
               htmlFor={`${paramName}-switch`}
-              className='cursor-pointer font-normal text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70'
+              className='cursor-pointer font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70'
             >
               {formatParameterLabel(paramName)}
             </Label>
@@ -146,14 +154,10 @@ export function McpDynamicArgs({
         )
 
       case 'dropdown': {
-        const dropdownOptions = useMemo(
-          () =>
-            (paramSchema.enum || []).map((option: any) => ({
-              label: String(option),
-              value: String(option),
-            })),
-          [paramSchema.enum]
-        )
+        const dropdownOptions = (paramSchema.enum || []).map((option: any) => ({
+          label: String(option),
+          value: String(option),
+        }))
 
         return (
           <div key={`${paramName}-dropdown`}>
@@ -340,22 +344,21 @@ export function McpDynamicArgs({
 
             return (
               <div key={paramName} className='subblock-row'>
-                <div className='subblock-content flex flex-col gap-[10px]'>
+                <div className='subblock-content flex flex-col gap-2.5'>
                   {showLabel && (
-                    <Label
-                      className={cn(
-                        'font-medium text-sm',
-                        toolSchema.required?.includes(paramName) &&
-                          'after:ml-1 after:text-red-500 after:content-["*"]'
-                      )}
-                    >
-                      {formatParameterLabel(paramName)}
-                    </Label>
+                    <div className='flex items-center justify-between gap-1.5 pl-0.5'>
+                      <Label className='flex items-baseline gap-1.5 whitespace-nowrap'>
+                        {formatParameterLabel(paramName)}
+                        {toolSchema.required?.includes(paramName) && (
+                          <span className='ml-0.5'>*</span>
+                        )}
+                      </Label>
+                    </div>
                   )}
                   {renderParameterInput(paramName, paramSchema as any)}
                 </div>
                 {showDivider && (
-                  <div className='subblock-divider px-[2px] pt-[16px] pb-[13px]'>
+                  <div className='subblock-divider px-0.5 pt-4 pb-[13px]'>
                     <div
                       className='h-[1.25px]'
                       style={{

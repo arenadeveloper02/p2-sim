@@ -1,5 +1,5 @@
 import { BrowserUseIcon } from '@/components/icons'
-import { AuthMode, type BlockConfig } from '@/blocks/types'
+import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import type { BrowserUseResponse } from '@/tools/browser_use/types'
 
 export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
@@ -11,6 +11,8 @@ export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
     'Integrate Browser Use into the workflow. Can navigate the web and perform actions as if a real user was interacting with the browser.',
   docsLink: 'https://docs.sim.ai/tools/browser_use',
   category: 'tools',
+  integrationType: IntegrationType.Automation,
+  tags: ['web-scraping', 'automation', 'agentic'],
   bgColor: '#181C1E',
   icon: BrowserUseIcon,
   subBlocks: [
@@ -33,6 +35,7 @@ export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
       type: 'dropdown',
       options: [
         { label: 'Browser Use LLM', id: 'browser-use-llm' },
+        { label: 'Browser Use 2.0', id: 'browser-use-2.0' },
         { label: 'GPT-4o', id: 'gpt-4o' },
         { label: 'GPT-4o Mini', id: 'gpt-4o-mini' },
         { label: 'GPT-4.1', id: 'gpt-4.1' },
@@ -42,6 +45,7 @@ export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
         { label: 'Gemini 2.5 Flash', id: 'gemini-2.5-flash' },
         { label: 'Gemini 2.5 Pro', id: 'gemini-2.5-pro' },
         { label: 'Gemini 3 Pro Preview', id: 'gemini-3-pro-preview' },
+        { label: 'Gemini 3 Flash Preview', id: 'gemini-3-flash-preview' },
         { label: 'Gemini Flash Latest', id: 'gemini-flash-latest' },
         { label: 'Gemini Flash Lite Latest', id: 'gemini-flash-lite-latest' },
         { label: 'Claude 3.7 Sonnet', id: 'claude-3-7-sonnet-20250219' },

@@ -9,11 +9,13 @@ import {
   PopoverSection,
 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
+import { writePendingCredentialCreateRequest } from '@/lib/credentials/client-state'
 import {
   usePersonalEnvironment,
   useWorkspaceEnvironment,
   type WorkspaceEnvironmentData,
 } from '@/hooks/queries/environment'
+import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 
 /**
  * Props for the EnvVarDropdown component
@@ -22,7 +24,7 @@ interface EnvVarDropdownProps {
   /** Whether the dropdown is visible */
   visible: boolean
   /** Callback when an environment variable is selected */
-  onSelect: (newValue: string) => void
+  onSelect: (newValue: string, newCursorPosition: number) => void
   /** Search term to filter environment variables */
   searchTerm?: string
   /** Additional CSS class names */
@@ -118,6 +120,8 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
   maxHeight = 'none',
   inputRef,
 }) => {
+  const { navigateToSettings } = useSettingsNavigation()
+
   // React Query hooks for environment variables
   const { data: personalEnv = {} } = usePersonalEnvironment()
   const { data: workspaceEnvData } = useWorkspaceEnvironment(workspaceId || '', {
@@ -168,7 +172,15 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
   }, [searchTerm])
 
   const openEnvironmentSettings = () => {
-    window.dispatchEvent(new CustomEvent('open-settings', { detail: { tab: 'environment' } }))
+    if (workspaceId) {
+      writePendingCredentialCreateRequest({
+        workspaceId,
+        type: 'env_personal',
+        envKey: searchTerm.trim(),
+        requestedAt: Date.now(),
+      })
+    }
+    navigateToSettings({ section: 'secrets' })
     onClose?.()
   }
 
@@ -180,6 +192,8 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
 
     const isStandardEnvVarContext = lastOpenBraces !== -1
 
+    const tagLength = 2 + envVar.length + 2
+
     if (isStandardEnvVarContext) {
       const startText = textBeforeCursor.slice(0, lastOpenBraces)
 
@@ -187,13 +201,10 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
       const endText = closeIndex !== -1 ? textAfterCursor.slice(closeIndex + 2) : textAfterCursor
 
       const newValue = `${startText}{{${envVar}}}${endText}`
-      onSelect(newValue)
+      onSelect(newValue, lastOpenBraces + tagLength)
     } else {
-      if (inputValue.trim() !== '') {
-        onSelect(`{{${envVar}}}`)
-      } else {
-        onSelect(`{{${envVar}}}`)
-      }
+      const newValue = `{{${envVar}}}`
+      onSelect(newValue, tagLength)
     }
 
     onClose?.()
@@ -269,7 +280,7 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
   }
 
   return (
-    <Popover open={visible} onOpenChange={(open) => !open && onClose?.()}>
+    <Popover open={visible} onOpenChange={(open) => !open && onClose?.()} colorScheme='inverted'>
       <PopoverAnchor asChild>
         <div
           className={cn('pointer-events-none', className)}
@@ -302,7 +313,7 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
               }}
             >
               <Plus className='h-3 w-3' />
-              <span>Create environment variable</span>
+              <span>Create Secret</span>
             </PopoverItem>
           </PopoverScrollArea>
         ) : (

@@ -1,26 +1,31 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
 import clsx from 'clsx'
-import { MoreVertical, Pencil, RotateCcw, SendToBack } from 'lucide-react'
-import { Button, Popover, PopoverContent, PopoverItem, PopoverTrigger } from '@/components/emcn'
-import { Skeleton } from '@/components/ui'
+import { FileText, MoreVertical, Pencil, RotateCcw, SendToBack } from 'lucide-react'
+import {
+  Button,
+  Popover,
+  PopoverContent,
+  PopoverItem,
+  PopoverTrigger,
+  Skeleton,
+  Tooltip,
+} from '@/components/emcn'
+import { formatDateTime } from '@/lib/core/utils/formatting'
 import type { WorkflowDeploymentVersionResponse } from '@/lib/workflows/persistence/utils'
+import { useUpdateDeploymentVersion } from '@/hooks/queries/deployments'
+import { VersionDescriptionModal } from './version-description-modal'
 
-const logger = createLogger('Versions')
-
-/** Shared styling constants aligned with terminal component */
-const HEADER_TEXT_CLASS = 'font-medium text-[var(--text-tertiary)] text-[12px]'
-const ROW_TEXT_CLASS = 'font-medium text-[var(--text-primary)] text-[12px]'
+const HEADER_TEXT_CLASS = 'font-medium text-[var(--text-tertiary)] text-caption'
+const ROW_TEXT_CLASS = 'font-medium text-[var(--text-primary)] text-caption'
 const COLUMN_BASE_CLASS = 'flex-shrink-0'
 
-/** Column width configuration */
 const COLUMN_WIDTHS = {
   VERSION: 'w-[180px]',
   DEPLOYED_BY: 'w-[140px]',
   TIMESTAMP: 'flex-1',
-  ACTIONS: 'w-[32px]',
+  ACTIONS: 'w-[56px]',
 } as const
 
 interface VersionsProps {
@@ -31,34 +36,6 @@ interface VersionsProps {
   onSelectVersion: (version: number | null) => void
   onPromoteToLive: (version: number) => void
   onLoadDeployment: (version: number) => void
-  fetchVersions: () => Promise<void>
-}
-
-/**
- * Formats a timestamp into a readable string.
- * @param value - The date string or Date object to format
- * @returns Formatted string like "8:36 PM PT on Oct 11, 2025"
- */
-const formatDate = (value: string | Date): string => {
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return '-'
-  }
-
-  const timePart = date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZoneName: 'short',
-  })
-
-  const datePart = date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-
-  return `${timePart} on ${datePart}`
 }
 
 /**
@@ -73,13 +50,14 @@ export function Versions({
   onSelectVersion,
   onPromoteToLive,
   onLoadDeployment,
-  fetchVersions,
 }: VersionsProps) {
   const [editingVersion, setEditingVersion] = useState<number | null>(null)
   const [editValue, setEditValue] = useState('')
-  const [isRenaming, setIsRenaming] = useState(false)
   const [openDropdown, setOpenDropdown] = useState<number | null>(null)
+  const [descriptionModalVersion, setDescriptionModalVersion] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const renameMutation = useUpdateDeploymentVersion()
 
   useEffect(() => {
     if (editingVersion !== null && inputRef.current) {
@@ -94,7 +72,8 @@ export function Versions({
     setEditValue(currentName || `v${version}`)
   }
 
-  const handleSaveRename = async (version: number) => {
+  const handleSaveRename = (version: number) => {
+    if (renameMutation.isPending) return
     if (!workflowId || !editValue.trim()) {
       setEditingVersion(null)
       return
@@ -108,25 +87,21 @@ export function Versions({
       return
     }
 
-    setIsRenaming(true)
-    try {
-      const res = await fetch(`/api/workflows/${workflowId}/deployments/${version}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editValue.trim() }),
-      })
-
-      if (res.ok) {
-        await fetchVersions()
-        setEditingVersion(null)
-      } else {
-        logger.error('Failed to rename version')
+    renameMutation.mutate(
+      {
+        workflowId,
+        version,
+        name: editValue.trim(),
+      },
+      {
+        onSuccess: () => {
+          setEditingVersion(null)
+        },
+        onError: () => {
+          // Keep editing state open on error so user can retry
+        },
       }
-    } catch (error) {
-      logger.error('Error renaming version:', error)
-    } finally {
-      setIsRenaming(false)
-    }
+    )
   }
 
   const handleCancelRename = () => {
@@ -149,10 +124,20 @@ export function Versions({
     onLoadDeployment(version)
   }
 
+  const handleOpenDescriptionModal = (version: number) => {
+    setOpenDropdown(null)
+    setDescriptionModalVersion(version)
+  }
+
+  const descriptionModalVersionData =
+    descriptionModalVersion !== null
+      ? versions.find((v) => v.version === descriptionModalVersion)
+      : null
+
   if (versionsLoading && versions.length === 0) {
     return (
-      <div className='overflow-hidden rounded-[4px] border border-[var(--border)]'>
-        <div className='flex h-[30px] items-center bg-[var(--surface-1)] px-[16px]'>
+      <div className='overflow-hidden rounded-sm border border-[var(--border)]'>
+        <div className='flex h-[30px] items-center bg-[var(--surface-1)] px-4'>
           <div className={clsx(COLUMN_WIDTHS.VERSION, COLUMN_BASE_CLASS)}>
             <Skeleton className='h-[12px] w-[50px]' />
           </div>
@@ -166,10 +151,10 @@ export function Versions({
         </div>
         <div className='bg-[var(--surface-2)]'>
           {[0, 1].map((i) => (
-            <div key={i} className='flex h-[36px] items-center px-[16px]'>
-              <div className={clsx(COLUMN_WIDTHS.VERSION, COLUMN_BASE_CLASS, 'min-w-0 pr-[8px]')}>
-                <div className='flex items-center gap-[16px]'>
-                  <Skeleton className='h-[6px] w-[6px] rounded-[2px]' />
+            <div key={i} className='flex h-[36px] items-center px-4'>
+              <div className={clsx(COLUMN_WIDTHS.VERSION, COLUMN_BASE_CLASS, 'min-w-0 pr-2')}>
+                <div className='flex items-center gap-4'>
+                  <Skeleton className='h-[6px] w-[6px] rounded-xs' />
                   <Skeleton className='h-[12px] w-[60px]' />
                 </div>
               </div>
@@ -179,8 +164,15 @@ export function Versions({
               <div className={clsx(COLUMN_WIDTHS.TIMESTAMP, 'min-w-0')}>
                 <Skeleton className='h-[12px] w-[160px]' />
               </div>
-              <div className={clsx(COLUMN_WIDTHS.ACTIONS, COLUMN_BASE_CLASS, 'flex justify-end')}>
-                <Skeleton className='h-[20px] w-[20px] rounded-[4px]' />
+              <div
+                className={clsx(
+                  COLUMN_WIDTHS.ACTIONS,
+                  COLUMN_BASE_CLASS,
+                  'flex justify-end gap-0.5'
+                )}
+              >
+                <Skeleton className='h-[20px] w-[20px] rounded-sm' />
+                <Skeleton className='h-[20px] w-[20px] rounded-sm' />
               </div>
             </div>
           ))}
@@ -191,15 +183,15 @@ export function Versions({
 
   if (versions.length === 0) {
     return (
-      <div className='flex h-[120px] items-center justify-center rounded-[4px] border border-[var(--border)] text-[#8D8D8D] text-[13px]'>
+      <div className='flex h-[120px] items-center justify-center rounded-sm border border-[var(--border)] text-[var(--text-placeholder)] text-small'>
         No deployments yet
       </div>
     )
   }
 
   return (
-    <div className='overflow-hidden rounded-[4px] border border-[var(--border)]'>
-      <div className='flex h-[30px] items-center bg-[var(--surface-1)] px-[16px]'>
+    <div className='overflow-hidden rounded-sm border border-[var(--border)]'>
+      <div className='flex h-[30px] items-center bg-[var(--surface-1)] px-4'>
         <div className={clsx(COLUMN_WIDTHS.VERSION, COLUMN_BASE_CLASS)}>
           <span className={HEADER_TEXT_CLASS}>Version</span>
         </div>
@@ -220,19 +212,19 @@ export function Versions({
             <div
               key={v.id}
               className={clsx(
-                'flex h-[36px] cursor-pointer items-center px-[16px] transition-colors duration-100',
+                'flex h-[36px] cursor-pointer items-center px-4 transition-colors duration-100',
                 isSelected
-                  ? 'bg-[var(--accent)]/10 hover:bg-[var(--accent)]/15'
-                  : 'hover:bg-[var(--surface-6)] dark:hover:bg-[var(--border)]'
+                  ? 'bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover-hover:bg-[color-mix(in_srgb,var(--accent)_15%,transparent)]'
+                  : 'hover-hover:bg-[var(--surface-6)] dark:hover-hover:bg-[var(--border)]'
               )}
               onClick={() => handleRowClick(v.version)}
             >
-              <div className={clsx(COLUMN_WIDTHS.VERSION, COLUMN_BASE_CLASS, 'min-w-0 pr-[8px]')}>
-                <div className='flex items-center gap-[16px]'>
+              <div className={clsx(COLUMN_WIDTHS.VERSION, COLUMN_BASE_CLASS, 'min-w-0 pr-2')}>
+                <div className='flex items-center gap-4'>
                   <div
                     className={clsx(
-                      'h-[6px] w-[6px] shrink-0 rounded-[2px]',
-                      v.isActive ? 'bg-[#4ADE80]' : 'bg-[#B7B7B7]'
+                      'h-[6px] w-[6px] shrink-0 rounded-xs',
+                      v.isActive ? 'bg-[var(--indicator-active)]' : 'bg-[var(--indicator-inactive)]'
                     )}
                     title={v.isActive ? 'Live' : 'Inactive'}
                   />
@@ -253,11 +245,11 @@ export function Versions({
                       onClick={(e) => e.stopPropagation()}
                       onBlur={() => handleSaveRename(v.version)}
                       className={clsx(
-                        'w-full border-0 bg-transparent p-0 font-medium text-[12px] leading-5 outline-none',
+                        'w-full border-0 bg-transparent p-0 font-medium text-caption leading-5 outline-none',
                         'text-[var(--text-primary)] focus:outline-none focus:ring-0'
                       )}
                       maxLength={100}
-                      disabled={isRenaming}
+                      disabled={renameMutation.isPending}
                       autoComplete='off'
                       autoCorrect='off'
                       autoCapitalize='off'
@@ -265,7 +257,7 @@ export function Versions({
                     />
                   ) : (
                     <span
-                      className={clsx('block flex items-center gap-[4px] truncate', ROW_TEXT_CLASS)}
+                      className={clsx('block flex items-center gap-1 truncate', ROW_TEXT_CLASS)}
                     >
                       <span className='truncate'>{v.name || `v${v.version}`}</span>
                       {v.isActive && <span className='text-[var(--text-tertiary)]'> (live)</span>}
@@ -289,14 +281,40 @@ export function Versions({
                 <span
                   className={clsx('block truncate text-[var(--text-tertiary)]', ROW_TEXT_CLASS)}
                 >
-                  {formatDate(v.createdAt)}
+                  {formatDateTime(new Date(v.createdAt))}
                 </span>
               </div>
 
               <div
-                className={clsx(COLUMN_WIDTHS.ACTIONS, COLUMN_BASE_CLASS, 'flex justify-end')}
+                className={clsx(
+                  COLUMN_WIDTHS.ACTIONS,
+                  COLUMN_BASE_CLASS,
+                  'flex items-center justify-end gap-0.5'
+                )}
                 onClick={(e) => e.stopPropagation()}
               >
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Button
+                      variant='ghost'
+                      className={clsx(
+                        '!p-1',
+                        !v.description &&
+                          'text-[var(--text-quaternary)] hover-hover:text-[var(--text-tertiary)]'
+                      )}
+                      onClick={() => handleOpenDescriptionModal(v.version)}
+                    >
+                      <FileText className='h-3.5 w-3.5' />
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content side='top' className='max-w-[240px]'>
+                    {v.description ? (
+                      <p className='line-clamp-3 text-caption'>{v.description}</p>
+                    ) : (
+                      <p className='text-caption'>Add description</p>
+                    )}
+                  </Tooltip.Content>
+                </Tooltip.Root>
                 <Popover
                   open={openDropdown === v.version}
                   onOpenChange={(open) => setOpenDropdown(open ? v.version : null)}
@@ -310,6 +328,10 @@ export function Versions({
                     <PopoverItem onClick={() => handleStartRename(v.version, v.name)}>
                       <Pencil className='h-3 w-3' />
                       <span>Rename</span>
+                    </PopoverItem>
+                    <PopoverItem onClick={() => handleOpenDescriptionModal(v.version)}>
+                      <FileText className='h-3 w-3' />
+                      <span>{v.description ? 'Edit description' : 'Add description'}</span>
                     </PopoverItem>
                     {!v.isActive && (
                       <PopoverItem onClick={() => handlePromote(v.version)}>
@@ -328,6 +350,20 @@ export function Versions({
           )
         })}
       </div>
+
+      {workflowId && descriptionModalVersionData && (
+        <VersionDescriptionModal
+          key={descriptionModalVersionData.version}
+          open={descriptionModalVersion !== null}
+          onOpenChange={(open) => !open && setDescriptionModalVersion(null)}
+          workflowId={workflowId}
+          version={descriptionModalVersionData.version}
+          versionName={
+            descriptionModalVersionData.name || `v${descriptionModalVersionData.version}`
+          }
+          currentDescription={descriptionModalVersionData.description}
+        />
+      )}
     </div>
   )
 }

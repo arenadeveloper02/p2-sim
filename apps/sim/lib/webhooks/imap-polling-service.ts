@@ -7,7 +7,7 @@ import type { FetchMessageObject, MailboxLockObject } from 'imapflow'
 import { ImapFlow } from 'imapflow'
 import { nanoid } from 'nanoid'
 import { pollingIdempotency } from '@/lib/core/idempotency/service'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
 
 const logger = createLogger('ImapPollingService')
@@ -285,7 +285,6 @@ async function fetchNewEmails(config: ImapWebhookConfig, requestId: string) {
 
   try {
     await client.connect()
-    logger.debug(`[${requestId}] Connected to IMAP server ${config.host}`)
 
     const maxEmails = config.maxEmailsPerPoll || 25
     let totalEmailsCollected = 0
@@ -295,7 +294,6 @@ async function fetchNewEmails(config: ImapWebhookConfig, requestId: string) {
 
       try {
         const mailbox = await client.mailboxOpen(mailboxPath)
-        logger.debug(`[${requestId}] Opened mailbox: ${mailbox.path}, exists: ${mailbox.exists}`)
 
         // Parse search criteria - expects JSON object from UI
         let searchCriteria: any = { unseen: true }
@@ -335,14 +333,10 @@ async function fetchNewEmails(config: ImapWebhookConfig, requestId: string) {
           const searchResult = await client.search(searchCriteria, { uid: true })
           messageUids = searchResult === false ? [] : searchResult
         } catch (searchError) {
-          logger.debug(
-            `[${requestId}] Search returned no messages for ${mailboxPath}: ${searchError}`
-          )
           continue
         }
 
         if (messageUids.length === 0) {
-          logger.debug(`[${requestId}] No messages matching criteria in ${mailboxPath}`)
           continue
         }
 
@@ -356,8 +350,6 @@ async function fetchNewEmails(config: ImapWebhookConfig, requestId: string) {
             latestUidByMailbox[mailboxPath] || 0
           )
         }
-
-        logger.info(`[${requestId}] Processing ${uidsToProcess.length} emails from ${mailboxPath}`)
 
         for await (const msg of client.fetch(
           uidsToProcess,
@@ -384,7 +376,6 @@ async function fetchNewEmails(config: ImapWebhookConfig, requestId: string) {
     }
 
     await client.logout()
-    logger.debug(`[${requestId}] Disconnected from IMAP server`)
 
     return { emails, latestUidByMailbox }
   } catch (error) {
@@ -639,7 +630,7 @@ async function processEmails(
               timestamp: new Date().toISOString(),
             }
 
-            const webhookUrl = `${getBaseUrl()}/api/webhooks/trigger/${webhookData.path}`
+            const webhookUrl = `${getInternalApiBaseUrl()}/api/webhooks/trigger/${webhookData.path}`
 
             const response = await fetch(webhookUrl, {
               method: 'POST',

@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
-import { StreamingIndicator } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/smooth-streaming'
+import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
+import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components'
+import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
+import { useThrottledValue } from '@/hooks/use-throttled-value'
 import ArenaCopilotMarkdownRenderer from '../../../panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
 import {
   downloadImage,
@@ -33,46 +36,11 @@ interface ChatMessageProps {
     timestamp: string | Date
     type: 'user' | 'workflow'
     isStreaming?: boolean
-    attachments?: ChatAttachment[]
+    attachments?: ChatMessageAttachment[]
   }
 }
 
 const MAX_WORD_LENGTH = 25
-
-/**
- * Formats file size in human-readable format
- */
-const formatFileSize = (bytes?: number): string => {
-  if (!bytes || bytes === 0) return ''
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return `${Math.round((bytes / 1024 ** i) * 10) / 10} ${sizes[i]}`
-}
-
-/**
- * Opens image attachment in new window
- */
-const openImageInNewWindow = (dataUrl: string, fileName: string) => {
-  const newWindow = window.open('', '_blank')
-  if (!newWindow) return
-
-  newWindow.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>${fileName}</title>
-        <style>
-          body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #000; }
-          img { max-width: 100%; max-height: 100vh; object-fit: contain; }
-        </style>
-      </head>
-      <body>
-        <img src="${dataUrl}" alt="${fileName}" />
-      </body>
-    </html>
-  `)
-  newWindow.document.close()
-}
 
 /**
  * Component for wrapping long words to prevent overflow
@@ -197,67 +165,26 @@ const RenderButtons = ({
  * Renders a chat message with optional file attachments
  */
 export function ChatMessage({ message }: ChatMessageProps) {
-  const formattedContent = useMemo(() => {
+  const rawContent = useMemo(() => {
     if (typeof message.content === 'object' && message.content !== null) {
       return JSON.stringify(message.content, null, 2)
     }
     return String(message.content || '')
   }, [message.content])
 
-  const handleAttachmentClick = (attachment: ChatAttachment) => {
-    const validDataUrl = attachment.dataUrl?.trim()
-    if (validDataUrl?.startsWith('data:')) {
-      openImageInNewWindow(validDataUrl, attachment.name)
-    }
-  }
+  const throttled = useThrottledValue(rawContent)
+  const formattedContent = message.type === 'user' ? rawContent : throttled
 
   if (message.type === 'user') {
+    const hasAttachments = message.attachments && message.attachments.length > 0
     return (
       <div className='w-full max-w-full overflow-hidden opacity-100 transition-opacity duration-200'>
-        {message.attachments && message.attachments.length > 0 && (
-          <div className='mb-2 flex flex-wrap gap-[6px]'>
-            {message.attachments.map((attachment) => {
-              const hasValidDataUrl =
-                attachment.dataUrl?.trim() && attachment.dataUrl.startsWith('data:')
-              // Only treat as displayable image if we have both image type AND valid data URL
-              const canDisplayAsImage = attachment.type.startsWith('image/') && hasValidDataUrl
-
-              return (
-                <div
-                  key={attachment.id}
-                  className={`group relative flex-shrink-0 overflow-hidden rounded-[6px] bg-[var(--surface-2)] ${
-                    hasValidDataUrl ? 'cursor-pointer' : ''
-                  } ${canDisplayAsImage ? 'h-[40px] w-[40px]' : 'flex min-w-[80px] max-w-[120px] items-center justify-center px-[8px] py-[2px]'}`}
-                  onClick={(e) => {
-                    if (hasValidDataUrl) {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      handleAttachmentClick(attachment)
-                    }
-                  }}
-                >
-                  {canDisplayAsImage ? (
-                    <img
-                      src={attachment.dataUrl}
-                      alt={attachment.name}
-                      className='h-full w-full object-cover'
-                    />
-                  ) : (
-                    <div className='min-w-0 flex-1'>
-                      <div className='truncate font-medium text-[10px] text-[var(--white)]'>
-                        {attachment.name}
-                      </div>
-                      {attachment.size && (
-                        <div className='text-[9px] text-[var(--text-tertiary)]'>
-                          {formatFileSize(attachment.size)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+        {hasAttachments && (
+          <ChatMessageAttachments
+            attachments={message.attachments!}
+            align='start'
+            className='mb-[4px]'
+          />
         )}
 
         {formattedContent && !formattedContent.startsWith('Uploaded') && (
@@ -385,7 +312,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       <div className='whitespace-normal break-words font-[470] font-season text-[#E8E8E8] text-sm leading-[1.25rem]'>
         {/* <WordWrap text={formattedContent} /> */}
         {renderContent(message?.content)}
-        {message?.isStreaming && <StreamingIndicator />}
+        {message?.isStreaming && <StreamingIndicator className='mt-1 text-[#E8E8E8]' />}
       </div>
       <RenderButtons message={message} formattedContent={formattedContent} />
     </div>

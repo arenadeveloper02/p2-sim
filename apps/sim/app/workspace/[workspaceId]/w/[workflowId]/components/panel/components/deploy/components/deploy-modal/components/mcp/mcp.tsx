@@ -10,13 +10,15 @@ import {
   type ComboboxOption,
   Input,
   Label,
+  Skeleton,
   Textarea,
 } from '@/components/emcn'
-import { Skeleton } from '@/components/ui'
 import { generateToolInputSchema, sanitizeToolName } from '@/lib/mcp/workflow-tool-schema'
 import { normalizeInputFormatValue } from '@/lib/workflows/input-format'
 import { isInputDefinitionTrigger } from '@/lib/workflows/triggers/input-definition-triggers'
 import type { InputFormatField } from '@/lib/workflows/types'
+import { McpServerFormModal } from '@/app/workspace/[workspaceId]/settings/components/mcp/components/mcp-server-form-modal/mcp-server-form-modal'
+import { useAllowedMcpDomains, useCreateMcpServer } from '@/hooks/queries/mcp'
 import {
   useAddWorkflowMcpTool,
   useDeleteWorkflowMcpTool,
@@ -26,7 +28,7 @@ import {
   type WorkflowMcpServer,
   type WorkflowMcpTool,
 } from '@/hooks/queries/workflow-mcp-servers'
-import { useSettingsModalStore } from '@/stores/modals/settings/store'
+import { useAvailableEnvVarKeys } from '@/hooks/use-available-env-vars'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -43,6 +45,12 @@ interface McpDeployProps {
   onAddedToServer?: () => void
   onSubmittingChange?: (submitting: boolean) => void
   onCanSaveChange?: (canSave: boolean) => void
+}
+
+function haveSameServerSelection(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  const bSet = new Set(b)
+  return a.every((id) => bSet.has(id))
 }
 
 /**
@@ -94,7 +102,11 @@ export function McpDeploy({
 }: McpDeployProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
-  const openSettingsModal = useSettingsModalStore((state) => state.openModal)
+  const [showMcpModal, setShowMcpModal] = useState(false)
+
+  const createMcpServer = useCreateMcpServer()
+  const { data: allowedMcpDomains = null } = useAllowedMcpDomains()
+  const availableEnvVars = useAvailableEnvVarKeys(workspaceId)
 
   const { data: servers = [], isLoading: isLoadingServers } = useWorkflowMcpServers(workspaceId)
   const addToolMutation = useAddWorkflowMcpTool()
@@ -142,7 +154,8 @@ export function McpDeploy({
     return isDefaultDescription ? '' : workflowDescription
   })
   const [parameterDescriptions, setParameterDescriptions] = useState<Record<string, string>>({})
-  const [pendingServerChanges, setPendingServerChanges] = useState<Set<string>>(new Set())
+  const [pendingServerChanges, setPendingServerChanges] = useState<Set<string>>(() => new Set())
+  const [saveErrors, setSaveErrors] = useState<string[]>([])
 
   const parameterSchema = useMemo(
     () => generateParameterSchema(inputFormat, parameterDescriptions),
@@ -179,6 +192,7 @@ export function McpDeploy({
     }
     return ids
   }, [servers, serverToolsMap])
+  const [draftSelectedServerIds, setDraftSelectedServerIds] = useState<string[] | null>(null)
 
   const hasLoadedInitialData = useRef(false)
 
@@ -238,9 +252,10 @@ export function McpDeploy({
     }
   }, [toolName, toolDescription, parameterDescriptions, savedValues])
 
-  const hasDeployedTools = selectedServerIds.length > 0
-  const hasChanges = useMemo(() => {
-    if (!savedValues || !hasDeployedTools) return false
+  const selectedServerIdsForForm = draftSelectedServerIds ?? selectedServerIds
+
+  const hasToolConfigurationChanges = useMemo(() => {
+    if (!savedValues) return false
     if (toolName !== savedValues.toolName) return true
     if (toolDescription !== savedValues.toolDescription) return true
     if (
@@ -249,11 +264,18 @@ export function McpDeploy({
       return true
     }
     return false
-  }, [toolName, toolDescription, parameterDescriptions, hasDeployedTools, savedValues])
+  }, [toolName, toolDescription, parameterDescriptions, savedValues])
+  const hasServerSelectionChanges = useMemo(
+    () => !haveSameServerSelection(selectedServerIdsForForm, selectedServerIds),
+    [selectedServerIdsForForm, selectedServerIds]
+  )
+  const hasChanges =
+    hasServerSelectionChanges ||
+    (hasToolConfigurationChanges && selectedServerIdsForForm.length > 0)
 
   useEffect(() => {
-    onCanSaveChange?.(hasChanges && hasDeployedTools && !!toolName.trim())
-  }, [hasChanges, hasDeployedTools, toolName, onCanSaveChange])
+    onCanSaveChange?.(hasChanges && !!toolName.trim())
+  }, [hasChanges, toolName, onCanSaveChange])
 
   /**
    * Save tool configuration to all deployed servers
@@ -261,74 +283,25 @@ export function McpDeploy({
   const handleSave = useCallback(async () => {
     if (!toolName.trim()) return
 
-    const toolsToUpdate: Array<{ serverId: string; toolId: string }> = []
-    for (const server of servers) {
-      const toolInfo = serverToolsMap[server.id]
-      if (toolInfo?.tool) {
-        toolsToUpdate.push({ serverId: server.id, toolId: toolInfo.tool.id })
-      }
-    }
+    const currentIds = new Set(selectedServerIds)
+    const nextIds = new Set(selectedServerIdsForForm)
+    const toAdd = new Set(selectedServerIdsForForm.filter((id) => !currentIds.has(id)))
+    const toRemove = selectedServerIds.filter((id) => !nextIds.has(id))
+    const shouldUpdateExisting = hasToolConfigurationChanges
 
-    if (toolsToUpdate.length === 0) return
+    if (toAdd.size === 0 && toRemove.length === 0 && !shouldUpdateExisting) return
 
     onSubmittingChange?.(true)
+    setSaveErrors([])
     try {
-      for (const { serverId, toolId } of toolsToUpdate) {
-        await updateToolMutation.mutateAsync({
-          workspaceId,
-          serverId,
-          toolId,
-          toolName: toolName.trim(),
-          toolDescription: toolDescription.trim() || undefined,
-          parameterSchema,
-        })
-      }
-      // Update saved values after successful save (triggers re-render → hasChanges becomes false)
-      setSavedValues({
-        toolName,
-        toolDescription,
-        parameterDescriptions: { ...parameterDescriptions },
-      })
-      onCanSaveChange?.(false)
-      onSubmittingChange?.(false)
-    } catch (error) {
-      logger.error('Failed to save tool configuration:', error)
-      onSubmittingChange?.(false)
-    }
-  }, [
-    toolName,
-    toolDescription,
-    parameterDescriptions,
-    parameterSchema,
-    servers,
-    serverToolsMap,
-    workspaceId,
-    updateToolMutation,
-    onSubmittingChange,
-    onCanSaveChange,
-  ])
-
-  const serverOptions: ComboboxOption[] = useMemo(() => {
-    return servers.map((server) => ({
-      label: server.name,
-      value: server.id,
-    }))
-  }, [servers])
-
-  const handleServerSelectionChange = useCallback(
-    async (newSelectedIds: string[]) => {
-      if (!toolName.trim()) return
-
-      const currentIds = new Set(selectedServerIds)
-      const newIds = new Set(newSelectedIds)
-
-      const toAdd = newSelectedIds.filter((id) => !currentIds.has(id))
-      const toRemove = selectedServerIds.filter((id) => !newIds.has(id))
+      const errors: string[] = []
+      const addedEntries: Record<string, { tool: WorkflowMcpTool; isLoading: boolean }> = {}
+      const removedIds: string[] = []
 
       for (const serverId of toAdd) {
         setPendingServerChanges((prev) => new Set(prev).add(serverId))
         try {
-          await addToolMutation.mutateAsync({
+          const addedTool = await addToolMutation.mutateAsync({
             workspaceId,
             serverId,
             workflowId,
@@ -336,10 +309,13 @@ export function McpDeploy({
             toolDescription: toolDescription.trim() || undefined,
             parameterSchema,
           })
+          addedEntries[serverId] = { tool: addedTool, isLoading: false }
           onAddedToServer?.()
           logger.info(`Added workflow ${workflowId} as tool to server ${serverId}`)
         } catch (error) {
-          logger.error('Failed to add tool:', error)
+          const serverName = servers.find((s) => s.id === serverId)?.name || serverId
+          errors.push(`Failed to add to ${serverName}`)
+          logger.error(`Failed to add tool to server ${serverId}:`, error)
         } finally {
           setPendingServerChanges((prev) => {
             const next = new Set(prev)
@@ -351,60 +327,121 @@ export function McpDeploy({
 
       for (const serverId of toRemove) {
         const toolInfo = serverToolsMap[serverId]
-        if (toolInfo?.tool) {
-          setPendingServerChanges((prev) => new Set(prev).add(serverId))
+        if (!toolInfo?.tool) continue
+
+        setPendingServerChanges((prev) => new Set(prev).add(serverId))
+        try {
+          await deleteToolMutation.mutateAsync({
+            workspaceId,
+            serverId,
+            toolId: toolInfo.tool.id,
+          })
+          removedIds.push(serverId)
+        } catch (error) {
+          const serverName = servers.find((s) => s.id === serverId)?.name || serverId
+          errors.push(`Failed to remove from ${serverName}`)
+          logger.error(`Failed to remove tool from server ${serverId}:`, error)
+        } finally {
+          setPendingServerChanges((prev) => {
+            const next = new Set(prev)
+            next.delete(serverId)
+            return next
+          })
+        }
+      }
+
+      if (shouldUpdateExisting) {
+        for (const serverId of selectedServerIdsForForm) {
+          if (toAdd.has(serverId)) continue
+          const toolInfo = serverToolsMap[serverId]
+          if (!toolInfo?.tool) continue
+
           try {
-            await deleteToolMutation.mutateAsync({
+            await updateToolMutation.mutateAsync({
               workspaceId,
               serverId,
               toolId: toolInfo.tool.id,
-            })
-            setServerToolsMap((prev) => {
-              const next = { ...prev }
-              delete next[serverId]
-              return next
+              toolName: toolName.trim(),
+              toolDescription: toolDescription.trim() || undefined,
+              parameterSchema,
             })
           } catch (error) {
-            logger.error('Failed to remove tool:', error)
-          } finally {
-            setPendingServerChanges((prev) => {
-              const next = new Set(prev)
-              next.delete(serverId)
-              return next
-            })
+            const serverName = servers.find((s) => s.id === serverId)?.name || serverId
+            errors.push(`Failed to update on ${serverName}`)
+            logger.error(`Failed to update tool on server ${serverId}:`, error)
           }
         }
       }
-    },
-    [
-      selectedServerIds,
-      serverToolsMap,
-      toolName,
-      toolDescription,
-      workspaceId,
-      workflowId,
-      parameterSchema,
-      addToolMutation,
-      deleteToolMutation,
-      onAddedToServer,
-    ]
-  )
+
+      setServerToolsMap((prev) => {
+        const next = { ...prev, ...addedEntries }
+        for (const id of removedIds) {
+          delete next[id]
+        }
+        return next
+      })
+      if (errors.length > 0) {
+        setSaveErrors(errors)
+      } else {
+        setDraftSelectedServerIds(null)
+        setSavedValues({
+          toolName,
+          toolDescription,
+          parameterDescriptions: { ...parameterDescriptions },
+        })
+        onCanSaveChange?.(false)
+      }
+      onSubmittingChange?.(false)
+    } catch (error) {
+      logger.error('Failed to save tool configuration:', error)
+      onSubmittingChange?.(false)
+    }
+  }, [
+    toolName,
+    toolDescription,
+    parameterDescriptions,
+    parameterSchema,
+    selectedServerIds,
+    selectedServerIdsForForm,
+    hasToolConfigurationChanges,
+    serverToolsMap,
+    workspaceId,
+    workflowId,
+    servers,
+    addToolMutation,
+    deleteToolMutation,
+    updateToolMutation,
+    onAddedToServer,
+    onSubmittingChange,
+    onCanSaveChange,
+  ])
+
+  const serverOptions: ComboboxOption[] = useMemo(() => {
+    return servers.map((server) => ({
+      label: server.name,
+      value: server.id,
+    }))
+  }, [servers])
+
+  const handleServerSelectionChange = useCallback((newSelectedIds: string[]) => {
+    setDraftSelectedServerIds(newSelectedIds)
+  }, [])
 
   const selectedServersLabel = useMemo(() => {
-    const count = selectedServerIds.length
+    const count = selectedServerIdsForForm.length
     if (count === 0) return 'Select servers...'
     if (count === 1) {
-      const server = servers.find((s) => s.id === selectedServerIds[0])
+      const server = servers.find((s) => s.id === selectedServerIdsForForm[0])
       return server?.name || '1 server'
     }
     return `${count} servers selected`
-  }, [selectedServerIds, servers])
+  }, [selectedServerIdsForForm, servers])
 
   const isPending = pendingServerChanges.size > 0
 
   if (!isDeployed) {
     return (
-      <div className='flex h-full items-center justify-center text-[13px] text-[var(--text-muted)]'>
+      <div className='flex h-full items-center justify-center text-[var(--text-muted)] text-small'>
         Deploy your workflow first to add it as an MCP tool.
       </div>
     )
@@ -413,18 +450,18 @@ export function McpDeploy({
   if (isLoadingServers) {
     return (
       <div className='-mx-1 space-y-4 px-1'>
-        <div className='space-y-[12px]'>
+        <div className='space-y-3'>
           <div>
             <Skeleton className='mb-[6.5px] h-[16px] w-[70px]' />
-            <Skeleton className='h-[34px] w-full rounded-[4px]' />
+            <Skeleton className='h-[34px] w-full rounded-sm' />
           </div>
           <div>
             <Skeleton className='mb-[6.5px] h-[16px] w-[80px]' />
-            <Skeleton className='h-[34px] w-full rounded-[4px]' />
+            <Skeleton className='h-[34px] w-full rounded-sm' />
           </div>
           <div>
             <Skeleton className='mb-[6.5px] h-[16px] w-[50px]' />
-            <Skeleton className='h-[34px] w-full rounded-[4px]' />
+            <Skeleton className='h-[34px] w-full rounded-sm' />
           </div>
         </div>
       </div>
@@ -433,24 +470,34 @@ export function McpDeploy({
 
   if (servers.length === 0) {
     return (
-      <div className='flex h-full flex-col items-center justify-center gap-3'>
-        <p className='text-[13px] text-[var(--text-muted)]'>
-          Create an MCP Server in Settings → MCP Servers first.
-        </p>
-        <Button
-          variant='tertiary'
-          onClick={() => openSettingsModal({ section: 'workflow-mcp-servers' })}
-        >
-          Create MCP Server
-        </Button>
-      </div>
+      <>
+        <div className='flex h-full flex-col items-center justify-center gap-3'>
+          <p className='text-[13px] text-[var(--text-muted)]'>
+            Create an MCP Server in Settings → MCP Servers first.
+          </p>
+          <Button variant='tertiary' onClick={() => setShowMcpModal(true)}>
+            Create MCP Server
+          </Button>
+        </div>
+        <McpServerFormModal
+          open={showMcpModal}
+          onOpenChange={setShowMcpModal}
+          mode='add'
+          onSubmit={async (config) => {
+            await createMcpServer.mutateAsync({ workspaceId, config: { ...config, enabled: true } })
+          }}
+          workspaceId={workspaceId}
+          availableEnvVars={availableEnvVars}
+          allowedMcpDomains={allowedMcpDomains}
+        />
+      </>
     )
   }
 
   return (
     <form
       id='mcp-deploy-form'
-      className='-mx-1 space-y-[12px] px-1'
+      className='-mx-1 space-y-3 px-1'
       onSubmit={(e) => {
         e.preventDefault()
         handleSave()
@@ -470,7 +517,7 @@ export function McpDeploy({
       ))}
 
       <div>
-        <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+        <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
           Tool name
         </Label>
         <Input
@@ -478,13 +525,13 @@ export function McpDeploy({
           onChange={(e) => setToolName(e.target.value)}
           placeholder='e.g., book_flight'
         />
-        <p className='mt-[6.5px] text-[11px] text-[var(--text-secondary)]'>
+        <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
           Use lowercase letters, numbers, and underscores only
         </p>
       </div>
 
       <div>
-        <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+        <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
           Description
         </Label>
         <Textarea
@@ -497,26 +544,28 @@ export function McpDeploy({
 
       {inputFormat.length > 0 && (
         <div>
-          <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+          <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
             Parameters ({inputFormat.length})
           </Label>
-          <div className='flex flex-col gap-[8px]'>
+          <div className='flex flex-col gap-2'>
             {inputFormat.map((field) => (
               <div
                 key={field.name}
-                className='overflow-hidden rounded-[4px] border border-[var(--border-1)]'
+                className='overflow-hidden rounded-sm border border-[var(--border-1)]'
               >
-                <div className='flex items-center justify-between bg-[var(--surface-4)] px-[10px] py-[5px]'>
-                  <div className='flex min-w-0 flex-1 items-center gap-[8px]'>
-                    <span className='block truncate font-medium text-[14px] text-[var(--text-tertiary)]'>
+                <div className='flex items-center justify-between bg-[var(--surface-4)] px-2.5 py-[5px]'>
+                  <div className='flex min-w-0 flex-1 items-center gap-2'>
+                    <span className='block truncate font-medium text-[var(--text-tertiary)] text-sm'>
                       {field.name}
                     </span>
-                    <Badge size='sm'>{field.type}</Badge>
+                    <Badge variant='type' size='sm'>
+                      {field.type}
+                    </Badge>
                   </div>
                 </div>
-                <div className='border-[var(--border-1)] border-t px-[10px] pt-[6px] pb-[10px]'>
-                  <div className='flex flex-col gap-[6px]'>
-                    <Label className='text-[13px]'>Description</Label>
+                <div className='rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-2.5 pt-1.5 pb-2.5'>
+                  <div className='flex flex-col gap-1.5'>
+                    <Label className='text-small'>Description</Label>
                     <Input
                       value={parameterDescriptions[field.name] || ''}
                       onChange={(e) =>
@@ -536,13 +585,13 @@ export function McpDeploy({
       )}
 
       <div>
-        <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+        <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
           Servers
         </Label>
         <Combobox
           options={serverOptions}
           multiSelect
-          multiSelectValues={selectedServerIds}
+          multiSelectValues={selectedServerIdsForForm}
           onMultiSelectChange={handleServerSelectionChange}
           placeholder='Select servers...'
           searchable
@@ -553,16 +602,20 @@ export function McpDeploy({
           }
         />
         {!toolName.trim() && (
-          <p className='mt-[6.5px] text-[11px] text-[var(--text-secondary)]'>
+          <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
             Enter a tool name to select servers
           </p>
         )}
       </div>
 
-      {addToolMutation.isError && (
-        <p className='mt-[6.5px] text-[12px] text-[var(--text-error)]'>
-          {addToolMutation.error?.message || 'Failed to add tool'}
-        </p>
+      {saveErrors.length > 0 && (
+        <div className='mt-[6.5px] flex flex-col gap-0.5'>
+          {saveErrors.map((error) => (
+            <p key={error} className='text-[var(--text-error)] text-caption'>
+              {error}
+            </p>
+          ))}
+        </div>
       )}
     </form>
   )

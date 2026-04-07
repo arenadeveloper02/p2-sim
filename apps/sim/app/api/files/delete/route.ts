@@ -1,9 +1,10 @@
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import type { StorageContext } from '@/lib/uploads/config'
 import { deleteFile, hasCloudStorage } from '@/lib/uploads/core/storage-service'
+import { deleteFileMetadata } from '@/lib/uploads/server/metadata'
 import { extractStorageKey, inferContextFromKey } from '@/lib/uploads/utils/file-utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
 import {
@@ -24,7 +25,7 @@ const logger = createLogger('FilesDeleteAPI')
  */
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
+    const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
 
     if (!authResult.success || !authResult.userId) {
       logger.warn('Unauthorized file delete request', {
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
         key,
         context: storageContext,
       })
+      await deleteFileMetadata(key)
 
       logger.info(`File successfully deleted: ${key}`)
 

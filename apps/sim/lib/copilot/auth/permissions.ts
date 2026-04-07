@@ -1,7 +1,5 @@
-import { db } from '@sim/db'
-import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
+import { getActiveWorkflowContext } from '@/lib/workflows/active-context'
 import { getUserEntityPermissions, type PermissionType } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CopilotPermissions')
@@ -11,7 +9,7 @@ const logger = createLogger('CopilotPermissions')
  *
  * @param userId - The authenticated user ID
  * @param workflowId - The workflow ID to check access for
- * @returns Promise<{ hasAccess: boolean; userPermission: PermissionType | null; workspaceId?: string; isOwner: boolean }>
+ * @returns Promise<{ hasAccess: boolean; userPermission: PermissionType | null; workspaceId?: string }>
  */
 export async function verifyWorkflowAccess(
   userId: string,
@@ -20,54 +18,32 @@ export async function verifyWorkflowAccess(
   hasAccess: boolean
   userPermission: PermissionType | null
   workspaceId?: string
-  isOwner: boolean
 }> {
   try {
-    const workflowData = await db
-      .select({
-        userId: workflow.userId,
-        workspaceId: workflow.workspaceId,
-      })
-      .from(workflow)
-      .where(eq(workflow.id, workflowId))
-      .limit(1)
-
-    if (!workflowData.length) {
+    const workflowContext = await getActiveWorkflowContext(workflowId)
+    if (!workflowContext) {
       logger.warn('Attempt to access non-existent workflow', {
         workflowId,
         userId,
       })
-      return { hasAccess: false, userPermission: null, isOwner: false }
+      return { hasAccess: false, userPermission: null }
     }
 
-    const { userId: workflowOwnerId, workspaceId } = workflowData[0]
+    const { workspaceId } = workflowContext
 
-    if (workflowOwnerId === userId) {
-      logger.debug('User has direct ownership of workflow', { workflowId, userId })
+    const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
+
+    if (userPermission !== null) {
+      logger.debug('User has workspace permission for workflow', {
+        workflowId,
+        userId,
+        workspaceId,
+        userPermission,
+      })
       return {
         hasAccess: true,
-        userPermission: 'admin',
-        workspaceId: workspaceId || undefined,
-        isOwner: true,
-      }
-    }
-
-    if (workspaceId && userId) {
-      const userPermission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-
-      if (userPermission !== null) {
-        logger.debug('User has workspace permission for workflow', {
-          workflowId,
-          userId,
-          workspaceId,
-          userPermission,
-        })
-        return {
-          hasAccess: true,
-          userPermission,
-          workspaceId: workspaceId || undefined,
-          isOwner: false,
-        }
+        userPermission,
+        workspaceId,
       }
     }
 
@@ -75,17 +51,15 @@ export async function verifyWorkflowAccess(
       workflowId,
       userId,
       workspaceId,
-      workflowOwnerId,
     })
     return {
       hasAccess: false,
       userPermission: null,
       workspaceId: workspaceId || undefined,
-      isOwner: false,
     }
   } catch (error) {
     logger.error('Error verifying workflow access', { error, workflowId, userId })
-    return { hasAccess: false, userPermission: null, isOwner: false }
+    return { hasAccess: false, userPermission: null }
   }
 }
 

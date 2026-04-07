@@ -8,15 +8,16 @@ import {
   Button,
   ChevronDown,
   Code,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   Input,
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverDivider,
-  PopoverItem,
   Tooltip,
 } from '@/components/emcn'
-import { WorkflowIcon } from '@/components/icons'
+import { Copy as CopyIcon, Search as SearchIcon } from '@/components/emcn/icons'
+import { AgentSkillsIcon, WorkflowIcon } from '@/components/icons'
 import { cn } from '@/lib/core/utils/cn'
 import { formatDuration } from '@/lib/core/utils/formatting'
 import { LoopTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/loop/loop-config'
@@ -58,40 +59,6 @@ function useSetToggle() {
 }
 
 /**
- * Generates a unique key for a trace span
- */
-function getSpanKey(span: TraceSpan): string {
-  if (span.id) {
-    return span.id
-  }
-  const name = span.name || 'span'
-  const start = span.startTime || 'unknown-start'
-  const end = span.endTime || 'unknown-end'
-  return `${name}|${start}|${end}`
-}
-
-/**
- * Merges multiple arrays of trace span children, deduplicating by span key
- */
-function mergeTraceSpanChildren(...groups: TraceSpan[][]): TraceSpan[] {
-  const merged: TraceSpan[] = []
-  const seen = new Set<string>()
-
-  groups.forEach((group) => {
-    group.forEach((child) => {
-      const key = getSpanKey(child)
-      if (seen.has(key)) {
-        return
-      }
-      seen.add(key)
-      merged.push(child)
-    })
-  })
-
-  return merged
-}
-
-/**
  * Parses a time value to milliseconds
  */
 function parseTime(value?: string | number | null): number {
@@ -101,7 +68,7 @@ function parseTime(value?: string | number | null): number {
 }
 
 /**
- * Checks if a span or any of its descendants has an error
+ * Checks if a span or any of its descendants has an error (any error).
  */
 function hasErrorInTree(span: TraceSpan): boolean {
   if (span.status === 'error') return true
@@ -115,35 +82,34 @@ function hasErrorInTree(span: TraceSpan): boolean {
 }
 
 /**
+ * Checks if a span or any of its descendants has an unhandled error.
+ * Spans with errorHandled: true (including containers that propagate it)
+ * are skipped. Used only for the root workflow span to match the actual
+ * workflow status.
+ */
+function hasUnhandledErrorInTree(span: TraceSpan): boolean {
+  if (span.status === 'error' && !span.errorHandled) return true
+  if (span.children && span.children.length > 0) {
+    return span.children.some((child) => hasUnhandledErrorInTree(child))
+  }
+  if (span.toolCalls && span.toolCalls.length > 0 && !span.errorHandled) {
+    return span.toolCalls.some((tc) => tc.error)
+  }
+  return false
+}
+
+/**
  * Normalizes and sorts trace spans recursively.
- * Merges children from both span.children and span.output.childTraceSpans,
- * deduplicates them, and sorts by start time.
+ * Deduplicates children and sorts by start time.
  */
 function normalizeAndSortSpans(spans: TraceSpan[]): TraceSpan[] {
   return spans
     .map((span) => {
       const enrichedSpan: TraceSpan = { ...span }
 
-      // Clean output by removing childTraceSpans after extracting
-      if (enrichedSpan.output && typeof enrichedSpan.output === 'object') {
-        enrichedSpan.output = { ...enrichedSpan.output }
-        if ('childTraceSpans' in enrichedSpan.output) {
-          const { childTraceSpans, ...cleanOutput } = enrichedSpan.output as {
-            childTraceSpans?: TraceSpan[]
-          } & Record<string, unknown>
-          enrichedSpan.output = cleanOutput
-        }
-      }
-
-      // Merge and deduplicate children from both sources
-      const directChildren = Array.isArray(span.children) ? span.children : []
-      const outputChildren = Array.isArray(span.output?.childTraceSpans)
-        ? (span.output!.childTraceSpans as TraceSpan[])
-        : []
-
-      const mergedChildren = mergeTraceSpanChildren(directChildren, outputChildren)
-      enrichedSpan.children =
-        mergedChildren.length > 0 ? normalizeAndSortSpans(mergedChildren) : undefined
+      // Process and deduplicate children
+      const children = Array.isArray(span.children) ? span.children : []
+      enrichedSpan.children = children.length > 0 ? normalizeAndSortSpans(children) : undefined
 
       return enrichedSpan
     })
@@ -170,6 +136,10 @@ function getBlockIconAndColor(
 
   // Check for tool by name first (most specific)
   if (lowerType === 'tool' && toolName) {
+    // Handle load_skill tool with the AgentSkillsIcon
+    if (toolName === 'load_skill') {
+      return { icon: AgentSkillsIcon, bgColor: '#8B5CF6' }
+    }
     const toolBlock = getBlockByToolName(toolName)
     if (toolBlock) {
       return { icon: toolBlock.icon, bgColor: toolBlock.bgColor }
@@ -325,7 +295,7 @@ function InputOutputSection({
   }, [activateSearch, closeContextMenu])
 
   return (
-    <div className='relative flex min-w-0 flex-col gap-[6px] overflow-hidden'>
+    <div className='relative flex min-w-0 flex-col gap-1.5 overflow-hidden'>
       <div
         className='group flex cursor-pointer items-center justify-between'
         onClick={() => onToggle(sectionKey)}
@@ -342,7 +312,7 @@ function InputOutputSection({
       >
         <span
           className={cn(
-            'font-medium text-[12px] transition-colors',
+            'font-medium text-caption transition-colors',
             isError
               ? 'text-[var(--text-error)]'
               : 'text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'
@@ -363,7 +333,7 @@ function InputOutputSection({
             <Code.Viewer
               code={jsonString}
               language='json'
-              className='!bg-[var(--surface-4)] dark:!bg-[var(--surface-3)] max-h-[300px] min-h-0 max-w-full rounded-[6px] border-0 [word-break:break-all]'
+              className='!bg-[var(--surface-4)] dark:!bg-[var(--surface-3)] max-h-[300px] min-h-0 max-w-full rounded-md border-0 [word-break:break-all]'
               wrapText
               searchQuery={isSearchActive ? searchQuery : undefined}
               currentMatchIndex={currentMatchIndex}
@@ -371,7 +341,7 @@ function InputOutputSection({
             />
             {/* Glass action buttons overlay */}
             {!isSearchActive && (
-              <div className='absolute top-[7px] right-[6px] z-10 flex gap-[4px]'>
+              <div className='absolute top-[7px] right-[6px] z-10 flex gap-1'>
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
                     <Button
@@ -381,7 +351,7 @@ function InputOutputSection({
                         e.stopPropagation()
                         handleCopy()
                       }}
-                      className='h-[20px] w-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover:bg-[var(--surface-3)]'
+                      className='h-[20px] w-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover-hover:bg-[var(--surface-3)]'
                     >
                       {copied ? (
                         <Check className='h-[10px] w-[10px] text-[var(--text-success)]' />
@@ -401,7 +371,7 @@ function InputOutputSection({
                         e.stopPropagation()
                         activateSearch()
                       }}
-                      className='h-[20px] w-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover:bg-[var(--surface-3)]'
+                      className='h-[20px] w-[20px] cursor-pointer border border-[var(--border-1)] bg-transparent p-0 backdrop-blur-sm hover-hover:bg-[var(--surface-3)]'
                     >
                       <Search className='h-[10px] w-[10px]' />
                     </Button>
@@ -415,7 +385,7 @@ function InputOutputSection({
           {/* Search Overlay */}
           {isSearchActive && (
             <div
-              className='absolute top-0 right-0 z-30 flex h-[34px] items-center gap-[6px] rounded-[4px] border border-[var(--border)] bg-[var(--surface-1)] px-[6px] shadow-sm'
+              className='absolute top-0 right-0 z-30 flex h-[34px] items-center gap-1.5 rounded-sm border border-[var(--border)] bg-[var(--surface-1)] px-1.5 shadow-sm'
               onClick={(e) => e.stopPropagation()}
             >
               <Input
@@ -424,11 +394,11 @@ function InputOutputSection({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder='Search...'
-                className='mr-[2px] h-[23px] w-[94px] text-[12px]'
+                className='mr-0.5 h-[23px] w-[94px] text-caption'
               />
               <span
                 className={cn(
-                  'min-w-[45px] text-center text-[11px]',
+                  'min-w-[45px] text-center text-xs',
                   matchCount > 0 ? 'text-[var(--text-secondary)]' : 'text-[var(--text-tertiary)]'
                 )}
               >
@@ -466,28 +436,38 @@ function InputOutputSection({
           {/* Context Menu - rendered in portal to avoid transform/overflow clipping */}
           {typeof document !== 'undefined' &&
             createPortal(
-              <Popover
-                open={isContextMenuOpen}
-                onOpenChange={closeContextMenu}
-                variant='secondary'
-                size='sm'
-                colorScheme='inverted'
-              >
-                <PopoverAnchor
-                  style={{
-                    position: 'fixed',
-                    left: `${contextMenuPosition.x}px`,
-                    top: `${contextMenuPosition.y}px`,
-                    width: '1px',
-                    height: '1px',
-                  }}
-                />
-                <PopoverContent align='start' side='bottom' sideOffset={4}>
-                  <PopoverItem onClick={handleCopy}>Copy</PopoverItem>
-                  <PopoverDivider />
-                  <PopoverItem onClick={handleSearch}>Search</PopoverItem>
-                </PopoverContent>
-              </Popover>,
+              <DropdownMenu open={isContextMenuOpen} onOpenChange={closeContextMenu} modal={false}>
+                <DropdownMenuTrigger asChild>
+                  <div
+                    style={{
+                      position: 'fixed',
+                      left: `${contextMenuPosition.x}px`,
+                      top: `${contextMenuPosition.y}px`,
+                      width: '1px',
+                      height: '1px',
+                      pointerEvents: 'none',
+                    }}
+                    tabIndex={-1}
+                    aria-hidden
+                  />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align='start'
+                  side='bottom'
+                  sideOffset={4}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                >
+                  <DropdownMenuItem onSelect={handleCopy}>
+                    <CopyIcon />
+                    Copy
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={handleSearch}>
+                    <SearchIcon />
+                    Search
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>,
               document.body
             )}
         </>
@@ -526,13 +506,12 @@ const TraceSpanNode = memo(function TraceSpanNode({
   const duration = span.duration || spanEndTime - spanStartTime
 
   const isDirectError = span.status === 'error'
-  const hasNestedError = hasErrorInTree(span)
+  const isRootWorkflow = depth === 0
+  const isRootWorkflowSpan = isRootWorkflow && span.type?.toLowerCase() === 'workflow'
+  const hasNestedError = isRootWorkflowSpan ? hasUnhandledErrorInTree(span) : hasErrorInTree(span)
   const showErrorStyle = isDirectError || hasNestedError
 
   const { icon: BlockIcon, bgColor } = getBlockIconAndColor(span.type, span.name)
-
-  // Root workflow execution is always expanded and has no toggle
-  const isRootWorkflow = depth === 0
 
   // Build all children including tool calls
   const allChildren = useMemo(() => {
@@ -573,7 +552,19 @@ const TraceSpanNode = memo(function TraceSpanNode({
     return children.sort((a, b) => parseTime(a.startTime) - parseTime(b.startTime))
   }, [span, spanId, spanStartTime])
 
-  const hasChildren = allChildren.length > 0
+  // Hide empty model timing segments for agents without tool calls
+  const filteredChildren = useMemo(() => {
+    const isAgent = span.type?.toLowerCase() === 'agent'
+    const hasToolCalls =
+      (span.toolCalls?.length ?? 0) > 0 || allChildren.some((c) => c.type?.toLowerCase() === 'tool')
+
+    if (isAgent && !hasToolCalls) {
+      return allChildren.filter((c) => c.type?.toLowerCase() !== 'model')
+    }
+    return allChildren
+  }, [allChildren, span.type, span.toolCalls])
+
+  const hasChildren = filteredChildren.length > 0
   const isExpanded = isRootWorkflow || expandedNodes.has(spanId)
   const isToggleable = !isRootWorkflow
 
@@ -590,7 +581,7 @@ const TraceSpanNode = memo(function TraceSpanNode({
       {/* Node Header Row */}
       <div
         className={cn(
-          'group flex items-center justify-between gap-[8px] py-[6px]',
+          'group flex items-center justify-between gap-2 py-1.5',
           isToggleable && 'cursor-pointer'
         )}
         onClick={isToggleable ? () => onToggleNode(spanId) : undefined}
@@ -609,17 +600,17 @@ const TraceSpanNode = memo(function TraceSpanNode({
         aria-expanded={isToggleable ? isExpanded : undefined}
         aria-label={isToggleable ? (isExpanded ? 'Collapse' : 'Expand') : undefined}
       >
-        <div className='flex min-w-0 flex-1 items-center gap-[8px]'>
+        <div className='flex min-w-0 flex-1 items-center gap-2'>
           {!isIterationType(span.type) && (
             <div
-              className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px]'
+              className='relative flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-sm'
               style={{ background: bgColor }}
             >
               {BlockIcon && <BlockIcon className='h-[9px] w-[9px] text-white' />}
             </div>
           )}
           <span
-            className='min-w-0 max-w-[180px] truncate font-medium text-[12px]'
+            className='min-w-0 max-w-[180px] truncate font-medium text-caption'
             style={{ color: showErrorStyle ? 'var(--text-error)' : 'var(--text-secondary)' }}
           >
             {span.name}
@@ -633,14 +624,14 @@ const TraceSpanNode = memo(function TraceSpanNode({
             />
           )}
         </div>
-        <span className='flex-shrink-0 font-medium text-[12px] text-[var(--text-tertiary)]'>
+        <span className='flex-shrink-0 font-medium text-[var(--text-tertiary)] text-caption'>
           {formatDuration(duration, { precision: 2 })}
         </span>
       </div>
 
       {/* Expanded Content */}
       {isExpanded && (
-        <div className='flex min-w-0 flex-col gap-[10px]'>
+        <div className='flex min-w-0 flex-col gap-2.5'>
           {/* Progress Bar */}
           <ProgressBar
             span={span}
@@ -651,7 +642,7 @@ const TraceSpanNode = memo(function TraceSpanNode({
 
           {/* Input/Output Sections */}
           {(hasInput || hasOutput) && (
-            <div className='flex min-w-0 flex-col gap-[6px] overflow-hidden py-[2px]'>
+            <div className='flex min-w-0 flex-col gap-1.5 overflow-hidden py-0.5'>
               {hasInput && (
                 <InputOutputSection
                   label='Input'
@@ -684,9 +675,9 @@ const TraceSpanNode = memo(function TraceSpanNode({
 
           {/* Nested Children */}
           {hasChildren && (
-            <div className='flex min-w-0 flex-col gap-[2px] border-[var(--border)] border-l pl-[10px]'>
-              {allChildren.map((child, index) => (
-                <div key={child.id || `${spanId}-child-${index}`} className='pl-[6px]'>
+            <div className='flex min-w-0 flex-col gap-0.5 border-[var(--border)] border-l pl-2.5'>
+              {filteredChildren.map((child, index) => (
+                <div key={child.id || `${spanId}-child-${index}`} className='pl-1.5'>
                   <TraceSpanNode
                     span={child}
                     workflowStartTime={workflowStartTime}
@@ -713,7 +704,7 @@ const TraceSpanNode = memo(function TraceSpanNode({
  */
 export const TraceSpans = memo(function TraceSpans({ traceSpans }: TraceSpansProps) {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set())
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set())
   const toggleSet = useSetToggle()
 
   const { workflowStartTime, actualTotalDuration, normalizedSpans } = useMemo(() => {
@@ -749,7 +740,7 @@ export const TraceSpans = memo(function TraceSpans({ traceSpans }: TraceSpansPro
   )
 
   if (!traceSpans || traceSpans.length === 0) {
-    return <div className='text-[12px] text-[var(--text-secondary)]'>No trace data available</div>
+    return <div className='text-[var(--text-secondary)] text-caption'>No trace data available</div>
   }
 
   return (

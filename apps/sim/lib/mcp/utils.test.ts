@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
 import {
   categorizeError,
   createMcpToolId,
@@ -82,7 +83,7 @@ describe('generateMcpServerId', () => {
 
 describe('MCP_CONSTANTS', () => {
   it.concurrent('has correct execution timeout', () => {
-    expect(MCP_CONSTANTS.EXECUTION_TIMEOUT).toBe(60000)
+    expect(MCP_CONSTANTS.EXECUTION_TIMEOUT).toBe(DEFAULT_EXECUTION_TIMEOUT_MS)
   })
 
   it.concurrent('has correct cache timeout (5 minutes)', () => {
@@ -108,7 +109,7 @@ describe('MCP_CONSTANTS', () => {
 
 describe('MCP_CLIENT_CONSTANTS', () => {
   it.concurrent('has correct client timeout', () => {
-    expect(MCP_CLIENT_CONSTANTS.CLIENT_TIMEOUT).toBe(60000)
+    expect(MCP_CLIENT_CONSTANTS.CLIENT_TIMEOUT).toBe(DEFAULT_EXECUTION_TIMEOUT_MS)
   })
 
   it.concurrent('has correct auto refresh interval (5 minutes)', () => {
@@ -245,7 +246,7 @@ describe('categorizeError', () => {
     const error = new Error('Server not accessible')
     const result = categorizeError(error)
     expect(result.status).toBe(404)
-    expect(result.message).toBe('Server not accessible')
+    expect(result.message).toBe('Resource not found')
   })
 
   it.concurrent('returns 401 for authentication errors', () => {
@@ -266,28 +267,28 @@ describe('categorizeError', () => {
     const error = new Error('Invalid parameter provided')
     const result = categorizeError(error)
     expect(result.status).toBe(400)
-    expect(result.message).toBe('Invalid parameter provided')
+    expect(result.message).toBe('Invalid request parameters')
   })
 
   it.concurrent('returns 400 for missing required errors', () => {
     const error = new Error('Missing required field: name')
     const result = categorizeError(error)
     expect(result.status).toBe(400)
-    expect(result.message).toBe('Missing required field: name')
+    expect(result.message).toBe('Invalid request parameters')
   })
 
   it.concurrent('returns 400 for validation errors', () => {
     const error = new Error('Validation failed for input')
     const result = categorizeError(error)
     expect(result.status).toBe(400)
-    expect(result.message).toBe('Validation failed for input')
+    expect(result.message).toBe('Invalid request parameters')
   })
 
   it.concurrent('returns 500 for generic errors', () => {
     const error = new Error('Something went wrong')
     const result = categorizeError(error)
     expect(result.status).toBe(500)
-    expect(result.message).toBe('Something went wrong')
+    expect(result.message).toBe('Internal server error')
   })
 
   it.concurrent('returns 500 for non-Error objects', () => {

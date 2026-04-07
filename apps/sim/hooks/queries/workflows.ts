@@ -8,6 +8,8 @@ import {
   createOptimisticMutationHandlers,
   generateTempId,
 } from '@/hooks/queries/utils/optimistic-mutation'
+import { getTopInsertionSortOrder } from '@/hooks/queries/utils/top-insertion-sort-order'
+import { useFolderStore } from '@/stores/folders/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 import { generateCreativeWorkflowName } from '@/stores/workflows/registry/utils'
@@ -16,12 +18,13 @@ import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowQueries')
 
+type WorkflowQueryScope = 'active' | 'archived' | 'all'
+
 export const workflowKeys = {
   all: ['workflows'] as const,
   lists: () => [...workflowKeys.all, 'list'] as const,
-  list: (workspaceId: string | undefined) => [...workflowKeys.lists(), workspaceId ?? ''] as const,
-  deploymentStatus: (workflowId: string | undefined) =>
-    [...workflowKeys.all, 'deploymentStatus', workflowId ?? ''] as const,
+  list: (workspaceId: string | undefined, scope: WorkflowQueryScope = 'active') =>
+    [...workflowKeys.lists(), workspaceId ?? '', scope] as const,
   deploymentVersions: () => [...workflowKeys.all, 'deploymentVersion'] as const,
   deploymentVersion: (workflowId: string | undefined, version: number | undefined) =>
     [...workflowKeys.deploymentVersions(), workflowId ?? '', version ?? 0] as const,
@@ -33,8 +36,11 @@ export const workflowKeys = {
  * Fetches workflow state from the API.
  * Used as the base query for both state preview and input fields extraction.
  */
-async function fetchWorkflowState(workflowId: string): Promise<WorkflowState | null> {
-  const response = await fetch(`/api/workflows/${workflowId}`)
+async function fetchWorkflowState(
+  workflowId: string,
+  signal?: AbortSignal
+): Promise<WorkflowState | null> {
+  const response = await fetch(`/api/workflows/${workflowId}`, { signal })
   if (!response.ok) throw new Error('Failed to fetch workflow')
   const { data } = await response.json()
   return data?.state ?? null
@@ -51,9 +57,10 @@ async function fetchWorkflowState(workflowId: string): Promise<WorkflowState | n
 export function useWorkflowState(workflowId: string | undefined) {
   return useQuery({
     queryKey: workflowKeys.state(workflowId),
-    queryFn: () => fetchWorkflowState(workflowId!),
+    queryFn: ({ signal }) => fetchWorkflowState(workflowId!, signal),
     enabled: Boolean(workflowId),
     staleTime: 30 * 1000, // 30 seconds
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -68,11 +75,18 @@ function mapWorkflow(workflow: any): WorkflowMetadata {
     sortOrder: workflow.sortOrder ?? 0,
     createdAt: new Date(workflow.createdAt),
     lastModified: new Date(workflow.updatedAt || workflow.createdAt),
+    archivedAt: workflow.archivedAt ? new Date(workflow.archivedAt) : null,
   }
 }
 
-async function fetchWorkflows(workspaceId: string): Promise<WorkflowMetadata[]> {
-  const response = await fetch(`/api/workflows?workspaceId=${workspaceId}`)
+async function fetchWorkflows(
+  workspaceId: string,
+  scope: WorkflowQueryScope = 'active',
+  signal?: AbortSignal
+): Promise<WorkflowMetadata[]> {
+  const response = await fetch(`/api/workflows?workspaceId=${workspaceId}&scope=${scope}`, {
+    signal,
+  })
 
   if (!response.ok) {
     throw new Error('Failed to fetch workflows')
@@ -82,39 +96,62 @@ async function fetchWorkflows(workspaceId: string): Promise<WorkflowMetadata[]> 
   return data.map(mapWorkflow)
 }
 
-export function useWorkflows(workspaceId?: string, options?: { syncRegistry?: boolean }) {
-  const { syncRegistry = true } = options || {}
+export function useWorkflows(
+  workspaceId?: string,
+  options?: { syncRegistry?: boolean; scope?: WorkflowQueryScope }
+) {
+  const { syncRegistry = true, scope = 'active' } = options || {}
   const beginMetadataLoad = useWorkflowRegistry((state) => state.beginMetadataLoad)
   const completeMetadataLoad = useWorkflowRegistry((state) => state.completeMetadataLoad)
   const failMetadataLoad = useWorkflowRegistry((state) => state.failMetadataLoad)
 
   const query = useQuery({
-    queryKey: workflowKeys.list(workspaceId),
-    queryFn: () => fetchWorkflows(workspaceId as string),
+    queryKey: workflowKeys.list(workspaceId, scope),
+    queryFn: ({ signal }) => fetchWorkflows(workspaceId as string, scope, signal),
     enabled: Boolean(workspaceId),
     placeholderData: keepPreviousData,
     staleTime: 60 * 1000,
   })
 
   useEffect(() => {
-    if (syncRegistry && workspaceId && query.status === 'pending') {
+    if (
+      syncRegistry &&
+      scope === 'active' &&
+      workspaceId &&
+      (query.status === 'pending' || query.isPlaceholderData)
+    ) {
       beginMetadataLoad(workspaceId)
     }
-  }, [syncRegistry, workspaceId, query.status, beginMetadataLoad])
+  }, [syncRegistry, scope, workspaceId, query.status, query.isPlaceholderData, beginMetadataLoad])
 
   useEffect(() => {
-    if (syncRegistry && workspaceId && query.status === 'success' && query.data) {
+    if (
+      syncRegistry &&
+      scope === 'active' &&
+      workspaceId &&
+      query.status === 'success' &&
+      query.data &&
+      !query.isPlaceholderData
+    ) {
       completeMetadataLoad(workspaceId, query.data)
     }
-  }, [syncRegistry, workspaceId, query.status, query.data, completeMetadataLoad])
+  }, [
+    syncRegistry,
+    scope,
+    workspaceId,
+    query.status,
+    query.data,
+    query.isPlaceholderData,
+    completeMetadataLoad,
+  ])
 
   useEffect(() => {
-    if (syncRegistry && workspaceId && query.status === 'error') {
+    if (syncRegistry && scope === 'active' && workspaceId && query.status === 'error') {
       const message =
         query.error instanceof Error ? query.error.message : 'Failed to fetch workflows'
       failMetadataLoad(workspaceId, message)
     }
-  }, [syncRegistry, workspaceId, query.status, query.error, failMetadataLoad])
+  }, [syncRegistry, scope, workspaceId, query.status, query.error, failMetadataLoad])
 
   return query
 }
@@ -126,6 +163,7 @@ interface CreateWorkflowVariables {
   color?: string
   folderId?: string | null
   sortOrder?: number
+  id?: string
 }
 
 interface CreateWorkflowResult {
@@ -145,6 +183,7 @@ interface DuplicateWorkflowVariables {
   description?: string
   color: string
   folderId?: string | null
+  newId?: string
 }
 
 interface DuplicateWorkflowResult {
@@ -166,7 +205,8 @@ interface DuplicateWorkflowResult {
 function createWorkflowMutationHandlers<TVariables extends { workspaceId: string }>(
   queryClient: ReturnType<typeof useQueryClient>,
   name: string,
-  createOptimisticWorkflow: (variables: TVariables, tempId: string) => WorkflowMetadata
+  createOptimisticWorkflow: (variables: TVariables, tempId: string) => WorkflowMetadata,
+  customGenerateTempId?: (variables: TVariables) => string
 ) {
   return createOptimisticMutationHandlers<
     CreateWorkflowResult | DuplicateWorkflowResult,
@@ -174,9 +214,9 @@ function createWorkflowMutationHandlers<TVariables extends { workspaceId: string
     WorkflowMetadata
   >(queryClient, {
     name,
-    getQueryKey: (variables) => workflowKeys.list(variables.workspaceId),
+    getQueryKey: (variables) => workflowKeys.list(variables.workspaceId, 'active'),
     getSnapshot: () => ({ ...useWorkflowRegistry.getState().workflows }),
-    generateTempId: () => generateTempId('temp-workflow'),
+    generateTempId: customGenerateTempId ?? (() => generateTempId('temp-workflow')),
     createOptimisticItem: createOptimisticWorkflow,
     applyOptimisticUpdate: (tempId, item) => {
       useWorkflowRegistry.setState((state) => ({
@@ -204,6 +244,17 @@ function createWorkflowMutationHandlers<TVariables extends { workspaceId: string
           error: null,
         }
       })
+
+      if (tempId !== data.id) {
+        useFolderStore.setState((state) => {
+          const selectedWorkflows = new Set(state.selectedWorkflows)
+          if (selectedWorkflows.has(tempId)) {
+            selectedWorkflows.delete(tempId)
+            selectedWorkflows.add(data.id)
+          }
+          return { selectedWorkflows }
+        })
+      }
     },
     rollback: (snapshot) => {
       useWorkflowRegistry.setState({ workflows: snapshot })
@@ -223,11 +274,13 @@ export function useCreateWorkflow() {
         sortOrder = variables.sortOrder
       } else {
         const currentWorkflows = useWorkflowRegistry.getState().workflows
-        const targetFolderId = variables.folderId || null
-        const workflowsInFolder = Object.values(currentWorkflows).filter(
-          (w) => w.folderId === targetFolderId
+        const currentFolders = useFolderStore.getState().folders
+        sortOrder = getTopInsertionSortOrder(
+          currentWorkflows,
+          currentFolders,
+          variables.workspaceId,
+          variables.folderId
         )
-        sortOrder = workflowsInFolder.reduce((min, w) => Math.min(min, w.sortOrder ?? 0), 1) - 1
       }
 
       return {
@@ -241,12 +294,13 @@ export function useCreateWorkflow() {
         folderId: variables.folderId || null,
         sortOrder,
       }
-    }
+    },
+    (variables) => variables.id ?? crypto.randomUUID()
   )
 
   return useMutation({
     mutationFn: async (variables: CreateWorkflowVariables): Promise<CreateWorkflowResult> => {
-      const { workspaceId, name, description, color, folderId, sortOrder } = variables
+      const { workspaceId, name, description, color, folderId, sortOrder, id } = variables
 
       logger.info(`Creating new workflow in workspace: ${workspaceId}`)
 
@@ -254,6 +308,7 @@ export function useCreateWorkflow() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id,
           name: name || generateCreativeWorkflowName(),
           description: description || 'New workflow',
           color: color || getNextWorkflowColor(),
@@ -323,11 +378,8 @@ export function useDuplicateWorkflowMutation() {
     'DuplicateWorkflow',
     (variables, tempId) => {
       const currentWorkflows = useWorkflowRegistry.getState().workflows
-      const targetFolderId = variables.folderId || null
-      const workflowsInFolder = Object.values(currentWorkflows).filter(
-        (w) => w.folderId === targetFolderId
-      )
-      const minSortOrder = workflowsInFolder.reduce((min, w) => Math.min(min, w.sortOrder ?? 0), 1)
+      const currentFolders = useFolderStore.getState().folders
+      const targetFolderId = variables.folderId ?? null
 
       return {
         id: tempId,
@@ -338,14 +390,20 @@ export function useDuplicateWorkflowMutation() {
         color: variables.color,
         workspaceId: variables.workspaceId,
         folderId: targetFolderId,
-        sortOrder: minSortOrder - 1,
+        sortOrder: getTopInsertionSortOrder(
+          currentWorkflows,
+          currentFolders,
+          variables.workspaceId,
+          targetFolderId
+        ),
       }
-    }
+    },
+    (variables) => variables.newId ?? crypto.randomUUID()
   )
 
   return useMutation({
     mutationFn: async (variables: DuplicateWorkflowVariables): Promise<DuplicateWorkflowResult> => {
-      const { workspaceId, sourceId, name, description, color, folderId } = variables
+      const { workspaceId, sourceId, name, description, color, folderId, newId } = variables
 
       logger.info(`Duplicating workflow ${sourceId} in workspace: ${workspaceId}`)
 
@@ -358,6 +416,7 @@ export function useDuplicateWorkflowMutation() {
           color,
           workspaceId,
           folderId: folderId ?? null,
+          newId,
         }),
       })
 
@@ -411,11 +470,16 @@ interface DeploymentVersionStateResponse {
   deployedState: WorkflowState
 }
 
-async function fetchDeploymentVersionState(
+/**
+ * Fetches the deployed state for a specific deployment version.
+ * Exported for reuse in other query hooks.
+ */
+export async function fetchDeploymentVersionState(
   workflowId: string,
-  version: number
+  version: number,
+  signal?: AbortSignal
 ): Promise<WorkflowState> {
-  const response = await fetch(`/api/workflows/${workflowId}/deployments/${version}`)
+  const response = await fetch(`/api/workflows/${workflowId}/deployments/${version}`, { signal })
 
   if (!response.ok) {
     throw new Error(`Failed to fetch deployment version: ${response.statusText}`)
@@ -436,7 +500,8 @@ async function fetchDeploymentVersionState(
 export function useDeploymentVersionState(workflowId: string | null, version: number | null) {
   return useQuery({
     queryKey: workflowKeys.deploymentVersion(workflowId ?? undefined, version ?? undefined),
-    queryFn: () => fetchDeploymentVersionState(workflowId as string, version as number),
+    queryFn: ({ signal }) =>
+      fetchDeploymentVersionState(workflowId as string, version as number, signal),
     enabled: Boolean(workflowId) && version !== null,
     staleTime: 5 * 60 * 1000, // 5 minutes - deployment versions don't change
   })
@@ -451,6 +516,8 @@ interface RevertToVersionVariables {
  * Mutation hook for reverting (loading) a deployment version into the current workflow.
  */
 export function useRevertToVersion() {
+  const queryClient = useQueryClient()
+
   return useMutation({
     mutationFn: async ({ workflowId, version }: RevertToVersionVariables): Promise<void> => {
       const response = await fetch(`/api/workflows/${workflowId}/deployments/${version}/revert`, {
@@ -460,6 +527,20 @@ export function useRevertToVersion() {
       if (!response.ok) {
         throw new Error('Failed to load deployment')
       }
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: workflowKeys.state(variables.workflowId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: deploymentKeys.info(variables.workflowId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: deploymentKeys.deployedState(variables.workflowId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: deploymentKeys.versions(variables.workflowId),
+      })
     },
   })
 }
@@ -490,7 +571,7 @@ export function useReorderWorkflows() {
       }
     },
     onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: workflowKeys.list(variables.workspaceId) })
+      await queryClient.cancelQueries({ queryKey: workflowKeys.lists() })
 
       const snapshot = { ...useWorkflowRegistry.getState().workflows }
 
@@ -517,137 +598,66 @@ export function useReorderWorkflows() {
       }
     },
     onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({ queryKey: workflowKeys.list(variables.workspaceId) })
+      queryClient.invalidateQueries({ queryKey: workflowKeys.lists() })
     },
   })
 }
 
 /**
- * Child deployment status data returned from the API
+ * Import workflow mutation (superuser debug)
  */
-export interface ChildDeploymentStatus {
-  activeVersion: number | null
-  isDeployed: boolean
-  needsRedeploy: boolean
-}
-
-/**
- * Fetches deployment status for a child workflow.
- * Uses Promise.all to fetch status and deployments in parallel for better performance.
- */
-async function fetchChildDeploymentStatus(workflowId: string): Promise<ChildDeploymentStatus> {
-  const fetchOptions = {
-    cache: 'no-store' as const,
-    headers: { 'Cache-Control': 'no-cache' },
-  }
-
-  const [statusRes, deploymentsRes] = await Promise.all([
-    fetch(`/api/workflows/${workflowId}/status`, fetchOptions),
-    fetch(`/api/workflows/${workflowId}/deployments`, fetchOptions),
-  ])
-
-  if (!statusRes.ok) {
-    throw new Error('Failed to fetch workflow status')
-  }
-
-  const statusData = await statusRes.json()
-
-  let activeVersion: number | null = null
-  if (deploymentsRes.ok) {
-    const deploymentsJson = await deploymentsRes.json()
-    const versions = Array.isArray(deploymentsJson?.data?.versions)
-      ? deploymentsJson.data.versions
-      : Array.isArray(deploymentsJson?.versions)
-        ? deploymentsJson.versions
-        : []
-
-    const active = versions.find((v: { isActive?: boolean }) => v.isActive)
-    activeVersion = active ? Number(active.version) : null
-  }
-
-  return {
-    activeVersion,
-    isDeployed: statusData.isDeployed || false,
-    needsRedeploy: statusData.needsRedeployment || false,
-  }
-}
-
-/**
- * Hook to fetch deployment status for a child workflow.
- * Used by workflow selector blocks to show deployment badges.
- */
-export function useChildDeploymentStatus(workflowId: string | undefined) {
-  return useQuery({
-    queryKey: workflowKeys.deploymentStatus(workflowId),
-    queryFn: () => fetchChildDeploymentStatus(workflowId!),
-    enabled: Boolean(workflowId),
-    staleTime: 0,
-    retry: false,
-  })
-}
-
-interface DeployChildWorkflowVariables {
+interface ImportWorkflowParams {
   workflowId: string
+  targetWorkspaceId: string
 }
 
-interface DeployChildWorkflowResult {
-  isDeployed: boolean
-  deployedAt?: Date
-  apiKey?: string
+interface ImportWorkflowResponse {
+  newWorkflowId: string
+  copilotChatsImported?: number
 }
 
-/**
- * Mutation hook for deploying a child workflow.
- * Invalidates the deployment status query on success.
- */
-export function useDeployChildWorkflow() {
+export function useImportWorkflow() {
   const queryClient = useQueryClient()
-  const setDeploymentStatus = useWorkflowRegistry((state) => state.setDeploymentStatus)
 
   return useMutation({
     mutationFn: async ({
       workflowId,
-    }: DeployChildWorkflowVariables): Promise<DeployChildWorkflowResult> => {
-      const response = await fetch(`/api/workflows/${workflowId}/deploy`, {
+      targetWorkspaceId,
+    }: ImportWorkflowParams): Promise<ImportWorkflowResponse> => {
+      const response = await fetch('/api/superuser/import-workflow', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          deployChatEnabled: false,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workflowId, targetWorkspaceId }),
       })
+
+      const data = await response.json()
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to deploy workflow')
+        throw new Error(data?.error || `Import failed with status ${response.status}`)
       }
 
-      const responseData = await response.json()
-      return {
-        isDeployed: responseData.isDeployed ?? false,
-        deployedAt: responseData.deployedAt ? new Date(responseData.deployedAt) : undefined,
-        apiKey: responseData.apiKey || '',
+      return data
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: workflowKeys.lists() })
+    },
+  })
+}
+
+export function useRestoreWorkflow() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (workflowId: string) => {
+      const res = await fetch(`/api/workflows/${workflowId}/restore`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to restore workflow')
       }
+      return res.json()
     },
-    onSuccess: (data, variables) => {
-      logger.info('Child workflow deployed', { workflowId: variables.workflowId })
-
-      setDeploymentStatus(variables.workflowId, data.isDeployed, data.deployedAt, data.apiKey || '')
-
-      queryClient.invalidateQueries({
-        queryKey: workflowKeys.deploymentStatus(variables.workflowId),
-      })
-      // Also invalidate deployment queries
-      queryClient.invalidateQueries({
-        queryKey: deploymentKeys.info(variables.workflowId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: deploymentKeys.versions(variables.workflowId),
-      })
-    },
-    onError: (error) => {
-      logger.error('Failed to deploy child workflow', { error })
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: workflowKeys.lists() })
     },
   })
 }

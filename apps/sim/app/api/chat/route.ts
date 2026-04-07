@@ -1,10 +1,11 @@
 import { db } from '@sim/db'
 import { chat, workflowQueries } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { isDev } from '@/lib/core/config/feature-flags'
 import { encryptSecret } from '@/lib/core/security/encryption'
@@ -76,7 +77,7 @@ async function replaceWorkflowQueries({
   })
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await getSession()
 
@@ -85,7 +86,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Get the user's chat deployments
-    const deployments = await db.select().from(chat).where(eq(chat.userId, session.user.id))
+    const deployments = await db
+      .select()
+      .from(chat)
+      .where(and(eq(chat.userId, session.user.id), isNull(chat.archivedAt)))
 
     return createSuccessResponse({ deployments })
   } catch (error: any) {
@@ -141,15 +145,18 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Check if identifier is already in use by an active chat
-      const existingChat = await db
-        .select()
-        .from(chat)
-        .where(eq(chat.identifier, identifier))
-        .limit(1)
+      // Check identifier availability and workflow access in parallel
+      const [existingIdentifier, { hasAccess, workflow: workflowRecord }] = await Promise.all([
+        db
+          .select()
+          .from(chat)
+          .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
+          .limit(1),
+        checkWorkflowAccessForChatCreation(workflowId, session.user.id),
+      ])
 
-      if (existingChat.length > 0) {
-        const existing = existingChat[0]
+      if (existingIdentifier.length > 0) {
+        const existing = existingIdentifier[0]
         // If chat is active, identifier is already in use
         if (existing.isActive) {
           return createErrorResponse('Identifier already in use', 400)
@@ -159,12 +166,6 @@ export async function POST(request: NextRequest) {
           `Found inactive chat with identifier ${identifier}, will update instead of creating new`
         )
       }
-
-      // Check if user has permission to create chat for this workflow
-      const { hasAccess, workflow: workflowRecord } = await checkWorkflowAccessForChatCreation(
-        workflowId,
-        session.user.id
-      )
 
       if (!hasAccess || !workflowRecord) {
         return createErrorResponse('Workflow not found or access denied', 404)
@@ -194,7 +195,7 @@ export async function POST(request: NextRequest) {
       // Merge customizations with the additional fields
       const mergedCustomizations = {
         ...(customizations || {}),
-        primaryColor: customizations?.primaryColor || 'var(--brand-primary-hover-hex)',
+        primaryColor: customizations?.primaryColor || 'var(--brand-hover)',
         // Only use default if welcomeMessage is undefined/null, not if it's an empty string
         welcomeMessage:
           customizations?.welcomeMessage !== undefined && customizations?.welcomeMessage !== null
@@ -207,8 +208,8 @@ export async function POST(request: NextRequest) {
       let chatId: string
 
       // If inactive chat exists, update it; otherwise create new
-      if (existingChat.length > 0 && !existingChat[0].isActive) {
-        const existing = existingChat[0]
+      if (existingIdentifier.length > 0 && !existingIdentifier[0].isActive) {
+        const existing = existingIdentifier[0]
         chatId = existing.id
 
         logger.info('Updating inactive chat deployment with values:', {
@@ -321,6 +322,20 @@ export async function POST(request: NextRequest) {
       } catch (_e) {
         // Silently fail
       }
+
+      recordAudit({
+        workspaceId: workflowRecord.workspaceId || null,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        actorEmail: session.user.email,
+        action: AuditAction.CHAT_DEPLOYED,
+        resourceType: AuditResourceType.CHAT,
+        resourceId: chatId,
+        resourceName: title,
+        description: `Deployed chat "${title}"`,
+        metadata: { workflowId, identifier, authType },
+        request,
+      })
 
       return createSuccessResponse({
         id: chatId,

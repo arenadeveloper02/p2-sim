@@ -1,8 +1,8 @@
 import { Link, Text } from '@react-email/components'
 import { baseStyles } from '@/components/emails/_styles'
 import { EmailLayout } from '@/components/emails/components'
-import { getBrandConfig } from '@/lib/branding/branding'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getBrandConfig } from '@/ee/whitelabeling'
 
 interface WelcomeEmailProps {
   userName?: string
@@ -44,7 +44,7 @@ export function WelcomeEmail({ userName }: WelcomeEmailProps) {
       <div style={baseStyles.divider} />
 
       <Text style={{ ...baseStyles.footerText, textAlign: 'left' }}>
-        You're on the free plan with $20 in credits to get started.
+        You're on the Community plan with 1,000 credits to get started.
       </Text>
     </EmailLayout>
   )

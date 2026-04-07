@@ -48,12 +48,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         workflowUpdatedAt: workflow.updatedAt,
       })
       .from(workflowExecutionLogs)
-      .innerJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
+      .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
       .innerJoin(
         permissions,
         and(
           eq(permissions.entityType, 'workspace'),
-          eq(permissions.entityId, workflow.workspaceId),
+          eq(permissions.entityId, workflowExecutionLogs.workspaceId),
           eq(permissions.userId, userId)
         )
       )
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const workflowSummary = {
       id: log.workflowId,
-      name: log.workflowName,
+      name: log.workflowName || 'Deleted Workflow',
       description: log.workflowDescription,
       color: log.workflowColor,
       folderId: log.workflowFolderId,
@@ -75,6 +75,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       workspaceId: log.workflowWorkspaceId,
       createdAt: log.workflowCreatedAt,
       updatedAt: log.workflowUpdatedAt,
+      deleted: !log.workflowName,
     }
 
     const response = {

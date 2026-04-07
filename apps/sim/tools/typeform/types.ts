@@ -1,4 +1,4 @@
-import type { ToolResponse } from '@/tools/types'
+import type { ToolFileData, ToolResponse } from '@/tools/types'
 
 export interface TypeformFilesParams {
   formId: string
@@ -12,6 +12,7 @@ export interface TypeformFilesParams {
 export interface TypeformFilesResponse extends ToolResponse {
   output: {
     fileUrl: string
+    file: ToolFileData
     contentType: string
     filename: string
   }
@@ -61,6 +62,8 @@ export interface TypeformResponsesParams {
   formId: string
   apiKey: string
   pageSize?: number
+  before?: string
+  after?: string
   since?: string
   until?: string
   completed?: string

@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import type { HubSpotGetCartParams, HubSpotGetCartResponse } from '@/tools/hubspot/types'
+import { GENERIC_CRM_OBJECT_OUTPUT } from '@/tools/hubspot/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('HubSpotGetCart')
@@ -7,7 +8,7 @@ const logger = createLogger('HubSpotGetCart')
 export const hubspotGetCartTool: ToolConfig<HubSpotGetCartParams, HubSpotGetCartResponse> = {
   id: 'hubspot_get_cart',
   name: 'Get Cart from HubSpot',
-  description: 'Retrieve a single cart by ID from HubSpot CRM',
+  description: 'Retrieve a single cart by ID from HubSpot',
   version: '1.0.0',
 
   oauth: {
@@ -25,26 +26,26 @@ export const hubspotGetCartTool: ToolConfig<HubSpotGetCartParams, HubSpotGetCart
     cartId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'The ID of the cart to retrieve',
+      visibility: 'user-or-llm',
+      description: 'The HubSpot cart ID to retrieve',
     },
     properties: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Comma-separated list of properties to return',
+      visibility: 'user-or-llm',
+      description: 'Comma-separated list of HubSpot property names to return',
     },
     associations: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'Comma-separated list of object types to retrieve associated IDs for',
     },
   },
 
   request: {
     url: (params) => {
-      const baseUrl = `https://api.hubapi.com/crm/v3/objects/carts/${params.cartId}`
+      const baseUrl = `https://api.hubapi.com/crm/v3/objects/carts/${params.cartId.trim()}`
       const queryParams = new URLSearchParams()
       if (params.properties) queryParams.append('properties', params.properties)
       if (params.associations) queryParams.append('associations', params.associations)
@@ -53,7 +54,9 @@ export const hubspotGetCartTool: ToolConfig<HubSpotGetCartParams, HubSpotGetCart
     },
     method: 'GET',
     headers: (params) => {
-      if (!params.accessToken) throw new Error('Access token is required')
+      if (!params.accessToken) {
+        throw new Error('Access token is required')
+      }
       return {
         Authorization: `Bearer ${params.accessToken}`,
         'Content-Type': 'application/json',
@@ -69,16 +72,12 @@ export const hubspotGetCartTool: ToolConfig<HubSpotGetCartParams, HubSpotGetCart
     }
     return {
       success: true,
-      output: {
-        cart: data,
-        cartId: data.id,
-        success: true,
-      },
+      output: { cart: data, cartId: data.id, success: true },
     }
   },
 
   outputs: {
-    cart: { type: 'object', description: 'HubSpot cart object with properties' },
+    cart: GENERIC_CRM_OBJECT_OUTPUT,
     cartId: { type: 'string', description: 'The retrieved cart ID' },
     success: { type: 'boolean', description: 'Operation success status' },
   },

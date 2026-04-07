@@ -1,6 +1,7 @@
 import { GoogleVaultIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 
 export const GoogleVaultBlock: BlockConfig = {
   type: 'google_vault',
@@ -11,6 +12,8 @@ export const GoogleVaultBlock: BlockConfig = {
     'Connect Google Vault to create exports, list exports, and manage holds within matters.',
   docsLink: 'https://developers.google.com/vault',
   category: 'tools',
+  integrationType: IntegrationType.Security,
+  tags: ['google-workspace', 'secrets-management', 'document-processing'],
   bgColor: '#E8F0FE',
   icon: GoogleVaultIcon,
   subBlocks: [
@@ -34,13 +37,21 @@ export const GoogleVaultBlock: BlockConfig = {
       id: 'credential',
       title: 'Google Vault Account',
       type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
       required: true,
       serviceId: 'google-vault',
-      requiredScopes: [
-        'https://www.googleapis.com/auth/ediscovery',
-        'https://www.googleapis.com/auth/devstorage.read_only',
-      ],
+      requiredScopes: getScopesForService('google-vault'),
       placeholder: 'Select Google Vault account',
+    },
+    {
+      id: 'manualCredential',
+      title: 'Google Vault Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
     // Create Hold inputs
     {
@@ -438,10 +449,10 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
         }
       },
       params: (params) => {
-        const { credential, holdStartTime, holdEndTime, holdTerms, ...rest } = params
+        const { oauthCredential, holdStartTime, holdEndTime, holdTerms, ...rest } = params
         return {
           ...rest,
-          credential,
+          oauthCredential,
           // Map hold-specific fields to their tool parameter names
           ...(holdStartTime && { startTime: holdStartTime }),
           ...(holdEndTime && { endTime: holdEndTime }),
@@ -453,7 +464,7 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
   inputs: {
     // Core inputs
     operation: { type: 'string', description: 'Operation to perform' },
-    credential: { type: 'string', description: 'Google Vault OAuth credential' },
+    oauthCredential: { type: 'string', description: 'Google Vault OAuth credential' },
     matterId: { type: 'string', description: 'Matter ID' },
 
     // Create export inputs
@@ -526,7 +537,7 @@ Return ONLY the description text - no explanations, no quotes, no extra text.`,
       description:
         'Single hold object (for create_matters_holds or list_matters_holds with holdId)',
     },
-    file: { type: 'json', description: 'Downloaded export file (UserFile) from execution files' },
+    file: { type: 'file', description: 'Downloaded export file (UserFile) from execution files' },
     nextPageToken: {
       type: 'string',
       description: 'Token for fetching next page of results (for list operations)',

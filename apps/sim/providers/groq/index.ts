@@ -10,10 +10,12 @@ import type {
   ProviderResponse,
   TimeSegment,
 } from '@/providers/types'
+import { ProviderError } from '@/providers/types'
 import {
   calculateCost,
   prepareToolExecution,
   prepareToolsWithUsageControl,
+  sumToolCosts,
   trackForcedToolUsage,
 } from '@/providers/utils'
 import { executeTool } from '@/tools'
@@ -74,7 +76,7 @@ export const groqProvider: ProviderConfig = {
     }
 
     if (request.temperature !== undefined) payload.temperature = request.temperature
-    if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+    if (request.maxTokens != null) payload.max_completion_tokens = request.maxTokens
 
     if (request.responseFormat) {
       payload.response_format = {
@@ -117,10 +119,13 @@ export const groqProvider: ProviderConfig = {
       const providerStartTime = Date.now()
       const providerStartTimeISO = new Date(providerStartTime).toISOString()
 
-      const streamResponse = await groq.chat.completions.create({
-        ...payload,
-        stream: true,
-      })
+      const streamResponse = await groq.chat.completions.create(
+        {
+          ...payload,
+          stream: true,
+        },
+        request.abortSignal ? { signal: request.abortSignal } : undefined
+      )
 
       const streamingResult = {
         stream: createReadableStreamFromGroqStream(streamResponse as any, (content, usage) => {
@@ -184,7 +189,10 @@ export const groqProvider: ProviderConfig = {
     try {
       const initialCallTime = Date.now()
 
-      let currentResponse = await groq.chat.completions.create(payload)
+      let currentResponse = await groq.chat.completions.create(
+        payload,
+        request.abortSignal ? { signal: request.abortSignal } : undefined
+      )
       const firstResponseTime = Date.now() - initialCallTime
 
       let content = currentResponse.choices[0]?.message?.content || ''
@@ -194,7 +202,7 @@ export const groqProvider: ProviderConfig = {
         total: currentResponse.usage?.total_tokens || 0,
       }
       const toolCalls = []
-      const toolResults = []
+      const toolResults: Record<string, unknown>[] = []
       const currentMessages = [...allMessages]
       let iterationCount = 0
       let modelTime = firstResponseTime
@@ -296,7 +304,7 @@ export const groqProvider: ProviderConfig = {
             })
 
             let resultContent: any
-            if (result.success) {
+            if (result.success && result.output) {
               toolResults.push(result.output)
               resultContent = result.output
             } else {
@@ -320,6 +328,7 @@ export const groqProvider: ProviderConfig = {
             currentMessages.push({
               role: 'tool',
               tool_call_id: toolCall.id,
+              name: toolName,
               content: JSON.stringify(resultContent),
             })
           }
@@ -353,7 +362,10 @@ export const groqProvider: ProviderConfig = {
           }
 
           const nextModelStartTime = Date.now()
-          currentResponse = await groq.chat.completions.create(nextPayload)
+          currentResponse = await groq.chat.completions.create(
+            nextPayload,
+            request.abortSignal ? { signal: request.abortSignal } : undefined
+          )
 
           const nextModelEndTime = Date.now()
           const thisModelTime = nextModelEndTime - nextModelStartTime
@@ -394,7 +406,10 @@ export const groqProvider: ProviderConfig = {
           stream: true,
         }
 
-        const streamResponse = await groq.chat.completions.create(streamingPayload)
+        const streamResponse = await groq.chat.completions.create(
+          streamingPayload,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
 
@@ -412,10 +427,12 @@ export const groqProvider: ProviderConfig = {
               usage.prompt_tokens,
               usage.completion_tokens
             )
+            const tc = sumToolCosts(toolResults)
             streamingResult.execution.output.cost = {
               input: accumulatedCost.input + streamCost.input,
               output: accumulatedCost.output + streamCost.output,
-              total: accumulatedCost.total + streamCost.total,
+              toolCost: tc || undefined,
+              total: accumulatedCost.total + streamCost.total + tc,
             }
           }),
           execution: {
@@ -448,6 +465,7 @@ export const groqProvider: ProviderConfig = {
               cost: {
                 input: accumulatedCost.input,
                 output: accumulatedCost.output,
+                toolCost: undefined as number | undefined,
                 total: accumulatedCost.total,
               },
             },
@@ -495,15 +513,11 @@ export const groqProvider: ProviderConfig = {
         duration: totalDuration,
       })
 
-      const enhancedError = new Error(error instanceof Error ? error.message : String(error))
-      // @ts-ignore
-      enhancedError.timing = {
+      throw new ProviderError(error instanceof Error ? error.message : String(error), {
         startTime: providerStartTimeISO,
         endTime: providerEndTimeISO,
         duration: totalDuration,
-      }
-
-      throw enhancedError
+      })
     }
   },
 }

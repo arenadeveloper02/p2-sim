@@ -124,12 +124,12 @@ export async function GET(request: NextRequest) {
         workflowDescription: workflow.description,
       })
       .from(workflowExecutionLogs)
-      .innerJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
+      .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
       .innerJoin(
         permissions,
         and(
           eq(permissions.entityType, 'workspace'),
-          eq(permissions.entityId, params.workspaceId),
+          eq(permissions.entityId, workflowExecutionLogs.workspaceId),
           eq(permissions.userId, userId)
         )
       )
@@ -169,8 +169,9 @@ export async function GET(request: NextRequest) {
       if (params.details === 'full') {
         result.workflow = {
           id: log.workflowId,
-          name: log.workflowName,
+          name: log.workflowName || 'Deleted Workflow',
           description: log.workflowDescription,
+          deleted: !log.workflowName,
         }
 
         if (log.cost) {

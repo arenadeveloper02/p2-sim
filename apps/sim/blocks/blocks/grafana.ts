@@ -1,6 +1,6 @@
 import { GrafanaIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { GrafanaResponse } from '@/tools/grafana/types'
 
 export const GrafanaBlock: BlockConfig<GrafanaResponse> = {
@@ -12,6 +12,8 @@ export const GrafanaBlock: BlockConfig<GrafanaResponse> = {
     'Integrate Grafana into workflows. Manage dashboards, alerts, annotations, data sources, folders, and monitor health status.',
   docsLink: 'https://docs.sim.ai/tools/grafana',
   category: 'tools',
+  integrationType: IntegrationType.Analytics,
+  tags: ['monitoring', 'data-analytics'],
   bgColor: '#E0E0E0',
   icon: GrafanaIcon,
   subBlocks: [
@@ -606,44 +608,22 @@ Return ONLY the folder title - no explanations, no quotes, no extra text.`,
     ],
     config: {
       tool: (params) => {
-        // Convert numeric string fields to numbers
-        if (params.panelId) {
-          params.panelId = Number(params.panelId)
-        }
-        if (params.annotationId) {
-          params.annotationId = Number(params.annotationId)
-        }
-        if (params.time) {
-          params.time = Number(params.time)
-        }
-        if (params.timeEnd) {
-          params.timeEnd = Number(params.timeEnd)
-        }
-        if (params.from) {
-          params.from = Number(params.from)
-        }
-        if (params.to) {
-          params.to = Number(params.to)
-        }
-
-        // Map subblock fields to tool parameter names
-        if (params.alertTitle) {
-          params.title = params.alertTitle
-        }
-        if (params.folderTitle) {
-          params.title = params.folderTitle
-        }
-        if (params.folderUidNew) {
-          params.uid = params.folderUidNew
-        }
-        if (params.annotationTags) {
-          params.tags = params.annotationTags
-        }
-        if (params.annotationDashboardUid) {
-          params.dashboardUid = params.annotationDashboardUid
-        }
-
+        if (params.alertTitle) params.title = params.alertTitle
+        if (params.folderTitle) params.title = params.folderTitle
+        if (params.folderUidNew) params.uid = params.folderUidNew
+        if (params.annotationTags) params.tags = params.annotationTags
+        if (params.annotationDashboardUid) params.dashboardUid = params.annotationDashboardUid
         return params.operation
+      },
+      params: (params) => {
+        const result: Record<string, unknown> = {}
+        if (params.panelId) result.panelId = Number(params.panelId)
+        if (params.annotationId) result.annotationId = Number(params.annotationId)
+        if (params.time) result.time = Number(params.time)
+        if (params.timeEnd) result.timeEnd = Number(params.timeEnd)
+        if (params.from) result.from = Number(params.from)
+        if (params.to) result.to = Number(params.to)
+        return result
       },
     },
   },

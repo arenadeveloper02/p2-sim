@@ -11,10 +11,12 @@ import type {
   ProviderResponse,
   TimeSegment,
 } from '@/providers/types'
+import { ProviderError } from '@/providers/types'
 import {
   calculateCost,
   prepareToolExecution,
   prepareToolsWithUsageControl,
+  sumToolCosts,
   trackForcedToolUsage,
 } from '@/providers/utils'
 import { executeTool } from '@/tools'
@@ -77,7 +79,7 @@ export const cerebrasProvider: ProviderConfig = {
         messages: allMessages,
       }
       if (request.temperature !== undefined) payload.temperature = request.temperature
-      if (request.maxTokens !== undefined) payload.max_tokens = request.maxTokens
+      if (request.maxTokens != null) payload.max_completion_tokens = request.maxTokens
       if (request.responseFormat) {
         payload.response_format = {
           type: 'json_schema',
@@ -116,10 +118,13 @@ export const cerebrasProvider: ProviderConfig = {
       if (request.stream && (!tools || tools.length === 0)) {
         logger.info('Using streaming response for Cerebras request (no tools)')
 
-        const streamResponse: any = await client.chat.completions.create({
-          ...payload,
-          stream: true,
-        })
+        const streamResponse: any = await client.chat.completions.create(
+          {
+            ...payload,
+            stream: true,
+          },
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const streamingResult = {
           stream: createReadableStreamFromCerebrasStream(streamResponse, (content, usage) => {
@@ -178,7 +183,10 @@ export const cerebrasProvider: ProviderConfig = {
       }
       const initialCallTime = Date.now()
 
-      let currentResponse = (await client.chat.completions.create(payload)) as CerebrasResponse
+      let currentResponse = (await client.chat.completions.create(
+        payload,
+        request.abortSignal ? { signal: request.abortSignal } : undefined
+      )) as CerebrasResponse
       const firstResponseTime = Date.now() - initialCallTime
 
       let content = currentResponse.choices[0]?.message?.content || ''
@@ -188,7 +196,7 @@ export const cerebrasProvider: ProviderConfig = {
         total: currentResponse.usage?.total_tokens || 0,
       }
       const toolCalls = []
-      const toolResults = []
+      const toolResults: Record<string, unknown>[] = []
       const currentMessages = [...allMessages]
       let iterationCount = 0
 
@@ -306,7 +314,7 @@ export const cerebrasProvider: ProviderConfig = {
               duration: duration,
             })
             let resultContent: any
-            if (result.success) {
+            if (result.success && result.output) {
               toolResults.push(result.output)
               resultContent = result.output
             } else {
@@ -364,7 +372,8 @@ export const cerebrasProvider: ProviderConfig = {
             finalPayload.tool_choice = 'none'
 
             const finalResponse = (await client.chat.completions.create(
-              finalPayload
+              finalPayload,
+              request.abortSignal ? { signal: request.abortSignal } : undefined
             )) as CerebrasResponse
 
             const nextModelEndTime = Date.now()
@@ -400,7 +409,8 @@ export const cerebrasProvider: ProviderConfig = {
 
             const nextModelStartTime = Date.now()
             currentResponse = (await client.chat.completions.create(
-              nextPayload
+              nextPayload,
+              request.abortSignal ? { signal: request.abortSignal } : undefined
             )) as CerebrasResponse
 
             const nextModelEndTime = Date.now()
@@ -442,7 +452,10 @@ export const cerebrasProvider: ProviderConfig = {
           stream: true,
         }
 
-        const streamResponse: any = await client.chat.completions.create(streamingPayload)
+        const streamResponse: any = await client.chat.completions.create(
+          streamingPayload,
+          request.abortSignal ? { signal: request.abortSignal } : undefined
+        )
 
         const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
 
@@ -460,10 +473,12 @@ export const cerebrasProvider: ProviderConfig = {
               usage.prompt_tokens,
               usage.completion_tokens
             )
+            const tc = sumToolCosts(toolResults)
             streamingResult.execution.output.cost = {
               input: accumulatedCost.input + streamCost.input,
               output: accumulatedCost.output + streamCost.output,
-              total: accumulatedCost.total + streamCost.total,
+              toolCost: tc || undefined,
+              total: accumulatedCost.total + streamCost.total + tc,
             }
           }),
           execution: {
@@ -496,6 +511,7 @@ export const cerebrasProvider: ProviderConfig = {
               cost: {
                 input: accumulatedCost.input,
                 output: accumulatedCost.output,
+                toolCost: undefined as number | undefined,
                 total: accumulatedCost.total,
               },
             },
@@ -539,15 +555,11 @@ export const cerebrasProvider: ProviderConfig = {
         duration: totalDuration,
       })
 
-      const enhancedError = new Error(error instanceof Error ? error.message : String(error))
-      // @ts-ignore - Adding timing property to error for debugging
-      enhancedError.timing = {
+      throw new ProviderError(error instanceof Error ? error.message : String(error), {
         startTime: providerStartTimeISO,
         endTime: providerEndTimeISO,
         duration: totalDuration,
-      }
-
-      throw enhancedError
+      })
     }
   },
 }

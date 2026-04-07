@@ -1,10 +1,13 @@
+import { createHash } from 'crypto'
 import { readFile } from 'fs/promises'
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { generatePptxFromCode } from '@/lib/execution/pptx-vm'
 import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
+import { parseWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
 import { canAccessAgentGeneratedImageViaDeployedChat } from '@/app/api/chat/utils'
@@ -18,6 +21,60 @@ import {
 } from '@/app/api/files/utils'
 
 const logger = createLogger('FilesServeAPI')
+
+const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04])
+
+const MAX_COMPILED_PPTX_CACHE = 10
+const compiledPptxCache = new Map<string, Buffer>()
+
+function compiledCacheSet(key: string, buffer: Buffer): void {
+  if (compiledPptxCache.size >= MAX_COMPILED_PPTX_CACHE) {
+    compiledPptxCache.delete(compiledPptxCache.keys().next().value as string)
+  }
+  compiledPptxCache.set(key, buffer)
+}
+
+async function compilePptxIfNeeded(
+  buffer: Buffer,
+  filename: string,
+  workspaceId?: string,
+  raw?: boolean
+): Promise<{ buffer: Buffer; contentType: string }> {
+  const isPptx = filename.toLowerCase().endsWith('.pptx')
+  if (raw || !isPptx || buffer.subarray(0, 4).equals(ZIP_MAGIC)) {
+    return { buffer, contentType: getContentType(filename) }
+  }
+
+  const code = buffer.toString('utf-8')
+  const cacheKey = createHash('sha256')
+    .update(code)
+    .update(workspaceId ?? '')
+    .digest('hex')
+  const cached = compiledPptxCache.get(cacheKey)
+  if (cached) {
+    return {
+      buffer: cached,
+      contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    }
+  }
+
+  const compiled = await generatePptxFromCode(code, workspaceId || '')
+  compiledCacheSet(cacheKey, compiled)
+  return {
+    buffer: compiled,
+    contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  }
+}
+
+const STORAGE_KEY_PREFIX_RE = /^\d{13}-[a-z0-9]{7}-/
+
+function stripStorageKeyPrefix(segment: string): string {
+  return STORAGE_KEY_PREFIX_RE.test(segment) ? segment.replace(STORAGE_KEY_PREFIX_RE, '') : segment
+}
+
+function getWorkspaceIdForCompile(key: string): string | undefined {
+  return parseWorkspaceFileKey(key) ?? undefined
+}
 
 export async function GET(
   request: NextRequest,
@@ -63,7 +120,7 @@ export async function GET(
       const workflowIdFromPath = pathSegments[1]
       logger.info('Agent-generated-image serve: checking auth', { fullPath, workflowIdFromPath })
 
-      const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
+      const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       let userId: string
       let authType: string
 
@@ -108,11 +165,11 @@ export async function GET(
       return await handleAgentGeneratedImageLocal(fullPath, userId)
     }
 
-    const contextParam = request.nextUrl.searchParams.get('context')
+    const isPublicByKeyPrefix =
+      cloudKey.startsWith('profile-pictures/') || cloudKey.startsWith('og-images/')
 
-    const context = contextParam || (isCloudPath ? inferContextFromKey(cloudKey) : undefined)
-
-    if (context === 'profile-pictures' || context === 'og-images') {
+    if (isPublicByKeyPrefix) {
+      const context = inferContextFromKey(cloudKey)
       logger.info(`Serving public ${context}:`, { cloudKey })
       if (isUsingCloudStorage() || isCloudPath) {
         return await handleCloudProxyPublic(cloudKey, context)
@@ -120,7 +177,9 @@ export async function GET(
       return await handleLocalFilePublic(fullPath)
     }
 
-    const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
+    const raw = request.nextUrl.searchParams.get('raw') === '1'
+
+    const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
 
     if (!authResult.success || !authResult.userId) {
       logger.warn('Unauthorized file access attempt', {
@@ -133,10 +192,10 @@ export async function GET(
     const userId = authResult.userId
 
     if (isUsingCloudStorage()) {
-      return await handleCloudProxy(cloudKey, userId, contextParam)
+      return await handleCloudProxy(cloudKey, userId, raw)
     }
 
-    return await handleLocalFile(cloudKey, userId)
+    return await handleLocalFile(cloudKey, userId, raw)
   } catch (error) {
     logger.error('Error serving file:', error)
 
@@ -148,7 +207,11 @@ export async function GET(
   }
 }
 
-async function handleLocalFile(filename: string, userId: string): Promise<NextResponse> {
+async function handleLocalFile(
+  filename: string,
+  userId: string,
+  raw: boolean
+): Promise<NextResponse> {
   try {
     const contextParam: StorageContext | undefined = inferContextFromKey(filename) as
       | StorageContext
@@ -167,21 +230,30 @@ async function handleLocalFile(filename: string, userId: string): Promise<NextRe
       throw new FileNotFoundError(`File not found: ${filename}`)
     }
 
-    const filePath = findLocalFile(filename)
+    const filePath = await findLocalFile(filename)
 
     if (!filePath) {
       throw new FileNotFoundError(`File not found: ${filename}`)
     }
 
-    const fileBuffer = await readFile(filePath)
-    const contentType = getContentType(filename)
+    const rawBuffer = await readFile(filePath)
+    const segment = filename.split('/').pop() || filename
+    const displayName = stripStorageKeyPrefix(segment)
+    const workspaceId = getWorkspaceIdForCompile(filename)
+    const { buffer: fileBuffer, contentType } = await compilePptxIfNeeded(
+      rawBuffer,
+      displayName,
+      workspaceId,
+      raw
+    )
 
     logger.info('Local file served', { userId, filename, size: fileBuffer.length })
 
     return createFileResponse({
       buffer: fileBuffer,
       contentType,
-      filename,
+      filename: displayName,
+      cacheControl: contextParam === 'workspace' ? 'private, no-cache, must-revalidate' : undefined,
     })
   } catch (error) {
     logger.error('Error reading local file:', error)
@@ -192,18 +264,11 @@ async function handleLocalFile(filename: string, userId: string): Promise<NextRe
 async function handleCloudProxy(
   cloudKey: string,
   userId: string,
-  contextParam?: string | null
+  raw = false
 ): Promise<NextResponse> {
   try {
-    let context: StorageContext
-
-    if (contextParam) {
-      context = contextParam as StorageContext
-      logger.info(`Using explicit context: ${context} for key: ${cloudKey}`)
-    } else {
-      context = inferContextFromKey(cloudKey)
-      logger.info(`Inferred context: ${context} from key pattern: ${cloudKey}`)
-    }
+    const context = inferContextFromKey(cloudKey)
+    logger.info(`Inferred context: ${context} from key pattern: ${cloudKey}`)
 
     const hasAccess = await verifyFileAccess(
       cloudKey,
@@ -218,19 +283,26 @@ async function handleCloudProxy(
       throw new FileNotFoundError(`File not found: ${cloudKey}`)
     }
 
-    let fileBuffer: Buffer
+    let rawBuffer: Buffer
 
     if (context === 'copilot') {
-      fileBuffer = await CopilotFiles.downloadCopilotFile(cloudKey)
+      rawBuffer = await CopilotFiles.downloadCopilotFile(cloudKey)
     } else {
-      fileBuffer = await downloadFile({
+      rawBuffer = await downloadFile({
         key: cloudKey,
         context,
       })
     }
 
-    const originalFilename = cloudKey.split('/').pop() || 'download'
-    const contentType = getContentType(originalFilename)
+    const segment = cloudKey.split('/').pop() || 'download'
+    const displayName = stripStorageKeyPrefix(segment)
+    const workspaceId = getWorkspaceIdForCompile(cloudKey)
+    const { buffer: fileBuffer, contentType } = await compilePptxIfNeeded(
+      rawBuffer,
+      displayName,
+      workspaceId,
+      raw
+    )
 
     logger.info('Cloud file served', {
       userId,
@@ -242,7 +314,8 @@ async function handleCloudProxy(
     return createFileResponse({
       buffer: fileBuffer,
       contentType,
-      filename: originalFilename,
+      filename: displayName,
+      cacheControl: context === 'workspace' ? 'private, no-cache, must-revalidate' : undefined,
     })
   } catch (error) {
     logger.error('Error downloading from cloud storage:', error)
@@ -266,8 +339,8 @@ async function handleCloudProxyPublic(
       })
     }
 
-    const originalFilename = cloudKey.split('/').pop() || 'download'
-    const contentType = getContentType(originalFilename)
+    const filename = cloudKey.split('/').pop() || 'download'
+    const contentType = getContentType(filename)
 
     logger.info('Public cloud file served', {
       key: cloudKey,
@@ -278,7 +351,7 @@ async function handleCloudProxyPublic(
     return createFileResponse({
       buffer: fileBuffer,
       contentType,
-      filename: originalFilename,
+      filename,
     })
   } catch (error) {
     logger.error('Error serving public cloud file:', error)
@@ -288,7 +361,7 @@ async function handleCloudProxyPublic(
 
 async function handleLocalFilePublic(filename: string): Promise<NextResponse> {
   try {
-    const filePath = findLocalFile(filename)
+    const filePath = await findLocalFile(filename)
 
     if (!filePath) {
       throw new FileNotFoundError(`File not found: ${filename}`)

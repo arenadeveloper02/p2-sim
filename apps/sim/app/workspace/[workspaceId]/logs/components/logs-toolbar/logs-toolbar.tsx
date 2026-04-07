@@ -1,19 +1,18 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { ArrowUp, Bell, Library, MoreHorizontal, RefreshCw } from 'lucide-react'
 import { useParams } from 'next/navigation'
+import { useShallow } from 'zustand/react/shallow'
 import {
   Button,
   Combobox,
   type ComboboxOption,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   Loader,
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverItem,
-  PopoverScrollArea,
-  PopoverTrigger,
 } from '@/components/emcn'
 import { DatePicker } from '@/components/emcn/components/date-picker/date-picker'
 import { cn } from '@/lib/core/utils/cn'
@@ -109,20 +108,33 @@ const colorIconCache = new Map<string, React.ComponentType<{ className?: string 
  * Uses a cache to ensure the same color always returns the same component reference,
  * which prevents unnecessary React reconciliation.
  * @param color - CSS color value for the icon background
+ * @param withRing - Whether to render the semi-transparent outer ring
  * @returns A React component that renders a colored square icon
  */
-function getColorIcon(color: string): React.ComponentType<{ className?: string }> {
-  const cached = colorIconCache.get(color)
+function getColorIcon(
+  color: string,
+  withRing = false
+): React.ComponentType<{ className?: string }> {
+  const cacheKey = withRing ? `${color}-ring` : color
+  const cached = colorIconCache.get(cacheKey)
   if (cached) return cached
 
   const ColorIcon = ({ className }: { className?: string }) => (
     <div
-      className={cn(className, 'flex-shrink-0 rounded-[3px]')}
-      style={{ backgroundColor: color, width: 10, height: 10 }}
+      className={cn(className, 'flex-shrink-0 rounded-[3px]', withRing && 'border-[1.5px]')}
+      style={{
+        backgroundColor: color,
+        width: 10,
+        height: 10,
+        ...(withRing && {
+          borderColor: `${color}60`,
+          backgroundClip: 'padding-box' as const,
+        }),
+      }}
     />
   )
-  ColorIcon.displayName = `ColorIcon(${color})`
-  colorIconCache.set(color, ColorIcon)
+  ColorIcon.displayName = `ColorIcon(${color}${withRing ? '-ring' : ''})`
+  colorIconCache.set(cacheKey, ColorIcon)
   return ColorIcon
 }
 
@@ -154,7 +166,7 @@ function getTriggerIcon(
  * @param props - The component props
  * @returns The complete logs toolbar
  */
-export function LogsToolbar({
+export const LogsToolbar = memo(function LogsToolbar({
   viewMode,
   onViewModeChange,
   isRefreshing,
@@ -189,7 +201,25 @@ export function LogsToolbar({
     setDateRange,
     clearDateRange,
     resetFilters,
-  } = useFilterStore()
+  } = useFilterStore(
+    useShallow((s) => ({
+      level: s.level,
+      setLevel: s.setLevel,
+      workflowIds: s.workflowIds,
+      setWorkflowIds: s.setWorkflowIds,
+      folderIds: s.folderIds,
+      setFolderIds: s.setFolderIds,
+      triggers: s.triggers,
+      setTriggers: s.setTriggers,
+      timeRange: s.timeRange,
+      setTimeRange: s.setTimeRange,
+      startDate: s.startDate,
+      endDate: s.endDate,
+      setDateRange: s.setDateRange,
+      clearDateRange: s.clearDateRange,
+      resetFilters: s.resetFilters,
+    }))
+  )
 
   const [datePickerOpen, setDatePickerOpen] = useState(false)
   const [previousTimeRange, setPreviousTimeRange] = useState(timeRange)
@@ -260,7 +290,7 @@ export function LogsToolbar({
   }, [selectedStatuses])
 
   const workflowOptions: ComboboxOption[] = useMemo(
-    () => workflows.map((w) => ({ value: w.id, label: w.name, icon: getColorIcon(w.color) })),
+    () => workflows.map((w) => ({ value: w.id, label: w.name, icon: getColorIcon(w.color, true) })),
     [workflows]
   )
 
@@ -382,39 +412,37 @@ export function LogsToolbar({
     <div className='flex flex-col gap-[19px]'>
       {/* Header Section */}
       <div className='flex items-start justify-between'>
-        <div className='flex items-start gap-[12px]'>
-          <div className='flex h-[26px] w-[26px] items-center justify-center rounded-[6px] border border-[#D4A843] bg-[#FDF6E3] dark:border-[#7A5F11] dark:bg-[#514215]'>
+        <div className='flex items-start gap-3'>
+          <div className='flex h-[26px] w-[26px] items-center justify-center rounded-md border border-[#D4A843] bg-[#FDF6E3] dark:border-[#7A5F11] dark:bg-[#514215]'>
             <Library className='h-[14px] w-[14px] text-[#D4A843] dark:text-[#FBBC04]' />
           </div>
-          <h1 className='font-medium text-[18px]'>Logs</h1>
+          <h1 className='font-medium text-lg'>Logs</h1>
         </div>
-        <div className='flex items-center gap-[8px]'>
-          {/* More options popover */}
-          <Popover size='sm'>
-            <PopoverTrigger asChild>
-              <Button variant='default' className='h-[32px] w-[32px] rounded-[6px] p-0'>
+        <div className='flex items-center gap-2'>
+          {/* More options menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant='default' className='h-[32px] w-[32px] rounded-md p-0'>
                 <MoreHorizontal className='h-[14px] w-[14px]' />
                 <span className='sr-only'>More options</span>
               </Button>
-            </PopoverTrigger>
-            <PopoverContent align='end' sideOffset={4}>
-              <PopoverScrollArea>
-                <PopoverItem onClick={onExport} disabled={!canEdit || isExporting || !hasLogs}>
-                  <ArrowUp className='h-3 w-3' />
-                  <span>Export as CSV</span>
-                </PopoverItem>
-                <PopoverItem onClick={onOpenNotificationSettings}>
-                  <Bell className='h-3 w-3' />
-                  <span>Configure Notifications</span>
-                </PopoverItem>
-              </PopoverScrollArea>
-            </PopoverContent>
-          </Popover>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end' sideOffset={4}>
+              <DropdownMenuItem onSelect={onExport} disabled={!canEdit || isExporting || !hasLogs}>
+                <ArrowUp className='h-3 w-3' />
+                <span>Export as CSV</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onOpenNotificationSettings}>
+                <Bell className='h-3 w-3' />
+                <span>Configure Notifications</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Refresh button */}
           <Button
             variant='default'
-            className='h-[32px] rounded-[6px] px-[10px]'
+            className='h-[32px] rounded-md px-2.5'
             onClick={
               isRefreshing
                 ? undefined
@@ -437,8 +465,8 @@ export function LogsToolbar({
             variant={isLive ? 'tertiary' : 'default'}
             onClick={onToggleLive}
             className={cn(
-              'h-[32px] rounded-[6px] px-[10px]',
-              isLive && 'border border-[var(--brand-tertiary-2)]'
+              'h-[32px] rounded-md px-2.5',
+              isLive && 'border border-[var(--brand-accent)]'
             )}
           >
             Live
@@ -446,7 +474,7 @@ export function LogsToolbar({
 
           {/* View mode toggle */}
           <div
-            className='flex h-[32px] cursor-pointer items-center rounded-[6px] border border-[var(--border)] bg-[var(--surface-2)] p-[2px]'
+            className='flex h-[32px] cursor-pointer items-center rounded-md border border-[var(--border)] bg-[var(--surface-2)] p-0.5'
             onClick={() => {
               logsPageTabSwitchEvent({
                 Tabs: isDashboardView ? 'Logs' : 'Dashboard',
@@ -457,7 +485,7 @@ export function LogsToolbar({
             <Button
               variant={!isDashboardView ? 'active' : 'ghost'}
               className={cn(
-                'h-[26px] rounded-[4px] px-[10px]',
+                'h-[26px] rounded-sm px-2.5',
                 isDashboardView && 'border border-transparent'
               )}
             >
@@ -466,7 +494,7 @@ export function LogsToolbar({
             <Button
               variant={isDashboardView ? 'active' : 'ghost'}
               className={cn(
-                'h-[26px] rounded-[4px] px-[10px]',
+                'h-[26px] rounded-sm px-2.5',
                 !isDashboardView && 'border border-transparent'
               )}
             >
@@ -477,7 +505,7 @@ export function LogsToolbar({
       </div>
 
       {/* Filter Bar Section */}
-      <div className='flex w-full items-center gap-[12px]'>
+      <div className='flex w-full items-center gap-3'>
         <div className='min-w-[200px] max-w-[400px] flex-1'>
           <AutocompleteSearch
             value={searchQuery}
@@ -486,33 +514,30 @@ export function LogsToolbar({
             onOpenChange={onSearchOpenChange}
           />
         </div>
-        <div className='ml-auto flex items-center gap-[8px]'>
+        <div className='ml-auto flex items-center gap-2'>
           {/* Clear Filters Button */}
           {filtersActive && (
             <Button
               variant='active'
               onClick={handleClearFilters}
-              className='h-[32px] rounded-[6px] px-[10px]'
+              className='h-[32px] rounded-md px-2.5'
             >
               <span>Clear</span>
             </Button>
           )}
 
-          {/* Filters Popover - Small screens only */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant='active'
-                className='h-[32px] gap-[6px] rounded-[6px] px-[10px] xl:hidden'
-              >
+          {/* Filters dropdown - Small screens only */}
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button variant='active' className='h-[32px] gap-1.5 rounded-md px-2.5 xl:hidden'>
                 <span>Filters</span>
               </Button>
-            </PopoverTrigger>
-            <PopoverContent align='end' sideOffset={4} className='w-[280px] p-[12px]'>
-              <div className='flex flex-col gap-[12px]'>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end' sideOffset={4} className='w-[280px] p-3'>
+              <div className='flex flex-col gap-3'>
                 {/* Status Filter */}
-                <div className='flex flex-col gap-[6px]'>
-                  <span className='font-medium text-[12px] text-[var(--text-secondary)]'>
+                <div className='flex flex-col gap-1.5'>
+                  <span className='font-medium text-[var(--text-secondary)] text-caption'>
                     Status
                   </span>
                   <Combobox
@@ -522,7 +547,7 @@ export function LogsToolbar({
                     onMultiSelectChange={handleStatusChange}
                     placeholder='All statuses'
                     overlayContent={
-                      <span className='flex items-center gap-[6px] truncate text-[var(--text-primary)]'>
+                      <span className='flex items-center gap-1.5 truncate text-[var(--text-primary)]'>
                         {selectedStatusColor && (
                           <div
                             className='flex-shrink-0 rounded-[3px]'
@@ -535,13 +560,13 @@ export function LogsToolbar({
                     showAllOption
                     allOptionLabel='All statuses'
                     size='sm'
-                    className='h-[32px] w-full rounded-[6px]'
+                    className='h-[32px] w-full rounded-md'
                   />
                 </div>
 
                 {/* Workflow Filter */}
-                <div className='flex flex-col gap-[6px]'>
-                  <span className='font-medium text-[12px] text-[var(--text-secondary)]'>
+                <div className='flex flex-col gap-1.5'>
+                  <span className='font-medium text-[var(--text-secondary)] text-caption'>
                     Workflow
                   </span>
                   <Combobox
@@ -560,11 +585,15 @@ export function LogsToolbar({
                     }}
                     placeholder='All workflows'
                     overlayContent={
-                      <span className='flex items-center gap-[6px] truncate text-[var(--text-primary)]'>
+                      <span className='flex items-center gap-1.5 truncate text-[var(--text-primary)]'>
                         {selectedWorkflow && (
                           <div
-                            className='h-[8px] w-[8px] flex-shrink-0 rounded-[2px]'
-                            style={{ backgroundColor: selectedWorkflow.color }}
+                            className='h-[8px] w-[8px] flex-shrink-0 rounded-xs border-[1.5px]'
+                            style={{
+                              backgroundColor: selectedWorkflow.color,
+                              borderColor: `${selectedWorkflow.color}60`,
+                              backgroundClip: 'padding-box',
+                            }}
                           />
                         )}
                         <span className='truncate'>{workflowDisplayLabel}</span>
@@ -575,13 +604,13 @@ export function LogsToolbar({
                     showAllOption
                     allOptionLabel='All workflows'
                     size='sm'
-                    className='h-[32px] w-full rounded-[6px]'
+                    className='h-[32px] w-full rounded-md'
                   />
                 </div>
 
                 {/* Folder Filter */}
-                <div className='flex flex-col gap-[6px]'>
-                  <span className='font-medium text-[12px] text-[var(--text-secondary)]'>
+                <div className='flex flex-col gap-1.5'>
+                  <span className='font-medium text-[var(--text-secondary)] text-caption'>
                     Folder
                   </span>
                   <Combobox
@@ -609,13 +638,13 @@ export function LogsToolbar({
                     showAllOption
                     allOptionLabel='All folders'
                     size='sm'
-                    className='h-[32px] w-full rounded-[6px]'
+                    className='h-[32px] w-full rounded-md'
                   />
                 </div>
 
                 {/* Trigger Filter */}
-                <div className='flex flex-col gap-[6px]'>
-                  <span className='font-medium text-[12px] text-[var(--text-secondary)]'>
+                <div className='flex flex-col gap-1.5'>
+                  <span className='font-medium text-[var(--text-secondary)] text-caption'>
                     Trigger
                   </span>
                   <Combobox
@@ -643,13 +672,13 @@ export function LogsToolbar({
                     showAllOption
                     allOptionLabel='All triggers'
                     size='sm'
-                    className='h-[32px] w-full rounded-[6px]'
+                    className='h-[32px] w-full rounded-md'
                   />
                 </div>
 
                 {/* Time Filter */}
-                <div className='flex flex-col gap-[6px]'>
-                  <span className='font-medium text-[12px] text-[var(--text-secondary)]'>
+                <div className='flex flex-col gap-1.5'>
+                  <span className='font-medium text-[var(--text-secondary)] text-caption'>
                     Time Range
                   </span>
                   <Combobox
@@ -663,15 +692,15 @@ export function LogsToolbar({
                       </span>
                     }
                     size='sm'
-                    className='h-[32px] w-full rounded-[6px]'
+                    className='h-[32px] w-full rounded-md'
                   />
                 </div>
               </div>
-            </PopoverContent>
-          </Popover>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Inline Filters - Large screens only */}
-          <div className='hidden items-center gap-[8px] xl:flex'>
+          <div className='hidden items-center gap-2 xl:flex'>
             {/* Status Filter */}
             <Combobox
               options={statusOptions}
@@ -680,7 +709,7 @@ export function LogsToolbar({
               onMultiSelectChange={handleStatusChange}
               placeholder='Status'
               overlayContent={
-                <span className='flex items-center gap-[6px] truncate text-[var(--text-primary)]'>
+                <span className='flex items-center gap-1.5 truncate text-[var(--text-primary)]'>
                   {selectedStatusColor && (
                     <div
                       className='flex-shrink-0 rounded-[3px]'
@@ -694,7 +723,7 @@ export function LogsToolbar({
               allOptionLabel='All statuses'
               size='sm'
               align='end'
-              className='h-[32px] w-[120px] rounded-[6px]'
+              className='h-[32px] w-[120px] rounded-md'
             />
 
             {/* Workflow Filter */}
@@ -705,11 +734,15 @@ export function LogsToolbar({
               onMultiSelectChange={setWorkflowIds}
               placeholder='Workflow'
               overlayContent={
-                <span className='flex items-center gap-[6px] truncate text-[var(--text-primary)]'>
+                <span className='flex items-center gap-1.5 truncate text-[var(--text-primary)]'>
                   {selectedWorkflow && (
                     <div
-                      className='h-[8px] w-[8px] flex-shrink-0 rounded-[2px]'
-                      style={{ backgroundColor: selectedWorkflow.color }}
+                      className='h-[8px] w-[8px] flex-shrink-0 rounded-xs border-[1.5px]'
+                      style={{
+                        backgroundColor: selectedWorkflow.color,
+                        borderColor: `${selectedWorkflow.color}60`,
+                        backgroundClip: 'padding-box',
+                      }}
                     />
                   )}
                   <span className='truncate'>{workflowDisplayLabel}</span>
@@ -721,7 +754,7 @@ export function LogsToolbar({
               allOptionLabel='All workflows'
               size='sm'
               align='end'
-              className='h-[32px] w-[120px] rounded-[6px]'
+              className='h-[32px] w-[120px] rounded-md'
             />
 
             {/* Folder Filter */}
@@ -740,7 +773,7 @@ export function LogsToolbar({
               allOptionLabel='All folders'
               size='sm'
               align='end'
-              className='h-[32px] w-[120px] rounded-[6px]'
+              className='h-[32px] w-[120px] rounded-md'
             />
 
             {/* Trigger Filter */}
@@ -759,12 +792,12 @@ export function LogsToolbar({
               allOptionLabel='All triggers'
               size='sm'
               align='end'
-              className='h-[32px] w-[120px] rounded-[6px]'
+              className='h-[32px] w-[120px] rounded-md'
             />
 
             {/* Timeline Filter */}
-            <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-              <PopoverAnchor asChild>
+            <DropdownMenu open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+              <DropdownMenuTrigger asChild>
                 <div>
                   <Combobox
                     options={TIME_RANGE_OPTIONS as unknown as ComboboxOption[]}
@@ -778,11 +811,11 @@ export function LogsToolbar({
                     }
                     size='sm'
                     align='end'
-                    className='h-[32px] w-[120px] rounded-[6px]'
+                    className='h-[32px] w-[120px] rounded-md'
                   />
                 </div>
-              </PopoverAnchor>
-              <PopoverContent
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
                 side='bottom'
                 align='end'
                 sideOffset={4}
@@ -797,11 +830,11 @@ export function LogsToolbar({
                   onCancel={handleDatePickerCancel}
                   inline
                 />
-              </PopoverContent>
-            </Popover>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
     </div>
   )
-}
+})
