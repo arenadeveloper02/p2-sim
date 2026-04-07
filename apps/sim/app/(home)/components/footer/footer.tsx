@@ -124,10 +124,10 @@ export default function Footer({ hideCTA }: FooterProps) {
             className='relative z-[1] grid grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-3 lg:grid-cols-7'
           >
             <div className='col-span-2 flex flex-col gap-6 sm:col-span-1'>
-              <Link href='/' aria-label='Sim home'>
+              <Link href='/' aria-label='Arena home'>
                 <Image
                   src='/logo/sim-landing.svg'
-                  alt='Sim'
+                  alt='Arena'
                   width={85}
                   height={26}
                   className='h-[26.4px] w-auto'

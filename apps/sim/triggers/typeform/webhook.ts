@@ -78,8 +78,8 @@ export const typeformWebhookTrigger: TriggerConfig = {
         'Get your Typeform Personal Access Token from <a href="https://admin.typeform.com/account#/section/tokens" target="_blank" rel="noopener noreferrer">https://admin.typeform.com/account#/section/tokens</a>',
         'Find your Form ID in the URL when editing your form (e.g., <code>https://admin.typeform.com/form/ABC123/create</code> → Form ID is <code>ABC123</code>)',
         'Fill in the form above with your Form ID and Personal Access Token',
-        'Optionally add a Webhook Secret for enhanced security - Sim will verify all incoming webhooks match this secret',
-        'Sim will automatically register the webhook with Typeform when you deploy the workflow',
+        'Optionally add a Webhook Secret for enhanced security - Arena will verify all incoming webhooks match this secret',
+        'Arena will automatically register the webhook with Typeform when you deploy the workflow',
         '<strong>Note:</strong> Requires a Typeform PRO or PRO+ account to use webhooks',
       ]
         .map(

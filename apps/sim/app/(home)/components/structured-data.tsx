@@ -24,10 +24,10 @@ export default function StructuredData() {
       {
         '@type': 'Organization',
         '@id': 'https://sim.ai/#organization',
-        name: 'Sim',
-        alternateName: 'Sim Studio',
+        name: 'Arena',
+        alternateName: 'Arena Studio',
         description:
-          'Sim is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to deploy and orchestrate agentic workflows.',
+          'Arena is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to deploy and orchestrate agentic workflows.',
         url: 'https://sim.ai',
         logo: {
           '@type': 'ImageObject',

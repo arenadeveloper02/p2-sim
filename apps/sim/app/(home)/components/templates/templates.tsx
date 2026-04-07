@@ -415,7 +415,7 @@ export default function Templates() {
       className='mt-10 mb-20'
     >
       <p className='sr-only'>
-        Sim includes {TEMPLATE_WORKFLOWS.length} pre-built workflow templates covering OCR
+      Arena includes {TEMPLATE_WORKFLOWS.length} pre-built workflow templates covering OCR
         processing, release management, meeting follow-ups, resume scanning, email triage,
         competitor monitoring, social listening, data enrichment, feedback analysis, code review,
         and knowledge base Q&amp;A. Each template connects real integrations and LLMs — pick one,
