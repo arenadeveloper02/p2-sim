@@ -251,7 +251,10 @@ function sameOriginServeUrl(pathname: string, search: string): string {
 
 /**
  * Returns the URL to use for img src.
- * - Our file-serve paths use the current page origin in the browser (session + HTTPS-safe).
+ * - Relative `/api/files/serve/...` uses the current page origin (session + HTTPS-safe).
+ * - Absolute serve URLs on the **same** origin as the page: same (pathname on current origin).
+ * - Absolute serve URLs on a **different** origin: proxied so localhost / another subdomain
+ *   still loads images (avoids rewriting `https://agent.../api/files/serve/...` to the wrong host).
  * - Other HTTP(S) URLs go through the proxy on the client.
  */
 function getImageDisplayUrl(url: string): string {
@@ -272,7 +275,24 @@ function getImageDisplayUrl(url: string): string {
 
     const imageUrlParsed = new URL(trimmed)
     if (imageUrlParsed.pathname.startsWith('/api/files/serve/')) {
-      return sameOriginServeUrl(imageUrlParsed.pathname, imageUrlParsed.search)
+      if (typeof window !== 'undefined') {
+        if (imageUrlParsed.origin === window.location.origin) {
+          return sameOriginServeUrl(imageUrlParsed.pathname, imageUrlParsed.search)
+        }
+        return `/api/files/proxy-image?url=${encodeURIComponent(trimmed)}`
+      }
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL
+      if (appUrl) {
+        try {
+          const app = new URL(appUrl)
+          if (imageUrlParsed.origin === app.origin) {
+            return `${app.origin}${imageUrlParsed.pathname}${imageUrlParsed.search}`
+          }
+        } catch {
+          /* ignore invalid NEXT_PUBLIC_APP_URL */
+        }
+      }
+      return `/api/files/proxy-image?url=${encodeURIComponent(trimmed)}`
     }
 
     if (typeof window !== 'undefined') {
@@ -549,9 +569,8 @@ function toSingleImageUrl(imageUrl: string): string {
 }
 
 /**
- * Returns a URL suitable for same-origin fetch. Uses current origin when the path is our serve path
- * so workspace and deployed chat both hit the same backend (avoids proxy/cross-origin).
- * Ensures only one URL is used even if the input accidentally contains multiple.
+ * Returns a URL suitable for fetch with credentials. Same-origin serve paths hit the app directly;
+ * serve URLs on another host use the image proxy (matches {@link getImageDisplayUrl}).
  */
 function getDownloadFetchUrl(imageUrl: string): string {
   const single = toSingleImageUrl(imageUrl)
@@ -562,7 +581,13 @@ function getDownloadFetchUrl(imageUrl: string): string {
   try {
     const parsed = new URL(trimmed.startsWith('http') ? trimmed : withSlash, window.location.origin)
     if (parsed.pathname.startsWith('/api/files/serve/')) {
-      return `${window.location.origin}${parsed.pathname}${parsed.search}`
+      if (parsed.origin === window.location.origin) {
+        return `${window.location.origin}${parsed.pathname}${parsed.search}`
+      }
+      const absoluteServe = trimmed.startsWith('http')
+        ? trimmed
+        : `${window.location.origin}${withSlash}`
+      return `${window.location.origin}/api/files/proxy-image?url=${encodeURIComponent(absoluteServe)}`
     }
     if (parsed.origin === window.location.origin) {
       return parsed.toString()
