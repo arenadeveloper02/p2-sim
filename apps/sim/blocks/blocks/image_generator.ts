@@ -1,14 +1,15 @@
 import { ImageIcon } from '@/components/icons'
+import { createVersionedToolSelector } from '@/blocks/utils'
+import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
-import type { DalleResponse } from '@/tools/openai/types'
 
-export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
+export const ImageGeneratorBlockV2: BlockConfig = {
   type: 'image_generator',
   name: 'Image Generator',
   description: 'Generate images',
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Integrate Image Generator into the workflow. Can generate images using DALL-E 3, GPT Image, Google Imagen, or Google Nano Banana.',
+    'Integrate Image Generator into the workflow. Can generate up to five images per run (user slider combined with an SLM estimate of how many distinct images the prompt needs) using DALL-E 3, GPT Image, Google Imagen, or Google Nano Banana.',
   docsLink: 'https://docs.sim.ai/tools/image_generator',
   category: 'tools',
   integrationType: IntegrationType.AI,
@@ -28,6 +29,16 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
         { label: 'Nano Banana Pro', id: 'gemini-3-pro-image-preview' },
       ],
       value: () => 'dall-e-3',
+    },
+    {
+      id: 'imageCount',
+      title: 'Images',
+      type: 'slider',
+      min: 1,
+      max: MAX_IMAGES_TO_GENERATE,
+      integer: true,
+      step: 1,
+      defaultValue: 1,
     },
     {
       id: 'prompt',
@@ -178,22 +189,30 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
     },
   ],
   tools: {
-    access: ['openai_image', 'google_imagen', 'google_nano_banana'],
+    access: ['openai_image_v2', 'google_imagen_v2', 'google_nano_banana_v2'],
     config: {
-      tool: (params) => {
-        // Select tool based on model
-        if (params.model?.startsWith('imagen-')) {
-          return 'google_imagen'
-        }
-        if (params.model?.startsWith('gemini-')) {
-          return 'google_nano_banana'
-        }
-        return 'openai_image'
-      },
+      tool: createVersionedToolSelector({
+        baseToolSelector: (params) => {
+          if (params.model?.startsWith('imagen-')) {
+            return 'google_imagen'
+          }
+          if (params.model?.startsWith('gemini-')) {
+            return 'google_nano_banana'
+          }
+          return 'openai_image'
+        },
+        suffix: '_v2',
+        fallbackToolId: 'openai_image_v2',
+      }),
       params: (params) => {
         if (!params.prompt) {
           throw new Error('Prompt is required')
         }
+
+        const imageCount = Math.min(
+          MAX_IMAGES_TO_GENERATE,
+          Math.max(1, Number(params.imageCount) || 1)
+        )
 
         // Handle Google Imagen models
         if (params.model?.startsWith('imagen-')) {
@@ -203,10 +222,10 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
             imageSize: params.imageSize || '1K',
             aspectRatio: params.aspectRatio || '1:1',
             personGeneration: params.personGeneration || 'allow_adult',
+            imageCount,
           }
         }
 
-        // Handle Google Nano Banana models
         if (params.model?.startsWith('gemini-')) {
           const base = {
             model: params.model,
@@ -214,6 +233,7 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
             aspectRatio: params.aspectRatio || '1:1',
             inputImage: params.inputImage,
             inputImageMimeType: params.inputImageMimeType,
+            imageCount,
           }
           if (params.model === 'gemini-3-pro-image-preview') {
             return { ...base, imageSize: params.imageSize || '1K' }
@@ -226,6 +246,7 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
           prompt: params.prompt,
           model: params.model || 'dall-e-3',
           size: params.size || '1024x1024',
+          imageCount,
         }
 
         if (params.model === 'dall-e-3') {
@@ -261,10 +282,21 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
       description: 'Base64 encoded input image for editing (Google Nano Banana)',
     },
     inputImageMimeType: { type: 'string', description: 'MIME type of input image' },
+    imageCount: {
+      type: 'number',
+      description: 'Requested images (1–5); execution may combine with SLM estimate (capped at 5)',
+    },
   },
   outputs: {
     content: { type: 'string', description: 'Generation response' },
     image: { type: 'file', description: 'Generated image file (UserFile)' },
+    images: {
+      type: 'array',
+      description: 'All generated image files when the Images count is greater than 1',
+    },
     metadata: { type: 'json', description: 'Generation metadata' },
   },
 }
+
+/** @deprecated Alias for {@link ImageGeneratorBlockV2}. */
+export const ImageGeneratorBlock = ImageGeneratorBlockV2

@@ -788,7 +788,11 @@ function SubBlockComponent({
             subBlockId={config.id}
             min={config.min}
             max={config.max}
-            defaultValue={(config.min || 0) + ((config.max || 100) - (config.min || 0)) / 2}
+            defaultValue={
+              typeof config.defaultValue === 'number'
+                ? config.defaultValue
+                : (config.min ?? 0) + ((config.max ?? 100) - (config.min ?? 0)) / 2
+            }
             step={config.step}
             integer={config.integer}
             isPreview={isPreview}

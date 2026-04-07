@@ -802,6 +802,11 @@ import {
 } from '@/tools/gong'
 import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import {
+  googleImagenV2Tool,
+  googleNanoBananaV2Tool,
+  openAIImageV2Tool,
+} from '@/tools/image_generation'
+import {
   googleAdsAdPerformanceTool,
   googleAdsCampaignPerformanceTool,
   googleAdsListAdGroupsTool,
@@ -2737,7 +2742,9 @@ export const tools: Record<string, ToolConfig> = {
   grafana_create_folder: grafanaCreateFolderTool,
   google_search: googleSearchTool,
   google_imagen: imagenTool,
+  google_imagen_v2: googleImagenV2Tool,
   google_nano_banana: nanoBananaTool,
+  google_nano_banana_v2: googleNanoBananaV2Tool,
   greenhouse_list_candidates: greenhouseListCandidatesTool,
   greenhouse_get_candidate: greenhouseGetCandidateTool,
   greenhouse_list_jobs: greenhouseListJobsTool,
@@ -4160,6 +4167,7 @@ export const tools: Record<string, ToolConfig> = {
   datadog_list_downtimes: datadogListDowntimesTool,
   datadog_cancel_downtime: datadogCancelDowntimeTool,
   openai_image: openAIImageTool,
+  openai_image_v2: openAIImageV2Tool,
   microsoft_ad_list_users: microsoftAdListUsersTool,
   microsoft_ad_get_user: microsoftAdGetUserTool,
   microsoft_ad_create_user: microsoftAdCreateUserTool,
