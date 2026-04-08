@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { History, Plus, Square } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   BubbleChatClose,
@@ -33,6 +34,7 @@ import {
 import { Lock, Unlock, Upload } from '@/components/emcn/icons'
 import { VariableIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
+import { captureEvent } from '@/lib/posthog/client'
 import { generateWorkflowJson } from '@/lib/workflows/operations/import-export'
 import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
 import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components'
@@ -63,7 +65,8 @@ import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useChatStore } from '@/stores/chat/store'
 import { useNotificationStore } from '@/stores/notifications/store'
 import type { ChatContext, PanelTab } from '@/stores/panel'
-import { usePanelStore, useVariablesStore as usePanelVariablesStore } from '@/stores/panel'
+import { usePanelStore } from '@/stores/panel'
+import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useVariablesStore } from '@/stores/variables/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { captureBaselineSnapshot } from '@/stores/workflow-diff/utils'
@@ -99,6 +102,9 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
   const router = useRouter()
   const params = useParams()
   const workspaceId = propWorkspaceId ?? (params.workspaceId as string)
+
+  const posthog = usePostHog()
+  const posthogRef = useRef(posthog)
 
   const panelRef = useRef<HTMLElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -205,7 +211,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
       setIsChatOpen: state.setIsChatOpen,
     }))
   )
-  const { isOpen: isVariablesOpen, setIsOpen: setVariablesOpen } = useVariablesStore(
+  const { isOpen: isVariablesOpen, setIsOpen: setVariablesOpen } = useVariablesModalStore(
     useShallow((state) => ({
       isOpen: state.isOpen,
       setIsOpen: state.setIsOpen,
@@ -262,6 +268,10 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
     copilotInitialLoadDoneRef.current = false
     loadCopilotChats()
   }, [loadCopilotChats])
+
+  useEffect(() => {
+    posthogRef.current = posthog
+  }, [posthog])
 
   const handleCopilotSelectChat = useCallback((chat: { id: string; title: string | null }) => {
     setCopilotChatId(chat.id)
@@ -393,6 +403,14 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
     [copilotEditQueuedMessage]
   )
 
+  const handleCopilotStopGeneration = useCallback(() => {
+    captureEvent(posthogRef.current, 'task_generation_aborted', {
+      workspace_id: workspaceId,
+      view: 'copilot',
+    })
+    copilotStopGeneration()
+  }, [copilotStopGeneration, workspaceId])
+
   const handleCopilotSubmit = useCallback(
     (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
       const trimmed = text.trim()
@@ -409,6 +427,17 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
   useEffect(() => {
     setHasHydrated(true)
   }, [setHasHydrated])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const message = (e as CustomEvent<{ message: string }>).detail?.message
+      if (!message) return
+      setActiveTab('copilot')
+      copilotSendMessage(message)
+    }
+    window.addEventListener('mothership-send-message', handler)
+    return () => window.removeEventListener('mothership-send-message', handler)
+  }, [setActiveTab, copilotSendMessage])
 
   /**
    * Handles tab click events
@@ -482,7 +511,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
         throw new Error('No workflow state found')
       }
 
-      const workflowVariables = usePanelVariablesStore
+      const workflowVariables = useVariablesStore
         .getState()
         .getVariablesByWorkflowId(activeWorkflowId)
 
@@ -821,12 +850,13 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
                   isSending={copilotIsSending}
                   isReconnecting={copilotIsReconnecting}
                   onSubmit={handleCopilotSubmit}
-                  onStopGeneration={copilotStopGeneration}
+                  onStopGeneration={handleCopilotStopGeneration}
                   messageQueue={copilotMessageQueue}
                   onRemoveQueuedMessage={copilotRemoveFromQueue}
                   onSendQueuedMessage={copilotSendNow}
                   onEditQueuedMessage={handleCopilotEditQueuedMessage}
                   userId={session?.user?.id}
+                  chatId={copilotResolvedChatId}
                   editValue={copilotEditingInputValue}
                   onEditValueConsumed={clearCopilotEditingValue}
                   layout='copilot-view'
@@ -884,9 +914,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
               <span className='text-[var(--text-error)]'>
                 All associated blocks, executions, and configuration will be removed.
               </span>{' '}
-              <span className='text-[var(--text-tertiary)]'>
-                You can restore it from Recently Deleted in Settings.
-              </span>
+              You can restore it from Recently Deleted in Settings.
             </p>
           </ModalBody>
           <ModalFooter>

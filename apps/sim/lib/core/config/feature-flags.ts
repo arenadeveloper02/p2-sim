@@ -123,6 +123,22 @@ export const isInboxEnabled = isTruthy(env.INBOX_ENABLED)
 export const isE2bEnabled = isTruthy(env.E2B_ENABLED)
 
 /**
+ * Whether Ollama is configured (OLLAMA_URL is set).
+ * When true, models that are not in the static cloud model list and have no
+ * slash-prefixed provider namespace are assumed to be Ollama models
+ * and do not require an API key.
+ */
+export const isOllamaConfigured = Boolean(env.OLLAMA_URL)
+
+/**
+ * Whether Azure OpenAI / Azure Anthropic credentials are pre-configured at the server level
+ * (via AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_ANTHROPIC_ENDPOINT, etc.).
+ * When true, the endpoint, API key, and API version fields are hidden in the Agent block UI.
+ * Set NEXT_PUBLIC_AZURE_CONFIGURED=true in self-hosted deployments on Azure.
+ */
+export const isAzureConfigured = isTruthy(getEnv('NEXT_PUBLIC_AZURE_CONFIGURED'))
+
+/**
  * Are invitations disabled globally
  * When true, workspace invitations are disabled for all users
  */
@@ -133,6 +149,18 @@ export const isInvitationsDisabled = isTruthy(env.DISABLE_INVITATIONS)
  * When true, the public API toggle is hidden and public API access is blocked
  */
 export const isPublicApiDisabled = isTruthy(env.DISABLE_PUBLIC_API)
+
+/**
+ * Is Google OAuth login disabled
+ * When true, the Google OAuth login button is hidden even when credentials are configured
+ */
+export const isGoogleAuthDisabled = isTruthy(env.DISABLE_GOOGLE_AUTH)
+
+/**
+ * Is GitHub OAuth login disabled
+ * When true, the GitHub OAuth login button is hidden even when credentials are configured
+ */
+export const isGithubAuthDisabled = isTruthy(env.DISABLE_GITHUB_AUTH)
 
 /**
  * Is React Grab enabled for UI element debugging

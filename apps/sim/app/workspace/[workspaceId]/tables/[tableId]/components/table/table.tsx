@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GripVertical } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import {
   Button,
   Checkbox,
@@ -39,6 +40,7 @@ import {
   TypeText,
 } from '@/components/emcn/icons'
 import { cn } from '@/lib/core/utils/cn'
+import { captureEvent } from '@/lib/posthog/client'
 import type { ColumnDefinition, Filter, SortDirection, TableRow as TableRowType } from '@/lib/table'
 import type { ColumnOption, SortConfig } from '@/app/workspace/[workspaceId]/components'
 import { ResourceHeader, ResourceOptionsBar } from '@/app/workspace/[workspaceId]/components'
@@ -177,6 +179,12 @@ export function Table({
   const router = useRouter()
   const workspaceId = propWorkspaceId || (params.workspaceId as string)
   const tableId = propTableId || (params.tableId as string)
+  const posthog = usePostHog()
+
+  useEffect(() => {
+    if (!tableId || !workspaceId) return
+    captureEvent(posthog, 'table_opened', { table_id: tableId, workspace_id: workspaceId })
+  }, [tableId, workspaceId, posthog])
 
   const [queryOptions, setQueryOptions] = useState<QueryOptions>({
     filter: null,
@@ -1844,9 +1852,7 @@ export function Table({
                 <span className='text-[var(--text-error)]'>
                   All {tableData?.rowCount ?? 0} rows will be removed.
                 </span>{' '}
-                <span className='text-[var(--text-tertiary)]'>
-                  You can restore it from Recently Deleted in Settings.
-                </span>
+                You can restore it from Recently Deleted in Settings.
               </p>
             </ModalBody>
             <ModalFooter>
@@ -1884,7 +1890,7 @@ export function Table({
               <span className='text-[var(--text-error)]'>
                 This will remove all data in this column.
               </span>{' '}
-              <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
+              This action cannot be undone.
             </p>
           </ModalBody>
           <ModalFooter>

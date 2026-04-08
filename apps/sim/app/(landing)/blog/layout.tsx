@@ -1,6 +1,6 @@
 import { getNavBlogPosts } from '@/lib/blog/registry'
-import Footer from '@/app/(home)/components/footer/footer'
-import Navbar from '@/app/(home)/components/navbar/navbar'
+import Footer from '@/app/(landing)/components/footer/footer'
+import Navbar from '@/app/(landing)/components/navbar/navbar'
 
 export default async function StudioLayout({ children }: { children: React.ReactNode }) {
   const blogPosts = await getNavBlogPosts()
@@ -9,8 +9,14 @@ export default async function StudioLayout({ children }: { children: React.React
     '@type': 'Organization',
     name: 'Sim',
     url: 'https://sim.ai',
+    description:
+      'Sim is an open-source platform for building, testing, and deploying AI agent workflows.',
     logo: 'https://sim.ai/logo/primary/small.png',
-    sameAs: ['https://x.com/simdotai'],
+    sameAs: [
+      'https://x.com/simdotai',
+      'https://github.com/simstudioai/sim',
+      'https://www.linkedin.com/company/simdotai',
+    ],
   }
 
   const websiteJsonLd = {
@@ -18,11 +24,6 @@ export default async function StudioLayout({ children }: { children: React.React
     '@type': 'WebSite',
     name: 'Sim',
     url: 'https://sim.ai',
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: 'https://sim.ai/search?q={search_term_string}',
-      'query-input': 'required name=search_term_string',
-    },
   }
 
   return (
