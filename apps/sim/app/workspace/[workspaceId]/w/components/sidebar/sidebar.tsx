@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { ArrowLeft, Compass, MoreHorizontal } from 'lucide-react'
+import { ArrowLeft, Compass, MessageCircle, MoreHorizontal } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
@@ -1190,21 +1190,29 @@ export const Sidebar = memo(function Sidebar() {
         onClick={handleSidebarClick}
       >
         <div className='flex h-full flex-col pt-3'>
-          <div>
-            <p className='pointer-events-auto w-full px-[10px] pb-[12px] text-center text-sm hover:cursor-pointer'>
-              <span
+          <div className='pointer-events-auto flex w-full px-[10px] pb-[12px] text-sm'>
+            <div className='flex w-full items-stretch rounded-[8px] border border-[var(--border)]'>
+              <button
+                type='button'
                 onClick={() => {
                   const hostname = window.location.hostname
                   const redirectUrl = getRedirectUrl(hostname)
 
                   window.location.href = redirectUrl
                 }}
-                className='flex items-center justify-start gap-2'
+                className='flex min-h-[40px] flex-1 items-center justify-start gap-2 border-r border-[var(--border)] px-3 py-2 text-[var(--text-body)] hover-hover:bg-[var(--surface-hover)] hover:cursor-pointer'
               >
-                <ArrowLeft className='h-5 w-5' />
-                <span> Back </span>
-              </span>
-            </p>
+                <ArrowLeft className='h-5 w-5 shrink-0' />
+                <span>Back</span>
+              </button>
+              <Link
+                href={`/workspace/${workspaceId}/copilot-replica`}
+                className='flex min-h-[40px] flex-1 items-center gap-2 px-3 py-2 text-[var(--text-body)] hover-hover:bg-[var(--surface-hover)] hover:cursor-pointer'
+              >
+                <MessageCircle className='h-5 w-5 shrink-0' />
+                <span>Chat</span>
+              </Link>
+            </div>
           </div>
           {/* Top bar: Logo + Collapse toggle */}
           <div className='flex flex-shrink-0 items-center pr-2 pb-2 pl-2.5'>
