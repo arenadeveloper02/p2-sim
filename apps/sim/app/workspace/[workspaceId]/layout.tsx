@@ -17,7 +17,11 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
           <ImpersonationBanner />
           <WorkspacePermissionsProvider>
             <div className='flex min-h-0 flex-1'>
-              <div className='shrink-0' suppressHydrationWarning>
+              <div
+                id='sim-workspace-sidebar-container'
+                className='shrink-0'
+                suppressHydrationWarning
+              >
                 <Sidebar />
               </div>
               <div className='flex min-w-0 flex-1 flex-col p-[8px] pl-0'>
