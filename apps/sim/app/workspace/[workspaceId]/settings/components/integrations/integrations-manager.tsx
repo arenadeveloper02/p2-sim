@@ -2,8 +2,9 @@
 
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import Cookies from 'js-cookie'
 import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   Avatar,
   AvatarFallback,
@@ -22,7 +23,7 @@ import {
   Tooltip,
 } from '@/components/emcn'
 import { Input as UiInput } from '@/components/ui'
-import { useSession } from '@/lib/auth/auth-client'
+import { client, useSession } from '@/lib/auth/auth-client'
 import {
   clearPendingCredentialCreateRequest,
   PENDING_CREDENTIAL_CREATE_REQUEST_EVENT,
@@ -63,9 +64,59 @@ const roleOptions = [
 
 export function IntegrationsManager() {
   const params = useParams()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const workspaceId = (params?.workspaceId as string) || ''
 
   useOAuthReturnRouter()
+
+  /**
+   * Arena iframe embed (`from=arena_v3`): one-time email-cookie sign-in, same pattern as deployed chat
+   * (`ArenaDeployedChat`: localStorage guard + `client.signIn.email`).
+   */
+  useEffect(() => {
+    if (searchParams.get('from') !== 'arena_v3' || !workspaceId) {
+      return
+    }
+
+    const autoLoginKey = `integrations:arenaV3AutoLogin:${workspaceId}`
+    let cancelled = false
+
+    const run = async () => {
+      try {
+        const alreadyTried = typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
+        const cookieEmail = Cookies.get('email')
+        if (!cookieEmail || alreadyTried) {
+          return
+        }
+
+        const sessionRes = await client.getSession()
+        if (sessionRes?.data?.user?.id || cancelled) {
+          return
+        }
+
+        localStorage.setItem(autoLoginKey, '1')
+        await client.signIn.email(
+          {
+            email: cookieEmail,
+            password: 'Position2!',
+            callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+          },
+          {}
+        )
+        if (!cancelled) {
+          router.refresh()
+        }
+      } catch (error) {
+        logger.error('Arena v3 integrations auto-login failed', { error })
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, workspaceId, router])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCredentialId, setSelectedCredentialId] = useState<string | null>(null)
