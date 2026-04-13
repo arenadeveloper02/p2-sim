@@ -143,6 +143,26 @@ if (validStripeKey) {
   })
 }
 
+const arenaV3OAuthCallbackTrustedOrigins = env.ARENA_V3_OAUTH_CALLBACK_ORIGINS
+  ? env.ARENA_V3_OAUTH_CALLBACK_ORIGINS.split(',')
+      .map((o) => o.trim())
+      .filter(Boolean)
+  : []
+
+/**
+ * Local dev: parent apps (Arena, Vite) often run on another port than Sim; Better Auth rejects
+ * cross-origin `callbackURL` unless the origin is trusted.
+ */
+const devArenaEmbedCallbackOrigins: string[] =
+  env.NODE_ENV === 'development'
+    ? [
+        'http://localhost:3001',
+        'http://127.0.0.1:3001',
+        'http://localhost:5173',
+        'http://localhost:4173',
+      ]
+    : []
+
 export const auth = betterAuth({
   baseURL: getBaseUrl(),
   trustedOrigins: [
@@ -152,6 +172,8 @@ export const auth = betterAuth({
           .map((o) => o.trim())
           .filter(Boolean)
       : []),
+    ...arenaV3OAuthCallbackTrustedOrigins,
+    ...devArenaEmbedCallbackOrigins,
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
     'https://claude.ai',
     'https://claude.com',

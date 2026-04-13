@@ -89,9 +89,15 @@ export const buildTimeCSPDirectives: CSPDirectives = {
           env.NEXT_PUBLIC_SOCKET_URL,
           env.NEXT_PUBLIC_SOCKET_URL.replace('http://', 'ws://').replace('https://', 'wss://'),
         ]
-      : isDev
-        ? ['http://localhost:3002', 'ws://localhost:3002']
-        : []),
+      : []),
+    ...(isDev
+      ? [
+          'http://localhost:3001',
+          'ws://localhost:3001',
+          'http://localhost:3002',
+          'ws://localhost:3002',
+        ]
+      : []),
     'https://api.browser-use.com',
     'https://api.exa.ai',
     'https://api.firecrawl.dev',
@@ -113,6 +119,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
 
   'frame-src': [
     "'self'",
+    ...(isDev ? ['http://localhost:3001'] : []),
     'https://drive.google.com',
     'https://docs.google.com',
     'https://*.google.com',
@@ -154,6 +161,8 @@ export function generateRuntimeCSP(): string {
       ? 'ws://localhost:3002'
       : ''
   const ollamaUrl = getEnv('OLLAMA_URL') || (isDev ? 'http://localhost:11434' : '')
+  const localDevPort3001 = isDev ? 'http://localhost:3001 ws://localhost:3001' : ''
+  const localDevFrame3001 = isDev ? 'http://localhost:3001' : ''
 
   const brandLogoDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_LOGO_URL'))
   const brandFaviconDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL'))
@@ -183,8 +192,8 @@ export function generateRuntimeCSP(): string {
     img-src ${imgSrcLocal};
     media-src 'self' blob:;
     font-src 'self' https://fonts.gstatic.com;
-    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} https://api.browser-use.com https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://collector.onedollarstats.com https://api-js.mixpanel.com https://api.mixpanel.com ${dynamicDomainsStr};
-    frame-src https://drive.google.com https://docs.google.com https://*.google.com;
+    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} ${localDevPort3001} https://api.browser-use.com https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://collector.onedollarstats.com https://api-js.mixpanel.com https://api.mixpanel.com ${dynamicDomainsStr};
+    frame-src 'self' ${localDevFrame3001} https://drive.google.com https://docs.google.com https://*.google.com;
     frame-ancestors 'self';
     form-action 'self';
     base-uri 'self';
