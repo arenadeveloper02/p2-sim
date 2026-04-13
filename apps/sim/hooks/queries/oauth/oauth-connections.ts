@@ -68,7 +68,10 @@ function postArenaV3OAuthNavigateToParent(url: string): void {
   window.parent.postMessage(payload, '*')
 }
 
-async function fetchOAuth2LinkAuthorizeUrl(providerId: string, callbackURL: string): Promise<string> {
+async function fetchOAuth2LinkAuthorizeUrl(
+  providerId: string,
+  callbackURL: string
+): Promise<string> {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const response = await fetch(`${origin}/api/auth/oauth2/link`, {
     method: 'POST',
