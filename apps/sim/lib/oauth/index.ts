@@ -1,3 +1,4 @@
+export * from './arena-v3-mandatory-integrations'
 export * from './microsoft'
 export * from './oauth'
 export * from './types'

@@ -31,7 +31,14 @@ import {
   readPendingCredentialCreateRequest,
   writeOAuthReturnContext,
 } from '@/lib/credentials/client-state'
-import { getCanonicalScopesForProvider, getServiceConfigByProviderId } from '@/lib/oauth'
+import {
+  ARENA_V3_MANDATORY_INTEGRATION_PROVIDER_IDS,
+  getArenaV3MandatoryIntegrationSortIndex,
+  getCanonicalScopesForProvider,
+  getServiceConfigByProviderId,
+  isArenaV3MandatoryIntegrationProviderId,
+  orderArenaV3MandatoryIntegrations,
+} from '@/lib/oauth'
 import { getScopeDescription } from '@/lib/oauth/utils'
 import { getUserColor } from '@/lib/workspaces/colors'
 import { CredentialSkeleton } from '@/app/workspace/[workspaceId]/settings/components/credentials/credential-skeleton'
@@ -48,6 +55,7 @@ import {
   type WorkspaceCredentialRole,
 } from '@/hooks/queries/credentials'
 import {
+  type ServiceInfo,
   useConnectOAuthService,
   useDisconnectOAuthService,
   useOAuthConnections,
@@ -67,6 +75,7 @@ export function IntegrationsManager() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const workspaceId = (params?.workspaceId as string) || ''
+  const isArenaV3IntegrationsEmbed = searchParams.get('from') === 'arena_v3'
 
   useOAuthReturnRouter()
 
@@ -154,7 +163,8 @@ export function IntegrationsManager() {
     enabled: Boolean(workspaceId),
   })
 
-  const { data: oauthConnections = [] } = useOAuthConnections()
+  const { data: oauthConnectionsData } = useOAuthConnections()
+  const oauthConnections: ServiceInfo[] = oauthConnectionsData ?? []
   const connectOAuthService = useConnectOAuthService()
   const disconnectOAuthService = useDisconnectOAuthService()
 
@@ -165,9 +175,26 @@ export function IntegrationsManager() {
     [credentials]
   )
 
+  /**
+   * Arena embed: all OAuth credentials **created by** the signed-in user (excludes teammates’
+   * shares). Used for the unified list (mandatory five + any other owned connections) and details.
+   */
+  const integrationsOauthCredentials = useMemo(() => {
+    if (!isArenaV3IntegrationsEmbed) return oauthCredentials
+    if (!currentUserId) return []
+    return oauthCredentials.filter((c) => c.createdBy === currentUserId)
+  }, [oauthCredentials, isArenaV3IntegrationsEmbed, currentUserId])
+
+  const oauthConnectionsForIntegrationsUi = useMemo((): ServiceInfo[] => {
+    if (!isArenaV3IntegrationsEmbed) return oauthConnections
+    return orderArenaV3MandatoryIntegrations<ServiceInfo>(oauthConnections)
+  }, [oauthConnections, isArenaV3IntegrationsEmbed])
+
   const selectedCredential = useMemo(
-    () => oauthCredentials.find((credential) => credential.id === selectedCredentialId) || null,
-    [oauthCredentials, selectedCredentialId]
+    () =>
+      integrationsOauthCredentials.find((credential) => credential.id === selectedCredentialId) ||
+      null,
+    [integrationsOauthCredentials, selectedCredentialId]
   )
 
   const { data: members = [], isPending: membersLoading } = useWorkspaceCredentialMembers(
@@ -190,10 +217,85 @@ export function IntegrationsManager() {
     return oauthServiceNameByProviderId.get(providerId) || providerId
   }
 
+  type ArenaV3IntegrationRow =
+    | { kind: 'credential'; credential: WorkspaceCredential }
+    | { kind: 'connect'; providerId: string; serviceName: string }
+
+  const arenaV3UnifiedRows = useMemo((): ArenaV3IntegrationRow[] => {
+    if (!isArenaV3IntegrationsEmbed) return []
+    const connectionByProvider = new Map(
+      oauthConnectionsForIntegrationsUi.map((s) => [s.providerId, s])
+    )
+    const rows: ArenaV3IntegrationRow[] = []
+    for (const providerId of ARENA_V3_MANDATORY_INTEGRATION_PROVIDER_IDS) {
+      const service = connectionByProvider.get(providerId)
+      const serviceName = service?.name || providerId
+      const creds = integrationsOauthCredentials
+        .filter((c) => c.providerId === providerId)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName))
+      if (creds.length === 0) {
+        rows.push({ kind: 'connect', providerId, serviceName })
+      } else {
+        for (const credential of creds) {
+          rows.push({ kind: 'credential', credential })
+        }
+      }
+    }
+    const extraCreds = integrationsOauthCredentials
+      .filter((c) => c.providerId && !isArenaV3MandatoryIntegrationProviderId(c.providerId))
+      .sort((a, b) => {
+        const labelA = (
+          oauthServiceNameByProviderId.get(a.providerId || '') ||
+          a.providerId ||
+          ''
+        ).toLowerCase()
+        const labelB = (
+          oauthServiceNameByProviderId.get(b.providerId || '') ||
+          b.providerId ||
+          ''
+        ).toLowerCase()
+        const byLabel = labelA.localeCompare(labelB)
+        if (byLabel !== 0) return byLabel
+        return a.displayName.localeCompare(b.displayName)
+      })
+    for (const credential of extraCreds) {
+      rows.push({ kind: 'credential', credential })
+    }
+    return rows
+  }, [
+    isArenaV3IntegrationsEmbed,
+    integrationsOauthCredentials,
+    oauthConnectionsForIntegrationsUi,
+    oauthServiceNameByProviderId,
+  ])
+
+  const arenaV3FilteredUnifiedRows = useMemo((): ArenaV3IntegrationRow[] => {
+    if (!isArenaV3IntegrationsEmbed) return []
+    if (!searchTerm.trim()) return arenaV3UnifiedRows
+    const q = searchTerm.toLowerCase()
+    return arenaV3UnifiedRows.filter((row) => {
+      if (row.kind === 'credential') {
+        const c = row.credential
+        const providerLabel = (
+          oauthServiceNameByProviderId.get(c.providerId || '') ||
+          c.providerId ||
+          ''
+        ).toLowerCase()
+        return (
+          c.displayName.toLowerCase().includes(q) ||
+          (c.description || '').toLowerCase().includes(q) ||
+          (c.providerId || '').toLowerCase().includes(q) ||
+          providerLabel.includes(q)
+        )
+      }
+      return row.serviceName.toLowerCase().includes(q) || row.providerId.toLowerCase().includes(q)
+    })
+  }, [isArenaV3IntegrationsEmbed, arenaV3UnifiedRows, searchTerm, oauthServiceNameByProviderId])
+
   const filteredCredentials = useMemo(() => {
-    if (!searchTerm.trim()) return oauthCredentials
+    if (!searchTerm.trim()) return integrationsOauthCredentials
     const normalized = searchTerm.toLowerCase()
-    return oauthCredentials.filter((credential) => {
+    return integrationsOauthCredentials.filter((credential) => {
       return (
         credential.displayName.toLowerCase().includes(normalized) ||
         (credential.description || '').toLowerCase().includes(normalized) ||
@@ -201,22 +303,44 @@ export function IntegrationsManager() {
         resolveProviderLabel(credential.providerId).toLowerCase().includes(normalized)
       )
     })
-  }, [oauthCredentials, searchTerm, oauthConnections])
+  }, [integrationsOauthCredentials, searchTerm, oauthConnections])
 
   const sortedCredentials = useMemo(() => {
-    return [...filteredCredentials].sort((a, b) => {
+    const list = [...filteredCredentials]
+    if (isArenaV3IntegrationsEmbed) {
+      list.sort((a, b) => {
+        const byProvider =
+          getArenaV3MandatoryIntegrationSortIndex(a.providerId || undefined) -
+          getArenaV3MandatoryIntegrationSortIndex(b.providerId || undefined)
+        if (byProvider !== 0) return byProvider
+        return a.displayName.localeCompare(b.displayName)
+      })
+      return list
+    }
+    return list.sort((a, b) => {
       const aProvider = a.providerId || ''
       const bProvider = b.providerId || ''
       return aProvider.localeCompare(bProvider)
     })
-  }, [filteredCredentials])
+  }, [filteredCredentials, isArenaV3IntegrationsEmbed])
+
+  useEffect(() => {
+    if (!isArenaV3IntegrationsEmbed || !selectedCredentialId) return
+    if (selectedCredential) return
+    setSelectedCredentialId(null)
+    setSelectedDescriptionDraft('')
+    setSelectedDisplayNameDraft('')
+  }, [isArenaV3IntegrationsEmbed, selectedCredentialId, selectedCredential])
 
   const filteredAvailableIntegrations = useMemo(() => {
-    if (!searchTerm.trim()) return oauthConnections
+    if (!searchTerm.trim()) return oauthConnectionsForIntegrationsUi
     const normalized = searchTerm.toLowerCase()
-    return oauthConnections.filter((service) => service.name.toLowerCase().includes(normalized))
-  }, [oauthConnections, searchTerm])
+    return oauthConnectionsForIntegrationsUi.filter((service) =>
+      service.name.toLowerCase().includes(normalized)
+    )
+  }, [oauthConnectionsForIntegrationsUi, searchTerm])
 
+  /** Full catalog for the Connect modal (Arena embed includes every integration, not only the five). */
   const oauthServiceOptions = useMemo(
     () =>
       oauthConnections.map((service) => ({
@@ -654,17 +778,20 @@ export function IntegrationsManager() {
     }
   }
 
-  const hasCredentials = oauthCredentials && oauthCredentials.length > 0
+  const hasCredentials = integrationsOauthCredentials.length > 0
 
   const connectedProviderIds = useMemo(
-    () => new Set(oauthCredentials.map((c) => c.providerId).filter(Boolean) as string[]),
-    [oauthCredentials]
+    () =>
+      new Set(integrationsOauthCredentials.map((c) => c.providerId).filter(Boolean) as string[]),
+    [integrationsOauthCredentials]
   )
 
-  const showNoResults =
+  const showNoResults = Boolean(
     searchTerm.trim() &&
-    sortedCredentials.length === 0 &&
-    filteredAvailableIntegrations.length === 0
+      (isArenaV3IntegrationsEmbed
+        ? arenaV3FilteredUnifiedRows.length === 0
+        : sortedCredentials.length === 0 && filteredAvailableIntegrations.length === 0)
+  )
 
   const handleAddForProvider = useCallback((providerId: string) => {
     setCreateOAuthProviderId(providerId)
@@ -1256,44 +1383,121 @@ export function IntegrationsManager() {
             </div>
           ) : (
             <div className='flex flex-col gap-2'>
-              {sortedCredentials.map((credential) => {
-                const serviceConfig = credential.providerId
-                  ? getServiceConfigByProviderId(credential.providerId)
-                  : null
-                return (
-                  <div key={credential.id} className='flex items-center justify-between gap-3'>
-                    <div className='flex min-w-0 items-center gap-2.5'>
-                      {serviceConfig && (
-                        <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--surface-5)]'>
-                          {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
-                        </div>
-                      )}
-                      <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
-                        <span className='truncate font-medium text-base'>
-                          {credential.displayName}
-                        </span>
-                        <p className='truncate text-[var(--text-muted)] text-sm'>
-                          {credential.description || resolveProviderLabel(credential.providerId)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className='flex flex-shrink-0 items-center gap-1'>
-                      <Button variant='default' onClick={() => handleSelectCredential(credential)}>
-                        Details
-                      </Button>
-                      {credential.role === 'admin' && (
-                        <Button
-                          variant='ghost'
-                          onClick={() => handleDeleteClick(credential)}
-                          disabled={disconnectOAuthService.isPending}
+              {isArenaV3IntegrationsEmbed
+                ? arenaV3FilteredUnifiedRows.map((row) => {
+                    if (row.kind === 'credential') {
+                      const { credential } = row
+                      const serviceConfig = credential.providerId
+                        ? getServiceConfigByProviderId(credential.providerId)
+                        : null
+                      return (
+                        <div
+                          key={credential.id}
+                          className='flex items-center justify-between gap-3'
                         >
-                          Disconnect
+                          <div className='flex min-w-0 items-center gap-2.5'>
+                            {serviceConfig && (
+                              <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--surface-5)]'>
+                                {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
+                              </div>
+                            )}
+                            <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
+                              <span className='truncate font-medium text-base'>
+                                {credential.displayName}
+                              </span>
+                              <p className='truncate text-[var(--text-muted)] text-sm'>
+                                {credential.description ||
+                                  resolveProviderLabel(credential.providerId)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className='flex flex-shrink-0 items-center gap-1'>
+                            <Button
+                              variant='default'
+                              onClick={() => handleSelectCredential(credential)}
+                            >
+                              Details
+                            </Button>
+                            {credential.role === 'admin' && (
+                              <Button
+                                variant='ghost'
+                                onClick={() => handleDeleteClick(credential)}
+                                disabled={disconnectOAuthService.isPending}
+                              >
+                                Disconnect
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    }
+                    const serviceConfig = getServiceConfigByProviderId(row.providerId)
+                    return (
+                      <div
+                        key={`connect-${row.providerId}`}
+                        className='flex items-center justify-between gap-3'
+                      >
+                        <div className='flex min-w-0 items-center gap-2.5'>
+                          {serviceConfig && (
+                            <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[6px] bg-[var(--surface-5)]'>
+                              {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
+                            </div>
+                          )}
+                          <span className='truncate font-medium text-[15px]'>
+                            {row.serviceName}
+                          </span>
+                        </div>
+                        <Button
+                          variant='default'
+                          onClick={() => handleAddForProvider(row.providerId)}
+                        >
+                          Add account
                         </Button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+                      </div>
+                    )
+                  })
+                : sortedCredentials.map((credential) => {
+                    const serviceConfig = credential.providerId
+                      ? getServiceConfigByProviderId(credential.providerId)
+                      : null
+                    return (
+                      <div key={credential.id} className='flex items-center justify-between gap-3'>
+                        <div className='flex min-w-0 items-center gap-2.5'>
+                          {serviceConfig && (
+                            <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--surface-5)]'>
+                              {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
+                            </div>
+                          )}
+                          <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
+                            <span className='truncate font-medium text-base'>
+                              {credential.displayName}
+                            </span>
+                            <p className='truncate text-[var(--text-muted)] text-sm'>
+                              {credential.description ||
+                                resolveProviderLabel(credential.providerId)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className='flex flex-shrink-0 items-center gap-1'>
+                          <Button
+                            variant='default'
+                            onClick={() => handleSelectCredential(credential)}
+                          >
+                            Details
+                          </Button>
+                          {credential.role === 'admin' && (
+                            <Button
+                              variant='ghost'
+                              onClick={() => handleDeleteClick(credential)}
+                              disabled={disconnectOAuthService.isPending}
+                            >
+                              Disconnect
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
 
               {showNoResults && (
                 <div className='py-4 text-center text-[var(--text-muted)] text-sm'>
@@ -1301,7 +1505,7 @@ export function IntegrationsManager() {
                 </div>
               )}
 
-              {filteredAvailableIntegrations.length > 0 && (
+              {!isArenaV3IntegrationsEmbed && filteredAvailableIntegrations.length > 0 && (
                 <div
                   className={`flex flex-col gap-2${hasCredentials || showNoResults ? ' mt-2 border-[var(--border)] border-t pt-4' : ''}`}
                 >
