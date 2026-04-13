@@ -2,6 +2,16 @@ import { env, getEnv } from '../config/env'
 import { isDev, isReactGrabEnabled } from '../config/feature-flags'
 
 /**
+ * Arena web apps under `*.thearena.ai` (CSP host wildcards). Covers dev/test (http) and sandbox/prod (https).
+ * Used across `frame-ancestors`, `connect-src`, and `frame-src`.
+ *
+ * CSP wildcards match **one or more** subdomain labels; they do **not** match the apex host `thearena.ai`.
+ *
+ * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP - host wildcards in source lists
+ */
+export const ARENA_APP_CSP_ORIGINS = ['http://*.thearena.ai', 'https://*.thearena.ai'] as const
+
+/**
  * Content Security Policy (CSP) configuration builder
  */
 
@@ -115,17 +125,19 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_LOGO_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_PRIVACY_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_TERMS_URL),
+    ...ARENA_APP_CSP_ORIGINS,
   ],
 
   'frame-src': [
     "'self'",
     ...(isDev ? ['http://localhost:3001'] : []),
+    ...ARENA_APP_CSP_ORIGINS,
     'https://drive.google.com',
     'https://docs.google.com',
     'https://*.google.com',
   ],
 
-  'frame-ancestors': ["'self'"],
+  'frame-ancestors': ["'self'", ...ARENA_APP_CSP_ORIGINS],
   'form-action': ["'self'"],
   'base-uri': ["'self'"],
   'object-src': ["'none'"],
@@ -180,6 +192,7 @@ export function generateRuntimeCSP(): string {
   const brandLogoDomain = brandLogoDomains[0] || ''
   const brandFaviconDomain = brandFaviconDomains[0] || ''
   const reactGrabScript = isReactGrabEnabled ? 'https://unpkg.com' : ''
+  const arenaAppOriginsStr = ARENA_APP_CSP_ORIGINS.join(' ')
 
   const imgSrcLocal = isDev
     ? "'self' data: blob: *"
@@ -192,9 +205,9 @@ export function generateRuntimeCSP(): string {
     img-src ${imgSrcLocal};
     media-src 'self' blob:;
     font-src 'self' https://fonts.gstatic.com;
-    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} ${localDevPort3001} https://api.browser-use.com https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://collector.onedollarstats.com https://api-js.mixpanel.com https://api.mixpanel.com ${dynamicDomainsStr};
-    frame-src 'self' ${localDevFrame3001} https://drive.google.com https://docs.google.com https://*.google.com;
-    frame-ancestors 'self';
+    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} ${localDevPort3001} ${arenaAppOriginsStr} https://api.browser-use.com https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://collector.onedollarstats.com https://api-js.mixpanel.com https://api.mixpanel.com ${dynamicDomainsStr};
+    frame-src 'self' ${localDevFrame3001} ${arenaAppOriginsStr} https://drive.google.com https://docs.google.com https://*.google.com;
+    frame-ancestors 'self' ${arenaAppOriginsStr};
     form-action 'self';
     base-uri 'self';
     object-src 'none';

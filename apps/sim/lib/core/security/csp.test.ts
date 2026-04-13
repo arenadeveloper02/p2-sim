@@ -117,6 +117,8 @@ describe('getMainCSPPolicy', () => {
 
     expect(policy).toContain("object-src 'none'")
     expect(policy).toContain("frame-ancestors 'self'")
+    expect(policy).toContain('https://*.thearena.ai')
+    expect(policy).toContain('http://*.thearena.ai')
     expect(policy).toContain("form-action 'self'")
     expect(policy).toContain("base-uri 'self'")
   })
@@ -202,6 +204,14 @@ describe('generateRuntimeCSP', () => {
 
     expect(csp).not.toMatch(/\s{3,}/)
     expect(csp.trim()).toBe(csp)
+  })
+
+  it('should include Arena subdomain wildcards for embed and network policy', () => {
+    const csp = generateRuntimeCSP()
+
+    expect(csp).toContain('http://*.thearena.ai')
+    expect(csp).toContain('https://*.thearena.ai')
+    expect(csp).toContain("frame-ancestors 'self'")
   })
 })
 
