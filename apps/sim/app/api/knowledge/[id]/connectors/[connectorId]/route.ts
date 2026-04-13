@@ -222,6 +222,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
     if (parsed.data.status !== undefined) {
       updates.status = parsed.data.status
+      if (parsed.data.status === 'active') {
+        updates.consecutiveFailures = 0
+        updates.lastSyncError = null
+        if (updates.nextSyncAt === undefined) {
+          updates.nextSyncAt = new Date()
+        }
+      }
     }
 
     await db
@@ -261,7 +268,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       resourceId: connectorId,
       resourceName: updatedData.connectorType,
       description: `Updated connector for knowledge base "${writeCheck.knowledgeBase.name}"`,
-      metadata: { knowledgeBaseId, updatedFields: Object.keys(parsed.data) },
+      metadata: {
+        knowledgeBaseId,
+        knowledgeBaseName: writeCheck.knowledgeBase.name,
+        connectorType: updatedData.connectorType,
+        updatedFields: Object.keys(parsed.data),
+        ...(parsed.data.syncIntervalMinutes !== undefined && {
+          syncIntervalMinutes: parsed.data.syncIntervalMinutes,
+        }),
+        ...(parsed.data.status !== undefined && { newStatus: parsed.data.status }),
+      },
       request,
     })
 
@@ -392,6 +408,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       description: `Deleted connector from knowledge base "${writeCheck.knowledgeBase.name}"`,
       metadata: {
         knowledgeBaseId,
+        knowledgeBaseName: writeCheck.knowledgeBase.name,
+        connectorType: existingConnector[0].connectorType,
+        deleteDocuments,
         documentsDeleted: deleteDocuments ? docCount : 0,
         documentsKept: deleteDocuments ? 0 : docCount,
       },

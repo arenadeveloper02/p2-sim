@@ -13,6 +13,7 @@ import { ApolloBlock } from '@/blocks/blocks/apollo'
 import { ArxivBlock } from '@/blocks/blocks/arxiv'
 import { AsanaBlock } from '@/blocks/blocks/asana'
 import { AshbyBlock } from '@/blocks/blocks/ashby'
+import { AthenaBlock } from '@/blocks/blocks/athena'
 import { AttioBlock } from '@/blocks/blocks/attio'
 import { BoxBlock } from '@/blocks/blocks/box'
 import { BrandfetchBlock } from '@/blocks/blocks/brandfetch'
@@ -29,6 +30,7 @@ import { CloudWatchBlock } from '@/blocks/blocks/cloudwatch'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock, ConfluenceV2Block } from '@/blocks/blocks/confluence'
 import { CredentialBlock } from '@/blocks/blocks/credential'
+import { CrowdStrikeBlock } from '@/blocks/blocks/crowdstrike'
 import { CursorBlock, CursorV2Block } from '@/blocks/blocks/cursor'
 import { DagsterBlock } from '@/blocks/blocks/dagster'
 import { DatabricksBlock } from '@/blocks/blocks/databricks'
@@ -236,6 +238,7 @@ export const registry: Record<string, BlockConfig> = {
   arxiv: ArxivBlock,
   asana: AsanaBlock,
   ashby: AshbyBlock,
+  athena: AthenaBlock,
   attio: AttioBlock,
   brandfetch: BrandfetchBlock,
   box: BoxBlock,
@@ -247,6 +250,7 @@ export const registry: Record<string, BlockConfig> = {
   cloudflare: CloudflareBlock,
   cloudformation: CloudFormationBlock,
   cloudwatch: CloudWatchBlock,
+  crowdstrike: CrowdStrikeBlock,
   clay: ClayBlock,
   clerk: ClerkBlock,
   condition: ConditionBlock,

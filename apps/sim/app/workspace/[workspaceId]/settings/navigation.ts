@@ -1,5 +1,6 @@
 import {
   Card,
+  ClipboardList,
   Connections,
   HexSimple,
   Key,
@@ -7,6 +8,7 @@ import {
   Lock,
   LogIn,
   Mail,
+  Palette,
   Send,
   Server,
   Settings,
@@ -26,11 +28,13 @@ export type SettingsSection =
   | 'template-profile'
   | 'credential-sets'
   | 'access-control'
+  | 'audit-logs'
   | 'apikeys'
   | 'byok'
   | 'subscription'
   | 'team'
   | 'sso'
+  | 'whitelabeling'
   | 'copilot'
   | 'mcp'
   | 'custom-tools'
@@ -70,6 +74,8 @@ const isSSOEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
 const isCredentialSetsEnabled = isTruthy(getEnv('NEXT_PUBLIC_CREDENTIAL_SETS_ENABLED'))
 const isAccessControlEnabled = isTruthy(getEnv('NEXT_PUBLIC_ACCESS_CONTROL_ENABLED'))
 const isInboxEnabled = isTruthy(getEnv('NEXT_PUBLIC_INBOX_ENABLED'))
+const isWhitelabelingEnabled = isTruthy(getEnv('NEXT_PUBLIC_WHITELABELING_ENABLED'))
+const isAuditLogsEnabled = isTruthy(getEnv('NEXT_PUBLIC_AUDIT_LOGS_ENABLED'))
 
 export const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
 export { isCredentialSetsEnabled }
@@ -94,6 +100,15 @@ export const allNavigationItems: NavigationItem[] = [
     requiresHosted: true,
     requiresEnterprise: true,
     selfHostedOverride: isAccessControlEnabled,
+  },
+  {
+    id: 'audit-logs',
+    label: 'Audit Logs',
+    icon: ClipboardList,
+    section: 'enterprise',
+    requiresHosted: true,
+    requiresEnterprise: true,
+    selfHostedOverride: isAuditLogsEnabled,
   },
   {
     id: 'subscription',
@@ -161,6 +176,15 @@ export const allNavigationItems: NavigationItem[] = [
     requiresHosted: true,
     requiresEnterprise: true,
     selfHostedOverride: isSSOEnabled,
+  },
+  {
+    id: 'whitelabeling',
+    label: 'Whitelabeling',
+    icon: Palette,
+    section: 'enterprise',
+    requiresHosted: true,
+    requiresEnterprise: true,
+    selfHostedOverride: isWhitelabelingEnabled,
   },
   {
     id: 'admin',

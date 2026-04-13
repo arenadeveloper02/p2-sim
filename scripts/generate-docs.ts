@@ -100,7 +100,7 @@ interface IntegrationEntry {
   triggerCount: number
   authType: 'oauth' | 'api-key' | 'none'
   category: string
-  integrationType?: string
+  integrationTypes?: string[]
   tags?: string[]
 }
 
@@ -676,7 +676,14 @@ async function writeIntegrationsJson(iconMapping: Record<string, string>): Promi
           triggerCount: triggers.length,
           authType,
           category: config.category,
-          ...(config.integrationType ? { integrationType: config.integrationType } : {}),
+          ...(config.integrationType || config.tags
+            ? {
+                integrationTypes: deriveIntegrationTypes(
+                  config.integrationType || null,
+                  config.tags || []
+                ),
+              }
+            : {}),
           ...(config.tags ? { tags: config.tags } : {}),
         })
       }
@@ -931,6 +938,85 @@ function extractStringPropertyFromContent(
 }
 
 /**
+ * Tag-to-category mapping used by deriveIntegrationTypes to expand a block's
+ * primary integrationType into a full set of categories for the landing page.
+ */
+const TAG_TO_CATEGORIES: Record<string, string[]> = {
+  llm: ['ai'],
+  agentic: ['ai'],
+  'image-generation': ['ai', 'design'],
+  'video-generation': ['ai', 'design'],
+  'text-to-speech': ['ai'],
+  'speech-to-text': ['ai'],
+  ocr: ['ai', 'documents'],
+  'vector-search': ['ai', 'search'],
+  'document-processing': ['documents'],
+  'content-management': ['documents'],
+  'e-signatures': ['documents'],
+  'note-taking': ['productivity', 'documents'],
+  'knowledge-base': ['documents', 'search'],
+  'data-analytics': ['analytics'],
+  seo: ['analytics', 'search'],
+  monitoring: ['developer-tools', 'analytics'],
+  'error-tracking': ['developer-tools'],
+  'incident-management': ['developer-tools'],
+  'version-control': ['developer-tools'],
+  'ci-cd': ['developer-tools'],
+  'feature-flags': ['developer-tools'],
+  messaging: ['communication'],
+  meeting: ['communication', 'productivity'],
+  calendar: ['productivity'],
+  scheduling: ['productivity'],
+  'project-management': ['productivity'],
+  ticketing: ['productivity', 'customer-support'],
+  forms: ['productivity'],
+  spreadsheet: ['productivity', 'databases'],
+  'data-warehouse': ['databases'],
+  cloud: ['developer-tools'],
+  'web-scraping': ['search'],
+  'sales-engagement': ['sales'],
+  enrichment: ['sales'],
+  'email-marketing': ['email'],
+  marketing: ['analytics'],
+  payments: ['ecommerce'],
+  subscriptions: ['ecommerce'],
+  hiring: ['hr'],
+  identity: ['security'],
+  'secrets-management': ['security'],
+  'customer-support': ['customer-support'],
+  webhooks: ['developer-tools'],
+  automation: ['developer-tools'],
+}
+
+/**
+ * Derive the full list of integration type categories from a block's primary
+ * integrationType and its tags. The primary type is always first; additional
+ * categories are inferred from tags via TAG_TO_CATEGORIES.
+ */
+function deriveIntegrationTypes(primaryType: string | null, tags: string[]): string[] {
+  const types = new Set<string>()
+  if (primaryType) {
+    types.add(primaryType)
+  }
+  for (const tag of tags) {
+    const mapped = TAG_TO_CATEGORIES[tag]
+    if (mapped) {
+      for (const t of mapped) {
+        types.add(t)
+      }
+    }
+  }
+  // Return primary first, then the rest sorted for deterministic output
+  const result: string[] = []
+  if (primaryType && types.has(primaryType)) {
+    result.push(primaryType)
+    types.delete(primaryType)
+  }
+  result.push(...Array.from(types).sort())
+  return result
+}
+
+/**
  * Extract an enum property value from block content.
  * Matches patterns like `integrationType: IntegrationType.DeveloperTools`
  * and returns the string value (e.g., 'developer-tools').
@@ -943,7 +1029,6 @@ function extractEnumPropertyFromContent(content: string, propName: string): stri
   const ENUM_MAP: Record<string, string> = {
     AI: 'ai',
     Analytics: 'analytics',
-    Automation: 'automation',
     Communication: 'communication',
     CRM: 'crm',
     CustomerSupport: 'customer-support',
@@ -955,13 +1040,11 @@ function extractEnumPropertyFromContent(content: string, propName: string): stri
     Email: 'email',
     FileStorage: 'file-storage',
     HR: 'hr',
-    Media: 'media',
     Other: 'other',
     Productivity: 'productivity',
-    SalesIntelligence: 'sales-intelligence',
+    Sales: 'sales',
     Search: 'search',
     Security: 'security',
-    Social: 'social',
   }
   return ENUM_MAP[enumKey] || enumKey.toLowerCase()
 }
@@ -1434,13 +1517,8 @@ function parseConstFieldContent(
  * 1. Const reference (e.g., `outputs: GIT_REF_OUTPUT_PROPERTIES,`)
  * 2. Inline object (e.g., `outputs: { id: { type: 'string', ... } }`)
  */
-function extractOutputsFromToolContent(
-  content: string,
-  toolPrefix: string
-): Record<string, any> {
-  const constMatch = content.match(
-    /(?<![a-zA-Z_])outputs\s*:\s*([A-Z][A-Z_0-9]+)\s*(?:,|\}|$)/
-  )
+function extractOutputsFromToolContent(content: string, toolPrefix: string): Record<string, any> {
+  const constMatch = content.match(/(?<![a-zA-Z_])outputs\s*:\s*([A-Z][A-Z_0-9]+)\s*(?:,|\}|$)/)
   if (constMatch) {
     const resolved = resolveConstReference(constMatch[1], toolPrefix)
     if (resolved && typeof resolved === 'object') {
@@ -1649,8 +1727,7 @@ function extractToolInfo(
           lastExportMatch = m
         }
         if (lastExportMatch && lastExportMatch.index !== undefined) {
-          const bracePos =
-            lastExportMatch.index + lastExportMatch[0].length - 1
+          const bracePos = lastExportMatch.index + lastExportMatch[0].length - 1
           const ep = findMatchingClose(fileContent, bracePos)
           if (ep !== -1) {
             fullToolBlock = fileContent.substring(bracePos, ep)
@@ -1665,8 +1742,7 @@ function extractToolInfo(
         )
         const baseToolMatch = fileContent.match(baseToolRegex)
         if (baseToolMatch && baseToolMatch.index !== undefined) {
-          const baseStart =
-            baseToolMatch.index + baseToolMatch[0].length - 1
+          const baseStart = baseToolMatch.index + baseToolMatch[0].length - 1
           const endIdx = findMatchingClose(fileContent, baseStart)
           if (endIdx !== -1) {
             const baseToolContent = fileContent.substring(baseStart, endIdx)

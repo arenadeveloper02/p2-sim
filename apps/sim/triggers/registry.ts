@@ -90,6 +90,9 @@ import {
 } from '@/triggers/github'
 import { gmailPollingTrigger } from '@/triggers/gmail'
 import { gongCallCompletedTrigger, gongWebhookTrigger } from '@/triggers/gong'
+import { googleCalendarPollingTrigger } from '@/triggers/google-calendar'
+import { googleDrivePollingTrigger } from '@/triggers/google-drive'
+import { googleSheetsPollingTrigger } from '@/triggers/google-sheets'
 import { googleFormsWebhookTrigger } from '@/triggers/googleforms'
 import {
   grainHighlightCreatedTrigger,
@@ -235,6 +238,13 @@ import {
   salesforceRecordUpdatedTrigger,
   salesforceWebhookTrigger,
 } from '@/triggers/salesforce'
+import {
+  servicenowChangeRequestCreatedTrigger,
+  servicenowChangeRequestUpdatedTrigger,
+  servicenowIncidentCreatedTrigger,
+  servicenowIncidentUpdatedTrigger,
+  servicenowWebhookTrigger,
+} from '@/triggers/servicenow'
 import { slackWebhookTrigger } from '@/triggers/slack'
 import { stripeWebhookTrigger } from '@/triggers/stripe'
 import { telegramWebhookTrigger } from '@/triggers/telegram'
@@ -352,6 +362,9 @@ export const TRIGGER_REGISTRY: TriggerRegistry = {
   fathom_new_meeting: fathomNewMeetingTrigger,
   fathom_webhook: fathomWebhookTrigger,
   gmail_poller: gmailPollingTrigger,
+  google_calendar_poller: googleCalendarPollingTrigger,
+  google_drive_poller: googleDrivePollingTrigger,
+  google_sheets_poller: googleSheetsPollingTrigger,
   gong_call_completed: gongCallCompletedTrigger,
   gong_webhook: gongWebhookTrigger,
   grain_webhook: grainWebhookTrigger,
@@ -437,6 +450,11 @@ export const TRIGGER_REGISTRY: TriggerRegistry = {
   salesforce_opportunity_stage_changed: salesforceOpportunityStageChangedTrigger,
   salesforce_case_status_changed: salesforceCaseStatusChangedTrigger,
   salesforce_webhook: salesforceWebhookTrigger,
+  servicenow_incident_created: servicenowIncidentCreatedTrigger,
+  servicenow_incident_updated: servicenowIncidentUpdatedTrigger,
+  servicenow_change_request_created: servicenowChangeRequestCreatedTrigger,
+  servicenow_change_request_updated: servicenowChangeRequestUpdatedTrigger,
+  servicenow_webhook: servicenowWebhookTrigger,
   stripe_webhook: stripeWebhookTrigger,
   telegram_webhook: telegramWebhookTrigger,
   typeform_webhook: typeformWebhookTrigger,
