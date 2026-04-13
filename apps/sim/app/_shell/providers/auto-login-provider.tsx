@@ -8,21 +8,6 @@ import { client } from '@/lib/auth/auth-client'
 const logger = createLogger('AutoLoginProvider')
 
 /**
- * Returns where the user should land after email cookie sign-in.
- * Workspace deep links (e.g. settings → integrations) are preserved; other routes default to `/workspace`.
- */
-function getPostAutoLoginDestination(): { callbackURL: string; routerPath: string } {
-  if (typeof window === 'undefined') {
-    return { callbackURL: '/workspace', routerPath: '/workspace' }
-  }
-  const { pathname, search, origin, href } = window.location
-  if (pathname.startsWith('/workspace')) {
-    return { callbackURL: href, routerPath: `${pathname}${search}` }
-  }
-  return { callbackURL: `${origin}/workspace`, routerPath: '/workspace' }
-}
-
-/**
  * Helper function to get a cookie value by name
  */
 function getCookie(name: string): string | null {
@@ -67,14 +52,13 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
 
         logger.info('Auto-login attempt with email from cookie')
 
-        const { callbackURL, routerPath } = getPostAutoLoginDestination()
-
         // Auto-login with email from cookie and password "Position2!"
+        // Always redirect to workspace after successful login
         const result = await client.signIn.email(
           {
             email: emailFromCookie.trim().toLowerCase(),
             password: 'Position2!',
-            callbackURL,
+            callbackURL: '/workspace',
           },
           {
             onError: (ctx) => {
@@ -87,7 +71,8 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
         if (result?.data) {
           // Login successful
           logger.info('Auto-login successful')
-          router.push(routerPath)
+          // Immediately redirect to workspace
+          router.push('/workspace')
           // Also refresh to ensure session is properly loaded
           router.refresh()
         }

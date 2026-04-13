@@ -2,14 +2,18 @@ import { env, getEnv } from '../config/env'
 import { isDev, isReactGrabEnabled } from '../config/feature-flags'
 
 /**
- * Arena web apps under `*.thearena.ai` (CSP host wildcards). Covers dev/test (http) and sandbox/prod (https).
- * Used across `frame-ancestors`, `connect-src`, and `frame-src`.
- *
- * CSP wildcards match **one or more** subdomain labels; they do **not** match the apex host `thearena.ai`.
- *
- * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP - host wildcards in source lists
+ * Arena hub (dev/test/sandbox/prod) and Sim agent hosts on thearena.ai for `frame-ancestors`, `connect-src`, and `frame-src`.
  */
-export const ARENA_APP_CSP_ORIGINS = ['http://*.thearena.ai', 'https://*.thearena.ai'] as const
+export const ARENA_APP_CSP_ORIGINS = [
+  'http://dev.thearena.ai',
+  'http://test.thearena.ai',
+  'https://sandbox.thearena.ai',
+  'https://app.thearena.ai',
+  'https://dev-agent.thearena.ai',
+  'https://test-agent.thearena.ai',
+  'https://sandbox-agent.thearena.ai',
+  'https://agent.thearena.ai',
+] as const
 
 /**
  * Content Security Policy (CSP) configuration builder

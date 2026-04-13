@@ -117,8 +117,9 @@ describe('getMainCSPPolicy', () => {
 
     expect(policy).toContain("object-src 'none'")
     expect(policy).toContain("frame-ancestors 'self'")
-    expect(policy).toContain('https://*.thearena.ai')
-    expect(policy).toContain('http://*.thearena.ai')
+    expect(policy).toContain('https://app.thearena.ai')
+    expect(policy).toContain('http://dev.thearena.ai')
+    expect(policy).toContain('https://dev-agent.thearena.ai')
     expect(policy).toContain("form-action 'self'")
     expect(policy).toContain("base-uri 'self'")
   })
@@ -206,11 +207,17 @@ describe('generateRuntimeCSP', () => {
     expect(csp.trim()).toBe(csp)
   })
 
-  it('should include Arena subdomain wildcards for embed and network policy', () => {
+  it('should include Arena app origins for embed and network policy', () => {
     const csp = generateRuntimeCSP()
 
-    expect(csp).toContain('http://*.thearena.ai')
-    expect(csp).toContain('https://*.thearena.ai')
+    expect(csp).toContain('http://dev.thearena.ai')
+    expect(csp).toContain('http://test.thearena.ai')
+    expect(csp).toContain('https://sandbox.thearena.ai')
+    expect(csp).toContain('https://app.thearena.ai')
+    expect(csp).toContain('https://dev-agent.thearena.ai')
+    expect(csp).toContain('https://test-agent.thearena.ai')
+    expect(csp).toContain('https://sandbox-agent.thearena.ai')
+    expect(csp).toContain('https://agent.thearena.ai')
     expect(csp).toContain("frame-ancestors 'self'")
   })
 })
