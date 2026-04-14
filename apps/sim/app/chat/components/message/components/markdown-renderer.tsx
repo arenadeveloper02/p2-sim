@@ -1,9 +1,9 @@
 import React, { type HTMLAttributes, memo, type ReactNode, useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { Code, Tooltip } from '@/components/emcn'
+import { Code, Tooltip, CopyCodeButton, Tooltip } from '@/components/emcn'
 import { CopyCodeButton } from '@/components/ui/copy-code-button'
+import { Streamdown } from 'streamdown'
+import 'streamdown/styles.css'
 import { extractTextContent } from '@/lib/core/utils/react-node-text'
 
 export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
@@ -25,8 +25,6 @@ export function LinkWithPreview({ href, children }: { href: string; children: Re
     </Tooltip.Root>
   )
 }
-
-const REMARK_PLUGINS = [remarkGfm]
 
 function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
   return {
@@ -73,11 +71,7 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
         {children}
       </ol>
     ),
-    li: ({
-      children,
-      ordered,
-      ...props
-    }: React.LiHTMLAttributes<HTMLLIElement> & { ordered?: boolean }) => (
+    li: ({ children }: React.LiHTMLAttributes<HTMLLIElement>) => (
       <li className='font-sans text-gray-800 dark:text-gray-200' style={{ display: 'list-item' }}>
         {children}
       </li>
@@ -180,7 +174,7 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
             </button>
             {/* <CopyCodeButton
               code={extractTextContent(codeContent)}
-              className='text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+              className='text-gray-400 hover-hover:bg-gray-700 hover-hover:text-gray-200'
             /> */}
           </div>
           <Code.Viewer
@@ -193,28 +187,11 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
       )
     },
 
-    code: ({
-      inline,
-      className,
-      children,
-      ...props
-    }: React.HTMLAttributes<HTMLElement> & { className?: string; inline?: boolean }) => {
-      if (inline) {
-        return (
-          <code
-            className='rounded bg-gray-200 px-1 py-0.5 font-mono text-[0.9em] text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-            {...props}
-          >
-            {children}
-          </code>
-        )
-      }
-      return (
-        <code className={className} {...props}>
-          {children}
-        </code>
-      )
-    },
+    inlineCode: ({ children }: { children?: React.ReactNode }) => (
+      <code className='rounded bg-gray-200 px-1 py-0.5 font-mono text-gray-800 text-inherit dark:bg-gray-700 dark:text-gray-200'>
+        {children}
+      </code>
+    ),
 
     blockquote: ({ children }: React.HTMLAttributes<HTMLQuoteElement>) => (
       <blockquote className='my-4 border-gray-300 border-l-4 py-1 pl-4 font-sans text-gray-700 italic dark:border-gray-600 dark:text-gray-300'>
@@ -292,9 +269,9 @@ const MarkdownRenderer = memo(function MarkdownRenderer({
 
   return (
     <div className='space-y-4 break-words font-sans text-[var(--landing-text)] text-base leading-relaxed'>
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
+      <Streamdown mode='static' components={components}>
         {processedContent}
-      </ReactMarkdown>
+      </Streamdown>
     </div>
   )
 })

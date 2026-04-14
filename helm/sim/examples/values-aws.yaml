@@ -65,6 +65,7 @@ app:
     S3_OG_IMAGES_BUCKET_NAME: "og-images"                 # OpenGraph preview images
     S3_AGENT_GENERATED_IMAGES_BUCKET_NAME: "arena-agent-generated-images"  # Agent-generated images
     S3_AGENT_GENERATED_IMAGES_REGION: "us-west-2"        # AWS region for agent-generated images bucket (defaults to AWS_REGION)
+    S3_WORKSPACE_LOGOS_BUCKET_NAME: "workspace-logos"     # Workspace logos
 
 # Realtime service
 realtime:

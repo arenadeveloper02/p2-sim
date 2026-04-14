@@ -525,6 +525,9 @@ export const settings = pgTable('settings', {
   // Copilot auto-allowed integration tools - array of tool IDs that can run without confirmation
   copilotAutoAllowedTools: jsonb('copilot_auto_allowed_tools').notNull().default('[]'),
 
+  // Workspace navigation
+  lastActiveWorkspaceId: text('last_active_workspace_id'),
+
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
@@ -1071,6 +1074,7 @@ export const workspace = pgTable('workspace', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   color: text('color').notNull().default('#33C482'),
+  logoUrl: text('logo_url'),
   ownerId: text('owner_id')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),

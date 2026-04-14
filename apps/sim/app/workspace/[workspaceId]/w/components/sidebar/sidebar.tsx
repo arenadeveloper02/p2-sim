@@ -41,7 +41,7 @@ import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { cn } from '@/lib/core/utils/cn'
 import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { isMacPlatform } from '@/lib/core/utils/platform'
-import { buildFolderTree } from '@/lib/folders/tree'
+import { buildFolderTree, getFolderPath } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'
 import {
   START_NAV_TOUR_EVENT,
@@ -72,6 +72,7 @@ import {
   useSidebarResize,
   useTaskSelection,
   useWorkflowOperations,
+  useWorkspaceLogoUpload,
   useWorkspaceManagement,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import {
@@ -97,6 +98,7 @@ import {
   useTasks,
 } from '@/hooks/queries/tasks'
 import { useUpdateWorkflow } from '@/hooks/queries/workflows'
+import type { Workspace } from '@/hooks/queries/workspace'
 import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -451,12 +453,32 @@ export const Sidebar = memo(function Sidebar() {
     switchWorkspace,
     handleCreateWorkspace,
     isCreatingWorkspace,
+    isDeletingWorkspace,
+    isLeavingWorkspace,
     updateWorkspace,
     confirmDeleteWorkspace,
     handleLeaveWorkspace,
   } = useWorkspaceManagement({
     workspaceId,
     sessionUserId: sessionData?.user?.id,
+  })
+
+  const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId)
+  const logoTargetWorkspaceIdRef = useRef<string>(workspaceId)
+
+  const {
+    fileInputRef: logoFileInputRef,
+    handleFileChange: handleLogoFileChange,
+    setTargetWorkspaceId: setLogoTargetWorkspaceId,
+  } = useWorkspaceLogoUpload({
+    workspaceId,
+    currentLogoUrl: activeWorkspaceFull?.logoUrl,
+    onUpload: (url) => {
+      updateWorkspace(logoTargetWorkspaceIdRef.current, { logoUrl: url })
+    },
+    onError: (error) => {
+      logger.error('Workspace logo upload error:', error)
+    },
   })
 
   const { handleMouseDown, isResizing } = useSidebarResize()
@@ -614,14 +636,22 @@ export const Sidebar = memo(function Sidebar() {
 
   const searchModalWorkflows = useMemo(
     () =>
-      regularWorkflows.map((workflow) => ({
-        id: workflow.id,
-        name: workflow.name,
-        href: `/workspace/${workspaceId}/w/${workflow.id}`,
-        color: workflow.color,
-        isCurrent: workflow.id === workflowId,
-      })),
-    [regularWorkflows, workspaceId, workflowId]
+      regularWorkflows.map((workflow) => {
+        const folderPath = workflow.folderId
+          ? getFolderPath(folderMap, workflow.folderId)
+              .map((folder) => folder.name)
+              .join(' / ')
+          : ''
+        return {
+          id: workflow.id,
+          name: workflow.name,
+          href: `/workspace/${workspaceId}/w/${workflow.id}`,
+          color: workflow.color,
+          folderPath: folderPath || undefined,
+          isCurrent: workflow.id === workflowId,
+        }
+      }),
+    [regularWorkflows, folderMap, workspaceId, workflowId]
   )
 
   const searchModalWorkspaces = useMemo(
@@ -983,7 +1013,7 @@ export const Sidebar = memo(function Sidebar() {
   }, [])
 
   const handleWorkspaceSwitch = useCallback(
-    async (workspace: { id: string; name: string; ownerId: string; role?: string }) => {
+    async (workspace: Workspace) => {
       if (workspace.id === workspaceId) {
         setIsWorkspaceMenuOpen(false)
         return
@@ -1016,6 +1046,22 @@ export const Sidebar = memo(function Sidebar() {
   const handleColorChangeWorkspace = useCallback(
     async (workspaceIdToUpdate: string, color: string) => {
       await updateWorkspace(workspaceIdToUpdate, { color })
+    },
+    [updateWorkspace]
+  )
+
+  const handleUploadLogo = useCallback(
+    (workspaceIdToUpdate: string) => {
+      logoTargetWorkspaceIdRef.current = workspaceIdToUpdate
+      setLogoTargetWorkspaceId(workspaceIdToUpdate)
+      logoFileInputRef.current?.click()
+    },
+    [logoFileInputRef, setLogoTargetWorkspaceId]
+  )
+
+  const handleRemoveLogo = useCallback(
+    async (workspaceIdToUpdate: string) => {
+      await updateWorkspace(workspaceIdToUpdate, { logoUrl: null })
     },
     [updateWorkspace]
   )
@@ -1251,6 +1297,13 @@ export const Sidebar = memo(function Sidebar() {
 
   return (
     <>
+      <input
+        ref={logoFileInputRef}
+        type='file'
+        accept='image/png,image/jpeg,image/jpg,image/svg+xml,image/webp'
+        className='hidden'
+        onChange={handleLogoFileChange}
+      />
       <div className='relative h-full'>
         <aside
           ref={sidebarRef}
@@ -1347,12 +1400,16 @@ export const Sidebar = memo(function Sidebar() {
                 onCreateWorkspace={handleCreateWorkspace}
                 onRenameWorkspace={handleRenameWorkspace}
                 onDeleteWorkspace={handleDeleteWorkspace}
+                isDeletingWorkspace={isDeletingWorkspace}
                 onDuplicateWorkspace={handleDuplicateWorkspace}
                 onExportWorkspace={exportWorkspace}
                 onImportWorkspace={handleImportWorkspace}
                 isImportingWorkspace={isImportingWorkspace}
                 onColorChange={handleColorChangeWorkspace}
+                onUploadLogo={handleUploadLogo}
+                onRemoveLogo={handleRemoveLogo}
                 onLeaveWorkspace={handleLeaveWorkspaceWrapper}
+                isLeavingWorkspace={isLeavingWorkspace}
                 sessionUserId={sessionData?.user?.id}
                 isCollapsed={isCollapsed}
               />

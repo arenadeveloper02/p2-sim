@@ -41,6 +41,7 @@ export type SettingsSection =
   | 'workflow-mcp-servers'
   | 'inbox'
   | 'admin'
+  | 'mothership'
   | 'recently-deleted'
 
 export type NavigationSection =
@@ -189,6 +190,13 @@ export const allNavigationItems: NavigationItem[] = [
     id: 'admin',
     label: 'Admin',
     icon: Lock,
+    section: 'superuser',
+    requiresAdminRole: true,
+  },
+  {
+    id: 'mothership',
+    label: 'Mothership',
+    icon: Server,
     section: 'superuser',
     requiresAdminRole: true,
   },

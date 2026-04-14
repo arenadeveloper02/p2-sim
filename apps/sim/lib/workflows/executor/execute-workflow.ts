@@ -15,6 +15,7 @@ export interface ExecuteWorkflowOptions {
   selectedOutputs?: string[]
   isSecureMode?: boolean
   workflowTriggerType?: 'api' | 'chat' | 'copilot'
+  triggerBlockId?: string
   onStream?: (streamingExec: StreamingExecution) => Promise<void>
   onBlockComplete?: (blockId: string, output: unknown) => Promise<void>
   skipLoggingComplete?: boolean
@@ -72,6 +73,7 @@ export async function executeWorkflow(
       workflowUserId: workflow.userId,
       sessionUserId,
       triggerType,
+      triggerBlockId: streamConfig?.triggerBlockId,
       useDraftState: streamConfig?.useDraftState ?? false,
       startTime: new Date().toISOString(),
       isClientSession: Boolean(sessionUserId),

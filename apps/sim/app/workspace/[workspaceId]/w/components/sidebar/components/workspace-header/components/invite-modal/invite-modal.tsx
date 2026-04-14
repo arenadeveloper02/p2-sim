@@ -575,7 +575,6 @@ export function InviteModal({ open, onOpenChange, workspaceName }: InviteModalPr
                       : 'Enter emails'
                   }
                   placeholderWithTags='Add email'
-                  autoFocus={userPerms.canAdmin}
                   disabled={isSubmitting || !userPerms.canAdmin}
                   fileInputOptions={fileInputOptions}
                 />
