@@ -1305,7 +1305,7 @@ export function Document({
       <ChunkContextMenu
         isOpen={isContextMenuOpen}
         position={contextMenuPosition}
-        menuRef={menuRef}
+        // menuRef={menuRef}
         onClose={handleContextMenuClose}
         hasChunk={contextMenuChunk !== null}
         isChunkEnabled={contextMenuChunk?.enabled ?? true}
