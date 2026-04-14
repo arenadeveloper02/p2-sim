@@ -319,13 +319,14 @@ export const useChatStore = create<ChatState>()(
           })
         },
 
-        finalizeMessageStream: (messageId, finalContent) => {
+        finalizeMessageStream: (messageId, finalContent, messageUpdates) => {
           set((state) => {
             const newMessages = state.messages.map((message) => {
               if (message.id === messageId) {
                 const { isStreaming, ...rest } = message
                 return {
                   ...rest,
+                  ...(messageUpdates ?? {}),
                   ...(finalContent !== undefined && { content: finalContent }),
                 }
               }

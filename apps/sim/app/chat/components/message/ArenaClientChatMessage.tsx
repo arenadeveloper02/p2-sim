@@ -15,6 +15,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
+import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
@@ -25,6 +26,7 @@ import {
   extractBase64Image,
   getImageUrlFromContent,
   hasBase64Images,
+  ImageWithViewFullOverlay,
   isBase64,
   isRenderableImageUrl,
   mergeToolOutputImageUrls,
@@ -47,6 +49,7 @@ export interface ChatMessage {
   isStreaming?: boolean
   executionId?: string
   liked?: boolean | null
+  generatedImages?: AssistantGeneratedImage[]
   knowledgeResults?: KnowledgeResultChunk[]
   knowledgeRefs?: KnowledgeRef[]
 }
@@ -260,6 +263,9 @@ export const ArenaClientChatMessage = memo(
     setMessages,
     workspaceIdsForKbLinks,
     onCopySegmentToInput,
+    onToggleGeneratedImage,
+    selectedGeneratedImageIds,
+    selectedGeneratedImageIdsKey,
   }: {
     message: ChatMessage
     setMessages?: Dispatch<SetStateAction<ChatMessage[]>>
@@ -267,6 +273,12 @@ export const ArenaClientChatMessage = memo(
     workspaceIdsForKbLinks?: string[]
     /** When set, text between pipes (| text |) is clickable and copies to chat input */
     onCopySegmentToInput?: (text: string) => void
+    onToggleGeneratedImage?: (
+      messageId: string,
+      image: { id: string; name: string; url: string; type: string }
+    ) => void
+    selectedGeneratedImageIds?: Set<string>
+    selectedGeneratedImageIdsKey?: string
   }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
@@ -325,6 +337,19 @@ export const ArenaClientChatMessage = memo(
       [onCopySegmentToInput]
     )
 
+    const handleUserAttachmentDownload = useCallback(
+      (attachment: { dataUrl: string }) => {
+        if (attachment.dataUrl.startsWith('data:image/')) {
+          const [, base64Data = ''] = attachment.dataUrl.split(',', 2)
+          void downloadImage(true, base64Data || undefined)
+          return
+        }
+
+        void downloadImage(false, undefined, attachment.dataUrl)
+      },
+      []
+    )
+
     const renderContent = (content: unknown) => {
       if (!content) {
         return null
@@ -343,7 +368,8 @@ export const ArenaClientChatMessage = memo(
 
           const { uniqueUrls, prose: proseWithoutUrlLines } = mergeToolOutputImageUrls(
             imgRaw,
-            txtRaw
+            txtRaw,
+            o.images
           )
           const proseTrim = proseWithoutUrlLines.trim()
           const txtTrim = txtRaw.trim()
@@ -358,7 +384,12 @@ export const ArenaClientChatMessage = memo(
                 {showS3 && <S3UploadFailedAlert />}
                 {uniqueUrls.map((url) => (
                   <div key={normalizeImageUrlForCompare(url)} className='w-full'>
-                    {renderBs64Img({ isBase64: false, imageData: '', imageUrl: url })}
+                    {renderBs64Img({
+                      isBase64: false,
+                      imageData: '',
+                      imageUrl: url,
+                      ...getGeneratedImageSelectionProps(url),
+                    })}
                   </div>
                 ))}
                 {imageBase64 && (
@@ -385,7 +416,12 @@ export const ArenaClientChatMessage = memo(
                 {prose ? renderStringContent(prose) : null}
                 {urls.map((url) => (
                   <div key={normalizeImageUrlForCompare(url)} className='w-full'>
-                    {renderBs64Img({ isBase64: false, imageData: '', imageUrl: url })}
+                    {renderBs64Img({
+                      isBase64: false,
+                      imageData: '',
+                      imageUrl: url,
+                      ...getGeneratedImageSelectionProps(url),
+                    })}
                   </div>
                 ))}
               </>
@@ -403,7 +439,12 @@ export const ArenaClientChatMessage = memo(
           if (isRenderableImageUrl(trimmed)) {
             return (
               <div className='w-full'>
-                {renderBs64Img({ isBase64: false, imageData: '', imageUrl: trimmed })}
+                {renderBs64Img({
+                  isBase64: false,
+                  imageData: '',
+                  imageUrl: trimmed,
+                  ...getGeneratedImageSelectionProps(trimmed),
+                })}
               </div>
             )
           }
@@ -470,6 +511,63 @@ export const ArenaClientChatMessage = memo(
 
     const containsBase64Images = hasBase64Images(cleanTextContent)
     const hasImageUrl = !!getImageUrlFromContent(cleanTextContent)
+    const supplementalGeneratedImages = useMemo(() => {
+      if (!message.generatedImages || message.generatedImages.length === 0) {
+        return []
+      }
+
+      const renderedUrls = new Set<string>()
+
+      if (typeof cleanTextContent === 'object' && cleanTextContent !== null) {
+        const contentRecord = cleanTextContent as Record<string, unknown>
+        const imgRaw = typeof contentRecord.image === 'string' ? contentRecord.image : ''
+        const txtRaw = typeof contentRecord.content === 'string' ? contentRecord.content : ''
+        const { uniqueUrls } = mergeToolOutputImageUrls(imgRaw, txtRaw, contentRecord.images)
+        uniqueUrls.forEach((url) => renderedUrls.add(normalizeImageUrlForCompare(url)))
+      } else if (typeof cleanTextContent === 'string') {
+        const { urls } = resolveMessageImagesAndProse(cleanTextContent)
+        urls.forEach((url) => renderedUrls.add(normalizeImageUrlForCompare(url)))
+      }
+
+      return message.generatedImages.filter(
+        (image) => !renderedUrls.has(normalizeImageUrlForCompare(image.url))
+      )
+    }, [cleanTextContent, message.generatedImages])
+
+    const generatedImagesByUrl = useMemo(() => {
+      const entries = (message.generatedImages ?? []).map((image) => [
+        normalizeImageUrlForCompare(image.url),
+        image,
+      ])
+      return new Map(entries)
+    }, [message.generatedImages])
+
+    const getGeneratedImageSelectionProps = useCallback(
+      (imageUrl?: string) => {
+        if (!imageUrl || !onToggleGeneratedImage) {
+          return {}
+        }
+
+        const matchedImage = generatedImagesByUrl.get(normalizeImageUrlForCompare(imageUrl))
+        if (!matchedImage) {
+          return {}
+        }
+
+        const isSelected = selectedGeneratedImageIds?.has(matchedImage.id) ?? false
+
+        return {
+          onSelect: () =>
+            onToggleGeneratedImage(message.id, {
+              id: matchedImage.id,
+              name: matchedImage.name || 'Generated image',
+              url: matchedImage.url,
+              type: matchedImage.type,
+            }),
+          selectLabel: isSelected ? 'Selected' : 'Select',
+        }
+      },
+      [generatedImagesByUrl, message.id, onToggleGeneratedImage, selectedGeneratedImageIds]
+    )
 
     const [knowledgeModalDoc, setKnowledgeModalDoc] = useState<{
       documentName: string
@@ -760,20 +858,74 @@ export const ArenaClientChatMessage = memo(
 
     // For user messages (on the right)
     if (message.type === 'user') {
+      const hasUserText =
+        typeof message.content === 'string'
+          ? message.content.trim().length > 0
+          : Boolean(message.content)
+
       return (
         <div className='px-4 py-2' data-message-id={message.id}>
           <div className='mx-auto max-w-3xl'>
-            <div className='flex justify-end'>
-              <div className='max-w-[94%] rounded-3xl bg-[#F4F4F4] px-4 py-3 dark:bg-gray-600'>
-                <div className='whitespace-pre-wrap break-words text-base text-gray-800 leading-relaxed dark:text-gray-100'>
-                  {isJsonObject ? (
-                    <span>{JSON.stringify(message.content as string)}</span>
-                  ) : (
-                    <span>{message.content as string}</span>
-                  )}
+            {message.attachments && message.attachments.length > 0 && (
+              <div className='mb-2 flex justify-end'>
+                <div className='flex flex-wrap gap-2'>
+                  {message.attachments.map((attachment, index) => {
+                    const isImage = attachment.type.startsWith('image/')
+                    return (
+                      <div key={attachment.id}>
+                        {isImage && attachment.dataUrl ? (
+                          <div className='flex flex-col items-end'>
+                            <ImageWithViewFullOverlay
+                              src={attachment.dataUrl}
+                              wrapperClassName='h-32 w-32 overflow-hidden rounded-lg border border-[var(--border-1)] bg-[var(--surface-5)]'
+                              onDownload={() => handleUserAttachmentDownload(attachment)}
+                              onSelect={
+                                onToggleGeneratedImage
+                                  ? () =>
+                                      onToggleGeneratedImage(message.id, {
+                                        id: attachment.id,
+                                        name: attachment.name || `Uploaded image ${index + 1}`,
+                                        url: attachment.dataUrl,
+                                        type: attachment.type,
+                                      })
+                                  : undefined
+                              }
+                              selectLabel={
+                                onToggleGeneratedImage
+                                  ? selectedGeneratedImageIds?.has(attachment.id)
+                                    ? 'Selected'
+                                    : 'Select'
+                                  : undefined
+                              }
+                              compactActions
+                            >
+                              <img
+                                src={attachment.dataUrl}
+                                alt={attachment.name}
+                                className='h-full w-full object-cover'
+                              />
+                            </ImageWithViewFullOverlay>
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
-            </div>
+            )}
+            {hasUserText && (
+              <div className='flex justify-end'>
+                <div className='max-w-[94%] rounded-3xl bg-[#F4F4F4] px-4 py-3 dark:bg-gray-600'>
+                  <div className='whitespace-pre-wrap break-words text-base text-gray-800 leading-relaxed dark:text-gray-100'>
+                    {isJsonObject ? (
+                      <span>{JSON.stringify(message.content as string)}</span>
+                    ) : (
+                      <span>{message.content as string}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )
@@ -788,6 +940,16 @@ export const ArenaClientChatMessage = memo(
             <div>
               <div className='break-words text-base'>
                 {renderContent(cleanTextContent)}
+                {supplementalGeneratedImages.map((image) => (
+                  <div key={normalizeImageUrlForCompare(image.url)} className='w-full'>
+                    {renderBs64Img({
+                      isBase64: false,
+                      imageData: '',
+                      imageUrl: image.url,
+                      ...getGeneratedImageSelectionProps(image.url),
+                    })}
+                  </div>
+                ))}
                 {/* {isJsonObject ? (
                   <pre className='text-gray-800 dark:text-gray-100'>
                     {JSON.stringify(cleanTextContent, null, 2)}
@@ -1051,10 +1213,13 @@ export const ArenaClientChatMessage = memo(
       prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
       prevProps.message.executionId === nextProps.message.executionId &&
       prevProps.message.liked === nextProps.message.liked &&
+      prevProps.message.generatedImages?.length === nextProps.message.generatedImages?.length &&
       prevProps.message.knowledgeResults?.length === nextProps.message.knowledgeResults?.length &&
       prevProps.message.knowledgeRefs?.length === nextProps.message.knowledgeRefs?.length &&
       prevProps.workspaceIdsForKbLinks?.length === nextProps.workspaceIdsForKbLinks?.length &&
-      prevProps.onCopySegmentToInput === nextProps.onCopySegmentToInput
+      prevProps.onCopySegmentToInput === nextProps.onCopySegmentToInput &&
+      prevProps.onToggleGeneratedImage === nextProps.onToggleGeneratedImage &&
+      prevProps.selectedGeneratedImageIdsKey === nextProps.selectedGeneratedImageIdsKey
     )
   }
 )

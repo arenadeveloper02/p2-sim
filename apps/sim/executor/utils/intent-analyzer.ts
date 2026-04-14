@@ -120,7 +120,7 @@ async function searchAndBuildMemoryContext(
 
   // Build token-limited memory context from sorted results
   const { getMemoryTokenLimit } = await import('@/executor/handlers/agent/memory-utils')
-  const { getAccurateTokenCount } = await import('@/lib/tokenization/estimators')
+  const { getAccurateTokenCount } = await import('@/lib/tokenization/accurate')
 
   const tokenLimit = getMemoryTokenLimit(model)
   const baseTokens = getAccurateTokenCount(userPrompt, model)

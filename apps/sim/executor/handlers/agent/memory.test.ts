@@ -6,7 +6,7 @@ import type { Message } from '@/executor/handlers/agent/types'
 
 vi.mock('@sim/logger', () => loggerMock)
 
-vi.mock('@/lib/tokenization/estimators', () => ({
+vi.mock('@/lib/tokenization/accurate', () => ({
   getAccurateTokenCount: vi.fn((text: string) => {
     return Math.ceil(text.length / 4)
   }),

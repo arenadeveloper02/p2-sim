@@ -15,6 +15,7 @@ export const ImageFusionBlock: BlockConfig<DalleResponse> = {
   type: 'image_fusion',
   name: 'Image Fusion',
   description: 'Fuse multiple images with Nano Banana Pro',
+  hideFromToolbar: true,
   authMode: AuthMode.ApiKey,
   longDescription:
     'Combine or fuse multiple images into one using Google Nano Banana Pro. Upload two or more images and describe how to merge them in the prompt. Use 1K resolution for faster results; 2K/4K may hit API deadlines with multiple images.',

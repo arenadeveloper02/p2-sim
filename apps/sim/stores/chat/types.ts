@@ -1,4 +1,5 @@
 import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
+import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 
 /**
  * Position interface for floating chat
@@ -20,6 +21,17 @@ export interface ChatMessage {
   blockId?: string
   isStreaming?: boolean
   attachments?: ChatMessageAttachment[]
+  files?: AssistantChatFile[]
+  generatedImages?: AssistantGeneratedImage[]
+}
+
+export interface ChatMessageUpdates {
+  content?: ChatMessage['content']
+  blockId?: ChatMessage['blockId']
+  isStreaming?: ChatMessage['isStreaming']
+  attachments?: ChatMessage['attachments']
+  files?: ChatMessage['files']
+  generatedImages?: ChatMessage['generatedImages']
 }
 
 /**
@@ -66,7 +78,8 @@ export interface ChatState {
   appendMessageContent: (messageId: string, content: string) => void
   finalizeMessageStream: (
     messageId: string,
-    finalContent?: string | Record<string, unknown>
+    finalContent?: string | Record<string, unknown>,
+    messageUpdates?: ChatMessageUpdates
   ) => void
   getConversationId: (workflowId: string) => string
   generateNewConversationId: (workflowId: string) => string

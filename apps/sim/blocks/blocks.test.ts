@@ -94,6 +94,83 @@ describe.concurrent('Blocks Module', () => {
     })
   })
 
+  describe('Image Blocks', () => {
+    it('should hide the legacy image fusion block from the toolbar', () => {
+      const block = getBlock('image_fusion')
+
+      expect(block).toBeDefined()
+      expect(block?.hideFromToolbar).toBe(true)
+    })
+
+    it('should expose a single dynamic Nano Banana reference input', () => {
+      const block = getBlock('image_generator')
+      const referenceImagesSubBlock = block?.subBlocks.find((subBlock) => subBlock.id === 'inputImage')
+      const referenceImageUrlsSubBlock = block?.subBlocks.find(
+        (subBlock) => subBlock.id === 'inputImageUrl'
+      )
+      const legacyFusionImagesSubBlock = block?.subBlocks.find((subBlock) => subBlock.id === 'inputImages')
+
+      expect(referenceImagesSubBlock).toMatchObject({
+        title: 'Reference Images',
+        type: 'file-upload',
+        multiple: true,
+        uploadContext: 'image-fusion',
+      })
+      expect(referenceImageUrlsSubBlock).toMatchObject({
+        title: 'Reference Image URLs',
+        type: 'long-input',
+      })
+      expect(legacyFusionImagesSubBlock?.hidden).toBe(true)
+    })
+
+    it('should map a single Nano Banana reference image to edit mode', () => {
+      const block = getBlock('image_generator')
+
+      const params = block?.tools.config?.params?.({
+        model: 'gemini-3-pro-image-preview',
+        prompt: 'Edit this image into a watercolor painting',
+        inputImage: [{ path: 's3://bucket/source-a.png' }],
+        imageCount: 1,
+      })
+
+      expect(params).toMatchObject({
+        model: 'gemini-3-pro-image-preview',
+        prompt: 'Edit this image into a watercolor painting',
+        imageCount: 1,
+        inputImage: { path: 's3://bucket/source-a.png' },
+      })
+      expect((params as Record<string, unknown>)?.inputImages).toBeUndefined()
+    })
+
+    it('should map multiple Nano Banana Pro references to fusion mode', () => {
+      const block = getBlock('image_generator')
+
+      expect(block).toBeDefined()
+      expect(block?.tools.config).toBeDefined()
+
+      const toolId = block?.tools.config?.tool?.({
+        model: 'gemini-3-pro-image-preview',
+      } as never)
+      const params = block?.tools.config?.params?.({
+        model: 'gemini-3-pro-image-preview',
+        prompt: 'Fuse these images into one composition',
+        inputImage: [{ path: 's3://bucket/source-a.png' }],
+        inputImageUrl: 'https://example.com/source-b.png, s3://bucket/source-c.png',
+        imageCount: 2,
+      })
+
+      expect(toolId).toBe('google_nano_banana_v2')
+      expect(params).toMatchObject({
+        model: 'gemini-3-pro-image-preview',
+        prompt: 'Fuse these images into one composition',
+        imageCount: 2,
+      })
+      expect(Array.isArray((params as Record<string, unknown>)?.inputImages)).toBe(true)
+      expect((params as Record<string, unknown>)?.inputImage).toBeUndefined()
+      expect(((params as Record<string, unknown>)?.inputImages as unknown[] | undefined)?.length).toBe(3)
+    })
+  })
+
   describe('getBlocksByCategory', () => {
     it('should return blocks in the "blocks" category', () => {
       const blocks = getBlocksByCategory('blocks')

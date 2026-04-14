@@ -1,4 +1,5 @@
 'use server'
+import { randomUUID } from 'crypto'
 import { existsSync, promises as fs } from 'fs'
 import { join } from 'path'
 import { createLogger } from '@sim/logger'
@@ -92,7 +93,7 @@ export async function saveGeneratedImage(
     // Determine file extension from MIME type
     const extension = mimeType.split('/')[1] || 'png'
     const timestamp = Date.now()
-    const fileName = `${timestamp}.${extension}`
+    const fileName = `${timestamp}-${randomUUID()}.${extension}`
 
     const safeWorkflowId = sanitisePathSegment(workflowId)
     const safeUserId = sanitisePathSegment(userId)

@@ -47,6 +47,11 @@ function buildWrapperOutputs(
       properties: {
         ...(metadataProperties ?? {}),
         count: { type: 'number', description: 'Total number of generated images returned' },
+        warnings: {
+          type: 'array',
+          description: 'Warnings emitted while preparing or generating the image request',
+          items: { type: 'string', description: 'Warning message' },
+        },
         s3UploadFailed: {
           type: 'boolean',
           description: 'Whether any generated image failed to upload to storage',
@@ -73,6 +78,12 @@ export function createImageGenerationWrapperTool(
         required: false,
         visibility: 'hidden',
         description: `Requested images to generate (1-${MAX_IMAGES_TO_GENERATE})`,
+      },
+      inputImageWarning: {
+        type: 'string',
+        required: false,
+        visibility: 'hidden',
+        description: 'Warning emitted when multiple input images were provided and the latest one was used',
       },
     },
     outputs: buildWrapperOutputs(baseTool.outputs),

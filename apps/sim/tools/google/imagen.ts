@@ -5,6 +5,14 @@ import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ImagenTool')
 
+function getObjectKeys(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return []
+  }
+
+  return Object.keys(value)
+}
+
 export interface ImagenRequestBody {
   instances: Array<{
     prompt: string
@@ -105,7 +113,14 @@ export const imagenTool: ToolConfig = {
         body.parameters.personGeneration = params.personGeneration
       }
 
-      logger.info('Imagen API request body:', JSON.stringify(body, null, 2))
+      logger.info('Imagen API request', {
+        model: params.model,
+        promptLength: typeof params.prompt === 'string' ? params.prompt.length : 0,
+        sampleCount: body.parameters.sampleCount ?? 1,
+        imageSize: body.parameters.imageSize ?? null,
+        aspectRatio: body.parameters.aspectRatio ?? null,
+        personGeneration: body.parameters.personGeneration ?? null,
+      })
       return body
     },
   },
@@ -127,7 +142,10 @@ export const imagenTool: ToolConfig = {
 
       const data = await response.json()
 
-      logger.info('Raw Imagen API response:', JSON.stringify(data, null, 2))
+      logger.info('Imagen API response received', {
+        topLevelKeys: getObjectKeys(data),
+        predictionsCount: Array.isArray(data?.predictions) ? data.predictions.length : 0,
+      })
 
       // Handle different possible response structures
       let generatedImages = []
@@ -135,7 +153,7 @@ export const imagenTool: ToolConfig = {
       if (data.predictions && data.predictions.length > 0) {
         // REST API format - predictions array contains the images directly
         generatedImages = data.predictions
-        logger.info('Found predictions array with', generatedImages.length, 'images')
+        logger.info('Imagen predictions detected', { generatedImageCount: generatedImages.length })
       } else if (data.generatedImages) {
         // Direct SDK format
         generatedImages = data.generatedImages
@@ -150,22 +168,22 @@ export const imagenTool: ToolConfig = {
         generatedImages = data.data
       }
 
-      logger.info('Extracted generatedImages:', generatedImages)
-
       if (generatedImages.length === 0) {
-        logger.error('No generated images found in response. Full response structure:', {
-          keys: Object.keys(data),
-          predictions: data.predictions,
-          generatedImages: data.generatedImages,
-          images: data.images,
-          data: data.data,
+        logger.error('No generated images found in Imagen response', {
+          topLevelKeys: getObjectKeys(data),
+          predictionsCount: Array.isArray(data.predictions) ? data.predictions.length : 0,
+          generatedImagesCount: Array.isArray(data.generatedImages) ? data.generatedImages.length : 0,
+          imagesCount: Array.isArray(data.images) ? data.images.length : 0,
+          dataCount: Array.isArray(data.data) ? data.data.length : 0,
         })
         throw new Error('No generated images found in response')
       }
 
       // Get the first generated image
       const generatedImage = generatedImages[0]
-      logger.info('First generated image structure:', JSON.stringify(generatedImage, null, 2))
+      logger.info('Imagen first generated image received', {
+        generatedImageKeys: getObjectKeys(generatedImage),
+      })
 
       let base64Image = null
 
@@ -185,7 +203,9 @@ export const imagenTool: ToolConfig = {
       }
 
       if (!base64Image) {
-        logger.error('No image bytes found in generated image:', generatedImage)
+        logger.error('No image bytes found in generated Imagen image', {
+          generatedImageKeys: getObjectKeys(generatedImage),
+        })
         throw new Error('No image bytes found in generated image')
       }
 

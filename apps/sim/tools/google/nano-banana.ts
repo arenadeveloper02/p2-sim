@@ -5,6 +5,14 @@ import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')
 
+function getObjectKeys(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return []
+  }
+
+  return Object.keys(value)
+}
+
 interface NanoBananaResponse {
   candidates: Array<{
     content: {
@@ -151,7 +159,10 @@ const nanoBananaTool: ToolConfig = {
       const dt: any = await response.json()
 
       if (!dt.data?.candidates || dt.data?.candidates.length === 0) {
-        logger.error('No candidates found in Nano Banana response:', dt.data?.candidates)
+        logger.error('No candidates found in Nano Banana response', {
+          topLevelKeys: getObjectKeys(dt),
+          dataKeys: getObjectKeys(dt.data),
+        })
         throw new Error('No candidates found in response')
       }
 
@@ -161,8 +172,8 @@ const nanoBananaTool: ToolConfig = {
       if (finishReason === 'NO_IMAGE') {
         logger.error('Nano Banana did not return an image', {
           finishReason,
-          candidate,
-          promptFeedback: dt.data?.promptFeedback,
+          candidateKeys: getObjectKeys(candidate),
+          hasPromptFeedback: Boolean(dt.data?.promptFeedback),
           modelVersion: dt.data?.modelVersion,
         })
         throw new Error(
@@ -172,7 +183,9 @@ const nanoBananaTool: ToolConfig = {
 
       const candidateParts = extractCandidateParts(candidate)
       if (candidateParts.length === 0) {
-        logger.error('No content parts found in candidate:', candidate)
+        logger.error('No content parts found in Nano Banana candidate', {
+          candidateKeys: getObjectKeys(candidate),
+        })
         throw new Error(
           `No content parts found in candidate (keys: ${Object.keys(candidate).join(', ') || 'none'})`
         )
@@ -199,7 +212,9 @@ const nanoBananaTool: ToolConfig = {
       }
 
       if (!base64Image) {
-        logger.error('No image data found in response parts:', candidateParts)
+        logger.error('No image data found in Nano Banana response parts', {
+          candidatePartCount: candidateParts.length,
+        })
         throw new Error('No image data found in response parts')
       }
 

@@ -3,7 +3,6 @@ import { mcpServers } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { createMcpToolId } from '@/lib/mcp/utils'
-import { getAccurateTokenCount } from '@/lib/tokenization/estimators'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
 import {
@@ -42,6 +41,7 @@ import { executeProviderRequest } from '@/providers'
 import { getProviderFromModel, transformBlockTool } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
 import { getTool, getToolAsync } from '@/tools/utils'
+import { countAgentTokens } from './token-count'
 
 const logger = createLogger('AgentBlockHandler')
 
@@ -347,8 +347,8 @@ export class AgentBlockHandler implements BlockHandler {
       ) {
         // Calculate base system prompt and user prompt token counts for accurate limit calculation
         const baseSystemPrompt = filteredInputs.systemPrompt || ''
-        const baseSystemPromptTokens = getAccurateTokenCount(baseSystemPrompt, filteredInputs.model)
-        const userPromptTokens = getAccurateTokenCount(userPrompt || '', filteredInputs.model)
+        const baseSystemPromptTokens = countAgentTokens(baseSystemPrompt, filteredInputs.model)
+        const userPromptTokens = countAgentTokens(userPrompt || '', filteredInputs.model)
 
         const conversationDetailsPrompt = this.formatConversationDetailsForSystemPrompt(
           lastConversation,
@@ -493,7 +493,7 @@ export class AgentBlockHandler implements BlockHandler {
     // Header
     const header =
       "=== USER CONVERSATION DETAILS (This can be used as context while figuring out response, don't include directly it in the response, understand the question and answer it accordingly) === :\n"
-    const headerTokens = getAccurateTokenCount(header, model)
+    const headerTokens = countAgentTokens(header, model)
     if (headerTokens <= availableTokens) {
       parts.push(header)
       currentTokenCount += headerTokens
@@ -513,7 +513,7 @@ export class AgentBlockHandler implements BlockHandler {
 
       if (lastConvParts.length > 0) {
         lastConvText += lastConvParts.join('\n')
-        const lastConvTokens = getAccurateTokenCount(lastConvText, model)
+        const lastConvTokens = countAgentTokens(lastConvText, model)
         if (currentTokenCount + lastConvTokens <= tokenLimit) {
           parts.push(lastConvText)
           currentTokenCount += lastConvTokens
@@ -525,7 +525,7 @@ export class AgentBlockHandler implements BlockHandler {
     if (factMemories && factMemories.length > 0) {
       const factMemoriesText = factMemories.map((msg) => `- ${msg.content}`).join('\n')
       const userFactsText = `USER FACTS:\n${factMemoriesText}`
-      const userFactsTokens = getAccurateTokenCount(userFactsText, model)
+      const userFactsTokens = countAgentTokens(userFactsText, model)
 
       if (currentTokenCount + userFactsTokens <= availableTokens) {
         parts.push(userFactsText)
@@ -540,10 +540,10 @@ export class AgentBlockHandler implements BlockHandler {
 
       for (const memory of preSearchedResults) {
         const memoryText = `${memory.role === 'user' ? 'User' : 'Assistant'}: ${memory.content}`
-        const memoryTokens = getAccurateTokenCount(memoryText, model)
+        const memoryTokens = countAgentTokens(memoryText, model)
         const prevConvTextWithMemory =
           prevConvText + (prevConvParts.length > 0 ? '\n' : '') + memoryText
-        const prevConvTokensWithMemory = getAccurateTokenCount(prevConvTextWithMemory, model)
+        const prevConvTokensWithMemory = countAgentTokens(prevConvTextWithMemory, model)
 
         if (currentTokenCount + prevConvTokensWithMemory <= availableTokens) {
           prevConvParts.push(memoryText)
@@ -564,7 +564,7 @@ export class AgentBlockHandler implements BlockHandler {
 
       if (prevConvParts.length > 0) {
         parts.push(prevConvText)
-        currentTokenCount += getAccurateTokenCount(prevConvText, model)
+        currentTokenCount += countAgentTokens(prevConvText, model)
       }
     }
 

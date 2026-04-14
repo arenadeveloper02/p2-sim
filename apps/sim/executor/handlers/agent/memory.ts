@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getAccurateTokenCount } from '@/lib/tokenization/estimators'
+import { getAccurateTokenCount } from '@/lib/tokenization/accurate'
 import { MEMORY } from '@/executor/constants'
 import type { AgentInputs, Message } from '@/executor/handlers/agent/types'
 import type { ExecutionContext } from '@/executor/types'

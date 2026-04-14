@@ -3,6 +3,10 @@
 import { memo, useState } from 'react'
 import { Check, Copy, File as FileIcon, FileText, Image as ImageIcon } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
+import type {
+  AssistantChatFile as ChatFile,
+  AssistantGeneratedImage,
+} from '@/lib/chat/assistant-assets'
 import {
   ChatFileDownload,
   ChatFileDownloadAll,
@@ -16,16 +20,6 @@ export interface ChatAttachment {
   type: string
   dataUrl: string
   size?: number
-}
-
-export interface ChatFile {
-  id: string
-  name: string
-  url: string
-  key: string
-  size: number
-  type: string
-  context?: string
 }
 
 /** Single chunk from knowledge base search (used when deployment outputs "Knowledge base results") */
@@ -67,6 +61,7 @@ export interface ChatMessage {
   attachments?: ChatAttachment[]
   executionId?: string
   files?: ChatFile[]
+  generatedImages?: AssistantGeneratedImage[]
   /** Knowledge base search results when workflow outputs "results"; used for clickable references and modal (live only, not in history) */
   knowledgeResults?: KnowledgeResultChunk[]
   /** Persisted refs for history: document name + chunk link only; no chunks */
@@ -98,6 +93,7 @@ export const ClientChatMessage = memo(
                 <div className='flex flex-wrap gap-2'>
                   {message.attachments.map((attachment) => {
                     const isImage = attachment.type.startsWith('image/')
+                    const attachmentUrl = attachment.dataUrl?.trim()
                     const getFileIcon = (type: string) => {
                       if (type.includes('pdf'))
                         return (
@@ -127,17 +123,14 @@ export const ClientChatMessage = memo(
                       <div
                         key={attachment.id}
                         className={`relative overflow-hidden rounded-2xl border border-[var(--border-1)] bg-[var(--landing-bg-elevated)] ${
-                          attachment.dataUrl?.trim() && attachment.dataUrl.startsWith('data:')
-                            ? 'cursor-pointer'
-                            : ''
+                          isImage && attachmentUrl ? 'cursor-pointer' : ''
                         } ${
                           isImage
-                            ? 'h-16 w-16 md:h-20 md:w-20'
+                            ? 'h-24 w-24 md:h-28 md:w-28'
                             : 'flex h-16 min-w-[140px] max-w-[220px] items-center gap-2 px-3 md:h-20 md:min-w-[160px] md:max-w-[240px]'
                         }`}
                         onClick={(e) => {
-                          const validDataUrl = attachment.dataUrl?.trim()
-                          if (validDataUrl?.startsWith('data:')) {
+                          if (isImage && attachmentUrl) {
                             e.preventDefault()
                             e.stopPropagation()
                             const newWindow = window.open('', '_blank')
@@ -153,7 +146,7 @@ export const ClientChatMessage = memo(
                                     </style>
                                   </head>
                                   <body>
-                                    <img src="${validDataUrl}" alt="${attachment.name}" />
+                                    <img src="${attachmentUrl}" alt="${attachment.name}" />
                                   </body>
                                 </html>
                               `)
@@ -162,11 +155,9 @@ export const ClientChatMessage = memo(
                           }
                         }}
                       >
-                        {isImage &&
-                        attachment.dataUrl?.trim() &&
-                        attachment.dataUrl.startsWith('data:') ? (
+                        {isImage && attachmentUrl ? (
                           <img
-                            src={attachment.dataUrl}
+                            src={attachmentUrl}
                             alt={attachment.name}
                             className='h-full w-full object-cover'
                           />
@@ -282,7 +273,8 @@ export const ClientChatMessage = memo(
       prevProps.message.content === nextProps.message.content &&
       prevProps.message.isStreaming === nextProps.message.isStreaming &&
       prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
-      prevProps.message.files?.length === nextProps.message.files?.length
+      prevProps.message.files?.length === nextProps.message.files?.length &&
+      prevProps.message.generatedImages?.length === nextProps.message.generatedImages?.length
     )
   }
 )

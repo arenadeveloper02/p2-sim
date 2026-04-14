@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Label, Switch } from '@/components/emcn'
 import type { ChunkData, DocumentData } from '@/lib/knowledge/types'
-import { getAccurateTokenCount, getTokenStrings } from '@/lib/tokenization/estimators'
+import { getAccurateTokenCount, getTokenStrings } from '@/lib/tokenization/accurate'
 import { useCreateChunk, useUpdateChunk } from '@/hooks/queries/kb/knowledge'
 import { useAutosave } from '@/hooks/use-autosave'
 

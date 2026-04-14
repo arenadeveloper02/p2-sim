@@ -3,6 +3,10 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
+import {
+  applyNanoBananaPromptImageParams,
+  normalizeOptionalString,
+} from '@/lib/image-generation/nano-banana-inputs'
 import { resolveImageGenerationCount } from '@/lib/image-generation/resolve-image-count.server'
 import { executeTool } from '@/tools'
 
@@ -45,20 +49,35 @@ function getOutputMetadata(output: Record<string, unknown>): Record<string, unkn
   return isRecord(output.metadata) ? output.metadata : {}
 }
 
-async function resolveRequestedImageCount(params: Record<string, unknown>): Promise<number> {
+function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
+  const warnings = metadata.warnings
+  if (!Array.isArray(warnings)) {
+    return []
+  }
+
+  return warnings.filter((warning): warning is string => typeof warning === 'string' && warning.length > 0)
+}
+
+async function resolveRequestedImageCount(
+  params: Record<string, unknown>
+): Promise<{ imageCount: number; promptImageUrl?: string; singleImagePrompt?: string }> {
   const askedCount = clampImageCount(params.imageCount)
   const prompt = String(params.prompt ?? '').trim()
 
   if (!prompt) {
-    return askedCount
+    return { imageCount: askedCount }
   }
 
-  const { imageCount } = await resolveImageGenerationCount({
+  const { imageCount, promptImageUrl, singleImagePrompt } = await resolveImageGenerationCount({
     prompt,
     askedCount,
   })
 
-  return clampImageCount(imageCount)
+  return {
+    imageCount: clampImageCount(imageCount),
+    promptImageUrl,
+    singleImagePrompt,
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -77,18 +96,40 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const validated = ImageGenerationWrapperSchema.parse(body)
-    const imageCount = await resolveRequestedImageCount(validated.params)
-    const { imageCount: _imageCount, ...baseParams } = validated.params
+    const { imageCount, promptImageUrl, singleImagePrompt } = await resolveRequestedImageCount(
+      validated.params
+    )
+    const { imageCount: _imageCount, inputImageUrl, ...baseParams } = validated.params
+    const inputImageWarning = normalizeOptionalString(validated.params.inputImageWarning)
+    const promptToExecute = normalizeOptionalString(singleImagePrompt) ?? String(baseParams.prompt ?? '')
+    const resolvedBaseParams = applyNanoBananaPromptImageParams({
+      baseToolId: validated.baseToolId,
+      baseParams: {
+        ...baseParams,
+        ...(promptToExecute ? { prompt: promptToExecute } : {}),
+      },
+      inputImageUrl,
+      inputImages: validated.params.inputImages,
+      promptImageUrl,
+    })
+
+    if (inputImageWarning) {
+      logger.warn('Image generation input warning', {
+        baseToolId: validated.baseToolId,
+        warning: inputImageWarning,
+      })
+    }
 
     logger.info('Executing image generation wrapper', {
       baseToolId: validated.baseToolId,
       imageCount,
+      hasPromptImageUrl: Boolean(promptImageUrl),
       workflowId:
-        (baseParams._context as { workflowId?: string } | undefined)?.workflowId ?? undefined,
+        (resolvedBaseParams._context as { workflowId?: string } | undefined)?.workflowId ?? undefined,
     })
 
     const results = await Promise.all(
-      Array.from({ length: imageCount }, () => executeTool(validated.baseToolId, { ...baseParams }))
+      Array.from({ length: imageCount }, () => executeTool(validated.baseToolId, { ...resolvedBaseParams }))
     )
 
     const failedResult = results.find((result) => !result.success)
@@ -115,6 +156,11 @@ export async function POST(request: NextRequest) {
       (typeof firstOutput.content === 'string' && firstOutput.content.length > 0
         ? firstOutput.content
         : '')
+    const outputMetadata = getOutputMetadata(firstOutput)
+    const warnings = [
+      ...getMetadataWarnings(outputMetadata),
+      ...(inputImageWarning ? [inputImageWarning] : []),
+    ]
 
     return NextResponse.json({
       success: true,
@@ -123,8 +169,9 @@ export async function POST(request: NextRequest) {
         image: primaryImage,
         images,
         metadata: {
-          ...getOutputMetadata(firstOutput),
+          ...outputMetadata,
           count: images.length,
+          ...(warnings.length > 0 ? { warnings } : {}),
           ...(s3UploadFailed ? { s3UploadFailed } : {}),
         },
         ...(s3UploadFailed ? { s3UploadFailed } : {}),

@@ -4,6 +4,10 @@ import { createLogger } from '@sim/logger'
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
+import {
+  getPersistedGeneratedImages,
+  getPersistedHistoryAttachments,
+} from '@/lib/chat/history-persistence'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getWorkspaceIdsForUser } from '@/lib/workspaces/permissions/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
@@ -221,6 +225,8 @@ export async function GET(
       const rawKnowledgeRefs = Array.isArray(executionData?.knowledgeRefs)
         ? executionData.knowledgeRefs
         : null
+      const attachments = getPersistedHistoryAttachments(executionData)
+      const generatedImages = getPersistedGeneratedImages(executionData)
       const knowledgeRefs =
         rawKnowledgeRefs == null
           ? null
@@ -241,7 +247,9 @@ export async function GET(
         totalDurationMs: log.totalDurationMs,
         conversationId,
         userInput,
+        attachments,
         modelOutput,
+        generatedImages,
         knowledgeRefs,
         liked: likedByExecutionId.has(log.executionId)
           ? likedByExecutionId.get(log.executionId)!
