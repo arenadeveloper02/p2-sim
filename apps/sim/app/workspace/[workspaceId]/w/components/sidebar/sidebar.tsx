@@ -1748,7 +1748,7 @@ export const Sidebar = memo(function Sidebar() {
                   )}
                 >
                   <DropdownMenu>
-                    <SidebarTooltip label='Help' enabled={showCollapsedTooltips}>
+                    {/* <SidebarTooltip label='Help' enabled={showCollapsedTooltips}>
                       <DropdownMenuTrigger asChild>
                         <button
                           type='button'
@@ -1761,7 +1761,7 @@ export const Sidebar = memo(function Sidebar() {
                           </span>
                         </button>
                       </DropdownMenuTrigger>
-                    </SidebarTooltip>
+                    </SidebarTooltip> */}
                     <DropdownMenuContent align='start' side='top' sideOffset={4}>
                       <DropdownMenuItem onSelect={handleOpenDocs}>
                         <BookOpen className='h-[14px] w-[14px]' />
