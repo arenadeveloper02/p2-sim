@@ -10,6 +10,7 @@ export type StorageContext =
   | 'agent-generated-images'
   | 'logs'
   | 'figma-design'
+  | 'workspace-logos'
 
 export interface FileInfo {
   path: string

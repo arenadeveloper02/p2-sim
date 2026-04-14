@@ -25,11 +25,10 @@ COPY packages/testing/package.json ./packages/testing/package.json
 COPY packages/logger/package.json ./packages/logger/package.json
 COPY packages/tsconfig/package.json ./packages/tsconfig/package.json
 
-# Install turbo globally, then dependencies, then rebuild isolated-vm for Node.js
+# Install dependencies, then rebuild isolated-vm for Node.js
 # Use --linker=hoisted for flat node_modules layout (required for Docker multi-stage builds)
 RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
     --mount=type=cache,id=npm-cache,target=/root/.npm \
-    bun install -g turbo && \
     HUSKY=0 bun install --omit=dev --ignore-scripts --linker=hoisted && \
     cd node_modules/isolated-vm && npx node-gyp rebuild --release
 
@@ -156,14 +155,18 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/public ./apps/sim/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/static ./apps/sim/.next/static
 
+# Copy blog/author content for runtime filesystem reads (not part of the JS bundle)
+COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/content ./apps/sim/content
+
 # Copy isolated-vm native module (compiled for Node.js in deps stage)
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules/isolated-vm ./node_modules/isolated-vm
 
 # Copy the isolated-vm worker script
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/execution/isolated-vm-worker.cjs ./apps/sim/lib/execution/isolated-vm-worker.cjs
 
-# Copy the bundled PPTX worker artifact
+# Copy the bundled worker artifacts
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/dist/pptx-worker.cjs ./apps/sim/dist/pptx-worker.cjs
+COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/dist/doc-worker.cjs ./apps/sim/dist/doc-worker.cjs
 
 # Guardrails setup with pip caching
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/guardrails/requirements.txt ./apps/sim/lib/guardrails/requirements.txt

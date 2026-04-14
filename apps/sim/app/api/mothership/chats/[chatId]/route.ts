@@ -4,16 +4,20 @@ import { createLogger } from '@sim/logger'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAccessibleCopilotChat } from '@/lib/copilot/chat-lifecycle'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
-import { getStreamMeta, readStreamEvents } from '@/lib/copilot/orchestrator/stream/buffer'
+import { getLatestRunForStream } from '@/lib/copilot/async-runs/repository'
+import { getAccessibleCopilotChat } from '@/lib/copilot/chat/lifecycle'
 import {
   authenticateCopilotRequestSessionOnly,
   createBadRequestResponse,
   createInternalServerErrorResponse,
   createUnauthorizedResponse,
-} from '@/lib/copilot/request-helpers'
-import { taskPubSub } from '@/lib/copilot/task-events'
+} from '@/lib/copilot/request/http'
+import type { FilePreviewSession } from '@/lib/copilot/request/session'
+import { readEvents } from '@/lib/copilot/request/session/buffer'
+import { readFilePreviewSessions } from '@/lib/copilot/request/session/file-preview-session'
+import { type StreamBatchEvent, toStreamBatchEvent } from '@/lib/copilot/request/session/types'
+import { taskPubSub } from '@/lib/copilot/tasks'
+import { captureServerEvent } from '@/lib/posthog/server'
 
 const logger = createLogger('MothershipChatAPI')
 
@@ -47,32 +51,45 @@ export async function GET(
     }
 
     let streamSnapshot: {
-      events: Array<{ eventId: number; streamId: string; event: Record<string, unknown> }>
+      events: StreamBatchEvent[]
+      previewSessions: FilePreviewSession[]
       status: string
     } | null = null
 
     if (chat.conversationId) {
       try {
-        const [meta, events] = await Promise.all([
-          getStreamMeta(chat.conversationId),
-          readStreamEvents(chat.conversationId, 0),
-        ])
-
-        streamSnapshot = {
-          events: events || [],
-          status: meta?.status || 'unknown',
-        }
-      } catch (error) {
-        logger.warn(
-          appendCopilotLogContext('Failed to read stream snapshot for mothership chat', {
-            messageId: chat.conversationId || undefined,
+        const [events, previewSessions] = await Promise.all([
+          readEvents(chat.conversationId, '0'),
+          readFilePreviewSessions(chat.conversationId).catch((error) => {
+            logger.warn('Failed to read preview sessions for mothership chat', {
+              chatId,
+              conversationId: chat.conversationId,
+              error: error instanceof Error ? error.message : String(error),
+            })
+            return []
           }),
-          {
+        ])
+        const run = await getLatestRunForStream(chat.conversationId, userId).catch((error) => {
+          logger.warn('Failed to fetch latest run for mothership chat snapshot', {
             chatId,
             conversationId: chat.conversationId,
             error: error instanceof Error ? error.message : String(error),
-          }
-        )
+          })
+          return null
+        })
+
+        streamSnapshot = {
+          events: events.map(toStreamBatchEvent),
+          previewSessions,
+          status:
+            typeof run?.status === 'string' ? run.status : events.length > 0 ? 'active' : 'unknown',
+        }
+      } catch (error) {
+        logger.warn('Failed to read stream snapshot for mothership chat', {
+          chatId,
+          conversationId: chat.conversationId,
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
     }
 
@@ -146,12 +163,32 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: 'Chat not found' }, { status: 404 })
     }
 
-    if (title !== undefined && updatedChat.workspaceId) {
-      taskPubSub?.publishStatusChanged({
-        workspaceId: updatedChat.workspaceId,
-        chatId,
-        type: 'renamed',
-      })
+    if (updatedChat.workspaceId) {
+      if (title !== undefined) {
+        taskPubSub?.publishStatusChanged({
+          workspaceId: updatedChat.workspaceId,
+          chatId,
+          type: 'renamed',
+        })
+        captureServerEvent(
+          userId,
+          'task_renamed',
+          { workspace_id: updatedChat.workspaceId },
+          {
+            groups: { workspace: updatedChat.workspaceId },
+          }
+        )
+      }
+      if (isUnread === true) {
+        captureServerEvent(
+          userId,
+          'task_marked_unread',
+          { workspace_id: updatedChat.workspaceId },
+          {
+            groups: { workspace: updatedChat.workspaceId },
+          }
+        )
+      }
     }
 
     return NextResponse.json({ success: true })
@@ -207,6 +244,14 @@ export async function DELETE(
         chatId,
         type: 'deleted',
       })
+      captureServerEvent(
+        userId,
+        'task_deleted',
+        { workspace_id: deletedChat.workspaceId },
+        {
+          groups: { workspace: deletedChat.workspaceId },
+        }
+      )
     }
 
     return NextResponse.json({ success: true })

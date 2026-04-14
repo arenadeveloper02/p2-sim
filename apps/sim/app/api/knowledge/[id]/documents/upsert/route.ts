@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { document } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -7,6 +6,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { generateId } from '@/lib/core/utils/uuid'
 import {
   createDocumentRecords,
   deleteDocument,
@@ -25,18 +25,17 @@ const UpsertDocumentSchema = z.object({
   fileSize: z.number().min(1, 'File size must be greater than 0'),
   mimeType: z.string().min(1, 'MIME type is required'),
   documentTagsData: z.string().optional(),
-  processingOptions: z.object({
-    chunkSize: z.number().min(100).max(4000),
-    minCharactersPerChunk: z.number().min(1).max(2000),
-    recipe: z.string(),
-    lang: z.string(),
-    chunkOverlap: z.number().min(0).max(500),
-  }),
+  processingOptions: z
+    .object({
+      recipe: z.string().optional(),
+      lang: z.string().optional(),
+    })
+    .optional(),
   workflowId: z.string().optional(),
 })
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const requestId = randomUUID().slice(0, 8)
+  const requestId = generateId().slice(0, 8)
   const { id: knowledgeBaseId } = await params
 
   try {
@@ -166,7 +165,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     processDocumentsWithQueue(
       createdDocuments,
       knowledgeBaseId,
-      validatedData.processingOptions,
+      validatedData.processingOptions ?? {},
       requestId
     ).catch((error: unknown) => {
       logger.error(`[${requestId}] Critical error in document processing pipeline:`, error)
@@ -178,8 +177,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         knowledgeBaseId,
         documentsCount: 1,
         uploadType: 'single',
-        chunkSize: validatedData.processingOptions.chunkSize,
-        recipe: validatedData.processingOptions.recipe,
+        recipe: validatedData.processingOptions?.recipe,
       })
     } catch (_e) {
       // Silently fail
@@ -198,7 +196,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         ? `Upserted (replaced) document "${validatedData.filename}" in knowledge base "${knowledgeBaseId}"`
         : `Upserted (created) document "${validatedData.filename}" in knowledge base "${knowledgeBaseId}"`,
       metadata: {
+        knowledgeBaseName: accessCheck.knowledgeBase?.name,
         fileName: validatedData.filename,
+        fileType: validatedData.mimeType,
+        fileSize: validatedData.fileSize,
         previousDocumentId: existingDocumentId,
         isUpdate,
       },

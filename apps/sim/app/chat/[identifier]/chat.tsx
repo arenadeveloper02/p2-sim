@@ -8,9 +8,10 @@ import { v4 as uuidv4 } from 'uuid'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { getFormattedGitHubStars } from '@/app/(home)/actions/github'
+import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   ChatErrorState,
   ChatHeader,
@@ -167,6 +168,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
   const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
   const [askInChatText, setAskInChatText] = useState('')
+  const [sttAvailable, setSttAvailable] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/settings/voice')
+      .then((r) => (r.ok ? r.json() : { sttAvailable: false }))
+      .then((data) => setSttAvailable(data.sttAvailable === true))
+      .catch(() => setSttAvailable(false))
+  }, [])
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -447,7 +456,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   useEffect(() => {
     fetchChatConfig()
-    setConversationId(uuidv4())
+    setConversationId(generateId())
 
     getFormattedGitHubStars()
       .then((formattedStars) => {
@@ -497,28 +506,24 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
     setUserHasScrolled(false)
 
-    // Only add user message to chat if there's actual content or files
-    // When form is submitted with empty input, we don't add a user message
     let userMessageId: string | null = null
-    if (messageToSend.trim() || (files && files.length > 0)) {
-      const userMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        content: messageToSend || (files && files.length > 0 ? `Sent ${files.length} file(s)` : ''),
-        type: 'user',
-        timestamp: new Date(),
-        attachments: files?.map((file) => ({
-          id: file.id,
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          dataUrl: file.dataUrl || '',
-        })),
-      }
-      userMessageId = userMessage.id
-
-      // Add the user's message to the chat
-      setMessages((prev) => [...prev, userMessage])
+    const userMessage: ChatMessage = {
+      id: generateId(),
+      content: messageToSend || (files && files.length > 0 ? `Sent ${files.length} file(s)` : ''),
+      type: 'user',
+      timestamp: new Date(),
+      attachments: files?.map((file) => ({
+        id: file.id,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        dataUrl: file.dataUrl || '',
+      })),
     }
+    userMessageId = userMessage.id
+
+    // Add the user's message to the chat
+    setMessages((prev) => [...prev, userMessage])
     setInputValue('')
     setIsLoading(true)
 
@@ -650,7 +655,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       logger.error('Error sending message:', error)
       setIsLoading(false)
       const errorMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         content: CHAT_ERROR_MESSAGES.GENERIC_ERROR,
         type: 'assistant',
         timestamp: new Date(),
@@ -719,8 +724,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }, [isStreamingResponse, stopStreaming, setMessages, stopAudio])
 
   const handleVoiceStart = useCallback(() => {
+    if (!sttAvailable) return
     setIsVoiceFirstMode(true)
-  }, [])
+  }, [sttAvailable])
 
   const handleExitVoiceMode = useCallback(() => {
     setIsVoiceFirstMode(false)
@@ -990,6 +996,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         isStreaming={isStreamingResponse}
         isPlayingAudio={isPlayingAudio}
         audioContextRef={audioContextRef}
+        chatId={chatConfig?.id}
         messages={messages.map((msg) => ({
           content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
           type: msg.type,
@@ -1048,6 +1055,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             onVoiceStart={handleVoiceStart}
             insertText={askInChatText}
             onInsertConsumed={() => setAskInChatText('')}
+            sttAvailable={sttAvailable}
           />
         </div>
       </div>

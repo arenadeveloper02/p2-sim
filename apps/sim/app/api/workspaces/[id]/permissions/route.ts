@@ -1,4 +1,3 @@
-import crypto from 'crypto'
 import { db } from '@sim/db'
 import { permissions, user, workspace, workspaceEnvironment } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -7,7 +6,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
+import { generateId } from '@/lib/core/utils/uuid'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
+import { captureServerEvent } from '@/lib/posthog/server'
 import {
   getUsersWithPermissions,
   hasWorkspaceAdminAccess,
@@ -160,7 +161,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           )
 
         await tx.insert(permissions).values({
-          id: crypto.randomUUID(),
+          id: generateId(),
           userId: update.userId,
           entityType: 'workspace' as const,
           entityId: workspaceId,
@@ -188,25 +189,28 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const updatedUsers = await getUsersWithPermissions(workspaceId)
 
     for (const update of body.updates) {
+      captureServerEvent(
+        session.user.id,
+        'workspace_member_role_changed',
+        { workspace_id: workspaceId, new_role: update.permissions },
+        { groups: { workspace: workspaceId } }
+      )
+
       recordAudit({
         workspaceId,
         actorId: session.user.id,
         action: AuditAction.MEMBER_ROLE_CHANGED,
         resourceType: AuditResourceType.WORKSPACE,
         resourceId: workspaceId,
+        resourceName: permLookup.get(update.userId)?.email ?? update.userId,
         actorName: session.user.name ?? undefined,
         actorEmail: session.user.email ?? undefined,
-        description: `Changed permissions for user ${update.userId} to ${update.permissions}`,
+        description: `Changed permissions for ${permLookup.get(update.userId)?.email ?? update.userId} from ${permLookup.get(update.userId)?.permission ?? 'none'} to ${update.permissions}`,
         metadata: {
           targetUserId: update.userId,
           targetEmail: permLookup.get(update.userId)?.email ?? undefined,
-          changes: [
-            {
-              field: 'permissions',
-              from: permLookup.get(update.userId)?.permission ?? null,
-              to: update.permissions,
-            },
-          ],
+          previousRole: permLookup.get(update.userId)?.permission ?? null,
+          newRole: update.permissions,
         },
         request,
       })

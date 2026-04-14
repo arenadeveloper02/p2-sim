@@ -3,14 +3,10 @@ import { chat, workflowQueries } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
-import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
-import { isDev } from '@/lib/core/config/feature-flags'
-import { encryptSecret } from '@/lib/core/security/encryption'
-import { getBaseUrl } from '@/lib/core/utils/urls'
-import { deployWorkflow } from '@/lib/workflows/persistence/utils'
+import { generateId } from '@/lib/core/utils/uuid'
+import { performChatDeploy } from '@/lib/workflows/orchestration'
 import { checkWorkflowAccessForChatCreation } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
@@ -67,7 +63,7 @@ async function replaceWorkflowQueries({
 
     await tx.insert(workflowQueries).values(
       queries.map((query, index) => ({
-        id: uuidv4(),
+        id: generateId(),
         userId,
         workflowId,
         query,
@@ -145,7 +141,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Check identifier availability and workflow access in parallel
       const [existingIdentifier, { hasAccess, workflow: workflowRecord }] = await Promise.all([
         db
           .select()
@@ -171,111 +166,25 @@ export async function POST(request: NextRequest) {
         return createErrorResponse('Workflow not found or access denied', 404)
       }
 
-      // Always deploy/redeploy the workflow to ensure latest version
-      const result = await deployWorkflow({
+      const result = await performChatDeploy({
         workflowId,
-        deployedBy: session.user.id,
+        userId: session.user.id,
+        identifier,
+        title,
+        description,
+        customizations,
+        authType,
+        password,
+        allowedEmails,
+        outputConfigs,
+        workspaceId: workflowRecord.workspaceId,
       })
 
       if (!result.success) {
-        return createErrorResponse(result.error || 'Failed to deploy workflow', 500)
+        return createErrorResponse(result.error || 'Failed to deploy chat', 500)
       }
 
-      logger.info(
-        `${workflowRecord.isDeployed ? 'Redeployed' : 'Auto-deployed'} workflow ${workflowId} for chat (v${result.version})`
-      )
-
-      // Encrypt password if provided
-      let encryptedPassword = null
-      if (authType === 'password' && password) {
-        const { encrypted } = await encryptSecret(password)
-        encryptedPassword = encrypted
-      }
-
-      // Merge customizations with the additional fields
-      const mergedCustomizations = {
-        ...(customizations || {}),
-        primaryColor: customizations?.primaryColor || 'var(--brand-hover)',
-        // Only use default if welcomeMessage is undefined/null, not if it's an empty string
-        welcomeMessage:
-          customizations?.welcomeMessage !== undefined && customizations?.welcomeMessage !== null
-            ? customizations.welcomeMessage
-            : "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
-      }
       const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
-
-      // Determine chat ID - use existing if updating, generate new if creating
-      let chatId: string
-
-      // If inactive chat exists, update it; otherwise create new
-      if (existingIdentifier.length > 0 && !existingIdentifier[0].isActive) {
-        const existing = existingIdentifier[0]
-        chatId = existing.id
-
-        logger.info('Updating inactive chat deployment with values:', {
-          chatId,
-          workflowId,
-          identifier,
-          title,
-          authType,
-          hasPassword: !!encryptedPassword,
-          emailCount: allowedEmails?.length || 0,
-          outputConfigsCount: outputConfigs.length,
-        })
-
-        await db
-          .update(chat)
-          .set({
-            workflowId,
-            userId: session.user.id,
-            identifier,
-            title,
-            description: description || '',
-            remarks: remarks || '',
-            department: department || '',
-            customizations: mergedCustomizations,
-            isActive: true,
-            authType,
-            password: encryptedPassword,
-            allowedEmails: authType === 'email' || authType === 'sso' ? allowedEmails : [],
-            outputConfigs,
-            updatedAt: new Date(),
-          })
-          .where(eq(chat.id, chatId))
-      } else {
-        // Create the chat deployment
-        chatId = uuidv4()
-
-        logger.info('Creating chat deployment with values:', {
-          workflowId,
-          identifier,
-          title,
-          authType,
-          hasPassword: !!encryptedPassword,
-          emailCount: allowedEmails?.length || 0,
-          outputConfigsCount: outputConfigs.length,
-        })
-
-        await db.insert(chat).values({
-          id: chatId,
-          workflowId,
-          userId: session.user.id,
-          identifier,
-          title,
-          description: description || '',
-          remarks: remarks || '',
-          department: department || '',
-          customizations: mergedCustomizations,
-          isActive: true,
-          authType,
-          password: encryptedPassword,
-          allowedEmails: authType === 'email' || authType === 'sso' ? allowedEmails : [],
-          outputConfigs,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-      }
-
       if (goldenQueries.length > 0 || customizations?.goldenQueries) {
         await replaceWorkflowQueries({
           workflowId,
@@ -284,62 +193,9 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      // Return successful response with chat URL
-      // Generate chat URL using path-based routing instead of subdomains
-      const baseUrl = getBaseUrl()
-
-      let chatUrl: string
-      try {
-        const url = new URL(baseUrl)
-        let host = url.host
-        if (host.startsWith('www.')) {
-          host = host.substring(4)
-        }
-        chatUrl = `${url.protocol}//${host}/chat/${identifier}`
-      } catch (error) {
-        logger.warn('Failed to parse baseUrl, falling back to defaults:', {
-          baseUrl,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        })
-        // Fallback based on environment
-        if (isDev) {
-          chatUrl = `http://localhost:3000/chat/${identifier}`
-        } else {
-          chatUrl = `https://sim.ai/chat/${identifier}`
-        }
-      }
-
-      logger.info(`Chat "${title}" deployed successfully at ${chatUrl}`)
-
-      try {
-        const { PlatformEvents } = await import('@/lib/core/telemetry')
-        PlatformEvents.chatDeployed({
-          chatId,
-          workflowId,
-          authType,
-          hasOutputConfigs: outputConfigs.length > 0,
-        })
-      } catch (_e) {
-        // Silently fail
-      }
-
-      recordAudit({
-        workspaceId: workflowRecord.workspaceId || null,
-        actorId: session.user.id,
-        actorName: session.user.name,
-        actorEmail: session.user.email,
-        action: AuditAction.CHAT_DEPLOYED,
-        resourceType: AuditResourceType.CHAT,
-        resourceId: chatId,
-        resourceName: title,
-        description: `Deployed chat "${title}"`,
-        metadata: { workflowId, identifier, authType },
-        request,
-      })
-
       return createSuccessResponse({
-        id: chatId,
-        chatUrl,
+        id: result.chatId,
+        chatUrl: result.chatUrl,
         message: 'Chat deployment created successfully',
       })
     } catch (validationError) {

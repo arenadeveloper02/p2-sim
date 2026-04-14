@@ -10,11 +10,8 @@ import {
 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { writePendingCredentialCreateRequest } from '@/lib/credentials/client-state'
-import {
-  usePersonalEnvironment,
-  useWorkspaceEnvironment,
-  type WorkspaceEnvironmentData,
-} from '@/hooks/queries/environment'
+import type { WorkspaceEnvironmentData } from '@/lib/environment/api'
+import { usePersonalEnvironment, useWorkspaceEnvironment } from '@/hooks/queries/environment'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 
 /**
@@ -245,9 +242,13 @@ export const EnvVarDropdown: React.FC<EnvVarDropdownProps> = ({
             })
             break
           case 'Enter':
-            e.preventDefault()
-            e.stopPropagation()
-            handleEnvVarSelect(filteredEnvVars[selectedIndex])
+          case 'Tab':
+            if (e.key === 'Tab' && e.shiftKey) break
+            if (filteredEnvVars[selectedIndex]) {
+              e.preventDefault()
+              e.stopPropagation()
+              handleEnvVarSelect(filteredEnvVars[selectedIndex])
+            }
             break
           case 'Escape':
             e.preventDefault()

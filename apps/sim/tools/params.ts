@@ -5,7 +5,7 @@ import {
   type CanonicalModeOverrides,
   evaluateSubBlockCondition,
   isCanonicalPair,
-  isSubBlockHiddenByHostedKey,
+  isSubBlockHidden,
   resolveCanonicalMode,
   type SubBlockCondition,
 } from '@/lib/workflows/subblocks/visibility'
@@ -66,7 +66,7 @@ export interface UIComponentConfig {
   /** Canonical parameter ID if this is part of a canonical group */
   canonicalParamId?: string
   /** The mode of the source subblock (basic/advanced/both) */
-  mode?: 'basic' | 'advanced' | 'both' | 'trigger'
+  mode?: 'basic' | 'advanced' | 'both' | 'trigger' | 'trigger-advanced'
   /** The actual subblock ID this config was derived from */
   actualSubBlockId?: string
   /** Wand configuration for AI assistance */
@@ -121,6 +121,10 @@ export interface ToolSchema {
   type: 'object'
   properties: Record<string, SchemaProperty>
   required: string[]
+}
+
+export interface UserToolSchemaOptions {
+  surface?: 'default' | 'copilot'
 }
 
 export interface LLMToolSchemaResult {
@@ -320,7 +324,7 @@ export function getToolParametersConfig(
           )
 
           if (subBlock) {
-            if (isSubBlockHiddenByHostedKey(subBlock)) {
+            if (isSubBlockHidden(subBlock)) {
               toolParam.visibility = 'hidden'
             }
 
@@ -390,8 +394,15 @@ export function getToolParametersConfig(
 function buildParameterSchema(
   toolId: string,
   paramId: string,
-  param: ToolParamDefinition
+  param: ToolParamDefinition,
+  options: UserToolSchemaOptions = {}
 ): SchemaProperty {
+  const surface = options.surface ?? 'default'
+
+  if (surface === 'copilot' && (param.type === 'file' || param.type === 'file[]')) {
+    return buildCopilotFileParameterSchema(param)
+  }
+
   let schemaType = param.type
   if (schemaType === 'json' || schemaType === 'any') {
     schemaType = 'object'
@@ -416,7 +427,50 @@ function buildParameterSchema(
   return propertySchema
 }
 
-export function createUserToolSchema(toolConfig: ToolConfig): ToolSchema {
+function buildCopilotFileParameterSchema(param: ToolParamDefinition): SchemaProperty {
+  const baseDescription =
+    param.description ||
+    (param.type === 'file'
+      ? 'A file object for tool execution.'
+      : 'An array of file objects for tool execution.')
+  const resolutionDescription =
+    'For copilot and mothership tool calls, prefer passing canonical workspace file IDs such as "wf_123". The runtime will resolve them into full file objects before tool execution.'
+
+  const fileObjectSchema: SchemaProperty = {
+    type: 'object',
+    description: `${baseDescription} ${resolutionDescription}`,
+    properties: {
+      id: { type: 'string', description: 'Canonical workspace file ID.' },
+      name: { type: 'string', description: 'File name.' },
+      url: { type: 'string', description: 'File URL or serve path.' },
+      size: { type: 'number', description: 'File size in bytes.' },
+      type: { type: 'string', description: 'MIME type.' },
+      key: { type: 'string', description: 'Internal storage key.' },
+      context: { type: 'string', description: 'Optional file context.' },
+      base64: { type: 'string', description: 'Optional base64-encoded file contents.' },
+    },
+    required: ['id', 'name', 'url', 'size', 'type', 'key'],
+  }
+
+  if (param.type === 'file') {
+    return fileObjectSchema
+  }
+
+  return {
+    type: 'array',
+    description: `${baseDescription} ${resolutionDescription}`,
+    items: {
+      type: 'object',
+      description: 'A file object.',
+      properties: fileObjectSchema.properties,
+    },
+  }
+}
+
+export function createUserToolSchema(
+  toolConfig: ToolConfig,
+  options: UserToolSchemaOptions = {}
+): ToolSchema {
   const schema: ToolSchema = {
     type: 'object',
     properties: {},
@@ -430,7 +484,7 @@ export function createUserToolSchema(toolConfig: ToolConfig): ToolSchema {
       continue
     }
 
-    const propertySchema = buildParameterSchema(toolConfig.id, paramId, param)
+    const propertySchema = buildParameterSchema(toolConfig.id, paramId, param, options)
     schema.properties[paramId] = propertySchema
 
     if (param.required) {
@@ -884,7 +938,6 @@ const EXCLUDED_SUBBLOCK_TYPES = new Set([
   'eval-input',
   'webhook-config',
   'schedule-info',
-  'trigger-save',
   'input-format',
   'response-format',
   'mcp-server-selector',
@@ -959,10 +1012,10 @@ export function getSubBlocksForToolInput(
       if (EXCLUDED_SUBBLOCK_TYPES.has(sb.type)) continue
 
       // Skip trigger-mode-only subblocks
-      if (sb.mode === 'trigger') continue
+      if (sb.mode === 'trigger' || sb.mode === 'trigger-advanced') continue
 
-      // Hide tool API key fields when running on hosted Sim
-      if (isSubBlockHiddenByHostedKey(sb)) continue
+      // Hide tool API key fields when running on hosted Sim or when env var is set
+      if (isSubBlockHidden(sb)) continue
 
       // Determine the effective param ID (canonical or subblock id)
       const effectiveParamId = sb.canonicalParamId || sb.id
@@ -1004,8 +1057,7 @@ export function getSubBlocksForToolInput(
       // Filter by visibility: exclude hidden and llm-only
       if (visibility === 'hidden' || visibility === 'llm-only') continue
 
-      // Evaluate condition against current values
-      if (sb.condition) {
+      if (sb.condition && !sb.reactiveCondition) {
         const conditionMet = evaluateSubBlockCondition(
           sb.condition as SubBlockCondition,
           valuesWithOperation

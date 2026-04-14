@@ -44,15 +44,6 @@ export const imapPollingTrigger: TriggerConfig = {
       required: false,
       mode: 'trigger',
     },
-    {
-      id: 'rejectUnauthorized',
-      title: 'Verify TLS Certificate',
-      type: 'switch',
-      defaultValue: true,
-      description: 'Verify server TLS certificate. Disable for self-signed certificates.',
-      required: false,
-      mode: 'trigger',
-    },
     // Authentication
     {
       id: 'username',
@@ -84,12 +75,11 @@ export const imapPollingTrigger: TriggerConfig = {
         'Choose which mailbox/folder(s) to monitor for new emails. Leave empty to monitor INBOX.',
       required: false,
       options: [],
-      fetchOptions: async (blockId: string, _subBlockId: string) => {
+      fetchOptions: async (blockId: string) => {
         const store = useSubBlockStore.getState()
         const host = store.getValue(blockId, 'host') as string | null
         const port = store.getValue(blockId, 'port') as string | null
         const secure = store.getValue(blockId, 'secure') as boolean | null
-        const rejectUnauthorized = store.getValue(blockId, 'rejectUnauthorized') as boolean | null
         const username = store.getValue(blockId, 'username') as string | null
         const password = store.getValue(blockId, 'password') as string | null
 
@@ -105,7 +95,6 @@ export const imapPollingTrigger: TriggerConfig = {
               host,
               port: port ? Number.parseInt(port, 10) : 993,
               secure: secure ?? true,
-              rejectUnauthorized: rejectUnauthorized ?? true,
               username,
               password,
             }),
@@ -129,7 +118,7 @@ export const imapPollingTrigger: TriggerConfig = {
           throw error
         }
       },
-      dependsOn: ['host', 'port', 'secure', 'rejectUnauthorized', 'username', 'password'],
+      dependsOn: ['host', 'port', 'secure', 'username', 'password'],
       mode: 'trigger',
     },
     // Email filtering
@@ -203,14 +192,6 @@ Return ONLY valid JSON, no explanations or markdown.`,
       mode: 'trigger',
     },
     // Instructions
-    {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'imap_poller',
-    },
     {
       id: 'triggerInstructions',
       title: 'Setup Instructions',

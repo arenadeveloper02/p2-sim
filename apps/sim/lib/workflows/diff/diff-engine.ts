@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import type { Edge } from 'reactflow'
-import { v4 as uuidv4 } from 'uuid'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getTargetedLayoutImpact } from '@/lib/workflows/autolayout'
 import type { BlockWithDiff } from '@/lib/workflows/diff/types'
 import { isValidKey } from '@/lib/workflows/sanitization/key-validation'
@@ -384,7 +384,7 @@ export class WorkflowDiffEngine {
           idMap[proposedId] = proposedId
         } else {
           // New block with a non-UUID ID (e.g., from YAML parsing) — mint a UUID
-          idMap[proposedId] = uuidv4()
+          idMap[proposedId] = generateId()
         }
       }
 
@@ -470,7 +470,7 @@ export class WorkflowDiffEngine {
         if (!edgeMap.has(edgeKey)) {
           edgeMap.set(edgeKey, {
             ...edge,
-            id: uuidv4(), // Use UUID for unique edge IDs
+            id: generateId(), // Use UUID for unique edge IDs
             source,
             target,
             sourceHandle,
@@ -522,14 +522,18 @@ export class WorkflowDiffEngine {
       // Apply autolayout to the proposed state
       logger.info('Applying autolayout to proposed workflow state')
       try {
-        const { layoutBlockIds, shiftSourceBlockIds } = getTargetedLayoutImpact({
+        const { layoutBlockIds, resizedBlockIds, shiftSourceBlockIds } = getTargetedLayoutImpact({
           before: mergedBaseline,
           after: fullyCleanedState,
         })
 
         const totalBlocks = Object.keys(finalBlocks).length
 
-        if (layoutBlockIds.length === 0 && shiftSourceBlockIds.length === 0) {
+        if (
+          layoutBlockIds.length === 0 &&
+          resizedBlockIds.length === 0 &&
+          shiftSourceBlockIds.length === 0
+        ) {
           logger.info('No blocks need layout; skipping autolayout', {
             totalBlocks,
           })
@@ -541,6 +545,7 @@ export class WorkflowDiffEngine {
           // as applyAutoLayout but with one unified code path.
           logger.info('Using targeted layout for copilot edits', {
             blocksNeedingLayout: layoutBlockIds.length,
+            resizedAnchorBlocks: resizedBlockIds.length,
             shiftSourceBlocks: shiftSourceBlockIds.length,
             anchors: totalBlocks - layoutBlockIds.length,
             totalBlocks,
@@ -553,6 +558,7 @@ export class WorkflowDiffEngine {
 
           const layoutedBlocks = applyTargetedLayout(finalBlocks, fullyCleanedState.edges, {
             changedBlockIds: layoutBlockIds,
+            resizedBlockIds,
             shiftSourceBlockIds,
             horizontalSpacing: DEFAULT_HORIZONTAL_SPACING,
             verticalSpacing: DEFAULT_VERTICAL_SPACING,

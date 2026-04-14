@@ -47,7 +47,7 @@ export const outlookPollingTrigger: TriggerConfig = {
       description: 'Choose which Outlook folders to monitor. Leave empty to monitor all emails.',
       required: false,
       options: [], // Will be populated dynamically
-      fetchOptions: async (blockId: string, subBlockId: string) => {
+      fetchOptions: async (blockId: string) => {
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -110,14 +110,6 @@ export const outlookPollingTrigger: TriggerConfig = {
       description: 'Download and include email attachments in the trigger payload',
       required: false,
       mode: 'trigger',
-    },
-    {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'outlook_poller',
     },
     {
       id: 'triggerInstructions',

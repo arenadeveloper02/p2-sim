@@ -10,6 +10,7 @@ import {
   Badge,
   Button,
   Combobox,
+  focusFirstTextInputIn,
   Input,
   Label,
   Modal,
@@ -23,6 +24,7 @@ import {
 } from '@/components/emcn'
 import { Input as UiInput } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
+import { cn } from '@/lib/core/utils/cn'
 import {
   clearPendingCredentialCreateRequest,
   PENDING_CREDENTIAL_CREATE_REQUEST_EVENT,
@@ -53,6 +55,7 @@ import {
 } from '@/hooks/queries/oauth/oauth-connections'
 import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
+import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
 const logger = createLogger('IntegrationsManager')
 
@@ -60,6 +63,8 @@ const roleOptions = [
   { value: 'member', label: 'Member' },
   { value: 'admin', label: 'Admin' },
 ] as const
+
+const roleComboOptions = roleOptions.map((option) => ({ value: option.value, label: option.label }))
 
 export function IntegrationsManager() {
   const params = useParams()
@@ -80,6 +85,15 @@ export function IntegrationsManager() {
   const [selectedDescriptionDraft, setSelectedDescriptionDraft] = useState('')
   const [selectedDisplayNameDraft, setSelectedDisplayNameDraft] = useState('')
   const [createStep, setCreateStep] = useState<1 | 2>(1)
+  const createModalContentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showCreateModal || createStep !== 2) return
+    const id = window.setTimeout(() => {
+      focusFirstTextInputIn(createModalContentRef.current)
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [showCreateModal, createStep])
   const [serviceSearch, setServiceSearch] = useState('')
   const [copyIdSuccess, setCopyIdSuccess] = useState(false)
   const [credentialToDelete, setCredentialToDelete] = useState<WorkspaceCredential | null>(null)
@@ -91,6 +105,13 @@ export function IntegrationsManager() {
     | { type: 'kb-connectors'; knowledgeBaseId: string }
     | undefined
   >(undefined)
+  const [saJsonInput, setSaJsonInput] = useState('')
+  const [saDisplayName, setSaDisplayName] = useState('')
+  const [saDescription, setSaDescription] = useState('')
+  const [saError, setSaError] = useState<string | null>(null)
+  const [saIsSubmitting, setSaIsSubmitting] = useState(false)
+  const [saDragActive, setSaDragActive] = useState(false)
+
   const { data: session } = useSession()
   const currentUserId = session?.user?.id || ''
 
@@ -110,7 +131,7 @@ export function IntegrationsManager() {
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId || null)
 
   const oauthCredentials = useMemo(
-    () => credentials.filter((c) => c.type === 'oauth'),
+    () => credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account'),
     [credentials]
   )
 
@@ -236,12 +257,20 @@ export function IntegrationsManager() {
   }, [selectedCredential, selectedDisplayNameDraft])
 
   const isDetailsDirty = isDescriptionDirty || isDisplayNameDirty
-  const [isSavingDetails, setIsSavingDetails] = useState(false)
+
+  const setNavGuardDirty = useSettingsDirtyStore((s) => s.setDirty)
+  const resetNavGuard = useSettingsDirtyStore((s) => s.reset)
+
+  useEffect(() => {
+    setNavGuardDirty(isDetailsDirty)
+  }, [isDetailsDirty, setNavGuardDirty])
+
+  useEffect(() => () => resetNavGuard(), [resetNavGuard])
 
   const handleSaveDetails = async () => {
-    if (!selectedCredential || !isSelectedAdmin || !isDetailsDirty) return
+    if (!selectedCredential || !isSelectedAdmin || !isDetailsDirty || updateCredential.isPending)
+      return
     setDetailsError(null)
-    setIsSavingDetails(true)
 
     try {
       if (isDisplayNameDirty || isDescriptionDirty) {
@@ -253,26 +282,22 @@ export function IntegrationsManager() {
         if (isDisplayNameDirty) setSelectedDisplayNameDraft((v) => v.trim())
         if (isDescriptionDirty) setSelectedDescriptionDraft((v) => v.trim())
       }
-
-      await refetchCredentials()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to save changes'
       setDetailsError(message)
       logger.error('Failed to save credential details', error)
-    } finally {
-      setIsSavingDetails(false)
     }
   }
 
   const handleBackAttempt = useCallback(() => {
-    if (isDetailsDirty && !isSavingDetails) {
+    if (isDetailsDirty && !updateCredential.isPending) {
       setShowUnsavedChangesAlert(true)
     } else {
       setSelectedCredentialId(null)
       setSelectedDescriptionDraft('')
       setSelectedDisplayNameDraft('')
     }
-  }, [isDetailsDirty, isSavingDetails])
+  }, [isDetailsDirty, updateCredential.isPending])
 
   const handleDiscardChanges = useCallback(() => {
     setShowUnsavedChangesAlert(false)
@@ -348,11 +373,7 @@ export function IntegrationsManager() {
 
   const isSelectedAdmin = selectedCredential?.role === 'admin'
   const selectedOAuthServiceConfig = useMemo(() => {
-    if (
-      !selectedCredential ||
-      selectedCredential.type !== 'oauth' ||
-      !selectedCredential.providerId
-    ) {
+    if (!selectedCredential?.providerId) {
       return null
     }
 
@@ -366,6 +387,10 @@ export function IntegrationsManager() {
     setCreateError(null)
     setCreateStep(1)
     setServiceSearch('')
+    setSaJsonInput('')
+    setSaDisplayName('')
+    setSaDescription('')
+    setSaError(null)
     pendingReturnOriginRef.current = undefined
   }
 
@@ -456,25 +481,30 @@ export function IntegrationsManager() {
     setDeleteError(null)
 
     try {
-      if (!credentialToDelete.accountId || !credentialToDelete.providerId) {
-        const errorMessage =
-          'Cannot disconnect: missing account information. Please try reconnecting this credential first.'
-        setDeleteError(errorMessage)
-        logger.error('Cannot disconnect OAuth credential: missing accountId or providerId')
-        return
-      }
-      await disconnectOAuthService.mutateAsync({
-        provider: credentialToDelete.providerId.split('-')[0] || credentialToDelete.providerId,
-        providerId: credentialToDelete.providerId,
-        serviceId: credentialToDelete.providerId,
-        accountId: credentialToDelete.accountId,
-      })
-      await refetchCredentials()
-      window.dispatchEvent(
-        new CustomEvent('oauth-credentials-updated', {
-          detail: { providerId: credentialToDelete.providerId, workspaceId },
+      if (credentialToDelete.type === 'service_account') {
+        await deleteCredential.mutateAsync(credentialToDelete.id)
+        await refetchCredentials()
+      } else {
+        if (!credentialToDelete.accountId || !credentialToDelete.providerId) {
+          const errorMessage =
+            'Cannot disconnect: missing account information. Please try reconnecting this credential first.'
+          setDeleteError(errorMessage)
+          logger.error('Cannot disconnect OAuth credential: missing accountId or providerId')
+          return
+        }
+        await disconnectOAuthService.mutateAsync({
+          provider: credentialToDelete.providerId.split('-')[0] || credentialToDelete.providerId,
+          providerId: credentialToDelete.providerId,
+          serviceId: credentialToDelete.providerId,
+          accountId: credentialToDelete.accountId,
         })
-      )
+        await refetchCredentials()
+        window.dispatchEvent(
+          new CustomEvent('oauth-credentials-updated', {
+            detail: { providerId: credentialToDelete.providerId, workspaceId },
+          })
+        )
+      }
 
       if (selectedCredentialId === credentialToDelete.id) {
         setSelectedCredentialId(null)
@@ -624,6 +654,117 @@ export function IntegrationsManager() {
     setShowCreateModal(true)
   }, [])
 
+  const validateServiceAccountJson = (raw: string): { valid: boolean; error?: string } => {
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return { valid: false, error: 'Invalid JSON. Paste the full service account key file.' }
+    }
+    if (parsed.type !== 'service_account') {
+      return { valid: false, error: 'JSON key must have "type": "service_account".' }
+    }
+    if (!parsed.client_email || typeof parsed.client_email !== 'string') {
+      return { valid: false, error: 'Missing "client_email" field.' }
+    }
+    if (!parsed.private_key || typeof parsed.private_key !== 'string') {
+      return { valid: false, error: 'Missing "private_key" field.' }
+    }
+    if (!parsed.project_id || typeof parsed.project_id !== 'string') {
+      return { valid: false, error: 'Missing "project_id" field.' }
+    }
+    return { valid: true }
+  }
+
+  const handleCreateServiceAccount = async () => {
+    setSaError(null)
+    const trimmed = saJsonInput.trim()
+    if (!trimmed) {
+      setSaError('Paste the service account JSON key.')
+      return
+    }
+    const validation = validateServiceAccountJson(trimmed)
+    if (!validation.valid) {
+      setSaError(validation.error ?? 'Invalid JSON')
+      return
+    }
+    setSaIsSubmitting(true)
+    try {
+      await createCredential.mutateAsync({
+        workspaceId,
+        type: 'service_account',
+        displayName: saDisplayName.trim() || undefined,
+        description: saDescription.trim() || undefined,
+        serviceAccountJson: trimmed,
+      })
+      setShowCreateModal(false)
+      resetCreateForm()
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to add service account'
+      setSaError(message)
+      logger.error('Failed to create service account credential', error)
+    } finally {
+      setSaIsSubmitting(false)
+    }
+  }
+
+  const readSaJsonFile = useCallback(
+    (file: File) => {
+      if (!file.name.endsWith('.json')) {
+        setSaError('Only .json files are supported')
+        return
+      }
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const text = e.target?.result
+        if (typeof text === 'string') {
+          setSaJsonInput(text)
+          setSaError(null)
+          try {
+            const parsed = JSON.parse(text)
+            if (parsed.client_email && !saDisplayName.trim()) {
+              setSaDisplayName(parsed.client_email)
+            }
+          } catch {
+            // validation will catch this on submit
+          }
+        }
+      }
+      reader.readAsText(file)
+    },
+    [saDisplayName]
+  )
+
+  const handleSaFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    readSaJsonFile(file)
+    event.target.value = ''
+  }
+
+  const handleSaDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setSaDragActive(true)
+  }, [])
+
+  const handleSaDragLeave = useCallback((event: React.DragEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setSaDragActive(false)
+  }, [])
+
+  const handleSaDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      setSaDragActive(false)
+      const file = event.dataTransfer.files[0]
+      if (file) readSaJsonFile(file)
+    },
+    [readSaJsonFile]
+  )
+
   const filteredServices = useMemo(() => {
     if (!serviceSearch.trim()) return oauthServiceOptions
     const q = serviceSearch.toLowerCase()
@@ -638,7 +779,7 @@ export function IntegrationsManager() {
         if (!open) resetCreateForm()
       }}
     >
-      <ModalContent size='md'>
+      <ModalContent size='md' ref={createModalContentRef}>
         {createStep === 1 ? (
           <>
             <ModalHeader>Connect Integration</ModalHeader>
@@ -654,7 +795,6 @@ export function IntegrationsManager() {
                     value={serviceSearch}
                     onChange={(e) => setServiceSearch(e.target.value)}
                     className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
-                    autoFocus
                   />
                 </div>
                 <div className='flex max-h-[320px] flex-col overflow-y-auto'>
@@ -700,7 +840,7 @@ export function IntegrationsManager() {
               </Button>
             </ModalFooter>
           </>
-        ) : (
+        ) : selectedOAuthService?.authType !== 'service_account' ? (
           <>
             <ModalHeader>
               <div className='flex items-center gap-2.5'>
@@ -785,7 +925,6 @@ export function IntegrationsManager() {
                     autoComplete='off'
                     data-lpignore='true'
                     className='mt-1.5'
-                    autoFocus
                   />
                 </div>
                 <div>
@@ -827,6 +966,159 @@ export function IntegrationsManager() {
               </Button>
             </ModalFooter>
           </>
+        ) : (
+          <>
+            <ModalHeader>
+              <div className='flex items-center gap-2.5'>
+                <button
+                  type='button'
+                  onClick={() => {
+                    setCreateStep(1)
+                    setSaError(null)
+                  }}
+                  className='flex h-6 w-6 items-center justify-center rounded-[4px] text-[var(--text-muted)] hover:bg-[var(--surface-5)] hover:text-[var(--text-primary)]'
+                  aria-label='Back'
+                >
+                  ←
+                </button>
+                <span>
+                  Add {selectedOAuthService?.name || resolveProviderLabel(createOAuthProviderId)}
+                </span>
+              </div>
+            </ModalHeader>
+            <ModalBody>
+              {saError && (
+                <div className='mb-3'>
+                  <Badge variant='red' size='lg' dot className='max-w-full'>
+                    {saError}
+                  </Badge>
+                </div>
+              )}
+              <div className='flex flex-col gap-4'>
+                <div className='flex items-center gap-3'>
+                  <div className='flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-[8px] bg-[var(--surface-5)]'>
+                    {selectedOAuthService &&
+                      createElement(selectedOAuthService.icon, { className: 'h-[18px] w-[18px]' })}
+                  </div>
+                  <div>
+                    <p className='font-medium text-[13px] text-[var(--text-primary)]'>
+                      Add {selectedOAuthService?.name || 'service account'}
+                    </p>
+                    <p className='text-[12px] text-[var(--text-tertiary)]'>
+                      {selectedOAuthService?.description || 'Paste or upload the JSON key file'}
+                    </p>
+                    <a
+                      href='https://docs.sim.ai/credentials/google-service-account'
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      className='text-[12px] text-[var(--accent)] hover:underline'
+                    >
+                      View setup guide
+                    </a>
+                  </div>
+                </div>
+
+                <div>
+                  <Label>
+                    JSON Key<span className='ml-1'>*</span>
+                  </Label>
+                  <div
+                    onDragOver={handleSaDragOver}
+                    onDragLeave={handleSaDragLeave}
+                    onDrop={handleSaDrop}
+                    className={cn(
+                      'relative mt-1.5 rounded-md border-2 border-dashed transition-colors',
+                      saDragActive
+                        ? 'border-[var(--accent)] bg-[var(--accent)]/5'
+                        : 'border-transparent'
+                    )}
+                  >
+                    {saDragActive && (
+                      <div className='pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-[var(--accent)]/5'>
+                        <p className='font-medium text-[13px] text-[var(--accent)]'>
+                          Drop JSON key file here
+                        </p>
+                      </div>
+                    )}
+                    <Textarea
+                      value={saJsonInput}
+                      onChange={(event) => {
+                        setSaJsonInput(event.target.value)
+                        setSaError(null)
+                        if (!saDisplayName.trim()) {
+                          try {
+                            const parsed = JSON.parse(event.target.value)
+                            if (parsed.client_email) setSaDisplayName(parsed.client_email)
+                          } catch {
+                            // not valid yet
+                          }
+                        }
+                      }}
+                      placeholder='Paste your service account JSON key here or drag & drop a .json file...'
+                      autoComplete='off'
+                      data-lpignore='true'
+                      className={cn(
+                        'min-h-[120px] resize-none border-0 font-mono text-[12px]',
+                        saDragActive && 'opacity-30'
+                      )}
+                    />
+                  </div>
+                  <div className='mt-1.5'>
+                    <label className='inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'>
+                      <input
+                        type='file'
+                        accept='.json'
+                        onChange={handleSaFileUpload}
+                        className='hidden'
+                      />
+                      Or upload a .json file
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <Label>Display name</Label>
+                  <Input
+                    value={saDisplayName}
+                    onChange={(event) => setSaDisplayName(event.target.value)}
+                    placeholder='Auto-populated from client_email'
+                    autoComplete='off'
+                    data-lpignore='true'
+                    className='mt-1.5'
+                  />
+                </div>
+                <div>
+                  <Label>Description</Label>
+                  <Textarea
+                    value={saDescription}
+                    onChange={(event) => setSaDescription(event.target.value)}
+                    placeholder='Optional description'
+                    maxLength={500}
+                    autoComplete='off'
+                    data-lpignore='true'
+                    className='mt-1.5 min-h-[80px] resize-none'
+                  />
+                </div>
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button
+                variant='default'
+                onClick={() => {
+                  setCreateStep(1)
+                  setSaError(null)
+                }}
+              >
+                Back
+              </Button>
+              <Button
+                variant='primary'
+                onClick={handleCreateServiceAccount}
+                disabled={!saJsonInput.trim() || saIsSubmitting}
+              >
+                {saIsSubmitting ? 'Adding...' : 'Add Service Account'}
+              </Button>
+            </ModalFooter>
+          </>
         )}
       </ModalContent>
     </Modal>
@@ -851,7 +1143,7 @@ export function IntegrationsManager() {
             <span className='font-medium text-[var(--text-primary)]'>
               {credentialToDelete?.displayName}
             </span>
-            ? <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
+            ? This action cannot be undone.
           </p>
           {deleteError && (
             <div className='mt-3 rounded-lg border border-red-500/50 bg-red-50 p-3 dark:bg-red-950/30'>
@@ -869,9 +1161,11 @@ export function IntegrationsManager() {
           <Button
             variant='destructive'
             onClick={handleConfirmDelete}
-            disabled={disconnectOAuthService.isPending}
+            disabled={disconnectOAuthService.isPending || deleteCredential.isPending}
           >
-            {disconnectOAuthService.isPending ? 'Disconnecting...' : 'Disconnect'}
+            {disconnectOAuthService.isPending || deleteCredential.isPending
+              ? 'Disconnecting...'
+              : 'Disconnect'}
           </Button>
         </ModalFooter>
       </ModalContent>
@@ -920,10 +1214,14 @@ export function IntegrationsManager() {
                 <div className='min-w-0 flex-1'>
                   <div className='flex items-center gap-2'>
                     <p className='truncate font-medium text-[var(--text-primary)] text-base'>
-                      {resolveProviderLabel(selectedCredential.providerId) || 'Unknown service'}
+                      {selectedOAuthServiceConfig?.name ||
+                        resolveProviderLabel(selectedCredential.providerId) ||
+                        'Unknown service'}
                     </p>
                     <Badge variant='gray-secondary' size='sm'>
-                      oauth
+                      {selectedOAuthServiceConfig?.authType === 'service_account'
+                        ? 'service account'
+                        : 'oauth'}
                     </Badge>
                     {selectedCredential.role && (
                       <Badge variant='gray-secondary' size='sm'>
@@ -931,7 +1229,9 @@ export function IntegrationsManager() {
                       </Badge>
                     )}
                   </div>
-                  <p className='text-[var(--text-muted)] text-small'>Connected service</p>
+                  <p className='text-[var(--text-muted)] text-small'>
+                    {selectedOAuthServiceConfig?.description || 'Connected service'}
+                  </p>
                 </div>
               </div>
 
@@ -1029,42 +1329,32 @@ export function IntegrationsManager() {
                           </div>
                         </div>
 
+                        <Combobox
+                          options={roleComboOptions}
+                          value={
+                            roleOptions.find((option) => option.value === member.role)?.label || ''
+                          }
+                          selectedValue={member.role}
+                          onChange={(value) =>
+                            handleChangeMemberRole(member.userId, value as WorkspaceCredentialRole)
+                          }
+                          placeholder='Role'
+                          disabled={
+                            !isSelectedAdmin || (member.role === 'admin' && adminMemberCount <= 1)
+                          }
+                          size='sm'
+                        />
                         {isSelectedAdmin ? (
-                          <>
-                            <Combobox
-                              options={roleOptions.map((option) => ({
-                                value: option.value,
-                                label: option.label,
-                              }))}
-                              value={
-                                roleOptions.find((option) => option.value === member.role)?.label ||
-                                ''
-                              }
-                              selectedValue={member.role}
-                              onChange={(value) =>
-                                handleChangeMemberRole(
-                                  member.userId,
-                                  value as WorkspaceCredentialRole
-                                )
-                              }
-                              placeholder='Role'
-                              disabled={member.role === 'admin' && adminMemberCount <= 1}
-                              size='sm'
-                            />
-                            <Button
-                              variant='ghost'
-                              onClick={() => handleRemoveMember(member.userId)}
-                              disabled={member.role === 'admin' && adminMemberCount <= 1}
-                              className='w-full justify-end'
-                            >
-                              Remove
-                            </Button>
-                          </>
+                          <Button
+                            variant='ghost'
+                            onClick={() => handleRemoveMember(member.userId)}
+                            disabled={member.role === 'admin' && adminMemberCount <= 1}
+                            className='w-full justify-end'
+                          >
+                            Remove
+                          </Button>
                         ) : (
-                          <>
-                            <Badge variant='gray-secondary'>{member.role}</Badge>
-                            <div />
-                          </>
+                          <div />
                         )}
                       </div>
                     ))}
@@ -1084,10 +1374,7 @@ export function IntegrationsManager() {
                           size='sm'
                         />
                         <Combobox
-                          options={roleOptions.map((option) => ({
-                            value: option.value,
-                            label: option.label,
-                          }))}
+                          options={roleComboOptions}
                           value={
                             roleOptions.find((option) => option.value === memberRole)?.label || ''
                           }
@@ -1116,15 +1403,17 @@ export function IntegrationsManager() {
             <div className='flex items-center gap-2'>
               {isSelectedAdmin && (
                 <>
-                  <Button
-                    variant='default'
-                    onClick={handleReconnectOAuth}
-                    disabled={connectOAuthService.isPending}
-                  >
-                    {`Reconnect to ${
-                      resolveProviderLabel(selectedCredential.providerId) || 'service'
-                    }`}
-                  </Button>
+                  {selectedOAuthServiceConfig?.authType !== 'service_account' && (
+                    <Button
+                      variant='default'
+                      onClick={handleReconnectOAuth}
+                      disabled={connectOAuthService.isPending}
+                    >
+                      {`Reconnect to ${
+                        resolveProviderLabel(selectedCredential.providerId) || 'service'
+                      }`}
+                    </Button>
+                  )}
                   {(workspaceUserOptions.length > 0 || isShareingWithWorkspace) && (
                     <Button
                       variant='default'
@@ -1138,7 +1427,7 @@ export function IntegrationsManager() {
                   <Button
                     variant='ghost'
                     onClick={() => handleDeleteClick(selectedCredential)}
-                    disabled={disconnectOAuthService.isPending}
+                    disabled={disconnectOAuthService.isPending || deleteCredential.isPending}
                   >
                     Disconnect
                   </Button>
@@ -1153,9 +1442,9 @@ export function IntegrationsManager() {
                 <Button
                   variant='primary'
                   onClick={handleSaveDetails}
-                  disabled={!isDetailsDirty || isSavingDetails}
+                  disabled={!isDetailsDirty || updateCredential.isPending}
                 >
-                  {isSavingDetails ? 'Saving...' : 'Save'}
+                  {updateCredential.isPending ? 'Saving...' : 'Save'}
                 </Button>
               )}
             </div>
@@ -1234,7 +1523,11 @@ export function IntegrationsManager() {
                         <Button
                           variant='ghost'
                           onClick={() => handleDeleteClick(credential)}
-                          disabled={disconnectOAuthService.isPending}
+                          disabled={
+                            credential.type === 'service_account'
+                              ? deleteCredential.isPending
+                              : disconnectOAuthService.isPending
+                          }
                         >
                           Disconnect
                         </Button>

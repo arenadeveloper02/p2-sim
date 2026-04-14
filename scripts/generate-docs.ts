@@ -53,6 +53,27 @@ interface BlockConfig {
   [key: string]: any
 }
 
+/**
+ * Find the position after the matching close delimiter for an opening delimiter.
+ * Assumes `content[openPos]` is the opening char (e.g. `{` or `[`).
+ * Returns the index one past the matching close char, or -1 if unbalanced.
+ */
+function findMatchingClose(
+  content: string,
+  openPos: number,
+  openChar = '{',
+  closeChar = '}'
+): number {
+  let count = 1
+  let pos = openPos + 1
+  while (pos < content.length && count > 0) {
+    if (content[pos] === openChar) count++
+    else if (content[pos] === closeChar) count--
+    pos++
+  }
+  return count === 0 ? pos : -1
+}
+
 interface TriggerInfo {
   id: string
   name: string
@@ -79,7 +100,7 @@ interface IntegrationEntry {
   triggerCount: number
   authType: 'oauth' | 'api-key' | 'none'
   category: string
-  integrationType?: string
+  integrationTypes?: string[]
   tags?: string[]
 }
 
@@ -134,16 +155,9 @@ async function generateIconMapping(): Promise<Record<string, string>> {
         const startIndex = match.index + match[0].length - 1
 
         // Extract the block content
-        let braceCount = 1
-        let endIndex = startIndex + 1
+        const endIndex = findMatchingClose(fileContent, startIndex)
 
-        while (endIndex < fileContent.length && braceCount > 0) {
-          if (fileContent[endIndex] === '{') braceCount++
-          else if (fileContent[endIndex] === '}') braceCount--
-          endIndex++
-        }
-
-        if (braceCount === 0) {
+        if (endIndex !== -1) {
           const blockContent = fileContent.substring(startIndex, endIndex)
 
           // Check hideFromToolbar - skip hidden blocks for docs but NOT for icon mapping
@@ -205,12 +219,27 @@ async function generateIconMapping(): Promise<Record<string, string>> {
  * Write the icon mapping to the docs app
  * This file is imported by BlockInfoCard to resolve icons automatically
  */
+/**
+ * Sort strings to match Biome's organizeImports order:
+ * case-insensitive character-by-character, uppercase before lowercase as tiebreaker.
+ */
+function biomeSortCompare(a: string, b: string): number {
+  const minLen = Math.min(a.length, b.length)
+  for (let i = 0; i < minLen; i++) {
+    const al = a[i].toLowerCase()
+    const bl = b[i].toLowerCase()
+    if (al !== bl) return al < bl ? -1 : 1
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1
+  }
+  return a.length - b.length
+}
+
 function writeIconMapping(iconMapping: Record<string, string>): void {
   try {
     const iconMappingPath = path.join(rootDir, 'apps/docs/components/ui/icon-mapping.ts')
 
-    // Get unique icon names
-    const iconNames = [...new Set(Object.values(iconMapping))].sort()
+    // Get unique icon names, sorted to match Biome's organizeImports
+    const iconNames = [...new Set(Object.values(iconMapping))].sort(biomeSortCompare)
 
     // Generate imports
     const imports = iconNames.map((icon) => `  ${icon},`).join('\n')
@@ -257,26 +286,16 @@ function extractOperationsFromContent(blockContent: string): { label: string; id
 
   // Locate the opening '[' of the subBlocks array
   const arrayStart = subBlocksMatch.index + subBlocksMatch[0].length - 1
-  let bracketCount = 1
-  let pos = arrayStart + 1
-  while (pos < blockContent.length && bracketCount > 0) {
-    if (blockContent[pos] === '[') bracketCount++
-    else if (blockContent[pos] === ']') bracketCount--
-    pos++
-  }
-  const subBlocksContent = blockContent.substring(arrayStart + 1, pos - 1)
+  const arrayEnd = findMatchingClose(blockContent, arrayStart, '[', ']')
+  if (arrayEnd === -1) return []
+  const subBlocksContent = blockContent.substring(arrayStart + 1, arrayEnd - 1)
 
   // Iterate over top-level objects in the subBlocks array, looking for id: 'operation'
   let i = 0
   while (i < subBlocksContent.length) {
     if (subBlocksContent[i] === '{') {
-      let braceCount = 1
-      let j = i + 1
-      while (j < subBlocksContent.length && braceCount > 0) {
-        if (subBlocksContent[j] === '{') braceCount++
-        else if (subBlocksContent[j] === '}') braceCount--
-        j++
-      }
+      const j = findMatchingClose(subBlocksContent, i)
+      if (j === -1) break
       const objContent = subBlocksContent.substring(i, j)
 
       if (/\bid\s*:\s*['"]operation['"]/.test(objContent)) {
@@ -284,14 +303,9 @@ function extractOperationsFromContent(blockContent: string): { label: string; id
         if (!optionsMatch) return []
 
         const optArrayStart = optionsMatch.index + optionsMatch[0].length - 1
-        let bc = 1
-        let op = optArrayStart + 1
-        while (op < objContent.length && bc > 0) {
-          if (objContent[op] === '[') bc++
-          else if (objContent[op] === ']') bc--
-          op++
-        }
-        const optionsContent = objContent.substring(optArrayStart + 1, op - 1)
+        const optArrayEnd = findMatchingClose(objContent, optArrayStart, '[', ']')
+        if (optArrayEnd === -1) return []
+        const optionsContent = objContent.substring(optArrayStart + 1, optArrayEnd - 1)
 
         // Extract { label, id } pairs from each option object
         const pairs: { label: string; id: string }[] = []
@@ -427,14 +441,9 @@ function extractTriggersAvailable(blockContent: string): string[] {
   if (!triggersMatch) return []
 
   const start = triggersMatch.index + triggersMatch[0].length - 1
-  let braceCount = 1
-  let pos = start + 1
-  while (pos < blockContent.length && braceCount > 0) {
-    if (blockContent[pos] === '{') braceCount++
-    else if (blockContent[pos] === '}') braceCount--
-    pos++
-  }
-  const triggersContent = blockContent.substring(start, pos)
+  const trigEnd = findMatchingClose(blockContent, start)
+  if (trigEnd === -1) return []
+  const triggersContent = blockContent.substring(start, trigEnd)
 
   if (!/enabled\s*:\s*true/.test(triggersContent)) return []
 
@@ -442,14 +451,9 @@ function extractTriggersAvailable(blockContent: string): string[] {
   if (!availableMatch) return []
 
   const arrayStart = availableMatch.index + availableMatch[0].length - 1
-  let bracketCount = 1
-  let ap = arrayStart + 1
-  while (ap < triggersContent.length && bracketCount > 0) {
-    if (triggersContent[ap] === '[') bracketCount++
-    else if (triggersContent[ap] === ']') bracketCount--
-    ap++
-  }
-  const arrayContent = triggersContent.substring(arrayStart + 1, ap - 1)
+  const arrayEnd = findMatchingClose(triggersContent, arrayStart, '[', ']')
+  if (arrayEnd === -1) return []
+  const arrayContent = triggersContent.substring(arrayStart + 1, arrayEnd - 1)
 
   const ids: string[] = []
   const idRegex = /['"]([^'"]+)['"]/g
@@ -476,17 +480,35 @@ async function buildTriggerRegistry(): Promise<Map<string, TriggerInfo>> {
     try {
       const content = fs.readFileSync(file, 'utf-8')
 
-      // Each trigger file exports a single TriggerConfig with id, name, description
-      const idMatch = /\bid\s*:\s*['"]([^'"]+)['"]/.exec(content)
-      const nameMatch = /\bname\s*:\s*['"]([^'"]+)['"]/.exec(content)
-      const descMatch = /\bdescription\s*:\s*['"]([^'"]+)['"]/.exec(content)
+      // A file may export multiple TriggerConfig objects (e.g. v1 + v2 in
+      // the same file). Extract all exported configs by splitting on the
+      // export boundaries and parsing each one independently.
+      const exportRegex = /export\s+const\s+\w+\s*:\s*TriggerConfig\s*=\s*\{/g
+      let exportMatch
+      const exportStarts: number[] = []
 
-      if (idMatch && nameMatch) {
-        registry.set(idMatch[1], {
-          id: idMatch[1],
-          name: nameMatch[1],
-          description: descMatch?.[1] ?? '',
-        })
+      while ((exportMatch = exportRegex.exec(content)) !== null) {
+        exportStarts.push(exportMatch.index)
+      }
+
+      // If no typed exports found, fall back to simple regex on whole file
+      const segments =
+        exportStarts.length > 0
+          ? exportStarts.map((start, i) => content.substring(start, exportStarts[i + 1]))
+          : [content]
+
+      for (const segment of segments) {
+        const idMatch = /\bid\s*:\s*['"]([^'"]+)['"]/.exec(segment)
+        const nameMatch = /\bname\s*:\s*['"]([^'"]+)['"]/.exec(segment)
+        const descMatch = /\bdescription\s*:\s*['"]([^'"]+)['"]/.exec(segment)
+
+        if (idMatch && nameMatch) {
+          registry.set(idMatch[1], {
+            id: idMatch[1],
+            name: nameMatch[1],
+            description: descMatch?.[1] ?? '',
+          })
+        }
       }
     } catch {
       // skip unreadable files silently
@@ -508,7 +530,7 @@ function writeIntegrationsIconMapping(iconMapping: Record<string, string>): void
     }
     const iconMappingPath = path.join(LANDING_INTEGRATIONS_DATA_PATH, 'icon-mapping.ts')
 
-    const iconNames = [...new Set(Object.values(iconMapping))].sort()
+    const iconNames = [...new Set(Object.values(iconMapping))].sort(biomeSortCompare)
     const imports = iconNames.map((icon) => `  ${icon},`).join('\n')
     const mappingEntries = Object.entries(iconMapping)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -654,7 +676,14 @@ async function writeIntegrationsJson(iconMapping: Record<string, string>): Promi
           triggerCount: triggers.length,
           authType,
           category: config.category,
-          ...(config.integrationType ? { integrationType: config.integrationType } : {}),
+          ...(config.integrationType || config.tags
+            ? {
+                integrationTypes: deriveIntegrationTypes(
+                  config.integrationType || null,
+                  config.tags || []
+                ),
+              }
+            : {}),
           ...(config.tags ? { tags: config.tags } : {}),
         })
       }
@@ -664,7 +693,16 @@ async function writeIntegrationsJson(iconMapping: Record<string, string>): Promi
     integrations.sort((a, b) => a.name.localeCompare(b.name))
 
     const jsonPath = path.join(LANDING_INTEGRATIONS_DATA_PATH, 'integrations.json')
-    fs.writeFileSync(jsonPath, JSON.stringify(integrations, null, 2))
+    // JSON.stringify always expands arrays across multiple lines. Biome's formatter
+    // collapses short arrays of primitives onto single lines. Post-process to match.
+    const json = JSON.stringify(integrations, null, 2).replace(
+      /\[\n(\s+"[^"\n]*"(?:,\n\s+"[^"\n]*")*)\n\s+\]/g,
+      (_match, inner) => {
+        const items = (inner as string).split(',\n').map((s: string) => s.trim())
+        return `[${items.join(', ')}]`
+      }
+    )
+    fs.writeFileSync(jsonPath, `${json}\n`)
     console.log(`✓ Integration data written: ${integrations.length} integrations → ${jsonPath}`)
   } catch (error) {
     console.error('Error writing integrations JSON:', error)
@@ -689,16 +727,9 @@ function extractAllBlockConfigs(fileContent: string): BlockConfig[] {
     const startIndex = match.index + match[0].length - 1 // Position of opening brace
 
     // Extract the block content by matching braces
-    let braceCount = 1
-    let endIndex = startIndex + 1
+    const endIndex = findMatchingClose(fileContent, startIndex)
 
-    while (endIndex < fileContent.length && braceCount > 0) {
-      if (fileContent[endIndex] === '{') braceCount++
-      else if (fileContent[endIndex] === '}') braceCount--
-      endIndex++
-    }
-
-    if (braceCount === 0) {
+    if (endIndex !== -1) {
       const blockContent = fileContent.substring(startIndex, endIndex)
 
       // Check if this block has hideFromToolbar: true
@@ -756,16 +787,9 @@ function extractBlockConfigFromContent(
 
       if (baseMatch) {
         const startIndex = baseMatch.index + baseMatch[0].length - 1
-        let braceCount = 1
-        let endIndex = startIndex + 1
+        const endIndex = findMatchingClose(fileContent, startIndex)
 
-        while (endIndex < fileContent.length && braceCount > 0) {
-          if (fileContent[endIndex] === '{') braceCount++
-          else if (fileContent[endIndex] === '}') braceCount--
-          endIndex++
-        }
-
-        if (braceCount === 0) {
+        if (endIndex !== -1) {
           const baseBlockContent = fileContent.substring(startIndex, endIndex)
           // Recursively extract base config (but don't pass fileContent to avoid infinite loops)
           baseConfig = extractBlockConfigFromContent(
@@ -914,6 +938,85 @@ function extractStringPropertyFromContent(
 }
 
 /**
+ * Tag-to-category mapping used by deriveIntegrationTypes to expand a block's
+ * primary integrationType into a full set of categories for the landing page.
+ */
+const TAG_TO_CATEGORIES: Record<string, string[]> = {
+  llm: ['ai'],
+  agentic: ['ai'],
+  'image-generation': ['ai', 'design'],
+  'video-generation': ['ai', 'design'],
+  'text-to-speech': ['ai'],
+  'speech-to-text': ['ai'],
+  ocr: ['ai', 'documents'],
+  'vector-search': ['ai', 'search'],
+  'document-processing': ['documents'],
+  'content-management': ['documents'],
+  'e-signatures': ['documents'],
+  'note-taking': ['productivity', 'documents'],
+  'knowledge-base': ['documents', 'search'],
+  'data-analytics': ['analytics'],
+  seo: ['analytics', 'search'],
+  monitoring: ['developer-tools', 'analytics'],
+  'error-tracking': ['developer-tools'],
+  'incident-management': ['developer-tools'],
+  'version-control': ['developer-tools'],
+  'ci-cd': ['developer-tools'],
+  'feature-flags': ['developer-tools'],
+  messaging: ['communication'],
+  meeting: ['communication', 'productivity'],
+  calendar: ['productivity'],
+  scheduling: ['productivity'],
+  'project-management': ['productivity'],
+  ticketing: ['productivity', 'customer-support'],
+  forms: ['productivity'],
+  spreadsheet: ['productivity', 'databases'],
+  'data-warehouse': ['databases'],
+  cloud: ['developer-tools'],
+  'web-scraping': ['search'],
+  'sales-engagement': ['sales'],
+  enrichment: ['sales'],
+  'email-marketing': ['email'],
+  marketing: ['analytics'],
+  payments: ['ecommerce'],
+  subscriptions: ['ecommerce'],
+  hiring: ['hr'],
+  identity: ['security'],
+  'secrets-management': ['security'],
+  'customer-support': ['customer-support'],
+  webhooks: ['developer-tools'],
+  automation: ['developer-tools'],
+}
+
+/**
+ * Derive the full list of integration type categories from a block's primary
+ * integrationType and its tags. The primary type is always first; additional
+ * categories are inferred from tags via TAG_TO_CATEGORIES.
+ */
+function deriveIntegrationTypes(primaryType: string | null, tags: string[]): string[] {
+  const types = new Set<string>()
+  if (primaryType) {
+    types.add(primaryType)
+  }
+  for (const tag of tags) {
+    const mapped = TAG_TO_CATEGORIES[tag]
+    if (mapped) {
+      for (const t of mapped) {
+        types.add(t)
+      }
+    }
+  }
+  // Return primary first, then the rest sorted for deterministic output
+  const result: string[] = []
+  if (primaryType && types.has(primaryType)) {
+    result.push(primaryType)
+    types.delete(primaryType)
+  }
+  result.push(...Array.from(types).sort())
+  return result
+}
+
+/**
  * Extract an enum property value from block content.
  * Matches patterns like `integrationType: IntegrationType.DeveloperTools`
  * and returns the string value (e.g., 'developer-tools').
@@ -926,7 +1029,6 @@ function extractEnumPropertyFromContent(content: string, propName: string): stri
   const ENUM_MAP: Record<string, string> = {
     AI: 'ai',
     Analytics: 'analytics',
-    Automation: 'automation',
     Communication: 'communication',
     CRM: 'crm',
     CustomerSupport: 'customer-support',
@@ -938,13 +1040,11 @@ function extractEnumPropertyFromContent(content: string, propName: string): stri
     Email: 'email',
     FileStorage: 'file-storage',
     HR: 'hr',
-    Media: 'media',
     Other: 'other',
     Productivity: 'productivity',
-    SalesIntelligence: 'sales-intelligence',
+    Sales: 'sales',
     Search: 'search',
     Security: 'security',
-    Social: 'social',
   }
   return ENUM_MAP[enumKey] || enumKey.toLowerCase()
 }
@@ -973,62 +1073,42 @@ function extractOutputsFromContent(content: string): Record<string, any> {
   const openBracePos = content.indexOf('{', outputsStart)
   if (openBracePos === -1) return {}
 
-  let braceCount = 1
-  let pos = openBracePos + 1
+  const pos = findMatchingClose(content, openBracePos)
+  if (pos === -1) return {}
 
-  while (pos < content.length && braceCount > 0) {
-    if (content[pos] === '{') braceCount++
-    else if (content[pos] === '}') braceCount--
-    pos++
+  const outputsContent = content.substring(openBracePos + 1, pos - 1).trim()
+  const outputs: Record<string, any> = {}
+
+  const fieldRegex = /(\w+)\s*:\s*{/g
+  let match
+  const fieldPositions: Array<{ name: string; start: number }> = []
+
+  while ((match = fieldRegex.exec(outputsContent)) !== null) {
+    fieldPositions.push({
+      name: match[1],
+      start: match.index + match[0].length - 1,
+    })
   }
 
-  if (braceCount === 0) {
-    const outputsContent = content.substring(openBracePos + 1, pos - 1).trim()
-    const outputs: Record<string, any> = {}
+  fieldPositions.forEach((field) => {
+    const endPos = findMatchingClose(outputsContent, field.start)
 
-    const fieldRegex = /(\w+)\s*:\s*{/g
-    let match
-    const fieldPositions: Array<{ name: string; start: number }> = []
+    if (endPos !== -1) {
+      const fieldContent = outputsContent.substring(field.start + 1, endPos - 1).trim()
 
-    while ((match = fieldRegex.exec(outputsContent)) !== null) {
-      fieldPositions.push({
-        name: match[1],
-        start: match.index + match[0].length - 1,
-      })
-    }
+      const typeMatch = fieldContent.match(/type\s*:\s*['"](.*?)['"]/)
+      const description = extractDescription(fieldContent)
 
-    fieldPositions.forEach((field) => {
-      const startPos = field.start
-      let braceCount = 1
-      let endPos = startPos + 1
-
-      while (endPos < outputsContent.length && braceCount > 0) {
-        if (outputsContent[endPos] === '{') braceCount++
-        else if (outputsContent[endPos] === '}') braceCount--
-        endPos++
-      }
-
-      if (braceCount === 0) {
-        const fieldContent = outputsContent.substring(startPos + 1, endPos - 1).trim()
-
-        const typeMatch = fieldContent.match(/type\s*:\s*['"](.*?)['"]/)
-        const description = extractDescription(fieldContent)
-
-        if (typeMatch) {
-          outputs[field.name] = {
-            type: typeMatch[1],
-            description: description || `${field.name} output from the block`,
-          }
+      if (typeMatch) {
+        outputs[field.name] = {
+          type: typeMatch[1],
+          description: description || `${field.name} output from the block`,
         }
       }
-    })
-
-    if (Object.keys(outputs).length > 0) {
-      return outputs
     }
-  }
+  })
 
-  return {}
+  return outputs
 }
 
 function extractToolsAccessFromContent(content: string): string[] {
@@ -1106,16 +1186,9 @@ function resolveConstReference(
 
   // Extract the const content
   const startIndex = constMatch.index + constMatch[0].length - 1
-  let braceCount = 1
-  let endIndex = startIndex + 1
+  const endIndex = findMatchingClose(typesContent, startIndex)
 
-  while (endIndex < typesContent.length && braceCount > 0) {
-    if (typesContent[endIndex] === '{') braceCount++
-    else if (typesContent[endIndex] === '}') braceCount--
-    endIndex++
-  }
-
-  if (braceCount !== 0) {
+  if (endIndex === -1) {
     return null
   }
 
@@ -1200,14 +1273,8 @@ function parseConstProperties(
     if ((propName === 'properties' || propName === 'type') && !constRef) {
       // Peek at what's inside the braces
       const startPos = match.index + match[0].length - 1
-      let braceCount = 1
-      let endPos = startPos + 1
-      while (endPos < content.length && braceCount > 0) {
-        if (content[endPos] === '{') braceCount++
-        else if (content[endPos] === '}') braceCount--
-        endPos++
-      }
-      if (braceCount === 0) {
+      const endPos = findMatchingClose(content, startPos)
+      if (endPos !== -1) {
         const propContent = content.substring(startPos + 1, endPos - 1).trim()
         // If it starts with 'type:', it's an output field definition - process it
         if (propContent.match(/^\s*type\s*:/)) {
@@ -1230,17 +1297,9 @@ function parseConstProperties(
     } else {
       // This property has inline definition
       const startPos = match.index + match[0].length - 1
+      const endPos = findMatchingClose(content, startPos)
 
-      let braceCount = 1
-      let endPos = startPos + 1
-
-      while (endPos < content.length && braceCount > 0) {
-        if (content[endPos] === '{') braceCount++
-        else if (content[endPos] === '}') braceCount--
-        endPos++
-      }
-
-      if (braceCount === 0) {
+      if (endPos !== -1) {
         const propContent = content.substring(startPos + 1, endPos - 1).trim()
         const parsedProp = parseConstFieldContent(propContent, toolPrefix, typesContent, depth)
         if (parsedProp) {
@@ -1282,16 +1341,9 @@ function resolveConstFromTypesContent(
   }
 
   const startIndex = constMatch.index + constMatch[0].length - 1
-  let braceCount = 1
-  let endIndex = startIndex + 1
+  const endIndex = findMatchingClose(typesContent, startIndex)
 
-  while (endIndex < typesContent.length && braceCount > 0) {
-    if (typesContent[endIndex] === '{') braceCount++
-    else if (typesContent[endIndex] === '}') braceCount--
-    endIndex++
-  }
-
-  if (braceCount !== 0) return null
+  if (endIndex === -1) return null
 
   const constContent = typesContent.substring(startIndex + 1, endIndex - 1).trim()
 
@@ -1372,16 +1424,9 @@ function parseConstFieldContent(
       const propertiesStart = fieldContent.search(/properties\s*:\s*\{/)
       if (propertiesStart !== -1) {
         const braceStart = fieldContent.indexOf('{', propertiesStart)
-        let braceCount = 1
-        let braceEnd = braceStart + 1
+        const braceEnd = findMatchingClose(fieldContent, braceStart)
 
-        while (braceEnd < fieldContent.length && braceCount > 0) {
-          if (fieldContent[braceEnd] === '{') braceCount++
-          else if (fieldContent[braceEnd] === '}') braceCount--
-          braceEnd++
-        }
-
-        if (braceCount === 0) {
+        if (braceEnd !== -1) {
           const propertiesContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
           result.properties = parseConstProperties(
             propertiesContent,
@@ -1410,16 +1455,9 @@ function parseConstFieldContent(
     const itemsStart = fieldContent.search(/items\s*:\s*\{/)
     if (itemsStart !== -1) {
       const braceStart = fieldContent.indexOf('{', itemsStart)
-      let braceCount = 1
-      let braceEnd = braceStart + 1
+      const braceEnd = findMatchingClose(fieldContent, braceStart)
 
-      while (braceEnd < fieldContent.length && braceCount > 0) {
-        if (fieldContent[braceEnd] === '{') braceCount++
-        else if (fieldContent[braceEnd] === '}') braceCount--
-        braceEnd++
-      }
-
-      if (braceCount === 0) {
+      if (braceEnd !== -1) {
         const itemsContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
         const itemsType = itemsContent.match(/type\s*:\s*['"]([^'"]+)['"]/)
         const itemsDesc = extractDescription(itemsContent)
@@ -1474,6 +1512,35 @@ function parseConstFieldContent(
   return result
 }
 
+/**
+ * Extract outputs from a tool content block by trying:
+ * 1. Const reference (e.g., `outputs: GIT_REF_OUTPUT_PROPERTIES,`)
+ * 2. Inline object (e.g., `outputs: { id: { type: 'string', ... } }`)
+ */
+function extractOutputsFromToolContent(content: string, toolPrefix: string): Record<string, any> {
+  const constMatch = content.match(/(?<![a-zA-Z_])outputs\s*:\s*([A-Z][A-Z_0-9]+)\s*(?:,|\}|$)/)
+  if (constMatch) {
+    const resolved = resolveConstReference(constMatch[1], toolPrefix)
+    if (resolved && typeof resolved === 'object') {
+      return resolved
+    }
+  }
+
+  const outputsStart = content.search(/(?<![a-zA-Z_])outputs\s*:\s*{/)
+  if (outputsStart !== -1) {
+    const openBracePos = content.indexOf('{', outputsStart)
+    if (openBracePos !== -1) {
+      const closePos = findMatchingClose(content, openBracePos)
+      if (closePos !== -1) {
+        const outputsContent = content.substring(openBracePos + 1, closePos - 1).trim()
+        return parseToolOutputsField(outputsContent, toolPrefix)
+      }
+    }
+  }
+
+  return {}
+}
+
 function extractToolInfo(
   toolName: string,
   fileContent: string
@@ -1497,16 +1564,9 @@ function extractToolInfo(
 
       if (exportMatch && exportMatch.index !== undefined) {
         const startIndex = exportMatch.index + exportMatch[0].length - 1
-        let braceCount = 1
-        let endIndex = startIndex + 1
+        const endIndex = findMatchingClose(fileContent, startIndex)
 
-        while (endIndex < fileContent.length && braceCount > 0) {
-          if (fileContent[endIndex] === '{') braceCount++
-          else if (fileContent[endIndex] === '}') braceCount--
-          endIndex++
-        }
-
-        if (braceCount === 0) {
+        if (endIndex !== -1) {
           toolContent = fileContent.substring(startIndex, endIndex)
         }
       }
@@ -1608,19 +1668,9 @@ function extractToolInfo(
           continue
         }
 
-        let braceCount = 1
-        let endPos = startPos + 1
+        const endPos = findMatchingClose(paramsContent, startPos)
 
-        while (endPos < paramsContent.length && braceCount > 0) {
-          if (paramsContent[endPos] === '{') {
-            braceCount++
-          } else if (paramsContent[endPos] === '}') {
-            braceCount--
-          }
-          endPos++
-        }
-
-        if (braceCount === 0) {
+        if (endPos !== -1) {
           const paramBlock = paramsContent.substring(startPos + 1, endPos - 1).trim()
           paramPositions.push({ name: paramName, start: startPos, content: paramBlock })
         }
@@ -1662,36 +1712,41 @@ function extractToolInfo(
     // Get the tool prefix for resolving const references
     const toolPrefix = getToolPrefixFromName(toolName)
 
-    let outputs: Record<string, any> = {}
+    let outputs = extractOutputsFromToolContent(toolContent, toolPrefix)
 
-    // Pattern 1: outputs directly assigned to a const (e.g., "outputs: GIT_REF_OUTPUT_PROPERTIES,")
-    const directConstMatch = toolContent.match(
-      /(?<![a-zA-Z_])outputs\s*:\s*([A-Z][A-Z_0-9]+)\s*(?:,|\}|$)/
-    )
-    if (directConstMatch) {
-      const constName = directConstMatch[1]
-      const resolvedConst = resolveConstReference(constName, toolPrefix)
-      if (resolvedConst && typeof resolvedConst === 'object') {
-        outputs = resolvedConst
-      }
-    }
-
-    // Pattern 2: outputs is an object with properties (e.g., "outputs: { ... }")
+    // If no outputs found, check for spread inheritance (e.g., "...extendParserTool")
+    // toolContent may be narrowed past the spread line, so reconstruct the full block
     if (Object.keys(outputs).length === 0) {
-      const outputsStart = toolContent.search(/(?<![a-zA-Z_])outputs\s*:\s*{/)
-      if (outputsStart !== -1) {
-        const openBracePos = toolContent.indexOf('{', outputsStart)
-        if (openBracePos !== -1) {
-          let braceCount = 1
-          let pos = openBracePos + 1
-          while (pos < toolContent.length && braceCount > 0) {
-            if (toolContent[pos] === '{') braceCount++
-            else if (toolContent[pos] === '}') braceCount--
-            pos++
+      let fullToolBlock = toolContent
+      if (toolIdMatch && toolIdMatch.index !== undefined) {
+        const beforeId = fileContent.substring(0, toolIdMatch.index)
+        const exportRegex = /export\s+const\s+\w+[^=]*=\s*\{/g
+        let lastExportMatch: RegExpExecArray | null = null
+        let m: RegExpExecArray | null = null
+        while ((m = exportRegex.exec(beforeId)) !== null) {
+          lastExportMatch = m
+        }
+        if (lastExportMatch && lastExportMatch.index !== undefined) {
+          const bracePos = lastExportMatch.index + lastExportMatch[0].length - 1
+          const ep = findMatchingClose(fileContent, bracePos)
+          if (ep !== -1) {
+            fullToolBlock = fileContent.substring(bracePos, ep)
           }
-          if (braceCount === 0) {
-            const outputsContent = toolContent.substring(openBracePos + 1, pos - 1).trim()
-            outputs = parseToolOutputsField(outputsContent, toolPrefix)
+        }
+      }
+      const spreadMatch = fullToolBlock.match(/\.\.\.(\w+(?:Tool|Base)\w*)/)
+      if (spreadMatch) {
+        const baseVarName = spreadMatch[1]
+        const baseToolRegex = new RegExp(
+          `export\\s+const\\s+${baseVarName}(?=[^a-zA-Z0-9_]|$)[^=]*=\\s*\\{`
+        )
+        const baseToolMatch = fileContent.match(baseToolRegex)
+        if (baseToolMatch && baseToolMatch.index !== undefined) {
+          const baseStart = baseToolMatch.index + baseToolMatch[0].length - 1
+          const endIdx = findMatchingClose(fileContent, baseStart)
+          if (endIdx !== -1) {
+            const baseToolContent = fileContent.substring(baseStart, endIdx)
+            outputs = extractOutputsFromToolContent(baseToolContent, toolPrefix)
           }
         }
       }
@@ -1879,24 +1934,15 @@ function parseToolOutputsField(outputsContent: string, toolPrefix?: string): Rec
 
     const openBrace = braces.find((b) => b.type === 'open' && b.pos === bracePos)
     if (openBrace) {
-      let braceCount = 1
-      let endPos = bracePos + 1
-
-      while (endPos < outputsContent.length && braceCount > 0) {
-        if (outputsContent[endPos] === '{') {
-          braceCount++
-        } else if (outputsContent[endPos] === '}') {
-          braceCount--
-        }
-        endPos++
+      const endPos = findMatchingClose(outputsContent, bracePos)
+      if (endPos !== -1) {
+        fieldPositions.push({
+          name: fieldName,
+          start: bracePos,
+          end: endPos,
+          level: openBrace.level,
+        })
       }
-
-      fieldPositions.push({
-        name: fieldName,
-        start: bracePos,
-        end: endPos,
-        level: openBrace.level,
-      })
     }
   }
 
@@ -1959,16 +2005,9 @@ function parseFieldContent(fieldContent: string, toolPrefix?: string): any {
 
       if (propertiesStart !== -1) {
         const braceStart = fieldContent.indexOf('{', propertiesStart)
-        let braceCount = 1
-        let braceEnd = braceStart + 1
+        const braceEnd = findMatchingClose(fieldContent, braceStart)
 
-        while (braceEnd < fieldContent.length && braceCount > 0) {
-          if (fieldContent[braceEnd] === '{') braceCount++
-          else if (fieldContent[braceEnd] === '}') braceCount--
-          braceEnd++
-        }
-
-        if (braceCount === 0) {
+        if (braceEnd !== -1) {
           const propertiesContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
           result.properties = parsePropertiesContent(propertiesContent, toolPrefix)
         }
@@ -1989,16 +2028,9 @@ function parseFieldContent(fieldContent: string, toolPrefix?: string): any {
 
     if (itemsStart !== -1) {
       const braceStart = fieldContent.indexOf('{', itemsStart)
-      let braceCount = 1
-      let braceEnd = braceStart + 1
+      const braceEnd = findMatchingClose(fieldContent, braceStart)
 
-      while (braceEnd < fieldContent.length && braceCount > 0) {
-        if (fieldContent[braceEnd] === '{') braceCount++
-        else if (fieldContent[braceEnd] === '}') braceCount--
-        braceEnd++
-      }
-
-      if (braceCount === 0) {
+      if (braceEnd !== -1) {
         const itemsContent = fieldContent.substring(braceStart + 1, braceEnd - 1).trim()
         const itemsType = itemsContent.match(/type\s*:\s*['"]([^'"]+)['"]/)
 
@@ -2171,19 +2203,9 @@ function parsePropertiesContent(
 
     const startPos = match.index + match[0].length - 1
 
-    let braceCount = 1
-    let endPos = startPos + 1
+    const endPos = findMatchingClose(propertiesContent, startPos)
 
-    while (endPos < propertiesContent.length && braceCount > 0) {
-      if (propertiesContent[endPos] === '{') {
-        braceCount++
-      } else if (propertiesContent[endPos] === '}') {
-        braceCount--
-      }
-      endPos++
-    }
-
-    if (braceCount === 0) {
+    if (endPos !== -1) {
       const propContent = propertiesContent.substring(startPos + 1, endPos - 1).trim()
 
       const hasDescription = /description\s*:\s*/.test(propContent)
@@ -2687,16 +2709,9 @@ async function getHiddenAndVisibleBlockTypes(): Promise<{
       const startIndex = match.index + match[0].length - 1
 
       // Extract the block content
-      let braceCount = 1
-      let endIndex = startIndex + 1
+      const endIndex = findMatchingClose(fileContent, startIndex)
 
-      while (endIndex < fileContent.length && braceCount > 0) {
-        if (fileContent[endIndex] === '{') braceCount++
-        else if (fileContent[endIndex] === '}') braceCount--
-        endIndex++
-      }
-
-      if (braceCount === 0) {
+      if (endIndex !== -1) {
         const blockContent = fileContent.substring(startIndex, endIndex)
         const blockType = extractStringPropertyFromContent(blockContent, 'type', true)
 
@@ -2813,7 +2828,7 @@ function updateMetaJson() {
     pages: items,
   }
 
-  fs.writeFileSync(metaJsonPath, JSON.stringify(metaJson, null, 2))
+  fs.writeFileSync(metaJsonPath, `${JSON.stringify(metaJson, null, 2)}\n`)
   console.log(`Updated meta.json with ${items.length} entries`)
 }
 

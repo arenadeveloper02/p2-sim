@@ -10,14 +10,15 @@ import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createMcpToolId } from '@/lib/mcp/shared'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
 import type { FilterRule, SortRule } from '@/lib/table/types'
-import { BLOCK_DIMENSIONS, HANDLE_POSITIONS } from '@/lib/workflows/blocks/block-dimensions'
+import { HANDLE_POSITIONS } from '@/lib/workflows/blocks/block-dimensions'
+import { calculateWorkflowBlockDimensions } from '@/lib/workflows/blocks/deterministic-dimensions'
 import { getConditionRows, getRouterRows } from '@/lib/workflows/dynamic-handle-topology'
 import {
   buildCanonicalIndex,
   evaluateSubBlockCondition,
   hasAdvancedValues,
   isSubBlockFeatureEnabled,
-  isSubBlockHiddenByHostedKey,
+  isSubBlockHidden,
   isSubBlockVisibleForMode,
   resolveDependencyValue,
 } from '@/lib/workflows/subblocks/visibility'
@@ -46,9 +47,10 @@ import { useCredentialName } from '@/hooks/queries/oauth/oauth-credentials'
 import { useReactivateSchedule, useScheduleInfo } from '@/hooks/queries/schedules'
 import { useSkills } from '@/hooks/queries/skills'
 import { useTablesList } from '@/hooks/queries/tables'
+import { useWorkflowMap } from '@/hooks/queries/workflows'
+import { useReactiveConditions } from '@/hooks/use-reactive-conditions'
 import { useSelectorDisplayName } from '@/hooks/use-selector-display-name'
-import { useVariablesStore } from '@/stores/panel'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useVariablesStore } from '@/stores/variables/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { wouldCreateCycle } from '@/stores/workflows/workflow/utils'
@@ -536,7 +538,6 @@ const SubBlockRow = memo(function SubBlockRow({
     workspaceId
   )
 
-  const credentialId = dependencyValues.credential
   const knowledgeBaseId = dependencyValues.knowledgeBaseId
 
   const dropdownLabel = useMemo(() => {
@@ -578,6 +579,7 @@ const SubBlockRow = memo(function SubBlockRow({
   const collectionIdValue = resolveContextValue('collectionId')
   const spreadsheetIdValue = resolveContextValue('spreadsheetId')
   const fileIdValue = resolveContextValue('fileId')
+  const credentialId = dependencyValues.credential ?? resolveContextValue('oauthCredential')
 
   const { displayName: selectorDisplayName } = useSelectorDisplayName({
     subBlock,
@@ -603,11 +605,11 @@ const SubBlockRow = memo(function SubBlockRow({
   )
   const knowledgeBaseDisplayName = kbForDisplayName?.name ?? null
 
-  const workflowMap = useWorkflowRegistry((state) => state.workflows)
-  const workflowSelectionName =
-    subBlock?.id === 'workflowId' && typeof rawValue === 'string'
-      ? (workflowMap[rawValue]?.name ?? null)
-      : null
+  const { data: workflowMapForLookup = {} } = useWorkflowMap(workspaceId)
+  const workflowSelectionName = useMemo(() => {
+    if (subBlock?.id !== 'workflowId' || typeof rawValue !== 'string') return null
+    return workflowMapForLookup[rawValue]?.name ?? null
+  }, [workflowMapForLookup, subBlock?.id, rawValue])
 
   const { data: mcpServers = [] } = useMcpServers(workspaceId || '')
   const mcpServerDisplayName = useMemo(() => {
@@ -641,7 +643,7 @@ const SubBlockRow = memo(function SubBlockRow({
   }, [subBlock?.id, rawValue, tables])
 
   const webhookUrlDisplayValue = useMemo(() => {
-    if (subBlock?.id !== 'webhookUrlDisplay' || !blockId) {
+    if (!subBlock?.id?.startsWith('webhookUrlDisplay') || !blockId) {
       return null
     }
     const baseUrl = getBaseUrl()
@@ -858,13 +860,14 @@ export const WorkflowBlock = memo(function WorkflowBlock({
   data,
   selected,
 }: NodeProps<WorkflowBlockProps>) {
-  const { type, config, name, isPending } = data
+  const { type, config, name, isPending, isSandbox } = data
 
   const contentRef = useRef<HTMLDivElement>(null)
 
   const params = useParams()
-  const currentWorkflowId = params.workflowId as string
-  const workspaceId = params.workspaceId as string
+  // In sandbox mode pass empty strings so all workspace-scoped queries are disabled
+  const currentWorkflowId = isSandbox ? '' : (params.workflowId as string)
+  const workspaceId = isSandbox ? '' : (params.workspaceId as string)
 
   const {
     currentWorkflow,
@@ -944,6 +947,13 @@ export const WorkflowBlock = memo(function WorkflowBlock({
   const canonicalIndex = useMemo(() => buildCanonicalIndex(config.subBlocks), [config.subBlocks])
   const canonicalModeOverrides = currentStoreBlock?.data?.canonicalModes
 
+  const hiddenByReactiveCondition = useReactiveConditions(
+    config.subBlocks,
+    id,
+    activeWorkflowId,
+    canonicalModeOverrides
+  )
+
   const subBlockRowsData = useMemo(() => {
     const rows: SubBlockConfig[][] = []
     let currentRow: SubBlockConfig[] = []
@@ -981,8 +991,9 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     const visibleSubBlocks = config.subBlocks.filter((block) => {
       if (block.hidden) return false
       if (block.hideFromPreview) return false
+      if (hiddenByReactiveCondition.has(block.id)) return false
       if (!isSubBlockFeatureEnabled(block)) return false
-      if (isSubBlockHiddenByHostedKey(block)) return false
+      if (isSubBlockHidden(block)) return false
 
       const isPureTriggerBlock = config?.triggers?.enabled && config.category === 'triggers'
 
@@ -1049,6 +1060,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     canonicalModeOverrides,
     userPermissions.canEdit,
     canonicalIndex,
+    hiddenByReactiveCondition,
     blockSubBlockValues,
     activeWorkflowId,
   ])
@@ -1137,33 +1149,14 @@ export const WorkflowBlock = memo(function WorkflowBlock({
   useBlockDimensions({
     blockId: id,
     calculateDimensions: () => {
-      const shouldShowDefaultHandles =
-        config.category !== 'triggers' && type !== 'starter' && !displayTriggerMode
-      const hasContentBelowHeader = subBlockRows.length > 0 || shouldShowDefaultHandles
-
-      const defaultHandlesRow = shouldShowDefaultHandles ? 1 : 0
-
-      let rowsCount = 0
-      if (type === 'condition') {
-        rowsCount = conditionRows.length + defaultHandlesRow
-      } else if (type === 'router_v2') {
-        // +1 for context row, plus route rows
-        rowsCount = 1 + routerRows.length + defaultHandlesRow
-      } else {
-        const subblockRowCount = subBlockRows.reduce((acc, row) => acc + row.length, 0)
-        rowsCount = subblockRowCount + defaultHandlesRow
-      }
-
-      const contentHeight = hasContentBelowHeader
-        ? BLOCK_DIMENSIONS.WORKFLOW_CONTENT_PADDING +
-          rowsCount * BLOCK_DIMENSIONS.WORKFLOW_ROW_HEIGHT
-        : 0
-      const calculatedHeight = Math.max(
-        BLOCK_DIMENSIONS.HEADER_HEIGHT + contentHeight,
-        BLOCK_DIMENSIONS.MIN_HEIGHT
-      )
-
-      return { width: BLOCK_DIMENSIONS.FIXED_WIDTH, height: calculatedHeight }
+      return calculateWorkflowBlockDimensions({
+        blockType: type,
+        category: config.category,
+        displayTriggerMode,
+        visibleSubBlockCount: subBlockRows.reduce((acc, row) => acc + row.length, 0),
+        conditionRowCount: conditionRows.length,
+        routerRowCount: routerRows.length,
+      })
     },
     dependencies: [
       type,

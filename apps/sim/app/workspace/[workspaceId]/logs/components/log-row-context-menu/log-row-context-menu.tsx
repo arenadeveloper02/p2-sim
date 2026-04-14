@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/emcn'
-import { Copy, Eye, ListFilter, SquareArrowUpRight, X } from '@/components/emcn/icons'
+import { Copy, Eye, Link, ListFilter, SquareArrowUpRight, X } from '@/components/emcn/icons'
 import type { WorkflowLog } from '@/stores/logs/filters/types'
 
 interface LogRowContextMenuProps {
@@ -17,10 +17,12 @@ interface LogRowContextMenuProps {
   onClose: () => void
   log: WorkflowLog | null
   onCopyExecutionId: () => void
+  onCopyLink: () => void
   onOpenWorkflow: () => void
   onOpenPreview: () => void
   onToggleWorkflowFilter: () => void
   onClearAllFilters: () => void
+  onCancelExecution: () => void
   isFilteredByThisWorkflow: boolean
   hasActiveFilters: boolean
 }
@@ -35,15 +37,19 @@ export const LogRowContextMenu = memo(function LogRowContextMenu({
   onClose,
   log,
   onCopyExecutionId,
+  onCopyLink,
   onOpenWorkflow,
   onOpenPreview,
   onToggleWorkflowFilter,
   onClearAllFilters,
+  onCancelExecution,
   isFilteredByThisWorkflow,
   hasActiveFilters,
 }: LogRowContextMenuProps) {
   const hasExecutionId = Boolean(log?.executionId)
   const hasWorkflow = Boolean(log?.workflow?.id || log?.workflowId)
+  const isCancellable =
+    (log?.status === 'running' || log?.status === 'pending') && hasExecutionId && hasWorkflow
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={(open) => !open && onClose()} modal={false}>
@@ -67,9 +73,22 @@ export const LogRowContextMenu = memo(function LogRowContextMenu({
         sideOffset={4}
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
+        {isCancellable && (
+          <>
+            <DropdownMenuItem onSelect={onCancelExecution}>
+              <X />
+              Cancel Execution
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem disabled={!hasExecutionId} onSelect={onCopyExecutionId}>
           <Copy />
           Copy Execution ID
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!hasExecutionId} onSelect={onCopyLink}>
+          <Link />
+          Copy Link
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />

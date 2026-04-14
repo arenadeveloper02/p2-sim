@@ -10,6 +10,7 @@ const providerEndpoints: Record<ProviderName, string> = {
   vllm: '/api/providers/vllm/models',
   openrouter: '/api/providers/openrouter/models',
   sambanova: '/api/providers/sambanova/models',
+  fireworks: '/api/providers/fireworks/models',
 }
 
 interface ProviderModelsResponse {
@@ -19,14 +20,21 @@ interface ProviderModelsResponse {
 
 export const providerKeys = {
   all: ['provider-models'] as const,
-  models: (provider: string) => [...providerKeys.all, provider] as const,
+  models: (provider: string, workspaceId?: string) =>
+    [...providerKeys.all, provider, workspaceId ?? ''] as const,
 }
 
 async function fetchProviderModels(
   provider: ProviderName,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  workspaceId?: string
 ): Promise<ProviderModelsResponse> {
-  const response = await fetch(providerEndpoints[provider], { signal })
+  let url = providerEndpoints[provider]
+  if (provider === 'fireworks' && workspaceId) {
+    url = `${url}?workspaceId=${encodeURIComponent(workspaceId)}`
+  }
+
+  const response = await fetch(url, { signal })
 
   if (!response.ok) {
     logger.warn(`Failed to fetch ${provider} models`, {
@@ -46,10 +54,10 @@ async function fetchProviderModels(
   }
 }
 
-export function useProviderModels(provider: ProviderName) {
+export function useProviderModels(provider: ProviderName, workspaceId?: string) {
   return useQuery({
-    queryKey: providerKeys.models(provider),
-    queryFn: ({ signal }) => fetchProviderModels(provider, signal),
+    queryKey: providerKeys.models(provider, workspaceId),
+    queryFn: ({ signal }) => fetchProviderModels(provider, signal, workspaceId),
     staleTime: 5 * 60 * 1000,
   })
 }
