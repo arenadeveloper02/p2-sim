@@ -5,7 +5,7 @@ import { PanelLeft } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import { MothershipChat, MothershipView } from '@/app/workspace/[workspaceId]/home/components'
 import {
-  getMothershipUseChatOptions,
+  getCopilotReplicaUseChatOptions,
   useChat,
   useMothershipResize,
 } from '@/app/workspace/[workspaceId]/home/hooks'
@@ -88,7 +88,7 @@ export function CopilotReplicaPage({ workspaceId }: CopilotReplicaPageProps) {
   } = useChat(
     workspaceId,
     selectedChatId,
-    getMothershipUseChatOptions({ onResourceEvent: handleResourceEvent })
+    getCopilotReplicaUseChatOptions({ onResourceEvent: handleResourceEvent })
   )
 
   const [editingInputValue, setEditingInputValue] = useState('')

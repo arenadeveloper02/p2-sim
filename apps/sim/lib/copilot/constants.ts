@@ -64,6 +64,12 @@ export const COPILOT_CHAT_API_PATH = '/api/copilot/chat'
 /** POST — send a workspace-scoped chat message (mothership). */
 export const MOTHERSHIP_CHAT_API_PATH = '/api/mothership/chat'
 
+/**
+ * POST — Copilot replica: proxied Arena workflow execute (authenticated session;
+ * server adds X-API-Key and maps body to Arena shape).
+ */
+export const COPILOT_REPLICA_ARENA_PROXY_PATH = '/api/copilot-replica/arena-workflow-execute'
+
 /** GET — resume/replay a copilot SSE stream. */
 export const COPILOT_CHAT_STREAM_API_PATH = '/api/copilot/chat/stream'
 

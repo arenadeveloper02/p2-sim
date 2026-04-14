@@ -11,6 +11,7 @@ import {
 import {
   COPILOT_CHAT_API_PATH,
   COPILOT_CHAT_STREAM_API_PATH,
+  COPILOT_REPLICA_ARENA_PROXY_PATH,
   MOTHERSHIP_CHAT_API_PATH,
 } from '@/lib/copilot/constants'
 import {
@@ -367,6 +368,11 @@ export interface UseChatOptions {
   onToolResult?: (toolName: string, success: boolean, result: unknown) => void
   onTitleUpdate?: () => void
   onStreamEnd?: (chatId: string, messages: ChatMessage[]) => void
+  /**
+   * When true, skip `/api/copilot/chat/stream` batch resume and live tail reconnect.
+   * Use for third-party SSE (e.g. Arena proxy) that does not persist events to Sim's stream buffer.
+   */
+  disableCopilotStreamResume?: boolean
 }
 
 export function getMothershipUseChatOptions(
@@ -374,6 +380,19 @@ export function getMothershipUseChatOptions(
 ): UseChatOptions {
   return {
     apiPath: MOTHERSHIP_CHAT_API_PATH,
+    stopPath: '/api/mothership/chat/stop',
+    ...options,
+  }
+}
+
+/**
+ * Copilot replica page: POST chat to the Arena workflow execute proxy (server adds `X-API-Key`).
+ */
+export function getCopilotReplicaUseChatOptions(
+  options: Pick<UseChatOptions, 'onResourceEvent' | 'onStreamEnd'> = {}
+): UseChatOptions {
+  return {
+    apiPath: COPILOT_REPLICA_ARENA_PROXY_PATH,
     stopPath: '/api/mothership/chat/stop',
     ...options,
   }
@@ -420,6 +439,8 @@ export function useChat(
   onTitleUpdateRef.current = options?.onTitleUpdate
   const onStreamEndRef = useRef(options?.onStreamEnd)
   onStreamEndRef.current = options?.onStreamEnd
+  const disableCopilotStreamResumeRef = useRef(options?.disableCopilotStreamResume ?? false)
+  disableCopilotStreamResumeRef.current = options?.disableCopilotStreamResume ?? false
   const resourcesRef = useRef(resources)
   resourcesRef.current = resources
 
@@ -877,6 +898,10 @@ export function useChat(
     if (isNewChat) {
       applyChatHistorySnapshot(chatHistory, { preserveActiveStreamingMessage: true })
     } else if (!activeStreamId || sendingRef.current) {
+      return
+    }
+
+    if (disableCopilotStreamResumeRef.current) {
       return
     }
 
@@ -1780,6 +1805,13 @@ export function useChat(
       signal?: AbortSignal
     }): Promise<void> => {
       const { streamId, assistantId, gen, fromEventId, snapshot, signal } = opts
+
+      if (disableCopilotStreamResumeRef.current) {
+        if (streamGenRef.current === gen) {
+          finalize()
+        }
+        return
+      }
 
       const batch =
         snapshot ??

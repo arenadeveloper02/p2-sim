@@ -400,6 +400,11 @@ export const env = createEnv({
     // Arena
     ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL
+
+    /** Full POST URL for Copilot replica (e.g. …/api/workflows/{id}/execute). */
+    COPILOT_REPLICA_ARENA_WORKFLOW_EXECUTE_URL: z.string().url().optional(),
+    /** X-API-Key sent to Arena agent execute (server-only; not Sim public API key). */
+    COPILOT_REPLICA_ARENA_API_KEY:        z.string().min(1).optional(),
   },
 
   client: {

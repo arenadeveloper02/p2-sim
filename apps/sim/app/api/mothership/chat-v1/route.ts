@@ -25,7 +25,7 @@ import {
 
 export const maxDuration = 3600
 
-const logger = createLogger('MothershipChatDuplicateAPI')
+const logger = createLogger('MothershipChatV1API')
 
 const FileAttachmentSchema = z.object({
   id: z.string(),
@@ -42,6 +42,11 @@ const ResourceAttachmentSchema = z.object({
   active: z.boolean().optional(),
 })
 
+const ArenaWorkflowExecuteResponseSchema = z.object({
+  result: z.record(z.unknown()),
+  stdout: z.string().optional(),
+})
+
 const MothershipMessageSchema = z.object({
   userId: z.string(),
   message: z.string().min(1, 'Message is required'),
@@ -52,6 +57,8 @@ const MothershipMessageSchema = z.object({
   fileAttachments: z.array(FileAttachmentSchema).optional(),
   userTimezone: z.string().optional(),
   resourceAttachments: z.array(ResourceAttachmentSchema).optional(),
+  /** Full JSON from Arena workflow execute; merged into copilot request payload after build. */
+  arenaWorkflowExecuteResponse: ArenaWorkflowExecuteResponseSchema.optional(),
   contexts: z
     .array(
       z.object({
@@ -84,8 +91,9 @@ const MothershipMessageSchema = z.object({
 })
 
 /**
- * POST /api/mothership/chat-duplicate
- * Same behavior as `POST /api/mothership/chat` — workspace-scoped chat; proxies to Go /api/mothership.
+ * POST /api/mothership/chat-v1
+ * Workspace-scoped chat — proxies to Go /api/mothership. Optional `arenaWorkflowExecuteResponse`
+ * merges `result` onto the built copilot payload (Arena preflight / buildpayload output).
  */
 export async function POST(req: NextRequest) {
   const body = await req.json()
@@ -113,6 +121,7 @@ export async function POST(req: NextRequest) {
       contexts,
       resourceAttachments,
       userTimezone,
+      arenaWorkflowExecuteResponse,
     } = MothershipMessageSchema.parse(body)
 
     const userMessageId = providedMessageId || crypto.randomUUID()
@@ -272,7 +281,7 @@ export async function POST(req: NextRequest) {
       getUserEntityPermissions(authenticatedUserId, 'workspace', workspaceId).catch(() => null),
     ])
 
-    const requestPayload = await buildCopilotRequestPayload(
+    let requestPayload: Record<string, unknown> = await buildCopilotRequestPayload(
       {
         message,
         workspaceId,
@@ -289,6 +298,17 @@ export async function POST(req: NextRequest) {
       },
       { selectedModel: '' }
     )
+
+    if (arenaWorkflowExecuteResponse?.result) {
+      const ar = arenaWorkflowExecuteResponse.result
+      requestPayload = {
+        ...requestPayload,
+        ...ar,
+        userId: authenticatedUserId,
+        messageId: userMessageId,
+        message: typeof ar.message === 'string' ? ar.message : message,
+      }
+    }
 
     if (actualChatId) {
       const acquired = await acquirePendingChatStream(actualChatId, userMessageId)

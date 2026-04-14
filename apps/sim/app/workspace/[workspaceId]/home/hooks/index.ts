@@ -1,5 +1,6 @@
 export type { UseChatReturn } from './use-chat'
 export {
+  getCopilotReplicaUseChatOptions,
   getMothershipUseChatOptions,
   getWorkflowCopilotUseChatOptions,
   useChat,
