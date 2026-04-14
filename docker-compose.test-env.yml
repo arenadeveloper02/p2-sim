@@ -9,7 +9,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 6G
+          memory: 8G
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
