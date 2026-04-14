@@ -10,7 +10,7 @@ import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { getFormattedGitHubStars } from '@/app/(home)/actions/github'
+import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   deployedChatPromptSentEvent,
   deployedChatThreadSelectedEvent,

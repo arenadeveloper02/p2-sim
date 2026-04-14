@@ -422,38 +422,9 @@ async function handleAgentGeneratedImageLocal(
   try {
     logger.info('Looking for agent-generated image:', { filename, userId })
 
-    const filePath = findLocalFile(filename)
+    const filePath = await findLocalFile(filename)
 
     if (!filePath) {
-      // Try direct path resolution as fallback
-      const { join, resolve } = await import('path')
-      const directPath = resolve(process.cwd(), filename)
-      const { existsSync } = await import('fs')
-
-      logger.warn('File not found via findLocalFile, trying direct path:', {
-        filename,
-        filePath,
-        directPath,
-        exists: existsSync(directPath),
-      })
-
-      if (existsSync(directPath)) {
-        const fileBuffer = await readFile(directPath)
-        const contentType = getContentType(filename)
-
-        logger.info('Agent-generated image served locally (direct path)', {
-          userId,
-          filename,
-          size: fileBuffer.length,
-        })
-
-        return createFileResponse({
-          buffer: fileBuffer,
-          contentType,
-          filename,
-        })
-      }
-
       throw new FileNotFoundError(`File not found: ${filename}`)
     }
 
