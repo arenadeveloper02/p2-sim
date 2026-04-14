@@ -433,7 +433,12 @@ export class ExecutionEngine {
       }
     } catch (error) {
       const errorMessage = normalizeError(error)
-      this.execLogger.error('Node execution failed', { nodeId,blockName,workflowId: this.context.workflowId,, error: errorMessage })
+      this.execLogger.error('Node execution failed', {
+        nodeId,
+        blockName,
+        workflowId: this.context.workflowId,
+        error: errorMessage,
+      })
       throw error
     }
   }
@@ -602,8 +607,7 @@ export class ExecutionEngine {
         const exitReadyNodes = this.edgeManager.processOutgoingEdges(
           sentinelEndNode,
           sentinelEndOutput,
-          false,
-          this.context
+          false
         )
 
         logger.info('Loop early exit: routing to blocks after loop', {
@@ -618,7 +622,7 @@ export class ExecutionEngine {
 
     // For Response blocks inside loops, process outgoing edges normally
     // Response blocks should have edges to sentinel end (they're terminal nodes)
-    const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false, this.context)
+    const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false)
 
     this.execLogger.info('Processing outgoing edges', {
       nodeId,
