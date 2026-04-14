@@ -66,6 +66,7 @@ import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import { getWorkflowLockToggleIds } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
+import { useDeploymentInfo } from '@/hooks/queries/deployments'
 import { useDuplicateWorkflowMutation, useWorkflowMap } from '@/hooks/queries/workflows'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
@@ -98,8 +99,7 @@ const RunAgentExternalChat = ({
   const [chatUrl, setChatUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  // Watch for deployment status changes
-  const deploymentStatus = useWorkflowRegistry((state) => state.deploymentStatuses[workflowId])
+  const { data: deploymentStatus } = useDeploymentInfo(workflowId)
 
   useEffect(() => {
     if (!workflowId) {
