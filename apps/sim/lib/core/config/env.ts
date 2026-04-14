@@ -233,13 +233,13 @@ export const env = createEnv({
     RATE_LIMIT_ENTERPRISE_ASYNC:           z.string().optional().default('5000'),  // Enterprise tier async API executions per minute
     // Timeout Configuration
     EXECUTION_TIMEOUT_FREE:                z.string().optional().default('3000'),   // 5 minutes
-    EXECUTION_TIMEOUT_PRO:                 z.string().optional().default('6000'),  // 50 minutes
-    EXECUTION_TIMEOUT_TEAM:                z.string().optional().default('6000'),  // 50 minutes
-    EXECUTION_TIMEOUT_ENTERPRISE:          z.string().optional().default('6000'),  // 50 minutes
-    EXECUTION_TIMEOUT_ASYNC_FREE:          z.string().optional().default('6000'),  // 90 minutes
-    EXECUTION_TIMEOUT_ASYNC_PRO:           z.string().optional().default('6000'),  // 90 minutes
-    EXECUTION_TIMEOUT_ASYNC_TEAM:          z.string().optional().default('6000'),  // 90 minutes
-    EXECUTION_TIMEOUT_ASYNC_ENTERPRISE:    z.string().optional().default('6000'),  // 90 minutes
+    EXECUTION_TIMEOUT_PRO:                 z.string().optional().default('9000'),  // 50 minutes
+    EXECUTION_TIMEOUT_TEAM:                z.string().optional().default('9000'),  // 50 minutes
+    EXECUTION_TIMEOUT_ENTERPRISE:          z.string().optional().default('9000'),  // 50 minutes
+    EXECUTION_TIMEOUT_ASYNC_FREE:          z.string().optional().default('9000'),  // 90 minutes
+    EXECUTION_TIMEOUT_ASYNC_PRO:           z.string().optional().default('9000'),  // 90 minutes
+    EXECUTION_TIMEOUT_ASYNC_TEAM:          z.string().optional().default('9000'),  // 90 minutes
+    EXECUTION_TIMEOUT_ASYNC_ENTERPRISE:    z.string().optional().default('9000'),  // 90 minutes
 
     // Isolated-VM Worker Pool Configuration
     IVM_POOL_SIZE:                         z.string().optional().default('4'),      // Max worker processes in pool
