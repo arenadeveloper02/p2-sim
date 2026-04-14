@@ -5,6 +5,18 @@ import {
   type PersistedStreamEventEnvelope,
   parsePersistedStreamEventEnvelopeJson,
 } from './contract'
+import {
+  logMothershipMemoryFallbackOnce,
+  memoryAllocateCursor,
+  memoryAppendEvents,
+  memoryClearAbortMarker,
+  memoryClearStreamBuffer,
+  memoryGetLatestSeq,
+  memoryGetOldestSeq,
+  memoryHasAbortMarker,
+  memoryReadEvents,
+  memoryWriteAbortMarker,
+} from './mothership-stream-memory-fallback'
 
 const logger = createLogger('SessionBuffer')
 
@@ -57,7 +69,7 @@ async function withRedisRetry<T>(
 ): Promise<T> {
   const redis = getRedisClient()
   if (!redis) {
-    throw new Error('Redis is required for mothership stream durability')
+    throw new Error('withRedisRetry called without Redis; use memory fallback at the call site')
   }
 
   let lastError: unknown
@@ -90,6 +102,11 @@ export async function allocateCursor(streamId: string): Promise<{
   seq: number
   cursor: string
 }> {
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    return memoryAllocateCursor(streamId)
+  }
+
   const config = getStreamConfig()
   const seq = await withRedisRetry({ operation: 'allocate_cursor', streamId }, async (redis) => {
     const nextValue = await redis.incr(getSeqKey(streamId))
@@ -105,6 +122,12 @@ export async function resetBuffer(streamId: string): Promise<void> {
 }
 
 export async function clearBuffer(streamId: string, operation = 'clear_outbox'): Promise<void> {
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    memoryClearStreamBuffer(streamId)
+    return
+  }
+
   await withRedisRetry({ operation, streamId }, async (redis) => {
     await redis.del(getEventsKey(streamId), getSeqKey(streamId), getAbortKey(streamId))
   })
@@ -114,6 +137,10 @@ export async function scheduleBufferCleanup(
   streamId: string,
   ttlSeconds = DEFAULT_COMPLETED_TTL_SECONDS
 ): Promise<void> {
+  if (!getRedisClient()) {
+    return
+  }
+
   try {
     await withRedisRetry({ operation: 'schedule_outbox_cleanup', streamId }, async (redis) => {
       const pipeline = redis.pipeline()
@@ -140,6 +167,12 @@ export async function appendEvents(
 
   const streamId = envelopes[0].stream.streamId
   const config = getStreamConfig()
+
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    memoryAppendEvents(streamId, envelopes)
+    return envelopes
+  }
 
   await withRedisRetry({ operation: 'append_event', streamId }, async (redis) => {
     const key = getEventsKey(streamId)
@@ -185,6 +218,11 @@ export async function readEvents(
   }
   const minScore = afterSeq + 1
 
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    return memoryReadEvents(streamId, afterSeq)
+  }
+
   const rawEntries = await withRedisRetry({ operation: 'read_events', streamId }, async (redis) => {
     return redis.zrangebyscore(getEventsKey(streamId), minScore, '+inf')
   })
@@ -207,6 +245,11 @@ export async function readEvents(
 }
 
 export async function getOldestSeq(streamId: string): Promise<number | null> {
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    return memoryGetOldestSeq(streamId)
+  }
+
   return withRedisRetry({ operation: 'get_oldest_seq', streamId }, async (redis) => {
     const entries = await redis.zrangebyscore(getEventsKey(streamId), '-inf', '+inf', 'LIMIT', 0, 1)
     if (!entries || entries.length === 0) {
@@ -223,6 +266,11 @@ export async function getOldestSeq(streamId: string): Promise<number | null> {
 }
 
 export async function getLatestSeq(streamId: string): Promise<number | null> {
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    return memoryGetLatestSeq(streamId)
+  }
+
   return withRedisRetry({ operation: 'get_latest_seq', streamId }, async (redis) => {
     const currentSeq = await redis.get(getSeqKey(streamId))
     if (currentSeq === null) {
@@ -234,6 +282,12 @@ export async function getLatestSeq(streamId: string): Promise<number | null> {
 }
 
 export async function writeAbortMarker(streamId: string): Promise<void> {
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    memoryWriteAbortMarker(streamId)
+    return
+  }
+
   const ttlSeconds = getStreamConfig().ttlSeconds
   await withRedisRetry({ operation: 'write_abort_marker', streamId }, async (redis) => {
     await redis.set(getAbortKey(streamId), '1', 'EX', ttlSeconds)
@@ -241,6 +295,11 @@ export async function writeAbortMarker(streamId: string): Promise<void> {
 }
 
 export async function hasAbortMarker(streamId: string): Promise<boolean> {
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    return memoryHasAbortMarker(streamId)
+  }
+
   return withRedisRetry({ operation: 'read_abort_marker', streamId }, async (redis) => {
     const marker = await redis.get(getAbortKey(streamId))
     return marker === '1'
@@ -248,6 +307,12 @@ export async function hasAbortMarker(streamId: string): Promise<boolean> {
 }
 
 export async function clearAbortMarker(streamId: string): Promise<void> {
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    memoryClearAbortMarker(streamId)
+    return
+  }
+
   await withRedisRetry({ operation: 'clear_abort_marker', streamId }, async (redis) => {
     await redis.del(getAbortKey(streamId))
   })

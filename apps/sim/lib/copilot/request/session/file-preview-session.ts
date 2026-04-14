@@ -2,6 +2,12 @@ import { createLogger } from '@sim/logger'
 import { getRedisClient } from '@/lib/core/config/redis'
 import { getStreamConfig } from './buffer'
 import {
+  logMothershipMemoryFallbackOnce,
+  memoryClearFilePreviewSessions,
+  memoryHgetallFilePreviewSessions,
+  memoryUpsertFilePreviewSession,
+} from './mothership-stream-memory-fallback'
+import {
   FILE_PREVIEW_SESSION_SCHEMA_VERSION,
   type FilePreviewSession,
   type FilePreviewStatus,
@@ -43,7 +49,7 @@ async function withRedisRetry<T>(
 ): Promise<T> {
   const redis = getRedisClient()
   if (!redis) {
-    throw new Error('Redis is required for mothership preview durability')
+    throw new Error('withRedisRetry called without Redis; use memory fallback at the call site')
   }
 
   let lastError: unknown
@@ -110,6 +116,12 @@ export async function upsertFilePreviewSession(
   session: FilePreviewSession
 ): Promise<FilePreviewSession> {
   const config = getStreamConfig()
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    memoryUpsertFilePreviewSession(session.streamId, session.id, JSON.stringify(session))
+    return session
+  }
+
   await withRedisRetry(
     { operation: 'upsert_preview_session', streamId: session.streamId },
     async (redis) => {
@@ -124,10 +136,15 @@ export async function upsertFilePreviewSession(
 }
 
 export async function readFilePreviewSessions(streamId: string): Promise<FilePreviewSession[]> {
-  const raw = await withRedisRetry(
-    { operation: 'read_preview_sessions', streamId },
-    async (redis) => redis.hgetall(getPreviewSessionsKey(streamId))
-  )
+  let raw: Record<string, string>
+  if (getRedisClient()) {
+    raw = await withRedisRetry({ operation: 'read_preview_sessions', streamId }, async (redis) =>
+      redis.hgetall(getPreviewSessionsKey(streamId))
+    )
+  } else {
+    logMothershipMemoryFallbackOnce()
+    raw = memoryHgetallFilePreviewSessions(streamId)
+  }
 
   const sessions: FilePreviewSession[] = []
   const values = Object.values(raw ?? {})
@@ -151,6 +168,12 @@ export async function readFilePreviewSessions(streamId: string): Promise<FilePre
 }
 
 export async function clearFilePreviewSessions(streamId: string): Promise<void> {
+  if (!getRedisClient()) {
+    logMothershipMemoryFallbackOnce()
+    memoryClearFilePreviewSessions(streamId)
+    return
+  }
+
   await withRedisRetry({ operation: 'clear_preview_sessions', streamId }, async (redis) => {
     await redis.del(getPreviewSessionsKey(streamId))
   })
@@ -160,6 +183,10 @@ export async function scheduleFilePreviewSessionCleanup(
   streamId: string,
   ttlSeconds = DEFAULT_COMPLETED_TTL_SECONDS
 ): Promise<void> {
+  if (!getRedisClient()) {
+    return
+  }
+
   try {
     await withRedisRetry(
       { operation: 'schedule_preview_session_cleanup', streamId },
