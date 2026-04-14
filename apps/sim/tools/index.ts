@@ -11,6 +11,7 @@ import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
+import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
@@ -40,6 +41,48 @@ interface HostedKeyInjectionResult {
   isUsingHostedKey: boolean
   envVarName?: string
 }
+
+/**
+ * Fills `credential` when an OAuth tool runs without one (e.g. integration nested in an agent)
+ * using the runner's first accessible workspace credential for the tool's provider.
+ */
+async function injectOAuthCredentialFromUserContextIfNeeded(
+  tool: ToolConfig,
+  params: Record<string, any>,
+  executionContext: ExecutionContext | undefined,
+  requestId: string
+): Promise<void> {
+  if (typeof window !== 'undefined') return
+  const oauth = tool.oauth
+  if (!oauth?.required || !oauth.provider) return
+  const pick = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+  if (
+    pick(params.credential) ||
+    pick(params.oauthCredential) ||
+    pick(params.credentialId)
+  ) {
+    return
+  }
+  const ctx = params._context as { userId?: string; workspaceId?: string } | undefined
+  const userId = executionContext?.userId ?? ctx?.userId
+  const workspaceId = executionContext?.workspaceId ?? ctx?.workspaceId
+  if (!userId || !workspaceId) return
+  try {
+    const accessible = await getAccessibleOAuthCredentials(workspaceId, userId)
+    const match = accessible.find((c) => c.providerId === oauth.provider)
+    if (!match) return
+    params.credential = match.id
+    logger.info(`[${requestId}] Auto-resolved OAuth credential for ${tool.id}`, {
+      provider: oauth.provider,
+      credentialId: match.id,
+    })
+  } catch (error) {
+    logger.warn(`[${requestId}] Failed to auto-resolve OAuth credential for ${tool.id}`, {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 
 /**
  * Inject hosted API key if tool supports it and user didn't provide one.
@@ -656,6 +699,15 @@ export async function executeTool(
 
     // Ensure context is preserved if it exists
     const contextParams = { ...params }
+
+    if (tool) {
+      await injectOAuthCredentialFromUserContextIfNeeded(
+        tool,
+        contextParams,
+        executionContext,
+        requestId
+      )
+    }
 
     // Validate the tool and its parameters
     validateRequiredParametersAfterMerge(toolId, tool, contextParams)
