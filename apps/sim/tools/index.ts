@@ -30,7 +30,6 @@ import type {
 import {
   formatRequestParams,
   getTool,
-  getToolAsync,
   safeStringify,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'

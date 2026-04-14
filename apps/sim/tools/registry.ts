@@ -594,8 +594,8 @@ import {
   exaResearchTool,
   exaSearchTool,
 } from '@/tools/exa'
-import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import { extendParserTool, extendParserV2Tool } from '@/tools/extend'
+import { facebookAdsQueryTool } from '@/tools/facebook_ads'
 import {
   fathomGetSummaryTool,
   fathomGetTranscriptTool,
@@ -2246,7 +2246,6 @@ import {
   salesforceUpdateTaskTool,
 } from '@/tools/salesforce'
 import { searchTool } from '@/tools/search'
-import { semrushOrganicPositionsTool, semrushQueryTool } from '@/tools/semrush'
 import {
   secretsManagerCreateSecretTool,
   secretsManagerDeleteSecretTool,
@@ -2254,6 +2253,7 @@ import {
   secretsManagerListSecretsTool,
   secretsManagerUpdateSecretTool,
 } from '@/tools/secrets_manager'
+import { semrushOrganicPositionsTool, semrushQueryTool } from '@/tools/semrush'
 import {
   sendGridAddContactsToListTool,
   sendGridAddContactTool,

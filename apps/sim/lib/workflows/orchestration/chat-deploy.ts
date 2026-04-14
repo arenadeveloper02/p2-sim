@@ -56,7 +56,9 @@ export async function performChatDeploy(
 
   const customizations = {
     primaryColor: params.customizations?.primaryColor || 'var(--brand-hover)',
-    welcomeMessage: params.customizations?.welcomeMessage || "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
+    welcomeMessage:
+      params.customizations?.welcomeMessage ||
+      "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
     ...(params.customizations?.imageUrl ? { imageUrl: params.customizations.imageUrl } : {}),
   }
 
@@ -64,7 +66,7 @@ export async function performChatDeploy(
   if (!deployResult.success) {
     return { success: false, error: deployResult.error || 'Failed to deploy workflow' }
   }
- 
+
   let encryptedPassword: string | null = null
   if (authType === 'password' && password) {
     const { encrypted } = await encryptSecret(password)

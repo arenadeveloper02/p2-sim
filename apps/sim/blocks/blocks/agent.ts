@@ -4,8 +4,6 @@ import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import {
   getAgentModelOptions,
-  getApiKeyCondition,
-  getModelOptions,
   getProviderCredentialSubBlocks,
   RESPONSE_FORMAT_WAND_CONFIG,
 } from '@/blocks/utils'
@@ -20,11 +18,6 @@ import {
   getReasoningEffortValuesForModel,
   getThinkingLevelsForModel,
   getVerbosityValuesForModel,
-  MODELS_WITH_DEEP_RESEARCH,
-  MODELS_WITH_REASONING_EFFORT,
-  MODELS_WITH_THINKING,
-  MODELS_WITH_VERBOSITY,
-  providers,
   supportsTemperature,
 } from '@/providers/models'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'

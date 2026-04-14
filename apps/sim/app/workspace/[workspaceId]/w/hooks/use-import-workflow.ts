@@ -12,8 +12,8 @@ import {
 } from '@/lib/workflows/operations/import-export'
 import { importWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { folderKeys, useCreateFolder } from '@/hooks/queries/folders'
-import { useCreateWorkflow, workflowKeys } from '@/hooks/queries/workflows'
 import { invalidateWorkflowLists } from '@/hooks/queries/utils/invalidate-workflow-lists'
+import { useCreateWorkflow } from '@/hooks/queries/workflows'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 
 const logger = createLogger('useImportWorkflow')

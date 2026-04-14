@@ -648,10 +648,10 @@ export function Editor() {
                     const canonicalMode =
                       canonicalGroup && isCanonicalSwap
                         ? resolveCanonicalMode(
-                          canonicalGroup,
-                          blockSubBlockValues,
-                          canonicalModeOverrides
-                        )
+                            canonicalGroup,
+                            blockSubBlockValues,
+                            canonicalModeOverrides
+                          )
                         : undefined
 
                     // For Arena blocks, always show divider if there are advanced-only fields coming after
@@ -673,19 +673,19 @@ export function Editor() {
                           canonicalToggle={
                             isCanonicalSwap && canonicalMode && canonicalId
                               ? {
-                                mode: canonicalMode,
-                                disabled: !canEditBlock,
-                                onToggle: () => {
-                                  if (!currentBlockId) return
-                                  const nextMode =
-                                    canonicalMode === 'advanced' ? 'basic' : 'advanced'
-                                  collaborativeSetBlockCanonicalMode(
-                                    currentBlockId,
-                                    canonicalId,
-                                    nextMode
-                                  )
-                                },
-                              }
+                                  mode: canonicalMode,
+                                  disabled: !canEditBlock,
+                                  onToggle: () => {
+                                    if (!currentBlockId) return
+                                    const nextMode =
+                                      canonicalMode === 'advanced' ? 'basic' : 'advanced'
+                                    collaborativeSetBlockCanonicalMode(
+                                      currentBlockId,
+                                      canonicalId,
+                                      nextMode
+                                    )
+                                  },
+                                }
                               : undefined
                           }
                         />

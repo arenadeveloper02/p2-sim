@@ -264,7 +264,7 @@ async function getCredentialByAccountId(requestId: string, accountId: string, us
  * 2. HubSpot shared tenants (`accountTokens.alias` — e.g. `northstar_anesthesia`) — matches legacy branch behavior.
  * 3. Workspace `credential` row → underlying `account.id` via {@link resolveOAuthAccountId}.
  */
- 
+
 export async function getCredential(requestId: string, credentialId: string, userId: string) {
   const directAccount = await db
     .select()

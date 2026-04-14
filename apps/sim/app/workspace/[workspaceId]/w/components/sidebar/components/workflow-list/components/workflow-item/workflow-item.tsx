@@ -5,9 +5,9 @@ import clsx from 'clsx'
 import { MoreHorizontal } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { selectWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { workflowBorderColor } from '@/lib/workspaces/colors'
+import { selectWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { getWorkflowLockToggleIds } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
@@ -291,8 +291,8 @@ export function WorkflowItem({
       captureSelectionState()
       const rect = e.currentTarget.getBoundingClientRect()
       handleContextMenuBase({
-        preventDefault: () => { },
-        stopPropagation: () => { },
+        preventDefault: () => {},
+        stopPropagation: () => {},
         clientX: rect.right,
         clientY: rect.top,
       } as React.MouseEvent)
@@ -336,13 +336,13 @@ export function WorkflowItem({
 
       const selection = isCurrentlySelected
         ? {
-          workflowIds: Array.from(selectedWorkflows),
-          folderIds: Array.from(selectedFolders),
-        }
+            workflowIds: Array.from(selectedWorkflows),
+            folderIds: Array.from(selectedFolders),
+          }
         : {
-          workflowIds: [workflow.id],
-          folderIds: [],
-        }
+            workflowIds: [workflow.id],
+            folderIds: [],
+          }
 
       e.dataTransfer.setData('sidebar-selection', JSON.stringify(selection))
       e.dataTransfer.effectAllowed = 'copyMove'
@@ -429,12 +429,12 @@ export function WorkflowItem({
         className={clsx(
           'group mx-0.5 flex h-[30px] items-center gap-2 rounded-lg px-2 text-sm',
           (active || isContextMenuOpen || (isSelected && selectedWorkflows.size > 1)) &&
-          'bg-[var(--surface-active)]',
+            'bg-[var(--surface-active)]',
           !active &&
-          !isContextMenuOpen &&
-          !(isSelected && selectedWorkflows.size > 1) &&
-          !isAnyDragActive &&
-          'hover-hover:bg-[var(--surface-hover)]',
+            !isContextMenuOpen &&
+            !(isSelected && selectedWorkflows.size > 1) &&
+            !isAnyDragActive &&
+            'hover-hover:bg-[var(--surface-hover)]',
           (isDragging || (isAnyDragActive && isSelected)) && 'opacity-50'
         )}
         draggable={!isEditing && !dragDisabled}

@@ -12,6 +12,7 @@ interface WorkspaceSummary {
   role?: string
   createdAt?: string
 }
+
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
 import { useWorkspacesWithMetadata } from '@/hooks/queries/workspace'
 
@@ -28,7 +29,6 @@ export default function WorkspacePage() {
   useEffect(() => {
     fetchUserProfileSetPeopleMP()
   }, [])
-
 
   useEffect(() => {
     if (isSessionPending || hasRedirectedRef.current) return

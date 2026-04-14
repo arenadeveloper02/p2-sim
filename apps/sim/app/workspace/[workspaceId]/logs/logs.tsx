@@ -33,8 +33,8 @@ import {
   type TriggerData,
   type WorkflowData,
 } from '@/lib/logs/search-suggestions'
-import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { workflowBorderColor } from '@/lib/workspaces/colors'
+import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import type {
   FilterTag,
   HeaderAction,
@@ -289,9 +289,9 @@ export default function Logs() {
   const logsRef = useRef<WorkflowLog[]>([])
   const selectedLogIndexRef = useRef(-1)
   const selectedLogIdRef = useRef<string | null>(null)
-  const logsRefetchRef = useRef<() => void>(() => { })
-  const activeLogRefetchRef = useRef<() => void>(() => { })
-  const logsQueryRef = useRef({ isFetching: false, hasNextPage: false, fetchNextPage: () => { } })
+  const logsRefetchRef = useRef<() => void>(() => {})
+  const activeLogRefetchRef = useRef<() => void>(() => {})
+  const logsQueryRef = useRef({ isFetching: false, hasNextPage: false, fetchNextPage: () => {} })
   const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false)
   const [activeSort, setActiveSort] = useState<{
     column: string
@@ -538,14 +538,14 @@ export default function Logs() {
 
   const handleCopyExecutionId = useCallback(() => {
     if (contextMenuLog?.executionId) {
-      navigator.clipboard.writeText(contextMenuLog.executionId).catch(() => { })
+      navigator.clipboard.writeText(contextMenuLog.executionId).catch(() => {})
     }
   }, [contextMenuLog])
 
   const handleCopyLink = useCallback(() => {
     if (contextMenuLog?.executionId) {
       const url = `${window.location.origin}/workspace/${workspaceId}/logs?executionId=${contextMenuLog.executionId}`
-      navigator.clipboard.writeText(url).catch(() => { })
+      navigator.clipboard.writeText(url).catch(() => {})
     }
   }, [contextMenuLog, workspaceId])
 
@@ -1071,12 +1071,12 @@ export default function Logs() {
       })),
       ...(textSearch
         ? [
-          {
-            label: 'search',
-            value: textSearch,
-            onRemove: () => handleFiltersChange(appliedFilters, ''),
-          },
-        ]
+            {
+              label: 'search',
+              value: textSearch,
+              onRemove: () => handleFiltersChange(appliedFilters, ''),
+            },
+          ]
         : []),
     ],
     [appliedFilters, textSearch, removeBadge, handleFiltersChange]

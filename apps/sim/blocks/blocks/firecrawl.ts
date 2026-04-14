@@ -1,5 +1,5 @@
 import { FirecrawlIcon } from '@/components/icons'
-import type { BlockConfig,IntegrationType } from '@/blocks/types'
+import type { BlockConfig } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import type { FirecrawlResponse } from '@/tools/firecrawl/types'
 

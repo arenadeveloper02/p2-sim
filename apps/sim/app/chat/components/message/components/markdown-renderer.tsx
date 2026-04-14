@@ -1,10 +1,8 @@
 import React, { type HTMLAttributes, memo, type ReactNode, useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
-import { Code, Tooltip, CopyCodeButton, Tooltip } from '@/components/emcn'
-import { CopyCodeButton } from '@/components/ui/copy-code-button'
 import { Streamdown } from 'streamdown'
+import { Code, Tooltip } from '@/components/emcn'
 import 'streamdown/styles.css'
-import { extractTextContent } from '@/lib/core/utils/react-node-text'
 
 export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -134,8 +132,8 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
                 : normalizedLanguage === 'jsx'
                   ? 'jsx'
                   : normalizedLanguage === 'bash' ||
-                    normalizedLanguage === 'shell' ||
-                    normalizedLanguage === 'sh'
+                      normalizedLanguage === 'shell' ||
+                      normalizedLanguage === 'sh'
                     ? 'bash'
                     : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
                       ? 'yaml'

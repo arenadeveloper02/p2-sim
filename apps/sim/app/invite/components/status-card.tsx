@@ -3,7 +3,6 @@
 import { Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/core/utils/cn'
-import { AUTH_PRIMARY_CTA_BASE } from '@/app/(auth)/components/auth-button-classes'
 
 interface InviteStatusCardProps {
   type: 'login' | 'loading' | 'error' | 'success' | 'invitation' | 'warning'
@@ -74,7 +73,7 @@ export function InviteStatusCard({
             className={cn(
               'inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] bg-[var(--brand-400)] px-2.5 font-[430] font-season text-sm text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white',
               index !== 0 &&
-              'border-[var(--landing-border-strong)] bg-[var(--brand-400)] text-[var(--landing-text)] hover:bg-[var(--primary-hover)]'
+                'border-[var(--landing-border-strong)] bg-[var(--brand-400)] text-[var(--landing-text)] hover:bg-[var(--primary-hover)]'
             )}
           >
             {action.loading ? (

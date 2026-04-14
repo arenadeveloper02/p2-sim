@@ -9,7 +9,7 @@ import {
   generatePdfFromCode,
   generatePptxFromCode,
 } from '@/lib/execution/doc-vm'
-import { CopilotFiles, isUsingCloudStorage,isStorageContextConfigured } from '@/lib/uploads'
+import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { parseWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { downloadFile } from '@/lib/uploads/core/storage-service'

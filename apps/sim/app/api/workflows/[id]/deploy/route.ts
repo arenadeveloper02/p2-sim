@@ -1,10 +1,13 @@
 // import { chat, db, workflow, workflowDeploymentVersion } from '@sim/db'
-import { db, workflow, chat } from '@sim/db'
+import { chat, db, workflow } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { removeMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
 import { captureServerEvent } from '@/lib/posthog/server'
+import { cleanupWebhooksForWorkflow } from '@/lib/webhooks/deploy'
 import { performFullDeploy, performFullUndeploy } from '@/lib/workflows/orchestration'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
 import {
@@ -12,9 +15,6 @@ import {
   createErrorResponse,
   createSuccessResponse,
 } from '@/app/api/workflows/utils'
-import { cleanupWebhooksForWorkflow } from '@/lib/webhooks/deploy'
-import { removeMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
-import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 
 const logger = createLogger('WorkflowDeployAPI')
 

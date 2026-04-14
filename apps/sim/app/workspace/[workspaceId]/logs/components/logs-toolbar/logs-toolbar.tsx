@@ -19,13 +19,13 @@ import { DatePicker } from '@/components/emcn/components/date-picker/date-picker
 import { cn } from '@/lib/core/utils/cn'
 import { hasActiveFilters } from '@/lib/logs/filters'
 import { getTriggerOptions } from '@/lib/logs/get-trigger-options'
+import { captureEvent } from '@/lib/posthog/client'
+import { workflowBorderColor } from '@/lib/workspaces/colors'
 import {
   logsFilterDropDown,
   logsPageTabSwitchEvent,
   logsRefreshEvent,
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
-import { captureEvent } from '@/lib/posthog/client'
-import { workflowBorderColor } from '@/lib/workspaces/colors'
 import { type LogStatus, STATUS_CONFIG } from '@/app/workspace/[workspaceId]/logs/utils'
 import { getBlock } from '@/blocks/registry'
 import { useFolderMap } from '@/hooks/queries/folders'
@@ -519,9 +519,9 @@ export const LogsToolbar = memo(function LogsToolbar({
               isRefreshing
                 ? undefined
                 : () => {
-                  logsRefreshEvent({})
-                  onRefresh()
-                }
+                    logsRefreshEvent({})
+                    onRefresh()
+                  }
             }
             disabled={isRefreshing}
           >

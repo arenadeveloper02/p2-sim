@@ -66,8 +66,8 @@ import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import { getWorkflowLockToggleIds } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
-import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useDuplicateWorkflowMutation, useWorkflowMap } from '@/hooks/queries/workflows'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -347,7 +347,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
         }
         copilotInitialLoadDoneRef.current = true
       })
-      .catch(() => { })
+      .catch(() => {})
   }, [activeWorkflowId])
 
   useEffect(() => {
@@ -379,7 +379,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
           }
           loadCopilotChats()
         })
-        .catch(() => { })
+        .catch(() => {})
     },
     [copilotChatId, loadCopilotChats]
   )
@@ -850,10 +850,11 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
             <div className='flex gap-1'>
               {!permissionConfig.hideCopilot && (
                 <Button
-                  className={`h-[28px] truncate rounded-md border px-2 py-[5px] text-[12.5px] ${_hasHydrated && activeTab === 'copilot'
+                  className={`h-[28px] truncate rounded-md border px-2 py-[5px] text-[12.5px] ${
+                    _hasHydrated && activeTab === 'copilot'
                       ? 'border-[var(--border-1)]'
                       : 'border-transparent hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-5)] hover-hover:text-[var(--text-primary)]'
-                    }`}
+                  }`}
                   variant={_hasHydrated && activeTab === 'copilot' ? 'active' : 'ghost'}
                   onClick={() => handleTabClick('copilot')}
                   data-tab-button='copilot'
@@ -863,10 +864,11 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
                 </Button>
               )}
               <Button
-                className={`h-[28px] rounded-md border px-2 py-[5px] text-[12.5px] ${_hasHydrated && activeTab === 'toolbar'
+                className={`h-[28px] rounded-md border px-2 py-[5px] text-[12.5px] ${
+                  _hasHydrated && activeTab === 'toolbar'
                     ? 'border-[var(--border-1)]'
                     : 'border-transparent hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-5)] hover-hover:text-[var(--text-primary)]'
-                  }`}
+                }`}
                 variant={_hasHydrated && activeTab === 'toolbar' ? 'active' : 'ghost'}
                 onClick={() => handleTabClick('toolbar')}
                 data-tab-button='toolbar'
@@ -875,10 +877,11 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
                 Toolbar
               </Button>
               <Button
-                className={`h-[28px] rounded-md border px-2 py-[5px] text-[12.5px] ${_hasHydrated && activeTab === 'editor'
+                className={`h-[28px] rounded-md border px-2 py-[5px] text-[12.5px] ${
+                  _hasHydrated && activeTab === 'editor'
                     ? 'border-[var(--border-1)]'
                     : 'border-transparent hover-hover:border-[var(--border-1)] hover-hover:bg-[var(--surface-5)] hover-hover:text-[var(--text-primary)]'
-                  }`}
+                }`}
                 variant={_hasHydrated && activeTab === 'editor' ? 'active' : 'ghost'}
                 onClick={() => handleTabClick('editor')}
                 data-tab-button='editor'

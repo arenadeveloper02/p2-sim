@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { ArrowLeft, Compass, MoreHorizontal } from 'lucide-react'
+import { Compass, MoreHorizontal } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
@@ -39,10 +39,10 @@ import {
 import { useSession } from '@/lib/auth/auth-client'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { cn } from '@/lib/core/utils/cn'
-import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { isMacPlatform } from '@/lib/core/utils/platform'
 import { buildFolderTree, getFolderPath } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'
+import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   START_NAV_TOUR_EVENT,
   START_WORKFLOW_TOUR_EVENT,
@@ -293,10 +293,10 @@ const SidebarNavItem = memo(function SidebarNavItem({
       onClick={
         item.onClick
           ? (e) => {
-            if (e.ctrlKey || e.metaKey || e.shiftKey) return
-            e.preventDefault()
-            item.onClick!()
-          }
+              if (e.ctrlKey || e.metaKey || e.shiftKey) return
+              e.preventDefault()
+              item.onClick!()
+            }
           : undefined
       }
       onContextMenu={onContextMenu ? (e) => onContextMenu(e, item.href!) : undefined}
@@ -615,8 +615,8 @@ export const Sidebar = memo(function Sidebar() {
       setMenuOpenTaskId(taskId)
       const rect = e.currentTarget.getBoundingClientRect()
       handleTaskContextMenuBase({
-        preventDefault: () => { },
-        stopPropagation: () => { },
+        preventDefault: () => {},
+        stopPropagation: () => {},
         clientX: rect.right,
         clientY: rect.top,
       } as React.MouseEvent)
@@ -760,18 +760,18 @@ export const Sidebar = memo(function Sidebar() {
     () =>
       fetchedTasks.length > 0
         ? fetchedTasks.map((t) => ({
-          ...t,
-          href: `/workspace/${workspaceId}/task/${t.id}`,
-        }))
+            ...t,
+            href: `/workspace/${workspaceId}/task/${t.id}`,
+          }))
         : [
-          {
-            id: 'new',
-            name: 'New task',
-            href: `/workspace/${workspaceId}/home`,
-            isActive: false,
-            isUnread: false,
-          },
-        ],
+            {
+              id: 'new',
+              name: 'New task',
+              href: `/workspace/${workspaceId}/home`,
+              isActive: false,
+              isUnread: false,
+            },
+          ],
     [fetchedTasks, workspaceId]
   )
 
@@ -784,10 +784,10 @@ export const Sidebar = memo(function Sidebar() {
       permissionConfig.hideTablesTab
         ? []
         : fetchedTables.map((t) => ({
-          id: t.id,
-          name: t.name,
-          href: `/workspace/${workspaceId}/tables/${t.id}`,
-        })),
+            id: t.id,
+            name: t.name,
+            href: `/workspace/${workspaceId}/tables/${t.id}`,
+          })),
     [fetchedTables, workspaceId, permissionConfig.hideTablesTab]
   )
 
@@ -796,10 +796,10 @@ export const Sidebar = memo(function Sidebar() {
       permissionConfig.hideFilesTab
         ? []
         : fetchedFiles.map((f) => ({
-          id: f.id,
-          name: f.name,
-          href: `/workspace/${workspaceId}/files/${f.id}`,
-        })),
+            id: f.id,
+            name: f.name,
+            href: `/workspace/${workspaceId}/files/${f.id}`,
+          })),
     [fetchedFiles, workspaceId, permissionConfig.hideFilesTab]
   )
 
@@ -808,10 +808,10 @@ export const Sidebar = memo(function Sidebar() {
       permissionConfig.hideKnowledgeBaseTab
         ? []
         : fetchedKnowledgeBases.map((kb) => ({
-          id: kb.id,
-          name: kb.name,
-          href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
-        })),
+            id: kb.id,
+            name: kb.name,
+            href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
+          })),
     [fetchedKnowledgeBases, workspaceId, permissionConfig.hideKnowledgeBaseTab]
   )
 

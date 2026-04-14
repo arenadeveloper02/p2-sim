@@ -529,7 +529,6 @@ export class ExecutionEngine {
     // Check if this is a terminal block (Response blocks or blocks with no outgoing edges)
     // Terminal blocks outside loops should stop the workflow, but inside loops they should allow continuation
     const blockType = node.block.metadata?.id
-    const isResponseBlock = blockType === BlockType.RESPONSE
     const isInsideLoop = !!node.metadata.loopId
     const isTerminalBlock = isResponseBlock || node.outgoingEdges.size === 0
 

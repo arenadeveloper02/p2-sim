@@ -8,7 +8,6 @@ import {
   LogIn,
   Mail,
   Palette,
-  Send,
   Server,
   Settings,
   ShieldCheck,

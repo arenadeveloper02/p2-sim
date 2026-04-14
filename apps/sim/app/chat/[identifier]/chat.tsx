@@ -5,10 +5,10 @@ import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
-import { generateId } from '@/lib/core/utils/uuid'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
@@ -263,14 +263,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             setMessages([
               ...(chatConfig?.customizations?.welcomeMessage
                 ? [
-                  {
-                    id: 'welcome',
-                    content: chatConfig.customizations.welcomeMessage,
-                    type: 'assistant',
-                    isInitialMessage: true,
-                    timestamp: new Date(),
-                  },
-                ]
+                    {
+                      id: 'welcome',
+                      content: chatConfig.customizations.welcomeMessage,
+                      type: 'assistant',
+                      isInitialMessage: true,
+                      timestamp: new Date(),
+                    },
+                  ]
                 : []),
               ...data.logs.flatMap((log: any) => {
                 const messages = []
@@ -362,8 +362,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           // Attempt a safe, one-time auto-login for email-gated chats when an email cookie exists
           if (errorData.error === 'auth_required_email') {
             try {
-              const autoLoginKey = `chat:autoLoginTried:${identifier}:${new URLSearchParams(window.location.search).get('chatId') || 'nochat'
-                }`
+              const autoLoginKey = `chat:autoLoginTried:${identifier}:${
+                new URLSearchParams(window.location.search).get('chatId') || 'nochat'
+              }`
               const alreadyTried =
                 typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
               const cookieEmail = Cookies.get('email')
@@ -522,7 +523,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     userMessageId = userMessage.id
 
     // Add the user's message to the chat
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage])
     setInputValue('')
     setIsLoading(true)
 
@@ -617,10 +618,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const shouldPlayAudio = isVoiceInput || isVoiceFirstMode
       const audioHandler = shouldPlayAudio
         ? createAudioStreamHandler(
-          streamTextToAudio,
-          DEFAULT_VOICE_SETTINGS.voiceId,
-          chatConfig?.id
-        )
+            streamTextToAudio,
+            DEFAULT_VOICE_SETTINGS.voiceId,
+            chatConfig?.id
+          )
         : undefined
 
       logger.info('Starting to handle streamed response:', { shouldPlayAudio })
