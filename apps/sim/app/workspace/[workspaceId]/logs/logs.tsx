@@ -60,6 +60,7 @@ import {
   useLogDetail,
   useLogsList,
 } from '@/hooks/queries/logs'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowMap, useWorkflows } from '@/hooks/queries/workflows'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useFilterStore } from '@/stores/logs/filters/store'
