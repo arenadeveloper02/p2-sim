@@ -32,8 +32,38 @@ import {
   safeStringify,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
+import * as toolsUtilsServer from '@/tools/utils.server'
 
 const logger = createLogger('Tools')
+
+interface ToolExecutionScope {
+  workspaceId?: string
+  workflowId?: string
+  userId?: string
+  executionId?: string
+  callChain?: string[]
+  isDeployedContext?: boolean
+  enforceCredentialAccess?: boolean
+}
+
+function resolveToolScope(
+  params: Record<string, unknown>,
+  executionContext?: ExecutionContext
+): ToolExecutionScope {
+  const ctx = params._context as Record<string, unknown> | undefined
+  return {
+    workspaceId: (executionContext?.workspaceId ?? ctx?.workspaceId) as string | undefined,
+    workflowId: (executionContext?.workflowId ?? ctx?.workflowId) as string | undefined,
+    userId: (executionContext?.userId ?? ctx?.userId) as string | undefined,
+    executionId: (executionContext?.executionId ?? ctx?.executionId) as string | undefined,
+    callChain: (executionContext?.callChain ?? ctx?.callChain) as string[] | undefined,
+    isDeployedContext: (executionContext?.isDeployedContext ?? ctx?.isDeployedContext) as
+      | boolean
+      | undefined,
+    enforceCredentialAccess: (executionContext?.enforceCredentialAccess ??
+      ctx?.enforceCredentialAccess) as boolean | undefined,
+  }
+}
 
 /** Result from hosted key injection */
 interface HostedKeyInjectionResult {
@@ -57,11 +87,7 @@ async function injectHostedKeyIfNeeded(
 
   const { envKeyPrefix, apiKeyParam, byokProviderId, rateLimit } = tool.hosting
 
-  // Derive workspace/user/workflow IDs from executionContext or params._context
-  const ctx = params._context as Record<string, unknown> | undefined
-  const workspaceId = executionContext?.workspaceId || (ctx?.workspaceId as string | undefined)
-  const userId = executionContext?.userId || (ctx?.userId as string | undefined)
-  const workflowId = executionContext?.workflowId || (ctx?.workflowId as string | undefined)
+  const { workspaceId, userId, workflowId } = resolveToolScope(params, executionContext)
 
   // Check BYOK workspace key first
   if (byokProviderId && workspaceId) {
@@ -280,10 +306,7 @@ async function processHostedKeyCost(
 
   if (cost <= 0) return { cost: 0 }
 
-  const ctx = params._context as Record<string, unknown> | undefined
-  const userId = executionContext?.userId || (ctx?.userId as string | undefined)
-  const wsId = executionContext?.workspaceId || (ctx?.workspaceId as string | undefined)
-  const wfId = executionContext?.workflowId || (ctx?.workflowId as string | undefined)
+  const { userId } = resolveToolScope(params, executionContext)
 
   if (!userId) return { cost, metadata }
 
@@ -308,8 +331,7 @@ async function reportCustomDimensionUsage(
   requestId: string
 ): Promise<void> {
   if (tool.hosting?.rateLimit.mode !== 'custom') return
-  const ctx = params._context as Record<string, unknown> | undefined
-  const billingActorId = executionContext?.workspaceId || (ctx?.workspaceId as string | undefined)
+  const { workspaceId: billingActorId } = resolveToolScope(params, executionContext)
   if (!billingActorId) return
 
   const { getHostedKeyRateLimiter } = await import(
@@ -357,6 +379,10 @@ function stripInternalFields(output: Record<string, unknown>): Record<string, un
     }
   }
   return result
+}
+
+export function postProcessToolOutput(toolId: string, output: Record<string, unknown>) {
+  return isCustomTool(toolId) ? output : stripInternalFields(output)
 }
 
 /**
@@ -605,18 +631,19 @@ export async function executeTool(
     // Normalize tool ID to strip resource suffixes (e.g., workflow_executor_<uuid> -> workflow_executor)
     const normalizedToolId = normalizeToolId(toolId)
 
+    const scope = resolveToolScope(params, executionContext)
+
     // Handle load_skill tool for agent skills progressive disclosure
     if (normalizedToolId === 'load_skill') {
       const skillName = params.skill_name
-      const workspaceId = params._context?.workspaceId
-      if (!skillName || !workspaceId) {
+      if (!skillName || !scope.workspaceId) {
         return {
           success: false,
           output: { error: 'Missing skill_name or workspace context' },
           error: 'Missing skill_name or workspace context',
         }
       }
-      const content = await resolveSkillContent(skillName, workspaceId)
+      const content = await resolveSkillContent(skillName, scope.workspaceId)
       if (!content) {
         return {
           success: false,
@@ -630,11 +657,13 @@ export async function executeTool(
       }
     }
 
-    // If it's a custom tool, use the async version with workflowId
+    // If it's a custom tool, use the async version
     if (isCustomTool(normalizedToolId)) {
-      const workflowId = params._context?.workflowId
-      const userId = params._context?.userId
-      tool = await getToolAsync(normalizedToolId, workflowId, userId)
+      tool = await toolsUtilsServer.getToolAsync(normalizedToolId, {
+        workflowId: scope.workflowId,
+        userId: scope.userId,
+        workspaceId: scope.workspaceId,
+      })
       if (!tool) {
         logger.error(`[${requestId}] Custom tool not found: ${normalizedToolId}`)
       }
@@ -693,6 +722,16 @@ export async function executeTool(
         }
         if (workflowId) {
           tokenPayload.workflowId = workflowId
+        }
+        if (contextParams.impersonateUserEmail) {
+          tokenPayload.impersonateEmail = contextParams.impersonateUserEmail as string
+        }
+        if (tool?.oauth?.provider) {
+          const { getCanonicalScopesForProvider } = await import('@/lib/oauth/utils')
+          const providerScopes = getCanonicalScopesForProvider(tool.oauth.provider)
+          if (providerScopes.length > 0) {
+            tokenPayload.scopes = providerScopes
+          }
         }
 
         logger.info(`[${requestId}] Fetching access token from ${baseUrl}/api/auth/oauth/token`)
@@ -785,6 +824,7 @@ export async function executeTool(
         }
         // Clean up params we don't need to pass to the actual tool
         contextParams.credential = undefined
+        contextParams.impersonateUserEmail = undefined
         if (contextParams.workflowId) contextParams.workflowId = undefined
       } catch (error: any) {
         logger.error(`[${requestId}] Error fetching access token for ${toolId}:`, {
@@ -830,9 +870,7 @@ export async function executeTool(
         )
       }
 
-      const strippedOutput = isCustomTool(normalizedToolId)
-        ? finalResult.output
-        : stripInternalFields(finalResult.output ?? {})
+      const strippedOutput = postProcessToolOutput(normalizedToolId, finalResult.output ?? {})
 
       return {
         ...finalResult,
@@ -887,9 +925,7 @@ export async function executeTool(
       )
     }
 
-    const strippedOutput = isCustomTool(normalizedToolId)
-      ? finalResult.output
-      : stripInternalFields(finalResult.output ?? {})
+    const strippedOutput = postProcessToolOutput(normalizedToolId, finalResult.output ?? {})
 
     return {
       ...finalResult,
@@ -1733,11 +1769,13 @@ async function executeMcpTool(
 
     const baseUrl = getInternalApiBaseUrl()
 
+    const mcpScope = resolveToolScope(params, executionContext)
+
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
 
     if (typeof window === 'undefined') {
       try {
-        const internalToken = await generateInternalToken(executionContext?.userId)
+        const internalToken = await generateInternalToken(mcpScope.userId)
         headers.Authorization = `Bearer ${internalToken}`
       } catch (error) {
         logger.error(`[${actualRequestId}] Failed to generate internal token:`, error)
@@ -1768,17 +1806,11 @@ async function executeMcpTool(
       )
     }
 
-    const workspaceId = params._context?.workspaceId || executionContext?.workspaceId
-    const workflowId = params._context?.workflowId || executionContext?.workflowId
-    const userId = params._context?.userId || executionContext?.userId
-    const callChain =
-      (params._context?.callChain as string[] | undefined) || executionContext?.callChain
-
-    if (callChain && callChain.length > 0) {
-      headers[SIM_VIA_HEADER] = serializeCallChain(callChain)
+    if (mcpScope.callChain && mcpScope.callChain.length > 0) {
+      headers[SIM_VIA_HEADER] = serializeCallChain(mcpScope.callChain)
     }
 
-    if (!workspaceId) {
+    if (!mcpScope.workspaceId) {
       return {
         success: false,
         output: {},
@@ -1798,8 +1830,8 @@ async function executeMcpTool(
       serverId,
       toolName,
       arguments: toolArguments,
-      workflowId, // Pass workflow context for user resolution
-      workspaceId, // Pass workspace context for scoping
+      workflowId: mcpScope.workflowId,
+      workspaceId: mcpScope.workspaceId,
     }
 
     // Include schema to skip discovery on execution
@@ -1813,14 +1845,14 @@ async function executeMcpTool(
     validateRequestBodySize(body, actualRequestId, `mcp:${toolId}`)
 
     logger.info(`[${actualRequestId}] Making MCP tool request to ${toolName} on ${serverId}`, {
-      hasWorkspaceId: !!workspaceId,
-      hasWorkflowId: !!workflowId,
+      hasWorkspaceId: !!mcpScope.workspaceId,
+      hasWorkflowId: !!mcpScope.workflowId,
       hasToolSchema: !!toolSchema,
     })
 
     const mcpUrl = new URL('/api/mcp/tools/execute', baseUrl)
-    if (userId) {
-      mcpUrl.searchParams.set('userId', userId)
+    if (mcpScope.userId) {
+      mcpUrl.searchParams.set('userId', mcpScope.userId)
     }
 
     const response = await fetch(mcpUrl.toString(), {

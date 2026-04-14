@@ -2,8 +2,10 @@ import { db } from '@sim/db'
 import { workflow, workspaceFiles } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { findMothershipUploadRowByChatAndName } from '@/lib/copilot/orchestrator/tool-executor/upload-file-reader'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/orchestrator/types'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getServePathPrefix } from '@/lib/uploads'
 import { downloadWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
@@ -103,7 +105,7 @@ async function executeImport(
     description: workflowDescription,
   } = extractWorkflowMetadata(parsed)
 
-  const workflowId = crypto.randomUUID()
+  const workflowId = generateId()
   const now = new Date()
   const dedupedName = await deduplicateWorkflowName(rawName, workspaceId, null)
 
@@ -135,7 +137,7 @@ async function executeImport(
       { id: string; name: string; type: string; value: unknown }
     > = {}
     for (const v of workflowData.variables) {
-      const varId = (v as { id?: string }).id || crypto.randomUUID()
+      const varId = (v as { id?: string }).id || generateId()
       const variable = v as { name: string; type?: string; value: unknown }
       variablesRecord[varId] = {
         id: varId,
@@ -156,6 +158,17 @@ async function executeImport(
     workflowId,
     workflowName: dedupedName,
     chatId,
+  })
+
+  recordAudit({
+    workspaceId,
+    actorId: userId,
+    action: AuditAction.WORKFLOW_CREATED,
+    resourceType: AuditResourceType.WORKFLOW,
+    resourceId: workflowId,
+    resourceName: dedupedName,
+    description: `Imported workflow "${dedupedName}" from file`,
+    metadata: { fileName, source: 'copilot-import' },
   })
 
   return {

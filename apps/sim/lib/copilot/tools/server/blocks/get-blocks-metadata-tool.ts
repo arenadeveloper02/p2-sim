@@ -5,6 +5,7 @@ import { getCopilotToolDescription } from '@/lib/copilot/tool-descriptions'
 import type { BaseServerTool } from '@/lib/copilot/tools/server/base-tool'
 import { GetBlocksMetadataInput, GetBlocksMetadataResult } from '@/lib/copilot/tools/shared/schemas'
 import { getAllowedIntegrationsFromEnv, isHosted } from '@/lib/core/config/feature-flags'
+import { getServiceAccountProviderForProviderId } from '@/lib/oauth/utils'
 import { registry as blockRegistry } from '@/blocks/registry'
 import { AuthMode, type BlockConfig, isHiddenFromDisplay } from '@/blocks/types'
 import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
@@ -184,7 +185,10 @@ export const getBlocksMetadataServerTool: BaseServerTool<
 
           const configFields: Record<string, any> = {}
           for (const subBlock of trig.subBlocks) {
-            if (subBlock.mode === 'trigger' && !SYSTEM_SUBBLOCK_IDS.includes(subBlock.id)) {
+            if (
+              (subBlock.mode === 'trigger' || subBlock.mode === 'trigger-advanced') &&
+              !SYSTEM_SUBBLOCK_IDS.includes(subBlock.id)
+            ) {
               const fieldDef: any = {
                 type: subBlock.type,
                 required: subBlock.required || false,
@@ -226,7 +230,9 @@ export const getBlocksMetadataServerTool: BaseServerTool<
         const blockInputs = computeBlockLevelInputs(blockConfig)
         const { commonParameters, operationParameters } = splitParametersByOperation(
           Array.isArray(blockConfig.subBlocks)
-            ? blockConfig.subBlocks.filter((sb) => sb.mode !== 'trigger')
+            ? blockConfig.subBlocks.filter(
+                (sb) => sb.mode !== 'trigger' && sb.mode !== 'trigger-advanced'
+              )
             : [],
           blockInputs
         )
@@ -342,6 +348,20 @@ function transformBlockMetadata(metadata: CopilotBlockMetadata): any {
         service: metadata.id, // e.g., 'gmail', 'slack', etc.
         description: `OAuth authentication required for ${metadata.name}`,
       }
+
+      // Check if this service also supports service account credentials
+      const oauthSubBlock = metadata.inputSchema?.find(
+        (sb: CopilotSubblockMetadata) => sb.type === 'oauth-input' && sb.serviceId
+      )
+      if (oauthSubBlock?.serviceId) {
+        const serviceAccountProviderId = getServiceAccountProviderForProviderId(
+          oauthSubBlock.serviceId
+        )
+        if (serviceAccountProviderId) {
+          transformed.requiredCredentials.serviceAccountType = serviceAccountProviderId
+          transformed.requiredCredentials.description = `OAuth or service account authentication supported for ${metadata.name}`
+        }
+      }
     } else if (metadata.authType === 'API Key') {
       transformed.requiredCredentials = {
         type: 'api_key',
@@ -409,7 +429,7 @@ function extractInputs(metadata: CopilotBlockMetadata): {
 
   for (const schema of metadata.inputSchema || []) {
     // Skip trigger subBlocks - they're handled separately in triggers.configFields
-    if (schema.mode === 'trigger') {
+    if (schema.mode === 'trigger' || schema.mode === 'trigger-advanced') {
       continue
     }
 
@@ -696,14 +716,19 @@ function resolveAuthType(
 /**
  * Gets all available models from PROVIDER_DEFINITIONS as static options.
  * This provides fallback data when store state is not available server-side.
- * Excludes dynamic providers (ollama, vllm, openrouter) which require runtime fetching.
+ * Excludes dynamic providers (ollama, vllm, openrouter, fireworks) which require runtime fetching.
  */
 function getStaticModelOptions(): { id: string; label?: string }[] {
   const models: { id: string; label?: string }[] = []
 
   for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
     // Skip providers with dynamic/fetched models
-    if (provider.id === 'ollama' || provider.id === 'vllm' || provider.id === 'openrouter') {
+    if (
+      provider.id === 'ollama' ||
+      provider.id === 'vllm' ||
+      provider.id === 'openrouter' ||
+      provider.id === 'fireworks'
+    ) {
       continue
     }
     if (provider?.models) {
@@ -737,6 +762,7 @@ function callOptionsWithFallback(
       ollama: { models: [] },
       vllm: { models: [] },
       openrouter: { models: [] },
+      fireworks: { models: [] },
     },
   }
 
@@ -889,7 +915,7 @@ function splitParametersByOperation(
 function computeBlockLevelInputs(blockConfig: BlockConfig): Record<string, any> {
   const inputs = blockConfig.inputs || {}
   const subBlocks: any[] = Array.isArray(blockConfig.subBlocks)
-    ? blockConfig.subBlocks.filter((sb) => sb.mode !== 'trigger')
+    ? blockConfig.subBlocks.filter((sb) => sb.mode !== 'trigger' && sb.mode !== 'trigger-advanced')
     : []
 
   const byParamKey: Record<string, any[]> = {}
@@ -924,7 +950,7 @@ function computeOperationLevelInputs(
 ): Record<string, Record<string, any>> {
   const inputs = blockConfig.inputs || {}
   const subBlocks = Array.isArray(blockConfig.subBlocks)
-    ? blockConfig.subBlocks.filter((sb) => sb.mode !== 'trigger')
+    ? blockConfig.subBlocks.filter((sb) => sb.mode !== 'trigger' && sb.mode !== 'trigger-advanced')
     : []
 
   const opInputs: Record<string, Record<string, any>> = {}

@@ -1,12 +1,13 @@
 import { createLogger } from '@sim/logger'
 import * as Papa from 'papaparse'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
-import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
-import { AGENT, isCustomTool } from '@/executor/constants'
-import { getCustomTool } from '@/hooks/queries/custom-tools'
-import { useEnvironmentStore } from '@/stores/settings/environment'
+import type { EnvironmentVariable } from '@/lib/environment/api'
+import { getQueryClient } from '@/app/_shell/providers/get-query-client'
+import type { CustomToolDefinition } from '@/hooks/queries/custom-tools'
+import { environmentKeys } from '@/hooks/queries/environment'
 import { tools } from '@/tools/registry'
 import type { ToolConfig } from '@/tools/types'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 
 const logger = createLogger('ToolsUtils')
 
@@ -400,20 +401,20 @@ export function createParamSchema(customTool: any): Record<string, any> {
 }
 
 /**
- * Get environment variables from store (client-side only)
- * @param getStore Optional function to get the store (useful for testing)
+ * Get environment variables from React Query cache (client-side only)
  */
-export function getClientEnvVars(getStore?: () => any): Record<string, string> {
+export function getClientEnvVars(): Record<string, string> {
   if (typeof window === 'undefined') return {}
 
   try {
-    // Allow injecting the store for testing
-    const envStore = getStore ? getStore() : useEnvironmentStore.getState()
-    const allEnvVars = envStore.getAllVariables()
+    const allEnvVars =
+      getQueryClient().getQueryData<Record<string, EnvironmentVariable>>(
+        environmentKeys.personal()
+      ) ?? {}
 
     // Convert environment variables to a simple key-value object
     return Object.entries(allEnvVars).reduce(
-      (acc, [key, variable]: [string, any]) => {
+      (acc, [key, variable]) => {
         acc[key] = variable.value
         return acc
       },
@@ -430,20 +431,14 @@ export function getClientEnvVars(getStore?: () => any): Record<string, string> {
  * @param customTool The custom tool configuration
  * @param isClient Whether running on client side
  * @param workflowId Optional workflow ID for server-side
- * @param getStore Optional function to get the store (useful for testing)
  */
-export function createCustomToolRequestBody(
-  customTool: any,
-  isClient = true,
-  workflowId?: string,
-  getStore?: () => any
-) {
+export function createCustomToolRequestBody(customTool: any, isClient = true, workflowId?: string) {
   return (params: Record<string, any>) => {
     // Get environment variables - try multiple sources in order of preference:
     // 1. envVars parameter (passed from provider/agent context)
     // 2. Client-side store (if running in browser)
     // 3. Empty object (fallback)
-    const envVars = params.envVars || (isClient ? getClientEnvVars(getStore) : {})
+    const envVars = params.envVars || (isClient ? getClientEnvVars() : {})
 
     // Get workflow variables from params (passed from execution context)
     const workflowVariables = params.workflowVariables || {}
@@ -469,48 +464,20 @@ export function createCustomToolRequestBody(
 }
 
 // Get a tool by its ID
-export function getTool(toolId: string): ToolConfig | undefined {
+export function getTool(toolId: string, _workspaceId?: string): ToolConfig | undefined {
   // Check for built-in tools
   const builtInTool = tools[toolId]
   if (builtInTool) return builtInTool
-
-  // Check if it's a custom tool
-  if (isCustomTool(toolId) && typeof window !== 'undefined') {
-    // Only try to use the sync version on the client
-    const identifier = toolId.slice(AGENT.CUSTOM_TOOL_PREFIX.length)
-
-    // Try to find the tool from query cache (extracts workspaceId from URL)
-    const customTool = getCustomTool(identifier)
-
-    if (customTool) {
-      return createToolConfig(customTool, toolId)
-    }
-  }
 
   // If not found or running on the server, return undefined
   return undefined
 }
 
-// Get a tool by its ID asynchronously (supports server-side)
-export async function getToolAsync(
-  toolId: string,
-  workflowId?: string,
-  userId?: string
-): Promise<ToolConfig | undefined> {
-  // Check for built-in tools
-  const builtInTool = tools[toolId]
-  if (builtInTool) return builtInTool
-
-  // Check if it's a custom tool
-  if (isCustomTool(toolId)) {
-    return fetchCustomToolFromAPI(toolId, workflowId, userId)
-  }
-
-  return undefined
-}
-
 // Helper function to create a tool config from a custom tool
-function createToolConfig(customTool: any, customToolId: string): ToolConfig {
+export function createToolConfig(
+  customTool: CustomToolDefinition,
+  customToolId: string
+): ToolConfig {
   // Create a parameter schema from the custom tool schema
   const params = createParamSchema(customTool)
 

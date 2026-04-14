@@ -1,7 +1,9 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
+import { captureEvent } from '@/lib/posthog/client'
 import {
   extractWorkflowsFromFiles,
   extractWorkflowsFromZip,
@@ -11,6 +13,7 @@ import {
 import { importWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { folderKeys, useCreateFolder } from '@/hooks/queries/folders'
 import { useCreateWorkflow, workflowKeys } from '@/hooks/queries/workflows'
+import { invalidateWorkflowLists } from '@/hooks/queries/utils/invalidate-workflow-lists'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 
 const logger = createLogger('useImportWorkflow')
@@ -35,6 +38,9 @@ export function useImportWorkflow({ workspaceId }: UseImportWorkflowProps) {
   const queryClient = useQueryClient()
   const createFolderMutation = useCreateFolder()
   const clearDiff = useWorkflowDiffStore((state) => state.clearDiff)
+  const posthog = usePostHog()
+  const posthogRef = useRef(posthog)
+  posthogRef.current = posthog
   const [isImporting, setIsImporting] = useState(false)
 
   /**
@@ -57,6 +63,7 @@ export function useImportWorkflow({ workspaceId }: UseImportWorkflowProps) {
             workspaceId,
             folderId,
             sortOrder,
+            deduplicate: true,
           }),
       })
 
@@ -215,12 +222,17 @@ export function useImportWorkflow({ workspaceId }: UseImportWorkflowProps) {
           }
         }
 
-        await queryClient.invalidateQueries({ queryKey: workflowKeys.lists() })
+        await invalidateWorkflowLists(queryClient, workspaceId)
         await queryClient.invalidateQueries({ queryKey: folderKeys.list(workspaceId) })
 
         logger.info(`Import complete. Imported ${importedWorkflowIds.length} workflow(s)`)
 
         if (importedWorkflowIds.length > 0) {
+          captureEvent(posthogRef.current, 'workflow_imported', {
+            workspace_id: workspaceId,
+            workflow_count: importedWorkflowIds.length,
+            format: hasZip && fileArray.length === 1 ? 'zip' : 'json',
+          })
           router.push(
             `/workspace/${workspaceId}/w/${importedWorkflowIds[importedWorkflowIds.length - 1]}`
           )

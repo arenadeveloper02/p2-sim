@@ -26,6 +26,14 @@ vi.mock('@/lib/execution/e2b', () => ({
   executeInE2B: mockExecuteInE2B,
 }))
 
+vi.mock('@/lib/core/config/feature-flags', () => ({
+  isHosted: false,
+  isE2bEnabled: false,
+  isProd: false,
+  isDev: false,
+  isTest: true,
+}))
+
 import { validateProxyUrl } from '@/lib/core/security/input-validation'
 import { POST } from '@/app/api/function/execute/route'
 
@@ -334,7 +342,7 @@ describe('Function Execute API Route', () => {
         code: 'return "Email sent to user"',
         params: {
           email: {
-            from: 'Waleed Latif <waleed@sim.ai>',
+            from: 'Dr. Shaw <shaw@high-flying.ai>',
             to: 'User <user@example.com>',
           },
         },
@@ -370,7 +378,7 @@ describe('Function Execute API Route', () => {
       async () => {
         const emailData = {
           id: '123',
-          from: 'Waleed Latif <waleed@sim.ai>',
+          from: 'Dr. Shaw <shaw@high-flying.ai>',
           to: 'User <user@example.com>',
           subject: 'Test Email',
           bodyText: 'Hello world',

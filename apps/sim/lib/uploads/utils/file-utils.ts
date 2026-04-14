@@ -32,7 +32,7 @@ export const MIME_TYPE_MAPPING: Record<string, 'image' | 'document' | 'audio' | 
   'image/png': 'image',
   'image/gif': 'image',
   'image/webp': 'image',
-  // SVG is XML text, not a raster image — handled separately in createFileContent
+  'image/svg+xml': 'image', // SVG upload is allowed; createFileContent handles it separately for Claude API
 
   // Documents
   'application/pdf': 'document',
@@ -366,7 +366,7 @@ export function validateKnowledgeBaseFile(
     return null
   }
 
-  return `File "${file.name}" has an unsupported format. Please use PDF, DOC, DOCX, TXT, CSV, XLS, XLSX, MD, PPT, PPTX, HTML, JSON, YAML, or YML files.`
+  return `File "${file.name}" has an unsupported format. Please use PDF, DOC, DOCX, TXT, CSV, XLS, XLSX, MD, PPT, PPTX, HTML, JSON, JSONL, YAML, or YML files.`
 }
 
 /**

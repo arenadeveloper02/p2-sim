@@ -1,10 +1,12 @@
 import { memo } from 'react'
+import { useParams } from 'next/navigation'
 import { cn } from '@/lib/core/utils/cn'
+import { workflowBorderColor } from '@/lib/workspaces/colors'
 import {
   DELETED_WORKFLOW_COLOR,
   DELETED_WORKFLOW_LABEL,
 } from '@/app/workspace/[workspaceId]/logs/utils'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useWorkflowMap } from '@/hooks/queries/workflows'
 import { StatusBar, type StatusBarSegment } from '..'
 
 export interface WorkflowExecutionItem {
@@ -36,7 +38,8 @@ function WorkflowsListInner({
   searchQuery: string
   segmentDurationMs: number
 }) {
-  const workflows = useWorkflowRegistry((s) => s.workflows)
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { data: workflows = {} } = useWorkflowMap(workspaceId)
 
   return (
     <div className='flex h-full flex-col overflow-hidden rounded-md bg-[var(--surface-2)] dark:bg-[var(--surface-1)]'>
@@ -91,7 +94,7 @@ function WorkflowsListInner({
                       className='h-[10px] w-[10px] flex-shrink-0 rounded-[3px] border-[1.5px]'
                       style={{
                         backgroundColor: workflowColor,
-                        borderColor: `${workflowColor}60`,
+                        borderColor: workflowBorderColor(workflowColor),
                         backgroundClip: 'padding-box',
                       }}
                     />

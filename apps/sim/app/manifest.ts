@@ -6,10 +6,12 @@ export default function manifest(): MetadataRoute.Manifest {
 
   return {
     name:
-      brand.name === 'Sim' ? 'Arena — Build AI Agents & Run Your Agentic Workforce' : brand.name,
+      brand.name === 'Sim'
+        ? 'Arena — The AI Workspace | Build, Deploy & Manage AI Agents'
+        : brand.name,
     short_name: brand.name,
     description:
-      'Arena is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows.',
+      'Arena is the AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM.',
     start_url: '/',
     scope: '/',
     display: 'standalone',

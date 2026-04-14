@@ -40,7 +40,12 @@ import {
   XCircle,
   Zap,
 } from 'lucide-react'
-import { getCustomTool } from '@/hooks/queries/custom-tools'
+import { getQueryClient } from '@/app/_shell/providers/get-query-client'
+import type { CustomToolDefinition } from '@/hooks/queries/custom-tools'
+import type { WorkflowDeploymentInfo } from '@/hooks/queries/deployments'
+import { deploymentKeys } from '@/hooks/queries/deployments'
+import { customToolsKeys } from '@/hooks/queries/utils/custom-tool-keys'
+import { getWorkflowById } from '@/hooks/queries/utils/workflow-cache'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -135,6 +140,15 @@ function formatDuration(seconds: number): string {
   const remMins = mins % 60
   if (remMins > 0) return `${hours}h ${remMins}m`
   return `${hours}h`
+}
+
+function getScopedWorkspaceId(params: Record<string, any>): string | undefined {
+  const paramWorkspaceId = params?.workspaceId
+  if (typeof paramWorkspaceId === 'string' && paramWorkspaceId.length > 0) {
+    return paramWorkspaceId
+  }
+
+  return useWorkflowRegistry.getState().hydration.workspaceId ?? undefined
 }
 
 function toUiConfig(metadata?: ToolMetadata): ToolUIConfig | undefined {
@@ -435,7 +449,8 @@ const META_deploy_api: ToolMetadata = {
 
     const workflowId = params?.workflowId || useWorkflowRegistry.getState().activeWorkflowId
     const isAlreadyDeployed = workflowId
-      ? useWorkflowRegistry.getState().getWorkflowDeploymentStatus(workflowId)?.isDeployed
+      ? (getQueryClient().getQueryData<WorkflowDeploymentInfo>(deploymentKeys.info(workflowId))
+          ?.isDeployed ?? false)
       : false
 
     let actionText = action
@@ -1036,13 +1051,18 @@ const META_manage_custom_tool: ToolMetadata = {
   },
   getDynamicText: (params, state) => {
     const operation = params?.operation as 'add' | 'edit' | 'delete' | 'list' | undefined
+    const workspaceId = getScopedWorkspaceId(params)
 
     if (!operation) return undefined
 
     let toolName = params?.schema?.function?.name
-    if (!toolName && params?.toolId) {
+    if (!toolName && params?.toolId && workspaceId) {
       try {
-        const tool = getCustomTool(params.toolId)
+        const tools =
+          getQueryClient().getQueryData<CustomToolDefinition[]>(
+            customToolsKeys.list(workspaceId)
+          ) ?? []
+        const tool = tools.find((t) => t.id === params.toolId || t.title === params.toolId)
         toolName = tool?.schema?.function?.name
       } catch {
         // Ignore errors accessing cache
@@ -1629,8 +1649,9 @@ const META_run_workflow: ToolMetadata = {
   },
   getDynamicText: (params, state) => {
     const workflowId = params?.workflowId || useWorkflowRegistry.getState().activeWorkflowId
-    if (workflowId) {
-      const workflowName = useWorkflowRegistry.getState().workflows[workflowId]?.name
+    const workspaceId = getScopedWorkspaceId(params)
+    if (workflowId && workspaceId) {
+      const workflowName = getWorkflowById(workspaceId, workflowId)?.name
       if (workflowName) {
         switch (state) {
           case ClientToolCallState.success:

@@ -74,6 +74,10 @@ docker compose -f docker-compose.prod.yml up -d
 
 Open [http://localhost:3000](http://localhost:3000)
 
+#### Background worker note
+
+The Docker Compose stack starts a dedicated worker container by default. If `REDIS_URL` is not configured, the worker will start, log that it is idle, and do no queue processing. This is expected. Queue-backed API, webhook, and schedule execution requires Redis; installs without Redis continue to use the inline execution path.
+
 Sim also supports local models via [Ollama](https://ollama.ai) and [vLLM](https://docs.vllm.ai/) — see the [Docker self-hosting docs](https://docs.sim.ai/self-hosting/docker) for setup details.
 
 ### Self-hosted: Manual Setup
@@ -86,6 +90,7 @@ Sim also supports local models via [Ollama](https://ollama.ai) and [vLLM](https:
 git clone https://github.com/simstudioai/sim.git
 cd sim
 bun install
+bun run prepare  # Set up pre-commit hooks
 ```
 
 2. Set up PostgreSQL with pgvector:
@@ -100,6 +105,11 @@ Or install manually via the [pgvector guide](https://github.com/pgvector/pgvecto
 
 ```bash
 cp apps/sim/.env.example apps/sim/.env
+# Create your secrets
+perl -i -pe "s/your_encryption_key/$(openssl rand -hex 32)/" apps/sim/.env
+perl -i -pe "s/your_internal_api_secret/$(openssl rand -hex 32)/" apps/sim/.env
+perl -i -pe "s/your_api_encryption_key/$(openssl rand -hex 32)/" apps/sim/.env
+# DB configs for migration
 cp packages/db/.env.example packages/db/.env
 # Edit both .env files to set DATABASE_URL="postgresql://postgres:your_password@localhost:5432/simstudio"
 ```
@@ -107,16 +117,18 @@ cp packages/db/.env.example packages/db/.env
 4. Run migrations:
 
 ```bash
-cd packages/db && bunx drizzle-kit migrate --config=./drizzle.config.ts
+cd packages/db && bun run db:migrate
 ```
 
 5. Start development servers:
 
 ```bash
-bun run dev:full  # Starts both Next.js app and realtime socket server
+bun run dev:full  # Starts Next.js app, realtime socket server, and the BullMQ worker
 ```
 
-Or run separately: `bun run dev` (Next.js) and `cd apps/sim && bun run dev:sockets` (realtime).
+If `REDIS_URL` is not configured, the worker will remain idle and execution continues inline.
+
+Or run separately: `bun run dev` (Next.js), `cd apps/sim && bun run dev:sockets` (realtime), and `cd apps/sim && bun run worker` (BullMQ worker).
 
 ## Copilot API Keys
 

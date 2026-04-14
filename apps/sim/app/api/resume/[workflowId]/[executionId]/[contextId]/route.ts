@@ -1,17 +1,43 @@
-import { randomUUID } from 'crypto'
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { AuthType } from '@/lib/auth/hybrid'
+import { getJobQueue, shouldUseBullMQ } from '@/lib/core/async-jobs'
+import { createBullMQJobData } from '@/lib/core/bullmq'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { SSE_HEADERS } from '@/lib/core/utils/sse'
+import { getBaseUrl } from '@/lib/core/utils/urls'
+import { generateId } from '@/lib/core/utils/uuid'
+import { enqueueWorkspaceDispatch } from '@/lib/core/workspace-dispatch'
+import { setExecutionMeta } from '@/lib/execution/event-buffer'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { PauseResumeManager } from '@/lib/workflows/executor/human-in-the-loop-manager'
+import { createStreamingResponse } from '@/lib/workflows/streaming/streaming'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
+import type { ResumeExecutionPayload } from '@/background/resume-execution'
+import { ExecutionSnapshot } from '@/executor/execution/snapshot'
+import type { SerializedSnapshot } from '@/executor/types'
 
 const logger = createLogger('WorkflowResumeAPI')
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+function getStoredSnapshotConfig(pausedExecution: { executionSnapshot: unknown }): {
+  executionMode?: 'sync' | 'stream' | 'async'
+  selectedOutputs?: string[]
+} {
+  try {
+    const serialized = pausedExecution.executionSnapshot as SerializedSnapshot
+    const snapshot = ExecutionSnapshot.fromJSON(serialized.snapshot)
+    return {
+      executionMode: snapshot.metadata.executionMode,
+      selectedOutputs: snapshot.selectedOutputs,
+    }
+  } catch {
+    return {}
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -23,7 +49,6 @@ export async function POST(
 ) {
   const { workflowId, executionId, contextId } = await params
 
-  // Allow resume from dashboard without requiring deployment
   const access = await validateWorkflowAccess(request, workflowId, false)
   if (access.error) {
     return NextResponse.json({ error: access.error.message }, { status: access.error.status })
@@ -60,7 +85,7 @@ export async function POST(
     userId = billedAccountUserId
   }
 
-  const resumeExecutionId = randomUUID()
+  const resumeExecutionId = generateId()
   const requestId = generateRequestId()
 
   logger.info(`[${requestId}] Preprocessing resume execution`, {
@@ -73,12 +98,12 @@ export async function POST(
   const preprocessResult = await preprocessExecution({
     workflowId,
     userId,
-    triggerType: 'manual', // Resume is a manual trigger
+    triggerType: 'manual',
     executionId: resumeExecutionId,
     requestId,
-    checkRateLimit: false, // Manual triggers bypass rate limits
-    checkDeployment: false, // Resuming existing execution, deployment already checked
-    skipUsageLimits: true, // Resume is continuation of authorized execution - don't recheck limits
+    checkRateLimit: false,
+    checkDeployment: false,
+    skipUsageLimits: true,
     useAuthenticatedUserAsActor: isPersonalApiKeyCaller,
     workspaceId: workflow.workspaceId || undefined,
   })
@@ -125,14 +150,132 @@ export async function POST(
       })
     }
 
-    PauseResumeManager.startResumeExecution({
+    await setExecutionMeta(enqueueResult.resumeExecutionId, {
+      status: 'active',
+      userId,
+      workflowId,
+    })
+
+    const resumeArgs = {
       resumeEntryId: enqueueResult.resumeEntryId,
       resumeExecutionId: enqueueResult.resumeExecutionId,
       pausedExecution: enqueueResult.pausedExecution,
       contextId: enqueueResult.contextId,
       resumeInput: enqueueResult.resumeInput,
       userId: enqueueResult.userId,
-    }).catch((error) => {
+    }
+
+    const isApiCaller = access.auth?.authType === AuthType.API_KEY
+    const snapshotConfig = isApiCaller ? getStoredSnapshotConfig(enqueueResult.pausedExecution) : {}
+    const executionMode = isApiCaller ? (snapshotConfig.executionMode ?? 'sync') : undefined
+
+    if (isApiCaller && executionMode === 'stream') {
+      const stream = await createStreamingResponse({
+        requestId,
+        streamConfig: {
+          selectedOutputs: snapshotConfig.selectedOutputs,
+          timeoutMs: preprocessResult.executionTimeout?.sync,
+        },
+        executionId: enqueueResult.resumeExecutionId,
+        executeFn: async ({ onStream, onBlockComplete, abortSignal }) =>
+          PauseResumeManager.startResumeExecution({
+            ...resumeArgs,
+            onStream,
+            onBlockComplete,
+            abortSignal,
+          }),
+      })
+
+      return new NextResponse(stream, {
+        headers: {
+          ...SSE_HEADERS,
+          'X-Execution-Id': enqueueResult.resumeExecutionId,
+        },
+      })
+    }
+
+    if (isApiCaller && executionMode === 'sync') {
+      const result = await PauseResumeManager.startResumeExecution(resumeArgs)
+
+      return NextResponse.json({
+        success: result.success,
+        status: result.status ?? (result.success ? 'completed' : 'failed'),
+        executionId: enqueueResult.resumeExecutionId,
+        output: result.output,
+        error: result.error,
+        metadata: result.metadata
+          ? {
+              duration: result.metadata.duration,
+              startTime: result.metadata.startTime,
+              endTime: result.metadata.endTime,
+            }
+          : undefined,
+      })
+    }
+
+    if (isApiCaller && executionMode === 'async') {
+      const resumePayload: ResumeExecutionPayload = {
+        resumeEntryId: enqueueResult.resumeEntryId,
+        resumeExecutionId: enqueueResult.resumeExecutionId,
+        pausedExecutionId: enqueueResult.pausedExecution.id,
+        contextId: enqueueResult.contextId,
+        resumeInput: enqueueResult.resumeInput,
+        userId: enqueueResult.userId,
+        workflowId,
+        parentExecutionId: executionId,
+      }
+
+      let jobId: string
+      try {
+        const useBullMQ = shouldUseBullMQ()
+        if (useBullMQ) {
+          jobId = await enqueueWorkspaceDispatch({
+            id: enqueueResult.resumeExecutionId,
+            workspaceId: workflow.workspaceId,
+            lane: 'runtime',
+            queueName: 'resume-execution',
+            bullmqJobName: 'resume-execution',
+            bullmqPayload: createBullMQJobData(resumePayload, {
+              workflowId,
+              userId,
+            }),
+            metadata: { workflowId, userId },
+          })
+        } else {
+          const jobQueue = await getJobQueue()
+          jobId = await jobQueue.enqueue('resume-execution', resumePayload, {
+            metadata: { workflowId, workspaceId: workflow.workspaceId, userId },
+          })
+        }
+        logger.info('Enqueued async resume execution', {
+          jobId,
+          resumeExecutionId: enqueueResult.resumeExecutionId,
+        })
+      } catch (dispatchError) {
+        logger.error('Failed to dispatch async resume execution', {
+          error: dispatchError instanceof Error ? dispatchError.message : String(dispatchError),
+          resumeExecutionId: enqueueResult.resumeExecutionId,
+        })
+        return NextResponse.json(
+          { error: 'Failed to queue resume execution. Please try again.' },
+          { status: 503 }
+        )
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          async: true,
+          jobId,
+          executionId: enqueueResult.resumeExecutionId,
+          message: 'Resume execution queued',
+          statusUrl: `${getBaseUrl()}/api/jobs/${jobId}`,
+        },
+        { status: 202 }
+      )
+    }
+
+    PauseResumeManager.startResumeExecution(resumeArgs).catch((error) => {
       logger.error('Failed to start resume execution', {
         workflowId,
         parentExecutionId: executionId,
@@ -170,7 +313,6 @@ export async function GET(
 ) {
   const { workflowId, executionId, contextId } = await params
 
-  // Allow access without API key for browser-based UI (same as parent execution endpoint)
   const access = await validateWorkflowAccess(request, workflowId, false)
   if (access.error) {
     return NextResponse.json({ error: access.error.message }, { status: access.error.status })

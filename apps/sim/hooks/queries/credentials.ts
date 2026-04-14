@@ -5,7 +5,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { environmentKeys } from '@/hooks/queries/environment'
 import { fetchJson } from '@/hooks/selectors/helpers'
 
-export type WorkspaceCredentialType = 'oauth' | 'env_workspace' | 'env_personal'
+/**
+ * Key prefix for OAuth credential queries.
+ * Duplicated here to avoid circular imports with oauth-credentials.ts.
+ */
+const OAUTH_CREDENTIALS_KEY = ['oauthCredentials'] as const
+
+export type WorkspaceCredentialType = 'oauth' | 'env_workspace' | 'env_personal' | 'service_account'
 export type WorkspaceCredentialRole = 'admin' | 'member'
 export type WorkspaceCredentialMemberStatus = 'active' | 'pending' | 'revoked'
 
@@ -73,7 +79,7 @@ export const workspaceCredentialKeys = {
  * Fetch workspace credential list from API.
  * Used by the prefetch function for hover-based cache warming.
  */
-async function fetchWorkspaceCredentialList(
+export async function fetchWorkspaceCredentialList(
   workspaceId: string,
   signal?: AbortSignal
 ): Promise<WorkspaceCredential[]> {
@@ -173,6 +179,7 @@ export function useCreateWorkspaceCredential() {
       accountId?: string
       envKey?: string
       envOwnerUserId?: string
+      serviceAccountJson?: string
     }) => {
       const response = await fetch('/api/credentials', {
         method: 'POST',
@@ -191,6 +198,9 @@ export function useCreateWorkspaceCredential() {
       queryClient.invalidateQueries({
         queryKey: workspaceCredentialKeys.lists(),
       })
+      queryClient.invalidateQueries({
+        queryKey: OAUTH_CREDENTIALS_KEY,
+      })
     },
   })
 }
@@ -204,6 +214,7 @@ export function useUpdateWorkspaceCredential() {
       displayName?: string
       description?: string | null
       accountId?: string
+      serviceAccountJson?: string
     }) => {
       const response = await fetch(`/api/credentials/${payload.credentialId}`, {
         method: 'PUT',
@@ -212,6 +223,7 @@ export function useUpdateWorkspaceCredential() {
           displayName: payload.displayName,
           description: payload.description,
           accountId: payload.accountId,
+          serviceAccountJson: payload.serviceAccountJson,
         }),
       })
       if (!response.ok) {
@@ -220,12 +232,54 @@ export function useUpdateWorkspaceCredential() {
       }
       return response.json()
     },
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({
+        queryKey: workspaceCredentialKeys.detail(variables.credentialId),
+      })
+      await queryClient.cancelQueries({ queryKey: workspaceCredentialKeys.lists() })
+
+      const previousLists = queryClient.getQueriesData<WorkspaceCredential[]>({
+        queryKey: workspaceCredentialKeys.lists(),
+      })
+
+      queryClient.setQueriesData<WorkspaceCredential[]>(
+        { queryKey: workspaceCredentialKeys.lists() },
+        (old) => {
+          if (!old) return old
+          return old.map((cred) =>
+            cred.id === variables.credentialId
+              ? {
+                  ...cred,
+                  ...(variables.displayName !== undefined
+                    ? { displayName: variables.displayName }
+                    : {}),
+                  ...(variables.description !== undefined
+                    ? { description: variables.description ?? null }
+                    : {}),
+                }
+              : cred
+          )
+        }
+      )
+
+      return { previousLists }
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousLists) {
+        for (const [queryKey, data] of context.previousLists) {
+          queryClient.setQueryData(queryKey, data)
+        }
+      }
+    },
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({
         queryKey: workspaceCredentialKeys.detail(variables.credentialId),
       })
       queryClient.invalidateQueries({
         queryKey: workspaceCredentialKeys.lists(),
+      })
+      queryClient.invalidateQueries({
+        queryKey: OAUTH_CREDENTIALS_KEY,
       })
     },
   })
@@ -248,6 +302,7 @@ export function useDeleteWorkspaceCredential() {
     onSettled: (_data, _error, credentialId) => {
       queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.detail(credentialId) })
       queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: OAUTH_CREDENTIALS_KEY })
       queryClient.invalidateQueries({ queryKey: environmentKeys.all })
     },
   })

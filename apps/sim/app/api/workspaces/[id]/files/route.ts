@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { captureServerEvent } from '@/lib/posthog/server'
 import {
   FileConflictError,
   listWorkspaceFiles,
@@ -116,6 +117,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     logger.info(`[${requestId}] Uploaded workspace file: ${fileName}`)
 
+    captureServerEvent(
+      session.user.id,
+      'file_uploaded',
+      { workspace_id: workspaceId, file_type: rawFile.type || 'application/octet-stream' },
+      { groups: { workspace: workspaceId } }
+    )
+
     recordAudit({
       workspaceId,
       actorId: session.user.id,
@@ -126,6 +134,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       resourceId: userFile.id,
       resourceName: fileName,
       description: `Uploaded file "${fileName}"`,
+      metadata: { fileSize: rawFile.size, fileType: rawFile.type || 'application/octet-stream' },
       request,
     })
 

@@ -1,10 +1,10 @@
-import crypto from 'crypto'
 import { db } from '@sim/db'
 import { permissions, userStats, workflowFolder, workflow as workflowTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, asc, eq, inArray, isNull, max, min, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getActiveWorkflowContext } from '@/lib/workflows/active-context'
 import { getNextWorkflowColor } from '@/lib/workflows/colors'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
@@ -100,7 +100,7 @@ export async function deduplicateWorkflowName(
     }
   }
 
-  return `${name} (${crypto.randomUUID().slice(0, 6)})`
+  return `${name} (${generateId().slice(0, 6)})`
 }
 
 export async function resolveWorkflowIdForUser(
@@ -249,7 +249,9 @@ export async function updateWorkflowRunCounts(workflowId: string, runs = 1) {
   }
 }
 
-export const workflowHasResponseBlock = (executionResult: ExecutionResult): boolean => {
+export const workflowHasResponseBlock = (
+  executionResult: Pick<ExecutionResult, 'success' | 'logs'>
+): boolean => {
   if (!executionResult?.logs || !Array.isArray(executionResult.logs) || !executionResult.success) {
     return false
   }
@@ -261,7 +263,9 @@ export const workflowHasResponseBlock = (executionResult: ExecutionResult): bool
   return responseBlock !== undefined
 }
 
-export const createHttpResponseFromBlock = (executionResult: ExecutionResult): NextResponse => {
+export const createHttpResponseFromBlock = (
+  executionResult: Pick<ExecutionResult, 'output'>
+): NextResponse => {
   const { data = {}, status = 200, headers = {} } = executionResult.output
 
   const responseHeaders = new Headers({
@@ -433,7 +437,7 @@ export async function createWorkflowRecord(params: CreateWorkflowInput) {
     color = getNextWorkflowColor(),
     folderId = null,
   } = params
-  const workflowId = crypto.randomUUID()
+  const workflowId = generateId()
   const now = new Date()
 
   const duplicateConditions = [
@@ -563,7 +567,7 @@ export async function createFolderRecord(params: CreateFolderInput) {
     )
   const sortOrder = (maxResult?.maxOrder ?? 0) + 1
 
-  const folderId = crypto.randomUUID()
+  const folderId = generateId()
   await db.insert(workflowFolder).values({
     id: folderId,
     userId,
@@ -610,6 +614,36 @@ export async function deleteFolderRecord(folderId: string): Promise<boolean> {
   await db.delete(workflowFolder).where(eq(workflowFolder.id, folderId))
 
   return true
+}
+
+/**
+ * Checks whether setting `parentId` as the parent of `folderId` would
+ * create a circular reference in the folder tree.
+ */
+export async function checkForCircularReference(
+  folderId: string,
+  parentId: string
+): Promise<boolean> {
+  let currentParentId: string | null = parentId
+  const visited = new Set<string>()
+
+  while (currentParentId) {
+    if (visited.has(currentParentId) || currentParentId === folderId) {
+      return true
+    }
+
+    visited.add(currentParentId)
+
+    const [parent] = await db
+      .select({ parentId: workflowFolder.parentId })
+      .from(workflowFolder)
+      .where(eq(workflowFolder.id, currentParentId))
+      .limit(1)
+
+    currentParentId = parent?.parentId || null
+  }
+
+  return false
 }
 
 export async function listFolders(workspaceId: string) {

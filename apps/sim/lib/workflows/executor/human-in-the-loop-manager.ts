@@ -1,15 +1,27 @@
-import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { pausedExecutions, resumeQueue, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, asc, desc, eq, inArray, lt, type SQL, sql } from 'drizzle-orm'
 import type { Edge } from 'reactflow'
 import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
+import { generateId } from '@/lib/core/utils/uuid'
+import { createExecutionEventWriter, setExecutionMeta } from '@/lib/execution/event-buffer'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
+import type { ExecutionEvent } from '@/lib/workflows/executor/execution-events'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
-import type { ExecutionResult, PausePoint, SerializedSnapshot } from '@/executor/types'
+import type {
+  ChildWorkflowContext,
+  ExecutionCallbacks,
+  IterationContext,
+} from '@/executor/execution/types'
+import type {
+  ExecutionResult,
+  PausePoint,
+  SerializedSnapshot,
+  StreamingExecution,
+} from '@/executor/types'
 import { filterOutputForLog } from '@/executor/utils/output-filter'
 import type { SerializedConnection } from '@/serializer/types'
 
@@ -99,6 +111,10 @@ interface StartResumeExecutionArgs {
   contextId: string
   resumeInput: unknown
   userId: string
+  sendEvent?: (event: ExecutionEvent) => void
+  onStream?: (streamingExec: StreamingExecution) => Promise<void>
+  onBlockComplete?: (blockId: string, output: unknown) => Promise<void>
+  abortSignal?: AbortSignal
 }
 
 export class PauseResumeManager {
@@ -125,7 +141,7 @@ export class PauseResumeManager {
     await db
       .insert(pausedExecutions)
       .values({
-        id: randomUUID(),
+        id: generateId(),
         workflowId,
         executionId,
         executionSnapshot: snapshotSeed,
@@ -208,7 +224,7 @@ export class PauseResumeManager {
         const [entry] = await tx
           .insert(resumeQueue)
           .values({
-            id: randomUUID(),
+            id: generateId(),
             pausedExecutionId: pausedExecution.id,
             parentExecutionId: executionId,
             newExecutionId: resumeExecutionId,
@@ -246,7 +262,7 @@ export class PauseResumeManager {
         }
       }
 
-      const resumeEntryId = randomUUID()
+      const resumeEntryId = generateId()
       await tx.insert(resumeQueue).values({
         id: resumeEntryId,
         pausedExecutionId: pausedExecution.id,
@@ -280,9 +296,19 @@ export class PauseResumeManager {
     })
   }
 
-  static async startResumeExecution(args: StartResumeExecutionArgs): Promise<void> {
-    const { resumeEntryId, resumeExecutionId, pausedExecution, contextId, resumeInput, userId } =
-      args
+  static async startResumeExecution(args: StartResumeExecutionArgs): Promise<ExecutionResult> {
+    const {
+      resumeEntryId,
+      resumeExecutionId,
+      pausedExecution,
+      contextId,
+      resumeInput,
+      userId,
+      sendEvent,
+      onStream,
+      onBlockComplete,
+      abortSignal,
+    } = args
 
     const pausePointsRecord = pausedExecution.pausePoints as Record<string, any>
     const pausePointForContext = pausePointsRecord?.[contextId]
@@ -297,6 +323,10 @@ export class PauseResumeManager {
         contextId,
         resumeInput,
         userId,
+        sendEvent,
+        onStream,
+        onBlockComplete,
+        abortSignal,
       })
 
       if (result.status === 'paused') {
@@ -345,6 +375,8 @@ export class PauseResumeManager {
       })
 
       await PauseResumeManager.processQueuedResumes(pausedExecution.executionId)
+
+      return result
     } catch (error) {
       await PauseResumeManager.markResumeFailed({
         resumeEntryId,
@@ -370,8 +402,22 @@ export class PauseResumeManager {
     contextId: string
     resumeInput: unknown
     userId: string
+    sendEvent?: (event: ExecutionEvent) => void
+    onStream?: (streamingExec: StreamingExecution) => Promise<void>
+    onBlockComplete?: (blockId: string, output: unknown) => Promise<void>
+    abortSignal?: AbortSignal
   }): Promise<ExecutionResult> {
-    const { resumeExecutionId, pausedExecution, contextId, resumeInput, userId } = args
+    const {
+      resumeExecutionId,
+      pausedExecution,
+      contextId,
+      resumeInput,
+      userId,
+      sendEvent,
+      onStream: externalOnStream,
+      onBlockComplete: externalOnBlockComplete,
+      abortSignal: externalAbortSignal,
+    } = args
     const parentExecutionId = pausedExecution.executionId
 
     await db
@@ -771,36 +817,283 @@ export class PauseResumeManager {
       actorUserId: metadata.userId,
     })
 
-    const timeoutController = createTimeoutAbortController(
-      preprocessingResult.executionTimeout?.async
-    )
+    const workflowId = pausedExecution.workflowId
+    const eventWriter = createExecutionEventWriter(resumeExecutionId)
+    await setExecutionMeta(resumeExecutionId, {
+      status: 'active',
+      userId: metadata.userId,
+      workflowId,
+    })
+
+    let localEventSeq = 0
+    const writeBufferedEvent = (event: ExecutionEvent) => {
+      localEventSeq++
+      event.eventId = localEventSeq
+      eventWriter.write(event).catch(() => {})
+      sendEvent?.(event)
+    }
+
+    writeBufferedEvent({
+      type: 'execution:started',
+      timestamp: new Date().toISOString(),
+      executionId: resumeExecutionId,
+      workflowId,
+      data: { startTime: new Date().toISOString() },
+    } as ExecutionEvent)
+
+    const callbacks: ExecutionCallbacks = {
+      onBlockStart: async (
+        blockId: string,
+        blockName: string,
+        blockType: string,
+        executionOrder: number,
+        iterationContext?: IterationContext,
+        childWorkflowContext?: ChildWorkflowContext
+      ) => {
+        writeBufferedEvent({
+          type: 'block:started',
+          timestamp: new Date().toISOString(),
+          executionId: resumeExecutionId,
+          workflowId,
+          data: {
+            blockId,
+            blockName,
+            blockType,
+            executionOrder,
+            ...(iterationContext && {
+              iterationCurrent: iterationContext.iterationCurrent,
+              iterationTotal: iterationContext.iterationTotal,
+              iterationType: iterationContext.iterationType,
+              iterationContainerId: iterationContext.iterationContainerId,
+              ...(iterationContext.parentIterations?.length && {
+                parentIterations: iterationContext.parentIterations,
+              }),
+            }),
+            ...(childWorkflowContext && {
+              childWorkflowBlockId: childWorkflowContext.parentBlockId,
+              childWorkflowName: childWorkflowContext.workflowName,
+            }),
+          },
+        } as ExecutionEvent)
+      },
+      onBlockComplete: async (
+        blockId: string,
+        blockName: string,
+        blockType: string,
+        callbackData: Record<string, unknown>,
+        iterationContext?: IterationContext,
+        childWorkflowContext?: ChildWorkflowContext
+      ) => {
+        const output = callbackData.output as Record<string, unknown> | undefined
+        const hasError = output?.error
+        const sharedData = {
+          blockId,
+          blockName,
+          blockType,
+          input: callbackData.input,
+          durationMs: (callbackData.executionTime as number) || 0,
+          startedAt: callbackData.startedAt,
+          executionOrder: callbackData.executionOrder,
+          endedAt: callbackData.endedAt,
+          ...(iterationContext && {
+            iterationCurrent: iterationContext.iterationCurrent,
+            iterationTotal: iterationContext.iterationTotal,
+            iterationType: iterationContext.iterationType,
+            iterationContainerId: iterationContext.iterationContainerId,
+            ...(iterationContext.parentIterations?.length && {
+              parentIterations: iterationContext.parentIterations,
+            }),
+          }),
+          ...(childWorkflowContext && {
+            childWorkflowBlockId: childWorkflowContext.parentBlockId,
+            childWorkflowName: childWorkflowContext.workflowName,
+          }),
+          ...(callbackData.childWorkflowInstanceId
+            ? { childWorkflowInstanceId: callbackData.childWorkflowInstanceId }
+            : {}),
+        }
+
+        writeBufferedEvent({
+          type: hasError ? 'block:error' : 'block:completed',
+          timestamp: new Date().toISOString(),
+          executionId: resumeExecutionId,
+          workflowId,
+          data: hasError ? { ...sharedData, error: output?.error } : { ...sharedData, output },
+        } as ExecutionEvent)
+
+        if (externalOnBlockComplete) {
+          await externalOnBlockComplete(blockId, callbackData.output)
+        }
+      },
+      onChildWorkflowInstanceReady: (
+        blockId: string,
+        childWorkflowInstanceId: string,
+        iterationContext?: IterationContext,
+        executionOrder?: number
+      ) => {
+        writeBufferedEvent({
+          type: 'block:childWorkflowStarted',
+          timestamp: new Date().toISOString(),
+          executionId: resumeExecutionId,
+          workflowId,
+          data: {
+            blockId,
+            childWorkflowInstanceId,
+            ...(iterationContext && {
+              iterationCurrent: iterationContext.iterationCurrent,
+              iterationContainerId: iterationContext.iterationContainerId,
+            }),
+            ...(executionOrder !== undefined && { executionOrder }),
+          },
+        } as ExecutionEvent)
+      },
+      onStream: async (streamingExec: StreamingExecution) => {
+        if (externalOnStream) {
+          await externalOnStream(streamingExec)
+          return
+        }
+
+        const blockId = (streamingExec.execution as unknown as Record<string, unknown>)
+          .blockId as string
+        const reader = streamingExec.stream.getReader()
+        const decoder = new TextDecoder()
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            const chunk = decoder.decode(value, { stream: true })
+            writeBufferedEvent({
+              type: 'stream:chunk',
+              timestamp: new Date().toISOString(),
+              executionId: resumeExecutionId,
+              workflowId,
+              data: { blockId, chunk },
+            } as ExecutionEvent)
+          }
+          writeBufferedEvent({
+            type: 'stream:done',
+            timestamp: new Date().toISOString(),
+            executionId: resumeExecutionId,
+            workflowId,
+            data: { blockId },
+          } as ExecutionEvent)
+        } catch (streamError) {
+          logger.error('Error streaming block content during resume', {
+            resumeExecutionId,
+            blockId,
+            error: streamError instanceof Error ? streamError.message : String(streamError),
+          })
+        } finally {
+          try {
+            await reader.cancel().catch(() => {})
+          } catch {}
+        }
+      },
+    }
+
+    const timeoutController = externalAbortSignal
+      ? null
+      : createTimeoutAbortController(preprocessingResult.executionTimeout?.async)
 
     let result: ExecutionResult
+    let finalMetaStatus: 'complete' | 'error' | 'cancelled' = 'complete'
     try {
       result = await executeWorkflowCore({
         snapshot: resumeSnapshot,
-        callbacks: {},
+        callbacks,
         loggingSession,
-        skipLogCreation: true, // Reuse existing log entry
-        includeFileBase64: true, // Enable base64 hydration
-        base64MaxBytes: undefined, // Use default limit
-        abortSignal: timeoutController.signal,
+        skipLogCreation: true,
+        includeFileBase64: true,
+        base64MaxBytes: undefined,
+        abortSignal: externalAbortSignal ?? timeoutController?.signal,
       })
-    } finally {
-      timeoutController.cleanup()
-    }
 
-    if (
-      result.status === 'cancelled' &&
-      timeoutController.isTimedOut() &&
-      timeoutController.timeoutMs
-    ) {
-      const timeoutErrorMessage = getTimeoutErrorMessage(null, timeoutController.timeoutMs)
-      logger.info('Resume execution timed out', {
-        resumeExecutionId,
-        timeoutMs: timeoutController.timeoutMs,
-      })
-      await loggingSession.markAsFailed(timeoutErrorMessage)
+      if (
+        result.status === 'cancelled' &&
+        timeoutController?.isTimedOut() &&
+        timeoutController?.timeoutMs
+      ) {
+        const timeoutErrorMessage = getTimeoutErrorMessage(null, timeoutController!.timeoutMs)
+        logger.info('Resume execution timed out', {
+          resumeExecutionId,
+          timeoutMs: timeoutController.timeoutMs,
+        })
+        await loggingSession.markAsFailed(timeoutErrorMessage)
+
+        writeBufferedEvent({
+          type: 'execution:error',
+          timestamp: new Date().toISOString(),
+          executionId: resumeExecutionId,
+          workflowId,
+          data: {
+            error: timeoutErrorMessage,
+            duration: result.metadata?.duration || 0,
+          },
+        } as ExecutionEvent)
+        finalMetaStatus = 'error'
+      } else if (result.status === 'cancelled') {
+        writeBufferedEvent({
+          type: 'execution:cancelled',
+          timestamp: new Date().toISOString(),
+          executionId: resumeExecutionId,
+          workflowId,
+          data: { duration: result.metadata?.duration || 0 },
+        } as ExecutionEvent)
+        finalMetaStatus = 'cancelled'
+      } else if (result.status === 'paused') {
+        writeBufferedEvent({
+          type: 'execution:paused',
+          timestamp: new Date().toISOString(),
+          executionId: resumeExecutionId,
+          workflowId,
+          data: {
+            output: result.output,
+            duration: result.metadata?.duration || 0,
+            startTime: result.metadata?.startTime || new Date().toISOString(),
+            endTime: result.metadata?.endTime || new Date().toISOString(),
+          },
+        } as ExecutionEvent)
+        finalMetaStatus = 'complete'
+      } else {
+        writeBufferedEvent({
+          type: 'execution:completed',
+          timestamp: new Date().toISOString(),
+          executionId: resumeExecutionId,
+          workflowId,
+          data: {
+            success: result.success,
+            output: result.output,
+            duration: result.metadata?.duration || 0,
+            startTime: result.metadata?.startTime || new Date().toISOString(),
+            endTime: result.metadata?.endTime || new Date().toISOString(),
+          },
+        } as ExecutionEvent)
+        finalMetaStatus = 'complete'
+      }
+    } catch (execError) {
+      writeBufferedEvent({
+        type: 'execution:error',
+        timestamp: new Date().toISOString(),
+        executionId: resumeExecutionId,
+        workflowId,
+        data: {
+          error: execError instanceof Error ? execError.message : String(execError),
+          duration: 0,
+        },
+      } as ExecutionEvent)
+      finalMetaStatus = 'error'
+      throw execError
+    } finally {
+      timeoutController?.cleanup()
+      try {
+        await eventWriter.close()
+      } catch (closeError) {
+        logger.warn('Failed to close event writer for resume', {
+          resumeExecutionId,
+          error: closeError instanceof Error ? closeError.message : String(closeError),
+        })
+      }
+      setExecutionMeta(resumeExecutionId, { status: finalMetaStatus }).catch(() => {})
     }
 
     return result
@@ -993,6 +1286,17 @@ export class PauseResumeManager {
         PauseResumeManager.mapPausePoints(row.pausePoints)
       )
     )
+  }
+
+  static async getPausedExecutionById(
+    id: string
+  ): Promise<typeof pausedExecutions.$inferSelect | null> {
+    const rows = await db
+      .select()
+      .from(pausedExecutions)
+      .where(eq(pausedExecutions.id, id))
+      .limit(1)
+    return rows[0] ?? null
   }
 
   static async getPausedExecutionDetail(options: {

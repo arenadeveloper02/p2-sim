@@ -42,7 +42,7 @@ export const webflowFormSubmissionTrigger: TriggerConfig = {
         field: 'selectedTriggerId',
         value: 'webflow_form_submission',
       },
-      fetchOptions: async (blockId: string, _subBlockId: string) => {
+      fetchOptions: async (blockId: string) => {
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -71,7 +71,7 @@ export const webflowFormSubmissionTrigger: TriggerConfig = {
           throw error
         }
       },
-      fetchOptionById: async (blockId: string, _subBlockId: string, optionId: string) => {
+      fetchOptionById: async (blockId: string, optionId: string) => {
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -104,18 +104,6 @@ export const webflowFormSubmissionTrigger: TriggerConfig = {
         'The name of the specific form to monitor (optional - leave empty for all forms)',
       required: false,
       mode: 'trigger',
-      condition: {
-        field: 'selectedTriggerId',
-        value: 'webflow_form_submission',
-      },
-    },
-    {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'webflow_form_submission',
       condition: {
         field: 'selectedTriggerId',
         value: 'webflow_form_submission',

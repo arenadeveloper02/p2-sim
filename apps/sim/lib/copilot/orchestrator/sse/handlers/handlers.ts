@@ -1,7 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { upsertAsyncToolCall } from '@/lib/copilot/async-runs/repository'
 import { STREAM_TIMEOUT_MS } from '@/lib/copilot/constants'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
 import {
   asRecord,
   getEventData,
@@ -21,6 +20,7 @@ import type {
   ToolCallState,
 } from '@/lib/copilot/orchestrator/types'
 import { isWorkflowToolName } from '@/lib/copilot/workflow-tools'
+import { generateId } from '@/lib/core/utils/uuid'
 import { executeToolAndReport, waitForToolCompletion } from './tool-execution'
 
 const logger = createLogger('CopilotSseHandlers')
@@ -83,15 +83,12 @@ function abortPendingToolIfStreamDead(
     },
     context.messageId
   ).catch((err) => {
-    logger.error(
-      appendCopilotLogContext('markToolComplete fire-and-forget failed (stream aborted)', {
-        messageId: context.messageId,
-      }),
-      {
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .error('markToolComplete fire-and-forget failed (stream aborted)', {
         toolCallId: toolCall.id,
         error: err instanceof Error ? err.message : String(err),
-      }
-    )
+      })
   })
   return true
 }
@@ -136,15 +133,12 @@ function handleClientCompletion(
       { background: true },
       context.messageId
     ).catch((err) => {
-      logger.error(
-        appendCopilotLogContext('markToolComplete fire-and-forget failed (client background)', {
-          messageId: context.messageId,
-        }),
-        {
+      logger
+        .withMetadata({ messageId: context.messageId })
+        .error('markToolComplete fire-and-forget failed (client background)', {
           toolCallId: toolCall.id,
           error: err instanceof Error ? err.message : String(err),
-        }
-      )
+        })
     })
     markToolResultSeen(toolCallId)
     return
@@ -160,15 +154,12 @@ function handleClientCompletion(
       undefined,
       context.messageId
     ).catch((err) => {
-      logger.error(
-        appendCopilotLogContext('markToolComplete fire-and-forget failed (client rejected)', {
-          messageId: context.messageId,
-        }),
-        {
+      logger
+        .withMetadata({ messageId: context.messageId })
+        .error('markToolComplete fire-and-forget failed (client rejected)', {
           toolCallId: toolCall.id,
           error: err instanceof Error ? err.message : String(err),
-        }
-      )
+        })
     })
     markToolResultSeen(toolCallId)
     return
@@ -184,15 +175,12 @@ function handleClientCompletion(
       completion.data,
       context.messageId
     ).catch((err) => {
-      logger.error(
-        appendCopilotLogContext('markToolComplete fire-and-forget failed (client cancelled)', {
-          messageId: context.messageId,
-        }),
-        {
+      logger
+        .withMetadata({ messageId: context.messageId })
+        .error('markToolComplete fire-and-forget failed (client cancelled)', {
           toolCallId: toolCall.id,
           error: err instanceof Error ? err.message : String(err),
-        }
-      )
+        })
     })
     markToolResultSeen(toolCallId)
     return
@@ -209,16 +197,13 @@ function handleClientCompletion(
     completion?.data,
     context.messageId
   ).catch((err) => {
-    logger.error(
-      appendCopilotLogContext('markToolComplete fire-and-forget failed (client completion)', {
-        messageId: context.messageId,
-      }),
-      {
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .error('markToolComplete fire-and-forget failed (client completion)', {
         toolCallId: toolCall.id,
         toolName: toolCall.name,
         error: err instanceof Error ? err.message : String(err),
-      }
-    )
+      })
   })
   markToolResultSeen(toolCallId)
 }
@@ -252,16 +237,13 @@ async function emitSyntheticToolResult(
       error: !success ? completion?.message : undefined,
     } as SSEEvent)
   } catch (error) {
-    logger.warn(
-      appendCopilotLogContext('Failed to emit synthetic tool_result', {
-        messageId: context.messageId,
-      }),
-      {
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .warn('Failed to emit synthetic tool_result', {
         toolCallId,
         toolName,
         error: error instanceof Error ? error.message : String(error),
-      }
-    )
+      })
   }
 }
 
@@ -328,17 +310,14 @@ export const sseHandlers: Record<string, SSEHandler> = {
     const rid = typeof event.data === 'string' ? event.data : undefined
     if (rid) {
       context.requestId = rid
-      logger.error(
-        appendCopilotLogContext('Mapped copilot message to Go trace ID', {
-          messageId: context.messageId,
-        }),
-        {
+      logger
+        .withMetadata({ messageId: context.messageId })
+        .info('Mapped copilot message to Go trace ID', {
           goTraceId: rid,
           chatId: context.chatId,
           executionId: context.executionId,
           runId: context.runId,
-        }
-      )
+        })
     }
   },
   title_updated: () => {},
@@ -479,35 +458,29 @@ export const sseHandlers: Record<string, SSEHandler> = {
       const pendingPromise = (async () => {
         try {
           await upsertAsyncToolCall({
-            runId: context.runId || crypto.randomUUID(),
+            runId: context.runId || generateId(),
             toolCallId,
             toolName,
             args,
           })
         } catch (err) {
-          logger.warn(
-            appendCopilotLogContext('Failed to persist async tool row before execution', {
-              messageId: context.messageId,
-            }),
-            {
+          logger
+            .withMetadata({ messageId: context.messageId })
+            .warn('Failed to persist async tool row before execution', {
               toolCallId,
               toolName,
               error: err instanceof Error ? err.message : String(err),
-            }
-          )
+            })
         }
         return executeToolAndReport(toolCallId, context, execContext, options)
       })().catch((err) => {
-        logger.error(
-          appendCopilotLogContext('Parallel tool execution failed', {
-            messageId: context.messageId,
-          }),
-          {
+        logger
+          .withMetadata({ messageId: context.messageId })
+          .error('Parallel tool execution failed', {
             toolCallId,
             toolName,
             error: err instanceof Error ? err.message : String(err),
-          }
-        )
+          })
         return {
           status: 'error',
           message: err instanceof Error ? err.message : String(err),
@@ -540,22 +513,19 @@ export const sseHandlers: Record<string, SSEHandler> = {
       } else {
         toolCall.status = 'executing'
         await upsertAsyncToolCall({
-          runId: context.runId || crypto.randomUUID(),
+          runId: context.runId || generateId(),
           toolCallId,
           toolName,
           args,
           status: 'running',
         }).catch((err) => {
-          logger.warn(
-            appendCopilotLogContext('Failed to persist async tool row for client-executable tool', {
-              messageId: context.messageId,
-            }),
-            {
+          logger
+            .withMetadata({ messageId: context.messageId })
+            .warn('Failed to persist async tool row for client-executable tool', {
               toolCallId,
               toolName,
               error: err instanceof Error ? err.message : String(err),
-            }
-          )
+            })
         })
         const clientWaitSignal = buildClientToolAbortSignal(options)
         const completion = await waitForToolCompletion(
@@ -740,35 +710,29 @@ export const subAgentHandlers: Record<string, SSEHandler> = {
       const pendingPromise = (async () => {
         try {
           await upsertAsyncToolCall({
-            runId: context.runId || crypto.randomUUID(),
+            runId: context.runId || generateId(),
             toolCallId,
             toolName,
             args,
           })
         } catch (err) {
-          logger.warn(
-            appendCopilotLogContext('Failed to persist async subagent tool row before execution', {
-              messageId: context.messageId,
-            }),
-            {
+          logger
+            .withMetadata({ messageId: context.messageId })
+            .warn('Failed to persist async subagent tool row before execution', {
               toolCallId,
               toolName,
               error: err instanceof Error ? err.message : String(err),
-            }
-          )
+            })
         }
         return executeToolAndReport(toolCallId, context, execContext, options)
       })().catch((err) => {
-        logger.error(
-          appendCopilotLogContext('Parallel subagent tool execution failed', {
-            messageId: context.messageId,
-          }),
-          {
+        logger
+          .withMetadata({ messageId: context.messageId })
+          .error('Parallel subagent tool execution failed', {
             toolCallId,
             toolName,
             error: err instanceof Error ? err.message : String(err),
-          }
-        )
+          })
         return {
           status: 'error',
           message: err instanceof Error ? err.message : String(err),
@@ -796,23 +760,19 @@ export const subAgentHandlers: Record<string, SSEHandler> = {
       } else {
         toolCall.status = 'executing'
         await upsertAsyncToolCall({
-          runId: context.runId || crypto.randomUUID(),
+          runId: context.runId || generateId(),
           toolCallId,
           toolName,
           args,
           status: 'running',
         }).catch((err) => {
-          logger.warn(
-            appendCopilotLogContext(
-              'Failed to persist async tool row for client-executable subagent tool',
-              { messageId: context.messageId }
-            ),
-            {
+          logger
+            .withMetadata({ messageId: context.messageId })
+            .warn('Failed to persist async tool row for client-executable subagent tool', {
               toolCallId,
               toolName,
               error: err instanceof Error ? err.message : String(err),
-            }
-          )
+            })
         })
         const clientWaitSignal = buildClientToolAbortSignal(options)
         const completion = await waitForToolCompletion(
@@ -881,15 +841,12 @@ export const subAgentHandlers: Record<string, SSEHandler> = {
 export function handleSubagentRouting(event: SSEEvent, context: StreamingContext): boolean {
   if (!event.subagent) return false
   if (!context.subAgentParentToolCallId) {
-    logger.warn(
-      appendCopilotLogContext('Subagent event missing parent tool call', {
-        messageId: context.messageId,
-      }),
-      {
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .warn('Subagent event missing parent tool call', {
         type: event.type,
         subagent: event.subagent,
-      }
-    )
+      })
     return false
   }
   return true

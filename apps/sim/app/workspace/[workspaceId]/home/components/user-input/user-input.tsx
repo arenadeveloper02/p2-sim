@@ -3,19 +3,13 @@
 import type React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { Database, Table as TableIcon } from '@/components/emcn/icons'
-import { getDocumentIcon } from '@/components/icons/document-icons'
 import { useSession } from '@/lib/auth/auth-client'
+import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { cn } from '@/lib/core/utils/cn'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
+import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
 import { useAvailableResources } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/add-resource-dropdown'
-import type {
-  PlusMenuHandle,
-  SpeechRecognitionErrorEvent,
-  SpeechRecognitionEvent,
-  SpeechRecognitionInstance,
-  WindowWithSpeech,
-} from '@/app/workspace/[workspaceId]/home/components/user-input/components'
+import type { PlusMenuHandle } from '@/app/workspace/[workspaceId]/home/components/user-input/components'
 import {
   AnimatedPlaceholderEffect,
   AttachedFilesList,
@@ -27,7 +21,6 @@ import {
   OVERLAY_CLASSES,
   PlusMenuDropdown,
   SendButton,
-  SPEECH_RECOGNITION_LANG,
   TEXTAREA_BASE_CLASSES,
 } from '@/app/workspace/[workspaceId]/home/components/user-input/components'
 import type {
@@ -45,10 +38,56 @@ import {
   computeMentionHighlightRanges,
   extractContextTokens,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/utils'
+import { useWorkflowMap } from '@/hooks/queries/workflows'
+import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
+import { useSpeechToText } from '@/hooks/use-speech-to-text'
 import type { ChatContext } from '@/stores/panel'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
+
+function getCaretAnchor(
+  textarea: HTMLTextAreaElement,
+  caretPos: number
+): { left: number; top: number } {
+  const textareaRect = textarea.getBoundingClientRect()
+  const style = window.getComputedStyle(textarea)
+
+  const mirror = document.createElement('div')
+  mirror.style.position = 'absolute'
+  mirror.style.top = '0'
+  mirror.style.left = '0'
+  mirror.style.visibility = 'hidden'
+  mirror.style.whiteSpace = 'pre-wrap'
+  mirror.style.overflowWrap = 'break-word'
+  mirror.style.font = style.font
+  mirror.style.padding = style.padding
+  mirror.style.border = style.border
+  mirror.style.width = style.width
+  mirror.style.lineHeight = style.lineHeight
+  mirror.style.boxSizing = style.boxSizing
+  mirror.style.letterSpacing = style.letterSpacing
+  mirror.style.textTransform = style.textTransform
+  mirror.style.textIndent = style.textIndent
+  mirror.style.textAlign = style.textAlign
+  mirror.textContent = textarea.value.substring(0, caretPos)
+
+  const marker = document.createElement('span')
+  marker.style.display = 'inline-block'
+  marker.style.width = '0px'
+  marker.style.padding = '0'
+  marker.style.border = '0'
+  mirror.appendChild(marker)
+
+  document.body.appendChild(mirror)
+  const markerRect = marker.getBoundingClientRect()
+  const mirrorRect = mirror.getBoundingClientRect()
+  document.body.removeChild(mirror)
+
+  return {
+    left: textareaRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft,
+    top: textareaRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop,
+  }
+}
 
 interface UserInputProps {
   defaultValue?: string
@@ -64,6 +103,8 @@ interface UserInputProps {
   isInitialView?: boolean
   userId?: string
   onContextAdd?: (context: ChatContext) => void
+  onContextRemove?: (context: ChatContext) => void
+  onEnterWhileEmpty?: () => boolean
 }
 
 export function UserInput({
@@ -76,8 +117,12 @@ export function UserInput({
   isInitialView = true,
   userId,
   onContextAdd,
+  onContextRemove,
+  onEnterWhileEmpty,
 }: UserInputProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { navigateToSettings } = useSettingsNavigation()
+  const { data: workflowsById = {} } = useWorkflowMap(workspaceId)
   const { data: session } = useSession()
   const [value, setValue] = useState(defaultValue)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -123,6 +168,37 @@ export function UserInput({
     [addContext, onContextAdd]
   )
 
+  const onContextRemoveRef = useRef(onContextRemove)
+  onContextRemoveRef.current = onContextRemove
+
+  const prevSelectedContextsRef = useRef<ChatContext[]>([])
+  useEffect(() => {
+    const prev = prevSelectedContextsRef.current
+    const curr = contextManagement.selectedContexts
+    const contextId = (ctx: ChatContext): string => {
+      switch (ctx.kind) {
+        case 'workflow':
+        case 'current_workflow':
+          return `${ctx.kind}:${ctx.workflowId}`
+        case 'knowledge':
+          return `knowledge:${ctx.knowledgeId ?? ''}`
+        case 'table':
+          return `table:${ctx.tableId}`
+        case 'file':
+          return `file:${ctx.fileId}`
+        case 'folder':
+          return `folder:${ctx.folderId}`
+        case 'past_chat':
+          return `past_chat:${ctx.chatId}`
+        default:
+          return `${ctx.kind}:${ctx.label}`
+      }
+    }
+    const removed = prev.filter((p) => !curr.some((c) => contextId(c) === contextId(p)))
+    if (removed.length > 0) removed.forEach((ctx) => onContextRemoveRef.current?.(ctx))
+    prevSelectedContextsRef.current = curr
+  }, [contextManagement.selectedContexts])
+
   const existingResourceKeys = useMemo(() => {
     const keys = new Set<string>()
     for (const ctx of contextManagement.selectedContexts) {
@@ -130,6 +206,8 @@ export function UserInput({
       if (ctx.kind === 'knowledge' && ctx.knowledgeId) keys.add(`knowledgebase:${ctx.knowledgeId}`)
       if (ctx.kind === 'table' && ctx.tableId) keys.add(`table:${ctx.tableId}`)
       if (ctx.kind === 'file' && ctx.fileId) keys.add(`file:${ctx.fileId}`)
+      if (ctx.kind === 'folder' && ctx.folderId) keys.add(`folder:${ctx.folderId}`)
+      if (ctx.kind === 'past_chat' && ctx.chatId) keys.add(`task:${ctx.chatId}`)
     }
     return keys
   }, [contextManagement.selectedContexts])
@@ -153,21 +231,45 @@ export function UserInput({
 
   const canSubmit = (value.trim().length > 0 || hasFiles) && !isSending
 
-  const [isListening, setIsListening] = useState(false)
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
-  const prefixRef = useRef('')
   const valueRef = useRef(value)
+  const sttPrefixRef = useRef('')
+
+  const handleTranscript = useCallback((text: string) => {
+    const prefix = sttPrefixRef.current
+    const newVal = prefix ? `${prefix} ${text}` : text
+    setValue(newVal)
+    valueRef.current = newVal
+  }, [])
+
+  const handleUsageLimitExceeded = useCallback(() => {
+    navigateToSettings({ section: 'subscription' })
+  }, [navigateToSettings])
+
+  const {
+    isListening,
+    isSupported: isSttSupported,
+    toggleListening: rawToggle,
+    resetTranscript,
+  } = useSpeechToText({
+    onTranscript: handleTranscript,
+    onUsageLimitExceeded: handleUsageLimitExceeded,
+  })
+
+  const toggleListening = useCallback(() => {
+    if (!isListening) {
+      sttPrefixRef.current = valueRef.current
+    }
+    rawToggle()
+  }, [isListening, rawToggle])
 
   const filesRef = useRef(files)
   filesRef.current = files
   const contextRef = useRef(contextManagement)
   contextRef.current = contextManagement
-
-  useEffect(() => {
-    return () => {
-      recognitionRef.current?.abort()
-    }
-  }, [])
+  const onEnterWhileEmptyRef = useRef(onEnterWhileEmpty)
+  onEnterWhileEmptyRef.current = onEnterWhileEmpty
+  const isSendingRef = useRef(isSending)
+  isSendingRef.current = isSending
 
   useEffect(() => {
     valueRef.current = value
@@ -195,15 +297,17 @@ export function UserInput({
       if (textarea) {
         const currentValue = valueRef.current
         const insertAt = atInsertPosRef.current ?? textarea.selectionStart ?? currentValue.length
-        atInsertPosRef.current = null
-
         const needsSpaceBefore = insertAt > 0 && !/\s/.test(currentValue.charAt(insertAt - 1))
         const insertText = `${needsSpaceBefore ? ' ' : ''}@${resource.title} `
         const before = currentValue.slice(0, insertAt)
         const after = currentValue.slice(insertAt)
+        const newValue = `${before}${insertText}${after}`
         const newPos = before.length + insertText.length
         pendingCursorRef.current = newPos
-        setValue(`${before}${insertText}${after}`)
+        // Eagerly sync refs so successive drop-handler iterations see the updated position
+        valueRef.current = newValue
+        atInsertPosRef.current = newPos
+        setValue(newValue)
       }
 
       const context = mapResourceToContext(resource)
@@ -229,7 +333,10 @@ export function UserInput({
   }, [])
 
   const handleContainerDragOver = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-sim-resource')) {
+    if (
+      e.dataTransfer.types.includes(SIM_RESOURCE_DRAG_TYPE) ||
+      e.dataTransfer.types.includes(SIM_RESOURCES_DRAG_TYPE)
+    ) {
       e.preventDefault()
       e.stopPropagation()
       e.dataTransfer.dropEffect = 'copy'
@@ -240,13 +347,30 @@ export function UserInput({
 
   const handleContainerDrop = useCallback(
     (e: React.DragEvent) => {
-      const resourceJson = e.dataTransfer.getData('application/x-sim-resource')
+      const resourcesJson = e.dataTransfer.getData(SIM_RESOURCES_DRAG_TYPE)
+      if (resourcesJson) {
+        e.preventDefault()
+        e.stopPropagation()
+        try {
+          const resources = JSON.parse(resourcesJson) as MothershipResource[]
+          for (const resource of resources) {
+            handleResourceSelect(resource)
+          }
+          // Reset after batch so the next non-drop insert uses the cursor position
+          atInsertPosRef.current = null
+        } catch {
+          // Invalid JSON — ignore
+        }
+        return
+      }
+      const resourceJson = e.dataTransfer.getData(SIM_RESOURCE_DRAG_TYPE)
       if (resourceJson) {
         e.preventDefault()
         e.stopPropagation()
         try {
           const resource = JSON.parse(resourceJson) as MothershipResource
           handleResourceSelect(resource)
+          atInsertPosRef.current = null
         } catch {
           // Invalid JSON — ignore
         }
@@ -258,11 +382,17 @@ export function UserInput({
   )
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
-    filesRef.current.handleDragEnter(e)
+    const isResourceDrag =
+      e.dataTransfer.types.includes(SIM_RESOURCE_DRAG_TYPE) ||
+      e.dataTransfer.types.includes(SIM_RESOURCES_DRAG_TYPE)
+    if (!isResourceDrag) filesRef.current.handleDragEnter(e)
   }, [])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    filesRef.current.handleDragLeave(e)
+    const isResourceDrag =
+      e.dataTransfer.types.includes(SIM_RESOURCE_DRAG_TYPE) ||
+      e.dataTransfer.types.includes(SIM_RESOURCES_DRAG_TYPE)
+    if (!isResourceDrag) filesRef.current.handleDragLeave(e)
   }, [])
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,84 +420,6 @@ export function UserInput({
     [textareaRef]
   )
 
-  const startRecognition = useCallback((): boolean => {
-    const w = window as WindowWithSpeech
-    const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition
-    if (!SpeechRecognitionAPI) return false
-
-    const recognition = new SpeechRecognitionAPI()
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = SPEECH_RECOGNITION_LANG
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let transcript = ''
-      for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript
-      }
-      const prefix = prefixRef.current
-      const newVal = prefix ? `${prefix} ${transcript}` : transcript
-      setValue(newVal)
-      valueRef.current = newVal
-    }
-
-    recognition.onend = () => {
-      if (recognitionRef.current === recognition) {
-        prefixRef.current = valueRef.current
-        try {
-          recognition.start()
-        } catch {
-          recognitionRef.current = null
-          setIsListening(false)
-        }
-      }
-    }
-
-    recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
-      if (recognitionRef.current !== recognition) return
-      if (e.error === 'aborted' || e.error === 'not-allowed') {
-        recognitionRef.current = null
-        setIsListening(false)
-      }
-    }
-
-    recognitionRef.current = recognition
-    try {
-      recognition.start()
-      return true
-    } catch {
-      recognitionRef.current = null
-      return false
-    }
-  }, [])
-
-  const restartRecognition = useCallback(
-    (newPrefix: string) => {
-      if (!recognitionRef.current) return
-      prefixRef.current = newPrefix
-      recognitionRef.current.abort()
-      recognitionRef.current = null
-      if (!startRecognition()) {
-        setIsListening(false)
-      }
-    },
-    [startRecognition]
-  )
-
-  const toggleListening = useCallback(() => {
-    if (isListening) {
-      recognitionRef.current?.stop()
-      recognitionRef.current = null
-      setIsListening(false)
-      return
-    }
-
-    prefixRef.current = valueRef.current
-    if (startRecognition()) {
-      setIsListening(true)
-    }
-  }, [isListening, startRecognition])
-
   const handleSubmit = useCallback(() => {
     const currentFiles = filesRef.current
     const currentContext = contextRef.current
@@ -389,19 +441,25 @@ export function UserInput({
       currentContext.selectedContexts.length > 0 ? currentContext.selectedContexts : undefined
     )
     setValue('')
-    restartRecognition('')
+    valueRef.current = ''
+    sttPrefixRef.current = ''
+    resetTranscript()
     currentFiles.clearAttachedFiles()
     currentContext.clearContexts()
 
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
-  }, [onSubmit, restartRecognition, textareaRef])
+  }, [onSubmit, textareaRef, resetTranscript])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault()
+        if (isSendingRef.current && !valueRef.current.trim()) {
+          onEnterWhileEmptyRef.current?.()
+          return
+        }
         handleSubmit()
         return
       }
@@ -471,31 +529,27 @@ export function UserInput({
     [handleSubmit, mentionTokensWithContext, value, textareaRef]
   )
 
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newValue = e.target.value
-      const caret = e.target.selectionStart ?? newValue.length
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value
+    const caret = e.target.selectionStart ?? newValue.length
 
-      if (
-        caret > 0 &&
-        newValue.charAt(caret - 1) === '@' &&
-        (caret === 1 || /\s/.test(newValue.charAt(caret - 2)))
-      ) {
-        const before = newValue.slice(0, caret - 1)
-        const after = newValue.slice(caret)
-        const adjusted = `${before}${after}`
-        setValue(adjusted)
-        atInsertPosRef.current = caret - 1
-        plusMenuRef.current?.open()
-        restartRecognition(adjusted)
-        return
-      }
+    if (
+      caret > 0 &&
+      newValue.charAt(caret - 1) === '@' &&
+      (caret === 1 || /\s/.test(newValue.charAt(caret - 2)))
+    ) {
+      const before = newValue.slice(0, caret - 1)
+      const after = newValue.slice(caret)
+      const adjusted = `${before}${after}`
+      setValue(adjusted)
+      atInsertPosRef.current = caret - 1
+      const anchor = getCaretAnchor(e.target, caret - 1)
+      plusMenuRef.current?.open(anchor)
+      return
+    }
 
-      setValue(newValue)
-      restartRecognition(newValue)
-    },
-    [restartRecognition]
-  )
+    setValue(newValue)
+  }, [])
 
   const handleSelectAdjust = useCallback(() => {
     const textarea = textareaRef.current
@@ -521,6 +575,28 @@ export function UserInput({
     },
     [isInitialView]
   )
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    const pastedFiles: File[] = []
+    for (const item of Array.from(items)) {
+      if (item.kind === 'file') {
+        const file = item.getAsFile()
+        if (file) pastedFiles.push(file)
+      }
+    }
+
+    if (pastedFiles.length === 0) return
+
+    e.preventDefault()
+    const dt = new DataTransfer()
+    for (const file of pastedFiles) {
+      dt.items.add(file)
+    }
+    filesRef.current.processFiles(dt.files)
+  }, [])
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
     if (overlayRef.current) {
@@ -550,7 +626,6 @@ export function UserInput({
 
     const elements: React.ReactNode[] = []
     let lastIndex = 0
-
     for (let i = 0; i < ranges.length; i++) {
       const range = ranges[i]
 
@@ -565,39 +640,17 @@ export function UserInput({
           : range.token
       const matchingCtx = contexts.find((c) => c.label === mentionLabel)
 
-      let mentionIconNode: React.ReactNode = null
-      if (matchingCtx) {
-        const iconClasses = 'absolute inset-0 m-auto h-[12px] w-[12px] text-[var(--text-icon)]'
-        switch (matchingCtx.kind) {
-          case 'workflow':
-          case 'current_workflow': {
-            const wfId = (matchingCtx as { workflowId: string }).workflowId
-            const wfColor = useWorkflowRegistry.getState().workflows[wfId]?.color ?? '#888'
-            mentionIconNode = (
-              <div
-                className='absolute inset-0 m-auto h-[12px] w-[12px] rounded-[3px] border-[2px]'
-                style={{
-                  backgroundColor: wfColor,
-                  borderColor: `${wfColor}60`,
-                  backgroundClip: 'padding-box',
-                }}
-              />
-            )
-            break
-          }
-          case 'knowledge':
-            mentionIconNode = <Database className={iconClasses} />
-            break
-          case 'table':
-            mentionIconNode = <TableIcon className={iconClasses} />
-            break
-          case 'file': {
-            const FileDocIcon = getDocumentIcon('', mentionLabel)
-            mentionIconNode = <FileDocIcon className={iconClasses} />
-            break
-          }
-        }
-      }
+      const wfId =
+        matchingCtx?.kind === 'workflow' || matchingCtx?.kind === 'current_workflow'
+          ? matchingCtx.workflowId
+          : undefined
+      const mentionIconNode = matchingCtx ? (
+        <ContextMentionIcon
+          context={matchingCtx}
+          workflowColor={wfId ? (workflowsById[wfId]?.color ?? null) : null}
+          className='absolute inset-0 m-auto h-[12px] w-[12px] text-[var(--text-icon)]'
+        />
+      ) : null
 
       elements.push(
         <span
@@ -624,7 +677,7 @@ export function UserInput({
     }
 
     return elements.length > 0 ? elements : <span>{'\u00A0'}</span>
-  }, [value, contextManagement.selectedContexts])
+  }, [value, contextManagement.selectedContexts, workflowsById])
 
   return (
     <div
@@ -661,6 +714,7 @@ export function UserInput({
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
+          onPaste={handlePaste}
           onCut={mentionTokensWithContext.handleCut}
           onSelect={handleSelectAdjust}
           onMouseUp={handleSelectAdjust}
@@ -684,7 +738,7 @@ export function UserInput({
           />
         </div>
         <div className='flex items-center gap-1.5'>
-          <MicButton isListening={isListening} onToggle={toggleListening} />
+          {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}
           <SendButton
             isSending={isSending}
             canSubmit={canSubmit}

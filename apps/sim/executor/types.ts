@@ -230,8 +230,6 @@ export interface ExecutionContext {
       parallelId: string
       totalBranches: number
       branchOutputs: Map<number, any[]>
-      completedCount: number
-      totalExpectedNodes: number
       parallelType?: 'count' | 'collection'
       items?: any[]
     }

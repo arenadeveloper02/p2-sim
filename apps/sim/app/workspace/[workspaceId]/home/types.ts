@@ -6,6 +6,9 @@ export type {
   MothershipResourceType,
 } from '@/lib/copilot/resource-types'
 
+/** Union of all valid context kind strings, derived from {@link ChatContext}. */
+export type ChatContextKind = ChatContext['kind']
+
 export interface FileAttachmentForApi {
   id: string
   key: string
@@ -98,6 +101,7 @@ export type MothershipToolName =
   | 'create_job'
   | 'complete_job'
   | 'update_job_history'
+  | 'job_respond'
   | 'download_to_workspace_file'
   | 'materialize_file'
   | 'context_write'
@@ -259,12 +263,14 @@ export interface ChatMessageAttachment {
 }
 
 export interface ChatMessageContext {
-  kind: string
+  kind: ChatContextKind
   label: string
   workflowId?: string
   knowledgeId?: string
   tableId?: string
   fileId?: string
+  folderId?: string
+  chatId?: string
 }
 
 export interface ChatMessage {
@@ -393,6 +399,7 @@ export const TOOL_UI_METADATA: Record<MothershipToolName, ToolUIMetadata> = {
   create_job: { title: 'Creating job', phaseLabel: 'Resource', phase: 'resource' },
   manage_job: { title: 'Updating job', phaseLabel: 'Management', phase: 'management' },
   update_job_history: { title: 'Updating job', phaseLabel: 'Management', phase: 'management' },
+  job_respond: { title: 'Explaining job scheduled', phaseLabel: 'Execution', phase: 'execution' },
   // Management
   manage_mcp_tool: { title: 'Updating integration', phaseLabel: 'Management', phase: 'management' },
   manage_skill: { title: 'Updating skill', phaseLabel: 'Management', phase: 'management' },

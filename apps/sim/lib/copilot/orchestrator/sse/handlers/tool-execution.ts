@@ -3,7 +3,6 @@ import { userTableRows } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { completeAsyncToolCall, markAsyncToolRunning } from '@/lib/copilot/async-runs/repository'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
 import { waitForToolConfirmation } from '@/lib/copilot/orchestrator/persistence'
 import { asRecord, markToolResultSeen } from '@/lib/copilot/orchestrator/sse/utils'
 import { executeToolServerSide, markToolComplete } from '@/lib/copilot/orchestrator/tool-executor'
@@ -23,6 +22,7 @@ import {
   persistChatResources,
   removeChatResources,
 } from '@/lib/copilot/resources'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getTableById } from '@/lib/table/service'
 import { uploadWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 
@@ -187,15 +187,12 @@ async function maybeWriteOutputToFile(
       contentType
     )
 
-    logger.error(
-      appendCopilotLogContext('Tool output written to file', { messageId: context.messageId }),
-      {
-        toolName,
-        fileName,
-        size: buffer.length,
-        fileId: uploaded.id,
-      }
-    )
+    logger.withMetadata({ messageId: context.messageId }).info('Tool output written to file', {
+      toolName,
+      fileName,
+      size: buffer.length,
+      fileId: uploaded.id,
+    })
 
     return {
       success: true,
@@ -209,16 +206,13 @@ async function maybeWriteOutputToFile(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    logger.warn(
-      appendCopilotLogContext('Failed to write tool output to file', {
-        messageId: context.messageId,
-      }),
-      {
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .warn('Failed to write tool output to file', {
         toolName,
         outputPath,
         error: message,
-      }
-    )
+      })
     return {
       success: false,
       error: `Failed to write output file: ${message}`,
@@ -306,7 +300,7 @@ function reportCancelledTool(
   data: Record<string, unknown> = { cancelled: true }
 ): void {
   markToolComplete(toolCall.id, toolCall.name, 499, message, data, messageId).catch((err) => {
-    logger.error(appendCopilotLogContext('markToolComplete failed (cancelled)', { messageId }), {
+    logger.withMetadata({ messageId }).error('markToolComplete failed (cancelled)', {
       toolCallId: toolCall.id,
       toolName: toolCall.name,
       error: err instanceof Error ? err.message : String(err),
@@ -388,7 +382,7 @@ async function maybeWriteOutputToTable(
         }
         const chunk = rows.slice(i, i + BATCH_CHUNK_SIZE)
         const values = chunk.map((rowData, j) => ({
-          id: `row_${crypto.randomUUID().replace(/-/g, '')}`,
+          id: `row_${generateId().replace(/-/g, '')}`,
           tableId: outputTable,
           workspaceId: context.workspaceId!,
           data: rowData,
@@ -401,14 +395,11 @@ async function maybeWriteOutputToTable(
       }
     })
 
-    logger.error(
-      appendCopilotLogContext('Tool output written to table', { messageId: context.messageId }),
-      {
-        toolName,
-        tableId: outputTable,
-        rowCount: rows.length,
-      }
-    )
+    logger.withMetadata({ messageId: context.messageId }).info('Tool output written to table', {
+      toolName,
+      tableId: outputTable,
+      rowCount: rows.length,
+    })
 
     return {
       success: true,
@@ -419,16 +410,13 @@ async function maybeWriteOutputToTable(
       },
     }
   } catch (err) {
-    logger.warn(
-      appendCopilotLogContext('Failed to write tool output to table', {
-        messageId: context.messageId,
-      }),
-      {
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .warn('Failed to write tool output to table', {
         toolName,
         outputTable,
         error: err instanceof Error ? err.message : String(err),
-      }
-    )
+      })
     return {
       success: false,
       error: `Failed to write to table: ${err instanceof Error ? err.message : String(err)}`,
@@ -515,7 +503,7 @@ async function maybeWriteReadCsvToTable(
         }
         const chunk = rows.slice(i, i + BATCH_CHUNK_SIZE)
         const values = chunk.map((rowData, j) => ({
-          id: `row_${crypto.randomUUID().replace(/-/g, '')}`,
+          id: `row_${generateId().replace(/-/g, '')}`,
           tableId: outputTable,
           workspaceId: context.workspaceId!,
           data: rowData,
@@ -528,16 +516,13 @@ async function maybeWriteReadCsvToTable(
       }
     })
 
-    logger.error(
-      appendCopilotLogContext('Read output written to table', { messageId: context.messageId }),
-      {
-        toolName,
-        tableId: outputTable,
-        tableName: table.name,
-        rowCount: rows.length,
-        filePath,
-      }
-    )
+    logger.withMetadata({ messageId: context.messageId }).info('Read output written to table', {
+      toolName,
+      tableId: outputTable,
+      tableName: table.name,
+      rowCount: rows.length,
+      filePath,
+    })
 
     return {
       success: true,
@@ -549,16 +534,13 @@ async function maybeWriteReadCsvToTable(
       },
     }
   } catch (err) {
-    logger.warn(
-      appendCopilotLogContext('Failed to write read output to table', {
-        messageId: context.messageId,
-      }),
-      {
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .warn('Failed to write read output to table', {
         toolName,
         outputTable,
         error: err instanceof Error ? err.message : String(err),
-      }
-    )
+      })
     return {
       success: false,
       error: `Failed to import into table: ${err instanceof Error ? err.message : String(err)}`,
@@ -599,14 +581,11 @@ export async function executeToolAndReport(
   toolCall.status = 'executing'
   await markAsyncToolRunning(toolCall.id, 'sim-stream').catch(() => {})
 
-  logger.error(
-    appendCopilotLogContext('Tool execution started', { messageId: context.messageId }),
-    {
-      toolCallId: toolCall.id,
-      toolName: toolCall.name,
-      params: toolCall.params,
-    }
-  )
+  logger.withMetadata({ messageId: context.messageId }).info('Tool execution started', {
+    toolCallId: toolCall.id,
+    toolName: toolCall.name,
+    params: toolCall.params,
+  })
 
   try {
     let result = await executeToolServerSide(toolCall, execContext)
@@ -693,24 +672,18 @@ export async function executeToolAndReport(
           : raw && typeof raw === 'object'
             ? JSON.stringify(raw).slice(0, 200)
             : undefined
-      logger.error(
-        appendCopilotLogContext('Tool execution succeeded', { messageId: context.messageId }),
-        {
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          outputPreview: preview,
-        }
-      )
+      logger.withMetadata({ messageId: context.messageId }).info('Tool execution succeeded', {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        outputPreview: preview,
+      })
     } else {
-      logger.warn(
-        appendCopilotLogContext('Tool execution failed', { messageId: context.messageId }),
-        {
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          error: result.error,
-          params: toolCall.params,
-        }
-      )
+      logger.withMetadata({ messageId: context.messageId }).warn('Tool execution failed', {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        error: result.error,
+        params: toolCall.params,
+      })
     }
 
     // If create_workflow was successful, update the execution context with the new workflowId.
@@ -760,16 +733,13 @@ export async function executeToolAndReport(
       result.output,
       context.messageId
     ).catch((err) => {
-      logger.error(
-        appendCopilotLogContext('markToolComplete fire-and-forget failed', {
-          messageId: context.messageId,
-        }),
-        {
+      logger
+        .withMetadata({ messageId: context.messageId })
+        .error('markToolComplete fire-and-forget failed', {
           toolCallId: toolCall.id,
           toolName: toolCall.name,
           error: err instanceof Error ? err.message : String(err),
-        }
-      )
+        })
     })
 
     const resultEvent: SSEEvent = {
@@ -804,15 +774,12 @@ export async function executeToolAndReport(
         if (deleted.length > 0) {
           isDeleteOp = true
           removeChatResources(execContext.chatId, deleted).catch((err) => {
-            logger.warn(
-              appendCopilotLogContext('Failed to remove chat resources after deletion', {
-                messageId: context.messageId,
-              }),
-              {
+            logger
+              .withMetadata({ messageId: context.messageId })
+              .warn('Failed to remove chat resources after deletion', {
                 chatId: execContext.chatId,
                 error: err instanceof Error ? err.message : String(err),
-              }
-            )
+              })
           })
 
           for (const resource of deleted) {
@@ -835,15 +802,12 @@ export async function executeToolAndReport(
 
         if (resources.length > 0) {
           persistChatResources(execContext.chatId, resources).catch((err) => {
-            logger.warn(
-              appendCopilotLogContext('Failed to persist chat resources', {
-                messageId: context.messageId,
-              }),
-              {
+            logger
+              .withMetadata({ messageId: context.messageId })
+              .warn('Failed to persist chat resources', {
                 chatId: execContext.chatId,
                 error: err instanceof Error ? err.message : String(err),
-              }
-            )
+              })
           })
 
           for (const resource of resources) {
@@ -879,15 +843,12 @@ export async function executeToolAndReport(
     toolCall.error = error instanceof Error ? error.message : String(error)
     toolCall.endTime = Date.now()
 
-    logger.error(
-      appendCopilotLogContext('Tool execution threw', { messageId: context.messageId }),
-      {
-        toolCallId: toolCall.id,
-        toolName: toolCall.name,
-        error: toolCall.error,
-        params: toolCall.params,
-      }
-    )
+    logger.withMetadata({ messageId: context.messageId }).error('Tool execution threw', {
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      error: toolCall.error,
+      params: toolCall.params,
+    })
 
     markToolResultSeen(toolCall.id)
     await completeAsyncToolCall({
@@ -909,16 +870,13 @@ export async function executeToolAndReport(
       },
       context.messageId
     ).catch((err) => {
-      logger.error(
-        appendCopilotLogContext('markToolComplete fire-and-forget failed', {
-          messageId: context.messageId,
-        }),
-        {
+      logger
+        .withMetadata({ messageId: context.messageId })
+        .error('markToolComplete fire-and-forget failed', {
           toolCallId: toolCall.id,
           toolName: toolCall.name,
           error: err instanceof Error ? err.message : String(err),
-        }
-      )
+        })
     })
 
     const errorEvent: SSEEvent = {

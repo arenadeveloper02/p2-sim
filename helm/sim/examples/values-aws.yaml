@@ -47,6 +47,9 @@ app:
 
     # Self-hosted / EC2: disable execution rate limits (no per-minute caps)
     DISABLE_EXECUTION_RATE_LIMIT: "true"
+    # AWS Bedrock - when using IRSA (see serviceAccount below), the default credential chain
+    # resolves automatically. Setting this hides the credential fields in the Agent block UI.
+    NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS: "true"     # Uncomment if using Bedrock with IRSA
 
     # AWS S3 Cloud Storage Configuration (RECOMMENDED for production)
     # Create S3 buckets in your AWS account and configure IAM permissions

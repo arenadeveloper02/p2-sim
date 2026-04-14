@@ -1,12 +1,40 @@
-import { isHosted } from '@/lib/core/config/feature-flags'
+import { isAzureConfigured, isHosted, isOllamaConfigured } from '@/lib/core/config/feature-flags'
+import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockOutput, OutputFieldDefinition, SubBlockConfig } from '@/blocks/types'
 import {
+  getBaseModelProviders,
   getHostedModels,
-  getProviderFromModel,
   getProviderIcon,
-  providers,
-} from '@/providers/utils'
+  getProviderModels,
+} from '@/providers/models'
 import { useProvidersStore } from '@/stores/providers/store'
+
+export const VERTEX_MODELS = getProviderModels('vertex')
+export const BEDROCK_MODELS = getProviderModels('bedrock')
+export const AZURE_MODELS = [
+  ...getProviderModels('azure-openai'),
+  ...getProviderModels('azure-anthropic'),
+]
+
+/**
+ * Standard subblocks for Google service account impersonation.
+ * Uses a reactive condition that fetches the credential by ID to check if it's
+ * a service account — works in both block editor and agent tool-input contexts.
+ */
+export const SERVICE_ACCOUNT_SUBBLOCKS: SubBlockConfig[] = [
+  {
+    id: 'impersonateUserEmail',
+    title: 'Impersonated Account',
+    type: 'short-input',
+    placeholder: 'Email to impersonate (for service accounts)',
+    paramVisibility: 'user-only',
+    reactiveCondition: {
+      watchFields: ['oauthCredential'],
+      requiredType: 'service_account',
+    },
+    mode: 'both',
+  },
+]
 
 /**
  * Returns model options for combobox subblocks, combining all provider sources.
@@ -17,8 +45,15 @@ export function getModelOptions() {
   const ollamaModels = providersState.providers.ollama.models
   const vllmModels = providersState.providers.vllm.models
   const openrouterModels = providersState.providers.openrouter.models
+  const fireworksModels = providersState.providers.fireworks.models
   const allModels = Array.from(
-    new Set([...baseModels, ...ollamaModels, ...vllmModels, ...openrouterModels])
+    new Set([
+      ...baseModels,
+      ...ollamaModels,
+      ...vllmModels,
+      ...openrouterModels,
+      ...fireworksModels,
+    ])
   )
 
   return allModels.map((model) => {
@@ -92,11 +127,15 @@ export function resolveOutputType(
   return resolvedOutputs
 }
 
-/**
- * Helper to get current Ollama models from store
- */
-const getCurrentOllamaModels = () => {
-  return useProvidersStore.getState().providers.ollama.models
+function getProviderFromStore(model: string): string | null {
+  const { providers } = useProvidersStore.getState()
+  const normalized = model.toLowerCase()
+  for (const [key, state] of Object.entries(providers)) {
+    if (state.models.some((m: string) => m.toLowerCase() === normalized)) {
+      return key
+    }
+  }
+  return null
 }
 
 function buildModelVisibilityCondition(model: string, shouldShow: boolean) {
@@ -111,39 +150,35 @@ function shouldRequireApiKeyForModel(model: string): boolean {
   const normalizedModel = model.trim().toLowerCase()
   if (!normalizedModel) return false
 
-  const hostedModels = getHostedModels()
-  const isHostedModel = hostedModels.some(
-    (hostedModel) => hostedModel.toLowerCase() === normalizedModel
-  )
-  if (isHosted && isHostedModel) return false
+  if (isHosted) {
+    const hostedModels = getHostedModels()
+    if (hostedModels.some((m) => m.toLowerCase() === normalizedModel)) return false
+  }
 
   if (normalizedModel.startsWith('vertex/') || normalizedModel.startsWith('bedrock/')) {
     return false
   }
-
+  if (
+    isAzureConfigured &&
+    (normalizedModel.startsWith('azure/') ||
+      normalizedModel.startsWith('azure-openai/') ||
+      normalizedModel.startsWith('azure-anthropic/') ||
+      AZURE_MODELS.some((m) => m.toLowerCase() === normalizedModel))
+  ) {
+    return false
+  }
   if (normalizedModel.startsWith('vllm/')) {
     return false
   }
 
-  const currentOllamaModels = getCurrentOllamaModels()
-  if (currentOllamaModels.some((ollamaModel) => ollamaModel.toLowerCase() === normalizedModel)) {
-    return false
-  }
+  const storeProvider = getProviderFromStore(normalizedModel)
+  if (storeProvider === 'ollama' || storeProvider === 'vllm') return false
+  if (storeProvider) return true
 
-  if (!isHosted) {
-    try {
-      const providerId = getProviderFromModel(model)
-      if (
-        providerId === 'ollama' ||
-        providerId === 'vllm' ||
-        providerId === 'vertex' ||
-        providerId === 'bedrock'
-      ) {
-        return false
-      }
-    } catch {
-      // If model resolution fails, fall through and require an API key.
-    }
+  if (isOllamaConfigured) {
+    if (normalizedModel.includes('/')) return true
+    if (normalizedModel in getBaseModelProviders()) return true
+    return false
   }
 
   return true
@@ -174,12 +209,27 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       title: 'Google Cloud Account',
       type: 'oauth-input',
       serviceId: 'vertex-ai',
-      requiredScopes: ['https://www.googleapis.com/auth/cloud-platform'],
+      canonicalParamId: 'vertexCredential',
+      mode: 'basic',
+      requiredScopes: getScopesForService('vertex-ai'),
       placeholder: 'Select Google Cloud account',
       required: true,
       condition: {
         field: 'model',
-        value: providers.vertex.models,
+        value: VERTEX_MODELS,
+      },
+    },
+    {
+      id: 'vertexManualCredential',
+      title: 'Google Cloud Account',
+      type: 'short-input',
+      canonicalParamId: 'vertexCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
+      condition: {
+        field: 'model',
+        value: VERTEX_MODELS,
       },
     },
     {
@@ -190,6 +240,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       password: true,
       connectionDroppable: false,
       required: true,
+      hideWhenHosted: true,
       condition: getApiKeyCondition(),
     },
     {
@@ -199,9 +250,10 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       password: true,
       placeholder: 'https://your-resource.services.ai.azure.com',
       connectionDroppable: false,
+      hideWhenEnvSet: 'NEXT_PUBLIC_AZURE_CONFIGURED',
       condition: {
         field: 'model',
-        value: [...providers['azure-openai'].models, ...providers['azure-anthropic'].models],
+        value: AZURE_MODELS,
       },
     },
     {
@@ -210,21 +262,23 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       type: 'short-input',
       placeholder: 'Enter API version',
       connectionDroppable: false,
+      hideWhenEnvSet: 'NEXT_PUBLIC_AZURE_CONFIGURED',
       condition: {
         field: 'model',
-        value: [...providers['azure-openai'].models, ...providers['azure-anthropic'].models],
+        value: AZURE_MODELS,
       },
     },
     {
       id: 'vertexProject',
       title: 'Vertex AI Project',
       type: 'short-input',
+      password: true,
       placeholder: 'your-gcp-project-id',
       connectionDroppable: false,
       required: true,
       condition: {
         field: 'model',
-        value: providers.vertex.models,
+        value: VERTEX_MODELS,
       },
     },
     {
@@ -236,7 +290,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       required: true,
       condition: {
         field: 'model',
-        value: providers.vertex.models,
+        value: VERTEX_MODELS,
       },
     },
     {
@@ -247,9 +301,10 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       placeholder: 'Enter your AWS Access Key ID',
       connectionDroppable: false,
       required: true,
+      hideWhenEnvSet: 'NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS',
       condition: {
         field: 'model',
-        value: providers.bedrock.models,
+        value: BEDROCK_MODELS,
       },
     },
     {
@@ -260,9 +315,10 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       placeholder: 'Enter your AWS Secret Access Key',
       connectionDroppable: false,
       required: true,
+      hideWhenEnvSet: 'NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS',
       condition: {
         field: 'model',
-        value: providers.bedrock.models,
+        value: BEDROCK_MODELS,
       },
     },
     {
@@ -273,7 +329,7 @@ export function getProviderCredentialSubBlocks(): SubBlockConfig[] {
       connectionDroppable: false,
       condition: {
         field: 'model',
-        value: providers.bedrock.models,
+        value: BEDROCK_MODELS,
       },
     },
   ]
@@ -331,6 +387,123 @@ export function createVersionedToolSelector<TParams extends Record<string, any>>
       return fallbackToolId
     }
   }
+}
+
+interface ParseOptionalNumberInputOptions {
+  integer?: boolean
+  max?: number
+  min?: number
+}
+
+/**
+ * Parses an optional JSON-capable block input value.
+ * Returns `undefined` for empty values and throws a helpful error for invalid JSON strings.
+ */
+export function parseOptionalJsonInput<T = unknown>(value: unknown, label: string): T | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.length === 0) {
+      return undefined
+    }
+
+    try {
+      return JSON.parse(trimmed) as T
+    } catch (error) {
+      throw new Error(
+        `Invalid JSON for ${label}: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
+
+  return value as T
+}
+
+/**
+ * Parses an optional numeric block input value.
+ * Returns `undefined` for empty values and throws when the provided value is not a valid number.
+ */
+export function parseOptionalNumberInput(
+  value: unknown,
+  label: string,
+  options: ParseOptionalNumberInputOptions = {}
+): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined
+  }
+
+  let parsed: number
+
+  if (typeof value === 'number') {
+    parsed = value
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.length === 0) {
+      return undefined
+    }
+
+    parsed = Number(trimmed)
+  } else {
+    throw new Error(`Invalid number for ${label}: expected a valid number.`)
+  }
+
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid number for ${label}: expected a valid number.`)
+  }
+
+  if (options.integer && !Number.isInteger(parsed)) {
+    throw new Error(`Invalid number for ${label}: expected an integer.`)
+  }
+
+  if (options.min != null && parsed < options.min) {
+    throw new Error(`${label} must be at least ${options.min}.`)
+  }
+
+  if (options.max != null && parsed > options.max) {
+    throw new Error(`${label} must be at most ${options.max}.`)
+  }
+
+  return parsed
+}
+
+/**
+ * Parses an optional boolean block input value.
+ * Returns `undefined` for empty or unrecognized values.
+ */
+export function parseOptionalBooleanInput(value: unknown): boolean | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined
+  }
+
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0
+  }
+
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (normalized.length === 0) {
+    return undefined
+  }
+
+  if (normalized === 'true' || normalized === '1') {
+    return true
+  }
+
+  if (normalized === 'false' || normalized === '0') {
+    return false
+  }
+
+  return undefined
 }
 
 const DEFAULT_MULTIPLE_FILES_ERROR =

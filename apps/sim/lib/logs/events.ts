@@ -2,8 +2,8 @@ import { db } from '@sim/db'
 import { workspaceNotificationDelivery, workspaceNotificationSubscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, or, sql } from 'drizzle-orm'
-import { v4 as uuidv4 } from 'uuid'
 import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
+import { generateId } from '@/lib/core/utils/uuid'
 import type { WorkflowExecutionLog } from '@/lib/logs/types'
 import {
   type AlertCheckContext,
@@ -12,6 +12,7 @@ import {
 } from '@/lib/notifications/alert-rules'
 import { getActiveWorkflowContext } from '@/lib/workflows/active-context'
 import {
+  enqueueNotificationDeliveryDispatch,
   executeNotificationDelivery,
   workspaceNotificationDeliveryTask,
 } from '@/background/workspace-notification-delivery'
@@ -114,7 +115,7 @@ export async function emitWorkflowExecutionCompleted(log: WorkflowExecutionLog):
         })
       }
 
-      const deliveryId = uuidv4()
+      const deliveryId = generateId()
 
       await db.insert(workspaceNotificationDelivery).values({
         id: deliveryId,
@@ -131,15 +132,26 @@ export async function emitWorkflowExecutionCompleted(log: WorkflowExecutionLog):
       const payload = {
         deliveryId,
         subscriptionId: subscription.id,
+        workspaceId,
         notificationType: subscription.notificationType,
         log: notificationLog,
         alertConfig: alertConfig || undefined,
       }
 
       if (isTriggerDevEnabled) {
-        await workspaceNotificationDeliveryTask.trigger(payload)
+        await workspaceNotificationDeliveryTask.trigger(payload, {
+          tags: [
+            `workspaceId:${workspaceId}`,
+            `workflowId:${log.workflowId}`,
+            `notificationType:${subscription.notificationType}`,
+          ],
+        })
         logger.info(
           `Enqueued ${subscription.notificationType} notification ${deliveryId} via Trigger.dev`
+        )
+      } else if (await enqueueNotificationDeliveryDispatch(payload)) {
+        logger.info(
+          `Enqueued ${subscription.notificationType} notification ${deliveryId} via BullMQ`
         )
       } else {
         void executeNotificationDelivery(payload).catch((error) => {

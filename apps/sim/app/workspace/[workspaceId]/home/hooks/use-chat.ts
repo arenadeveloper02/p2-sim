@@ -20,28 +20,10 @@ import {
 } from '@/lib/copilot/resource-extraction'
 import { VFS_DIR_TO_RESOURCE } from '@/lib/copilot/resource-types'
 import { isWorkflowToolName } from '@/lib/copilot/workflow-tools'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getNextWorkflowColor } from '@/lib/workflows/colors'
+import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { invalidateResourceQueries } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry'
-import { deploymentKeys } from '@/hooks/queries/deployments'
-import {
-  fetchChatHistory,
-  type StreamSnapshot,
-  type TaskChatHistory,
-  type TaskStoredContentBlock,
-  type TaskStoredFileAttachment,
-  type TaskStoredMessage,
-  type TaskStoredToolCall,
-  taskKeys,
-  useChatHistory,
-} from '@/hooks/queries/tasks'
-import { getTopInsertionSortOrder } from '@/hooks/queries/utils/top-insertion-sort-order'
-import { workflowKeys } from '@/hooks/queries/workflows'
-import { useExecutionStream } from '@/hooks/use-execution-stream'
-import { useExecutionStore } from '@/stores/execution/store'
-import { useFolderStore } from '@/stores/folders/store'
-import type { ChatContext } from '@/stores/panel'
-import { consolePersistence, useTerminalConsoleStore } from '@/stores/terminal'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type {
   ChatMessage,
   ChatMessageAttachment,
@@ -56,7 +38,30 @@ import type {
   SSEPayload,
   SSEPayloadData,
   ToolCallStatus,
-} from '../types'
+} from '@/app/workspace/[workspaceId]/home/types'
+import { deploymentKeys } from '@/hooks/queries/deployments'
+import {
+  fetchChatHistory,
+  type StreamSnapshot,
+  type TaskChatHistory,
+  type TaskStoredContentBlock,
+  type TaskStoredFileAttachment,
+  type TaskStoredMessage,
+  type TaskStoredToolCall,
+  taskKeys,
+  useChatHistory,
+} from '@/hooks/queries/tasks'
+import { getFolderMap } from '@/hooks/queries/utils/folder-cache'
+import { invalidateWorkflowSelectors } from '@/hooks/queries/utils/invalidate-workflow-lists'
+import { getTopInsertionSortOrder } from '@/hooks/queries/utils/top-insertion-sort-order'
+import { getWorkflowById, getWorkflows } from '@/hooks/queries/utils/workflow-cache'
+import { workflowKeys } from '@/hooks/queries/workflows'
+import { useExecutionStream } from '@/hooks/use-execution-stream'
+import { useExecutionStore } from '@/stores/execution/store'
+import type { ChatContext } from '@/stores/panel'
+import { consolePersistence, useTerminalConsoleStore } from '@/stores/terminal'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 
 export interface UseChatReturn {
   messages: ChatMessage[]
@@ -289,6 +294,7 @@ function mapStoredMessage(msg: TaskStoredMessage): ChatMessage {
       ...(c.knowledgeId && { knowledgeId: c.knowledgeId }),
       ...(c.tableId && { tableId: c.tableId }),
       ...(c.fileId && { fileId: c.fileId }),
+      ...(c.folderId && { folderId: c.folderId }),
     }))
   }
 
@@ -301,31 +307,37 @@ function getPayloadData(payload: SSEPayload): SSEPayloadData | undefined {
   return typeof payload.data === 'object' ? payload.data : undefined
 }
 
-/** Adds a workflow to the registry with a top-insertion sort order if it doesn't already exist. */
+/** Adds a workflow to the React Query cache with a top-insertion sort order if it doesn't already exist. */
 function ensureWorkflowInRegistry(resourceId: string, title: string, workspaceId: string): boolean {
-  const registry = useWorkflowRegistry.getState()
-  if (registry.workflows[resourceId]) return false
+  const workflows = getWorkflows(workspaceId)
+  if (workflows.some((w) => w.id === resourceId)) return false
   const sortOrder = getTopInsertionSortOrder(
-    registry.workflows,
-    useFolderStore.getState().folders,
+    Object.fromEntries(workflows.map((w) => [w.id, w])),
+    getFolderMap(workspaceId),
     workspaceId,
     null
   )
-  useWorkflowRegistry.setState((state) => ({
-    workflows: {
-      ...state.workflows,
-      [resourceId]: {
-        id: resourceId,
-        name: title,
-        lastModified: new Date(),
-        createdAt: new Date(),
-        color: getNextWorkflowColor(),
-        workspaceId,
-        folderId: null,
-        sortOrder,
-      },
-    },
-  }))
+  const newMetadata: WorkflowMetadata = {
+    id: resourceId,
+    name: title,
+    lastModified: new Date(),
+    createdAt: new Date(),
+    color: getNextWorkflowColor(),
+    workspaceId,
+    folderId: null,
+    sortOrder,
+  }
+  const queryClient = getQueryClient()
+  const key = workflowKeys.list(workspaceId, 'active')
+  queryClient.setQueryData<WorkflowMetadata[]>(key, (current) => {
+    const next = current ?? workflows
+    if (next.some((workflow) => workflow.id === resourceId)) {
+      return next
+    }
+
+    return [...next, newMetadata]
+  })
+  void invalidateWorkflowSelectors(queryClient, workspaceId)
   return true
 }
 
@@ -367,10 +379,11 @@ export interface UseChatOptions {
   onToolResult?: (toolName: string, success: boolean, result: unknown) => void
   onTitleUpdate?: () => void
   onStreamEnd?: (chatId: string, messages: ChatMessage[]) => void
+  initialActiveResourceId?: string | null
 }
 
 export function getMothershipUseChatOptions(
-  options: Pick<UseChatOptions, 'onResourceEvent' | 'onStreamEnd'> = {}
+  options: Pick<UseChatOptions, 'onResourceEvent' | 'onStreamEnd' | 'initialActiveResourceId'> = {}
 ): UseChatOptions {
   return {
     apiPath: MOTHERSHIP_CHAT_API_PATH,
@@ -406,6 +419,7 @@ export function useChat(
   const [resolvedChatId, setResolvedChatId] = useState<string | undefined>(initialChatId)
   const [resources, setResources] = useState<MothershipResource[]>([])
   const [activeResourceId, setActiveResourceId] = useState<string | null>(null)
+  const initialActiveResourceIdRef = useRef(options?.initialActiveResourceId)
   const onResourceEventRef = useRef(options?.onResourceEvent)
   onResourceEventRef.current = options?.onResourceEvent
   const apiPathRef = useRef(options?.apiPath ?? MOTHERSHIP_CHAT_API_PATH)
@@ -835,7 +849,12 @@ export function useChat(
       const persistedResources = history.resources.filter((r) => r.id !== 'streaming-file')
       if (persistedResources.length > 0) {
         setResources(persistedResources)
-        setActiveResourceId(persistedResources[persistedResources.length - 1].id)
+        const initialId = initialActiveResourceIdRef.current
+        const restoredId =
+          initialId && persistedResources.some((r) => r.id === initialId)
+            ? initialId
+            : persistedResources[persistedResources.length - 1].id
+        setActiveResourceId(restoredId)
 
         for (const resource of persistedResources) {
           if (resource.type !== 'workflow') continue
@@ -891,7 +910,7 @@ export function useChat(
       streamingBlocksRef.current = []
       clientExecutionStartedRef.current = extractToolCallIdsFromSnapshot(snapshot)
 
-      const assistantId = crypto.randomUUID()
+      const assistantId = generateId()
 
       const reconnect = async () => {
         const succeeded = await retryReconnectRef.current({
@@ -1253,7 +1272,7 @@ export function useChat(
                       ? ((args as Record<string, unknown>).workflowId as string)
                       : useWorkflowRegistry.getState().activeWorkflowId
                   if (targetWorkflowId) {
-                    const meta = useWorkflowRegistry.getState().workflows[targetWorkflowId]
+                    const meta = getWorkflowById(workspaceId, targetWorkflowId)
                     const wasAdded = addResource({
                       type: 'workflow',
                       id: targetWorkflowId,
@@ -1397,17 +1416,6 @@ export function useChat(
                     const output = tc.result?.output as Record<string, unknown> | undefined
                     const deployedWorkflowId = (output?.workflowId as string) ?? undefined
                     if (deployedWorkflowId && typeof output?.isDeployed === 'boolean') {
-                      const isDeployed = output.isDeployed as boolean
-                      const serverDeployedAt = output.deployedAt
-                        ? new Date(output.deployedAt as string)
-                        : undefined
-                      useWorkflowRegistry
-                        .getState()
-                        .setDeploymentStatus(
-                          deployedWorkflowId,
-                          isDeployed,
-                          isDeployed ? (serverDeployedAt ?? new Date()) : undefined
-                        )
                       queryClient.invalidateQueries({
                         queryKey: deploymentKeys.info(deployedWorkflowId),
                       })
@@ -1737,6 +1745,8 @@ export function useChat(
       }
 
       if (options?.error) {
+        pendingRecoveryMessageRef.current = null
+        setPendingRecoveryMessage(null)
         setMessageQueue([])
         return
       }
@@ -1878,7 +1888,7 @@ export function useChat(
 
       if (sendingRef.current) {
         const queued: QueuedMessage = {
-          id: crypto.randomUUID(),
+          id: generateId(),
           content: message,
           fileAttachments,
           contexts,
@@ -1893,8 +1903,8 @@ export function useChat(
       setIsSending(true)
       sendingRef.current = true
 
-      const userMessageId = crypto.randomUUID()
-      const assistantId = crypto.randomUUID()
+      const userMessageId = generateId()
+      const assistantId = generateId()
 
       pendingUserMsgRef.current = { id: userMessageId, content: message }
       streamIdRef.current = userMessageId
@@ -1944,6 +1954,7 @@ export function useChat(
         ...('knowledgeId' in c && c.knowledgeId ? { knowledgeId: c.knowledgeId } : {}),
         ...('tableId' in c && c.tableId ? { tableId: c.tableId } : {}),
         ...('fileId' in c && c.fileId ? { fileId: c.fileId } : {}),
+        ...('folderId' in c && c.folderId ? { folderId: c.folderId } : {}),
       }))
 
       setMessages((prev) => [
@@ -2030,7 +2041,7 @@ export function useChat(
           }
           setMessages(previousMessages)
           const queuedMessage: QueuedMessage = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             content: message,
             fileAttachments,
             contexts,

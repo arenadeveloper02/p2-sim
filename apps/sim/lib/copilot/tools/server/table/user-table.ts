@@ -1,11 +1,11 @@
 import { createLogger } from '@sim/logger'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
 import {
   assertServerToolNotAborted,
   type BaseServerTool,
   type ServerToolContext,
 } from '@/lib/copilot/tools/server/base-tool'
 import type { UserTableArgs, UserTableResult } from '@/lib/copilot/tools/shared/schemas'
+import { generateId } from '@/lib/core/utils/uuid'
 import { COLUMN_TYPES } from '@/lib/table/constants'
 import {
   addTableColumn,
@@ -232,7 +232,7 @@ async function batchInsertAll(
   for (let i = 0; i < rows.length; i += MAX_BATCH_SIZE) {
     assertServerToolNotAborted(context, 'Request aborted before table mutation could be applied.')
     const batch = rows.slice(i, i + MAX_BATCH_SIZE)
-    const requestId = crypto.randomUUID().slice(0, 8)
+    const requestId = generateId().slice(0, 8)
     const result = await batchInsertRows({ tableId, rows: batch, workspaceId }, table, requestId)
     inserted += result.length
   }
@@ -242,13 +242,10 @@ async function batchInsertAll(
 export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult> = {
   name: 'user_table',
   async execute(params: UserTableArgs, context?: ServerToolContext): Promise<UserTableResult> {
-    const withMessageId = (message: string) =>
-      appendCopilotLogContext(message, { messageId: context?.messageId })
+    const reqLogger = logger.withMetadata({ messageId: context?.messageId })
 
     if (!context?.userId) {
-      logger.error(
-        withMessageId('Unauthorized attempt to access user table - no authenticated user context')
-      )
+      logger.error('Unauthorized attempt to access user table - no authenticated user context')
       throw new Error('Authentication required')
     }
 
@@ -271,7 +268,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const table = await createTable(
             {
@@ -341,7 +338,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table not found' }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           await deleteTable(args.tableId, requestId)
 
@@ -367,7 +364,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const row = await insertRow(
             { tableId: args.tableId, data: args.data, workspaceId },
@@ -398,7 +395,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const rows = await batchInsertRows(
             { tableId: args.tableId, rows: args.rows, workspaceId },
@@ -444,7 +441,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           const result = await queryRows(
             args.tableId,
             workspaceId,
@@ -483,7 +480,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const updatedRow = await updateRow(
             { tableId: args.tableId, rowId: args.rowId, data: args.data, workspaceId },
@@ -509,7 +506,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           await deleteRow(args.tableId, args.rowId, workspaceId, requestId)
 
@@ -538,7 +535,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const result = await updateRowsByFilter(
             {
@@ -570,7 +567,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const result = await deleteRowsByFilter(
             {
@@ -633,7 +630,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const result = await batchUpdateRows(
             {
@@ -672,7 +669,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const result = await deleteRowsByIds(
             { tableId: args.tableId, rowIds, workspaceId },
@@ -712,7 +709,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
           const columns = inferSchema(headers, rows)
           const tableName = args.name || file.name.replace(/\.[^.]+$/, '')
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const table = await createTable(
             {
@@ -729,7 +726,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           const coerced = coerceRows(rows, columns, columnMap)
           const inserted = await batchInsertAll(table.id, coerced, table, workspaceId, context)
 
-          logger.info(withMessageId('Table created from file'), {
+          reqLogger.info('Table created from file', {
             tableId: table.id,
             fileName: file.name,
             columns: columns.length,
@@ -805,7 +802,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           const coerced = coerceRows(rows, matchedColumns, columnMap)
           const inserted = await batchInsertAll(table.id, coerced, table, workspaceId, context)
 
-          logger.info(withMessageId('Rows imported from file'), {
+          reqLogger.info('Rows imported from file', {
             tableId: table.id,
             fileName: file.name,
             matchedColumns: mappedHeaders.length,
@@ -845,7 +842,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               message: 'column with name and type is required for add_column',
             }
           }
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const updated = await addTableColumn(args.tableId, col, requestId)
           return {
@@ -864,7 +861,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           if (!colName || !newColName) {
             return { success: false, message: 'columnName and newName are required' }
           }
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const updated = await renameColumn(
             { tableId: args.tableId, oldName: colName, newName: newColName },
@@ -887,7 +884,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           if (!names || names.length === 0) {
             return { success: false, message: 'columnName or columnNames is required' }
           }
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           if (names.length === 1) {
             assertNotAborted()
             const updated = await deleteColumn(
@@ -928,7 +925,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               message: 'At least one of newType or unique must be provided',
             }
           }
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           let result: TableDefinition | undefined
           if (newType !== undefined) {
             if (!(COLUMN_TYPES as readonly string[]).includes(newType)) {
@@ -981,7 +978,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Table not found' }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const renamed = await renameTable(args.tableId, newName, requestId)
 
@@ -1003,7 +1000,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             ? error.cause.message
             : String(error.cause)
           : undefined
-      logger.error(withMessageId('Table operation failed'), {
+      reqLogger.error('Table operation failed', {
         operation,
         error: errorMessage,
         cause,

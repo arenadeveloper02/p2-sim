@@ -3,6 +3,8 @@ import { Check, Copy } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Code, Tooltip } from '@/components/emcn'
+import { CopyCodeButton } from '@/components/ui/copy-code-button'
+import { extractTextContent } from '@/lib/core/utils/react-node-text'
 
 export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -138,8 +140,8 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
                 : normalizedLanguage === 'jsx'
                   ? 'jsx'
                   : normalizedLanguage === 'bash' ||
-                      normalizedLanguage === 'shell' ||
-                      normalizedLanguage === 'sh'
+                    normalizedLanguage === 'shell' ||
+                    normalizedLanguage === 'sh'
                     ? 'bash'
                     : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
                       ? 'yaml'
@@ -176,6 +178,10 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
                 <Copy className='h-3 w-3' strokeWidth={2} />
               )}
             </button>
+            {/* <CopyCodeButton
+              code={extractTextContent(codeContent)}
+              className='text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+            /> */}
           </div>
           <Code.Viewer
             code={codeText}

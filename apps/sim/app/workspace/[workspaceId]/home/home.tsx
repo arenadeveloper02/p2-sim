@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import { PanelLeft } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import {
@@ -10,12 +11,13 @@ import {
   type LandingWorkflowSeed,
   LandingWorkflowSeedStorage,
 } from '@/lib/core/utils/browser-storage'
+import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
 import { useChatHistory, useMarkTaskRead } from '@/hooks/queries/tasks'
 import type { ChatContext } from '@/stores/panel'
 import { MothershipChat, MothershipView, TemplatePrompts, UserInput } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
-import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
+import type { FileAttachmentForApi, MothershipResourceType } from './types'
 
 const logger = createLogger('Home')
 
@@ -26,7 +28,11 @@ interface HomeProps {
 export function Home({ chatId }: HomeProps = {}) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialResourceId = searchParams.get('resource')
   const { data: session } = useSession()
+  const posthog = usePostHog()
+  const posthogRef = useRef(posthog)
   const [initialPrompt, setInitialPrompt] = useState('')
   const hasCheckedLandingStorageRef = useRef(false)
   const initialViewInputRef = useRef<HTMLDivElement>(null)
@@ -54,6 +60,7 @@ export function Home({ chatId }: HomeProps = {}) {
                 description,
                 color,
                 workspaceId,
+                deduplicate: true,
               }),
             })
 
@@ -155,7 +162,10 @@ export function Home({ chatId }: HomeProps = {}) {
   } = useChat(
     workspaceId,
     chatId,
-    getMothershipUseChatOptions({ onResourceEvent: handleResourceEvent })
+    getMothershipUseChatOptions({
+      onResourceEvent: handleResourceEvent,
+      initialActiveResourceId: initialResourceId,
+    })
   )
 
   const [editingInputValue, setEditingInputValue] = useState('')
@@ -179,6 +189,17 @@ export function Home({ chatId }: HomeProps = {}) {
   )
 
   useEffect(() => {
+    const url = new URL(window.location.href)
+    if (activeResourceId) {
+      url.searchParams.set('resource', activeResourceId)
+    } else {
+      url.searchParams.delete('resource')
+    }
+    url.hash = ''
+    window.history.replaceState(null, '', url.toString())
+  }, [activeResourceId])
+
+  useEffect(() => {
     wasSendingRef.current = false
     if (resolvedChatId) markRead(resolvedChatId)
   }, [resolvedChatId, markRead])
@@ -198,10 +219,29 @@ export function Home({ chatId }: HomeProps = {}) {
     return () => cancelAnimationFrame(id)
   }, [resources])
 
+  useEffect(() => {
+    posthogRef.current = posthog
+  }, [posthog])
+
+  const handleStopGeneration = useCallback(() => {
+    captureEvent(posthogRef.current, 'task_generation_aborted', {
+      workspace_id: workspaceId,
+      view: 'mothership',
+    })
+    stopGeneration()
+  }, [stopGeneration, workspaceId])
+
   const handleSubmit = useCallback(
     (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
       const trimmed = text.trim()
       if (!trimmed && !(fileAttachments && fileAttachments.length > 0)) return
+
+      captureEvent(posthogRef.current, 'task_message_sent', {
+        workspace_id: workspaceId,
+        has_attachments: !!(fileAttachments && fileAttachments.length > 0),
+        has_contexts: !!(contexts && contexts.length > 0),
+        is_new_task: !chatId,
+      })
 
       if (initialViewInputRef.current) {
         setIsInputEntering(true)
@@ -209,7 +249,7 @@ export function Home({ chatId }: HomeProps = {}) {
 
       sendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts)
     },
-    [sendMessage]
+    [sendMessage, workspaceId, chatId]
   )
 
   useEffect(() => {
@@ -221,51 +261,42 @@ export function Home({ chatId }: HomeProps = {}) {
     return () => window.removeEventListener('mothership-send-message', handler)
   }, [sendMessage])
 
-  const handleContextAdd = useCallback(
-    (context: ChatContext) => {
-      let resourceType: MothershipResourceType | null = null
-      let resourceId: string | null = null
-      const resourceTitle: string = context.label
-
+  const resolveResourceFromContext = useCallback(
+    (context: ChatContext): { type: MothershipResourceType; id: string } | null => {
       switch (context.kind) {
         case 'workflow':
         case 'current_workflow':
-          resourceType = 'workflow'
-          resourceId = context.workflowId
-          break
+          return context.workflowId ? { type: 'workflow', id: context.workflowId } : null
         case 'knowledge':
-          if (context.knowledgeId) {
-            resourceType = 'knowledgebase'
-            resourceId = context.knowledgeId
-          }
-          break
+          return context.knowledgeId ? { type: 'knowledgebase', id: context.knowledgeId } : null
         case 'table':
-          if (context.tableId) {
-            resourceType = 'table'
-            resourceId = context.tableId
-          }
-          break
+          return context.tableId ? { type: 'table', id: context.tableId } : null
         case 'file':
-          if (context.fileId) {
-            resourceType = 'file'
-            resourceId = context.fileId
-          }
-          break
+          return context.fileId ? { type: 'file', id: context.fileId } : null
         default:
-          break
+          return null
       }
+    },
+    []
+  )
 
-      if (resourceType && resourceId) {
-        const resource: MothershipResource = {
-          type: resourceType,
-          id: resourceId,
-          title: resourceTitle,
-        }
-        addResource(resource)
+  const handleContextAdd = useCallback(
+    (context: ChatContext) => {
+      const resolved = resolveResourceFromContext(context)
+      if (resolved) {
+        addResource({ ...resolved, title: context.label })
         handleResourceEvent()
       }
     },
-    [addResource, handleResourceEvent]
+    [resolveResourceFromContext, addResource, handleResourceEvent]
+  )
+
+  const handleContextRemove = useCallback(
+    (context: ChatContext) => {
+      const resolved = resolveResourceFromContext(context)
+      if (resolved) removeResource(resolved.type, resolved.id)
+    },
+    [resolveResourceFromContext, removeResource]
   )
 
   const hasMessages = messages.length > 0
@@ -302,9 +333,10 @@ export function Home({ chatId }: HomeProps = {}) {
               defaultValue={initialPrompt}
               onSubmit={handleSubmit}
               isSending={isSending}
-              onStopGeneration={stopGeneration}
+              onStopGeneration={handleStopGeneration}
               userId={session?.user?.id}
               onContextAdd={handleContextAdd}
+              onContextRemove={handleContextRemove}
             />
           </div>
         </div>
@@ -327,13 +359,15 @@ export function Home({ chatId }: HomeProps = {}) {
           isSending={isSending}
           isReconnecting={isReconnecting}
           onSubmit={handleSubmit}
-          onStopGeneration={stopGeneration}
+          onStopGeneration={handleStopGeneration}
           messageQueue={messageQueue}
           onRemoveQueuedMessage={removeFromQueue}
           onSendQueuedMessage={sendNow}
           onEditQueuedMessage={handleEditQueuedMessage}
           userId={session?.user?.id}
+          chatId={resolvedChatId}
           onContextAdd={handleContextAdd}
+          onContextRemove={handleContextRemove}
           editValue={editingInputValue}
           onEditValueConsumed={clearEditingValue}
           animateInput={isInputEntering}

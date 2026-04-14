@@ -3,7 +3,6 @@ import { knowledgeConnector } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import { generateInternalToken } from '@/lib/auth/internal'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
 import {
   assertServerToolNotAborted,
   type BaseServerTool,
@@ -11,6 +10,7 @@ import {
 } from '@/lib/copilot/tools/server/base-tool'
 import type { KnowledgeBaseArgs, KnowledgeBaseResult } from '@/lib/copilot/tools/shared/schemas'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
+import { generateId } from '@/lib/core/utils/uuid'
 import {
   createSingleDocument,
   deleteDocument,
@@ -48,14 +48,11 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
     params: KnowledgeBaseArgs,
     context?: ServerToolContext
   ): Promise<KnowledgeBaseResult> {
-    const withMessageId = (message: string) =>
-      appendCopilotLogContext(message, { messageId: context?.messageId })
+    const reqLogger = logger.withMetadata({ messageId: context?.messageId })
 
     if (!context?.userId) {
-      logger.error(
-        withMessageId(
-          'Unauthorized attempt to access knowledge base - no authenticated user context'
-        )
+      reqLogger.error(
+        'Unauthorized attempt to access knowledge base - no authenticated user context'
       )
       throw new Error('Authentication required')
     }
@@ -86,7 +83,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const newKnowledgeBase = await createKnowledgeBase(
             {
@@ -105,7 +102,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             requestId
           )
 
-          logger.info(withMessageId('Knowledge base created via copilot'), {
+          reqLogger.info('Knowledge base created via copilot', {
             knowledgeBaseId: newKnowledgeBase.id,
             name: newKnowledgeBase.name,
             userId: context.userId,
@@ -141,7 +138,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             }
           }
 
-          logger.info(withMessageId('Knowledge base metadata retrieved via copilot'), {
+          reqLogger.info('Knowledge base metadata retrieved via copilot', {
             knowledgeBaseId: knowledgeBase.id,
             userId: context.userId,
           })
@@ -205,7 +202,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             distanceThreshold: strategy.distanceThreshold,
           })
 
-          logger.info(withMessageId('Knowledge base queried via copilot'), {
+          reqLogger.info('Knowledge base queried via copilot', {
             knowledgeBaseId: args.knowledgeBaseId,
             query: args.query.substring(0, 100),
             resultCount: results.length,
@@ -272,7 +269,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             5 * 60
           )
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const doc = await createSingleDocument(
             {
@@ -296,13 +293,13 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             },
             {}
           ).catch((err) => {
-            logger.error(withMessageId('Background document processing failed'), {
+            reqLogger.error('Background document processing failed', {
               documentId: doc.id,
               error: err instanceof Error ? err.message : String(err),
             })
           })
 
-          logger.info(withMessageId('Workspace file added to knowledge base via copilot'), {
+          reqLogger.info('Workspace file added to knowledge base via copilot', {
             knowledgeBaseId: args.knowledgeBaseId,
             documentId: doc.id,
             fileName: fileRecord.name,
@@ -348,11 +345,11 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const updatedKb = await updateKnowledgeBase(args.knowledgeBaseId, updates, requestId)
 
-          logger.info(withMessageId('Knowledge base updated via copilot'), {
+          reqLogger.info('Knowledge base updated via copilot', {
             knowledgeBaseId: args.knowledgeBaseId,
             userId: context.userId,
           })
@@ -387,11 +384,11 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           await deleteKnowledgeBase(args.knowledgeBaseId, requestId)
 
-          logger.info(withMessageId('Knowledge base deleted via copilot'), {
+          reqLogger.info('Knowledge base deleted via copilot', {
             knowledgeBaseId: args.knowledgeBaseId,
             name: kbToDelete.name,
             userId: context.userId,
@@ -414,7 +411,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
           if (!args.documentId) {
             return { success: false, message: 'documentId is required for delete_document' }
           }
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const result = await deleteDocument(args.documentId, requestId)
           return {
@@ -444,7 +441,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
               message: 'At least one of filename or enabled is required for update_document',
             }
           }
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           await updateDocument(args.documentId, updateData, requestId)
           return {
@@ -468,7 +465,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
 
           const tagDefinitions = await getDocumentTagDefinitions(args.knowledgeBaseId)
 
-          logger.info(withMessageId('Tag definitions listed via copilot'), {
+          reqLogger.info('Tag definitions listed via copilot', {
             knowledgeBaseId: args.knowledgeBaseId,
             count: tagDefinitions.length,
             userId: context.userId,
@@ -510,7 +507,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const newTag = await createTagDefinition(
             {
@@ -522,7 +519,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             requestId
           )
 
-          logger.info(withMessageId('Tag definition created via copilot'), {
+          reqLogger.info('Tag definition created via copilot', {
             knowledgeBaseId: args.knowledgeBaseId,
             tagId: newTag.id,
             displayName: newTag.displayName,
@@ -569,11 +566,11 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const updatedTag = await updateTagDefinition(args.tagDefinitionId, updateData, requestId)
 
-          logger.info(withMessageId('Tag definition updated via copilot'), {
+          reqLogger.info('Tag definition updated via copilot', {
             tagId: args.tagDefinitionId,
             knowledgeBaseId: existingTag.knowledgeBaseId,
             userId: context.userId,
@@ -606,7 +603,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           assertNotAborted()
           const deleted = await deleteTagDefinition(
             args.knowledgeBaseId,
@@ -614,7 +611,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             requestId
           )
 
-          logger.info(withMessageId('Tag definition deleted via copilot'), {
+          reqLogger.info('Tag definition deleted via copilot', {
             tagId: args.tagDefinitionId,
             tagSlot: deleted.tagSlot,
             displayName: deleted.displayName,
@@ -640,7 +637,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             }
           }
 
-          const requestId = crypto.randomUUID().slice(0, 8)
+          const requestId = generateId().slice(0, 8)
           const stats = await getTagUsageStats(args.knowledgeBaseId, requestId)
 
           return {
@@ -696,7 +693,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
           }
 
           const connector = createRes.data
-          logger.info(withMessageId('Connector created via copilot'), {
+          reqLogger.info('Connector created via copilot', {
             connectorId: connector.id,
             connectorType: args.connectorType,
             knowledgeBaseId: args.knowledgeBaseId,
@@ -751,7 +748,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             return { success: false, message: updateRes.error ?? 'Failed to update connector' }
           }
 
-          logger.info(withMessageId('Connector updated via copilot'), {
+          reqLogger.info('Connector updated via copilot', {
             connectorId: args.connectorId,
             userId: context.userId,
           })
@@ -784,7 +781,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             return { success: false, message: deleteRes.error ?? 'Failed to delete connector' }
           }
 
-          logger.info(withMessageId('Connector deleted via copilot'), {
+          reqLogger.info('Connector deleted via copilot', {
             connectorId: args.connectorId,
             userId: context.userId,
           })
@@ -817,7 +814,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
             return { success: false, message: syncRes.error ?? 'Failed to sync connector' }
           }
 
-          logger.info(withMessageId('Connector sync triggered via copilot'), {
+          reqLogger.info('Connector sync triggered via copilot', {
             connectorId: args.connectorId,
             userId: context.userId,
           })
@@ -837,7 +834,7 @@ export const knowledgeBaseServerTool: BaseServerTool<KnowledgeBaseArgs, Knowledg
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-      logger.error(withMessageId('Error in knowledge_base tool'), {
+      reqLogger.error('Error in knowledge_base tool', {
         operation,
         error: errorMessage,
         userId: context.userId,

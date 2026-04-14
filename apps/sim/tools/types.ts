@@ -6,6 +6,7 @@ export type BYOKProviderId =
   | 'anthropic'
   | 'google'
   | 'mistral'
+  | 'fireworks'
   | 'firecrawl'
   | 'exa'
   | 'serper'
@@ -193,6 +194,8 @@ export interface OAuthTokenPayload {
   credentialAccountUserId?: string
   providerId?: string
   workflowId?: string
+  impersonateEmail?: string
+  scopes?: string[]
 }
 
 /**

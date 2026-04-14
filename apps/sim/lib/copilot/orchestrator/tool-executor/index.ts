@@ -2,8 +2,8 @@ import { db } from '@sim/db'
 import { credential, mcpServers, pendingCredentialDraft, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull, lt } from 'drizzle-orm'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { SIM_AGENT_API_URL } from '@/lib/copilot/constants'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
 import type {
   ExecutionContext,
   ToolCallResult,
@@ -12,6 +12,7 @@ import type {
 import { routeExecution } from '@/lib/copilot/tools/server/router'
 import { env } from '@/lib/core/config/env'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { getKnowledgeBaseById } from '@/lib/knowledge/service'
 import { validateMcpDomain } from '@/lib/mcp/domain-check'
@@ -232,6 +233,17 @@ async function executeManageCustomTool(
       })
       const created = resultTools.find((tool) => tool.title === title)
 
+      recordAudit({
+        workspaceId,
+        actorId: context.userId,
+        action: AuditAction.CUSTOM_TOOL_CREATED,
+        resourceType: AuditResourceType.CUSTOM_TOOL,
+        resourceId: created?.id,
+        resourceName: title,
+        description: `Created custom tool "${title}"`,
+        metadata: { source: 'copilot' },
+      })
+
       return {
         success: true,
         output: {
@@ -280,6 +292,17 @@ async function executeManageCustomTool(
         userId: context.userId,
       })
 
+      recordAudit({
+        workspaceId,
+        actorId: context.userId,
+        action: AuditAction.CUSTOM_TOOL_UPDATED,
+        resourceType: AuditResourceType.CUSTOM_TOOL,
+        resourceId: params.toolId,
+        resourceName: title,
+        description: `Updated custom tool "${title}"`,
+        metadata: { source: 'copilot' },
+      })
+
       return {
         success: true,
         output: {
@@ -306,6 +329,16 @@ async function executeManageCustomTool(
         return { success: false, error: `Custom tool not found: ${params.toolId}` }
       }
 
+      recordAudit({
+        workspaceId,
+        actorId: context.userId,
+        action: AuditAction.CUSTOM_TOOL_DELETED,
+        resourceType: AuditResourceType.CUSTOM_TOOL,
+        resourceId: params.toolId,
+        description: 'Deleted custom tool',
+        metadata: { source: 'copilot' },
+      })
+
       return {
         success: true,
         output: {
@@ -322,17 +355,14 @@ async function executeManageCustomTool(
       error: `Unsupported operation for manage_custom_tool: ${operation}`,
     }
   } catch (error) {
-    logger.error(
-      appendCopilotLogContext('manage_custom_tool execution failed', {
-        messageId: context.messageId,
-      }),
-      {
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .error('manage_custom_tool execution failed', {
         operation,
         workspaceId,
         userId: context.userId,
         error: error instanceof Error ? error.message : String(error),
-      }
-    )
+      })
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to manage custom tool',
@@ -465,6 +495,19 @@ async function executeManageMcpTool(
 
       await mcpService.clearCache(workspaceId)
 
+      recordAudit({
+        workspaceId,
+        actorId: context.userId,
+        action: AuditAction.MCP_SERVER_ADDED,
+        resourceType: AuditResourceType.MCP_SERVER,
+        resourceId: serverId,
+        resourceName: config.name,
+        description: existing
+          ? `Updated existing MCP server "${config.name}"`
+          : `Added MCP server "${config.name}"`,
+        metadata: { transport: config.transport, url: config.url, source: 'copilot' },
+      })
+
       return {
         success: true,
         output: {
@@ -518,6 +561,17 @@ async function executeManageMcpTool(
 
       await mcpService.clearCache(workspaceId)
 
+      recordAudit({
+        workspaceId,
+        actorId: context.userId,
+        action: AuditAction.MCP_SERVER_UPDATED,
+        resourceType: AuditResourceType.MCP_SERVER,
+        resourceId: params.serverId,
+        resourceName: updated.name,
+        description: `Updated MCP server "${updated.name}"`,
+        metadata: { source: 'copilot' },
+      })
+
       return {
         success: true,
         output: {
@@ -531,6 +585,13 @@ async function executeManageMcpTool(
     }
 
     if (operation === 'delete') {
+      if (context.userPermission && context.userPermission !== 'admin') {
+        return {
+          success: false,
+          error: `Permission denied: 'delete' on manage_mcp_tool requires admin access. You have '${context.userPermission}' permission.`,
+        }
+      }
+
       if (!params.serverId) {
         return { success: false, error: "'serverId' is required for 'delete'" }
       }
@@ -546,6 +607,17 @@ async function executeManageMcpTool(
 
       await mcpService.clearCache(workspaceId)
 
+      recordAudit({
+        workspaceId,
+        actorId: context.userId,
+        action: AuditAction.MCP_SERVER_REMOVED,
+        resourceType: AuditResourceType.MCP_SERVER,
+        resourceId: params.serverId,
+        resourceName: deleted.name,
+        description: `Deleted MCP server "${deleted.name}"`,
+        metadata: { source: 'copilot' },
+      })
+
       return {
         success: true,
         output: {
@@ -559,16 +631,13 @@ async function executeManageMcpTool(
 
     return { success: false, error: `Unsupported operation for manage_mcp_tool: ${operation}` }
   } catch (error) {
-    logger.error(
-      appendCopilotLogContext('manage_mcp_tool execution failed', {
-        messageId: context.messageId,
-      }),
-      {
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .error('manage_mcp_tool execution failed', {
         operation,
         workspaceId,
         error: error instanceof Error ? error.message : String(error),
-      }
-    )
+      })
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to manage MCP server',
@@ -650,6 +719,17 @@ async function executeManageSkill(
       })
       const created = resultSkills.find((s) => s.name === params.name)
 
+      recordAudit({
+        workspaceId,
+        actorId: context.userId,
+        action: AuditAction.SKILL_CREATED,
+        resourceType: AuditResourceType.SKILL,
+        resourceId: created?.id,
+        resourceName: params.name,
+        description: `Created skill "${params.name}"`,
+        metadata: { source: 'copilot' },
+      })
+
       return {
         success: true,
         output: {
@@ -692,14 +772,27 @@ async function executeManageSkill(
         userId: context.userId,
       })
 
+      const updatedName = params.name || found.name
+
+      recordAudit({
+        workspaceId,
+        actorId: context.userId,
+        action: AuditAction.SKILL_UPDATED,
+        resourceType: AuditResourceType.SKILL,
+        resourceId: params.skillId,
+        resourceName: updatedName,
+        description: `Updated skill "${updatedName}"`,
+        metadata: { source: 'copilot' },
+      })
+
       return {
         success: true,
         output: {
           success: true,
           operation,
           skillId: params.skillId,
-          name: params.name || found.name,
-          message: `Updated skill "${params.name || found.name}"`,
+          name: updatedName,
+          message: `Updated skill "${updatedName}"`,
         },
       }
     }
@@ -714,6 +807,16 @@ async function executeManageSkill(
         return { success: false, error: `Skill not found: ${params.skillId}` }
       }
 
+      recordAudit({
+        workspaceId,
+        actorId: context.userId,
+        action: AuditAction.SKILL_DELETED,
+        resourceType: AuditResourceType.SKILL,
+        resourceId: params.skillId,
+        description: 'Deleted skill',
+        metadata: { source: 'copilot' },
+      })
+
       return {
         success: true,
         output: {
@@ -727,16 +830,11 @@ async function executeManageSkill(
 
     return { success: false, error: `Unsupported operation for manage_skill: ${operation}` }
   } catch (error) {
-    logger.error(
-      appendCopilotLogContext('manage_skill execution failed', {
-        messageId: context.messageId,
-      }),
-      {
-        operation,
-        workspaceId,
-        error: error instanceof Error ? error.message : String(error),
-      }
-    )
+    logger.withMetadata({ messageId: context.messageId }).error('manage_skill execution failed', {
+      operation,
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    })
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to manage skill',
@@ -843,7 +941,7 @@ async function generateOAuthLink(
   await db
     .insert(pendingCredentialDraft)
     .values({
-      id: crypto.randomUUID(),
+      id: generateId(),
       userId,
       workspaceId,
       providerId,
@@ -868,10 +966,10 @@ async function generateOAuthLink(
   const { headers: getHeaders } = await import('next/headers')
   const reqHeaders = await getHeaders()
 
-  const data = (await auth.api.oAuth2LinkAccount({
+  const data = await auth.api.oAuth2LinkAccount({
     body: { providerId, callbackURL },
     headers: reqHeaders,
-  })) as { url?: string; redirect?: boolean }
+  })
 
   if (!data?.url) {
     throw new Error('oAuth2LinkAccount did not return an authorization URL')
@@ -963,10 +1061,27 @@ const SIM_WORKFLOW_TOOL_HANDLERS: Record<
             .update(credential)
             .set({ displayName, updatedAt: new Date() })
             .where(eq(credential.id, credentialId))
+          recordAudit({
+            actorId: c.userId,
+            action: AuditAction.CREDENTIAL_RENAMED,
+            resourceType: AuditResourceType.OAUTH,
+            resourceId: credentialId,
+            resourceName: displayName,
+            description: `Renamed credential to "${displayName}"`,
+            metadata: { source: 'copilot' },
+          })
           return { success: true, output: { credentialId, displayName } }
         }
         case 'delete': {
           await db.delete(credential).where(eq(credential.id, credentialId))
+          recordAudit({
+            actorId: c.userId,
+            action: AuditAction.CREDENTIAL_DELETED,
+            resourceType: AuditResourceType.OAUTH,
+            resourceId: credentialId,
+            description: `Deleted credential`,
+            metadata: { source: 'copilot' },
+          })
           return { success: true, output: { credentialId, deleted: true } }
         }
         default:
@@ -1007,15 +1122,12 @@ const SIM_WORKFLOW_TOOL_HANDLERS: Record<
         },
       }
     } catch (err) {
-      logger.warn(
-        appendCopilotLogContext('Failed to generate OAuth link, falling back to generic URL', {
-          messageId: c.messageId,
-        }),
-        {
+      logger
+        .withMetadata({ messageId: c.messageId })
+        .warn('Failed to generate OAuth link, falling back to generic URL', {
           providerName,
           error: err instanceof Error ? err.message : String(err),
-        }
-      )
+        })
       const workspaceUrl = c.workspaceId
         ? `${baseUrl}/workspace/${c.workspaceId}`
         : `${baseUrl}/workspace`
@@ -1199,12 +1311,9 @@ export async function executeToolServerSide(
 
   const toolConfig = getTool(resolvedToolName)
   if (!toolConfig) {
-    logger.warn(
-      appendCopilotLogContext('Tool not found in registry', {
-        messageId: context.messageId,
-      }),
-      { toolName, resolvedToolName }
-    )
+    logger
+      .withMetadata({ messageId: context.messageId })
+      .warn('Tool not found in registry', { toolName, resolvedToolName })
     return {
       success: false,
       error: `Tool not found: ${toolName}`,
@@ -1293,15 +1402,10 @@ async function executeServerToolDirect(
 
     return { success: true, output: result }
   } catch (error) {
-    logger.error(
-      appendCopilotLogContext('Server tool execution failed', {
-        messageId: context.messageId,
-      }),
-      {
-        toolName,
-        error: error instanceof Error ? error.message : String(error),
-      }
-    )
+    logger.withMetadata({ messageId: context.messageId }).error('Server tool execution failed', {
+      toolName,
+      error: error instanceof Error ? error.message : String(error),
+    })
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Server tool execution failed',
@@ -1377,7 +1481,7 @@ export async function markToolComplete(
       })
 
       if (!response.ok) {
-        logger.warn(appendCopilotLogContext('Mark-complete call failed', { messageId }), {
+        logger.withMetadata({ messageId }).warn('Mark-complete call failed', {
           toolCallId,
           toolName,
           status: response.status,
@@ -1391,7 +1495,7 @@ export async function markToolComplete(
     }
   } catch (error) {
     const isTimeout = error instanceof DOMException && error.name === 'AbortError'
-    logger.error(appendCopilotLogContext('Mark-complete call failed', { messageId }), {
+    logger.withMetadata({ messageId }).error('Mark-complete call failed', {
       toolCallId,
       toolName,
       timedOut: isTimeout,

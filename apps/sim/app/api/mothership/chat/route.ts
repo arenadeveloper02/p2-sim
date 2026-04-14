@@ -12,12 +12,12 @@ import {
   createSSEStream,
   SSE_RESPONSE_HEADERS,
 } from '@/lib/copilot/chat-streaming'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
 import type { OrchestratorResult } from '@/lib/copilot/orchestrator/types'
 import { processContextsServer, resolveActiveResourceContext } from '@/lib/copilot/process-contents'
 import { createRequestTracker, createUnauthorizedResponse } from '@/lib/copilot/request-helpers'
 import { taskPubSub } from '@/lib/copilot/task-events'
 import { generateWorkspaceContext } from '@/lib/copilot/workspace-context'
+import { generateId } from '@/lib/core/utils/uuid'
 import {
   assertActiveWorkspaceAccess,
   getUserEntityPermissions,
@@ -36,7 +36,7 @@ const FileAttachmentSchema = z.object({
 })
 
 const ResourceAttachmentSchema = z.object({
-  type: z.enum(['workflow', 'table', 'file', 'knowledgebase']),
+  type: z.enum(['workflow', 'table', 'file', 'knowledgebase', 'folder']),
   id: z.string().min(1),
   title: z.string().optional(),
   active: z.boolean().optional(),
@@ -66,6 +66,7 @@ const MothershipMessageSchema = z.object({
           'docs',
           'table',
           'file',
+          'folder',
         ]),
         label: z.string(),
         chatId: z.string().optional(),
@@ -77,6 +78,7 @@ const MothershipMessageSchema = z.object({
         executionId: z.string().optional(),
         tableId: z.string().optional(),
         fileId: z.string().optional(),
+        folderId: z.string().optional(),
       })
     )
     .optional(),
@@ -110,29 +112,24 @@ export async function POST(req: NextRequest) {
       userTimezone,
     } = MothershipMessageSchema.parse(body)
 
-    const userMessageId = providedMessageId || crypto.randomUUID()
+    const userMessageId = providedMessageId || generateId()
     userMessageIdForLogs = userMessageId
+    const reqLogger = logger.withMetadata({
+      requestId: tracker.requestId,
+      messageId: userMessageId,
+    })
 
-    logger.error(
-      appendCopilotLogContext('Received mothership chat start request', {
-        requestId: tracker.requestId,
-        messageId: userMessageId,
-      }),
-      {
-        workspaceId,
-        chatId,
-        createNewChat,
-        hasContexts: Array.isArray(contexts) && contexts.length > 0,
-        contextsCount: Array.isArray(contexts) ? contexts.length : 0,
-        hasResourceAttachments:
-          Array.isArray(resourceAttachments) && resourceAttachments.length > 0,
-        resourceAttachmentCount: Array.isArray(resourceAttachments)
-          ? resourceAttachments.length
-          : 0,
-        hasFileAttachments: Array.isArray(fileAttachments) && fileAttachments.length > 0,
-        fileAttachmentCount: Array.isArray(fileAttachments) ? fileAttachments.length : 0,
-      }
-    )
+    reqLogger.info('Received mothership chat start request', {
+      workspaceId,
+      chatId,
+      createNewChat,
+      hasContexts: Array.isArray(contexts) && contexts.length > 0,
+      contextsCount: Array.isArray(contexts) ? contexts.length : 0,
+      hasResourceAttachments: Array.isArray(resourceAttachments) && resourceAttachments.length > 0,
+      resourceAttachmentCount: Array.isArray(resourceAttachments) ? resourceAttachments.length : 0,
+      hasFileAttachments: Array.isArray(fileAttachments) && fileAttachments.length > 0,
+      fileAttachmentCount: Array.isArray(fileAttachments) ? fileAttachments.length : 0,
+    })
 
     try {
       await assertActiveWorkspaceAccess(workspaceId, authenticatedUserId)
@@ -174,13 +171,7 @@ export async function POST(req: NextRequest) {
           actualChatId
         )
       } catch (e) {
-        logger.error(
-          appendCopilotLogContext('Failed to process contexts', {
-            requestId: tracker.requestId,
-            messageId: userMessageId,
-          }),
-          e
-        )
+        reqLogger.error('Failed to process contexts', e)
       }
     }
 
@@ -205,13 +196,7 @@ export async function POST(req: NextRequest) {
         if (result.status === 'fulfilled' && result.value) {
           agentContexts.push(result.value)
         } else if (result.status === 'rejected') {
-          logger.error(
-            appendCopilotLogContext('Failed to resolve resource attachment', {
-              requestId: tracker.requestId,
-              messageId: userMessageId,
-            }),
-            result.reason
-          )
+          reqLogger.error('Failed to resolve resource attachment', result.reason)
         }
       }
     }
@@ -241,6 +226,7 @@ export async function POST(req: NextRequest) {
               ...(c.knowledgeId && { knowledgeId: c.knowledgeId }),
               ...(c.tableId && { tableId: c.tableId }),
               ...(c.fileId && { fileId: c.fileId }),
+              ...(c.folderId && { folderId: c.folderId }),
             })),
           }),
       }
@@ -298,8 +284,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const executionId = crypto.randomUUID()
-    const runId = crypto.randomUUID()
+    const executionId = generateId()
+    const runId = generateId()
     const stream = createSSEStream({
       requestPayload,
       userId: authenticatedUserId,
@@ -328,7 +314,7 @@ export async function POST(req: NextRequest) {
           if (!result.success) return
 
           const assistantMessage: Record<string, unknown> = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             role: 'assistant' as const,
             content: result.content,
             timestamp: new Date().toISOString(),
@@ -399,16 +385,10 @@ export async function POST(req: NextRequest) {
               })
             }
           } catch (error) {
-            logger.error(
-              appendCopilotLogContext('Failed to persist chat messages', {
-                requestId: tracker.requestId,
-                messageId: userMessageId,
-              }),
-              {
-                chatId: actualChatId,
-                error: error instanceof Error ? error.message : 'Unknown error',
-              }
-            )
+            reqLogger.error('Failed to persist chat messages', {
+              chatId: actualChatId,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            })
           }
         },
       },
@@ -423,15 +403,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    logger.error(
-      appendCopilotLogContext('Error handling mothership chat', {
-        requestId: tracker.requestId,
-        messageId: userMessageIdForLogs,
-      }),
-      {
+    logger
+      .withMetadata({ requestId: tracker.requestId, messageId: userMessageIdForLogs })
+      .error('Error handling mothership chat', {
         error: error instanceof Error ? error.message : 'Unknown error',
-      }
-    )
+      })
 
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Internal server error' },

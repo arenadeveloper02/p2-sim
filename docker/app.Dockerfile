@@ -25,11 +25,10 @@ COPY packages/testing/package.json ./packages/testing/package.json
 COPY packages/logger/package.json ./packages/logger/package.json
 COPY packages/tsconfig/package.json ./packages/tsconfig/package.json
 
-# Install turbo globally, then dependencies, then rebuild isolated-vm for Node.js
+# Install dependencies, then rebuild isolated-vm for Node.js
 # Use --linker=hoisted for flat node_modules layout (required for Docker multi-stage builds)
 RUN --mount=type=cache,id=bun-cache,target=/root/.bun/install/cache \
     --mount=type=cache,id=npm-cache,target=/root/.npm \
-    bun install -g turbo && \
     HUSKY=0 bun install --omit=dev --ignore-scripts --linker=hoisted && \
     cd node_modules/isolated-vm && npx node-gyp rebuild --release
 
@@ -155,6 +154,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/public ./apps/sim/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/static ./apps/sim/.next/static
+
+# Copy the full dependency tree and app source so the BullMQ worker can run from source.
+# The standalone server continues to use server.js; the worker uses bun on worker/index.ts.
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/apps/sim ./apps/sim
+COPY --from=builder --chown=nextjs:nodejs /app/packages ./packages
 
 # Copy isolated-vm native module (compiled for Node.js in deps stage)
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules/isolated-vm ./node_modules/isolated-vm

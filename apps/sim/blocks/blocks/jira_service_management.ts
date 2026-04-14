@@ -44,6 +44,9 @@ export const JiraServiceManagementBlock: BlockConfig<JsmResponse> = {
         { label: 'Get Approvals', id: 'get_approvals' },
         { label: 'Answer Approval', id: 'answer_approval' },
         { label: 'Get Request Type Fields', id: 'get_request_type_fields' },
+        { label: 'Get Form Templates', id: 'get_form_templates' },
+        { label: 'Get Form Structure', id: 'get_form_structure' },
+        { label: 'Get Issue Forms', id: 'get_issue_forms' },
       ],
       value: () => 'get_service_desks',
     },
@@ -191,14 +194,30 @@ export const JiraServiceManagementBlock: BlockConfig<JsmResponse> = {
           'add_participants',
           'get_approvals',
           'answer_approval',
+          'get_issue_forms',
         ],
       },
+    },
+    {
+      id: 'projectIdOrKey',
+      title: 'Project ID or Key',
+      type: 'short-input',
+      required: { field: 'operation', value: ['get_form_templates', 'get_form_structure'] },
+      placeholder: 'Enter Jira project ID or key (e.g., 10001 or SD)',
+      condition: { field: 'operation', value: ['get_form_templates', 'get_form_structure'] },
+    },
+    {
+      id: 'formId',
+      title: 'Form ID',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter form ID (UUID from Get Form Templates)',
+      condition: { field: 'operation', value: 'get_form_structure' },
     },
     {
       id: 'summary',
       title: 'Summary',
       type: 'short-input',
-      required: true,
       placeholder: 'Enter request summary',
       condition: { field: 'operation', value: 'create_request' },
       wandConfig: {
@@ -238,6 +257,7 @@ Return ONLY the description text - no explanations.`,
       title: 'Raise on Behalf Of',
       type: 'short-input',
       placeholder: 'Account ID to raise request on behalf of',
+      mode: 'advanced',
       condition: { field: 'operation', value: 'create_request' },
     },
     {
@@ -245,6 +265,7 @@ Return ONLY the description text - no explanations.`,
       title: 'Request Participants',
       type: 'short-input',
       placeholder: 'Comma-separated account IDs to add as participants',
+      mode: 'advanced',
       condition: { field: 'operation', value: 'create_request' },
     },
     {
@@ -252,6 +273,7 @@ Return ONLY the description text - no explanations.`,
       title: 'Channel',
       type: 'short-input',
       placeholder: 'Channel (e.g., portal, email)',
+      mode: 'advanced',
       condition: { field: 'operation', value: 'create_request' },
     },
     {
@@ -260,6 +282,16 @@ Return ONLY the description text - no explanations.`,
       type: 'long-input',
       placeholder:
         'JSON object of field values (e.g., {"summary": "Title", "customfield_10010": "value"})',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'create_request' },
+    },
+    {
+      id: 'formAnswers',
+      title: 'Form Answers',
+      type: 'long-input',
+      placeholder:
+        'JSON object for form-based request types (e.g., {"summary": {"text": "Title"}, "customfield_10010": {"choices": ["10320"]}})',
+      mode: 'advanced',
       condition: { field: 'operation', value: 'create_request' },
     },
     {
@@ -491,6 +523,9 @@ Return ONLY the comment text - no explanations.`,
       'jsm_get_approvals',
       'jsm_answer_approval',
       'jsm_get_request_type_fields',
+      'jsm_get_form_templates',
+      'jsm_get_form_structure',
+      'jsm_get_issue_forms',
     ],
     config: {
       tool: (params) => {
@@ -537,6 +572,12 @@ Return ONLY the comment text - no explanations.`,
             return 'jsm_answer_approval'
           case 'get_request_type_fields':
             return 'jsm_get_request_type_fields'
+          case 'get_form_templates':
+            return 'jsm_get_form_templates'
+          case 'get_form_structure':
+            return 'jsm_get_form_structure'
+          case 'get_issue_forms':
+            return 'jsm_get_issue_forms'
           default:
             return 'jsm_get_service_desks'
         }
@@ -571,8 +612,8 @@ Return ONLY the comment text - no explanations.`,
             if (!params.requestTypeId) {
               throw new Error('Request Type ID is required')
             }
-            if (!params.summary) {
-              throw new Error('Summary is required')
+            if (!params.summary && !params.formAnswers) {
+              throw new Error('Summary is required (unless using Form Answers)')
             }
             return {
               ...baseParams,
@@ -584,7 +625,22 @@ Return ONLY the comment text - no explanations.`,
               requestParticipants: params.requestParticipants,
               channel: params.channel,
               requestFieldValues: params.requestFieldValues
-                ? JSON.parse(params.requestFieldValues)
+                ? (() => {
+                    try {
+                      return JSON.parse(params.requestFieldValues)
+                    } catch {
+                      throw new Error('requestFieldValues must be valid JSON')
+                    }
+                  })()
+                : undefined,
+              formAnswers: params.formAnswers
+                ? (() => {
+                    try {
+                      return JSON.parse(params.formAnswers)
+                    } catch {
+                      throw new Error('formAnswers must be valid JSON')
+                    }
+                  })()
                 : undefined,
             }
           case 'get_request':
@@ -781,6 +837,34 @@ Return ONLY the comment text - no explanations.`,
               serviceDeskId: params.serviceDeskId,
               requestTypeId: params.requestTypeId,
             }
+          case 'get_form_templates':
+            if (!params.projectIdOrKey) {
+              throw new Error('Project ID or key is required')
+            }
+            return {
+              ...baseParams,
+              projectIdOrKey: params.projectIdOrKey,
+            }
+          case 'get_form_structure':
+            if (!params.projectIdOrKey) {
+              throw new Error('Project ID or key is required')
+            }
+            if (!params.formId) {
+              throw new Error('Form ID is required')
+            }
+            return {
+              ...baseParams,
+              projectIdOrKey: params.projectIdOrKey,
+              formId: params.formId,
+            }
+          case 'get_issue_forms':
+            if (!params.issueIdOrKey) {
+              throw new Error('Issue ID or key is required')
+            }
+            return {
+              ...baseParams,
+              issueIdOrKey: params.issueIdOrKey,
+            }
           default:
             return baseParams
         }
@@ -826,6 +910,12 @@ Return ONLY the comment text - no explanations.`,
     },
     channel: { type: 'string', description: 'Channel (e.g., portal, email)' },
     requestFieldValues: { type: 'string', description: 'JSON object of request field values' },
+    formAnswers: {
+      type: 'string',
+      description: 'JSON object of form answers for form-based request types',
+    },
+    projectIdOrKey: { type: 'string', description: 'Jira project ID or key' },
+    formId: { type: 'string', description: 'Form ID (UUID)' },
     searchQuery: { type: 'string', description: 'Filter request types by name' },
     groupId: { type: 'string', description: 'Filter by request type group ID' },
     expand: { type: 'string', description: 'Comma-separated fields to expand' },
@@ -867,6 +957,26 @@ Return ONLY the comment text - no explanations.`,
     canRaiseOnBehalfOf: {
       type: 'boolean',
       description: 'Whether requests can be raised on behalf of another user',
+    },
+    templates: {
+      type: 'json',
+      description:
+        'Array of form templates (id, name, updated, portalRequestTypeIds, issueCreateIssueTypeIds)',
+    },
+    design: {
+      type: 'json',
+      description:
+        'Full form design with questions (labels, types, choices, validation), layout, conditions, sections, settings',
+    },
+    publish: {
+      type: 'json',
+      description: 'Form publishing and request type configuration',
+    },
+    updated: { type: 'string', description: 'Last updated timestamp' },
+    forms: {
+      type: 'json',
+      description:
+        'Array of forms attached to an issue (id, name, updated, submitted, lock, internal, formTemplateId)',
     },
   },
 }

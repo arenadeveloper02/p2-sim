@@ -1,5 +1,7 @@
 import { A2ABlock } from '@/blocks/blocks/a2a'
 import { AgentBlock } from '@/blocks/blocks/agent'
+import { AgentMailBlock } from '@/blocks/blocks/agentmail'
+import { AhrefsBlock } from '@/blocks/blocks/ahrefs'
 import { AirtableBlock } from '@/blocks/blocks/airtable'
 import { AirweaveBlock } from '@/blocks/blocks/airweave'
 import { AlgoliaBlock } from '@/blocks/blocks/algolia'
@@ -12,6 +14,7 @@ import { ArenaBlock } from '@/blocks/blocks/arena'
 import { ArxivBlock } from '@/blocks/blocks/arxiv'
 import { AsanaBlock } from '@/blocks/blocks/asana'
 import { AshbyBlock } from '@/blocks/blocks/ashby'
+import { AthenaBlock } from '@/blocks/blocks/athena'
 import { AttioBlock } from '@/blocks/blocks/attio'
 import { BoxBlock } from '@/blocks/blocks/box'
 import { BrandfetchBlock } from '@/blocks/blocks/brandfetch'
@@ -23,9 +26,14 @@ import { CirclebackBlock } from '@/blocks/blocks/circleback'
 import { ClayBlock } from '@/blocks/blocks/clay'
 import { ClerkBlock } from '@/blocks/blocks/clerk'
 import { CloudflareBlock } from '@/blocks/blocks/cloudflare'
+import { CloudFormationBlock } from '@/blocks/blocks/cloudformation'
+import { CloudWatchBlock } from '@/blocks/blocks/cloudwatch'
 import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock, ConfluenceV2Block } from '@/blocks/blocks/confluence'
+import { CredentialBlock } from '@/blocks/blocks/credential'
+import { CrowdStrikeBlock } from '@/blocks/blocks/crowdstrike'
 import { CursorBlock, CursorV2Block } from '@/blocks/blocks/cursor'
+import { DagsterBlock } from '@/blocks/blocks/dagster'
 import { DatabricksBlock } from '@/blocks/blocks/databricks'
 import { DatadogBlock } from '@/blocks/blocks/datadog'
 import { DevinBlock } from '@/blocks/blocks/devin'
@@ -43,6 +51,7 @@ import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { EvernoteBlock } from '@/blocks/blocks/evernote'
 import { ExaBlock } from '@/blocks/blocks/exa'
 import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
+import { ExtendBlock, ExtendV2Block } from '@/blocks/blocks/extend'
 import { FathomBlock } from '@/blocks/blocks/fathom'
 import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock, FileV2Block, FileV3Block } from '@/blocks/blocks/file'
@@ -99,8 +108,9 @@ import { KalshiBlock, KalshiV2Block } from '@/blocks/blocks/kalshi'
 import { KetchBlock } from '@/blocks/blocks/ketch'
 import { KnowledgeBlock } from '@/blocks/blocks/knowledge'
 import { LangsmithBlock } from '@/blocks/blocks/langsmith'
+import { LaunchDarklyBlock } from '@/blocks/blocks/launchdarkly'
 import { LemlistBlock } from '@/blocks/blocks/lemlist'
-import { LinearBlock } from '@/blocks/blocks/linear'
+import { LinearBlock, LinearV2Block } from '@/blocks/blocks/linear'
 import { LinkedInBlock } from '@/blocks/blocks/linkedin'
 import { LinkupBlock } from '@/blocks/blocks/linkup'
 import { LoopsBlock } from '@/blocks/blocks/loops'
@@ -142,6 +152,7 @@ import { PolymarketBlock } from '@/blocks/blocks/polymarket'
 import { PostgreSQLBlock } from '@/blocks/blocks/postgresql'
 import { PostHogBlock } from '@/blocks/blocks/posthog'
 import { PresentationBlock } from '@/blocks/blocks/presentation'
+import { ProfoundBlock } from '@/blocks/blocks/profound'
 import { PulseBlock, PulseV2Block } from '@/blocks/blocks/pulse'
 import { QdrantBlock } from '@/blocks/blocks/qdrant'
 import { QuiverBlock } from '@/blocks/blocks/quiver'
@@ -153,12 +164,14 @@ import { ResendBlock } from '@/blocks/blocks/resend'
 import { ResponseBlock } from '@/blocks/blocks/response'
 import { RevenueCatBlock } from '@/blocks/blocks/revenuecat'
 import { RipplingBlock } from '@/blocks/blocks/rippling'
+import { RootlyBlock } from '@/blocks/blocks/rootly'
 import { RouterBlock, RouterV2Block } from '@/blocks/blocks/router'
 import { RssBlock } from '@/blocks/blocks/rss'
 import { S3Block } from '@/blocks/blocks/s3'
 import { SalesforceBlock } from '@/blocks/blocks/salesforce'
 import { ScheduleBlock } from '@/blocks/blocks/schedule'
 import { SearchBlock } from '@/blocks/blocks/search'
+import { SecretsManagerBlock } from '@/blocks/blocks/secrets_manager'
 import { SendGridBlock } from '@/blocks/blocks/sendgrid'
 import { SentryBlock } from '@/blocks/blocks/sentry'
 import { SerperBlock } from '@/blocks/blocks/serper'
@@ -167,6 +180,7 @@ import { SftpBlock } from '@/blocks/blocks/sftp'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { ShopifyBlock } from '@/blocks/blocks/shopify'
 import { SimilarwebBlock } from '@/blocks/blocks/similarweb'
+import { SixtyfourBlock } from '@/blocks/blocks/sixtyfour'
 import { SlackBlock } from '@/blocks/blocks/slack'
 import { SmtpBlock } from '@/blocks/blocks/smtp'
 import { SpotifyBlock } from '@/blocks/blocks/spotify'
@@ -180,6 +194,7 @@ import { StripeBlock } from '@/blocks/blocks/stripe'
 import { SttBlock, SttV2Block } from '@/blocks/blocks/stt'
 import { SupabaseBlock } from '@/blocks/blocks/supabase'
 import { TableBlock } from '@/blocks/blocks/table'
+import { TailscaleBlock } from '@/blocks/blocks/tailscale'
 import { TavilyBlock } from '@/blocks/blocks/tavily'
 import { TelegramBlock } from '@/blocks/blocks/telegram'
 import { TextractBlock, TextractV2Block } from '@/blocks/blocks/textract'
@@ -219,6 +234,8 @@ export const registry: Record<string, BlockConfig> = {
   a2a: A2ABlock,
   agent: AgentBlock,
   arena: ArenaBlock,
+  agentmail: AgentMailBlock,
+  ahrefs: AhrefsBlock,
   airtable: AirtableBlock,
   airweave: AirweaveBlock,
   algolia: AlgoliaBlock,
@@ -230,6 +247,7 @@ export const registry: Record<string, BlockConfig> = {
   arxiv: ArxivBlock,
   asana: AsanaBlock,
   ashby: AshbyBlock,
+  athena: AthenaBlock,
   attio: AttioBlock,
   brandfetch: BrandfetchBlock,
   box: BoxBlock,
@@ -239,13 +257,18 @@ export const registry: Record<string, BlockConfig> = {
   chat_trigger: ChatTriggerBlock,
   circleback: CirclebackBlock,
   cloudflare: CloudflareBlock,
+  cloudformation: CloudFormationBlock,
+  cloudwatch: CloudWatchBlock,
+  crowdstrike: CrowdStrikeBlock,
   clay: ClayBlock,
   clerk: ClerkBlock,
   condition: ConditionBlock,
+  credential: CredentialBlock,
   confluence: ConfluenceBlock,
   confluence_v2: ConfluenceV2Block,
   cursor: CursorBlock,
   cursor_v2: CursorV2Block,
+  dagster: DagsterBlock,
   databricks: DatabricksBlock,
   datadog: DatadogBlock,
   devin: DevinBlock,
@@ -260,10 +283,12 @@ export const registry: Record<string, BlockConfig> = {
   elevenlabs: ElevenLabsBlock,
   fathom: FathomBlock,
   enrich: EnrichBlock,
-  evernote: EvernoteBlock,
   evaluator: EvaluatorBlock,
+  evernote: EvernoteBlock,
   exa: ExaBlock,
   facebook_ads: FacebookAdsBlock,
+  extend: ExtendBlock,
+  extend_v2: ExtendV2Block,
   file: FileBlock,
   figma: FigmaBlock,
   file_v2: FileV2Block,
@@ -330,8 +355,10 @@ export const registry: Record<string, BlockConfig> = {
   ketch: KetchBlock,
   knowledge: KnowledgeBlock,
   langsmith: LangsmithBlock,
+  launchdarkly: LaunchDarklyBlock,
   lemlist: LemlistBlock,
   linear: LinearBlock,
+  linear_v2: LinearV2Block,
   linkedin: LinkedInBlock,
   linkup: LinkupBlock,
   presentation: PresentationBlock,
@@ -370,6 +397,7 @@ export const registry: Record<string, BlockConfig> = {
   perplexity: PerplexityBlock,
   pinecone: PineconeBlock,
   pipedrive: PipedriveBlock,
+  profound: ProfoundBlock,
   polymarket: PolymarketBlock,
   postgresql: PostgreSQLBlock,
   posthog: PostHogBlock,
@@ -386,6 +414,7 @@ export const registry: Record<string, BlockConfig> = {
   response: ResponseBlock,
   revenuecat: RevenueCatBlock,
   rippling: RipplingBlock,
+  rootly: RootlyBlock,
   router: RouterBlock,
   router_v2: RouterV2Block,
   rss: RssBlock,
@@ -402,10 +431,12 @@ export const registry: Record<string, BlockConfig> = {
   sharepoint: SharepointBlock,
   shopify: ShopifyBlock,
   similarweb: SimilarwebBlock,
+  sixtyfour: SixtyfourBlock,
   slack: SlackBlock,
   spyfu: SpyfuBlock,
   smtp: SmtpBlock,
   spotify: SpotifyBlock,
+  secrets_manager: SecretsManagerBlock,
   sqs: SQSBlock,
   ssh: SSHBlock,
   stagehand: StagehandBlock,
@@ -416,6 +447,7 @@ export const registry: Record<string, BlockConfig> = {
   stt_v2: SttV2Block,
   supabase: SupabaseBlock,
   table: TableBlock,
+  tailscale: TailscaleBlock,
   tavily: TavilyBlock,
   telegram: TelegramBlock,
   textract: TextractBlock,

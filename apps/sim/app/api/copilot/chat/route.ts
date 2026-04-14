@@ -5,6 +5,7 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { createRunSegment } from '@/lib/copilot/async-runs/repository'
 import { getAccessibleCopilotChat, resolveOrCreateChat } from '@/lib/copilot/chat-lifecycle'
 import { buildCopilotRequestPayload } from '@/lib/copilot/chat-payload'
 import {
@@ -14,7 +15,6 @@ import {
   requestChatTitle,
   SSE_RESPONSE_HEADERS,
 } from '@/lib/copilot/chat-streaming'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
 import { COPILOT_REQUEST_MODES } from '@/lib/copilot/models'
 import { orchestrateCopilotStream } from '@/lib/copilot/orchestrator'
 import { getStreamMeta, readStreamEvents } from '@/lib/copilot/orchestrator/stream/buffer'
@@ -27,6 +27,8 @@ import {
   createRequestTracker,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request-helpers'
+import { generateId } from '@/lib/core/utils/uuid'
+import { captureServerEvent } from '@/lib/posthog/server'
 import {
   authorizeWorkflowByWorkspacePermission,
   resolveWorkflowIdForUser,
@@ -86,6 +88,7 @@ const ChatMessageSchema = z.object({
           'docs',
           'table',
           'file',
+          'folder',
         ]),
         label: z.string(),
         chatId: z.string().optional(),
@@ -97,6 +100,7 @@ const ChatMessageSchema = z.object({
         executionId: z.string().optional(),
         tableId: z.string().optional(),
         fileId: z.string().optional(),
+        folderId: z.string().optional(),
       })
     )
     .optional(),
@@ -183,36 +187,47 @@ export async function POST(req: NextRequest) {
       const wf = await getWorkflowById(workflowId)
       resolvedWorkspaceId = wf?.workspaceId ?? undefined
     } catch {
-      logger.warn(
-        appendCopilotLogContext('Failed to resolve workspaceId from workflow', {
-          requestId: tracker.requestId,
-          messageId: userMessageId,
-        })
-      )
+      logger
+        .withMetadata({ requestId: tracker.requestId, messageId: userMessageId })
+        .warn('Failed to resolve workspaceId from workflow')
     }
 
-    const userMessageIdToUse = userMessageId || crypto.randomUUID()
+    captureServerEvent(
+      authenticatedUserId,
+      'copilot_chat_sent',
+      {
+        workflow_id: workflowId,
+        workspace_id: resolvedWorkspaceId ?? '',
+        has_file_attachments: Array.isArray(fileAttachments) && fileAttachments.length > 0,
+        has_contexts: Array.isArray(contexts) && contexts.length > 0,
+        mode,
+      },
+      {
+        groups: resolvedWorkspaceId ? { workspace: resolvedWorkspaceId } : undefined,
+        setOnce: { first_copilot_use_at: new Date().toISOString() },
+      }
+    )
+
+    const userMessageIdToUse = userMessageId || generateId()
+    const reqLogger = logger.withMetadata({
+      requestId: tracker.requestId,
+      messageId: userMessageIdToUse,
+    })
     try {
-      logger.error(
-        appendCopilotLogContext('Received chat POST', {
-          requestId: tracker.requestId,
-          messageId: userMessageIdToUse,
-        }),
-        {
-          workflowId,
-          hasContexts: Array.isArray(normalizedContexts),
-          contextsCount: Array.isArray(normalizedContexts) ? normalizedContexts.length : 0,
-          contextsPreview: Array.isArray(normalizedContexts)
-            ? normalizedContexts.map((c: any) => ({
-                kind: c?.kind,
-                chatId: c?.chatId,
-                workflowId: c?.workflowId,
-                executionId: (c as any)?.executionId,
-                label: c?.label,
-              }))
-            : undefined,
-        }
-      )
+      reqLogger.info('Received chat POST', {
+        workflowId,
+        hasContexts: Array.isArray(normalizedContexts),
+        contextsCount: Array.isArray(normalizedContexts) ? normalizedContexts.length : 0,
+        contextsPreview: Array.isArray(normalizedContexts)
+          ? normalizedContexts.map((c: any) => ({
+              kind: c?.kind,
+              chatId: c?.chatId,
+              workflowId: c?.workflowId,
+              executionId: (c as any)?.executionId,
+              label: c?.label,
+            }))
+          : undefined,
+      })
     } catch {}
 
     let currentChat: any = null
@@ -250,40 +265,22 @@ export async function POST(req: NextRequest) {
           actualChatId
         )
         agentContexts = processed
-        logger.error(
-          appendCopilotLogContext('Contexts processed for request', {
-            requestId: tracker.requestId,
-            messageId: userMessageIdToUse,
-          }),
-          {
-            processedCount: agentContexts.length,
-            kinds: agentContexts.map((c) => c.type),
-            lengthPreview: agentContexts.map((c) => c.content?.length ?? 0),
-          }
-        )
+        reqLogger.info('Contexts processed for request', {
+          processedCount: agentContexts.length,
+          kinds: agentContexts.map((c) => c.type),
+          lengthPreview: agentContexts.map((c) => c.content?.length ?? 0),
+        })
         if (
           Array.isArray(normalizedContexts) &&
           normalizedContexts.length > 0 &&
           agentContexts.length === 0
         ) {
-          logger.warn(
-            appendCopilotLogContext(
-              'Contexts provided but none processed. Check executionId for logs contexts.',
-              {
-                requestId: tracker.requestId,
-                messageId: userMessageIdToUse,
-              }
-            )
+          reqLogger.warn(
+            'Contexts provided but none processed. Check executionId for logs contexts.'
           )
         }
       } catch (e) {
-        logger.error(
-          appendCopilotLogContext('Failed to process contexts', {
-            requestId: tracker.requestId,
-            messageId: userMessageIdToUse,
-          }),
-          e
-        )
+        reqLogger.error('Failed to process contexts', e)
       }
     }
 
@@ -312,13 +309,7 @@ export async function POST(req: NextRequest) {
         if (result.status === 'fulfilled' && result.value) {
           agentContexts.push(result.value)
         } else if (result.status === 'rejected') {
-          logger.error(
-            appendCopilotLogContext('Failed to resolve resource attachment', {
-              requestId: tracker.requestId,
-              messageId: userMessageIdToUse,
-            }),
-            result.reason
-          )
+          reqLogger.error('Failed to resolve resource attachment', result.reason)
         }
       }
     }
@@ -357,26 +348,20 @@ export async function POST(req: NextRequest) {
     )
 
     try {
-      logger.error(
-        appendCopilotLogContext('About to call Sim Agent', {
-          requestId: tracker.requestId,
-          messageId: userMessageIdToUse,
-        }),
-        {
-          hasContext: agentContexts.length > 0,
-          contextCount: agentContexts.length,
-          hasFileAttachments: Array.isArray(requestPayload.fileAttachments),
-          messageLength: message.length,
-          mode: effectiveMode,
-          hasTools: Array.isArray(requestPayload.tools),
-          toolCount: Array.isArray(requestPayload.tools) ? requestPayload.tools.length : 0,
-          hasBaseTools: Array.isArray(requestPayload.baseTools),
-          baseToolCount: Array.isArray(requestPayload.baseTools)
-            ? requestPayload.baseTools.length
-            : 0,
-          hasCredentials: !!requestPayload.credentials,
-        }
-      )
+      reqLogger.info('About to call Sim Agent', {
+        hasContext: agentContexts.length > 0,
+        contextCount: agentContexts.length,
+        hasFileAttachments: Array.isArray(requestPayload.fileAttachments),
+        messageLength: message.length,
+        mode: effectiveMode,
+        hasTools: Array.isArray(requestPayload.tools),
+        toolCount: Array.isArray(requestPayload.tools) ? requestPayload.tools.length : 0,
+        hasBaseTools: Array.isArray(requestPayload.baseTools),
+        baseToolCount: Array.isArray(requestPayload.baseTools)
+          ? requestPayload.baseTools.length
+          : 0,
+        hasCredentials: !!requestPayload.credentials,
+      })
     } catch {}
 
     if (stream && actualChatId) {
@@ -424,8 +409,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (stream) {
-      const executionId = crypto.randomUUID()
-      const runId = crypto.randomUUID()
+      const executionId = generateId()
+      const runId = generateId()
       const sseStream = createSSEStream({
         requestPayload,
         userId: authenticatedUserId,
@@ -455,7 +440,7 @@ export async function POST(req: NextRequest) {
             if (!result.success) return
 
             const assistantMessage: Record<string, unknown> = {
-              id: crypto.randomUUID(),
+              id: generateId(),
               role: 'assistant' as const,
               content: result.content,
               timestamp: new Date().toISOString(),
@@ -520,16 +505,10 @@ export async function POST(req: NextRequest) {
                   .where(eq(copilotChats.id, actualChatId))
               }
             } catch (error) {
-              logger.error(
-                appendCopilotLogContext('Failed to persist chat messages', {
-                  requestId: tracker.requestId,
-                  messageId: userMessageIdToUse,
-                }),
-                {
-                  chatId: actualChatId,
-                  error: error instanceof Error ? error.message : 'Unknown error',
-                }
-              )
+              reqLogger.error('Failed to persist chat messages', {
+                chatId: actualChatId,
+                error: error instanceof Error ? error.message : 'Unknown error',
+              })
             }
           },
         },
@@ -539,10 +518,26 @@ export async function POST(req: NextRequest) {
       return new Response(sseStream, { headers: SSE_RESPONSE_HEADERS })
     }
 
+    const nsExecutionId = generateId()
+    const nsRunId = generateId()
+
+    if (actualChatId) {
+      await createRunSegment({
+        id: nsRunId,
+        executionId: nsExecutionId,
+        chatId: actualChatId,
+        userId: authenticatedUserId,
+        workflowId,
+        streamId: userMessageIdToUse,
+      }).catch(() => {})
+    }
+
     const nonStreamingResult = await orchestrateCopilotStream(requestPayload, {
       userId: authenticatedUserId,
       workflowId,
       chatId: actualChatId,
+      executionId: nsExecutionId,
+      runId: nsRunId,
       goRoute: '/api/copilot',
       autoExecuteTools: true,
       interactive: true,
@@ -555,19 +550,13 @@ export async function POST(req: NextRequest) {
       provider: typeof requestPayload?.provider === 'string' ? requestPayload.provider : undefined,
     }
 
-    logger.error(
-      appendCopilotLogContext('Non-streaming response from orchestrator', {
-        requestId: tracker.requestId,
-        messageId: userMessageIdToUse,
-      }),
-      {
-        hasContent: !!responseData.content,
-        contentLength: responseData.content?.length || 0,
-        model: responseData.model,
-        provider: responseData.provider,
-        toolCallsCount: responseData.toolCalls?.length || 0,
-      }
-    )
+    reqLogger.info('Non-streaming response from orchestrator', {
+      hasContent: !!responseData.content,
+      contentLength: responseData.content?.length || 0,
+      model: responseData.model,
+      provider: responseData.provider,
+      toolCallsCount: responseData.toolCalls?.length || 0,
+    })
 
     // Save messages if we have a chat
     if (currentChat && responseData.content) {
@@ -590,7 +579,7 @@ export async function POST(req: NextRequest) {
       }
 
       const assistantMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         role: 'assistant',
         content: responseData.content,
         timestamp: new Date().toISOString(),
@@ -600,12 +589,7 @@ export async function POST(req: NextRequest) {
 
       // Start title generation in parallel if this is first message (non-streaming)
       if (actualChatId && !currentChat.title && conversationHistory.length === 0) {
-        logger.error(
-          appendCopilotLogContext('Starting title generation for non-streaming response', {
-            requestId: tracker.requestId,
-            messageId: userMessageIdToUse,
-          })
-        )
+        reqLogger.info('Starting title generation for non-streaming response')
         requestChatTitle({ message, model: selectedModel, provider, messageId: userMessageIdToUse })
           .then(async (title) => {
             if (title) {
@@ -616,22 +600,11 @@ export async function POST(req: NextRequest) {
                   updatedAt: new Date(),
                 })
                 .where(eq(copilotChats.id, actualChatId!))
-              logger.error(
-                appendCopilotLogContext(`Generated and saved title: ${title}`, {
-                  requestId: tracker.requestId,
-                  messageId: userMessageIdToUse,
-                })
-              )
+              reqLogger.info(`Generated and saved title: ${title}`)
             }
           })
           .catch((error) => {
-            logger.error(
-              appendCopilotLogContext('Title generation failed', {
-                requestId: tracker.requestId,
-                messageId: userMessageIdToUse,
-              }),
-              error
-            )
+            reqLogger.error('Title generation failed', error)
           })
       }
 
@@ -645,17 +618,11 @@ export async function POST(req: NextRequest) {
         .where(eq(copilotChats.id, actualChatId!))
     }
 
-    logger.error(
-      appendCopilotLogContext('Returning non-streaming response', {
-        requestId: tracker.requestId,
-        messageId: userMessageIdToUse,
-      }),
-      {
-        duration: tracker.getDuration(),
-        chatId: actualChatId,
-        responseLength: responseData.content?.length || 0,
-      }
-    )
+    reqLogger.info('Returning non-streaming response', {
+      duration: tracker.getDuration(),
+      chatId: actualChatId,
+      responseLength: responseData.content?.length || 0,
+    })
 
     return NextResponse.json({
       success: true,
@@ -679,33 +646,25 @@ export async function POST(req: NextRequest) {
     const duration = tracker.getDuration()
 
     if (error instanceof z.ZodError) {
-      logger.error(
-        appendCopilotLogContext('Validation error', {
-          requestId: tracker.requestId,
-          messageId: pendingChatStreamID ?? undefined,
-        }),
-        {
+      logger
+        .withMetadata({ requestId: tracker.requestId, messageId: pendingChatStreamID ?? undefined })
+        .error('Validation error', {
           duration,
           errors: error.errors,
-        }
-      )
+        })
       return NextResponse.json(
         { error: 'Invalid request data', details: error.errors },
         { status: 400 }
       )
     }
 
-    logger.error(
-      appendCopilotLogContext('Error handling copilot chat', {
-        requestId: tracker.requestId,
-        messageId: pendingChatStreamID ?? undefined,
-      }),
-      {
+    logger
+      .withMetadata({ requestId: tracker.requestId, messageId: pendingChatStreamID ?? undefined })
+      .error('Error handling copilot chat', {
         duration,
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined,
-      }
-    )
+      })
 
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Internal server error' },
@@ -750,16 +709,13 @@ export async function GET(req: NextRequest) {
             status: meta?.status || 'unknown',
           }
         } catch (err) {
-          logger.warn(
-            appendCopilotLogContext('Failed to read stream snapshot for chat', {
-              messageId: chat.conversationId || undefined,
-            }),
-            {
+          logger
+            .withMetadata({ messageId: chat.conversationId || undefined })
+            .warn('Failed to read stream snapshot for chat', {
               chatId,
               conversationId: chat.conversationId,
               error: err instanceof Error ? err.message : String(err),
-            }
-          )
+            })
         }
       }
 
@@ -778,11 +734,9 @@ export async function GET(req: NextRequest) {
         ...(streamSnapshot ? { streamSnapshot } : {}),
       }
 
-      logger.error(
-        appendCopilotLogContext(`Retrieved chat ${chatId}`, {
-          messageId: chat.conversationId || undefined,
-        })
-      )
+      logger
+        .withMetadata({ messageId: chat.conversationId || undefined })
+        .info(`Retrieved chat ${chatId}`)
       return NextResponse.json({ success: true, chat: transformedChat })
     }
 

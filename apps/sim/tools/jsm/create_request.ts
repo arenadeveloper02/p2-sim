@@ -12,6 +12,8 @@ export const jsmCreateRequestTool: ToolConfig<JsmCreateRequestParams, JsmCreateR
     provider: 'jira',
   },
 
+  errorExtractor: 'atlassian-errors',
+
   params: {
     accessToken: {
       type: 'string',
@@ -45,9 +47,9 @@ export const jsmCreateRequestTool: ToolConfig<JsmCreateRequestParams, JsmCreateR
     },
     summary: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description: 'Summary/title for the service request',
+      description: 'Summary/title for the service request (required unless using Form Answers)',
     },
     description: {
       type: 'string',
@@ -67,6 +69,13 @@ export const jsmCreateRequestTool: ToolConfig<JsmCreateRequestParams, JsmCreateR
       visibility: 'user-or-llm',
       description:
         'Request field values as key-value pairs (overrides summary/description if provided)',
+    },
+    formAnswers: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Form answers for form-based request types (e.g., {"summary": {"text": "Title"}, "customfield_10010": {"choices": ["10320"]}})',
     },
     requestParticipants: {
       type: 'string',
@@ -98,6 +107,7 @@ export const jsmCreateRequestTool: ToolConfig<JsmCreateRequestParams, JsmCreateR
       description: params.description,
       raiseOnBehalfOf: params.raiseOnBehalfOf,
       requestFieldValues: params.requestFieldValues,
+      formAnswers: params.formAnswers,
       requestParticipants: params.requestParticipants,
       channel: params.channel,
     }),

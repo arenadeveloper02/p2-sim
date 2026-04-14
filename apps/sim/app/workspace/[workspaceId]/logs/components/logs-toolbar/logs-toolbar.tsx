@@ -1,8 +1,9 @@
 'use client'
 
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { ArrowUp, Bell, Library, MoreHorizontal, RefreshCw } from 'lucide-react'
 import { useParams } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   Button,
@@ -23,12 +24,14 @@ import {
   logsPageTabSwitchEvent,
   logsRefreshEvent,
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { captureEvent } from '@/lib/posthog/client'
+import { workflowBorderColor } from '@/lib/workspaces/colors'
 import { type LogStatus, STATUS_CONFIG } from '@/app/workspace/[workspaceId]/logs/utils'
 import { getBlock } from '@/blocks/registry'
-import { useFolderStore } from '@/stores/folders/store'
+import { useFolderMap } from '@/hooks/queries/folders'
+import { useWorkflows } from '@/hooks/queries/workflows'
 import { useFilterStore } from '@/stores/logs/filters/store'
 import { CORE_TRIGGER_TYPES } from '@/stores/logs/filters/types'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { AutocompleteSearch } from './components/search'
 
 const TIME_RANGE_OPTIONS: ComboboxOption[] = [
@@ -127,7 +130,7 @@ function getColorIcon(
         width: 10,
         height: 10,
         ...(withRing && {
-          borderColor: `${color}60`,
+          borderColor: workflowBorderColor(color),
           backgroundClip: 'padding-box' as const,
         }),
       }}
@@ -184,6 +187,9 @@ export const LogsToolbar = memo(function LogsToolbar({
 }: LogsToolbarProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
+  const posthog = usePostHog()
+  const posthogRef = useRef(posthog)
+  posthogRef.current = posthog
 
   const {
     level,
@@ -223,17 +229,17 @@ export const LogsToolbar = memo(function LogsToolbar({
 
   const [datePickerOpen, setDatePickerOpen] = useState(false)
   const [previousTimeRange, setPreviousTimeRange] = useState(timeRange)
-  const folders = useFolderStore((state) => state.folders)
+  const { data: folders = {} } = useFolderMap(workspaceId)
 
-  const allWorkflows = useWorkflowRegistry((state) => state.workflows)
+  const { data: allWorkflowList = [] } = useWorkflows(workspaceId)
 
   const workflows = useMemo(() => {
-    return Object.values(allWorkflows).map((w) => ({
+    return allWorkflowList.map((w) => ({
       id: w.id,
       name: w.name,
       color: w.color,
     }))
-  }, [allWorkflows])
+  }, [allWorkflowList])
 
   const folderList = useMemo(() => {
     return Object.values(folders).filter((f) => f.workspaceId === workspaceId)
@@ -270,8 +276,66 @@ export const LogsToolbar = memo(function LogsToolbar({
       } else {
         setLevel(values.join(','))
       }
+      captureEvent(posthogRef.current, 'logs_filter_applied', {
+        filter_type: 'status',
+        workspace_id: workspaceId,
+      })
     },
-    [setLevel, statusOptions]
+    [setLevel, workspaceId, statusOptions]
+  )
+
+  const handleWorkflowFilterChange = useCallback(
+    (values: string[]) => {
+      const workflowNames = values
+        .map((id) => workflows.find((w) => w.id === id)?.name || id)
+        .join(',')
+      logsFilterDropDown({
+        Dropdown: 'Workflow',
+        Values: workflowNames,
+      })
+      setWorkflowIds(values)
+      captureEvent(posthogRef.current, 'logs_filter_applied', {
+        filter_type: 'workflow',
+        workspace_id: workspaceId,
+      })
+    },
+    [setWorkflowIds, workspaceId]
+  )
+
+  const handleFolderFilterChange = useCallback(
+    (values: string[]) => {
+      const workflowNames = values
+        .map((id) => workflows.find((w) => w.id === id)?.name || id)
+        .join(',')
+      logsFilterDropDown({
+        Dropdown: 'Workflow',
+        Values: workflowNames,
+      })
+      setFolderIds(values)
+      captureEvent(posthogRef.current, 'logs_filter_applied', {
+        filter_type: 'folder',
+        workspace_id: workspaceId,
+      })
+    },
+    [setFolderIds, workspaceId]
+  )
+
+  const handleTriggerFilterChange = useCallback(
+    (values: string[]) => {
+      const triggerLabels = values
+        .map((val) => triggerOptions.find((t) => t.value === val)?.label || val)
+        .join(',')
+      logsFilterDropDown({
+        Dropdown: 'Trigger',
+        Values: triggerLabels,
+      })
+      setTriggers(values)
+      captureEvent(posthogRef.current, 'logs_filter_applied', {
+        filter_type: 'trigger',
+        workspace_id: workspaceId,
+      })
+    },
+    [setTriggers, workspaceId]
   )
 
   const statusDisplayLabel = useMemo(() => {
@@ -364,9 +428,13 @@ export const LogsToolbar = memo(function LogsToolbar({
           Values: val,
         })
         setTimeRange(val as typeof timeRange)
+        captureEvent(posthogRef.current, 'logs_filter_applied', {
+          filter_type: 'time',
+          workspace_id: workspaceId,
+        })
       }
     },
-    [timeRange, setTimeRange, clearDateRange]
+    [timeRange, setTimeRange, clearDateRange, workspaceId]
   )
 
   /**
@@ -376,8 +444,12 @@ export const LogsToolbar = memo(function LogsToolbar({
     (start: string, end: string) => {
       setDateRange(start, end)
       setDatePickerOpen(false)
+      captureEvent(posthogRef.current, 'logs_filter_applied', {
+        filter_type: 'time',
+        workspace_id: workspaceId,
+      })
     },
-    [setDateRange]
+    [setDateRange, workspaceId]
   )
 
   /**
@@ -447,9 +519,9 @@ export const LogsToolbar = memo(function LogsToolbar({
               isRefreshing
                 ? undefined
                 : () => {
-                    logsRefreshEvent({})
-                    onRefresh()
-                  }
+                  logsRefreshEvent({})
+                  onRefresh()
+                }
             }
             disabled={isRefreshing}
           >
@@ -573,16 +645,7 @@ export const LogsToolbar = memo(function LogsToolbar({
                     options={workflowOptions}
                     multiSelect
                     multiSelectValues={workflowIds}
-                    onMultiSelectChange={(values) => {
-                      const workflowNames = values
-                        .map((id) => workflows.find((w) => w.id === id)?.name || id)
-                        .join(',')
-                      logsFilterDropDown({
-                        Dropdown: 'Workflow',
-                        Values: workflowNames,
-                      })
-                      setWorkflowIds(values)
-                    }}
+                    onMultiSelectChange={handleWorkflowFilterChange}
                     placeholder='All workflows'
                     overlayContent={
                       <span className='flex items-center gap-1.5 truncate text-[var(--text-primary)]'>
@@ -591,7 +654,7 @@ export const LogsToolbar = memo(function LogsToolbar({
                             className='h-[8px] w-[8px] flex-shrink-0 rounded-xs border-[1.5px]'
                             style={{
                               backgroundColor: selectedWorkflow.color,
-                              borderColor: `${selectedWorkflow.color}60`,
+                              borderColor: workflowBorderColor(selectedWorkflow.color),
                               backgroundClip: 'padding-box',
                             }}
                           />
@@ -617,16 +680,7 @@ export const LogsToolbar = memo(function LogsToolbar({
                     options={folderOptions}
                     multiSelect
                     multiSelectValues={folderIds}
-                    onMultiSelectChange={(values) => {
-                      const folderNames = values
-                        .map((id) => folderList.find((f) => f.id === id)?.name || id)
-                        .join(',')
-                      logsFilterDropDown({
-                        Dropdown: 'Folder',
-                        Values: folderNames,
-                      })
-                      setFolderIds(values)
-                    }}
+                    onMultiSelectChange={handleFolderFilterChange}
                     placeholder='All folders'
                     overlayContent={
                       <span className='truncate text-[var(--text-primary)]'>
@@ -651,16 +705,7 @@ export const LogsToolbar = memo(function LogsToolbar({
                     options={triggerOptions}
                     multiSelect
                     multiSelectValues={triggers}
-                    onMultiSelectChange={(values) => {
-                      const triggerLabels = values
-                        .map((val) => triggerOptions.find((t) => t.value === val)?.label || val)
-                        .join(',')
-                      logsFilterDropDown({
-                        Dropdown: 'Trigger',
-                        Values: triggerLabels,
-                      })
-                      setTriggers(values)
-                    }}
+                    onMultiSelectChange={handleTriggerFilterChange}
                     placeholder='All triggers'
                     overlayContent={
                       <span className='truncate text-[var(--text-primary)]'>
@@ -731,7 +776,7 @@ export const LogsToolbar = memo(function LogsToolbar({
               options={workflowOptions}
               multiSelect
               multiSelectValues={workflowIds}
-              onMultiSelectChange={setWorkflowIds}
+              onMultiSelectChange={handleWorkflowFilterChange}
               placeholder='Workflow'
               overlayContent={
                 <span className='flex items-center gap-1.5 truncate text-[var(--text-primary)]'>
@@ -740,7 +785,7 @@ export const LogsToolbar = memo(function LogsToolbar({
                       className='h-[8px] w-[8px] flex-shrink-0 rounded-xs border-[1.5px]'
                       style={{
                         backgroundColor: selectedWorkflow.color,
-                        borderColor: `${selectedWorkflow.color}60`,
+                        borderColor: workflowBorderColor(selectedWorkflow.color),
                         backgroundClip: 'padding-box',
                       }}
                     />
@@ -762,7 +807,7 @@ export const LogsToolbar = memo(function LogsToolbar({
               options={folderOptions}
               multiSelect
               multiSelectValues={folderIds}
-              onMultiSelectChange={setFolderIds}
+              onMultiSelectChange={handleFolderFilterChange}
               placeholder='Folder'
               overlayContent={
                 <span className='truncate text-[var(--text-primary)]'>{folderDisplayLabel}</span>
@@ -781,7 +826,7 @@ export const LogsToolbar = memo(function LogsToolbar({
               options={triggerOptions}
               multiSelect
               multiSelectValues={triggers}
-              onMultiSelectChange={setTriggers}
+              onMultiSelectChange={handleTriggerFilterChange}
               placeholder='Trigger'
               overlayContent={
                 <span className='truncate text-[var(--text-primary)]'>{triggerDisplayLabel}</span>

@@ -17,6 +17,7 @@ import {
   ModalFooter,
   ModalHeader,
   Plus,
+  Skeleton,
   UserPlus,
 } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
@@ -124,6 +125,7 @@ export function WorkspaceHeader({
 
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
+  const [menuOpenWorkspaceId, setMenuOpenWorkspaceId] = useState<string | null>(null)
   const contextMenuRef = useRef<HTMLDivElement | null>(null)
   const capturedWorkspaceRef = useRef<Workspace | null>(null)
   const isRenamingRef = useRef(false)
@@ -221,6 +223,7 @@ export function WorkspaceHeader({
     contextMenuClosedRef.current = false
 
     capturedWorkspaceRef.current = workspace
+    setMenuOpenWorkspaceId(workspace.id)
     setContextMenuPosition({ x, y })
     setIsContextMenuOpen(true)
   }
@@ -246,6 +249,7 @@ export function WorkspaceHeader({
     contextMenuClosedRef.current = true
 
     setIsContextMenuOpen(false)
+    setMenuOpenWorkspaceId(null)
     const isOpeningAnother = isContextMenuOpeningRef.current
     isContextMenuOpeningRef.current = false
     if (!isRenamingRef.current && !isOpeningAnother) {
@@ -379,7 +383,7 @@ export function WorkspaceHeader({
                 type='button'
                 aria-label='Switch workspace'
                 className={cn(
-                  'group flex h-[32px] min-w-0 items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)] pl-1.5 transition-colors hover-hover:bg-[var(--surface-5)]',
+                  'group flex h-[32px] min-w-0 items-center rounded-lg border border-[var(--border)] bg-[var(--surface-2)] pl-[5px] transition-colors hover-hover:bg-[var(--surface-5)]',
                   isCollapsed ? 'w-[32px]' : 'w-full cursor-pointer gap-2 pr-2'
                 )}
                 title={activeWorkspace?.name || 'Loading...'}
@@ -389,14 +393,16 @@ export function WorkspaceHeader({
                   }
                 }}
               >
-                <div
-                  className='flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center rounded-sm font-medium text-caption text-white leading-none'
-                  style={{
-                    backgroundColor: activeWorkspaceFull?.color || 'var(--brand-accent)',
-                  }}
-                >
-                  {workspaceInitial}
-                </div>
+                {activeWorkspaceFull ? (
+                  <div
+                    className='flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center rounded-sm font-medium text-caption text-white leading-none'
+                    style={{ backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)' }}
+                  >
+                    {workspaceInitial}
+                  </div>
+                ) : (
+                  <Skeleton className='h-[20px] w-[20px] flex-shrink-0 rounded-sm' />
+                )}
                 {!isCollapsed && (
                   <>
                     <span className='min-w-0 flex-1 truncate text-left font-base text-[var(--text-primary)] text-sm'>
@@ -433,14 +439,18 @@ export function WorkspaceHeader({
               ) : (
                 <>
                   <div className='flex items-center gap-2 px-0.5 py-0.5'>
-                    <div
-                      className='flex h-[32px] w-[32px] flex-shrink-0 items-center justify-center rounded-md font-medium text-caption text-white'
-                      style={{
-                        backgroundColor: activeWorkspaceFull?.color || 'var(--brand-accent)',
-                      }}
-                    >
-                      {workspaceInitial}
-                    </div>
+                    {activeWorkspaceFull ? (
+                      <div
+                        className='flex h-[32px] w-[32px] flex-shrink-0 items-center justify-center rounded-md font-medium text-caption text-white'
+                        style={{
+                          backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)',
+                        }}
+                      >
+                        {workspaceInitial}
+                      </div>
+                    ) : (
+                      <Skeleton className='h-[32px] w-[32px] flex-shrink-0 rounded-md' />
+                    )}
                     <div className='flex min-w-0 flex-1 flex-col'>
                       <span className='truncate font-medium text-[var(--text-primary)] text-small'>
                         {activeWorkspace?.name || 'Loading...'}
@@ -530,8 +540,11 @@ export function WorkspaceHeader({
                               className={cn(
                                 'group flex cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors',
                                 workspace.id !== workspaceId &&
+                                  menuOpenWorkspaceId !== workspace.id &&
                                   'hover-hover:bg-[var(--surface-hover)]',
-                                workspace.id === workspaceId && 'bg-[var(--surface-active)]'
+                                (workspace.id === workspaceId ||
+                                  menuOpenWorkspaceId === workspace.id) &&
+                                  'bg-[var(--surface-active)]'
                               )}
                               onClick={() => {
                                 onWorkspaceSwitch(workspace)
@@ -556,7 +569,10 @@ export function WorkspaceHeader({
                                   const rect = e.currentTarget.getBoundingClientRect()
                                   openContextMenuAt(workspace, rect.right, rect.top)
                                 }}
-                                className='flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity group-hover:opacity-100'
+                                className={cn(
+                                  'flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity group-hover:opacity-100',
+                                  menuOpenWorkspaceId === workspace.id && 'opacity-100'
+                                )}
                               >
                                 <MoreHorizontal className='h-[14px] w-[14px] text-[var(--text-tertiary)]' />
                               </button>
@@ -616,12 +632,16 @@ export function WorkspaceHeader({
             title={activeWorkspace?.name || 'Loading...'}
             disabled
           >
-            <div
-              className='flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center rounded-sm font-medium text-caption text-white leading-none'
-              style={{ backgroundColor: activeWorkspaceFull?.color || 'var(--brand-accent)' }}
-            >
-              {workspaceInitial}
-            </div>
+            {activeWorkspaceFull ? (
+              <div
+                className='flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center rounded-sm font-medium text-caption text-white leading-none'
+                style={{ backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)' }}
+              >
+                {workspaceInitial}
+              </div>
+            ) : (
+              <Skeleton className='h-[20px] w-[20px] flex-shrink-0 rounded-sm' />
+            )}
             {!isCollapsed && (
               <>
                 <span className='min-w-0 flex-1 truncate text-left font-base text-[var(--text-primary)] text-sm'>
@@ -703,8 +723,8 @@ export function WorkspaceHeader({
             <p className='text-[var(--text-secondary)]'>
               Are you sure you want to leave{' '}
               <span className='font-base text-[var(--text-primary)]'>{leaveTarget?.name}</span>? You
-              will lose access to all workflows and data in this workspace.{' '}
-              <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
+              will lose access to all workflows and data in this workspace. This action cannot be
+              undone.
             </p>
           </ModalBody>
           <ModalFooter>

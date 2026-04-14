@@ -1,5 +1,9 @@
 import { LinearIcon } from '@/components/icons'
-import { buildIssueOutputs, linearSetupInstructions } from '@/triggers/linear/utils'
+import {
+  buildIssueOutputs,
+  buildLinearV2SubBlocks,
+  linearSetupInstructions,
+} from '@/triggers/linear/utils'
 import type { TriggerConfig } from '@/triggers/types'
 
 export const linearIssueRemovedTrigger: TriggerConfig = {
@@ -40,18 +44,6 @@ export const linearIssueRemovedTrigger: TriggerConfig = {
       },
     },
     {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'linear_issue_removed',
-      condition: {
-        field: 'selectedTriggerId',
-        value: 'linear_issue_removed',
-      },
-    },
-    {
       id: 'triggerInstructions',
       title: 'Setup Instructions',
       hideFromPreview: true,
@@ -67,6 +59,30 @@ export const linearIssueRemovedTrigger: TriggerConfig = {
 
   outputs: buildIssueOutputs(),
 
+  webhook: {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Linear-Event': 'Issue',
+      'Linear-Delivery': 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      'Linear-Signature': 'sha256...',
+      'User-Agent': 'Linear-Webhook',
+    },
+  },
+}
+
+export const linearIssueRemovedV2Trigger: TriggerConfig = {
+  id: 'linear_issue_removed_v2',
+  name: 'Linear Issue Removed',
+  provider: 'linear',
+  description: 'Trigger workflow when an issue is removed/deleted in Linear',
+  version: '2.0.0',
+  icon: LinearIcon,
+  subBlocks: buildLinearV2SubBlocks({
+    triggerId: 'linear_issue_removed_v2',
+    eventType: 'Issue (remove)',
+  }),
+  outputs: buildIssueOutputs(),
   webhook: {
     method: 'POST',
     headers: {

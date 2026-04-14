@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { idempotencyKey } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -6,13 +5,16 @@ import { eq } from 'drizzle-orm'
 import { getRedisClient } from '@/lib/core/config/redis'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { getStorageMethod, type StorageMethod } from '@/lib/core/storage'
-import { extractProviderIdentifierFromBody } from '@/lib/webhooks/provider-utils'
+import { generateId } from '@/lib/core/utils/uuid'
+import { extractProviderIdentifierFromBody } from '@/lib/webhooks/providers'
 
 const logger = createLogger('IdempotencyService')
 
 export interface IdempotencyConfig {
   ttlSeconds?: number
   namespace?: string
+  /** When true, failed keys are deleted rather than stored so the operation is retried on the next attempt. */
+  retryFailures?: boolean
 }
 
 export interface IdempotencyResult {
@@ -58,6 +60,7 @@ export class IdempotencyService {
     this.config = {
       ttlSeconds: config.ttlSeconds ?? DEFAULT_TTL,
       namespace: config.namespace ?? 'default',
+      retryFailures: config.retryFailures ?? false,
     }
     this.storageMethod = getStorageMethod()
     logger.info(`IdempotencyService using ${this.storageMethod} storage`, {
@@ -340,6 +343,21 @@ export class IdempotencyService {
     logger.debug(`Stored idempotency result in database: ${normalizedKey}`)
   }
 
+  private async deleteKey(
+    normalizedKey: string,
+    storageMethod: 'redis' | 'database'
+  ): Promise<void> {
+    if (storageMethod === 'redis') {
+      const redis = getRedisClient()
+      if (redis) await redis.del(`${REDIS_KEY_PREFIX}${normalizedKey}`).catch(() => {})
+    } else {
+      await db
+        .delete(idempotencyKey)
+        .where(eq(idempotencyKey.key, normalizedKey))
+        .catch(() => {})
+    }
+  }
+
   async executeWithIdempotency<T>(
     provider: string,
     identifier: string,
@@ -360,6 +378,10 @@ export class IdempotencyService {
       }
 
       if (existingResult?.status === 'failed') {
+        if (this.config.retryFailures) {
+          await this.deleteKey(claimResult.normalizedKey, claimResult.storageMethod)
+          return this.executeWithIdempotency(provider, identifier, operation, additionalContext)
+        }
         logger.info(`Previous operation failed for: ${claimResult.normalizedKey}`)
         throw new Error(existingResult.error || 'Previous operation failed')
       }
@@ -391,11 +413,15 @@ export class IdempotencyService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
 
-      await this.storeResult(
-        claimResult.normalizedKey,
-        { success: false, error: errorMessage, status: 'failed' },
-        claimResult.storageMethod
-      )
+      if (this.config.retryFailures) {
+        await this.deleteKey(claimResult.normalizedKey, claimResult.storageMethod)
+      } else {
+        await this.storeResult(
+          claimResult.normalizedKey,
+          { success: false, error: errorMessage, status: 'failed' },
+          claimResult.storageMethod
+        )
+      }
 
       logger.warn(`Operation failed: ${claimResult.normalizedKey} - ${errorMessage}`)
       throw error
@@ -419,7 +445,12 @@ export class IdempotencyService {
       normalizedHeaders?.['x-shopify-webhook-id'] ||
       normalizedHeaders?.['x-github-delivery'] ||
       normalizedHeaders?.['x-event-id'] ||
-      normalizedHeaders?.['x-teams-notification-id']
+      normalizedHeaders?.['x-teams-notification-id'] ||
+      normalizedHeaders?.['svix-id'] ||
+      normalizedHeaders?.['linear-delivery'] ||
+      normalizedHeaders?.['greenhouse-event-id'] ||
+      normalizedHeaders?.['x-zm-request-id'] ||
+      normalizedHeaders?.['idempotency-key']
 
     if (webhookIdHeader) {
       return `${webhookId}:${webhookIdHeader}`
@@ -432,7 +463,7 @@ export class IdempotencyService {
       }
     }
 
-    const uniqueId = randomUUID()
+    const uniqueId = generateId()
     logger.warn('No unique identifier found, duplicate executions may occur', {
       webhookId,
       provider,
@@ -449,4 +480,5 @@ export const webhookIdempotency = new IdempotencyService({
 export const pollingIdempotency = new IdempotencyService({
   namespace: 'polling',
   ttlSeconds: 60 * 60 * 24 * 3, // 3 days
+  retryFailures: true,
 })

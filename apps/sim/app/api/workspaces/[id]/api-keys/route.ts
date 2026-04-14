@@ -2,7 +2,6 @@ import { db } from '@sim/db'
 import { apiKey } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray } from 'drizzle-orm'
-import { nanoid } from 'nanoid'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createApiKey, getApiKeyDisplayFormat } from '@/lib/api-key/auth'
@@ -10,12 +9,15 @@ import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { generateShortId } from '@/lib/core/utils/uuid'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { getUserEntityPermissions, getWorkspaceById } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceApiKeysAPI')
 
 const CreateKeySchema = z.object({
   name: z.string().trim().min(1, 'Name is required'),
+  source: z.enum(['settings', 'deploy_modal']).optional(),
 })
 
 const DeleteKeysSchema = z.object({
@@ -101,7 +103,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const body = await request.json()
-    const { name } = CreateKeySchema.parse(body)
+    const { name, source } = CreateKeySchema.parse(body)
 
     const existingKey = await db
       .select()
@@ -133,7 +135,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const [newKey] = await db
       .insert(apiKey)
       .values({
-        id: nanoid(),
+        id: generateShortId(),
         workspaceId,
         userId: userId,
         createdBy: userId,
@@ -158,6 +160,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // Telemetry should not fail the operation
     }
 
+    captureServerEvent(
+      userId,
+      'api_key_created',
+      { workspace_id: workspaceId, key_name: name, source },
+      {
+        groups: { workspace: workspaceId },
+        setOnce: { first_api_key_created_at: new Date().toISOString() },
+      }
+    )
+
     logger.info(`[${requestId}] Created workspace API key: ${name} in workspace ${workspaceId}`)
 
     recordAudit({
@@ -170,7 +182,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       resourceId: newKey.id,
       resourceName: name,
       description: `Created API key "${name}"`,
-      metadata: { keyName: name },
+      metadata: { keyName: name, keyType: 'workspace', source: source ?? 'settings' },
       request,
     })
 
@@ -245,8 +257,8 @@ export async function DELETE(
       actorEmail: session?.user?.email,
       action: AuditAction.API_KEY_REVOKED,
       resourceType: AuditResourceType.API_KEY,
-      description: `Revoked ${deletedCount} API key(s)`,
-      metadata: { keyIds: keys, deletedCount },
+      description: `Revoked ${deletedCount} workspace API key(s)`,
+      metadata: { keyIds: keys, deletedCount, keyType: 'workspace' },
       request,
     })
 

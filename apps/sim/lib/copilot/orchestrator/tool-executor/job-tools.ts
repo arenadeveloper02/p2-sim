@@ -2,8 +2,9 @@ import { db } from '@sim/db'
 import { copilotChats, workflowSchedule } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
-import { v4 as uuidv4 } from 'uuid'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/orchestrator/types'
+import { generateId } from '@/lib/core/utils/uuid'
 import { parseCronToHumanReadable, validateCronExpression } from '@/lib/workflows/schedules/utils'
 
 const logger = createLogger('JobTools')
@@ -116,7 +117,7 @@ export async function executeCreateJob(
     return { success: false, error: 'Could not determine next run time' }
   }
 
-  const jobId = uuidv4()
+  const jobId = generateId()
   const now = new Date()
 
   try {
@@ -149,6 +150,17 @@ export async function executeCreateJob(
       : `Once at ${nextRunAt.toISOString()}`
 
     logger.info('Job created', { jobId, cronExpression, nextRunAt: nextRunAt.toISOString() })
+
+    recordAudit({
+      workspaceId: context.workspaceId || null,
+      actorId: context.userId,
+      action: AuditAction.SCHEDULE_UPDATED,
+      resourceType: AuditResourceType.SCHEDULE,
+      resourceId: jobId,
+      resourceName: title || undefined,
+      description: `Created job "${title || jobId}"`,
+      metadata: { operation: 'create', cronExpression },
+    })
 
     return {
       success: true,
@@ -381,6 +393,19 @@ export async function executeManageJob(
 
         logger.info('Job updated', { jobId: args.jobId, fields: Object.keys(updates) })
 
+        recordAudit({
+          workspaceId: context.workspaceId || null,
+          actorId: context.userId,
+          action: AuditAction.SCHEDULE_UPDATED,
+          resourceType: AuditResourceType.SCHEDULE,
+          resourceId: args.jobId,
+          description: `Updated job`,
+          metadata: {
+            operation: 'update',
+            fields: Object.keys(updates).filter((k) => k !== 'updatedAt'),
+          },
+        })
+
         return {
           success: true,
           output: {
@@ -418,6 +443,16 @@ export async function executeManageJob(
         await db.delete(workflowSchedule).where(eq(workflowSchedule.id, args.jobId))
 
         logger.info('Job deleted', { jobId: args.jobId })
+
+        recordAudit({
+          workspaceId: context.workspaceId || null,
+          actorId: context.userId,
+          action: AuditAction.SCHEDULE_UPDATED,
+          resourceType: AuditResourceType.SCHEDULE,
+          resourceId: args.jobId,
+          description: `Deleted job`,
+          metadata: { operation: 'delete' },
+        })
 
         return {
           success: true,
@@ -491,6 +526,16 @@ export async function executeCompleteJob(
       .where(and(eq(workflowSchedule.id, jobId), isNull(workflowSchedule.archivedAt)))
 
     logger.info('Job completed', { jobId })
+
+    recordAudit({
+      workspaceId: context.workspaceId || null,
+      actorId: context.userId,
+      action: AuditAction.SCHEDULE_UPDATED,
+      resourceType: AuditResourceType.SCHEDULE,
+      resourceId: jobId,
+      description: `Completed job`,
+      metadata: { operation: 'complete' },
+    })
 
     return {
       success: true,

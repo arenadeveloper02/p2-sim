@@ -1,9 +1,10 @@
 'use client'
 
-import { Database, Table as TableIcon } from '@/components/emcn/icons'
-import { getDocumentIcon } from '@/components/icons/document-icons'
+import { useMemo } from 'react'
+import { useParams } from 'next/navigation'
+import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
 import type { ChatMessageContext } from '@/app/workspace/[workspaceId]/home/types'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useWorkflows } from '@/hooks/queries/workflows'
 
 const USER_MESSAGE_CLASSES =
   'whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-[430] font-[family-name:var(--font-inter)] text-base text-[var(--text-primary)] leading-[23px] tracking-[0] antialiased'
@@ -44,46 +45,20 @@ function computeMentionRanges(text: string, contexts: ChatMessageContext[]): Men
 }
 
 function MentionHighlight({ context }: { context: ChatMessageContext }) {
-  const workflowColor = useWorkflowRegistry((state) => {
-    if (context.kind === 'workflow' || context.kind === 'current_workflow') {
-      return state.workflows[context.workflowId || '']?.color ?? null
-    }
-    return null
-  })
-
-  let icon: React.ReactNode = null
-  const iconClasses = 'h-[12px] w-[12px] flex-shrink-0 text-[var(--text-icon)]'
-
-  switch (context.kind) {
-    case 'workflow':
-    case 'current_workflow':
-      icon = workflowColor ? (
-        <span
-          className='inline-block h-[12px] w-[12px] flex-shrink-0 rounded-[3px] border-[2px]'
-          style={{
-            backgroundColor: workflowColor,
-            borderColor: `${workflowColor}60`,
-            backgroundClip: 'padding-box',
-          }}
-        />
-      ) : null
-      break
-    case 'knowledge':
-      icon = <Database className={iconClasses} />
-      break
-    case 'table':
-      icon = <TableIcon className={iconClasses} />
-      break
-    case 'file': {
-      const FileDocIcon = getDocumentIcon('', context.label)
-      icon = <FileDocIcon className={iconClasses} />
-      break
-    }
-  }
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { data: workflowList } = useWorkflows(workspaceId)
+  const workflowColor = useMemo(() => {
+    if (context.kind !== 'workflow' && context.kind !== 'current_workflow') return null
+    return (workflowList ?? []).find((w) => w.id === context.workflowId)?.color ?? null
+  }, [workflowList, context.kind, context.workflowId])
 
   return (
     <span className='inline-flex items-baseline gap-1 rounded-[5px] bg-[var(--surface-5)] px-[5px]'>
-      {icon && <span className='relative top-0.5 flex-shrink-0'>{icon}</span>}
+      <ContextMentionIcon
+        context={context}
+        workflowColor={workflowColor}
+        className='relative top-0.5 h-[12px] w-[12px] flex-shrink-0 text-[var(--text-icon)]'
+      />
       {context.label}
     </span>
   )
