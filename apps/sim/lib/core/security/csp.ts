@@ -164,7 +164,11 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     ...(isHosted ? ['https://www.googletagmanager.com'] : []),
   ],
 
-  'frame-ancestors': ["'self'", ...(isDev ? [...LOCAL_DEV_FRAME_ANCESTORS] : []), ...ARENA_APP_CSP_ORIGINS],
+  'frame-ancestors': [
+    "'self'",
+    ...(isDev ? [...LOCAL_DEV_FRAME_ANCESTORS] : []),
+    ...ARENA_APP_CSP_ORIGINS,
+  ],
   'form-action': ["'self'"],
   'base-uri': ["'self'"],
   'object-src': ["'none'"],
