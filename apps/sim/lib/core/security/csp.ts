@@ -16,6 +16,14 @@ export const ARENA_APP_CSP_ORIGINS = [
 ] as const
 
 /**
+ * Local development origins allowed to embed Sim via iframe.
+ *
+ * `frame-ancestors` is evaluated by the browser against the parent page's origin.
+ * In local dev, the Arena app typically runs on `http://localhost:3001`.
+ */
+const LOCAL_DEV_FRAME_ANCESTORS = ['http://localhost:3001'] as const
+
+/**
  * Content Security Policy (CSP) configuration builder
  */
 
@@ -156,7 +164,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     ...(isHosted ? ['https://www.googletagmanager.com'] : []),
   ],
 
-  'frame-ancestors': ["'self'", ...ARENA_APP_CSP_ORIGINS],
+  'frame-ancestors': ["'self'", ...(isDev ? [...LOCAL_DEV_FRAME_ANCESTORS] : []), ...ARENA_APP_CSP_ORIGINS],
   'form-action': ["'self'"],
   'base-uri': ["'self'"],
   'object-src': ["'none'"],
@@ -194,6 +202,7 @@ export function generateRuntimeCSP(): string {
   const ollamaUrl = getEnv('OLLAMA_URL') || (isDev ? 'http://localhost:11434' : '')
   const localDevPort3001 = isDev ? 'http://localhost:3001 ws://localhost:3001' : ''
   const localDevFrame3001 = isDev ? 'http://localhost:3001' : ''
+  const localDevFrameAncestors = isDev ? LOCAL_DEV_FRAME_ANCESTORS.join(' ') : ''
 
   const brandLogoDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_LOGO_URL'))
   const brandFaviconDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL'))
@@ -234,7 +243,7 @@ export function generateRuntimeCSP(): string {
     font-src 'self' https://fonts.gstatic.com;
     connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} ${localDevPort3001} ${arenaAppOriginsStr} https://api.browser-use.com https://api.elevenlabs.io wss://api.elevenlabs.io https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://challenges.cloudflare.com https://collector.onedollarstats.com https://api-js.mixpanel.com https://api.mixpanel.com ${gtmConnect} ${dynamicDomainsStr};
     frame-src 'self' ${localDevFrame3001} ${arenaAppOriginsStr} https://challenges.cloudflare.com https://drive.google.com https://docs.google.com https://*.google.com ${gtmFrame};
-    frame-ancestors 'self' ${arenaAppOriginsStr};
+    frame-ancestors 'self' ${localDevFrameAncestors} ${arenaAppOriginsStr};
     form-action 'self';
     base-uri 'self';
     object-src 'none';
