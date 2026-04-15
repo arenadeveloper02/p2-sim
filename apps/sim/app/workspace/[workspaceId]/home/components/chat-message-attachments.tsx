@@ -42,7 +42,11 @@ export function ChatMessageAttachments(props: {
           <ImageWithViewFullOverlay
             key={att.id}
             src={att.previewUrl}
-            wrapperClassName='h-[120px] w-[120px] overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-5)]'
+            wrapperClassName={
+              isSelected
+                ? 'h-[120px] w-[120px] overflow-hidden rounded-[8px] border border-[var(--selection)] bg-[var(--surface-5)] ring-1 ring-[var(--selection)] transition-[border-color,box-shadow]'
+                : 'h-[120px] w-[120px] overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-5)] transition-[border-color,box-shadow]'
+            }
             onDownload={() => downloadImage(false, undefined, att.previewUrl)}
             onSelect={onImageSelect ? () => onImageSelect(att, index) : undefined}
             selectLabel={onImageSelect ? (isSelected ? 'Selected' : 'Select') : undefined}

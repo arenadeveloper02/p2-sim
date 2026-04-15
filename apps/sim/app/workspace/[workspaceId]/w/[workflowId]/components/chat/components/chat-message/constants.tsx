@@ -460,6 +460,7 @@ export const renderBs64Img = ({
   imageUrl,
   onSelect,
   selectLabel,
+  isSelected,
   compactActions,
 }: {
   isBase64: boolean
@@ -467,6 +468,7 @@ export const renderBs64Img = ({
   imageUrl?: string
   onSelect?: () => void
   selectLabel?: string
+  isSelected?: boolean
   compactActions?: boolean
 }) => {
   try {
@@ -474,8 +476,9 @@ export const renderBs64Img = ({
     const singleImageUrl = normalizeImageUrl(imageUrl)
     const displayUrl = singleImageUrl ? getImageDisplayUrl(singleImageUrl) : ''
 
-    const imageWrapperClass =
-      'my-2 w-fit max-w-full h-[500px] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
+    const imageWrapperClass = isSelected
+      ? 'my-2 h-[500px] min-h-0 w-fit max-w-full overflow-auto rounded-lg border border-[var(--selection)] bg-[var(--surface-5)] ring-1 ring-[var(--selection)] transition-[border-color,box-shadow]'
+      : 'my-2 h-[500px] min-h-0 w-fit max-w-full overflow-auto rounded-lg border border-[var(--border-1)] bg-[var(--surface-5)] transition-[border-color,box-shadow]'
 
     if (!isBase64 && singleImageUrl && (!cleanImageData || cleanImageData.length === 0)) {
       return (

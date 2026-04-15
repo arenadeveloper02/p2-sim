@@ -564,6 +564,7 @@ export const ArenaClientChatMessage = memo(
               type: matchedImage.type,
             }),
           selectLabel: isSelected ? 'Selected' : 'Select',
+          isSelected,
         }
       },
       [generatedImagesByUrl, message.id, onToggleGeneratedImage, selectedGeneratedImageIds]
@@ -871,13 +872,18 @@ export const ArenaClientChatMessage = memo(
                 <div className='flex flex-wrap gap-2'>
                   {message.attachments.map((attachment, index) => {
                     const isImage = attachment.type.startsWith('image/')
+                    const isSelected = selectedGeneratedImageIds?.has(attachment.id) ?? false
                     return (
                       <div key={attachment.id}>
                         {isImage && attachment.dataUrl ? (
                           <div className='flex flex-col items-end'>
                             <ImageWithViewFullOverlay
                               src={attachment.dataUrl}
-                              wrapperClassName='h-32 w-32 overflow-hidden rounded-lg border border-[var(--border-1)] bg-[var(--surface-5)]'
+                              wrapperClassName={
+                                isSelected
+                                  ? 'h-32 w-32 overflow-hidden rounded-lg border border-[var(--selection)] bg-[var(--surface-5)] ring-1 ring-[var(--selection)] transition-[border-color,box-shadow]'
+                                  : 'h-32 w-32 overflow-hidden rounded-lg border border-[var(--border-1)] bg-[var(--surface-5)] transition-[border-color,box-shadow]'
+                              }
                               onDownload={() => handleUserAttachmentDownload(attachment)}
                               onSelect={
                                 onToggleGeneratedImage

@@ -245,6 +245,7 @@ export function ChatMessage({
             type: matchedImage.type,
           }),
         selectLabel: isSelected ? 'Selected' : 'Select',
+        isSelected,
       }
     },
     [generatedImagesByUrl, message.id, onToggleGeneratedImage, selectedGeneratedImageIds]
