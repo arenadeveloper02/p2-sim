@@ -32,18 +32,32 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
         { label: 'Create Product', id: 'shopify_create_product' },
         { label: 'Get Product', id: 'shopify_get_product' },
         { label: 'List Products', id: 'shopify_list_products' },
+        { label: 'Products Over Time', id: 'shopify_products_over_time' },
         { label: 'Update Product', id: 'shopify_update_product' },
         { label: 'Delete Product', id: 'shopify_delete_product' },
         // Order Operations
         { label: 'Get Order', id: 'shopify_get_order' },
         { label: 'List Orders', id: 'shopify_list_orders' },
         { label: 'Gross Sales Over Time', id: 'shopify_gross_sales_over_time' },
+        { label: 'Net Sales Over Time', id: 'shopify_net_sales_over_time' },
+        { label: 'Orders Over Time', id: 'shopify_orders_over_time' },
+        { label: 'Revenue by Product', id: 'shopify_revenue_by_product' },
+        { label: 'Revenue by Customer', id: 'shopify_revenue_by_customer' },
+        { label: 'Revenue by Location', id: 'shopify_revenue_by_location' },
+        { label: 'Top Selling Products', id: 'shopify_top_selling_products' },
+        { label: 'Top Customers', id: 'shopify_top_customers' },
+        { label: 'New Customer Sales Over Time', id: 'shopify_new_customer_sales_over_time' },
+        { label: 'New Customers Over Time', id: 'shopify_new_customers_over_time' },
+        { label: 'New vs Returning Customers', id: 'shopify_new_vs_returning_customers' },
+        { label: 'One-Time Customers', id: 'shopify_one_time_customers' },
+        { label: 'Predicted Spend Tiers', id: 'shopify_predicted_spend_tiers' },
         { label: 'Update Order', id: 'shopify_update_order' },
         { label: 'Cancel Order', id: 'shopify_cancel_order' },
         // Customer Operations
         { label: 'Create Customer', id: 'shopify_create_customer' },
         { label: 'Get Customer', id: 'shopify_get_customer' },
         { label: 'List Customers', id: 'shopify_list_customers' },
+        { label: 'Customers Over Time', id: 'shopify_customers_over_time' },
         { label: 'Update Customer', id: 'shopify_update_customer' },
         { label: 'Delete Customer', id: 'shopify_delete_customer' },
         // Inventory Operations
@@ -236,7 +250,7 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
         value: ['shopify_list_orders'],
       },
     },
-    // Start Date (for gross sales)
+    // Start Date (for analytics tools)
     {
       id: 'startDate',
       title: 'Start Date',
@@ -244,10 +258,26 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
       placeholder: 'YYYY-MM-DD',
       condition: {
         field: 'operation',
-        value: ['shopify_gross_sales_over_time'],
+        value: [
+          'shopify_gross_sales_over_time',
+          'shopify_net_sales_over_time',
+          'shopify_orders_over_time',
+          'shopify_customers_over_time',
+          'shopify_products_over_time',
+          'shopify_revenue_by_product',
+          'shopify_revenue_by_customer',
+          'shopify_revenue_by_location',
+          'shopify_top_selling_products',
+          'shopify_top_customers',
+          'shopify_new_customer_sales_over_time',
+          'shopify_new_customers_over_time',
+          'shopify_new_vs_returning_customers',
+          'shopify_one_time_customers',
+          'shopify_predicted_spend_tiers',
+        ],
       },
     },
-    // End Date (for gross sales)
+    // End Date (for analytics tools)
     {
       id: 'endDate',
       title: 'End Date',
@@ -255,10 +285,26 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
       placeholder: 'YYYY-MM-DD',
       condition: {
         field: 'operation',
-        value: ['shopify_gross_sales_over_time'],
+        value: [
+          'shopify_gross_sales_over_time',
+          'shopify_net_sales_over_time',
+          'shopify_orders_over_time',
+          'shopify_customers_over_time',
+          'shopify_products_over_time',
+          'shopify_revenue_by_product',
+          'shopify_revenue_by_customer',
+          'shopify_revenue_by_location',
+          'shopify_top_selling_products',
+          'shopify_top_customers',
+          'shopify_new_customer_sales_over_time',
+          'shopify_new_customers_over_time',
+          'shopify_new_vs_returning_customers',
+          'shopify_one_time_customers',
+          'shopify_predicted_spend_tiers',
+        ],
       },
     },
-    // Group By (for gross sales)
+    // Group By (for analytics tools)
     {
       id: 'groupBy',
       title: 'Group By',
@@ -271,7 +317,34 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
       value: () => 'day',
       condition: {
         field: 'operation',
-        value: ['shopify_gross_sales_over_time'],
+        value: [
+          'shopify_gross_sales_over_time',
+          'shopify_net_sales_over_time',
+          'shopify_orders_over_time',
+          'shopify_customers_over_time',
+          'shopify_products_over_time',
+          'shopify_new_customer_sales_over_time',
+          'shopify_new_customers_over_time',
+          'shopify_new_vs_returning_customers',
+        ],
+      },
+    },
+    // Limit (for revenue/top tools)
+    {
+      id: 'limit',
+      title: 'Limit',
+      type: 'short-input',
+      placeholder: 'Number of results (default: 50)',
+      condition: {
+        field: 'operation',
+        value: [
+          'shopify_revenue_by_product',
+          'shopify_revenue_by_customer',
+          'shopify_revenue_by_location',
+          'shopify_top_selling_products',
+          'shopify_top_customers',
+          'shopify_one_time_customers',
+        ],
       },
     },
     // Order Note (for update)
@@ -548,16 +621,30 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
       'shopify_create_product',
       'shopify_get_product',
       'shopify_list_products',
+      'shopify_products_over_time',
       'shopify_update_product',
       'shopify_delete_product',
       'shopify_get_order',
       'shopify_list_orders',
       'shopify_gross_sales_over_time',
+      'shopify_net_sales_over_time',
+      'shopify_orders_over_time',
+      'shopify_revenue_by_product',
+      'shopify_revenue_by_customer',
+      'shopify_revenue_by_location',
+      'shopify_top_selling_products',
+      'shopify_top_customers',
+      'shopify_new_customer_sales_over_time',
+      'shopify_new_customers_over_time',
+      'shopify_new_vs_returning_customers',
+      'shopify_one_time_customers',
+      'shopify_predicted_spend_tiers',
       'shopify_update_order',
       'shopify_cancel_order',
       'shopify_create_customer',
       'shopify_get_customer',
       'shopify_list_customers',
+      'shopify_customers_over_time',
       'shopify_update_customer',
       'shopify_delete_customer',
       'shopify_list_inventory_items',
@@ -612,6 +699,14 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
               query: params.productQuery?.trim(),
             }
 
+          case 'shopify_products_over_time':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              groupBy: params.groupBy || 'day',
+            }
+
           case 'shopify_update_product':
             if (!params.productId?.trim()) {
               throw new Error('Product ID is required.')
@@ -661,6 +756,101 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
               startDate: params.startDate?.trim(),
               endDate: params.endDate?.trim(),
               groupBy: params.groupBy || 'day',
+            }
+
+          case 'shopify_net_sales_over_time':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              groupBy: params.groupBy || 'day',
+            }
+
+          case 'shopify_orders_over_time':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              groupBy: params.groupBy || 'day',
+            }
+
+          case 'shopify_revenue_by_product':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              limit: params.limit ? Number(params.limit) : 50,
+            }
+
+          case 'shopify_revenue_by_customer':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              limit: params.limit ? Number(params.limit) : 50,
+            }
+
+          case 'shopify_revenue_by_location':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              limit: params.limit ? Number(params.limit) : 50,
+            }
+
+          case 'shopify_top_selling_products':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              limit: params.limit ? Number(params.limit) : 50,
+            }
+
+          case 'shopify_top_customers':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              limit: params.limit ? Number(params.limit) : 50,
+            }
+
+          case 'shopify_new_customer_sales_over_time':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              groupBy: params.groupBy || 'day',
+            }
+
+          case 'shopify_new_customers_over_time':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              groupBy: params.groupBy || 'day',
+            }
+
+          case 'shopify_new_vs_returning_customers':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              groupBy: params.groupBy || 'day',
+            }
+
+          case 'shopify_one_time_customers':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              limit: params.limit ? Number(params.limit) : 50,
+            }
+
+          case 'shopify_predicted_spend_tiers':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
             }
 
           case 'shopify_update_order':
@@ -722,6 +912,14 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
             return {
               ...baseParams,
               query: params.customerQuery?.trim(),
+            }
+
+          case 'shopify_customers_over_time':
+            return {
+              ...baseParams,
+              startDate: params.startDate?.trim(),
+              endDate: params.endDate?.trim(),
+              groupBy: params.groupBy || 'day',
             }
 
           case 'shopify_update_customer':
