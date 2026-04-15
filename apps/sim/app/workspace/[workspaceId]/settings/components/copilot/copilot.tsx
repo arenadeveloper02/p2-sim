@@ -279,7 +279,6 @@ export function Copilot() {
                 }}
                 placeholder='e.g., Development, Production'
                 className='h-9'
-                autoFocus
               />
               {createError && (
                 <p className='text-[var(--text-error)] text-small leading-tight'>{createError}</p>
@@ -369,7 +368,7 @@ export function Copilot() {
               <span className='text-[var(--text-error)]'>
                 will immediately revoke access for any integrations using it.
               </span>{' '}
-              <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
+              This action cannot be undone.
             </p>
           </ModalBody>
           <ModalFooter>

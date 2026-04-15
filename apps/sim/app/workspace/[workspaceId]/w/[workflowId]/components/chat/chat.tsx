@@ -32,6 +32,7 @@ import {
   extractPathFromOutputId,
   parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
+import { generateId } from '@/lib/core/utils/uuid'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
@@ -839,7 +840,7 @@ export function Chat() {
       if (typeof result !== 'object') return
 
       if ('stream' in result && result.stream instanceof ReadableStream) {
-        const responseMessageId = crypto.randomUUID()
+        const responseMessageId = generateId()
         addMessage({
           id: responseMessageId,
           content: '',
@@ -1214,7 +1215,7 @@ export function Chat() {
           const defaultType = fieldName === 'files' ? 'file[]' : 'string'
 
           return {
-            id: crypto.randomUUID(),
+            id: generateId(),
             name: fieldName,
             type: defaultType,
             value: '',
@@ -1229,7 +1230,7 @@ export function Chat() {
 
       const userId = session?.user?.id || 'unknown'
       addToQueue({
-        id: crypto.randomUUID(),
+        id: generateId(),
         operation: {
           operation: 'subblock-update',
           target: 'subblock',
@@ -1525,13 +1526,15 @@ export function Chat() {
                 {isStreaming ? (
                   <Button
                     onClick={handleStopStreaming}
-                    className='h-[22px] w-[22px] rounded-full border-0 bg-[var(--text-primary)] p-0 transition-colors hover-hover:bg-[var(--text-secondary)] dark:bg-[var(--border-1)] dark:hover-hover:bg-[var(--text-body)]'
+                    variant='ghost'
+                    className='h-[22px] w-[22px] rounded-full bg-[#383838] p-0 transition-colors hover-hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover-hover:bg-[#CFCFCF]'
                   >
                     <Square className='h-2.5 w-2.5 fill-white text-white dark:fill-black dark:text-black' />
                   </Button>
                 ) : (
                   <Button
                     onClick={handleSendMessage}
+                    variant='ghost'
                     disabled={
                       (!chatMessage.trim() && chatFiles.length === 0) ||
                       !activeWorkflowId ||
@@ -1539,10 +1542,10 @@ export function Chat() {
                       isStreaming
                     }
                     className={cn(
-                      'h-[22px] w-[22px] rounded-full border-0 p-0 transition-colors',
+                      'h-[22px] w-[22px] rounded-full p-0 transition-colors',
                       chatMessage.trim() || chatFiles.length > 0
-                        ? 'bg-[var(--text-primary)] hover-hover:bg-[var(--text-secondary)] dark:bg-[var(--border-1)] dark:hover-hover:bg-[var(--text-body)]'
-                        : 'bg-[var(--text-subtle)] dark:bg-[var(--text-subtle)]'
+                        ? 'bg-[#383838] hover-hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover-hover:bg-[#CFCFCF]'
+                        : 'bg-[#808080] dark:bg-[#808080]'
                     )}
                   >
                     <ArrowUp

@@ -1,5 +1,5 @@
 import { env, getEnv } from '../config/env'
-import { isDev, isReactGrabEnabled } from '../config/feature-flags'
+import { isDev, isHosted, isReactGrabEnabled } from '../config/feature-flags'
 
 /**
  * Arena hub (dev/test/sandbox/prod) and Sim agent hosts on thearena.ai for `frame-ancestors`, `connect-src`, and `frame-src`.
@@ -54,7 +54,9 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     'https://*.google.com',
     'https://apis.google.com',
     'https://assets.onedollarstats.com',
+    'https://challenges.cloudflare.com',
     ...(isReactGrabEnabled ? ['https://unpkg.com'] : []),
+    ...(isHosted ? ['https://www.googletagmanager.com', 'https://www.google-analytics.com'] : []),
   ],
 
   'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
@@ -73,6 +75,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     'https://s3.amazonaws.com',
     'https://github.com/*',
     'https://collector.onedollarstats.com',
+    ...(isHosted ? ['https://www.googletagmanager.com', 'https://www.google-analytics.com'] : []),
     ...(env.S3_BUCKET_NAME && env.AWS_REGION
       ? [`https://${env.S3_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com`]
       : []),
@@ -113,6 +116,8 @@ export const buildTimeCSPDirectives: CSPDirectives = {
         ]
       : []),
     'https://api.browser-use.com',
+    'https://api.elevenlabs.io',
+    'wss://api.elevenlabs.io',
     'https://api.exa.ai',
     'https://api.firecrawl.dev',
     'https://*.googleapis.com',
@@ -123,9 +128,17 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     'https://*.supabase.co',
     'https://api.github.com',
     'https://github.com/*',
+    'https://challenges.cloudflare.com',
     'https://collector.onedollarstats.com',
     'https://api-js.mixpanel.com',
     'https://api.mixpanel.com',
+    ...(isHosted
+      ? [
+          'https://www.googletagmanager.com',
+          'https://*.google-analytics.com',
+          'https://*.analytics.google.com',
+        ]
+      : []),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_LOGO_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_PRIVACY_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_TERMS_URL),
@@ -136,9 +149,11 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     "'self'",
     ...(isDev ? ['http://localhost:3001'] : []),
     ...ARENA_APP_CSP_ORIGINS,
+    'https://challenges.cloudflare.com',
     'https://drive.google.com',
     'https://docs.google.com',
     'https://*.google.com',
+    ...(isHosted ? ['https://www.googletagmanager.com'] : []),
   ],
 
   'frame-ancestors': ["'self'", ...ARENA_APP_CSP_ORIGINS],
@@ -197,20 +212,28 @@ export function generateRuntimeCSP(): string {
   const brandFaviconDomain = brandFaviconDomains[0] || ''
   const reactGrabScript = isReactGrabEnabled ? 'https://unpkg.com' : ''
   const arenaAppOriginsStr = ARENA_APP_CSP_ORIGINS.join(' ')
+  const gtmScript = isHosted
+    ? 'https://www.googletagmanager.com https://www.google-analytics.com'
+    : ''
+  const gtmConnect = isHosted
+    ? 'https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com'
+    : ''
+  const gtmImg = isHosted ? 'https://www.googletagmanager.com https://www.google-analytics.com' : ''
+  const gtmFrame = isHosted ? 'https://www.googletagmanager.com' : ''
 
   const imgSrcLocal = isDev
     ? "'self' data: blob: *"
-    : `'self' data: blob: https://*.googleusercontent.com https://*.google.com https://*.atlassian.com https://cdn.discordapp.com https://*.githubusercontent.com https://*.s3.amazonaws.com https://s3.amazonaws.com https://*.amazonaws.com https://*.blob.core.windows.net https://github.com/* https://collector.onedollarstats.com ${brandLogoDomain} ${brandFaviconDomain}`
+    : `'self' data: blob: https://*.googleusercontent.com https://*.google.com https://*.atlassian.com https://cdn.discordapp.com https://*.githubusercontent.com https://*.s3.amazonaws.com https://s3.amazonaws.com https://*.amazonaws.com https://*.blob.core.windows.net https://github.com/* https://collector.onedollarstats.com ${gtmImg} ${brandLogoDomain} ${brandFaviconDomain}`
 
   return `
     default-src 'self';
-    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.google.com https://apis.google.com https://assets.onedollarstats.com ${reactGrabScript};
+    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.google.com https://apis.google.com https://assets.onedollarstats.com https://challenges.cloudflare.com ${reactGrabScript} ${gtmScript};
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     img-src ${imgSrcLocal};
     media-src 'self' blob:;
     font-src 'self' https://fonts.gstatic.com;
-    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} ${localDevPort3001} ${arenaAppOriginsStr} https://api.browser-use.com https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://collector.onedollarstats.com https://api-js.mixpanel.com https://api.mixpanel.com ${dynamicDomainsStr};
-    frame-src 'self' ${localDevFrame3001} ${arenaAppOriginsStr} https://drive.google.com https://docs.google.com https://*.google.com;
+    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} ${localDevPort3001} ${arenaAppOriginsStr} https://api.browser-use.com https://api.elevenlabs.io wss://api.elevenlabs.io https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://challenges.cloudflare.com https://collector.onedollarstats.com https://api-js.mixpanel.com https://api.mixpanel.com ${gtmConnect} ${dynamicDomainsStr};
+    frame-src 'self' ${localDevFrame3001} ${arenaAppOriginsStr} https://challenges.cloudflare.com https://drive.google.com https://docs.google.com https://*.google.com ${gtmFrame};
     frame-ancestors 'self' ${arenaAppOriginsStr};
     form-action 'self';
     base-uri 'self';

@@ -8,6 +8,7 @@ import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { generateId } from '@/lib/core/utils/uuid'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
 import { getUserEntityPermissions, getWorkspaceById } from '@/lib/workspaces/permissions/utils'
@@ -114,7 +115,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     await db
       .insert(workspaceEnvironment)
       .values({
-        id: crypto.randomUUID(),
+        id: generateId(),
         workspaceId,
         variables: merged,
         createdAt: new Date(),
@@ -139,8 +140,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       action: AuditAction.ENVIRONMENT_UPDATED,
       resourceType: AuditResourceType.ENVIRONMENT,
       resourceId: workspaceId,
-      description: `Updated environment variables`,
-      metadata: { variableCount: Object.keys(variables).length },
+      description: `Updated ${Object.keys(variables).length} workspace environment variable(s)`,
+      metadata: {
+        variableCount: Object.keys(variables).length,
+        updatedKeys: Object.keys(variables),
+        totalKeysAfterUpdate: Object.keys(merged).length,
+      },
       request,
     })
 
@@ -199,7 +204,7 @@ export async function DELETE(
     await db
       .insert(workspaceEnvironment)
       .values({
-        id: wsRows[0]?.id || crypto.randomUUID(),
+        id: wsRows[0]?.id || generateId(),
         workspaceId,
         variables: current,
         createdAt: wsRows[0]?.createdAt || new Date(),
@@ -214,6 +219,22 @@ export async function DELETE(
       workspaceId,
       envKeys: Object.keys(current),
       actingUserId: userId,
+    })
+
+    recordAudit({
+      workspaceId,
+      actorId: userId,
+      actorName: session?.user?.name,
+      actorEmail: session?.user?.email,
+      action: AuditAction.ENVIRONMENT_DELETED,
+      resourceType: AuditResourceType.ENVIRONMENT,
+      resourceId: workspaceId,
+      description: `Removed ${keys.length} workspace environment variable(s)`,
+      metadata: {
+        removedKeys: keys,
+        remainingKeysCount: Object.keys(current).length,
+      },
+      request,
     })
 
     return NextResponse.json({ success: true })

@@ -1,8 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
+import { sendToProfound } from './lib/analytics/profound'
 import { isAuthDisabled, isDev } from './lib/core/config/feature-flags'
 import { generateRuntimeCSP } from './lib/core/security/csp'
+import { getClientIp } from './lib/core/utils/request'
 import { getLoginRedirectUrl } from './lib/core/utils/urls'
 
 const logger = createLogger('Proxy')
@@ -128,7 +130,7 @@ function handleSecurityFiltering(request: NextRequest): NextResponse | null {
   if (isSuspicious && !isWebhookEndpoint && !isMcpEndpoint && !isMcpOauthDiscoveryEndpoint) {
     logger.warn('Blocked suspicious request', {
       userAgent,
-      ip: request.headers.get('x-forwarded-for') || 'unknown',
+      ip: getClientIp(request),
       url: request.url,
       method: request.method,
       pattern: SUSPICIOUS_UA_PATTERNS.find((pattern) => pattern.test(userAgent))?.toString(),
@@ -159,33 +161,36 @@ export async function proxy(request: NextRequest) {
   const hasActiveSession = isAuthDisabled || !!sessionCookie
 
   const redirect = handleRootPathRedirects(request, hasActiveSession)
-  if (redirect) return redirect
+  if (redirect) return track(request, redirect)
 
   if (url.pathname === '/login' || url.pathname === '/signup') {
     // Block login/signup pages in non-local environments
     if (!isDev) {
       // In non-local environments, redirect to workspace (auto-login will handle authentication)
-      return NextResponse.redirect(new URL('/workspace', request.url))
+      return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
+    }
+    if (hasActiveSession) {
+      return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
     }
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
-    return response
+    return track(request, response)
   }
 
   // Chat pages are publicly accessible embeds — CSP is set in next.config.ts headers
   if (url.pathname.startsWith('/chat/')) {
-    return NextResponse.next()
+    return track(request, NextResponse.next())
   }
 
   // Allow public access to template pages for SEO
   if (url.pathname.startsWith('/templates')) {
-    return NextResponse.next()
+    return track(request, NextResponse.next())
   }
 
   if (url.pathname.startsWith('/workspace')) {
     // Allow public access to workspace template pages - they handle their own redirects
     if (url.pathname.match(/^\/workspace\/[^/]+\/templates/)) {
-      return NextResponse.next()
+      return track(request, NextResponse.next())
     }
 
     if (!hasActiveSession) {
@@ -193,25 +198,26 @@ export async function proxy(request: NextRequest) {
       if (isDev) {
         if (hasEmailCookie(request)) {
           // Email cookie exists - allow access (auto-login will handle it)
-          return NextResponse.next()
+          return track(request, NextResponse.next())
         }
         // No email cookie in dev - redirect to login
-        return NextResponse.redirect(new URL('/login', request.url))
+        return track(request, NextResponse.redirect(new URL('/login', request.url)))
       }
       // In non-local environments, allow access (auto-login will handle authentication)
-      return NextResponse.next()
+      return track(request, NextResponse.next())
+      //return track(request, NextResponse.redirect(new URL('/login', request.url)))
     }
-    return NextResponse.next()
+    return track(request, NextResponse.next())
   }
 
   const invitationRedirect = handleInvitationRedirects(request, hasActiveSession)
-  if (invitationRedirect) return invitationRedirect
+  if (invitationRedirect) return track(request, invitationRedirect)
 
   const workspaceInvitationRedirect = handleWorkspaceInvitationAPI(request, hasActiveSession)
-  if (workspaceInvitationRedirect) return workspaceInvitationRedirect
+  if (workspaceInvitationRedirect) return track(request, workspaceInvitationRedirect)
 
   const securityBlock = handleSecurityFiltering(request)
-  if (securityBlock) return securityBlock
+  if (securityBlock) return track(request, securityBlock)
 
   const response = NextResponse.next()
   response.headers.set('Vary', 'User-Agent')
@@ -220,6 +226,14 @@ export async function proxy(request: NextRequest) {
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
   }
 
+  return track(request, response)
+}
+
+/**
+ * Sends request data to Profound analytics (fire-and-forget) and returns the response.
+ */
+function track(request: NextRequest, response: NextResponse): NextResponse {
+  sendToProfound(request, response.status)
   return response
 }
 

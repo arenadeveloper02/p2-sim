@@ -8,38 +8,33 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#0c0c0c' },
-  ],
+  themeColor: '#000000',
 }
 
 export const metadata = {
   metadataBase: new URL('https://docs.sim.ai'),
   title: {
-    default: 'Sim Documentation — Build AI Agents & Run Your Agentic Workforce',
-    template: '%s',
+    default: 'Sim Documentation — The AI Workspace for Teams',
+    template: '%s | Sim Docs',
   },
   description:
-    'Documentation for Sim — the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to deploy and orchestrate agentic workflows.',
+    'Documentation for Sim — the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM.',
   applicationName: 'Sim Docs',
   generator: 'Next.js',
   referrer: 'origin-when-cross-origin' as const,
   keywords: [
+    'AI workspace',
+    'AI agent builder',
     'AI agents',
-    'agentic workforce',
-    'AI agent platform',
+    'build AI agents',
     'open-source AI agents',
-    'agentic workflows',
     'LLM orchestration',
     'AI integrations',
     'knowledge base',
     'AI automation',
-    'workflow builder',
-    'AI workflow orchestration',
+    'visual workflow builder',
     'enterprise AI',
     'AI agent deployment',
-    'intelligent automation',
     'AI tools',
   ],
   authors: [{ name: 'Sim Team', url: 'https://sim.ai' }],
@@ -49,15 +44,7 @@ export const metadata = {
   classification: 'Developer Documentation',
   manifest: '/favicon/site.webmanifest',
   icons: {
-    icon: [
-      { url: '/icon.svg', type: 'image/svg+xml', sizes: 'any' },
-      { url: '/favicon/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
-      { url: '/favicon/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
-      { url: '/favicon/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/favicon/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
-    ],
     apple: '/favicon/apple-touch-icon.png',
-    shortcut: '/icon.svg',
   },
   appleWebApp: {
     capable: true,
@@ -68,9 +55,7 @@ export const metadata = {
     telephone: false,
   },
   other: {
-    'apple-mobile-web-app-capable': 'yes',
-    'mobile-web-app-capable': 'yes',
-    'msapplication-TileColor': '#33C482',
+    'msapplication-TileColor': '#000000',
   },
   openGraph: {
     type: 'website',
@@ -78,9 +63,9 @@ export const metadata = {
     alternateLocale: ['es_ES', 'fr_FR', 'de_DE', 'ja_JP', 'zh_CN'],
     url: 'https://docs.sim.ai',
     siteName: 'Sim Documentation',
-    title: 'Sim Documentation — Build AI Agents & Run Your Agentic Workforce',
+    title: 'Sim Documentation — The AI Workspace for Teams',
     description:
-      'Documentation for Sim — the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to deploy and orchestrate agentic workflows.',
+      'Documentation for Sim — the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM.',
     images: [
       {
         url: 'https://docs.sim.ai/api/og?title=Sim%20Documentation',
@@ -92,9 +77,9 @@ export const metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Sim Documentation — Build AI Agents & Run Your Agentic Workforce',
+    title: 'Sim Documentation — The AI Workspace for Teams',
     description:
-      'Documentation for Sim — the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to deploy and orchestrate agentic workflows.',
+      'Documentation for Sim — the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM.',
     creator: '@simdotai',
     site: '@simdotai',
     images: ['https://docs.sim.ai/api/og?title=Sim%20Documentation'],

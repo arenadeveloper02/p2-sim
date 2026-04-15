@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { format, formatDistanceToNow } from 'date-fns'
+import { format, formatDistanceToNow, isPast } from 'date-fns'
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   Loader2,
@@ -18,6 +19,7 @@ import {
 import {
   Badge,
   Button,
+  Checkbox,
   Modal,
   ModalBody,
   ModalContent,
@@ -34,8 +36,8 @@ import {
   type OAuthProvider,
 } from '@/lib/oauth'
 import { getMissingRequiredScopes } from '@/lib/oauth/utils'
+import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { EditConnectorModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/edit-connector-modal/edit-connector-modal'
-import { OAuthRequiredModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/components/oauth-required-modal'
 import { CONNECTOR_REGISTRY } from '@/connectors/registry'
 import type { ConnectorData, SyncLogData } from '@/hooks/queries/kb/connectors'
 import {
@@ -45,6 +47,7 @@ import {
   useUpdateConnector,
 } from '@/hooks/queries/kb/connectors'
 import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
+import { useCredentialRefreshTriggers } from '@/hooks/use-credential-refresh-triggers'
 
 const logger = createLogger('ConnectorsSection')
 
@@ -64,6 +67,7 @@ const STATUS_CONFIG = {
   syncing: { label: 'Syncing', variant: 'amber' as const },
   error: { label: 'Error', variant: 'red' as const },
   paused: { label: 'Paused', variant: 'gray' as const },
+  disabled: { label: 'Disabled', variant: 'amber' as const },
 } as const
 
 export function ConnectorsSection({
@@ -77,6 +81,12 @@ export function ConnectorsSection({
   const { mutate: updateConnector } = useUpdateConnector()
   const { mutate: deleteConnector, isPending: isDeleting } = useDeleteConnector()
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [deleteDocuments, setDeleteDocuments] = useState(false)
+
+  const closeDeleteModal = useCallback(() => {
+    setDeleteTarget(null)
+    setDeleteDocuments(false)
+  }, [])
   const [editingConnector, setEditingConnector] = useState<ConnectorData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [syncingIds, setSyncingIds] = useState<Set<string>>(() => new Set())
@@ -151,7 +161,10 @@ export function ConnectorsSection({
           knowledgeBaseId,
           connectorId: connector.id,
           updates: {
-            status: connector.status === 'paused' ? 'active' : 'paused',
+            status:
+              connector.status === 'paused' || connector.status === 'disabled'
+                ? 'active'
+                : 'paused',
           },
         },
         {
@@ -224,22 +237,30 @@ export function ConnectorsSection({
         />
       )}
 
-      <Modal open={deleteTarget !== null} onOpenChange={() => setDeleteTarget(null)}>
+      <Modal open={deleteTarget !== null} onOpenChange={closeDeleteModal}>
         <ModalContent size='sm'>
-          <ModalHeader>Delete Connector</ModalHeader>
+          <ModalHeader>Remove Connector</ModalHeader>
           <ModalBody>
             <p className='text-[var(--text-secondary)] text-sm'>
-              Are you sure you want to remove this connected source?{' '}
-              <span className='text-[var(--text-error)]'>
-                This will stop future syncs from this source.
-              </span>{' '}
-              <span className='text-[var(--text-tertiary)]'>
-                Documents already synced will remain in the knowledge base.
-              </span>
+              This will disconnect the source and stop future syncs. Documents already synced will
+              remain in the knowledge base unless you choose to delete them.
             </p>
+            <div className='mt-3 flex items-center gap-2'>
+              <Checkbox
+                id='delete-docs'
+                checked={deleteDocuments}
+                onCheckedChange={(checked) => setDeleteDocuments(checked === true)}
+              />
+              <label
+                htmlFor='delete-docs'
+                className='cursor-pointer text-[var(--text-secondary)] text-sm'
+              >
+                Also delete all synced documents
+              </label>
+            </div>
           </ModalBody>
           <ModalFooter>
-            <Button variant='default' onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
+            <Button variant='default' onClick={closeDeleteModal} disabled={isDeleting}>
               Cancel
             </Button>
             <Button
@@ -248,23 +269,23 @@ export function ConnectorsSection({
               onClick={() => {
                 if (deleteTarget) {
                   deleteConnector(
-                    { knowledgeBaseId, connectorId: deleteTarget },
+                    { knowledgeBaseId, connectorId: deleteTarget, deleteDocuments },
                     {
                       onSuccess: () => {
                         setError(null)
-                        setDeleteTarget(null)
+                        closeDeleteModal()
                       },
                       onError: (err) => {
                         logger.error('Delete connector failed', { error: err.message })
                         setError(err.message)
-                        setDeleteTarget(null)
+                        closeDeleteModal()
                       },
                     }
                   )
                 }
               }}
             >
-              {isDeleting ? 'Deleting...' : 'Delete'}
+              {isDeleting ? 'Removing...' : 'Remove'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -313,11 +334,16 @@ function ConnectorCard({
   const requiredScopes =
     connectorDef?.auth.mode === 'oauth' ? (connectorDef.auth.requiredScopes ?? []) : []
 
-  const { data: credentials } = useOAuthCredentials(providerId, { workspaceId })
+  const { data: credentials, refetch: refetchCredentials } = useOAuthCredentials(providerId, {
+    workspaceId,
+  })
+
+  useCredentialRefreshTriggers(refetchCredentials, providerId ?? '', workspaceId)
 
   const missingScopes = useMemo(() => {
     if (!credentials || !connector.credentialId) return []
     const credential = credentials.find((c) => c.id === connector.credentialId)
+    if (!credential) return []
     return getMissingRequiredScopes(credential, requiredScopes)
   }, [credentials, connector.credentialId, requiredScopes])
 
@@ -331,7 +357,12 @@ function ConnectorCard({
     <div className='rounded-lg border border-[var(--border-1)]'>
       <div className='flex items-center justify-between px-3 py-2.5'>
         <div className='flex items-center gap-2.5'>
-          {Icon && <Icon className='h-5 w-5 flex-shrink-0' />}
+          <div className='relative flex-shrink-0'>
+            {Icon && <Icon className='h-5 w-5' />}
+            {connector.status === 'disabled' && (
+              <AlertTriangle className='-right-1 -top-1 absolute h-3 w-3 text-amber-500' />
+            )}
+          </div>
           <div className='flex flex-col gap-0.5'>
             <div className='flex items-center gap-2'>
               <span className='flex items-center gap-1.5 font-medium text-[var(--text-primary)] text-small'>
@@ -359,7 +390,9 @@ function ConnectorCard({
                   <span>·</span>
                   <span>
                     Next sync:{' '}
-                    {formatDistanceToNow(new Date(connector.nextSyncAt), { addSuffix: true })}
+                    {isPast(new Date(connector.nextSyncAt))
+                      ? 'pending'
+                      : formatDistanceToNow(new Date(connector.nextSyncAt), { addSuffix: true })}
                   </span>
                 </>
               )}
@@ -384,7 +417,12 @@ function ConnectorCard({
                     variant='ghost'
                     className='h-7 w-7 p-0'
                     onClick={onSync}
-                    disabled={connector.status === 'syncing' || isSyncPending || syncCooldown}
+                    disabled={
+                      connector.status === 'syncing' ||
+                      connector.status === 'disabled' ||
+                      isSyncPending ||
+                      syncCooldown
+                    }
                   >
                     <RefreshCw
                       className={cn(
@@ -418,7 +456,7 @@ function ConnectorCard({
                   >
                     {isUpdating ? (
                       <Loader2 className='h-3.5 w-3.5 animate-spin' />
-                    ) : connector.status === 'paused' ? (
+                    ) : connector.status === 'paused' || connector.status === 'disabled' ? (
                       <Play className='h-3.5 w-3.5' />
                     ) : (
                       <Pause className='h-3.5 w-3.5' />
@@ -426,7 +464,9 @@ function ConnectorCard({
                   </Button>
                 </Tooltip.Trigger>
                 <Tooltip.Content>
-                  {connector.status === 'paused' ? 'Resume' : 'Pause'}
+                  {connector.status === 'paused' || connector.status === 'disabled'
+                    ? 'Resume'
+                    : 'Pause'}
                 </Tooltip.Content>
               </Tooltip.Root>
 
@@ -458,7 +498,46 @@ function ConnectorCard({
         </div>
       </div>
 
-      {missingScopes.length > 0 && (
+      {connector.status === 'disabled' && (
+        <div className='border-[var(--border-1)] border-t px-3 py-2'>
+          <div className='flex flex-col gap-1 rounded-sm border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-900 dark:bg-amber-950'>
+            <div className='flex items-center gap-1.5 font-medium text-amber-800 text-caption dark:text-amber-200'>
+              <AlertTriangle className='h-3 w-3 flex-shrink-0' />
+              Connector disabled after repeated sync failures
+            </div>
+            <p className='text-amber-700 text-micro dark:text-amber-300'>
+              Syncing has been paused due to {connector.consecutiveFailures} consecutive failures.
+              {serviceId
+                ? ' Reconnect your account to resume syncing.'
+                : ' Use the resume button to re-enable syncing.'}
+            </p>
+            {canEdit && serviceId && providerId && (
+              <Button
+                variant='active'
+                onClick={() => {
+                  if (connector.credentialId) {
+                    writeOAuthReturnContext({
+                      origin: 'kb-connectors',
+                      knowledgeBaseId,
+                      displayName: connectorDef?.name ?? connector.connectorType,
+                      providerId: providerId!,
+                      preCount: credentials?.length ?? 0,
+                      workspaceId,
+                      requestedAt: Date.now(),
+                    })
+                  }
+                  setShowOAuthModal(true)
+                }}
+                className='w-full px-2 py-1 font-medium text-caption'
+              >
+                Reconnect
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {missingScopes.length > 0 && connector.status !== 'disabled' && (
         <div className='border-[var(--border-1)] border-t px-3 py-2'>
           <div className='flex flex-col gap-1 rounded-sm border bg-[var(--surface-2)] px-2 py-1.5'>
             <div className='flex items-center font-medium text-caption'>
@@ -469,15 +548,17 @@ function ConnectorCard({
               <Button
                 variant='active'
                 onClick={() => {
-                  writeOAuthReturnContext({
-                    origin: 'kb-connectors',
-                    knowledgeBaseId,
-                    displayName: connectorDef?.name ?? connector.connectorType,
-                    providerId: providerId!,
-                    preCount: credentials?.length ?? 0,
-                    workspaceId,
-                    requestedAt: Date.now(),
-                  })
+                  if (connector.credentialId) {
+                    writeOAuthReturnContext({
+                      origin: 'kb-connectors',
+                      knowledgeBaseId,
+                      displayName: connectorDef?.name ?? connector.connectorType,
+                      providerId: providerId!,
+                      preCount: credentials?.length ?? 0,
+                      workspaceId,
+                      requestedAt: Date.now(),
+                    })
+                  }
                   setShowOAuthModal(true)
                 }}
                 className='w-full px-2 py-1 font-medium text-caption'
@@ -495,8 +576,25 @@ function ConnectorCard({
         </div>
       )}
 
-      {showOAuthModal && serviceId && providerId && (
-        <OAuthRequiredModal
+      {showOAuthModal && serviceId && providerId && !connector.credentialId && (
+        <OAuthModal
+          mode='connect'
+          isOpen={showOAuthModal}
+          onClose={() => {
+            consumeOAuthReturnContext()
+            setShowOAuthModal(false)
+          }}
+          provider={providerId as OAuthProvider}
+          serviceId={serviceId}
+          workspaceId={workspaceId}
+          knowledgeBaseId={knowledgeBaseId}
+          credentialCount={credentials?.length ?? 0}
+        />
+      )}
+
+      {showOAuthModal && serviceId && providerId && connector.credentialId && (
+        <OAuthModal
+          mode='reauthorize'
           isOpen={showOAuthModal}
           onClose={() => {
             consumeOAuthReturnContext()

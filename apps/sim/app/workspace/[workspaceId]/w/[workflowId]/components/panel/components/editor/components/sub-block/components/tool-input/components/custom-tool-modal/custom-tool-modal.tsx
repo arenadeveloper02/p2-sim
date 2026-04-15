@@ -1103,11 +1103,9 @@ try {
                                 }
                               }}
                             >
-                              <span className='flex-1 truncate text-[var(--text-primary)]'>
-                                {param.name}
-                              </span>
+                              <span className='flex-1 truncate'>{param.name}</span>
                               {param.type && param.type !== 'any' && (
-                                <span className='ml-auto text-[var(--text-secondary)] text-micro'>
+                                <span className='ml-auto text-[var(--text-muted-inverse)] text-micro'>
                                   {param.type}
                                 </span>
                               )}
@@ -1183,7 +1181,7 @@ try {
                 This will permanently delete the tool and remove it from any workflows that are
                 using it.
               </span>{' '}
-              <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
+              This action cannot be undone.
             </p>
           </ModalBody>
           <ModalFooter>

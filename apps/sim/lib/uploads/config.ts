@@ -5,8 +5,13 @@ export type { StorageConfig, StorageContext } from '@/lib/uploads/shared/types'
 export const UPLOAD_DIR = '/uploads'
 
 const hasS3Config = !!(env.S3_BUCKET_NAME && env.AWS_REGION)
+const hasBlobConfig = !!(
+  env.AZURE_STORAGE_CONTAINER_NAME &&
+  ((env.AZURE_ACCOUNT_NAME && env.AZURE_ACCOUNT_KEY) || env.AZURE_CONNECTION_STRING)
+)
 
-export const USE_S3_STORAGE = hasS3Config
+export const USE_BLOB_STORAGE = hasBlobConfig
+export const USE_S3_STORAGE = hasS3Config && !USE_BLOB_STORAGE
 
 export const S3_CONFIG = {
   bucket: env.S3_BUCKET_NAME || '',
@@ -43,6 +48,26 @@ export const S3_OG_IMAGES_CONFIG = {
   region: env.AWS_REGION || '',
 }
 
+export const BLOB_OG_IMAGES_CONFIG = {
+  accountName: env.AZURE_ACCOUNT_NAME || '',
+  accountKey: env.AZURE_ACCOUNT_KEY || '',
+  connectionString: env.AZURE_CONNECTION_STRING || '',
+  containerName: env.AZURE_STORAGE_OG_IMAGES_CONTAINER_NAME || '',
+}
+export const BLOB_COPILOT_CONFIG = {
+  accountName: env.AZURE_ACCOUNT_NAME || '',
+  accountKey: env.AZURE_ACCOUNT_KEY || '',
+  connectionString: env.AZURE_CONNECTION_STRING || '',
+  containerName: env.AZURE_STORAGE_COPILOT_CONTAINER_NAME || '',
+}
+
+export const BLOB_PROFILE_PICTURES_CONFIG = {
+  accountName: env.AZURE_ACCOUNT_NAME || '',
+  accountKey: env.AZURE_ACCOUNT_KEY || '',
+  connectionString: env.AZURE_CONNECTION_STRING || '',
+  containerName: env.AZURE_STORAGE_PROFILE_PICTURES_CONTAINER_NAME || '',
+}
+
 /**
  * S3 config for agent-generated images (e.g. image generator block).
  * Uses the same AWS credentials as the main S3 bucket.
@@ -51,6 +76,44 @@ export const S3_OG_IMAGES_CONFIG = {
 export const S3_AGENT_GENERATED_IMAGES_CONFIG = {
   bucket: env.S3_AGENT_GENERATED_IMAGES_BUCKET_NAME || '',
   region: env.S3_AGENT_GENERATED_IMAGES_REGION || env.AWS_REGION || '',
+}
+
+export const S3_WORKSPACE_LOGOS_CONFIG = {
+  bucket: env.S3_WORKSPACE_LOGOS_BUCKET_NAME || '',
+  region: env.AWS_REGION || '',
+}
+
+export const BLOB_WORKSPACE_LOGOS_CONFIG = {
+  accountName: env.AZURE_ACCOUNT_NAME || '',
+  accountKey: env.AZURE_ACCOUNT_KEY || '',
+  connectionString: env.AZURE_CONNECTION_STRING || '',
+  containerName: env.AZURE_STORAGE_WORKSPACE_LOGOS_CONTAINER_NAME || '',
+}
+export const BLOB_CHAT_CONFIG = {
+  accountName: env.AZURE_ACCOUNT_NAME || '',
+  accountKey: env.AZURE_ACCOUNT_KEY || '',
+  connectionString: env.AZURE_CONNECTION_STRING || '',
+  containerName: env.AZURE_STORAGE_CHAT_CONTAINER_NAME || '',
+}
+export const BLOB_KB_CONFIG = {
+  accountName: env.AZURE_ACCOUNT_NAME || '',
+  accountKey: env.AZURE_ACCOUNT_KEY || '',
+  connectionString: env.AZURE_CONNECTION_STRING || '',
+  containerName: env.AZURE_STORAGE_KB_CONTAINER_NAME || '',
+}
+
+export const BLOB_EXECUTION_FILES_CONFIG = {
+  accountName: env.AZURE_ACCOUNT_NAME || '',
+  accountKey: env.AZURE_ACCOUNT_KEY || '',
+  connectionString: env.AZURE_CONNECTION_STRING || '',
+  containerName: env.AZURE_STORAGE_EXECUTION_FILES_CONTAINER_NAME || 'sim-execution-files',
+}
+
+export const BLOB_CONFIG = {
+  accountName: env.AZURE_ACCOUNT_NAME || '',
+  accountKey: env.AZURE_ACCOUNT_KEY || '',
+  connectionString: env.AZURE_CONNECTION_STRING || '',
+  containerName: env.AZURE_STORAGE_CONTAINER_NAME || '',
 }
 
 /**
@@ -125,6 +188,11 @@ function getS3Config(context: StorageContext): StorageConfig {
         bucket: S3_AGENT_GENERATED_IMAGES_CONFIG.bucket || S3_CONFIG.bucket,
         region: S3_AGENT_GENERATED_IMAGES_CONFIG.region || S3_CONFIG.region,
       }
+    case 'workspace-logos':
+      return {
+        bucket: S3_WORKSPACE_LOGOS_CONFIG.bucket || S3_CONFIG.bucket,
+        region: S3_WORKSPACE_LOGOS_CONFIG.region || S3_CONFIG.region,
+      }
     default:
       return {
         bucket: S3_CONFIG.bucket,
@@ -136,67 +204,75 @@ function getS3Config(context: StorageContext): StorageConfig {
 /**
  * Get Azure Blob configuration for a given context
  */
-// function getBlobConfig(context: StorageContext): StorageConfig {
-//   switch (context) {
-//     case 'knowledge-base':
-//       return {
-//         accountName: BLOB_KB_CONFIG.accountName,
-//         accountKey: BLOB_KB_CONFIG.accountKey,
-//         connectionString: BLOB_KB_CONFIG.connectionString,
-//         containerName: BLOB_KB_CONFIG.containerName,
-//       }
-//     case 'chat':
-//       return {
-//         accountName: BLOB_CHAT_CONFIG.accountName,
-//         accountKey: BLOB_CHAT_CONFIG.accountKey,
-//         connectionString: BLOB_CHAT_CONFIG.connectionString,
-//         containerName: BLOB_CHAT_CONFIG.containerName,
-//       }
-//     case 'copilot':
-//       return {
-//         accountName: BLOB_COPILOT_CONFIG.accountName,
-//         accountKey: BLOB_COPILOT_CONFIG.accountKey,
-//         connectionString: BLOB_COPILOT_CONFIG.connectionString,
-//         containerName: BLOB_COPILOT_CONFIG.containerName,
-//       }
-//     case 'execution':
-//       return {
-//         accountName: BLOB_EXECUTION_FILES_CONFIG.accountName,
-//         accountKey: BLOB_EXECUTION_FILES_CONFIG.accountKey,
-//         connectionString: BLOB_EXECUTION_FILES_CONFIG.connectionString,
-//         containerName: BLOB_EXECUTION_FILES_CONFIG.containerName,
-//       }
-//     case 'mothership':
-//     case 'workspace':
-//       return {
-//         accountName: BLOB_CONFIG.accountName,
-//         accountKey: BLOB_CONFIG.accountKey,
-//         connectionString: BLOB_CONFIG.connectionString,
-//         containerName: BLOB_CONFIG.containerName,
-//       }
-//     case 'profile-pictures':
-//       return {
-//         accountName: BLOB_PROFILE_PICTURES_CONFIG.accountName,
-//         accountKey: BLOB_PROFILE_PICTURES_CONFIG.accountKey,
-//         connectionString: BLOB_PROFILE_PICTURES_CONFIG.connectionString,
-//         containerName: BLOB_PROFILE_PICTURES_CONFIG.containerName,
-//       }
-//     case 'og-images':
-//       return {
-//         accountName: BLOB_OG_IMAGES_CONFIG.accountName || BLOB_CONFIG.accountName,
-//         accountKey: BLOB_OG_IMAGES_CONFIG.accountKey || BLOB_CONFIG.accountKey,
-//         connectionString: BLOB_OG_IMAGES_CONFIG.connectionString || BLOB_CONFIG.connectionString,
-//         containerName: BLOB_OG_IMAGES_CONFIG.containerName || BLOB_CONFIG.containerName,
-//       }
-//     default:
-//       return {
-//         accountName: BLOB_CONFIG.accountName,
-//         accountKey: BLOB_CONFIG.accountKey,
-//         connectionString: BLOB_CONFIG.connectionString,
-//         containerName: BLOB_CONFIG.containerName,
-//       }
-//   }
-// }
+function getBlobConfig(context: StorageContext): StorageConfig {
+  switch (context) {
+    case 'knowledge-base':
+      return {
+        accountName: BLOB_KB_CONFIG.accountName,
+        accountKey: BLOB_KB_CONFIG.accountKey,
+        connectionString: BLOB_KB_CONFIG.connectionString,
+        containerName: BLOB_KB_CONFIG.containerName,
+      }
+    case 'chat':
+      return {
+        accountName: BLOB_CHAT_CONFIG.accountName,
+        accountKey: BLOB_CHAT_CONFIG.accountKey,
+        connectionString: BLOB_CHAT_CONFIG.connectionString,
+        containerName: BLOB_CHAT_CONFIG.containerName,
+      }
+    case 'copilot':
+      return {
+        accountName: BLOB_COPILOT_CONFIG.accountName,
+        accountKey: BLOB_COPILOT_CONFIG.accountKey,
+        connectionString: BLOB_COPILOT_CONFIG.connectionString,
+        containerName: BLOB_COPILOT_CONFIG.containerName,
+      }
+    case 'execution':
+      return {
+        accountName: BLOB_EXECUTION_FILES_CONFIG.accountName,
+        accountKey: BLOB_EXECUTION_FILES_CONFIG.accountKey,
+        connectionString: BLOB_EXECUTION_FILES_CONFIG.connectionString,
+        containerName: BLOB_EXECUTION_FILES_CONFIG.containerName,
+      }
+    case 'mothership':
+    case 'workspace':
+      return {
+        accountName: BLOB_CONFIG.accountName,
+        accountKey: BLOB_CONFIG.accountKey,
+        connectionString: BLOB_CONFIG.connectionString,
+        containerName: BLOB_CONFIG.containerName,
+      }
+    case 'profile-pictures':
+      return {
+        accountName: BLOB_PROFILE_PICTURES_CONFIG.accountName,
+        accountKey: BLOB_PROFILE_PICTURES_CONFIG.accountKey,
+        connectionString: BLOB_PROFILE_PICTURES_CONFIG.connectionString,
+        containerName: BLOB_PROFILE_PICTURES_CONFIG.containerName,
+      }
+    case 'og-images':
+      return {
+        accountName: BLOB_OG_IMAGES_CONFIG.accountName || BLOB_CONFIG.accountName,
+        accountKey: BLOB_OG_IMAGES_CONFIG.accountKey || BLOB_CONFIG.accountKey,
+        connectionString: BLOB_OG_IMAGES_CONFIG.connectionString || BLOB_CONFIG.connectionString,
+        containerName: BLOB_OG_IMAGES_CONFIG.containerName || BLOB_CONFIG.containerName,
+      }
+    case 'workspace-logos':
+      return {
+        accountName: BLOB_WORKSPACE_LOGOS_CONFIG.accountName || BLOB_CONFIG.accountName,
+        accountKey: BLOB_WORKSPACE_LOGOS_CONFIG.accountKey || BLOB_CONFIG.accountKey,
+        connectionString:
+          BLOB_WORKSPACE_LOGOS_CONFIG.connectionString || BLOB_CONFIG.connectionString,
+        containerName: BLOB_WORKSPACE_LOGOS_CONFIG.containerName || BLOB_CONFIG.containerName,
+      }
+    default:
+      return {
+        accountName: BLOB_CONFIG.accountName,
+        accountKey: BLOB_CONFIG.accountKey,
+        connectionString: BLOB_CONFIG.connectionString,
+        containerName: BLOB_CONFIG.containerName,
+      }
+  }
+}
 
 /**
  * Check if a specific storage context is configured

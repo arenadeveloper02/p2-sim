@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto'
 import { render } from '@react-email/render'
 import { db } from '@sim/db'
 import {
@@ -17,8 +16,10 @@ import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { generateId } from '@/lib/core/utils/uuid'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress } from '@/lib/messaging/email/utils'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
 import {
   InvitationsNotAllowedError,
@@ -197,12 +198,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const token = randomUUID()
+    const token = generateId()
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + 7) // 7 days expiry
 
     const invitationData = {
-      id: randomUUID(),
+      id: generateId(),
       workspaceId,
       email: normalizedEmail,
       inviterId: session.user.id,
@@ -228,6 +229,16 @@ export async function POST(req: NextRequest) {
       // Telemetry should not fail the operation
     }
 
+    captureServerEvent(
+      session.user.id,
+      'workspace_member_invited',
+      { workspace_id: workspaceId, invitee_role: permission },
+      {
+        groups: { workspace: workspaceId },
+        setOnce: { first_invitation_sent_at: new Date().toISOString() },
+      }
+    )
+
     await sendInvitationEmail({
       to: normalizedEmail,
       inviterName: session.user.name || session.user.email || 'A user',
@@ -246,7 +257,12 @@ export async function POST(req: NextRequest) {
       resourceId: workspaceId,
       resourceName: email,
       description: `Invited ${email} as ${permission}`,
-      metadata: { targetEmail: email, targetRole: permission },
+      metadata: {
+        targetEmail: email,
+        targetRole: permission,
+        workspaceName: workspaceDetails.name,
+        invitationId: invitationData.id,
+      },
       request: req,
     })
 

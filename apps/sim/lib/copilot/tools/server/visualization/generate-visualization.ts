@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
+import { GenerateVisualization } from '@/lib/copilot/generated/tool-catalog-v1'
 import {
   assertServerToolNotAborted,
   type BaseServerTool,
@@ -66,7 +66,8 @@ async function collectSandboxFiles(
   inputTables?: string[],
   messageId?: string
 ): Promise<SandboxFile[]> {
-  const withMessageId = (message: string) => appendCopilotLogContext(message, { messageId })
+  const withMessageId = (message: string) =>
+    messageId ? `${message} [messageId:${messageId}]` : message
   const sandboxFiles: SandboxFile[] = []
   let totalSize = 0
 
@@ -75,12 +76,12 @@ async function collectSandboxFiles(
     for (const fileRef of inputFiles) {
       const record = findWorkspaceFileRecord(allFiles, fileRef)
       if (!record) {
-        logger.warn(withMessageId('Sandbox input file not found'), { fileRef })
+        logger.warn('Sandbox input file not found', { fileRef })
         continue
       }
       const ext = record.name.split('.').pop()?.toLowerCase() ?? ''
       if (!TEXT_EXTENSIONS.has(ext)) {
-        logger.warn(withMessageId('Skipping non-text sandbox input file'), {
+        logger.warn('Skipping non-text sandbox input file', {
           fileId: record.id,
           fileName: record.name,
           ext,
@@ -88,7 +89,7 @@ async function collectSandboxFiles(
         continue
       }
       if (record.size > MAX_FILE_SIZE) {
-        logger.warn(withMessageId('Sandbox input file exceeds size limit'), {
+        logger.warn('Sandbox input file exceeds size limit', {
           fileId: record.id,
           fileName: record.name,
           size: record.size,
@@ -96,9 +97,7 @@ async function collectSandboxFiles(
         continue
       }
       if (totalSize + record.size > MAX_TOTAL_SIZE) {
-        logger.warn(
-          withMessageId('Sandbox input total size limit reached, skipping remaining files')
-        )
+        logger.warn('Sandbox input total size limit reached, skipping remaining files')
         break
       }
       const buffer = await downloadWorkspaceFile(record)
@@ -119,7 +118,7 @@ async function collectSandboxFiles(
     for (const tableId of inputTables) {
       const table = await getTableById(tableId)
       if (!table) {
-        logger.warn(withMessageId('Sandbox input table not found'), { tableId })
+        logger.warn('Sandbox input table not found', { tableId })
         continue
       }
       const { rows } = await queryRows(tableId, workspaceId, { limit: 10000 }, 'sandbox-input')
@@ -134,9 +133,7 @@ async function collectSandboxFiles(
       }
       const csvContent = csvLines.join('\n')
       if (totalSize + csvContent.length > MAX_TOTAL_SIZE) {
-        logger.warn(
-          withMessageId('Sandbox input total size limit reached, skipping remaining tables')
-        )
+        logger.warn('Sandbox input total size limit reached, skipping remaining tables')
         break
       }
       totalSize += csvContent.length
@@ -151,14 +148,14 @@ export const generateVisualizationServerTool: BaseServerTool<
   VisualizationArgs,
   VisualizationResult
 > = {
-  name: 'generate_visualization',
+  name: GenerateVisualization.id,
 
   async execute(
     params: VisualizationArgs,
     context?: ServerToolContext
   ): Promise<VisualizationResult> {
     const withMessageId = (message: string) =>
-      appendCopilotLogContext(message, { messageId: context?.messageId })
+      context?.messageId ? `${message} [messageId:${context.messageId}]` : message
 
     if (!context?.userId) {
       throw new Error('Authentication required')
@@ -243,7 +240,7 @@ export const generateVisualizationServerTool: BaseServerTool<
           imageBuffer,
           'image/png'
         )
-        logger.info(withMessageId('Chart image overwritten'), {
+        logger.info('Chart image overwritten', {
           fileId: updated.id,
           fileName: updated.name,
           size: imageBuffer.length,
@@ -267,7 +264,7 @@ export const generateVisualizationServerTool: BaseServerTool<
         'image/png'
       )
 
-      logger.info(withMessageId('Chart image saved'), {
+      logger.info('Chart image saved', {
         fileId: uploaded.id,
         fileName: uploaded.name,
         size: imageBuffer.length,
@@ -282,7 +279,7 @@ export const generateVisualizationServerTool: BaseServerTool<
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error'
-      logger.error(withMessageId('Visualization generation failed'), { error: msg })
+      logger.error('Visualization generation failed', { error: msg })
       return { success: false, message: `Failed to generate visualization: ${msg}` }
     }
   },

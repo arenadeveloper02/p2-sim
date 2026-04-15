@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import {
   document,
+  embedding,
   knowledgeBase,
   knowledgeConnector,
   knowledgeConnectorSyncLog,
@@ -9,6 +10,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { decryptApiKey } from '@/lib/api-key/crypto'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
+import { generateId } from '@/lib/core/utils/uuid'
 import type { DocumentData } from '@/lib/knowledge/documents/service'
 import {
   hardDeleteDocuments,
@@ -42,6 +44,7 @@ const MAX_PAGES = 500
 const MAX_SAFE_TITLE_LENGTH = 200
 const STALE_PROCESSING_MINUTES = 45
 const RETRY_WINDOW_DAYS = 7
+const MAX_CONSECUTIVE_FAILURES = 10
 
 /** Sanitizes a document title for use in S3 storage keys. */
 function sanitizeStorageTitle(title: string): string {
@@ -140,23 +143,39 @@ export function resolveTagMapping(
 }
 
 /**
- * Dispatch a connector sync — uses Trigger.dev when available,
- * otherwise falls back to direct executeSync.
+ * Dispatch a connector sync using the configured background execution backend.
  */
 export async function dispatchSync(
   connectorId: string,
   options?: { fullSync?: boolean; requestId?: string }
 ): Promise<void> {
-  const requestId = options?.requestId ?? crypto.randomUUID()
+  const requestId = options?.requestId ?? generateId()
 
   if (isTriggerAvailable()) {
+    const connectorRows = await db
+      .select({
+        knowledgeBaseId: knowledgeConnector.knowledgeBaseId,
+        workspaceId: knowledgeBase.workspaceId,
+        userId: knowledgeBase.userId,
+      })
+      .from(knowledgeConnector)
+      .innerJoin(knowledgeBase, eq(knowledgeBase.id, knowledgeConnector.knowledgeBaseId))
+      .where(eq(knowledgeConnector.id, connectorId))
+      .limit(1)
+
+    const row = connectorRows[0]
+    const tags = [`connectorId:${connectorId}`]
+    if (row?.knowledgeBaseId) tags.push(`knowledgeBaseId:${row.knowledgeBaseId}`)
+    if (row?.workspaceId) tags.push(`workspaceId:${row.workspaceId}`)
+    if (row?.userId) tags.push(`userId:${row.userId}`)
+
     await knowledgeConnectorSync.trigger(
       {
         connectorId,
         fullSync: options?.fullSync,
         requestId,
       },
-      { tags: [`connector:${connectorId}`] }
+      { tags }
     )
     logger.info(`Dispatched connector sync to Trigger.dev`, { connectorId, requestId })
   } else {
@@ -178,7 +197,7 @@ async function resolveAccessToken(
   connector: { credentialId: string | null; encryptedApiKey: string | null },
   connectorConfig: { auth: ConnectorAuthConfig },
   userId: string
-): Promise<string | null> {
+): Promise<string> {
   if (connectorConfig.auth.mode === 'apiKey') {
     if (!connector.encryptedApiKey) {
       throw new Error('API key connector is missing encrypted API key')
@@ -191,11 +210,22 @@ async function resolveAccessToken(
     throw new Error('OAuth connector is missing credential ID')
   }
 
-  return refreshAccessTokenIfNeeded(
-    connector.credentialId,
-    userId,
-    `sync-${connector.credentialId}`
-  )
+  const requestId = `sync-${connector.credentialId}`
+  const token = await refreshAccessTokenIfNeeded(connector.credentialId, userId, requestId)
+
+  if (!token) {
+    logger.error(`[${requestId}] refreshAccessTokenIfNeeded returned null`, {
+      credentialId: connector.credentialId,
+      userId,
+      authMode: connectorConfig.auth.mode,
+      authProvider: connectorConfig.auth.provider,
+    })
+    throw new Error(
+      `Failed to obtain access token for credential ${connector.credentialId} (provider: ${connectorConfig.auth.provider})`
+    )
+  }
+
+  return token
 }
 
 /**
@@ -253,12 +283,6 @@ export async function executeSync(
   const userId = kbRows[0].userId
   const sourceConfig = connector.sourceConfig as Record<string, unknown>
 
-  let accessToken = await resolveAccessToken(connector, connectorConfig, userId)
-
-  if (!accessToken) {
-    throw new Error('Failed to obtain access token')
-  }
-
   const lockResult = await db
     .update(knowledgeConnector)
     .set({ status: 'syncing', updatedAt: new Date() })
@@ -277,7 +301,7 @@ export async function executeSync(
     return result
   }
 
-  const syncLogId = crypto.randomUUID()
+  const syncLogId = generateId()
   const syncStartedAt = new Date()
   await db.insert(knowledgeConnectorSyncLog).values({
     id: syncLogId,
@@ -289,10 +313,12 @@ export async function executeSync(
   let syncExitedCleanly = false
 
   try {
+    let accessToken = await resolveAccessToken(connector, connectorConfig, userId)
+
     const externalDocs: ExternalDocument[] = []
     let cursor: string | undefined
     let hasMore = true
-    const syncContext: Record<string, unknown> = { syncRunId: crypto.randomUUID() }
+    const syncContext: Record<string, unknown> = { syncRunId: generateId() }
 
     // Determine if this sync should be incremental
     const isIncremental =
@@ -305,8 +331,7 @@ export async function executeSync(
 
     for (let pageNum = 0; hasMore && pageNum < MAX_PAGES; pageNum++) {
       if (pageNum > 0 && connectorConfig.auth.mode === 'oauth') {
-        const refreshed = await resolveAccessToken(connector, connectorConfig, userId)
-        if (refreshed) accessToken = refreshed
+        accessToken = await resolveAccessToken(connector, connectorConfig, userId)
       }
 
       const page = await connectorConfig.listDocuments(
@@ -444,8 +469,7 @@ export async function executeSync(
 
       if (deferredOps.length > 0) {
         if (connectorConfig.auth.mode === 'oauth') {
-          const refreshed = await resolveAccessToken(connector, connectorConfig, userId)
-          if (refreshed) accessToken = refreshed
+          accessToken = await resolveAccessToken(connector, connectorConfig, userId)
         }
 
         const hydrated = await Promise.allSettled(
@@ -538,12 +562,7 @@ export async function executeSync(
 
       if (batchDocs.length > 0) {
         try {
-          await processDocumentsWithQueue(
-            batchDocs,
-            connector.knowledgeBaseId,
-            {},
-            crypto.randomUUID()
-          )
+          await processDocumentsWithQueue(batchDocs, connector.knowledgeBaseId, {}, generateId())
         } catch (error) {
           logger.warn('Failed to enqueue batch for processing — will retry on next sync', {
             connectorId,
@@ -625,6 +644,23 @@ export async function executeSync(
     if (stuckDocs.length > 0) {
       logger.info(`Retrying ${stuckDocs.length} stuck documents`, { connectorId })
       try {
+        const stuckDocIds = stuckDocs.map((doc) => doc.id)
+
+        await db.delete(embedding).where(inArray(embedding.documentId, stuckDocIds))
+
+        await db
+          .update(document)
+          .set({
+            processingStatus: 'pending',
+            processingStartedAt: null,
+            processingCompletedAt: null,
+            processingError: null,
+            chunkCount: 0,
+            tokenCount: 0,
+            characterCount: 0,
+          })
+          .where(inArray(document.id, stuckDocIds))
+
         await processDocumentsWithQueue(
           stuckDocs.map((doc) => ({
             documentId: doc.id,
@@ -635,7 +671,7 @@ export async function executeSync(
           })),
           connector.knowledgeBaseId,
           {},
-          crypto.randomUUID()
+          generateId()
         )
       } catch (error) {
         logger.warn('Failed to enqueue stuck documents for reprocessing', {
@@ -725,15 +761,25 @@ export async function executeSync(
 
       const now = new Date()
       const failures = (connector.consecutiveFailures ?? 0) + 1
+      const disabled = failures >= MAX_CONSECUTIVE_FAILURES
       const backoffMinutes = Math.min(failures * 30, 1440)
-      const nextSync = new Date(now.getTime() + backoffMinutes * 60 * 1000)
+      const nextSync = disabled ? null : new Date(now.getTime() + backoffMinutes * 60 * 1000)
+
+      if (disabled) {
+        logger.warn('Connector disabled after repeated failures', {
+          connectorId,
+          consecutiveFailures: failures,
+        })
+      }
 
       await db
         .update(knowledgeConnector)
         .set({
-          status: 'error',
+          status: disabled ? 'disabled' : 'error',
           lastSyncAt: now,
-          lastSyncError: errorMessage,
+          lastSyncError: disabled
+            ? 'Connector disabled after repeated sync failures. Please reconnect.'
+            : errorMessage,
           nextSyncAt: nextSync,
           consecutiveFailures: failures,
           updatedAt: now,
@@ -791,7 +837,7 @@ async function addDocument(
   if (await isKnowledgeBaseDeleted(knowledgeBaseId)) {
     throw new Error(`Knowledge base ${knowledgeBaseId} is deleted`)
   }
-  const documentId = crypto.randomUUID()
+  const documentId = generateId()
   const contentBuffer = Buffer.from(extDoc.content, 'utf-8')
   const safeTitle = sanitizeStorageTitle(extDoc.title)
   const customKey = `kb/${Date.now()}-${documentId}-${safeTitle}.txt`

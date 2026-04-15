@@ -28,6 +28,7 @@ export const getBrandConfig = (): BrandConfig => {
   const hasCustomBrand = Boolean(
     getEnv('NEXT_PUBLIC_BRAND_NAME') ||
       getEnv('NEXT_PUBLIC_BRAND_LOGO_URL') ||
+      getEnv('NEXT_PUBLIC_BRAND_WORDMARK_URL') ||
       getEnv('NEXT_PUBLIC_BRAND_PRIMARY_COLOR')
   )
 
@@ -36,6 +37,7 @@ export const getBrandConfig = (): BrandConfig => {
     logoUrl: getEnv('NEXT_PUBLIC_BRAND_LOGO_URL') || defaultBrandConfig.logoUrl,
     logoUrlBlacktext:
       getEnv('NEXT_PUBLIC_BRAND_LOGO_URL_DARK') || defaultBrandConfig.logoUrlBlacktext,
+    wordmarkUrl: getEnv('NEXT_PUBLIC_BRAND_WORDMARK_URL') || defaultBrandConfig.wordmarkUrl,
     faviconUrl: getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL') || defaultBrandConfig.faviconUrl,
     customCssUrl: getEnv('NEXT_PUBLIC_CUSTOM_CSS_URL') || defaultBrandConfig.customCssUrl,
     supportEmail: getEnv('NEXT_PUBLIC_SUPPORT_EMAIL') || defaultBrandConfig.supportEmail,

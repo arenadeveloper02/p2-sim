@@ -12,7 +12,7 @@ export interface ConnectorData {
   sourceConfig: Record<string, unknown>
   syncMode: string
   syncIntervalMinutes: number
-  status: 'active' | 'paused' | 'syncing' | 'error'
+  status: 'active' | 'paused' | 'syncing' | 'error' | 'disabled'
   lastSyncAt: string | null
   lastSyncError: string | null
   lastSyncDocCount: number | null
@@ -224,13 +224,16 @@ export function useUpdateConnector() {
 export interface DeleteConnectorParams {
   knowledgeBaseId: string
   connectorId: string
+  deleteDocuments?: boolean
 }
 
 async function deleteConnector({
   knowledgeBaseId,
   connectorId,
+  deleteDocuments,
 }: DeleteConnectorParams): Promise<void> {
-  const response = await fetch(`/api/knowledge/${knowledgeBaseId}/connectors/${connectorId}`, {
+  const base = `/api/knowledge/${knowledgeBaseId}/connectors/${connectorId}`
+  const response = await fetch(deleteDocuments ? `${base}?deleteDocuments=true` : base, {
     method: 'DELETE',
   })
 

@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { devtools, type PersistStorage } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
 import { redactApiKeys } from '@/lib/core/security/redaction'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getQueryClient } from '@/app/_shell/providers/query-provider'
 import { truncateLargeBase64Data } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { NormalizedBlockOutput } from '@/executor/types'
@@ -361,7 +362,7 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
 
       const createdEntry: ConsoleEntry = {
         ...truncatedEntry,
-        id: crypto.randomUUID(),
+        id: generateId(),
         timestamp: new Date().toISOString(),
         input: normalizeConsoleInput(truncatedEntry.input),
         output: normalizeConsoleOutput(truncatedEntry.output),

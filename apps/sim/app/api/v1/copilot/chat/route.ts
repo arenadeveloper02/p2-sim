@@ -1,9 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
-import { COPILOT_REQUEST_MODES } from '@/lib/copilot/models'
-import { orchestrateCopilotStream } from '@/lib/copilot/orchestrator'
+import { COPILOT_REQUEST_MODES } from '@/lib/copilot/constants'
+import { runHeadlessCopilotLifecycle } from '@/lib/copilot/request/lifecycle/headless'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getWorkflowById, resolveWorkflowIdForUser } from '@/lib/workflows/utils'
 import { authenticateV1Request } from '@/app/api/v1/auth'
 
@@ -80,11 +80,13 @@ export async function POST(req: NextRequest) {
     const transportMode = effectiveMode === 'build' ? 'agent' : effectiveMode
 
     // Always generate a chatId - required for artifacts system to work with subagents
-    const chatId = parsed.chatId || crypto.randomUUID()
+    const chatId = parsed.chatId || generateId()
 
-    messageId = crypto.randomUUID()
-    logger.error(
-      appendCopilotLogContext('Received headless copilot chat start request', { messageId }),
+    messageId = generateId()
+    logger.info(
+      messageId
+        ? `Received headless copilot chat start request [messageId:${messageId}]`
+        : 'Received headless copilot chat start request',
       {
         workflowId: resolved.workflowId,
         workflowName: parsed.workflowName,
@@ -104,7 +106,7 @@ export async function POST(req: NextRequest) {
       chatId,
     }
 
-    const result = await orchestrateCopilotStream(requestPayload, {
+    const result = await runHeadlessCopilotLifecycle(requestPayload, {
       userId: auth.userId,
       workflowId: resolved.workflowId,
       chatId,
@@ -129,9 +131,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    logger.error(appendCopilotLogContext('Headless copilot request failed', { messageId }), {
-      error: error instanceof Error ? error.message : String(error),
-    })
+    logger.error(
+      messageId
+        ? `Headless copilot request failed [messageId:${messageId}]`
+        : 'Headless copilot request failed',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      }
+    )
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }

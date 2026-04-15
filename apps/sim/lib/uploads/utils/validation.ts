@@ -1,4 +1,16 @@
-import path from 'path'
+/**
+ * Checks whether a string is a valid file extension (lowercase alphanumeric only).
+ * Rejects extensions containing spaces, punctuation, or other non-alphanumeric characters
+ * that arise from non-filename document names (e.g. "Sim.ai <> RVTech").
+ */
+export function isAlphanumericExtension(ext: string): boolean {
+  return /^[a-z0-9]+$/.test(ext)
+}
+
+function extractExtension(fileName: string): string {
+  const lastDot = fileName.lastIndexOf('.')
+  return lastDot !== -1 ? fileName.slice(lastDot + 1).toLowerCase() : ''
+}
 
 export const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
 
@@ -16,9 +28,58 @@ export const SUPPORTED_DOCUMENT_EXTENSIONS = [
   'html',
   'htm',
   'json',
+  'jsonl',
   'yaml',
   'yml',
 ] as const
+
+export const SUPPORTED_CODE_EXTENSIONS = [
+  'mdx',
+  'xml',
+  'css',
+  'scss',
+  'less',
+  'js',
+  'jsx',
+  'ts',
+  'tsx',
+  'py',
+  'rb',
+  'go',
+  'rs',
+  'java',
+  'kt',
+  'swift',
+  'c',
+  'cpp',
+  'h',
+  'hpp',
+  'cs',
+  'php',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'sql',
+  'graphql',
+  'gql',
+  'toml',
+  'ini',
+  'conf',
+  'cfg',
+  'env',
+  'log',
+  'diff',
+  'patch',
+  'dockerfile',
+  'makefile',
+  'gitignore',
+  'editorconfig',
+  'prettierrc',
+  'eslintrc',
+] as const
+
+export type SupportedCodeExtension = (typeof SUPPORTED_CODE_EXTENSIONS)[number]
 
 export const SUPPORTED_AUDIO_EXTENSIONS = [
   'mp3',
@@ -75,6 +136,7 @@ export const SUPPORTED_MIME_TYPES: Record<SupportedDocumentExtension, string[]> 
   html: ['text/html', 'application/xhtml+xml'],
   htm: ['text/html', 'application/xhtml+xml'],
   json: ['application/json', 'text/json', 'application/x-json'],
+  jsonl: ['application/jsonl', 'application/x-jsonlines', 'text/jsonl', 'application/octet-stream'],
   yaml: ['text/yaml', 'text/x-yaml', 'application/yaml', 'application/x-yaml'],
   yml: ['text/yaml', 'text/x-yaml', 'application/yaml', 'application/x-yaml'],
 }
@@ -137,12 +199,13 @@ export interface FileValidationError {
  * Validate if a file type is supported for document processing
  */
 export function validateFileType(fileName: string, mimeType: string): FileValidationError | null {
-  const extension = path.extname(fileName).toLowerCase().substring(1) as SupportedDocumentExtension
+  const raw = extractExtension(fileName)
+  const extension = (isAlphanumericExtension(raw) ? raw : '') as SupportedDocumentExtension
 
   if (!SUPPORTED_DOCUMENT_EXTENSIONS.includes(extension)) {
     return {
       code: 'UNSUPPORTED_FILE_TYPE',
-      message: `Unsupported file type: ${extension}. Supported types are: ${SUPPORTED_DOCUMENT_EXTENSIONS.join(', ')}`,
+      message: `Unsupported file type${extension ? `: ${extension}` : ` for "${fileName}"`}. Supported types are: ${SUPPORTED_DOCUMENT_EXTENSIONS.join(', ')}`,
       supportedTypes: [...SUPPORTED_DOCUMENT_EXTENSIONS],
     }
   }
@@ -221,7 +284,8 @@ export function validateMediaFileType(
   fileName: string,
   mimeType: string
 ): FileValidationError | null {
-  const extension = path.extname(fileName).toLowerCase().substring(1)
+  const raw = extractExtension(fileName)
+  const extension = isAlphanumericExtension(raw) ? raw : ''
 
   const isAudio = SUPPORTED_AUDIO_EXTENSIONS.includes(extension as SupportedAudioExtension)
   const isVideo = SUPPORTED_VIDEO_EXTENSIONS.includes(extension as SupportedVideoExtension)
@@ -229,7 +293,7 @@ export function validateMediaFileType(
   if (!isAudio && !isVideo) {
     return {
       code: 'UNSUPPORTED_FILE_TYPE',
-      message: `Unsupported media file type: ${extension}. Supported audio types: ${SUPPORTED_AUDIO_EXTENSIONS.join(', ')}. Supported video types: ${SUPPORTED_VIDEO_EXTENSIONS.join(', ')}`,
+      message: `Unsupported media file type${extension ? `: ${extension}` : ` for "${fileName}"`}. Supported audio types: ${SUPPORTED_AUDIO_EXTENSIONS.join(', ')}. Supported video types: ${SUPPORTED_VIDEO_EXTENSIONS.join(', ')}`,
       supportedTypes: [...SUPPORTED_AUDIO_EXTENSIONS, ...SUPPORTED_VIDEO_EXTENSIONS],
     }
   }

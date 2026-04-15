@@ -1,6 +1,6 @@
 'use client'
 
-import { useLayoutEffect, useRef } from 'react'
+import { useCallback, useLayoutEffect, useRef } from 'react'
 import { cn } from '@/lib/core/utils/cn'
 import { MessageActions } from '@/app/workspace/[workspaceId]/components'
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components/chat-message-attachments'
@@ -15,15 +15,18 @@ import { UserMessageContent } from '@/app/workspace/[workspaceId]/home/component
 import type {
   ChatMessage,
   FileAttachmentForApi,
+  MothershipResource,
   QueuedMessage,
 } from '@/app/workspace/[workspaceId]/home/types'
 import { useAutoScroll } from '@/hooks/use-auto-scroll'
 import type { ChatContext } from '@/stores/panel'
+import { MothershipChatSkeleton } from './mothership-chat-skeleton'
 
 interface MothershipChatProps {
   messages: ChatMessage[]
   isSending: boolean
   isReconnecting?: boolean
+  isLoading?: boolean
   onSubmit: (
     text: string,
     fileAttachments?: FileAttachmentForApi[],
@@ -35,7 +38,10 @@ interface MothershipChatProps {
   onSendQueuedMessage: (id: string) => Promise<void>
   onEditQueuedMessage: (id: string) => void
   userId?: string
+  chatId?: string
   onContextAdd?: (context: ChatContext) => void
+  onContextRemove?: (context: ChatContext) => void
+  onWorkspaceResourceSelect?: (resource: MothershipResource) => void
   editValue?: string
   onEditValueConsumed?: () => void
   layout?: 'mothership-view' | 'copilot-view'
@@ -53,7 +59,7 @@ const LAYOUT_STYLES = {
     userRow: 'flex flex-col items-end gap-[6px] pt-3',
     attachmentWidth: 'max-w-[70%]',
     userBubble: 'max-w-[70%] overflow-hidden rounded-[16px] bg-[var(--surface-5)] px-3.5 py-2',
-    assistantRow: 'group/msg relative pb-5',
+    assistantRow: 'group/msg',
     footer: 'flex-shrink-0 px-[24px] pb-[16px]',
     footerInner: 'mx-auto max-w-[42rem]',
   },
@@ -63,7 +69,7 @@ const LAYOUT_STYLES = {
     userRow: 'flex flex-col items-end gap-[6px] pt-2',
     attachmentWidth: 'max-w-[85%]',
     userBubble: 'max-w-[85%] overflow-hidden rounded-[16px] bg-[var(--surface-5)] px-3 py-2',
-    assistantRow: 'group/msg relative pb-3',
+    assistantRow: 'group/msg',
     footer: 'flex-shrink-0 px-3 pb-3',
     footerInner: '',
   },
@@ -73,6 +79,7 @@ export function MothershipChat({
   messages,
   isSending,
   isReconnecting = false,
+  isLoading = false,
   onSubmit,
   onStopGeneration,
   messageQueue,
@@ -80,7 +87,10 @@ export function MothershipChat({
   onSendQueuedMessage,
   onEditQueuedMessage,
   userId,
+  chatId,
   onContextAdd,
+  onContextRemove,
+  onWorkspaceResourceSelect,
   editValue,
   onEditValueConsumed,
   layout = 'mothership-view',
@@ -91,9 +101,16 @@ export function MothershipChat({
 }: MothershipChatProps) {
   const styles = LAYOUT_STYLES[layout]
   const isStreamActive = isSending || isReconnecting
-  const { ref: scrollContainerRef, scrollToBottom } = useAutoScroll(isStreamActive)
+  const { ref: scrollContainerRef, scrollToBottom } = useAutoScroll(isStreamActive, {
+    scrollOnMount: true,
+  })
   const hasMessages = messages.length > 0
   const initialScrollDoneRef = useRef(false)
+  const handleSendQueuedHead = useCallback(() => {
+    const topMessage = messageQueue[0]
+    if (!topMessage) return
+    void onSendQueuedMessage(topMessage.id)
+  }, [messageQueue, onSendQueuedMessage])
 
   useLayoutEffect(() => {
     if (!hasMessages) {
@@ -108,61 +125,75 @@ export function MothershipChat({
   return (
     <div className={cn('flex h-full min-h-0 flex-col', className)}>
       <div ref={scrollContainerRef} className={styles.scrollContainer}>
-        <div className={styles.content}>
-          {messages.map((msg, index) => {
-            if (msg.role === 'user') {
-              const hasAttachments = Boolean(msg.attachments?.length)
-              return (
-                <div key={msg.id} className={styles.userRow}>
-                  {hasAttachments && (
-                    <ChatMessageAttachments
-                      attachments={msg.attachments ?? []}
-                      align='end'
-                      className={styles.attachmentWidth}
-                    />
-                  )}
-                  <div className={styles.userBubble}>
-                    <UserMessageContent content={msg.content} contexts={msg.contexts} />
+        {isLoading && !hasMessages ? (
+          <MothershipChatSkeleton layout={layout} />
+        ) : (
+          <div className={styles.content}>
+            {messages.map((msg, index) => {
+              if (msg.role === 'user') {
+                const hasAttachments = Boolean(msg.attachments?.length)
+                return (
+                  <div key={msg.id} className={styles.userRow}>
+                    {hasAttachments && (
+                      <ChatMessageAttachments
+                        attachments={msg.attachments ?? []}
+                        align='end'
+                        className={styles.attachmentWidth}
+                      />
+                    )}
+                    <div className={styles.userBubble}>
+                      <UserMessageContent content={msg.content} contexts={msg.contexts} />
+                    </div>
                   </div>
+                )
+              }
+
+              const hasAnyBlocks = Boolean(msg.contentBlocks?.length)
+              const hasRenderableAssistant = assistantMessageHasRenderableContent(
+                msg.contentBlocks ?? [],
+                msg.content ?? ''
+              )
+              const isLastAssistant = index === messages.length - 1
+              const isThisStreaming = isStreamActive && isLastAssistant
+
+              if (!hasAnyBlocks && !msg.content?.trim() && isThisStreaming) {
+                return <PendingTagIndicator key={msg.id} />
+              }
+
+              if (!hasRenderableAssistant && !msg.content?.trim() && !isThisStreaming) {
+                return null
+              }
+
+              const isLastMessage = index === messages.length - 1
+              const precedingUserMsg = [...messages]
+                .slice(0, index)
+                .reverse()
+                .find((m) => m.role === 'user')
+
+              return (
+                <div key={msg.id} className={styles.assistantRow}>
+                  <MessageContent
+                    blocks={msg.contentBlocks || []}
+                    fallbackContent={msg.content}
+                    isStreaming={isThisStreaming}
+                    onOptionSelect={isLastMessage ? onSubmit : undefined}
+                    onWorkspaceResourceSelect={onWorkspaceResourceSelect}
+                  />
+                  {!isThisStreaming && (msg.content || msg.contentBlocks?.length) && (
+                    <div className='mt-2.5'>
+                      <MessageActions
+                        content={msg.content}
+                        chatId={chatId}
+                        userQuery={precedingUserMsg?.content}
+                        requestId={msg.requestId}
+                      />
+                    </div>
+                  )}
                 </div>
               )
-            }
-
-            const hasAnyBlocks = Boolean(msg.contentBlocks?.length)
-            const hasRenderableAssistant = assistantMessageHasRenderableContent(
-              msg.contentBlocks ?? [],
-              msg.content ?? ''
-            )
-            const isLastAssistant = index === messages.length - 1
-            const isThisStreaming = isStreamActive && isLastAssistant
-
-            if (!hasAnyBlocks && !msg.content?.trim() && isThisStreaming) {
-              return <PendingTagIndicator key={msg.id} />
-            }
-
-            if (!hasRenderableAssistant && !msg.content?.trim() && !isThisStreaming) {
-              return null
-            }
-
-            const isLastMessage = index === messages.length - 1
-
-            return (
-              <div key={msg.id} className={styles.assistantRow}>
-                {!isThisStreaming && (msg.content || msg.contentBlocks?.length) && (
-                  <div className='absolute right-0 bottom-0 z-10'>
-                    <MessageActions content={msg.content} requestId={msg.requestId} />
-                  </div>
-                )}
-                <MessageContent
-                  blocks={msg.contentBlocks || []}
-                  fallbackContent={msg.content}
-                  isStreaming={isThisStreaming}
-                  onOptionSelect={isLastMessage ? onSubmit : undefined}
-                />
-              </div>
-            )
-          })}
-        </div>
+            })}
+          </div>
+        )}
       </div>
 
       <div
@@ -183,8 +214,10 @@ export function MothershipChat({
             isInitialView={false}
             userId={userId}
             onContextAdd={onContextAdd}
+            onContextRemove={onContextRemove}
             editValue={editValue}
             onEditValueConsumed={onEditValueConsumed}
+            onSendQueuedHead={handleSendQueuedHead}
           />
         </div>
       </div>
