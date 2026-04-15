@@ -167,6 +167,43 @@ interface LineWithPipeHoverProps {
   onCopySegment: (text: string) => void
 }
 
+type WelcomeSegment =
+  | { type: 'text'; value: string }
+  | { type: 'query'; value: string; raw: string }
+
+function parseWelcomeSegments(content: string): WelcomeSegment[] {
+  const segments: WelcomeSegment[] = []
+  const pattern = /\{\{([\s\S]*?)\}\}/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(content)) !== null) {
+    const fullMatch = match[0]
+    const innerText = match[1] ?? ''
+    const start = match.index
+    const end = start + fullMatch.length
+
+    if (start > lastIndex) {
+      segments.push({ type: 'text', value: content.slice(lastIndex, start) })
+    }
+
+    const query = innerText.trim()
+    if (query.length > 0) {
+      segments.push({ type: 'query', value: query, raw: fullMatch })
+    } else {
+      segments.push({ type: 'text', value: fullMatch })
+    }
+
+    lastIndex = end
+  }
+
+  if (lastIndex < content.length) {
+    segments.push({ type: 'text', value: content.slice(lastIndex) })
+  }
+
+  return segments
+}
+
 function LineWithPipeHover({ line, onCopySegment }: LineWithPipeHoverProps) {
   const [hovered, setHovered] = useState<{ start: number; end: number; text: string } | null>(null)
   const lineRef = useRef<HTMLSpanElement>(null)
@@ -260,6 +297,7 @@ export const ArenaClientChatMessage = memo(
     setMessages,
     workspaceIdsForKbLinks,
     onCopySegmentToInput,
+    onWelcomeQueryClick,
   }: {
     message: ChatMessage
     setMessages?: Dispatch<SetStateAction<ChatMessage[]>>
@@ -267,6 +305,8 @@ export const ArenaClientChatMessage = memo(
     workspaceIdsForKbLinks?: string[]
     /** When set, text between pipes (| text |) is clickable and copies to chat input */
     onCopySegmentToInput?: (text: string) => void
+    /** When set, welcome-message {{query}} tokens are clickable and execute query */
+    onWelcomeQueryClick?: (text: string) => void
   }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
@@ -297,9 +337,40 @@ export const ArenaClientChatMessage = memo(
       }
     }, [])
 
+    const renderWelcomeMessage = useCallback(
+      (str: string) => {
+        const segments = parseWelcomeSegments(str)
+        return (
+          <div className='whitespace-pre-wrap break-words'>
+            {segments.map((segment, index) => {
+              if (segment.type === 'text') {
+                return <span key={`w-text-${index}`}>{segment.value}</span>
+              }
+              return (
+                <button
+                  key={`w-query-${index}`}
+                  type='button'
+                  className='inline cursor-pointer rounded px-0.5 py-0.5 font-medium text-[var(--text-primary)] transition-all duration-150 ease-out hover:text-[1.0625em] hover:shadow-sm'
+                  onClick={() => onWelcomeQueryClick?.(segment.value)}
+                  title='Run this query'
+                >
+                  {segment.value}
+                </button>
+              )
+            })}
+          </div>
+        )
+      },
+      [onWelcomeQueryClick]
+    )
+
     /** Renders string content. When onCopySegmentToInput is set and content has pipes (and is not a table/code block), renders line-by-line: on hover we look backward for a pipe and forward for a pipe (stop at newline); if both exist the text between is copyable. No extra pipes are rendered. */
     const renderStringContent = useCallback(
       (str: string) => {
+        if (message.isInitialMessage) {
+          return renderWelcomeMessage(str)
+        }
+
         if (!onCopySegmentToInput || !str.includes('|')) {
           return <ArenaCopilotMarkdownRenderer content={str} />
         }
@@ -322,7 +393,7 @@ export const ArenaClientChatMessage = memo(
           </span>
         )
       },
-      [onCopySegmentToInput]
+      [message.isInitialMessage, onCopySegmentToInput, renderWelcomeMessage]
     )
 
     const renderContent = (content: unknown) => {
@@ -1054,7 +1125,8 @@ export const ArenaClientChatMessage = memo(
       prevProps.message.knowledgeResults?.length === nextProps.message.knowledgeResults?.length &&
       prevProps.message.knowledgeRefs?.length === nextProps.message.knowledgeRefs?.length &&
       prevProps.workspaceIdsForKbLinks?.length === nextProps.workspaceIdsForKbLinks?.length &&
-      prevProps.onCopySegmentToInput === nextProps.onCopySegmentToInput
+      prevProps.onCopySegmentToInput === nextProps.onCopySegmentToInput &&
+      prevProps.onWelcomeQueryClick === nextProps.onWelcomeQueryClick
     )
   }
 )
