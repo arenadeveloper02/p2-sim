@@ -42,7 +42,7 @@ export const webflowCollectionItemDeletedTrigger: TriggerConfig = {
         field: 'selectedTriggerId',
         value: 'webflow_collection_item_deleted',
       },
-      fetchOptions: async (blockId: string, _subBlockId: string) => {
+      fetchOptions: async (blockId: string) => {
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -71,7 +71,7 @@ export const webflowCollectionItemDeletedTrigger: TriggerConfig = {
           throw error
         }
       },
-      fetchOptionById: async (blockId: string, _subBlockId: string, optionId: string) => {
+      fetchOptionById: async (blockId: string, optionId: string) => {
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -108,7 +108,7 @@ export const webflowCollectionItemDeletedTrigger: TriggerConfig = {
         field: 'selectedTriggerId',
         value: 'webflow_collection_item_deleted',
       },
-      fetchOptions: async (blockId: string, _subBlockId: string) => {
+      fetchOptions: async (blockId: string) => {
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -140,7 +140,7 @@ export const webflowCollectionItemDeletedTrigger: TriggerConfig = {
           throw error
         }
       },
-      fetchOptionById: async (blockId: string, _subBlockId: string, optionId: string) => {
+      fetchOptionById: async (blockId: string, optionId: string) => {
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -166,18 +166,6 @@ export const webflowCollectionItemDeletedTrigger: TriggerConfig = {
         }
       },
       dependsOn: ['triggerCredentials', 'triggerSiteId'],
-    },
-    {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'webflow_collection_item_deleted',
-      condition: {
-        field: 'selectedTriggerId',
-        value: 'webflow_collection_item_deleted',
-      },
     },
     {
       id: 'triggerInstructions',

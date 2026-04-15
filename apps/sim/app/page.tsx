@@ -1,30 +1,32 @@
 import type { Metadata } from 'next'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import Landing from '@/app/(home)/landing'
+import Landing from '@/app/(landing)/landing'
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 3600
 
 const baseUrl = getBaseUrl()
 
 export const metadata: Metadata = {
   metadataBase: new URL(baseUrl),
-  title: 'Arena — Build AI Agents & Run Your Agentic Workforce',
+  title: {
+    absolute: 'Arena — The AI Workspace | Build, Deploy & Manage AI Agents',
+  },
   description:
-    'Arena is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows.',
+    'Arena is the AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work — visually, conversationally, or with code.',
   keywords:
-    'AI agents, agentic workforce, open-source AI agent platform, agentic workflows, LLM orchestration, AI automation, knowledge base, workflow builder, AI integrations, SOC2 compliant, HIPAA compliant, enterprise AI',
-  authors: [{ name: 'Arena' }],
-  creator: 'Arena',
-  publisher: 'Arena',
+    'AI workspace, AI agent builder, AI agent workflow builder, build AI agents, visual workflow builder, open-source AI agent platform, AI agents, agentic workflows, LLM orchestration, AI automation, knowledge base, workflow builder, AI integrations, SOC2 compliant, enterprise AI',
+  authors: [{ name: 'Sim' }],
+  creator: 'Sim',
+  publisher: 'Sim',
   formatDetection: {
     email: false,
     address: false,
     telephone: false,
   },
   openGraph: {
-    title: 'Arena — Build AI Agents & Run Your Agentic Workforce',
+    title: 'Arena — The AI Workspace | Build, Deploy & Manage AI Agents',
     description:
-      'Arena is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows. Create agents, workflows, knowledge bases, tables, and docs. Join over 100,000 builders.',
+      'Arena is the AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work — visually, conversationally, or with code.',
     type: 'website',
     url: baseUrl,
     siteName: 'Arena',
@@ -34,7 +36,7 @@ export const metadata: Metadata = {
         url: '/logo/426-240/primary/small.png',
         width: 2130,
         height: 1200,
-        alt: 'Arena — Build AI Agents & Run Your Agentic Workforce',
+        alt: 'Arena — The AI Workspace for Teams',
         type: 'image/png',
       },
     ],
@@ -43,12 +45,12 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@simdotai',
     creator: '@simdotai',
-    title: 'Arena — Build AI Agents & Run Your Agentic Workforce',
+    title: 'Arena — The AI Workspace | Build, Deploy & Manage AI Agents',
     description:
-      'Arena is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to orchestrate agentic workflows.',
+      'Arena is the  AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work.',
     images: {
       url: '/logo/426-240/primary/small.png',
-      alt: 'Arena — Build AI Agents & Run Your Agentic Workforce',
+      alt: 'Arena — The AI Workspace for Teams',
     },
   },
   alternates: {
@@ -76,9 +78,9 @@ export const metadata: Metadata = {
   referrer: 'origin-when-cross-origin',
   other: {
     'llm:content-type':
-      'AI agent platform, agentic workforce, agentic workflows, LLM orchestration',
+      'AI workspace, AI agent builder, AI agent platform, agentic workflows, LLM orchestration',
     'llm:use-cases':
-      'AI agents, agentic workforce, agentic workflows, knowledge bases, tables, document creation, email automation, Slack bots, data analysis, customer support, content generation',
+      'build AI agents, AI workspace, visual workflow builder, natural language agent creation, knowledge bases, tables, document creation, email automation, Slack bots, data analysis, customer support, content generation',
     'llm:integrations':
       'OpenAI, Anthropic, Google AI, Mistral, xAI, Perplexity, Slack, Gmail, Discord, Notion, Airtable, Supabase',
     'llm:pricing':

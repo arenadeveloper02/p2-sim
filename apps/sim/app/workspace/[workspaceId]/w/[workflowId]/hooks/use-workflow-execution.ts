@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
-import { v4 as uuidv4 } from 'uuid'
+import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
+import { generateId } from '@/lib/core/utils/uuid'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { processStreamingBlockLogs } from '@/lib/tokenization'
 import {
@@ -30,12 +31,11 @@ import type { BlockLog, BlockState, ExecutionResult, StreamingExecution } from '
 import { hasExecutionResult } from '@/executor/utils/errors'
 import { coerceValue } from '@/executor/utils/start-block'
 import { subscriptionKeys } from '@/hooks/queries/subscription'
+import { getWorkflows } from '@/hooks/queries/utils/workflow-cache'
 import { useExecutionStream } from '@/hooks/use-execution-stream'
 import { WorkflowValidationError } from '@/serializer'
 import { useCurrentWorkflowExecution, useExecutionStore } from '@/stores/execution'
 import { useNotificationStore } from '@/stores/notifications'
-import { useVariablesStore } from '@/stores/panel'
-import { useEnvironmentStore } from '@/stores/settings/environment'
 import {
   clearExecutionPointer,
   consolePersistence,
@@ -43,6 +43,7 @@ import {
   saveExecutionPointer,
   useTerminalConsoleStore,
 } from '@/stores/terminal'
+import { useVariablesStore } from '@/stores/variables/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { mergeSubblockState } from '@/stores/workflows/utils'
@@ -102,11 +103,11 @@ function normalizeErrorMessage(error: unknown): string {
 }
 
 export function useWorkflowExecution() {
+  const { workspaceId: routeWorkspaceId } = useParams<{ workspaceId: string }>()
+  const hydrationWorkspaceId = useWorkflowRegistry((s) => s.hydration.workspaceId)
   const queryClient = useQueryClient()
   const currentWorkflow = useCurrentWorkflow()
-  const { activeWorkflowId, workflows } = useWorkflowRegistry(
-    useShallow((s) => ({ activeWorkflowId: s.activeWorkflowId, workflows: s.workflows }))
-  )
+  const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
   const { toggleConsole, addConsole, updateConsole, cancelRunningEntries, clearExecutionEntries } =
     useTerminalConsoleStore(
       useShallow((s) => ({
@@ -118,7 +119,6 @@ export function useWorkflowExecution() {
       }))
     )
   const hasHydrated = useTerminalConsoleStore((s) => s._hasHydrated)
-  const getAllVariables = useEnvironmentStore((s) => s.getAllVariables)
   const { getVariablesByWorkflowId, variables } = useVariablesStore(
     useShallow((s) => ({
       getVariablesByWorkflowId: s.getVariablesByWorkflowId,
@@ -260,7 +260,7 @@ export function useWorkflowExecution() {
       setExecutionResult(result)
 
       // Persist logs
-      await persistLogs(uuidv4(), result)
+      await persistLogs(generateId(), result)
 
       // Reset debug state
       resetDebugState()
@@ -307,7 +307,7 @@ export function useWorkflowExecution() {
       setExecutionResult(errorResult)
 
       // Persist logs
-      await persistLogs(uuidv4(), errorResult)
+      await persistLogs(generateId(), errorResult)
 
       // Reset debug state
       resetDebugState()
@@ -380,8 +380,17 @@ export function useWorkflowExecution() {
     async (workflowInput?: any, enableDebug = false) => {
       if (!activeWorkflowId) return
 
-      // Get workspaceId from workflow metadata
-      const workspaceId = workflows[activeWorkflowId]?.workspaceId
+      // Sandbox exercises have no real workflow — signal the SandboxCanvasProvider
+      // to run mock execution by setting isExecuting, then bail out immediately.
+      const scopedWorkspaceId = routeWorkspaceId ?? hydrationWorkspaceId ?? undefined
+      const cachedWorkflows = scopedWorkspaceId ? getWorkflows(scopedWorkspaceId) : []
+      const activeWorkflow = cachedWorkflows.find((w) => w.id === activeWorkflowId)
+      if (activeWorkflow?.isSandbox) {
+        setIsExecuting(activeWorkflowId, true)
+        return
+      }
+
+      const workspaceId = scopedWorkspaceId ?? activeWorkflow?.workspaceId
 
       if (!workspaceId) {
         logger.error('Cannot execute workflow without workspaceId')
@@ -404,7 +413,7 @@ export function useWorkflowExecution() {
       // For chat executions, we'll use a streaming approach
       if (isChatExecution) {
         let isCancelled = false
-        const executionId = uuidv4()
+        const executionId = generateId()
         currentChatExecutionIdRef.current = executionId
         const stream = new ReadableStream({
           async start(controller) {
@@ -708,7 +717,7 @@ export function useWorkflowExecution() {
         return { success: true, stream }
       }
 
-      const manualExecutionId = uuidv4()
+      const manualExecutionId = generateId()
       try {
         const result = await executeWorkflow(
           workflowInput,
@@ -733,7 +742,6 @@ export function useWorkflowExecution() {
       activeWorkflowId,
       currentWorkflow,
       toggleConsole,
-      getAllVariables,
       getVariablesByWorkflowId,
       setIsExecuting,
       setIsDebugging,
@@ -741,7 +749,6 @@ export function useWorkflowExecution() {
       setExecutor,
       setPendingBlocks,
       setActiveBlocks,
-      workflows,
       queryClient,
     ]
   )
@@ -1784,7 +1791,7 @@ export function useWorkflowExecution() {
       setExecutionResult(null)
       setIsExecuting(workflowId, true)
 
-      const executionId = uuidv4()
+      const executionId = generateId()
       try {
         await executeWorkflow(undefined, undefined, executionId, undefined, 'manual', blockId)
       } catch (error) {

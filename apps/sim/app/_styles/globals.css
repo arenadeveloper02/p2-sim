@@ -10,11 +10,17 @@
  * @see stores/constants.ts for the source of truth
  */
 :root {
-  --sidebar-width: 248px; /* SIDEBAR_WIDTH.DEFAULT */
+  --sidebar-width: 0px; /* 0 outside workspace; blocking script always sets actual value on workspace pages */
   --panel-width: 320px; /* PANEL_WIDTH.DEFAULT */
   --toolbar-triggers-height: 300px; /* TOOLBAR_TRIGGERS_HEIGHT.DEFAULT */
   --editor-connections-height: 172px; /* EDITOR_CONNECTIONS_HEIGHT.DEFAULT */
   --terminal-height: 206px; /* TERMINAL_HEIGHT.DEFAULT */
+  --auth-primary-btn-bg: #ffffff;
+  --auth-primary-btn-border: #ffffff;
+  --auth-primary-btn-text: #000000;
+  --auth-primary-btn-hover-bg: #e0e0e0;
+  --auth-primary-btn-hover-border: #e0e0e0;
+  --auth-primary-btn-hover-text: #000000;
 
   /* z-index scale for layered UI
      Popover must be above modal so dropdowns inside modals render correctly */
@@ -220,6 +226,7 @@ html[data-sidebar-collapsed] .sidebar-container .sidebar-collapse-btn {
     --brand-tertiary-2: #33c481;
     --warning: #ff6600;
     --brand-accent: #33c482;
+    --brand-accent-hover: #2dac72;
     --selection: #1a5cf6;
 
     /* Inverted surface (dark chrome on light page, e.g. tag dropdown) */
@@ -374,6 +381,7 @@ html[data-sidebar-collapsed] .sidebar-container .sidebar-collapse-btn {
     /* Brand & state */
     --brand-secondary: #33b4ff;
     --brand-accent: #33c482;
+    --brand-accent-hover: #2dac72;
     --selection: #4b83f7;
     --warning: #ff6600;
 

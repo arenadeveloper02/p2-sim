@@ -4,7 +4,6 @@ import { a2aAgent, a2aPushNotificationConfig, a2aTask, workflow } from '@sim/db/
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
 import { A2A_DEFAULT_TIMEOUT, A2A_MAX_HISTORY_LENGTH } from '@/lib/a2a/constants'
 import { notifyTaskStateChange } from '@/lib/a2a/push-notifications'
 import {
@@ -16,8 +15,10 @@ import {
 import { type AuthResult, AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { acquireLock, getRedisClient, releaseLock } from '@/lib/core/config/redis'
 import { validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
+import { getClientIp } from '@/lib/core/utils/request'
 import { SSE_HEADERS } from '@/lib/core/utils/sse'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { generateId } from '@/lib/core/utils/uuid'
 import { markExecutionCancelled } from '@/lib/execution/cancellation'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
@@ -52,10 +53,9 @@ function getCallerFingerprint(request: NextRequest, userId?: string | null): str
     return `user:${userId}`
   }
 
-  const forwardedFor = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-  const realIp = request.headers.get('x-real-ip')?.trim()
+  const clientIp = getClientIp(request)
   const userAgent = request.headers.get('user-agent')?.trim() || 'unknown'
-  return `public:${forwardedFor || realIp || 'unknown'}:${userAgent}`
+  return `public:${clientIp}:${userAgent}`
 }
 
 function hasCallerAccessToTask(
@@ -400,11 +400,11 @@ async function handleMessageSend(
 
   const message = params.message
   const taskId = message.taskId || generateTaskId()
-  const contextId = message.contextId || uuidv4()
+  const contextId = message.contextId || generateId()
 
   // Distributed lock to prevent concurrent task processing
   const lockKey = `a2a:task:${taskId}:lock`
-  const lockValue = uuidv4()
+  const lockValue = generateId()
   const acquired = await acquireLock(lockKey, lockValue, 60)
 
   if (!acquired) {
@@ -628,12 +628,12 @@ async function handleMessageStream(
   }
 
   const message = params.message
-  const contextId = message.contextId || uuidv4()
+  const contextId = message.contextId || generateId()
   const taskId = message.taskId || generateTaskId()
 
   // Distributed lock to prevent concurrent task processing
   const lockKey = `a2a:task:${taskId}:lock`
-  const lockValue = uuidv4()
+  const lockValue = generateId()
   const acquired = await acquireLock(lockKey, lockValue, 300)
 
   if (!acquired) {
@@ -1427,7 +1427,7 @@ async function handlePushNotificationSet(
       .where(eq(a2aPushNotificationConfig.id, existingConfig.id))
   } else {
     await db.insert(a2aPushNotificationConfig).values({
-      id: uuidv4(),
+      id: generateId(),
       taskId: params.id,
       url: config.url,
       token: config.token || null,

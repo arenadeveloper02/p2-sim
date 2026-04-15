@@ -19,43 +19,44 @@ import {
   ModalHeader,
   Tooltip,
 } from '@/components/emcn'
-import { useSession } from '@/lib/auth/auth-client'
-import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
-import {
-  getCanonicalScopesForProvider,
-  getProviderIdFromServiceId,
-  type OAuthProvider,
-} from '@/lib/oauth'
+import { getSubscriptionAccessState } from '@/lib/billing/client'
+import { consumeOAuthReturnContext } from '@/lib/credentials/client-state'
+import { getProviderIdFromServiceId, type OAuthProvider } from '@/lib/oauth'
+import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { ConnectorSelectorField } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/add-connector-modal/components/connector-selector-field'
-import { OAuthRequiredModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/components/oauth-required-modal'
+import { SYNC_INTERVALS } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/consts'
+import { MaxBadge } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/max-badge'
+import { isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { getDependsOnFields } from '@/blocks/utils'
 import { CONNECTOR_REGISTRY } from '@/connectors/registry'
 import type { ConnectorConfig, ConnectorConfigField } from '@/connectors/types'
 import { useCreateConnector } from '@/hooks/queries/kb/connectors'
 import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
+import { useSubscriptionData } from '@/hooks/queries/subscription'
 import type { SelectorKey } from '@/hooks/selectors/types'
-
-const SYNC_INTERVALS = [
-  { label: 'Every hour', value: 60 },
-  { label: 'Every 6 hours', value: 360 },
-  { label: 'Daily', value: 1440 },
-  { label: 'Weekly', value: 10080 },
-  { label: 'Manual only', value: 0 },
-] as const
+import { useCredentialRefreshTriggers } from '@/hooks/use-credential-refresh-triggers'
 
 const CONNECTOR_ENTRIES = Object.entries(CONNECTOR_REGISTRY)
 
 interface AddConnectorModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onConnectorTypeChange?: (connectorType: string | null) => void
   knowledgeBaseId: string
+  initialConnectorType?: string | null
 }
 
 type Step = 'select-type' | 'configure'
 
-export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddConnectorModalProps) {
-  const [step, setStep] = useState<Step>('select-type')
-  const [selectedType, setSelectedType] = useState<string | null>(null)
+export function AddConnectorModal({
+  open,
+  onOpenChange,
+  onConnectorTypeChange,
+  knowledgeBaseId,
+  initialConnectorType,
+}: AddConnectorModalProps) {
+  const [step, setStep] = useState<Step>(() => (initialConnectorType ? 'configure' : 'select-type'))
+  const [selectedType, setSelectedType] = useState<string | null>(initialConnectorType ?? null)
   const [sourceConfig, setSourceConfig] = useState<Record<string, string>>({})
   const [syncInterval, setSyncInterval] = useState(1440)
   const [selectedCredentialId, setSelectedCredentialId] = useState<string | null>(null)
@@ -69,8 +70,11 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
   const [searchTerm, setSearchTerm] = useState('')
 
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data: session } = useSession()
   const { mutate: createConnector, isPending: isCreating } = useCreateConnector()
+
+  const { data: subscriptionResponse } = useSubscriptionData({ enabled: isBillingEnabled })
+  const subscriptionAccess = getSubscriptionAccessState(subscriptionResponse?.data)
+  const hasMaxAccess = !isBillingEnabled || subscriptionAccess.hasUsableMaxAccess
 
   const connectorConfig = selectedType ? CONNECTOR_REGISTRY[selectedType] : null
   const isApiKeyMode = connectorConfig?.auth.mode === 'apiKey'
@@ -82,10 +86,16 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
     [connectorConfig]
   )
 
-  const { data: credentials = [], isLoading: credentialsLoading } = useOAuthCredentials(
-    connectorProviderId ?? undefined,
-    { enabled: Boolean(connectorConfig) && !isApiKeyMode, workspaceId }
-  )
+  const {
+    data: credentials = [],
+    isLoading: credentialsLoading,
+    refetch: refetchCredentials,
+  } = useOAuthCredentials(connectorProviderId ?? undefined, {
+    enabled: Boolean(connectorConfig) && !isApiKeyMode,
+    workspaceId,
+  })
+
+  useCredentialRefreshTriggers(refetchCredentials, connectorProviderId ?? '', workspaceId)
 
   const effectiveCredentialId =
     selectedCredentialId ?? (credentials.length === 1 ? credentials[0].id : null)
@@ -150,6 +160,7 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
     setError(null)
     setSearchTerm('')
     setStep('configure')
+    onConnectorTypeChange?.(type)
   }
 
   const handleFieldChange = useCallback(
@@ -263,51 +274,9 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
     )
   }
 
-  const handleConnectNewAccount = useCallback(async () => {
-    if (!connectorConfig || !connectorProviderId || !workspaceId) return
-
-    const userName = session?.user?.name
-    const integrationName = connectorConfig.name
-    const displayName = userName ? `${userName}'s ${integrationName}` : integrationName
-
-    try {
-      const res = await fetch('/api/credentials/draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId,
-          providerId: connectorProviderId,
-          displayName,
-        }),
-      })
-      if (!res.ok) {
-        setError('Failed to prepare credential. Please try again.')
-        return
-      }
-    } catch {
-      setError('Failed to prepare credential. Please try again.')
-      return
-    }
-
-    writeOAuthReturnContext({
-      origin: 'kb-connectors',
-      knowledgeBaseId,
-      displayName,
-      providerId: connectorProviderId,
-      preCount: credentials.length,
-      workspaceId,
-      requestedAt: Date.now(),
-    })
-
+  const handleConnectNewAccount = useCallback(() => {
     setShowOAuthModal(true)
-  }, [
-    connectorConfig,
-    connectorProviderId,
-    workspaceId,
-    session?.user?.name,
-    knowledgeBaseId,
-    credentials.length,
-  ])
+  }, [])
 
   const filteredEntries = useMemo(() => {
     const term = searchTerm.toLowerCase().trim()
@@ -327,7 +296,10 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
               <Button
                 variant='ghost'
                 className='mr-2 h-6 w-6 p-0'
-                onClick={() => setStep('select-type')}
+                onClick={() => {
+                  setStep('select-type')
+                  onConnectorTypeChange?.('')
+                }}
               >
                 <ArrowLeft className='h-4 w-4' />
               </Button>
@@ -373,7 +345,7 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
               <div className='flex flex-col gap-3'>
                 {/* Auth: API key input or OAuth credential selection */}
                 {isApiKeyMode ? (
-                  <div className='flex flex-col gap-1'>
+                  <div className='flex flex-col gap-2'>
                     <Label>
                       {connectorConfig.auth.mode === 'apiKey' && connectorConfig.auth.label
                         ? connectorConfig.auth.label
@@ -394,42 +366,42 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
                     />
                   </div>
                 ) : (
-                  <div className='flex flex-col gap-1'>
+                  <div className='flex flex-col gap-2'>
                     <Label>Account</Label>
-                    {credentialsLoading ? (
-                      <div className='flex items-center gap-2 text-[var(--text-muted)] text-small'>
-                        <Loader2 className='h-4 w-4 animate-spin' />
-                        Loading credentials...
-                      </div>
-                    ) : (
-                      <Combobox
-                        size='sm'
-                        options={[
-                          ...credentials.map(
-                            (cred): ComboboxOption => ({
-                              label: cred.name || cred.provider,
-                              value: cred.id,
-                              icon: connectorConfig.icon,
-                            })
-                          ),
-                          {
-                            label: 'Connect new account',
-                            value: '__connect_new__',
-                            icon: Plus,
-                            onSelect: () => {
-                              void handleConnectNewAccount()
-                            },
+                    <Combobox
+                      size='sm'
+                      options={[
+                        ...credentials.map(
+                          (cred): ComboboxOption => ({
+                            label: cred.name || cred.provider,
+                            value: cred.id,
+                            icon: connectorConfig.icon,
+                          })
+                        ),
+                        {
+                          label:
+                            credentials.length > 0
+                              ? `Connect another ${connectorConfig.name} account`
+                              : `Connect ${connectorConfig.name} account`,
+                          value: '__connect_new__',
+                          icon: Plus,
+                          onSelect: () => {
+                            void handleConnectNewAccount()
                           },
-                        ]}
-                        value={effectiveCredentialId ?? undefined}
-                        onChange={(value) => setSelectedCredentialId(value)}
-                        placeholder={
-                          credentials.length === 0
-                            ? `No ${connectorConfig.name} accounts`
-                            : 'Select account'
-                        }
-                      />
-                    )}
+                        },
+                      ]}
+                      value={effectiveCredentialId ?? undefined}
+                      onChange={(value) => setSelectedCredentialId(value)}
+                      onOpenChange={(isOpen) => {
+                        if (isOpen) void refetchCredentials()
+                      }}
+                      placeholder={
+                        credentials.length === 0
+                          ? `No ${connectorConfig.name} accounts`
+                          : 'Select account'
+                      }
+                      isLoading={credentialsLoading}
+                    />
                   </div>
                 )}
 
@@ -442,7 +414,7 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
                     canonicalId && (canonicalGroups.get(canonicalId)?.length ?? 0) === 2
 
                   return (
-                    <div key={field.id} className='flex flex-col gap-1'>
+                    <div key={field.id} className='flex flex-col gap-2'>
                       <div className='flex items-center justify-between'>
                         <Label>
                           {field.title}
@@ -507,7 +479,7 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
 
                 {/* Tag definitions (opt-out) */}
                 {connectorConfig.tagDefinitions && connectorConfig.tagDefinitions.length > 0 && (
-                  <div className='flex flex-col gap-1'>
+                  <div className='flex flex-col gap-2'>
                     <Label>Metadata Tags</Label>
                     {connectorConfig.tagDefinitions.map((tagDef) => (
                       <div
@@ -550,15 +522,20 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
                 )}
 
                 {/* Sync interval */}
-                <div className='flex flex-col gap-1'>
+                <div className='flex flex-col gap-2'>
                   <Label>Sync Frequency</Label>
                   <ButtonGroup
                     value={String(syncInterval)}
                     onValueChange={(val) => setSyncInterval(Number(val))}
                   >
                     {SYNC_INTERVALS.map((interval) => (
-                      <ButtonGroupItem key={interval.value} value={String(interval.value)}>
+                      <ButtonGroupItem
+                        key={interval.value}
+                        value={String(interval.value)}
+                        disabled={interval.requiresMax && !hasMaxAccess}
+                      >
                         {interval.label}
+                        {interval.requiresMax && !hasMaxAccess && <MaxBadge />}
                       </ButtonGroupItem>
                     ))}
                   </ButtonGroup>
@@ -590,20 +567,25 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
           )}
         </ModalContent>
       </Modal>
-      {connectorConfig && connectorConfig.auth.mode === 'oauth' && connectorProviderId && (
-        <OAuthRequiredModal
-          isOpen={showOAuthModal}
-          onClose={() => {
-            consumeOAuthReturnContext()
-            setShowOAuthModal(false)
-          }}
-          provider={connectorProviderId}
-          toolName={connectorConfig.name}
-          requiredScopes={getCanonicalScopesForProvider(connectorProviderId)}
-          newScopes={[]}
-          serviceId={connectorConfig.auth.provider}
-        />
-      )}
+      {showOAuthModal &&
+        connectorConfig &&
+        connectorConfig.auth.mode === 'oauth' &&
+        connectorProviderId && (
+          <OAuthModal
+            mode='connect'
+            isOpen={showOAuthModal}
+            onClose={() => {
+              consumeOAuthReturnContext()
+              setShowOAuthModal(false)
+            }}
+            provider={connectorProviderId}
+            serviceId={connectorConfig.auth.provider}
+            workspaceId={workspaceId}
+            knowledgeBaseId={knowledgeBaseId}
+            credentialCount={credentials.length}
+            connectorType={selectedType ?? undefined}
+          />
+        )}
     </>
   )
 }

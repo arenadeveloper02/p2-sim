@@ -2,8 +2,8 @@ import { db } from '@sim/db'
 import { webhook } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { nanoid } from 'nanoid'
 import type { NextRequest } from 'next/server'
+import { generateShortId } from '@/lib/core/utils/uuid'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
 import { PendingWebhookVerificationTracker } from '@/lib/webhooks/pending-verification'
 import {
@@ -11,11 +11,9 @@ import {
   createExternalWebhookSubscription,
   shouldRecreateExternalWebhookSubscription,
 } from '@/lib/webhooks/provider-subscriptions'
-import {
-  configureGmailPolling,
-  configureOutlookPolling,
-  syncWebhooksForCredentialSet,
-} from '@/lib/webhooks/utils.server'
+import { getProviderHandler } from '@/lib/webhooks/providers'
+import { syncWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
+import { buildCanonicalIndex } from '@/lib/workflows/subblocks/visibility'
 import { getBlock } from '@/blocks'
 import type { SubBlockConfig } from '@/blocks/types'
 import type { BlockState } from '@/stores/workflows/workflow/types'
@@ -153,7 +151,6 @@ function getConfigValue(block: BlockState, subBlock: SubBlockConfig): unknown {
 
   if (
     (fieldValue === null || fieldValue === undefined || fieldValue === '') &&
-    Boolean(subBlock.required) &&
     subBlock.defaultValue !== undefined
   ) {
     return subBlock.defaultValue
@@ -185,16 +182,40 @@ function buildProviderConfig(
     Object.entries(block.subBlocks || {}).map(([key, value]) => [key, { value: value.value }])
   )
 
-  triggerDef.subBlocks
-    .filter((subBlock) => subBlock.mode === 'trigger' && !SYSTEM_SUBBLOCK_IDS.includes(subBlock.id))
-    .forEach((subBlock) => {
-      const valueToUse = getConfigValue(block, subBlock)
-      if (valueToUse !== null && valueToUse !== undefined && valueToUse !== '') {
-        providerConfig[subBlock.id] = valueToUse
-      } else if (isFieldRequired(subBlock, subBlockValues)) {
-        missingFields.push(subBlock.title || subBlock.id)
-      }
-    })
+  const canonicalIndex = buildCanonicalIndex(triggerDef.subBlocks)
+  const satisfiedCanonicalIds = new Set<string>()
+  const filledSubBlockIds = new Set<string>()
+
+  const relevantSubBlocks = triggerDef.subBlocks.filter(
+    (subBlock) =>
+      (subBlock.mode === 'trigger' || subBlock.mode === 'trigger-advanced') &&
+      !SYSTEM_SUBBLOCK_IDS.includes(subBlock.id)
+  )
+
+  // First pass: populate providerConfig, clear stale baseConfig entries, and track which
+  // subblocks and canonical groups have a value.
+  for (const subBlock of relevantSubBlocks) {
+    const valueToUse = getConfigValue(block, subBlock)
+    if (valueToUse !== null && valueToUse !== undefined && valueToUse !== '') {
+      providerConfig[subBlock.id] = valueToUse
+      filledSubBlockIds.add(subBlock.id)
+      const canonicalId = canonicalIndex.canonicalIdBySubBlockId[subBlock.id]
+      if (canonicalId) satisfiedCanonicalIds.add(canonicalId)
+    } else {
+      delete providerConfig[subBlock.id]
+    }
+  }
+
+  // Second pass: validate required fields. Skip subblocks that are filled or whose canonical
+  // group is satisfied by another member.
+  for (const subBlock of relevantSubBlocks) {
+    if (filledSubBlockIds.has(subBlock.id)) continue
+    const canonicalId = canonicalIndex.canonicalIdBySubBlockId[subBlock.id]
+    if (canonicalId && satisfiedCanonicalIds.has(canonicalId)) continue
+    if (isFieldRequired(subBlock, subBlockValues)) {
+      missingFields.push(subBlock.title || subBlock.id)
+    }
+  }
 
   const credentialConfig = triggerDef.subBlocks.find(
     (subBlock) => subBlock.id === 'triggerCredentials'
@@ -233,29 +254,20 @@ function buildProviderConfig(
 
 async function configurePollingIfNeeded(
   provider: string,
-  savedWebhook: any,
+  savedWebhook: Record<string, unknown>,
   requestId: string
 ): Promise<TriggerSaveError | null> {
-  if (provider === 'gmail') {
-    const success = await configureGmailPolling(savedWebhook, requestId)
-    if (!success) {
-      await db.delete(webhook).where(eq(webhook.id, savedWebhook.id))
-      return {
-        message: 'Failed to configure Gmail polling. Please check your Gmail account permissions.',
-        status: 500,
-      }
-    }
+  const handler = getProviderHandler(provider)
+  if (!handler.configurePolling) {
+    return null
   }
 
-  if (provider === 'outlook') {
-    const success = await configureOutlookPolling(savedWebhook, requestId)
-    if (!success) {
-      await db.delete(webhook).where(eq(webhook.id, savedWebhook.id))
-      return {
-        message:
-          'Failed to configure Outlook polling. Please check your Outlook account permissions.',
-        status: 500,
-      }
+  const success = await handler.configurePolling({ webhook: savedWebhook, requestId })
+  if (!success) {
+    await db.delete(webhook).where(eq(webhook.id, savedWebhook.id as string))
+    return {
+      message: `Failed to configure ${provider} polling. Please check your account permissions.`,
+      status: 500,
     }
   }
 
@@ -297,7 +309,7 @@ async function syncCredentialSetWebhooks(params: {
     basePath: triggerPath,
     credentialSetId,
     oauthProviderId,
-    providerConfig: baseConfig as Record<string, any>,
+    providerConfig: baseConfig as Record<string, unknown>,
     requestId,
     deploymentVersionId,
   })
@@ -322,13 +334,13 @@ async function syncCredentialSetWebhooks(params: {
     }
   }
 
-  if (provider === 'gmail' || provider === 'outlook') {
-    const configureFunc = provider === 'gmail' ? configureGmailPolling : configureOutlookPolling
+  const handler = getProviderHandler(provider)
+  if (handler.configurePolling) {
     for (const wh of syncResult.webhooks) {
       if (wh.isNew) {
         const rows = await db.select().from(webhook).where(eq(webhook.id, wh.id)).limit(1)
         if (rows.length > 0) {
-          const success = await configureFunc(rows[0], requestId)
+          const success = await handler.configurePolling({ webhook: rows[0], requestId })
           if (!success) {
             await db.delete(webhook).where(eq(webhook.id, wh.id))
             return {
@@ -459,6 +471,18 @@ export async function saveTriggerWebhooksForDeploy({
       }
     }
 
+    if (providerConfig.requireAuth && !providerConfig.token) {
+      await restorePreviousSubscriptions()
+      return {
+        success: false,
+        error: {
+          message:
+            'Authentication is enabled but no token is configured. Please set an authentication token or disable authentication.',
+          status: 400,
+        },
+      }
+    }
+
     webhookConfigs.set(block.id, { provider, providerConfig, triggerPath, triggerDef })
 
     if (providerConfig.credentialSetId) {
@@ -558,13 +582,13 @@ export async function saveTriggerWebhooksForDeploy({
         await restorePreviousSubscriptions()
         return { success: false, error: syncResult.error, warnings: collectedWarnings }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`[${requestId}] Failed to create webhook for ${block.id}`, error)
       await restorePreviousSubscriptions()
       return {
         success: false,
         error: {
-          message: error?.message || 'Failed to save trigger configuration',
+          message: (error as Error)?.message || 'Failed to save trigger configuration',
           status: 500,
         },
         warnings: collectedWarnings,
@@ -588,7 +612,7 @@ export async function saveTriggerWebhooksForDeploy({
     if (!config) continue
 
     const { provider, providerConfig, triggerPath } = config
-    const webhookId = nanoid()
+    const webhookId = generateShortId()
     const createPayload = {
       id: webhookId,
       path: triggerPath,
@@ -621,7 +645,7 @@ export async function saveTriggerWebhooksForDeploy({
         updatedProviderConfig: result.updatedProviderConfig as Record<string, unknown>,
         externalSubscriptionCreated: result.externalSubscriptionCreated,
       })
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`[${requestId}] Failed to create external subscription for ${block.id}`, error)
       await pendingVerificationTracker.clearAll()
       for (const sub of createdSubscriptions) {
@@ -649,7 +673,7 @@ export async function saveTriggerWebhooksForDeploy({
       return {
         success: false,
         error: {
-          message: error?.message || 'Failed to create external subscription',
+          message: (error as Error)?.message || 'Failed to create external subscription',
           status: 500,
         },
       }
@@ -722,7 +746,7 @@ export async function saveTriggerWebhooksForDeploy({
         return { success: false, error: pollingError }
       }
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     await pendingVerificationTracker.clearAll()
     logger.error(`[${requestId}] Failed to insert webhook records`, error)
     for (const sub of createdSubscriptions) {
@@ -750,7 +774,7 @@ export async function saveTriggerWebhooksForDeploy({
     return {
       success: false,
       error: {
-        message: error?.message || 'Failed to save webhook records',
+        message: (error as Error)?.message || 'Failed to save webhook records',
         status: 500,
       },
     }

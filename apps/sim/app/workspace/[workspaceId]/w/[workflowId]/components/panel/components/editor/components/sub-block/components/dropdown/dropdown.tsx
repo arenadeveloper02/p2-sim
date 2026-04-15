@@ -3,6 +3,7 @@ import { isEqual } from 'es-toolkit'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { Badge } from '@/components/emcn'
 import { Combobox, type ComboboxOption } from '@/components/emcn/components'
+import { generateId } from '@/lib/core/utils/uuid'
 import { buildCanonicalIndex, resolveDependencyValue } from '@/lib/workflows/subblocks/visibility'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { getBlock } from '@/blocks/registry'
@@ -54,14 +55,10 @@ interface DropdownProps {
   /** Show "Select All" option for multi-select */
   selectAllOption?: boolean
   /** Async function to fetch options dynamically */
-  fetchOptions?: (
-    blockId: string,
-    subBlockId: string
-  ) => Promise<Array<{ label: string; id: string }>>
+  fetchOptions?: (blockId: string) => Promise<Array<{ label: string; id: string }>>
   /** Async function to fetch a single option's label by ID (for hydration) */
   fetchOptionById?: (
     blockId: string,
-    subBlockId: string,
     optionId: string
   ) => Promise<{ label: string; id: string } | null>
   /** Field dependencies that trigger option refetch when changed */
@@ -164,7 +161,7 @@ export const Dropdown = memo(function Dropdown({
     setIsLoadingOptions(true)
     setFetchError(null)
     try {
-      const options = await fetchOptions(blockId, subBlockId)
+      const options = await fetchOptions(blockId)
       setFetchedOptions(options)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch options'
@@ -173,7 +170,7 @@ export const Dropdown = memo(function Dropdown({
     } finally {
       setIsLoadingOptions(false)
     }
-  }, [fetchOptions, blockId, subBlockId, isPreview, disabled])
+  }, [fetchOptions, blockId, isPreview, disabled])
 
   /**
    * Handles combobox open state changes to trigger option fetching
@@ -279,7 +276,7 @@ export const Dropdown = memo(function Dropdown({
             fieldType === 'object' || fieldType === 'array' ? JSON.stringify(value, null, 2) : value
 
           return {
-            id: crypto.randomUUID(),
+            id: generateId(),
             name: key,
             type: fieldType,
             value: fieldValue,
@@ -458,7 +455,7 @@ export const Dropdown = memo(function Dropdown({
     let isActive = true
 
     // Fetch the hydrated option
-    fetchOptionById(blockId, subBlockId, valueToHydrate)
+    fetchOptionById(blockId, valueToHydrate)
       .then((option) => {
         if (isActive) setHydratedOption(option)
       })
@@ -474,7 +471,6 @@ export const Dropdown = memo(function Dropdown({
     singleValue,
     multiSelect,
     blockId,
-    subBlockId,
     isPreview,
     disabled,
     fetchedOptions,

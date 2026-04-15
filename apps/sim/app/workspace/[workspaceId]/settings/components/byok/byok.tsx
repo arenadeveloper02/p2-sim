@@ -18,6 +18,7 @@ import {
   BrandfetchIcon,
   ExaAIIcon,
   FirecrawlIcon,
+  FireworksIcon,
   GeminiIcon,
   GoogleIcon,
   JinaAIIcon,
@@ -74,6 +75,13 @@ const PROVIDERS: {
     icon: MistralIcon,
     description: 'LLM calls and Knowledge Base OCR',
     placeholder: 'Enter your API key',
+  },
+  {
+    id: 'fireworks',
+    name: 'Fireworks',
+    icon: FireworksIcon,
+    description: 'LLM calls',
+    placeholder: 'Enter your Fireworks API key',
   },
   {
     id: 'firecrawl',
@@ -346,7 +354,6 @@ export function BYOK() {
                   }}
                   placeholder={PROVIDERS.find((p) => p.id === editingProvider)?.placeholder}
                   className='h-9 pr-9'
-                  autoFocus
                   name='byok_api_key'
                   autoComplete='off'
                   autoCorrect='off'
@@ -407,7 +414,8 @@ export function BYOK() {
               API key?{' '}
               <span className='text-[var(--text-error)]'>
                 This workspace will revert to using platform hosted keys.
-              </span>
+              </span>{' '}
+              This action cannot be undone.
             </p>
           </ModalBody>
           <ModalFooter>

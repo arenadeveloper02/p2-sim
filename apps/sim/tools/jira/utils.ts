@@ -97,6 +97,13 @@ export async function downloadJiraAttachments(
   return downloaded
 }
 
+function normalizeDomain(domain: string): string {
+  return `https://${domain
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/+$/, '')}`.toLowerCase()
+}
+
 export async function getJiraCloudId(domain: string, accessToken: string): Promise<string> {
   const response = await fetchWithRetry(
     'https://api.atlassian.com/oauth/token/accessible-resources',
@@ -116,18 +123,66 @@ export async function getJiraCloudId(domain: string, accessToken: string): Promi
 
   const resources = await response.json()
 
-  if (Array.isArray(resources) && resources.length > 0) {
-    const normalizedInput = `https://${domain}`.toLowerCase()
-    const matchedResource = resources.find((r) => r.url.toLowerCase() === normalizedInput)
-
-    if (matchedResource) {
-      return matchedResource.id
-    }
+  if (!Array.isArray(resources) || resources.length === 0) {
+    throw new Error('No Jira resources found')
   }
 
-  if (Array.isArray(resources) && resources.length > 0) {
+  const normalized = normalizeDomain(domain)
+  const match = resources.find(
+    (r: { url: string }) => r.url.toLowerCase().replace(/\/+$/, '') === normalized
+  )
+
+  if (match) {
+    return match.id
+  }
+
+  if (resources.length === 1) {
     return resources[0].id
   }
 
-  throw new Error('No Jira resources found')
+  throw new Error(
+    `Could not match Jira domain "${domain}" to any accessible resource. ` +
+      `Available sites: ${resources.map((r: { url: string }) => r.url).join(', ')}`
+  )
+}
+
+/**
+ * Parse error messages from Atlassian API responses (Jira, JSM, Confluence).
+ * Handles all known error formats: errorMessage, errorMessages[], errors[].title/detail,
+ * field-level errors object, and generic message fallback.
+ */
+export function parseAtlassianErrorMessage(
+  status: number,
+  statusText: string,
+  errorText: string
+): string {
+  try {
+    const errorData = JSON.parse(errorText)
+    if (errorData.errorMessage) {
+      return errorData.errorMessage
+    }
+    if (Array.isArray(errorData.errorMessages) && errorData.errorMessages.length > 0) {
+      return errorData.errorMessages.join(', ')
+    }
+    if (Array.isArray(errorData.errors) && errorData.errors.length > 0) {
+      const err = errorData.errors[0]
+      if (err?.title) {
+        return err.detail ? `${err.title}: ${err.detail}` : err.title
+      }
+    }
+    if (errorData.errors && !Array.isArray(errorData.errors)) {
+      const fieldErrors = Object.entries(errorData.errors)
+        .map(([field, msg]) => `${field}: ${msg}`)
+        .join(', ')
+      if (fieldErrors) return fieldErrors
+    }
+    if (errorData.message) {
+      return errorData.message
+    }
+  } catch {
+    if (errorText) {
+      return errorText
+    }
+  }
+  return `${status} ${statusText}`
 }

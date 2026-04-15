@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { admissionRejectedResponse, tryAdmit } from '@/lib/core/admission/gate'
 import { generateRequestId } from '@/lib/core/utils/request'
 import {
   checkWebhookPreprocessing,
@@ -41,10 +42,25 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ path: string }> }
 ) {
+  const ticket = tryAdmit()
+  if (!ticket) {
+    return admissionRejectedResponse()
+  }
+
+  try {
+    return await handleWebhookPost(request, params)
+  } finally {
+    ticket.release()
+  }
+}
+
+async function handleWebhookPost(
+  request: NextRequest,
+  params: Promise<{ path: string }>
+): Promise<NextResponse> {
   const requestId = generateRequestId()
   const { path } = await params
 
-  // Handle provider challenges before body parsing (Microsoft Graph validationToken, etc.)
   const earlyChallenge = await handleProviderChallenges({}, request, requestId, path)
   if (earlyChallenge) {
     return earlyChallenge
@@ -59,7 +75,7 @@ export async function POST(
 
   const { body, rawBody } = parseResult
 
-  const challengeResponse = await handleProviderChallenges(body, request, requestId, path)
+  const challengeResponse = await handleProviderChallenges(body, request, requestId, path, rawBody)
   if (challengeResponse) {
     return challengeResponse
   }
@@ -70,7 +86,7 @@ export async function POST(
   if (webhooksForPath.length === 0) {
     const verificationResponse = await handlePreLookupWebhookVerification(
       request.method,
-      body,
+      body as Record<string, unknown> | undefined,
       requestId,
       path
     )
@@ -139,7 +155,6 @@ export async function POST(
     if (shouldSkipWebhookEvent(foundWebhook, body, requestId)) {
       continue
     }
-
     const response = await queueWebhookExecution(foundWebhook, foundWorkflow, body, request, {
       requestId,
       path,
@@ -150,7 +165,6 @@ export async function POST(
     responses.push(response)
   }
 
-  // Return the last successful response, or a combined response for multiple webhooks
   if (responses.length === 0) {
     return new NextResponse('No webhooks processed successfully', { status: 500 })
   }

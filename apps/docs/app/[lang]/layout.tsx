@@ -9,7 +9,6 @@ import {
   SidebarSeparator,
 } from '@/components/docs-layout/sidebar-components'
 import { Navbar } from '@/components/navbar/navbar'
-import { AnimatedBlocks } from '@/components/ui/animated-blocks'
 import { SimLogoFull } from '@/components/ui/sim-logo'
 import { i18n } from '@/lib/i18n'
 import { source } from '@/lib/source'
@@ -66,7 +65,7 @@ export default async function Layout({ children, params }: LayoutProps) {
     '@type': 'WebSite',
     name: 'Sim Documentation',
     description:
-      'Documentation for Sim — the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to deploy and orchestrate agentic workflows.',
+      'Documentation for Sim — the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM.',
     url: 'https://docs.sim.ai',
     publisher: {
       '@type': 'Organization',
@@ -99,13 +98,12 @@ export default async function Layout({ children, params }: LayoutProps) {
       </head>
       <body className='flex min-h-screen flex-col font-sans'>
         <Script src='https://assets.onedollarstats.com/stonks.js' strategy='lazyOnload' />
-        <AnimatedBlocks />
         <RootProvider i18n={provider(lang)}>
           <Navbar />
           <DocsLayout
             tree={source.pageTree[lang]}
             nav={{
-              title: <SimLogoFull className='h-7 w-auto' />,
+              title: <SimLogoFull className='h-[22px] w-auto' />,
             }}
             sidebar={{
               tabs: false,

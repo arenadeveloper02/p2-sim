@@ -1,4 +1,5 @@
 import { WebhookIcon } from '@/components/icons'
+import { generateId } from '@/lib/core/utils/uuid'
 import type { TriggerConfig } from '@/triggers/types'
 
 export const genericWebhookTrigger: TriggerConfig = {
@@ -36,7 +37,7 @@ export const genericWebhookTrigger: TriggerConfig = {
       description: 'Token used to authenticate webhook requests via Bearer token or custom header',
       password: true,
       required: false,
-      value: () => crypto.randomUUID(),
+      value: () => generateId(),
       mode: 'trigger',
     },
     {
@@ -108,14 +109,6 @@ export const genericWebhookTrigger: TriggerConfig = {
       description:
         'Define the expected JSON input schema for this webhook (optional). Use type "file[]" for file uploads.',
       mode: 'trigger',
-    },
-    {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'generic_webhook',
     },
     {
       id: 'triggerInstructions',

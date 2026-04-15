@@ -9,6 +9,7 @@ import { getSelectorDefinition } from '@/hooks/selectors/registry'
 import { resolveSelectorForSubBlock } from '@/hooks/selectors/resolution'
 import type { SelectorContext, SelectorKey } from '@/hooks/selectors/types'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
+import { formatParameterLabel } from '@/tools/params'
 
 const logger = createLogger('ResolveValues')
 
@@ -34,6 +35,8 @@ interface ResolutionContext {
   subBlockId: string
   /** The workflow ID for API calls */
   workflowId: string
+  /** The workspace scope for selector-based lookups */
+  workspaceId?: string
   /** The current workflow state for extracting additional context */
   currentState: WorkflowState
   /** The block ID being resolved */
@@ -64,13 +67,15 @@ async function resolveCredential(credentialId: string, workflowId: string): Prom
   }
 }
 
-async function resolveWorkflow(workflowId: string): Promise<string | null> {
+async function resolveWorkflow(workflowId: string, workspaceId?: string): Promise<string | null> {
+  if (!workspaceId) return null
+
   try {
     const definition = getSelectorDefinition('sim.workflows')
     if (definition.fetchById) {
       const result = await definition.fetchById({
         key: 'sim.workflows',
-        context: {},
+        context: { workspaceId },
         detailId: workflowId,
       })
       return result?.label ?? null
@@ -123,6 +128,33 @@ function extractMcpToolName(toolId: string): string {
 }
 
 /**
+ * Resolves a subBlock field ID to its human-readable title.
+ * Falls back to the raw ID if the block or subBlock is not found.
+ */
+export function resolveFieldLabel(blockType: string, subBlockId: string): string {
+  if (subBlockId.startsWith('data.')) {
+    return formatParameterLabel(subBlockId.slice(5))
+  }
+  const blockConfig = getBlock(blockType)
+  if (!blockConfig) return subBlockId
+  const subBlockConfig = blockConfig.subBlocks.find((sb) => sb.id === subBlockId)
+  return subBlockConfig?.title ?? subBlockId
+}
+
+/**
+ * Resolves a dropdown option ID to its human-readable label.
+ * Returns null if the subBlock is not a dropdown or the value is not found.
+ */
+function resolveDropdownLabel(subBlockConfig: SubBlockConfig, value: string): string | null {
+  if (subBlockConfig.type !== 'dropdown') return null
+  if (!subBlockConfig.options) return null
+  const options =
+    typeof subBlockConfig.options === 'function' ? subBlockConfig.options() : subBlockConfig.options
+  const match = options.find((opt) => opt.id === value)
+  return match?.label ?? null
+}
+
+/**
  * Formats a value for display in diff descriptions.
  */
 export function formatValueForDisplay(value: unknown): string {
@@ -134,18 +166,22 @@ export function formatValueForDisplay(value: unknown): string {
   if (typeof value === 'boolean') return value ? 'enabled' : 'disabled'
   if (typeof value === 'number') return String(value)
   if (Array.isArray(value)) return `[${value.length} items]`
-  if (typeof value === 'object') return `${JSON.stringify(value).slice(0, 50)}...`
+  if (typeof value === 'object') {
+    const json = JSON.stringify(value)
+    return json.length > 50 ? `${json.slice(0, 50)}...` : json
+  }
   return String(value)
 }
 
 function extractSelectorContext(
   blockId: string,
   currentState: WorkflowState,
-  workflowId: string
+  workflowId: string,
+  workspaceId?: string
 ): SelectorContext {
   const block = currentState.blocks?.[blockId]
-  if (!block?.subBlocks) return { workflowId }
-  return buildSelectorContextFromBlock(block.type, block.subBlocks, { workflowId })
+  if (!block?.subBlocks) return { workflowId, workspaceId }
+  return buildSelectorContextFromBlock(block.type, block.subBlocks, { workflowId, workspaceId })
 }
 
 /**
@@ -160,7 +196,6 @@ export async function resolveValueForDisplay(
   value: unknown,
   context: ResolutionContext
 ): Promise<ResolvedValue> {
-  // Non-string or empty values can't be resolved
   if (typeof value !== 'string' || !value) {
     return {
       original: value,
@@ -177,12 +212,16 @@ export async function resolveValueForDisplay(
   const semanticFallback = getSemanticFallback(subBlockConfig)
 
   const selectorCtx = context.blockId
-    ? extractSelectorContext(context.blockId, context.currentState, context.workflowId)
-    : { workflowId: context.workflowId }
+    ? extractSelectorContext(
+        context.blockId,
+        context.currentState,
+        context.workflowId,
+        context.workspaceId
+      )
+    : { workflowId: context.workflowId, workspaceId: context.workspaceId }
 
-  // Credential fields (oauth-input or credential subBlockId)
   const isCredentialField =
-    subBlockConfig?.type === 'oauth-input' || context.subBlockId === 'credential'
+    subBlockConfig.type === 'oauth-input' || context.subBlockId === 'credential'
 
   if (isCredentialField && (value.startsWith(CREDENTIAL_SET.PREFIX) || isUuid(value))) {
     const label = await resolveCredential(value, context.workflowId)
@@ -192,24 +231,35 @@ export async function resolveValueForDisplay(
     return { original: value, displayLabel: semanticFallback, resolved: true }
   }
 
-  // Workflow selector
-  if (subBlockConfig?.type === 'workflow-selector' && isUuid(value)) {
-    const label = await resolveWorkflow(value)
+  if (subBlockConfig.type === 'workflow-selector' && isUuid(value)) {
+    const label = await resolveWorkflow(value, selectorCtx.workspaceId)
     if (label) {
       return { original: value, displayLabel: label, resolved: true }
     }
     return { original: value, displayLabel: semanticFallback, resolved: true }
   }
 
-  // MCP tool selector
-  if (subBlockConfig?.type === 'mcp-tool-selector') {
+  if (subBlockConfig.type === 'mcp-tool-selector') {
     const toolName = extractMcpToolName(value)
     return { original: value, displayLabel: toolName, resolved: true }
   }
 
-  // Selector types that require hydration (file-selector, sheet-selector, etc.)
-  // These support external service IDs like Google Drive file IDs
-  if (subBlockConfig && SELECTOR_TYPES_HYDRATION_REQUIRED.includes(subBlockConfig.type)) {
+  if (subBlockConfig.type === 'dropdown') {
+    try {
+      const label = resolveDropdownLabel(subBlockConfig, value)
+      if (label) {
+        return { original: value, displayLabel: label, resolved: true }
+      }
+    } catch (error) {
+      logger.warn('Failed to resolve dropdown label', {
+        value,
+        subBlockId: context.subBlockId,
+        error,
+      })
+    }
+  }
+
+  if (SELECTOR_TYPES_HYDRATION_REQUIRED.includes(subBlockConfig.type)) {
     const resolution = resolveSelectorForSubBlock(subBlockConfig, selectorCtx)
 
     if (resolution?.key) {
@@ -218,22 +268,17 @@ export async function resolveValueForDisplay(
         return { original: value, displayLabel: label, resolved: true }
       }
     }
-    // If resolution failed for a hydration-required type, use semantic fallback
     return { original: value, displayLabel: semanticFallback, resolved: true }
   }
 
-  // For fields without specific subBlock types, use pattern matching
-  // UUID fallback
   if (isUuid(value)) {
     return { original: value, displayLabel: semanticFallback, resolved: true }
   }
 
-  // Slack-style IDs (channels: C..., users: U.../W...) get semantic fallback
   if (/^C[A-Z0-9]{8,}$/.test(value) || /^[UW][A-Z0-9]{8,}$/.test(value)) {
     return { original: value, displayLabel: semanticFallback, resolved: true }
   }
 
-  // Credential set prefix without credential field type
   if (value.startsWith(CREDENTIAL_SET.PREFIX)) {
     const label = await resolveCredential(value, context.workflowId)
     if (label) {

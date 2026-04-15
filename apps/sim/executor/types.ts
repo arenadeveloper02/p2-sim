@@ -179,6 +179,7 @@ export interface ExecutionContext {
   userId?: string
   isDeployedContext?: boolean
   enforceCredentialAccess?: boolean
+  copilotToolExecution?: boolean
 
   permissionConfig?: PermissionGroupConfig | null
   permissionConfigLoaded?: boolean
@@ -230,8 +231,6 @@ export interface ExecutionContext {
       parallelId: string
       totalBranches: number
       branchOutputs: Map<number, any[]>
-      completedCount: number
-      totalExpectedNodes: number
       parallelType?: 'count' | 'collection'
       items?: any[]
     }

@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { v4 as uuidv4 } from 'uuid'
+import { generateId } from '@/lib/core/utils/uuid'
 import type {
   BlockCompletedData,
   BlockErrorData,
@@ -568,7 +568,9 @@ export interface WorkflowExecutionOptions {
   onStream?: (se: StreamingExecution) => Promise<void>
   executionId?: string
   onBlockComplete?: (blockId: string, output: any) => Promise<void>
-  overrideTriggerType?: 'chat' | 'manual' | 'api' | 'copilot'
+  overrideTriggerType?: 'chat' | 'manual' | 'api' | 'copilot' | 'webhook' | 'schedule'
+  triggerBlockId?: string
+  useDraftState?: boolean
   stopAfterBlockId?: string
   abortSignal?: AbortSignal
   /** For run_from_block / run_block: start from a specific block using cached state */
@@ -592,7 +594,7 @@ export async function executeWorkflowWithFullLogging(
     throw new Error('No active workflow')
   }
 
-  const executionId = options.executionId || uuidv4()
+  const executionId = options.executionId || generateId()
   const { addConsole, updateConsole, cancelRunningEntries } = useTerminalConsoleStore.getState()
   const { setActiveBlocks, setBlockRunStatus, setEdgeRunStatus, setCurrentExecutionId } =
     useExecutionStore.getState()
@@ -625,8 +627,9 @@ export async function executeWorkflowWithFullLogging(
     input: options.workflowInput,
     stream: true,
     triggerType: options.overrideTriggerType || 'manual',
-    useDraftState: true,
+    useDraftState: options.useDraftState ?? true,
     isClientSession: true,
+    ...(options.triggerBlockId ? { triggerBlockId: options.triggerBlockId } : {}),
     ...(options.stopAfterBlockId ? { stopAfterBlockId: options.stopAfterBlockId } : {}),
     ...(options.runFromBlock
       ? {
