@@ -172,6 +172,8 @@ export async function POST(request: NextRequest) {
         identifier,
         title,
         description,
+        remarks,
+        department,
         customizations,
         authType,
         password,

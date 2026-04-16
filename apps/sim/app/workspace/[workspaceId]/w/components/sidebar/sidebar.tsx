@@ -23,6 +23,7 @@ import {
   Tooltip,
 } from '@/components/emcn'
 import {
+  ArrowLeft,
   BookOpen,
   Calendar,
   Database,
@@ -293,10 +294,10 @@ const SidebarNavItem = memo(function SidebarNavItem({
       onClick={
         item.onClick
           ? (e) => {
-              if (e.ctrlKey || e.metaKey || e.shiftKey) return
-              e.preventDefault()
-              item.onClick!()
-            }
+            if (e.ctrlKey || e.metaKey || e.shiftKey) return
+            e.preventDefault()
+            item.onClick!()
+          }
           : undefined
       }
       onContextMenu={onContextMenu ? (e) => onContextMenu(e, item.href!) : undefined}
@@ -375,6 +376,12 @@ export const Sidebar = memo(function Sidebar() {
   }, [isCollapsed])
 
   const isMac = useMemo(() => isMacPlatform(), [])
+
+  const arenaHubAgentsUrl = useMemo(() => {
+    const base = process.env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL
+    if (!base?.trim()) return null
+    return `${base.replace(/\/$/, '')}/hub/agents`
+  }, [])
 
   const [showCollapsedTooltips, setShowCollapsedTooltips] = useState(isCollapsed)
 
@@ -615,8 +622,8 @@ export const Sidebar = memo(function Sidebar() {
       setMenuOpenTaskId(taskId)
       const rect = e.currentTarget.getBoundingClientRect()
       handleTaskContextMenuBase({
-        preventDefault: () => {},
-        stopPropagation: () => {},
+        preventDefault: () => { },
+        stopPropagation: () => { },
         clientX: rect.right,
         clientY: rect.top,
       } as React.MouseEvent)
@@ -639,8 +646,8 @@ export const Sidebar = memo(function Sidebar() {
       regularWorkflows.map((workflow) => {
         const folderPath = workflow.folderId
           ? getFolderPath(folderMap, workflow.folderId)
-              .map((folder) => folder.name)
-              .join(' / ')
+            .map((folder) => folder.name)
+            .join(' / ')
           : ''
         return {
           id: workflow.id,
@@ -760,18 +767,18 @@ export const Sidebar = memo(function Sidebar() {
     () =>
       fetchedTasks.length > 0
         ? fetchedTasks.map((t) => ({
-            ...t,
-            href: `/workspace/${workspaceId}/task/${t.id}`,
-          }))
+          ...t,
+          href: `/workspace/${workspaceId}/task/${t.id}`,
+        }))
         : [
-            {
-              id: 'new',
-              name: 'New task',
-              href: `/workspace/${workspaceId}/home`,
-              isActive: false,
-              isUnread: false,
-            },
-          ],
+          {
+            id: 'new',
+            name: 'New task',
+            href: `/workspace/${workspaceId}/home`,
+            isActive: false,
+            isUnread: false,
+          },
+        ],
     [fetchedTasks, workspaceId]
   )
 
@@ -784,10 +791,10 @@ export const Sidebar = memo(function Sidebar() {
       permissionConfig.hideTablesTab
         ? []
         : fetchedTables.map((t) => ({
-            id: t.id,
-            name: t.name,
-            href: `/workspace/${workspaceId}/tables/${t.id}`,
-          })),
+          id: t.id,
+          name: t.name,
+          href: `/workspace/${workspaceId}/tables/${t.id}`,
+        })),
     [fetchedTables, workspaceId, permissionConfig.hideTablesTab]
   )
 
@@ -796,10 +803,10 @@ export const Sidebar = memo(function Sidebar() {
       permissionConfig.hideFilesTab
         ? []
         : fetchedFiles.map((f) => ({
-            id: f.id,
-            name: f.name,
-            href: `/workspace/${workspaceId}/files/${f.id}`,
-          })),
+          id: f.id,
+          name: f.name,
+          href: `/workspace/${workspaceId}/files/${f.id}`,
+        })),
     [fetchedFiles, workspaceId, permissionConfig.hideFilesTab]
   )
 
@@ -808,10 +815,10 @@ export const Sidebar = memo(function Sidebar() {
       permissionConfig.hideKnowledgeBaseTab
         ? []
         : fetchedKnowledgeBases.map((kb) => ({
-            id: kb.id,
-            name: kb.name,
-            href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
-          })),
+          id: kb.id,
+          name: kb.name,
+          href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
+        })),
     [fetchedKnowledgeBases, workspaceId, permissionConfig.hideKnowledgeBaseTab]
   )
 
@@ -1316,12 +1323,34 @@ export const Sidebar = memo(function Sidebar() {
           onClick={handleSidebarClick}
         >
           <div className='flex h-full flex-col pt-3'>
+            {arenaHubAgentsUrl ? (
+              <div
+                className={cn(
+                  'flex flex-shrink-0 items-center px-2.5 pb-1.5',
+                  isCollapsed && 'justify-center'
+                )}
+              >
+                <SidebarTooltip label='Back to Arena agents' enabled={isCollapsed} side='right'>
+                  <Link
+                    href={arenaHubAgentsUrl}
+                    className={cn(
+                      'group flex h-[30px] min-w-0 items-center gap-2 rounded-lg px-1 text-[var(--text-body)] text-sm hover-hover:bg-[var(--surface-hover)]',
+                      isCollapsed ? 'w-[30px] flex-shrink-0 justify-center' : 'flex-1'
+                    )}
+                    aria-label='Back to Arena agents'
+                  >
+                    <ArrowLeft className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+                    <span className='sidebar-collapse-hide truncate font-base'>Back</span>
+                  </Link>
+                </SidebarTooltip>
+              </div>
+            ) : null}
             <div className='flex flex-shrink-0 items-center pr-2 pb-2 pl-2.5'>
-              <div className='flex h-[30px] items-center'>
-                <div className='relative h-[30px]'>
+              <div className='flex h-[40px] items-center'>
+                <div className='relative h-[40px]'>
                   <Link
                     href={`/workspace/${workspaceId}/home`}
-                    className='sidebar-collapse-hide !transition-none group flex h-[30px] items-center rounded-[8px] px-[7px] hover-hover:bg-[var(--surface-hover)]'
+                    className='sidebar-collapse-hide !transition-none group flex h-[30px] items-center rounded-[8px] hover-hover:bg-[var(--surface-hover)]'
                     tabIndex={isCollapsed ? -1 : undefined}
                     aria-label={brand.name}
                   >
@@ -1331,7 +1360,7 @@ export const Sidebar = memo(function Sidebar() {
                         alt={brand.name}
                         height={16}
                         width={80}
-                        className='h-[16px] w-auto flex-shrink-0 object-contain object-left'
+                        className='h-[32px] w-auto flex-shrink-0 object-contain object-left'
                         unoptimized
                       />
                     ) : brand.logoUrl ? (
