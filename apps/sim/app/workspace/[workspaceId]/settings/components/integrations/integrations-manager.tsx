@@ -74,6 +74,20 @@ export function IntegrationsManager() {
   const workspaceId = (params?.workspaceId as string) || ''
   const isArenaV3IntegrationsEmbed = searchParams.get('from') === 'arena_v3'
 
+  const requestedIntegrationProviderIds = useMemo(() => {
+    const raw = searchParams.get('integrations')
+    if (!raw) return null
+
+    const items = raw
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+
+    if (items.length === 0) return null
+    const convertToArray = new Set(items)
+    return [...convertToArray]
+  }, [searchParams])
+
   useOAuthReturnRouter()
 
   /**
@@ -176,31 +190,16 @@ export function IntegrationsManager() {
     enabled: Boolean(workspaceId),
   })
 
-  const { data: oauthConnections = [], isPending: oauthConnectionsLoading } = useOAuthConnections()
+  const { data: oauthConnections = [] } = useOAuthConnections()
   const connectOAuthService = useConnectOAuthService()
   const disconnectOAuthService = useDisconnectOAuthService()
 
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId || null)
 
-  const arenaV3IntegrationsFilter = useMemo(() => {
-    if (!isArenaV3IntegrationsEmbed) return null
-
-    const raw = searchParams.get('integrations')?.trim() || ''
-    if (!raw) return null
-
-    const providerIds = raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-
-    return providerIds.length > 0 ? new Set(providerIds) : null
-  }, [isArenaV3IntegrationsEmbed, searchParams])
-
-  const oauthCredentials = useMemo(() => {
-    const all = credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account')
-    if (!arenaV3IntegrationsFilter) return all
-    return all.filter((c) => (c.providerId ? arenaV3IntegrationsFilter.has(c.providerId) : false))
-  }, [credentials, arenaV3IntegrationsFilter])
+  const oauthCredentials = useMemo(
+    () => credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account'),
+    [credentials]
+  )
 
   const selectedCredential = useMemo(
     () => oauthCredentials.find((credential) => credential.id === selectedCredentialId) || null,
@@ -238,7 +237,7 @@ export function IntegrationsManager() {
         resolveProviderLabel(credential.providerId).toLowerCase().includes(normalized)
       )
     })
-  }, [oauthCredentials, searchTerm, oauthServiceNameByProviderId])
+  }, [oauthCredentials, searchTerm, oauthConnections])
 
   const sortedCredentials = useMemo(() => {
     return [...filteredCredentials].sort((a, b) => {
@@ -248,27 +247,20 @@ export function IntegrationsManager() {
     })
   }, [filteredCredentials])
 
-  const visibleOAuthConnections = useMemo(() => {
-    if (!arenaV3IntegrationsFilter) return oauthConnections
-    return oauthConnections.filter((service) => arenaV3IntegrationsFilter.has(service.providerId))
-  }, [oauthConnections, arenaV3IntegrationsFilter])
-
   const filteredAvailableIntegrations = useMemo(() => {
-    if (!searchTerm.trim()) return visibleOAuthConnections
+    if (!searchTerm.trim()) return oauthConnections
     const normalized = searchTerm.toLowerCase()
-    return visibleOAuthConnections.filter((service) =>
-      service.name.toLowerCase().includes(normalized)
-    )
-  }, [visibleOAuthConnections, searchTerm])
+    return oauthConnections.filter((service) => service.name.toLowerCase().includes(normalized))
+  }, [oauthConnections, searchTerm])
 
   const oauthServiceOptions = useMemo(
     () =>
-      visibleOAuthConnections.map((service) => ({
+      oauthConnections.map((service) => ({
         value: service.providerId,
         label: service.name,
         icon: getServiceConfigByProviderId(service.providerId)?.icon,
       })),
-    [visibleOAuthConnections]
+    [oauthConnections]
   )
 
   const activeMembers = useMemo(
@@ -291,10 +283,8 @@ export function IntegrationsManager() {
   }, [workspacePermissions?.users, activeMembers])
 
   const selectedOAuthService = useMemo(
-    () =>
-      visibleOAuthConnections.find((service) => service.providerId === createOAuthProviderId) ||
-      null,
-    [visibleOAuthConnections, createOAuthProviderId]
+    () => oauthConnections.find((service) => service.providerId === createOAuthProviderId) || null,
+    [oauthConnections, createOAuthProviderId]
   )
   const createOAuthRequiredScopes = useMemo(() => {
     if (!createOAuthProviderId) return []
@@ -711,17 +701,13 @@ export function IntegrationsManager() {
 
   const hasCredentials = oauthCredentials && oauthCredentials.length > 0
 
-  /** All workspace OAuth credentials (not arena URL–filtered) so Connect vs Add account matches the current user. */
-  const connectedProviderIds = useMemo(() => {
-    const ids = credentials
-      .filter((c) => c.type === 'oauth' && c.providerId)
-      .map((c) => c.providerId as string)
-    return new Set(ids)
-  }, [credentials])
+  const connectedProviderIds = useMemo(
+    () => new Set(oauthCredentials.map((c) => c.providerId).filter(Boolean) as string[]),
+    [oauthCredentials]
+  )
 
   const showNoResults =
-    Boolean(searchTerm.trim()) &&
-    !isArenaV3IntegrationsEmbed &&
+    searchTerm.trim() &&
     sortedCredentials.length === 0 &&
     filteredAvailableIntegrations.length === 0
 
@@ -1538,84 +1524,161 @@ export function IntegrationsManager() {
     )
   }
 
-  return (
-    <>
-      <div className='flex h-full flex-col gap-4.5'>
-        {!isArenaV3IntegrationsEmbed && (
-          <div className='flex items-center gap-2'>
-            <div className='flex flex-1 items-center gap-2 rounded-lg border border-[var(--border)] bg-transparent px-2 py-1.5 transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover-hover:border-[var(--border-1)] dark:hover-hover:bg-[var(--surface-5)]'>
-              <Search
-                className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
-                strokeWidth={2}
-              />
-              <UiInput
-                placeholder='Search integrations...'
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                disabled={credentialsLoading}
-                className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
-              />
-            </div>
-            <Button
-              onClick={() => setShowCreateModal(true)}
-              disabled={credentialsLoading}
-              variant='primary'
-            >
-              <Plus className='mr-1.5 h-[13px] w-[13px]' />
-              Connect
-            </Button>
+  const renderUsersCredentials = () => {
+    if (!requestedIntegrationProviderIds?.length) return null
+
+    const requestedProviderIds = new Set(requestedIntegrationProviderIds)
+
+    const adminConnectedProviderIds = new Set(
+      oauthCredentials
+        .filter((credential) => credential.role === 'admin')
+        .map((credential) => credential.providerId)
+        .filter((providerId): providerId is string => typeof providerId === 'string')
+    )
+
+    const requestedIntegrationsToConnect = filteredAvailableIntegrations.filter(
+      (service) =>
+        typeof service.providerId === 'string' &&
+        requestedProviderIds.has(service.providerId) &&
+        !adminConnectedProviderIds.has(service.providerId)
+    )
+
+    const allAdminCredentialsAlreadyConnected = sortedCredentials.filter((credential) => {
+      const providerId = credential.providerId
+      return (
+        credential.role === 'admin' &&
+        typeof providerId === 'string' &&
+        requestedProviderIds.has(providerId)
+      )
+    })
+
+    if (
+      requestedIntegrationsToConnect.length === 0 &&
+      allAdminCredentialsAlreadyConnected.length === 0
+    ) {
+      return null
+    }
+    return (
+      <div className='flex flex-col gap-2'>
+        <h1 className='font-semibold text-heading-darker text-lg'>
+          VIMI is your always-on AI assistant that listens across your work ecosystem.
+        </h1>
+        <p className='mb-3 font-normal text-heading-darker text-sm'>
+          Connect your core tools to unlock its full potential. It keeps a continuous pulse on your
+          work and surfaces the most important updates in one place—so nothing critical slips
+          through the cracks.
+        </p>
+
+        {requestedIntegrationsToConnect.length > 0 && (
+          <div className='flex flex-col gap-2'>
+            {requestedIntegrationsToConnect.map((service) => {
+              if (typeof service.providerId !== 'string') return null
+
+              const serviceConfig = getServiceConfigByProviderId(service.providerId)
+              // const isConnected = connectedProviderIds.has(service.providerId)
+              return (
+                <div key={service.providerId} className='flex items-center justify-between gap-3'>
+                  <div className='flex min-w-0 items-center gap-2.5'>
+                    {serviceConfig && (
+                      <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[6px] bg-[var(--surface-5)]'>
+                        {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
+                      </div>
+                    )}
+                    <span className='truncate font-medium text-[15px]'>{service.name}</span>
+                  </div>
+                  <Button
+                    variant='default'
+                    onClick={() => handleAddForProvider(service.providerId)}
+                  >
+                    {'Add account'}
+                  </Button>
+                </div>
+              )
+            })}
           </div>
         )}
 
-        <div className='min-h-0 flex-1 overflow-y-auto'>
-          {isArenaV3IntegrationsEmbed ? (
-            oauthConnectionsLoading ? (
-              <div className='flex flex-col gap-2'>
-                <CredentialSkeleton />
-                <CredentialSkeleton />
-                <CredentialSkeleton />
-              </div>
-            ) : (
-              <div className='flex flex-col gap-2'>
-                {filteredAvailableIntegrations.length === 0 ? (
-                  <div className='py-4 text-center text-[var(--text-muted)] text-sm'>
-                    No integrations available.
-                  </div>
-                ) : (
-                  <div className='flex flex-col gap-2'>
-                    <p className='mb-1 font-medium text-[12px] text-[var(--text-muted)]'>
-                      Available integrations
-                    </p>
-                    {filteredAvailableIntegrations.map((service) => {
-                      const serviceConfig = getServiceConfigByProviderId(service.providerId)
-                      const isConnected = connectedProviderIds.has(service.providerId)
-                      return (
-                        <div
-                          key={service.providerId}
-                          className='flex items-center justify-between gap-3'
-                        >
-                          <div className='flex min-w-0 items-center gap-2.5'>
-                            {serviceConfig && (
-                              <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[6px] bg-[var(--surface-5)]'>
-                                {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
-                              </div>
-                            )}
-                            <span className='truncate font-medium text-[15px]'>{service.name}</span>
-                          </div>
-                          <Button
-                            variant='default'
-                            onClick={() => handleAddForProvider(service.providerId)}
-                          >
-                            {isConnected ? 'Add account' : 'Connect'}
-                          </Button>
-                        </div>
-                      )
-                    })}
+        {allAdminCredentialsAlreadyConnected.map((credential) => {
+          const serviceConfig = credential.providerId
+            ? getServiceConfigByProviderId(credential.providerId)
+            : null
+
+          return (
+            <div key={credential.id} className='flex items-center justify-between gap-3'>
+              <div className='flex min-w-0 items-center gap-2.5'>
+                {serviceConfig && (
+                  <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--surface-5)]'>
+                    {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
                   </div>
                 )}
+                <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
+                  <span className='truncate font-medium text-base'>{credential.displayName}</span>
+                  <p className='truncate text-[var(--text-muted)] text-sm'>
+                    {credential.description || resolveProviderLabel(credential.providerId)}
+                  </p>
+                </div>
               </div>
-            )
-          ) : credentialsLoading ? (
+              <div className='flex flex-shrink-0 items-center gap-1'>
+                <div className='rounded-md bg-[#F5FCF9] px-2 py-1 font-medium text-[#23784F] text-[14px]'>
+                  Added
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  if (isArenaV3IntegrationsEmbed) {
+    return (
+      <>
+        <div className='flex h-full flex-col gap-4.5'>
+          {credentialsLoading ? (
+            <div className='flex flex-col gap-2'>
+              <CredentialSkeleton />
+              <CredentialSkeleton />
+              <CredentialSkeleton />
+            </div>
+          ) : (
+            renderUsersCredentials()
+          )}
+        </div>
+        {createModalJsx}
+        {deleteConfirmDialogJsx}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div className='flex h-full flex-col gap-4.5'>
+        <div className='flex items-center gap-2'>
+          <div className='flex flex-1 items-center gap-2 rounded-lg border border-[var(--border)] bg-transparent px-2 py-1.5 transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover-hover:border-[var(--border-1)] dark:hover-hover:bg-[var(--surface-5)]'>
+            <Search
+              className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
+              strokeWidth={2}
+            />
+            <UiInput
+              placeholder='Search integrations...'
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              disabled={credentialsLoading}
+              className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
+            />
+          </div>
+          <Button
+            onClick={() => setShowCreateModal(true)}
+            disabled={credentialsLoading}
+            variant='primary'
+          >
+            <Plus className='mr-1.5 h-[13px] w-[13px]' />
+            Connect
+          </Button>
+        </div>
+
+        <div className='min-h-0 flex-1 overflow-y-auto'>
+          {credentialsLoading ? (
             <div className='flex flex-col gap-2'>
               <CredentialSkeleton />
               <CredentialSkeleton />
