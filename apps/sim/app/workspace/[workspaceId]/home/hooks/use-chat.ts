@@ -2765,7 +2765,7 @@ export function useChat(
             const resolveResponse = await fetch('/api/agent/resolve-workspace', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ message: message, context: contexts }),
+              body: JSON.stringify({ message: message, context: messages.map((m) => m.content).join('\n') }),
               signal: abortController.signal,
             })
             if (resolveResponse.ok) {
