@@ -683,6 +683,8 @@ export interface UseChatOptions {
   onTitleUpdate?: () => void
   onStreamEnd?: (chatId: string, messages: ChatMessage[]) => void
   initialActiveResourceId?: string | null
+  /** When true, resolves the target workspaceId via the external agent API before each send. */
+  resolveWorkspaceBeforeSend?: boolean
 }
 
 export function getMothershipUseChatOptions(
@@ -691,6 +693,7 @@ export function getMothershipUseChatOptions(
   return {
     apiPath: MOTHERSHIP_CHAT_API_PATH,
     stopPath: '/api/mothership/chat/stop',
+    resolveWorkspaceBeforeSend: true,
     ...options,
   }
 }
@@ -735,6 +738,8 @@ export function useChat(
   const pendingStopPromiseRef = useRef<Promise<void> | null>(null)
   const workflowIdRef = useRef(options?.workflowId)
   workflowIdRef.current = options?.workflowId
+  const resolveWorkspaceBeforeSendRef = useRef(options?.resolveWorkspaceBeforeSend)
+  resolveWorkspaceBeforeSendRef.current = options?.resolveWorkspaceBeforeSend
   const onToolResultRef = useRef(options?.onToolResult)
   onToolResultRef.current = options?.onToolResult
   const onTitleUpdateRef = useRef(options?.onTitleUpdate)
@@ -2754,12 +2759,38 @@ export function useChat(
               }))
             : undefined
 
+        let effectiveWorkspaceId = workspaceId
+        if (resolveWorkspaceBeforeSendRef.current) {
+          try {
+            const resolveResponse = await fetch('/api/agent/resolve-workspace', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message: message, context: contexts }),
+              signal: abortController.signal,
+            })
+            if (resolveResponse.ok) {
+              const resolveData = await resolveResponse.json()
+              if (resolveData.workspaceId) {
+                effectiveWorkspaceId = resolveData.workspaceId
+              }
+            } else {
+              logger.warn('Workspace resolve returned non-OK status, using current workspace', {
+                status: resolveResponse.status,
+              })
+            }
+          } catch (err) {
+            logger.warn('Failed to resolve workspace, using current workspace', {
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }
+
         const response = await fetch(apiPathRef.current, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message,
-            workspaceId,
+            workspaceId: effectiveWorkspaceId,
             userMessageId,
             createNewChat: !requestChatId,
             ...(requestChatId ? { chatId: requestChatId } : {}),

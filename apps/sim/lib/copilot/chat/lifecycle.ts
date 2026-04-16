@@ -70,22 +70,22 @@ export async function resolveOrCreateChat(params: {
   if (chatId) {
     const chat = await getAccessibleCopilotChat(chatId, userId)
 
-    if (chat) {
-      if (workflowId && chat.workflowId !== workflowId) {
-        return { chatId, chat: null, conversationHistory: [], isNew: false }
-      }
+    // if (chat) {
+    //   if (workflowId && chat.workflowId !== workflowId) {
+    //     return { chatId, chat: null, conversationHistory: [], isNew: false }
+    //   }
 
-      if (workspaceId && chat.workspaceId !== workspaceId) {
-        return { chatId, chat: null, conversationHistory: [], isNew: false }
-      }
+    //   if (workspaceId && chat.workspaceId !== workspaceId) {
+    //     return { chatId, chat: null, conversationHistory: [], isNew: false }
+    //   }
 
-      if (chat.workflowId) {
-        const activeWorkflow = await getActiveWorkflowRecord(chat.workflowId)
-        if (!activeWorkflow) {
-          return { chatId, chat: null, conversationHistory: [], isNew: false }
-        }
-      }
-    }
+    //   if (chat.workflowId) {
+    //     const activeWorkflow = await getActiveWorkflowRecord(chat.workflowId)
+    //     if (!activeWorkflow) {
+    //       return { chatId, chat: null, conversationHistory: [], isNew: false }
+    //     }
+    //   }
+    // }
 
     return {
       chatId,
