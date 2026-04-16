@@ -2,10 +2,10 @@ import { db, workflowDeploymentVersion, workflowSchedule } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull, lt, lte, ne, not, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import { getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { generateId } from '@/lib/core/utils/uuid'
 import {
   executeJobInline,
   executeScheduleJob,
@@ -83,9 +83,12 @@ export async function GET(request: NextRequest) {
 
     const jobQueue = await getJobQueue()
 
+    const workflowUtils =
+      dueSchedules.length > 0 ? await import('@/lib/workflows/utils') : undefined
+
     const schedulePromises = dueSchedules.map(async (schedule) => {
       const queueTime = schedule.lastQueuedAt ?? queuedAt
-      const executionId = uuidv4()
+      const executionId = generateId()
       const correlation = {
         executionId,
         requestId,
@@ -111,8 +114,17 @@ export async function GET(request: NextRequest) {
       }
 
       try {
+        const resolvedWorkflow = schedule.workflowId
+          ? await workflowUtils?.getWorkflowById(schedule.workflowId)
+          : null
+        const resolvedWorkspaceId = resolvedWorkflow?.workspaceId
+
         const jobId = await jobQueue.enqueue('schedule-execution', payload, {
-          metadata: { workflowId: schedule.workflowId ?? undefined, correlation },
+          metadata: {
+            workflowId: schedule.workflowId ?? undefined,
+            workspaceId: resolvedWorkspaceId ?? undefined,
+            correlation,
+          },
         })
         logger.info(
           `[${requestId}] Queued schedule execution task ${jobId} for workflow ${schedule.workflowId}`
@@ -165,7 +177,7 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Jobs always execute inline (no TriggerDev)
+    // Mothership jobs are executed inline directly.
     const jobPromises = dueJobs.map(async (job) => {
       const queueTime = job.lastQueuedAt ?? queuedAt
       const payload = {

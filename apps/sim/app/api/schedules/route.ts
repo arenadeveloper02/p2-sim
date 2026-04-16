@@ -3,8 +3,11 @@ import { workflow, workflowDeploymentVersion, workflowSchedule } from '@sim/db/s
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { generateId } from '@/lib/core/utils/uuid'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { validateCronExpression } from '@/lib/workflows/schedules/utils'
 import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
@@ -248,7 +251,7 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date()
-    const id = crypto.randomUUID()
+    const id = generateId()
 
     await db.insert(workflowSchedule).values({
       id,
@@ -276,6 +279,32 @@ export async function POST(req: NextRequest) {
       timezone,
       lifecycle,
     })
+
+    recordAudit({
+      workspaceId,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
+      action: AuditAction.SCHEDULE_CREATED,
+      resourceType: AuditResourceType.SCHEDULE,
+      resourceId: id,
+      resourceName: title.trim(),
+      description: `Created job schedule "${title.trim()}"`,
+      metadata: {
+        cronExpression,
+        timezone,
+        lifecycle,
+        maxRuns: maxRuns ?? null,
+      },
+      request: req,
+    })
+
+    captureServerEvent(
+      session.user.id,
+      'scheduled_task_created',
+      { workspace_id: workspaceId },
+      { groups: { workspace: workspaceId } }
+    )
 
     return NextResponse.json(
       { schedule: { id, status: 'active', cronExpression, nextRunAt } },

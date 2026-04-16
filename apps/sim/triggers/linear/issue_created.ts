@@ -1,6 +1,7 @@
 import { LinearIcon } from '@/components/icons'
 import {
   buildIssueOutputs,
+  buildLinearV2SubBlocks,
   linearSetupInstructions,
   linearTriggerOptions,
 } from '@/triggers/linear/utils'
@@ -53,18 +54,6 @@ export const linearIssueCreatedTrigger: TriggerConfig = {
       },
     },
     {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'linear_issue_created',
-      condition: {
-        field: 'selectedTriggerId',
-        value: 'linear_issue_created',
-      },
-    },
-    {
       id: 'triggerInstructions',
       title: 'Setup Instructions',
       hideFromPreview: true,
@@ -80,6 +69,31 @@ export const linearIssueCreatedTrigger: TriggerConfig = {
 
   outputs: buildIssueOutputs(),
 
+  webhook: {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Linear-Event': 'Issue',
+      'Linear-Delivery': 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      'Linear-Signature': 'sha256...',
+      'User-Agent': 'Linear-Webhook',
+    },
+  },
+}
+
+export const linearIssueCreatedV2Trigger: TriggerConfig = {
+  id: 'linear_issue_created_v2',
+  name: 'Linear Issue Created',
+  provider: 'linear',
+  description: 'Trigger workflow when a new issue is created in Linear',
+  version: '2.0.0',
+  icon: LinearIcon,
+  subBlocks: buildLinearV2SubBlocks({
+    triggerId: 'linear_issue_created_v2',
+    eventType: 'Issue (create)',
+    includeDropdown: true,
+  }),
+  outputs: buildIssueOutputs(),
   webhook: {
     method: 'POST',
     headers: {

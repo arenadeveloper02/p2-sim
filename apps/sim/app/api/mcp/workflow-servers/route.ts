@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getParsedBody, withMcpAuth } from '@/lib/mcp/middleware'
 import { mcpPubSub } from '@/lib/mcp/pubsub'
 import { createMcpErrorResponse, createMcpSuccessResponse } from '@/lib/mcp/utils'
@@ -112,7 +113,7 @@ export const POST = withMcpAuth('write')(
         )
       }
 
-      const serverId = crypto.randomUUID()
+      const serverId = generateId()
 
       const [server] = await db
         .insert(workflowMcpServer)
@@ -168,7 +169,7 @@ export const POST = withMcpAuth('write')(
 
           const parameterSchema = await generateParameterSchemaForWorkflow(workflowRecord.id)
 
-          const toolId = crypto.randomUUID()
+          const toolId = generateId()
           await db.insert(workflowMcpTool).values({
             id: toolId,
             serverId,
@@ -207,6 +208,13 @@ export const POST = withMcpAuth('write')(
         resourceId: serverId,
         resourceName: body.name.trim(),
         description: `Published workflow MCP server "${body.name.trim()}" with ${addedTools.length} tool(s)`,
+        metadata: {
+          serverName: body.name.trim(),
+          isPublic: body.isPublic ?? false,
+          toolCount: addedTools.length,
+          toolNames: addedTools.map((t) => t.toolName),
+          workflowIds: addedTools.map((t) => t.workflowId),
+        },
         request,
       })
 

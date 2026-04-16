@@ -1,3 +1,4 @@
+import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { HostedKeyRateLimitConfig } from '@/lib/core/rate-limiter'
 import type { OAuthService } from '@/lib/oauth'
 
@@ -6,6 +7,7 @@ export type BYOKProviderId =
   | 'anthropic'
   | 'google'
   | 'mistral'
+  | 'fireworks'
   | 'firecrawl'
   | 'exa'
   | 'serper'
@@ -61,6 +63,7 @@ export interface ToolResponse {
   success: boolean // Whether the tool execution was successful
   output: Record<string, any> // The structured output from the tool
   error?: string // Error message if success is false
+  resources?: MothershipResource[] // Resources to auto-open/show in UI
   timing?: {
     startTime: string // ISO timestamp when the tool execution started
     endTime: string // ISO timestamp when the tool execution ended
@@ -193,6 +196,8 @@ export interface OAuthTokenPayload {
   credentialAccountUserId?: string
   providerId?: string
   workflowId?: string
+  impersonateEmail?: string
+  scopes?: string[]
 }
 
 /**

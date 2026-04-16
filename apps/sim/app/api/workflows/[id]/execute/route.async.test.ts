@@ -19,6 +19,7 @@ const {
 
 vi.mock('@/lib/auth/hybrid', () => ({
   checkHybridAuth: mockCheckHybridAuth,
+  hasExternalApiCredentials: vi.fn().mockReturnValue(true),
   AuthType: {
     SESSION: 'session',
     API_KEY: 'api_key',
@@ -69,18 +70,23 @@ vi.mock('@/background/workflow-execution', () => ({
   executeWorkflowJob: vi.fn(),
 }))
 
-vi.mock('@sim/logger', () => ({
-  createLogger: vi.fn().mockReturnValue({
+vi.mock('@sim/logger', () => {
+  const createMockLogger = (): Record<string, any> => ({
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
-  }),
-}))
+    withMetadata: vi.fn(() => createMockLogger()),
+  })
+  return { createLogger: vi.fn(() => createMockLogger()) }
+})
 
-vi.mock('uuid', () => ({
-  validate: vi.fn().mockReturnValue(true),
-  v4: vi.fn().mockReturnValue('execution-123'),
+vi.mock('@/lib/core/utils/uuid', () => ({
+  generateId: vi.fn(() => 'execution-123'),
+  generateShortId: vi.fn(() => 'mock-short-id'),
+  isValidUuid: vi.fn((v: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+  ),
 }))
 
 import { POST } from './route'
@@ -137,29 +143,24 @@ describe('workflow execute async route', () => {
       expect.objectContaining({
         workflowId: 'workflow-1',
         userId: 'actor-1',
+        workspaceId: 'workspace-1',
         executionId: 'execution-123',
-        requestId: 'req-12345678',
-        correlation: {
-          executionId: 'execution-123',
-          requestId: 'req-12345678',
-          source: 'workflow',
-          workflowId: 'workflow-1',
-          triggerType: 'manual',
-        },
+        executionMode: 'async',
       }),
-      {
-        metadata: {
+      expect.objectContaining({
+        metadata: expect.objectContaining({
           workflowId: 'workflow-1',
           userId: 'actor-1',
-          correlation: {
+          workspaceId: 'workspace-1',
+          correlation: expect.objectContaining({
             executionId: 'execution-123',
             requestId: 'req-12345678',
             source: 'workflow',
             workflowId: 'workflow-1',
             triggerType: 'manual',
-          },
-        },
-      }
+          }),
+        }),
+      })
     )
   })
 })

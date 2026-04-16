@@ -14,9 +14,11 @@ import {
   Unlock,
 } from 'lucide-react'
 import { useParams } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { Button, Switch, Tooltip } from '@/components/emcn'
+import { captureEvent } from '@/lib/posthog/client'
 import {
   buildCanonicalIndex,
   evaluateSubBlockCondition,
@@ -106,6 +108,7 @@ export function Editor() {
 
   const params = useParams()
   const workspaceId = params.workspaceId as string
+  const posthog = usePostHog()
 
   const subBlocksRef = useRef<HTMLDivElement>(null)
 
@@ -142,7 +145,9 @@ export function Editor() {
     if (!triggerMode) return subBlocks
     return subBlocks.filter(
       (subBlock) =>
-        subBlock.mode === 'trigger' || subBlock.type === ('trigger-config' as SubBlockType)
+        subBlock.mode === 'trigger' ||
+        subBlock.mode === 'trigger-advanced' ||
+        subBlock.type === ('trigger-config' as SubBlockType)
     )
   }, [blockConfig?.subBlocks, triggerMode])
 
@@ -330,7 +335,11 @@ export function Editor() {
   const handleOpenDocs = useCallback(() => {
     const docsLink = isSubflow ? subflowConfig?.docsLink : blockConfig?.docsLink
     window.open(docsLink || 'https://docs.sim.ai/quick-reference', '_blank', 'noopener,noreferrer')
-  }, [isSubflow, subflowConfig?.docsLink, blockConfig?.docsLink])
+    captureEvent(posthog, 'docs_opened', {
+      source: 'editor_button',
+      block_type: currentBlock?.type,
+    })
+  }, [isSubflow, subflowConfig?.docsLink, blockConfig?.docsLink, posthog, currentBlock?.type])
 
   // Check if block has advanced mode or trigger mode available
   const hasAdvancedMode = blockConfig?.subBlocks?.some((sb) => sb.mode === 'advanced')

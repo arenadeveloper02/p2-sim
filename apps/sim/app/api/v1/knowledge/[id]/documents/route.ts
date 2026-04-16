@@ -187,8 +187,6 @@ export async function POST(request: NextRequest, { params }: DocumentsRouteParam
       requestId
     )
 
-    const chunkingConfig = result.kb.chunkingConfig ?? { maxSize: 1024, minSize: 100, overlap: 200 }
-
     const documentData: DocumentData = {
       documentId: newDocument.id,
       filename: file.name,
@@ -197,18 +195,7 @@ export async function POST(request: NextRequest, { params }: DocumentsRouteParam
       mimeType: contentType,
     }
 
-    processDocumentsWithQueue(
-      [documentData],
-      knowledgeBaseId,
-      {
-        chunkSize: chunkingConfig.maxSize,
-        minCharactersPerChunk: chunkingConfig.minSize,
-        chunkOverlap: chunkingConfig.overlap,
-        recipe: 'default',
-        lang: 'en',
-      },
-      requestId
-    ).catch(() => {
+    processDocumentsWithQueue([documentData], knowledgeBaseId, {}, requestId).catch(() => {
       // Processing errors are logged internally
     })
 
@@ -220,6 +207,7 @@ export async function POST(request: NextRequest, { params }: DocumentsRouteParam
       resourceId: newDocument.id,
       resourceName: file.name,
       description: `Uploaded document "${file.name}" to knowledge base via API`,
+      metadata: { knowledgeBaseId, fileSize: file.size, mimeType: contentType },
       request,
     })
 

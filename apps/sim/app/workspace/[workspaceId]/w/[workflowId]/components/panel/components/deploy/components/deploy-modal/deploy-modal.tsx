@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
+import { useParams } from 'next/navigation'
 import {
   Badge,
   Button,
@@ -41,10 +42,10 @@ import {
 } from '@/hooks/queries/deployments'
 // import { useTemplateByWorkflow } from '@/hooks/queries/templates'
 import { useWorkflowMcpServers } from '@/hooks/queries/workflow-mcp-servers'
+import { useWorkflowMap } from '@/hooks/queries/workflows'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { mergeSubblockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
@@ -91,14 +92,12 @@ export function DeployModal({
   isLoadingDeployedState,
 }: DeployModalProps) {
   const queryClient = useQueryClient()
+  const params = useParams()
+  const workspaceId = params?.workspaceId as string
   const { navigateToSettings } = useSettingsNavigation()
-  const deploymentStatus = useWorkflowRegistry((state) =>
-    state.getWorkflowDeploymentStatus(workflowId)
-  )
-  const isDeployed = deploymentStatus?.isDeployed ?? isDeployedProp
-  const workflowMetadata = useWorkflowRegistry((state) =>
-    workflowId ? state.workflows[workflowId] : undefined
-  )
+  const isDeployed = isDeployedProp
+  const { data: workflowMap = {} } = useWorkflowMap(workspaceId)
+  const workflowMetadata = workflowId ? workflowMap[workflowId] : undefined
   const workflowWorkspaceId = workflowMetadata?.workspaceId ?? null
   const workspaceQuery = useWorkspaceSettings(workflowWorkspaceId || '')
   const workspaceData = workspaceQuery.data
@@ -391,8 +390,6 @@ export function DeployModal({
     if (!workflowId) return
 
     invalidateDeploymentQueries(queryClient, workflowId)
-
-    useWorkflowRegistry.getState().setWorkflowNeedsRedeployment(workflowId, false)
 
     if (chatSuccessTimeoutRef.current) {
       clearTimeout(chatSuccessTimeoutRef.current)
@@ -926,7 +923,8 @@ export function DeployModal({
               ?{' '}
               <span className='text-[var(--text-error)]'>
                 This will permanently remove the agent configuration.
-              </span>
+              </span>{' '}
+              This action cannot be undone.
             </p>
           </ModalBody>
           <ModalFooter>
@@ -952,6 +950,7 @@ export function DeployModal({
         allowPersonalApiKeys={allowPersonalApiKeys}
         canManageWorkspaceKeys={canManageWorkspaceKeys}
         defaultKeyType={defaultKeyType}
+        source='deploy_modal'
       />
 
       {workflowId && (

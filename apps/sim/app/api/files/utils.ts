@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { createLogger } from '@sim/logger'
 import { NextResponse } from 'next/server'
 import { sanitizeFileKey } from '@/lib/uploads/utils/file-utils'
@@ -128,9 +129,17 @@ export async function findLocalFile(filename: string): Promise<string | null> {
       if (filename.includes('..')) {
         return null
       }
-      const appAllowedDir = resolve(process.cwd(), 'agent-generated-images')
-      const appPath = resolve(process.cwd(), filename)
-      const isWithinAppDir = appPath.startsWith(appAllowedDir + sep) && appPath !== appAllowedDir
+      const relative = filename.slice('agent-generated-images/'.length)
+      const segments = relative.split('/').filter((part) => part.length > 0)
+      if (segments.length === 0 || segments.some((part) => part === '..')) {
+        return null
+      }
+      const appAllowedDir = path.join(process.cwd(), 'agent-generated-images')
+      const appPath = path.join(appAllowedDir, ...segments)
+      const normalizedAllowed = path.resolve(appAllowedDir) + path.sep
+      const normalizedPath = path.resolve(appPath)
+      const isWithinAppDir =
+        normalizedPath.startsWith(normalizedAllowed) && normalizedPath !== path.resolve(appAllowedDir)
 
       if (isWithinAppDir && existsSync(appPath)) {
         return appPath
@@ -144,7 +153,6 @@ export async function findLocalFile(filename: string): Promise<string | null> {
       return null
     }
 
-    const path = await import('path')
     const { UPLOAD_DIR_SERVER } = await import('@/lib/uploads/core/setup.server')
 
     const resolvedPath = path.join(UPLOAD_DIR_SERVER, sanitizedFilename)

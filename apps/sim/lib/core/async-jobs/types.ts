@@ -20,7 +20,11 @@ export const JOB_STATUS = {
 
 export type JobStatus = (typeof JOB_STATUS)[keyof typeof JOB_STATUS]
 
-export type JobType = 'workflow-execution' | 'schedule-execution' | 'webhook-execution'
+export type JobType =
+  | 'workflow-execution'
+  | 'schedule-execution'
+  | 'webhook-execution'
+  | 'resume-execution'
 
 export type AsyncExecutionCorrelationSource = 'workflow' | 'schedule' | 'webhook'
 
@@ -54,6 +58,7 @@ export interface Job<TPayload = unknown, TOutput = unknown> {
 
 export interface JobMetadata {
   workflowId?: string
+  workspaceId?: string
   userId?: string
   correlation?: AsyncExecutionCorrelation
   [key: string]: unknown
@@ -62,6 +67,11 @@ export interface JobMetadata {
 export interface EnqueueOptions {
   maxAttempts?: number
   metadata?: JobMetadata
+  jobId?: string
+  priority?: number
+  name?: string
+  delayMs?: number
+  tags?: string[]
 }
 
 /**
@@ -95,4 +105,4 @@ export interface JobQueueBackend {
   markJobFailed(jobId: string, error: string): Promise<void>
 }
 
-export type AsyncBackendType = 'trigger-dev' | 'redis' | 'database'
+export type AsyncBackendType = 'trigger-dev' | 'database'

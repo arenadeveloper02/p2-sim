@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { permissions, workflow, workspace } from '@sim/db/schema'
+import { permissions, settings, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
@@ -7,6 +7,8 @@ import { z } from 'zod'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { PlatformEvents } from '@/lib/core/telemetry'
+import { generateId } from '@/lib/core/utils/uuid'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
@@ -36,36 +38,47 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Invalid scope' }, { status: 400 })
   }
 
-  const userWorkspaces = await db
-    .select({
-      workspace: workspace,
-      permissionType: permissions.permissionType,
-    })
-    .from(permissions)
-    .innerJoin(workspace, eq(permissions.entityId, workspace.id))
-    .where(
-      scope === 'all'
-        ? and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace'))
-        : scope === 'archived'
-          ? and(
-              eq(permissions.userId, session.user.id),
-              eq(permissions.entityType, 'workspace'),
-              sql`${workspace.archivedAt} IS NOT NULL`
-            )
-          : and(
-              eq(permissions.userId, session.user.id),
-              eq(permissions.entityType, 'workspace'),
-              isNull(workspace.archivedAt)
-            )
-    )
-    .orderBy(asc(workspace.name))
+  const settingsQuery = db
+    .select({ lastActiveWorkspaceId: settings.lastActiveWorkspaceId })
+    .from(settings)
+    .where(eq(settings.userId, session.user.id))
+    .limit(1)
+
+  const [userWorkspaces, userSettings] = await Promise.all([
+    db
+      .select({
+        workspace: workspace,
+        permissionType: permissions.permissionType,
+      })
+      .from(permissions)
+      .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+      .where(
+        scope === 'all'
+          ? and(eq(permissions.userId, session.user.id), eq(permissions.entityType, 'workspace'))
+          : scope === 'archived'
+            ? and(
+                eq(permissions.userId, session.user.id),
+                eq(permissions.entityType, 'workspace'),
+                sql`${workspace.archivedAt} IS NOT NULL`
+              )
+            : and(
+                eq(permissions.userId, session.user.id),
+                eq(permissions.entityType, 'workspace'),
+                isNull(workspace.archivedAt)
+              )
+      )
+      .orderBy(asc(workspace.name)),
+    settingsQuery,
+  ])
+
+  const lastActiveWorkspaceId = userSettings[0]?.lastActiveWorkspaceId ?? null
 
   if (scope === 'active' && userWorkspaces.length === 0) {
     const defaultWorkspace = await createDefaultWorkspace(session.user.id, session.user.name)
 
     await migrateExistingWorkflows(session.user.id, defaultWorkspace.id)
 
-    return NextResponse.json({ workspaces: [defaultWorkspace] })
+    return NextResponse.json({ workspaces: [defaultWorkspace], lastActiveWorkspaceId })
   }
 
   if (scope === 'active') {
@@ -75,12 +88,15 @@ export async function GET(request: Request) {
   const workspacesWithPermissions = userWorkspaces.map(
     ({ workspace: workspaceDetails, permissionType }) => ({
       ...workspaceDetails,
-      role: permissionType === 'admin' ? 'owner' : 'member', // Map admin to owner for compatibility
+      role: permissionType === 'admin' ? 'owner' : 'member',
       permissions: permissionType,
     })
   )
 
-  return NextResponse.json({ workspaces: workspacesWithPermissions })
+  return NextResponse.json({
+    workspaces: workspacesWithPermissions,
+    lastActiveWorkspaceId,
+  })
 }
 
 // POST /api/workspaces - Create a new workspace
@@ -96,6 +112,16 @@ export async function POST(req: Request) {
 
     const newWorkspace = await createWorkspace(session.user.id, name, skipDefaultWorkflow, color)
 
+    captureServerEvent(
+      session.user.id,
+      'workspace_created',
+      { workspace_id: newWorkspace.id, name: newWorkspace.name },
+      {
+        groups: { workspace: newWorkspace.id },
+        setOnce: { first_workspace_created_at: new Date().toISOString() },
+      }
+    )
+
     recordAudit({
       workspaceId: newWorkspace.id,
       actorId: session.user.id,
@@ -106,7 +132,7 @@ export async function POST(req: Request) {
       resourceId: newWorkspace.id,
       resourceName: newWorkspace.name,
       description: `Created workspace "${newWorkspace.name}"`,
-      metadata: { name: newWorkspace.name },
+      metadata: { name: newWorkspace.name, color: newWorkspace.color },
       request: req,
     })
 
@@ -129,8 +155,8 @@ async function createWorkspace(
   skipDefaultWorkflow = false,
   explicitColor?: string
 ) {
-  const workspaceId = crypto.randomUUID()
-  const workflowId = crypto.randomUUID()
+  const workspaceId = generateId()
+  const workflowId = generateId()
   const now = new Date()
   const color = explicitColor || getRandomWorkspaceColor()
 
@@ -148,7 +174,7 @@ async function createWorkspace(
       })
 
       await tx.insert(permissions).values({
-        id: crypto.randomUUID(),
+        id: generateId(),
         entityType: 'workspace' as const,
         entityId: workspaceId,
         userId: userId,
@@ -173,6 +199,9 @@ async function createWorkspace(
           runCount: 0,
           variables: {},
         })
+
+        const { workflowState } = buildDefaultWorkflowArtifacts()
+        await saveWorkflowToNormalizedTables(workflowId, workflowState, tx)
       }
 
       logger.info(
@@ -181,15 +210,6 @@ async function createWorkspace(
           : `Created workspace ${workspaceId} with initial workflow ${workflowId} for user ${userId}`
       )
     })
-
-    if (!skipDefaultWorkflow) {
-      const { workflowState } = buildDefaultWorkflowArtifacts()
-      const seedResult = await saveWorkflowToNormalizedTables(workflowId, workflowState)
-
-      if (!seedResult.success) {
-        throw new Error(seedResult.error || 'Failed to seed default workflow state')
-      }
-    }
   } catch (error) {
     logger.error(`Failed to create workspace ${workspaceId}:`, error)
     throw error

@@ -1,5 +1,9 @@
 import { LinearIcon } from '@/components/icons'
-import { buildCycleOutputs, linearSetupInstructions } from '@/triggers/linear/utils'
+import {
+  buildCycleOutputs,
+  buildLinearV2SubBlocks,
+  linearSetupInstructions,
+} from '@/triggers/linear/utils'
 import type { TriggerConfig } from '@/triggers/types'
 
 export const linearCycleUpdatedTrigger: TriggerConfig = {
@@ -40,18 +44,6 @@ export const linearCycleUpdatedTrigger: TriggerConfig = {
       },
     },
     {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'linear_cycle_updated',
-      condition: {
-        field: 'selectedTriggerId',
-        value: 'linear_cycle_updated',
-      },
-    },
-    {
       id: 'triggerInstructions',
       title: 'Setup Instructions',
       hideFromPreview: true,
@@ -67,6 +59,30 @@ export const linearCycleUpdatedTrigger: TriggerConfig = {
 
   outputs: buildCycleOutputs(),
 
+  webhook: {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Linear-Event': 'Cycle',
+      'Linear-Delivery': 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      'Linear-Signature': 'sha256...',
+      'User-Agent': 'Linear-Webhook',
+    },
+  },
+}
+
+export const linearCycleUpdatedV2Trigger: TriggerConfig = {
+  id: 'linear_cycle_updated_v2',
+  name: 'Linear Cycle Updated',
+  provider: 'linear',
+  description: 'Trigger workflow when a cycle is updated in Linear',
+  version: '2.0.0',
+  icon: LinearIcon,
+  subBlocks: buildLinearV2SubBlocks({
+    triggerId: 'linear_cycle_updated_v2',
+    eventType: 'Cycle (update)',
+  }),
+  outputs: buildCycleOutputs(),
   webhook: {
     method: 'POST',
     headers: {

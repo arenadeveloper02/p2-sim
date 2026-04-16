@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { validateCronExpression } from '@/lib/workflows/schedules/utils'
 import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
@@ -37,6 +38,7 @@ type ScheduleRow = {
   timezone: string | null
   sourceType: string | null
   sourceWorkspaceId: string | null
+  jobTitle: string | null
 }
 
 async function fetchAndAuthorize(
@@ -54,6 +56,7 @@ async function fetchAndAuthorize(
       timezone: workflowSchedule.timezone,
       sourceType: workflowSchedule.sourceType,
       sourceWorkspaceId: workflowSchedule.sourceWorkspaceId,
+      jobTitle: workflowSchedule.jobTitle,
     })
     .from(workflowSchedule)
     .where(and(eq(workflowSchedule.id, scheduleId), isNull(workflowSchedule.archivedAt)))
@@ -143,13 +146,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       recordAudit({
         workspaceId,
         actorId: session.user.id,
+        actorName: session.user.name,
+        actorEmail: session.user.email,
         action: AuditAction.SCHEDULE_UPDATED,
         resourceType: AuditResourceType.SCHEDULE,
         resourceId: scheduleId,
-        actorName: session.user.name ?? undefined,
-        actorEmail: session.user.email ?? undefined,
-        description: `Disabled schedule ${scheduleId}`,
-        metadata: {},
+        resourceName: schedule.jobTitle ?? undefined,
+        description: `Disabled schedule "${schedule.jobTitle ?? scheduleId}"`,
+        metadata: {
+          operation: 'disable',
+          sourceType: schedule.sourceType,
+          previousStatus: schedule.status,
+        },
         request,
       })
 
@@ -203,13 +211,17 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       recordAudit({
         workspaceId,
         actorId: session.user.id,
+        actorName: session.user.name,
+        actorEmail: session.user.email,
         action: AuditAction.SCHEDULE_UPDATED,
         resourceType: AuditResourceType.SCHEDULE,
         resourceId: scheduleId,
-        actorName: session.user.name ?? undefined,
-        actorEmail: session.user.email ?? undefined,
-        description: `Updated job schedule ${scheduleId}`,
-        metadata: {},
+        resourceName: schedule.jobTitle ?? undefined,
+        description: `Updated job schedule "${schedule.jobTitle ?? scheduleId}"`,
+        metadata: {
+          operation: 'update',
+          updatedFields: Object.keys(setFields).filter((k) => k !== 'updatedAt'),
+        },
         request,
       })
 
@@ -245,13 +257,19 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     recordAudit({
       workspaceId,
       actorId: session.user.id,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
       action: AuditAction.SCHEDULE_UPDATED,
       resourceType: AuditResourceType.SCHEDULE,
       resourceId: scheduleId,
-      actorName: session.user.name ?? undefined,
-      actorEmail: session.user.email ?? undefined,
-      description: `Reactivated schedule ${scheduleId}`,
-      metadata: { cronExpression: schedule.cronExpression, timezone: schedule.timezone },
+      resourceName: schedule.jobTitle ?? undefined,
+      description: `Reactivated schedule "${schedule.jobTitle ?? scheduleId}"`,
+      metadata: {
+        operation: 'reactivate',
+        sourceType: schedule.sourceType,
+        cronExpression: schedule.cronExpression,
+        timezone: schedule.timezone,
+      },
       request,
     })
 
@@ -288,15 +306,27 @@ export async function DELETE(
     recordAudit({
       workspaceId,
       actorId: session.user.id,
-      action: AuditAction.SCHEDULE_UPDATED,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
+      action: AuditAction.SCHEDULE_DELETED,
       resourceType: AuditResourceType.SCHEDULE,
       resourceId: scheduleId,
-      actorName: session.user.name ?? undefined,
-      actorEmail: session.user.email ?? undefined,
-      description: `Deleted ${schedule.sourceType === 'job' ? 'job' : 'schedule'} ${scheduleId}`,
-      metadata: {},
+      resourceName: schedule.jobTitle ?? undefined,
+      description: `Deleted ${schedule.sourceType === 'job' ? 'job' : 'schedule'} "${schedule.jobTitle ?? scheduleId}"`,
+      metadata: {
+        sourceType: schedule.sourceType,
+        cronExpression: schedule.cronExpression,
+        timezone: schedule.timezone,
+      },
       request,
     })
+
+    captureServerEvent(
+      session.user.id,
+      'scheduled_task_deleted',
+      { workspace_id: workspaceId ?? '' },
+      workspaceId ? { groups: { workspace: workspaceId } } : undefined
+    )
 
     return NextResponse.json({ message: 'Schedule deleted successfully' })
   } catch (error) {

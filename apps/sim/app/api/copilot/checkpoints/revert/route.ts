@@ -4,14 +4,14 @@ import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getAccessibleCopilotChat } from '@/lib/copilot/chat-lifecycle'
+import { getAccessibleCopilotChat } from '@/lib/copilot/chat/lifecycle'
 import {
   authenticateCopilotRequestSessionOnly,
   createInternalServerErrorResponse,
   createNotFoundResponse,
   createRequestTracker,
   createUnauthorizedResponse,
-} from '@/lib/copilot/request-helpers'
+} from '@/lib/copilot/request/http'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import { isUuidV4 } from '@/executor/constants'
@@ -82,7 +82,6 @@ export async function POST(request: NextRequest) {
       loops: checkpointState?.loops || {},
       parallels: checkpointState?.parallels || {},
       isDeployed: checkpointState?.isDeployed || false,
-      deploymentStatuses: checkpointState?.deploymentStatuses || {},
       lastSaved: Date.now(),
       ...(checkpointState?.deployedAt &&
       checkpointState.deployedAt !== null &&

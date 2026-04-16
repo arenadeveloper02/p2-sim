@@ -1,4 +1,4 @@
-import { createLogger } from '@sim/logger'
+import { createLogger, type Logger } from '@sim/logger'
 import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
 import { BlockType, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
@@ -24,6 +24,7 @@ export class ExecutionEngine {
   private executing = new Set<Promise<void>>()
   private queueLock = Promise.resolve()
   private finalOutput: NormalizedBlockOutput = {}
+  private responseOutputLocked = false
   private pausedBlocks: Map<string, PauseMetadata> = new Map()
   private allowResumeTriggers: boolean
   private cancelledFlag = false
@@ -36,6 +37,7 @@ export class ExecutionEngine {
   private readonly CANCELLATION_CHECK_INTERVAL_MS = 500
   private abortPromise: Promise<void> | null = null
   private abortResolve: (() => void) | null = null
+  private execLogger: Logger
 
   constructor(
     private context: ExecutionContext,
@@ -45,6 +47,13 @@ export class ExecutionEngine {
   ) {
     this.allowResumeTriggers = this.context.metadata.resumeFromSnapshot === true
     this.useRedisCancellation = isRedisCancellationEnabled() && !!this.context.executionId
+    this.execLogger = logger.withMetadata({
+      workflowId: this.context.workflowId,
+      workspaceId: this.context.workspaceId,
+      executionId: this.context.executionId,
+      userId: this.context.userId,
+      requestId: this.context.metadata.requestId,
+    })
     this.initializeAbortHandler()
   }
 
@@ -90,7 +99,9 @@ export class ExecutionEngine {
       const cancelled = await isExecutionCancelled(this.context.executionId!)
       if (cancelled) {
         this.cancelledFlag = true
-        logger.info('Execution cancelled via Redis', { executionId: this.context.executionId })
+        this.execLogger.info('Execution cancelled via Redis', {
+          executionId: this.context.executionId,
+        })
       }
       return cancelled
     }
@@ -123,8 +134,7 @@ export class ExecutionEngine {
         await this.waitForAllExecutions()
       }
 
-      // Rethrow the captured error so it's handled by the catch block
-      if (this.errorFlag && this.executionError) {
+      if (this.errorFlag && this.executionError && !this.responseOutputLocked) {
         throw this.executionError
       }
 
@@ -181,7 +191,7 @@ export class ExecutionEngine {
       this.finalizeIncompleteLogs()
 
       const errorMessage = normalizeError(error)
-      logger.error('Execution failed', { error: errorMessage })
+      this.execLogger.error('Execution failed', { error: errorMessage })
 
       const executionResult: ExecutionResult = {
         success: false,
@@ -282,7 +292,7 @@ export class ExecutionEngine {
   private initializeQueue(triggerBlockId?: string): void {
     if (this.context.runFromBlockContext) {
       const { startBlockId } = this.context.runFromBlockContext
-      logger.info('Initializing queue for run-from-block mode', {
+      this.execLogger.info('Initializing queue for run-from-block mode', {
         startBlockId,
         dirtySetSize: this.context.runFromBlockContext.dirtySet.size,
       })
@@ -294,7 +304,7 @@ export class ExecutionEngine {
     const remainingEdges = (this.context.metadata as any).remainingEdges
 
     if (remainingEdges && Array.isArray(remainingEdges) && remainingEdges.length > 0) {
-      logger.info('Removing edges from resumed pause blocks', {
+      this.execLogger.info('Removing edges from resumed pause blocks', {
         edgeCount: remainingEdges.length,
         // edges: remainingEdges,
       })
@@ -306,13 +316,13 @@ export class ExecutionEngine {
           targetNode.incomingEdges.delete(edge.source)
 
           if (this.edgeManager.isNodeReady(targetNode)) {
-            logger.info('Node became ready after edge removal', { nodeId: targetNode.id })
+            this.execLogger.info('Node became ready after edge removal', { nodeId: targetNode.id })
             this.addToQueue(targetNode.id)
           }
         }
       }
 
-      logger.info('Edge removal complete, queued ready nodes', {
+      this.execLogger.info('Edge removal complete, queued ready nodes', {
         queueLength: this.readyQueue.length,
         // queuedNodes: this.readyQueue,
       })
@@ -321,8 +331,8 @@ export class ExecutionEngine {
     }
 
     if (pendingBlocks && pendingBlocks.length > 0) {
-      logger.info('Initializing queue from pending blocks (resume mode)', {
-        // pendingBlocks,
+      this.execLogger.info('Initializing queue from pending blocks (resume mode)', {
+        //pendingBlocks,
         allowResumeTriggers: this.allowResumeTriggers,
         dagNodeCount: this.dag.nodes.size,
       })
@@ -331,7 +341,7 @@ export class ExecutionEngine {
         this.addToQueue(nodeId)
       }
 
-      logger.info('Pending blocks queued', {
+      this.execLogger.info('Pending blocks queued', {
         queueLength: this.readyQueue.length,
         // queuedNodes: this.readyQueue,
       })
@@ -353,7 +363,7 @@ export class ExecutionEngine {
     if (startNode) {
       this.addToQueue(startNode.id)
     } else {
-      logger.warn('No start node found in DAG')
+      this.execLogger.warn('No start node found in DAG')
     }
   }
 
@@ -423,11 +433,11 @@ export class ExecutionEngine {
       }
     } catch (error) {
       const errorMessage = normalizeError(error)
-      logger.error('Engine: block execution failed', {
+      this.execLogger.error('Node execution failed', {
         nodeId,
         blockName,
-        error: errorMessage,
         workflowId: this.context.workflowId,
+        error: errorMessage,
       })
       throw error
     }
@@ -440,7 +450,13 @@ export class ExecutionEngine {
   ): Promise<void> {
     const node = this.dag.nodes.get(nodeId)
     if (!node) {
-      logger.error('Node not found during completion', { nodeId })
+      this.execLogger.error('Node not found during completion', { nodeId })
+      return
+    }
+
+    if (this.stoppedEarlyFlag && this.responseOutputLocked) {
+      // Workflow already ended via Response block. Skip state persistence (setBlockOutput),
+      // parallel/loop scope tracking, and edge propagation — no downstream blocks will run.
       return
     }
 
@@ -501,14 +517,23 @@ export class ExecutionEngine {
     // This prevents downstream nodes from being queued when workflow is skipped
     await this.nodeOrchestrator.handleNodeCompletion(this.context, nodeId, output)
 
-    if (isFinalOutput) {
+    const isResponseBlock = node.block.metadata?.id === BlockType.RESPONSE
+    if (isResponseBlock) {
+      if (!this.responseOutputLocked) {
+        this.finalOutput = output
+        this.responseOutputLocked = true
+      }
+      this.stoppedEarlyFlag = true
+      return
+    }
+
+    if (isFinalOutput && !this.responseOutputLocked) {
       this.finalOutput = output
     }
 
     // Check if this is a terminal block (Response blocks or blocks with no outgoing edges)
     // Terminal blocks outside loops should stop the workflow, but inside loops they should allow continuation
     const blockType = node.block.metadata?.id
-    const isResponseBlock = blockType === BlockType.RESPONSE
     const isInsideLoop = !!node.metadata.loopId
     const isTerminalBlock = isResponseBlock || node.outgoingEdges.size === 0
 
@@ -532,7 +557,7 @@ export class ExecutionEngine {
       // shouldContinue: true means more iterations, shouldExit: true means loop is done
       const shouldContinueLoop = output.shouldContinue === true
       if (!shouldContinueLoop) {
-        logger.info('Stopping execution after target block', { nodeId })
+        this.execLogger.info('Stopping execution after target block', { nodeId })
         this.stoppedEarlyFlag = true
         return
       }
@@ -582,8 +607,7 @@ export class ExecutionEngine {
         const exitReadyNodes = this.edgeManager.processOutgoingEdges(
           sentinelEndNode,
           sentinelEndOutput,
-          false,
-          this.context
+          false
         )
 
         logger.info('Loop early exit: routing to blocks after loop', {
@@ -598,9 +622,9 @@ export class ExecutionEngine {
 
     // For Response blocks inside loops, process outgoing edges normally
     // Response blocks should have edges to sentinel end (they're terminal nodes)
-    const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false, this.context)
+    const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false)
 
-    logger.info('Processing outgoing edges', {
+    this.execLogger.info('Processing outgoing edges', {
       nodeId,
       outgoingEdgesCount: node.outgoingEdges.size,
       outgoingEdges: Array.from(node.outgoingEdges.entries()).map(([id, e]) => ({
@@ -663,9 +687,7 @@ export class ExecutionEngine {
     if (this.context.pendingDynamicNodes && this.context.pendingDynamicNodes.length > 0) {
       const dynamicNodes = this.context.pendingDynamicNodes
       this.context.pendingDynamicNodes = []
-      logger.info('Adding dynamically expanded parallel nodes count ', {
-        dynamicNodesCount: dynamicNodes.length,
-      })
+      this.execLogger.info('Adding dynamically expanded parallel nodes', { dynamicNodes })
       this.addMultipleToQueue(dynamicNodes)
     }
   }
@@ -849,7 +871,7 @@ export class ExecutionEngine {
       }
       return parsedSnapshot.state
     } catch (error) {
-      logger.warn('Failed to serialize execution state', {
+      this.execLogger.warn('Failed to serialize execution state', {
         error: error instanceof Error ? error.message : String(error),
       })
       return undefined

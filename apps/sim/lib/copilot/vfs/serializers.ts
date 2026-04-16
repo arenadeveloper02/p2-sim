@@ -1,6 +1,6 @@
-import { getCopilotToolDescription } from '@/lib/copilot/tool-descriptions'
+import { getCopilotToolDescription } from '@/lib/copilot/tools/descriptions'
 import { isHosted } from '@/lib/core/config/feature-flags'
-import { isSubBlockHiddenByHostedKey } from '@/lib/workflows/subblocks/visibility'
+import { isSubBlockHidden } from '@/lib/workflows/subblocks/visibility'
 import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 import type { ToolConfig } from '@/tools/types'
@@ -12,6 +12,7 @@ export function serializeWorkflowMeta(wf: {
   id: string
   name: string
   description?: string | null
+  folderId?: string | null
   isDeployed: boolean
   deployedAt?: Date | null
   runCount: number
@@ -24,6 +25,7 @@ export function serializeWorkflowMeta(wf: {
       id: wf.id,
       name: wf.name,
       description: wf.description || undefined,
+      folderId: wf.folderId || undefined,
       isDeployed: wf.isDeployed,
       deployedAt: wf.deployedAt?.toISOString(),
       runCount: wf.runCount,
@@ -324,7 +326,7 @@ function getStaticModelOptionsForVFS(): Array<{
   hosted: boolean
 }> {
   const hostedProviders = new Set(['openai', 'anthropic', 'google'])
-  const dynamicProviders = new Set(['ollama', 'vllm', 'openrouter'])
+  const dynamicProviders = new Set(['ollama', 'vllm', 'openrouter', 'fireworks'])
 
   const models: Array<{ id: string; provider: string; hosted: boolean }> = []
 
@@ -369,7 +371,7 @@ function serializeSubBlock(sb: SubBlockConfig): Record<string, unknown> {
  * Serialize a block schema for VFS components/blocks/{type}.json
  */
 export function serializeBlockSchema(block: BlockConfig): string {
-  const hiddenIds = new Set(block.subBlocks.filter(isSubBlockHiddenByHostedKey).map((sb) => sb.id))
+  const hiddenIds = new Set(block.subBlocks.filter(isSubBlockHidden).map((sb) => sb.id))
 
   const subBlocks = block.subBlocks
     .filter((sb) => !hiddenIds.has(sb.id))
@@ -559,7 +561,7 @@ export function serializeDeployments(data: DeploymentData): string {
     result.api = {
       isDeployed: true,
       deployedAt: data.deployedAt?.toISOString(),
-      apiEndpoint: `/api/workflows/${data.workflowId}/run`,
+      apiEndpoint: `/api/workflows/${data.workflowId}/execute`,
       ...(data.api ? { version: data.api.version } : {}),
     }
   }

@@ -1,5 +1,9 @@
 import { LinearIcon } from '@/components/icons'
-import { buildProjectUpdateOutputs, linearSetupInstructions } from '@/triggers/linear/utils'
+import {
+  buildLinearV2SubBlocks,
+  buildProjectUpdateOutputs,
+  linearSetupInstructions,
+} from '@/triggers/linear/utils'
 import type { TriggerConfig } from '@/triggers/types'
 
 export const linearProjectUpdateCreatedTrigger: TriggerConfig = {
@@ -40,18 +44,6 @@ export const linearProjectUpdateCreatedTrigger: TriggerConfig = {
       },
     },
     {
-      id: 'triggerSave',
-      title: '',
-      type: 'trigger-save',
-      hideFromPreview: true,
-      mode: 'trigger',
-      triggerId: 'linear_project_update_created',
-      condition: {
-        field: 'selectedTriggerId',
-        value: 'linear_project_update_created',
-      },
-    },
-    {
       id: 'triggerInstructions',
       title: 'Setup Instructions',
       hideFromPreview: true,
@@ -67,6 +59,30 @@ export const linearProjectUpdateCreatedTrigger: TriggerConfig = {
 
   outputs: buildProjectUpdateOutputs(),
 
+  webhook: {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Linear-Event': 'ProjectUpdate',
+      'Linear-Delivery': 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      'Linear-Signature': 'sha256...',
+      'User-Agent': 'Linear-Webhook',
+    },
+  },
+}
+
+export const linearProjectUpdateCreatedV2Trigger: TriggerConfig = {
+  id: 'linear_project_update_created_v2',
+  name: 'Linear Project Update Created',
+  provider: 'linear',
+  description: 'Trigger workflow when a new project update is posted in Linear',
+  version: '2.0.0',
+  icon: LinearIcon,
+  subBlocks: buildLinearV2SubBlocks({
+    triggerId: 'linear_project_update_created_v2',
+    eventType: 'ProjectUpdate (create)',
+  }),
+  outputs: buildProjectUpdateOutputs(),
   webhook: {
     method: 'POST',
     headers: {

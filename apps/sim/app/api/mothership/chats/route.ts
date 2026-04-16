@@ -9,8 +9,9 @@ import {
   createBadRequestResponse,
   createInternalServerErrorResponse,
   createUnauthorizedResponse,
-} from '@/lib/copilot/request-helpers'
-import { taskPubSub } from '@/lib/copilot/task-events'
+} from '@/lib/copilot/request/http'
+import { taskPubSub } from '@/lib/copilot/tasks'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { assertActiveWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('MothershipChatsAPI')
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
         id: copilotChats.id,
         title: copilotChats.title,
         updatedAt: copilotChats.updatedAt,
-        conversationId: copilotChats.conversationId,
+        activeStreamId: copilotChats.conversationId,
         lastSeenAt: copilotChats.lastSeenAt,
       })
       .from(copilotChats)
@@ -94,6 +95,15 @@ export async function POST(request: NextRequest) {
       .returning({ id: copilotChats.id })
 
     taskPubSub?.publishStatusChanged({ workspaceId, chatId: chat.id, type: 'created' })
+
+    captureServerEvent(
+      userId,
+      'task_created',
+      { workspace_id: workspaceId },
+      {
+        groups: { workspace: workspaceId },
+      }
+    )
 
     return NextResponse.json({ success: true, id: chat.id })
   } catch (error) {

@@ -1,13 +1,24 @@
 import { createLogger } from '@sim/logger'
 import { PDFDocument } from 'pdf-lib'
 import { getBYOKKey } from '@/lib/api-key/byok'
-import { type Chunk, JsonYamlChunker, StructuredDataChunker, TextChunker } from '@/lib/chunkers'
+import {
+  type Chunk,
+  JsonYamlChunker,
+  RecursiveChunker,
+  RegexChunker,
+  SentenceChunker,
+  StructuredDataChunker,
+  TextChunker,
+  TokenChunker,
+} from '@/lib/chunkers'
+import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
 import { env } from '@/lib/core/config/env'
 import { parseBuffer, parseFile } from '@/lib/file-parsers'
 import type { FileParseMetadata } from '@/lib/file-parsers/types'
+import { resolveParserExtension } from '@/lib/knowledge/documents/parser-extension'
 import { retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
 import { StorageService } from '@/lib/uploads'
-import { getExtensionFromMimeType, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
+import { isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromUrl } from '@/lib/uploads/utils/file-utils.server'
 import { mistralParserTool } from '@/tools/mistral/parser'
 
@@ -43,9 +54,6 @@ type OCRRequestBody = {
 
 const MISTRAL_MAX_PAGES = 1000
 
-/**
- * Get page count from a PDF buffer using unpdf
- */
 async function getPdfPageCount(buffer: Buffer): Promise<number> {
   try {
     const { getDocumentProxy } = await import('unpdf')
@@ -58,10 +66,6 @@ async function getPdfPageCount(buffer: Buffer): Promise<number> {
   }
 }
 
-/**
- * Split a PDF buffer into multiple smaller PDFs
- * Returns an array of PDF buffers, each with at most maxPages pages
- */
 async function splitPdfIntoChunks(
   pdfBuffer: Buffer,
   maxPages: number
@@ -111,6 +115,54 @@ class APIError extends Error {
   }
 }
 
+async function applyStrategy(
+  strategy: ChunkingStrategy,
+  content: string,
+  chunkSize: number,
+  chunkOverlap: number,
+  minCharactersPerChunk: number,
+  strategyOptions?: StrategyOptions
+): Promise<Chunk[]> {
+  const baseOptions = { chunkSize, chunkOverlap, minCharactersPerChunk }
+
+  switch (strategy) {
+    case 'token': {
+      const chunker = new TokenChunker(baseOptions)
+      return chunker.chunk(content)
+    }
+    case 'sentence': {
+      const chunker = new SentenceChunker(baseOptions)
+      return chunker.chunk(content)
+    }
+    case 'recursive': {
+      const chunker = new RecursiveChunker({
+        ...baseOptions,
+        separators: strategyOptions?.separators,
+        recipe: strategyOptions?.recipe,
+      })
+      return chunker.chunk(content)
+    }
+    case 'regex': {
+      if (!strategyOptions?.pattern) {
+        logger.warn(
+          'Regex strategy requested but no pattern provided, falling back to text chunker'
+        )
+        const chunker = new TextChunker(baseOptions)
+        return chunker.chunk(content)
+      }
+      const chunker = new RegexChunker({
+        ...baseOptions,
+        pattern: strategyOptions.pattern,
+      })
+      return chunker.chunk(content)
+    }
+    default: {
+      const chunker = new TextChunker(baseOptions)
+      return chunker.chunk(content)
+    }
+  }
+}
+
 export async function processDocument(
   fileUrl: string,
   filename: string,
@@ -119,7 +171,9 @@ export async function processDocument(
   chunkOverlap = 200,
   minCharactersPerChunk = 100,
   userId?: string,
-  workspaceId?: string | null
+  workspaceId?: string | null,
+  strategy?: ChunkingStrategy,
+  strategyOptions?: StrategyOptions
 ): Promise<{
   chunks: Chunk[]
   metadata: {
@@ -143,30 +197,42 @@ export async function processDocument(
     let chunks: Chunk[]
     const metadata: FileParseMetadata = parseResult.metadata ?? {}
 
-    const isJsonYaml =
-      metadata.type === 'json' ||
-      metadata.type === 'yaml' ||
-      mimeType.includes('json') ||
-      mimeType.includes('yaml')
-
-    if (isJsonYaml && JsonYamlChunker.isStructuredData(content)) {
-      logger.info('Using JSON/YAML chunker for structured data')
-      chunks = await JsonYamlChunker.chunkJsonYaml(content, {
+    if (strategy && strategy !== 'auto') {
+      logger.info(`Using explicit chunking strategy: ${strategy}`)
+      chunks = await applyStrategy(
+        strategy,
+        content,
         chunkSize,
+        chunkOverlap,
         minCharactersPerChunk,
-      })
-    } else if (StructuredDataChunker.isStructuredData(content, mimeType)) {
-      logger.info('Using structured data chunker for spreadsheet/CSV content')
-      const rowCount = metadata.totalRows ?? metadata.rowCount
-      chunks = await StructuredDataChunker.chunkStructuredData(content, {
-        chunkSize,
-        headers: metadata.headers,
-        totalRows: typeof rowCount === 'number' ? rowCount : undefined,
-        sheetName: metadata.sheetNames?.[0],
-      })
+        strategyOptions
+      )
     } else {
-      const chunker = new TextChunker({ chunkSize, chunkOverlap, minCharactersPerChunk })
-      chunks = await chunker.chunk(content)
+      const isJsonYaml =
+        metadata.type === 'json' ||
+        metadata.type === 'yaml' ||
+        mimeType.includes('json') ||
+        mimeType.includes('yaml')
+
+      if (isJsonYaml && JsonYamlChunker.isStructuredData(content)) {
+        logger.info('Using JSON/YAML chunker for structured data')
+        chunks = await JsonYamlChunker.chunkJsonYaml(content, {
+          chunkSize,
+          minCharactersPerChunk,
+        })
+      } else if (StructuredDataChunker.isStructuredData(content, mimeType)) {
+        logger.info('Using structured data chunker for spreadsheet/CSV content')
+        const rowCount = metadata.totalRows ?? metadata.rowCount
+        chunks = await StructuredDataChunker.chunkStructuredData(content, {
+          chunkSize,
+          headers: metadata.headers,
+          totalRows: typeof rowCount === 'number' ? rowCount : undefined,
+          sheetName: metadata.sheetNames?.[0],
+        })
+      } else {
+        const chunker = new TextChunker({ chunkSize, chunkOverlap, minCharactersPerChunk })
+        chunks = await chunker.chunk(content)
+      }
     }
 
     const characterCount = content.length
@@ -564,9 +630,6 @@ async function executeMistralOCRRequest(
   )
 }
 
-/**
- * Process a single PDF chunk: upload to S3, OCR, cleanup
- */
 async function processChunk(
   chunk: { buffer: Buffer; startPage: number; endPage: number },
   chunkIndex: number,
@@ -584,7 +647,6 @@ async function processChunk(
   let uploadedKey: string | null = null
 
   try {
-    // Upload the chunk to S3
     const timestamp = Date.now()
     const uniqueId = Math.random().toString(36).substring(2, 9)
     const safeFileName = filename.replace(/[^a-zA-Z0-9.-]/g, '_')
@@ -616,7 +678,6 @@ async function processChunk(
 
     logger.info(`Uploaded chunk ${chunkIndex + 1} to S3: ${chunkKey}`)
 
-    // Process the chunk with Mistral OCR
     const params = {
       filePath: chunkUrl,
       apiKey,
@@ -638,7 +699,6 @@ async function processChunk(
     })
     return { index: chunkIndex, content: null }
   } finally {
-    // Clean up the chunk file from S3 after processing
     if (uploadedKey) {
       try {
         await StorageService.deleteFile({ key: uploadedKey, context: 'knowledge-base' })
@@ -673,7 +733,6 @@ async function processMistralOCRInBatches(
     `Split into ${pdfChunks.length} chunks, processing with concurrency ${MAX_CONCURRENT_CHUNKS}`
   )
 
-  // Process chunks concurrently with limited concurrency
   const results: { index: number; content: string | null }[] = []
 
   for (let i = 0; i < pdfChunks.length; i += MAX_CONCURRENT_CHUNKS) {
@@ -692,15 +751,12 @@ async function processMistralOCRInBatches(
     )
   }
 
-  // Sort by index to maintain page order and filter out nulls
   const sortedResults = results
     .sort((a, b) => a.index - b.index)
     .filter((r) => r.content !== null)
     .map((r) => r.content as string)
 
   if (sortedResults.length === 0) {
-    // Don't fall back to file parser for large PDFs - it produces poor results
-    // Better to fail clearly than return low-quality extraction
     throw new Error(
       `OCR failed for all ${pdfChunks.length} chunks of ${filename}. ` +
         `Large PDFs require OCR - file parser fallback would produce poor results.`
@@ -759,10 +815,7 @@ async function parseDataURI(fileUrl: string, filename: string, mimeType: string)
       : decodeURIComponent(base64Data)
   }
 
-  const extension =
-    (filename.includes('.') ? filename.split('.').pop()?.toLowerCase() : undefined) ||
-    getExtensionFromMimeType(mimeType) ||
-    'txt'
+  const extension = resolveParserExtension(filename, mimeType, 'txt')
   const buffer = Buffer.from(base64Data, 'base64')
   const result = await parseBuffer(buffer, extension)
   return result.content
@@ -775,14 +828,7 @@ async function parseHttpFile(
 ): Promise<{ content: string; metadata?: FileParseMetadata }> {
   const buffer = await downloadFileWithTimeout(fileUrl)
 
-  let extension = filename.includes('.') ? filename.split('.').pop()?.toLowerCase() : undefined
-  if (!extension && mimeType) {
-    extension = getExtensionFromMimeType(mimeType) ?? undefined
-  }
-  if (!extension) {
-    throw new Error(`Could not determine file type for: ${filename}`)
-  }
-
+  const extension = resolveParserExtension(filename, mimeType)
   const result = await parseBuffer(buffer, extension)
   return result
 }

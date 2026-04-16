@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
+import { generateId } from '@/lib/core/utils/uuid'
 import {
   extractWorkflowName,
   extractWorkflowsFromZip,
@@ -176,6 +177,7 @@ export function useImportWorkspace({ onSuccess }: UseImportWorkspaceProps = {}) 
                 color: workflowColor,
                 workspaceId: newWorkspace.id,
                 folderId: targetFolderId,
+                deduplicate: true,
               }),
             })
 
@@ -209,7 +211,7 @@ export function useImportWorkspace({ onSuccess }: UseImportWorkspaceProps = {}) 
                 > = {}
 
                 for (const v of variablesArray) {
-                  const id = typeof v.id === 'string' && v.id.trim() ? v.id : crypto.randomUUID()
+                  const id = typeof v.id === 'string' && v.id.trim() ? v.id : generateId()
                   variablesRecord[id] = {
                     id,
                     workflowId: newWorkflow.id,

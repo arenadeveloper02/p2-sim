@@ -3,10 +3,10 @@ import { createLogger } from '@sim/logger'
 import { task } from '@trigger.dev/sdk'
 import { Cron } from 'croner'
 import { and, eq, isNull } from 'drizzle-orm'
-import { v4 as uuidv4 } from 'uuid'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
 import { decryptSecret } from '@/lib/core/security/encryption'
+import { generateId } from '@/lib/core/utils/uuid'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
@@ -14,7 +14,7 @@ import {
   executeWorkflowCore,
   wasExecutionFinalizedByCore,
 } from '@/lib/workflows/executor/execution-core'
-import { PauseResumeManager } from '@/lib/workflows/executor/human-in-the-loop-manager'
+import { handlePostExecutionPauseState } from '@/lib/workflows/executor/pause-persistence'
 import {
   blockExistsInDeployment,
   loadDeployedWorkflowState,
@@ -49,7 +49,7 @@ type RunWorkflowResult =
 export function buildScheduleCorrelation(
   payload: ScheduleExecutionPayload
 ): AsyncExecutionCorrelation {
-  const executionId = payload.executionId || uuidv4()
+  const executionId = payload.executionId || generateId()
   const requestId = payload.requestId || payload.correlation?.requestId || executionId.slice(0, 8)
 
   return {
@@ -394,33 +394,13 @@ async function runWorkflowExecution({
         timeoutMs: timeoutController.timeoutMs,
       })
       await loggingSession.markAsFailed(timeoutErrorMessage)
-    } else if (executionResult.status === 'paused') {
-      if (!executionResult.snapshotSeed) {
-        logger.error(`[${requestId}] Missing snapshot seed for paused execution`, {
-          executionId,
-        })
-        await loggingSession.markAsFailed('Missing snapshot seed for paused execution')
-      } else {
-        try {
-          await PauseResumeManager.persistPauseResult({
-            workflowId: payload.workflowId,
-            executionId,
-            pausePoints: executionResult.pausePoints || [],
-            snapshotSeed: executionResult.snapshotSeed,
-            executorUserId: executionResult.metadata?.userId,
-          })
-        } catch (pauseError) {
-          logger.error(`[${requestId}] Failed to persist pause result`, {
-            executionId,
-            error: pauseError instanceof Error ? pauseError.message : String(pauseError),
-          })
-          await loggingSession.markAsFailed(
-            `Failed to persist pause state: ${pauseError instanceof Error ? pauseError.message : String(pauseError)}`
-          )
-        }
-      }
     } else {
-      await PauseResumeManager.processQueuedResumes(executionId)
+      await handlePostExecutionPauseState({
+        result: executionResult,
+        workflowId: payload.workflowId,
+        executionId,
+        loggingSession,
+      })
     }
 
     await loggingSession.waitForPostExecution()
@@ -460,6 +440,7 @@ async function runWorkflowExecution({
 export type ScheduleExecutionPayload = {
   scheduleId: string
   workflowId: string
+  workspaceId?: string
   executionId?: string
   requestId?: string
   correlation?: AsyncExecutionCorrelation
@@ -960,7 +941,7 @@ async function createJobLogEntry(params: {
     }))
 
     const traceSpan = {
-      id: uuidv4(),
+      id: generateId(),
       name,
       type: 'mothership',
       duration: durationMs,
@@ -978,10 +959,10 @@ async function createJobLogEntry(params: {
     }
 
     await db.insert(jobExecutionLogs).values({
-      id: uuidv4(),
+      id: generateId(),
       scheduleId,
       workspaceId,
-      executionId: uuidv4(),
+      executionId: generateId(),
       level: success ? 'info' : 'error',
       status: success ? 'completed' : 'failed',
       trigger: 'mothership',
@@ -1015,7 +996,7 @@ async function createJobLogEntry(params: {
 }
 
 export async function executeJobInline(payload: JobExecutionPayload) {
-  const requestId = uuidv4().slice(0, 8)
+  const requestId = generateId().slice(0, 8)
   const now = new Date(payload.now)
 
   logger.info(`[${requestId}] Starting job execution`, { scheduleId: payload.scheduleId })
@@ -1076,7 +1057,7 @@ export async function executeJobInline(payload: JobExecutionPayload) {
       messages: [{ role: 'user', content: promptText }],
       workspaceId: jobRecord.sourceWorkspaceId,
       userId: jobRecord.sourceUserId,
-      chatId: jobRecord.sourceChatId || crypto.randomUUID(),
+      chatId: jobRecord.sourceChatId || generateId(),
     }
 
     const startTime = new Date()

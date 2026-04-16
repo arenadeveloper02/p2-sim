@@ -5,6 +5,7 @@ import { createLogger } from '@sim/logger'
 import { History, Plus, Square, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   BubbleChatClose,
@@ -34,6 +35,7 @@ import {
 import { Lock, Unlock, Upload } from '@/components/emcn/icons'
 import { VariableIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
+import { captureEvent } from '@/lib/posthog/client'
 import { generateWorkflowJson } from '@/lib/workflows/operations/import-export'
 import {
   openWorkflowChatEvent,
@@ -64,6 +66,8 @@ import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import { getWorkflowLockToggleIds } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
+import { useDeploymentInfo } from '@/hooks/queries/deployments'
+import { useDuplicateWorkflowMutation, useWorkflowMap } from '@/hooks/queries/workflows'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
@@ -71,7 +75,8 @@ import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useChatStore } from '@/stores/chat/store'
 import { useNotificationStore } from '@/stores/notifications/store'
 import type { ChatContext, PanelTab } from '@/stores/panel'
-import { usePanelStore, useVariablesStore as usePanelVariablesStore } from '@/stores/panel'
+import { usePanelStore } from '@/stores/panel'
+import { useVariablesModalStore } from '@/stores/variables/modal'
 import { useVariablesStore } from '@/stores/variables/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { captureBaselineSnapshot } from '@/stores/workflow-diff/utils'
@@ -94,8 +99,7 @@ const RunAgentExternalChat = ({
   const [chatUrl, setChatUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  // Watch for deployment status changes
-  const deploymentStatus = useWorkflowRegistry((state) => state.deploymentStatuses[workflowId])
+  const { data: deploymentStatus } = useDeploymentInfo(workflowId)
 
   useEffect(() => {
     if (!workflowId) {
@@ -168,10 +172,18 @@ const RunAgentExternalChat = ({
  *
  * @returns Panel on the right side of the workflow
  */
-export const Panel = memo(function Panel() {
+interface PanelProps {
+  /** Override workspaceId when rendered outside a workspace route (e.g. sandbox mode) */
+  workspaceId?: string
+}
+
+export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: PanelProps = {}) {
   const router = useRouter()
   const params = useParams()
-  const workspaceId = params.workspaceId as string
+  const workspaceId = propWorkspaceId ?? (params.workspaceId as string)
+
+  const posthog = usePostHog()
+  const posthogRef = useRef(posthog)
 
   const panelRef = useRef<HTMLElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -200,18 +212,15 @@ export const Panel = memo(function Panel() {
   const userPermissions = useUserPermissionsContext()
   const { config: permissionConfig } = usePermissionConfig()
   const { isImporting, handleFileChange } = useImportWorkflow({ workspaceId })
-  const { workflows, activeWorkflowId, duplicateWorkflow, hydration } = useWorkflowRegistry(
+  const duplicateWorkflowMutation = useDuplicateWorkflowMutation()
+  const { data: workflows = {} } = useWorkflowMap(workspaceId)
+  const { activeWorkflowId, hydration } = useWorkflowRegistry(
     useShallow((state) => ({
-      workflows: state.workflows,
       activeWorkflowId: state.activeWorkflowId,
-      duplicateWorkflow: state.duplicateWorkflow,
       hydration: state.hydration,
     }))
   )
-  const isRegistryLoading =
-    hydration.phase === 'idle' ||
-    hydration.phase === 'metadata-loading' ||
-    hydration.phase === 'state-loading'
+  const isRegistryLoading = hydration.phase === 'idle' || hydration.phase === 'state-loading'
   const { data: workspaceData } = useWorkspaceSettings(workspaceId)
   // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
   const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
@@ -288,7 +297,7 @@ export const Panel = memo(function Panel() {
       setIsChatOpen: state.setIsChatOpen,
     }))
   )
-  const { isOpen: isVariablesOpen, setIsOpen: setVariablesOpen } = useVariablesStore(
+  const { isOpen: isVariablesOpen, setIsOpen: setVariablesOpen } = useVariablesModalStore(
     useShallow((state) => ({
       isOpen: state.isOpen,
       setIsOpen: state.setIsOpen,
@@ -301,7 +310,7 @@ export const Panel = memo(function Panel() {
   const [copilotChatId, setCopilotChatId] = useState<string | undefined>(undefined)
   const [copilotChatTitle, setCopilotChatTitle] = useState<string | null>(null)
   const [copilotChatList, setCopilotChatList] = useState<
-    { id: string; title: string | null; updatedAt: string; conversationId: string | null }[]
+    { id: string; title: string | null; updatedAt: string; activeStreamId: string | null }[]
   >([])
   const [isCopilotHistoryOpen, setIsCopilotHistoryOpen] = useState(false)
 
@@ -321,7 +330,7 @@ export const Panel = memo(function Panel() {
           id: string
           title: string | null
           updatedAt: string
-          conversationId: string | null
+          activeStreamId: string | null
         }>
         setCopilotChatList(filtered)
 
@@ -345,6 +354,10 @@ export const Panel = memo(function Panel() {
     copilotInitialLoadDoneRef.current = false
     loadCopilotChats()
   }, [loadCopilotChats])
+
+  useEffect(() => {
+    posthogRef.current = posthog
+  }, [posthog])
 
   const handleCopilotSelectChat = useCallback((chat: { id: string; title: string | null }) => {
     setCopilotChatId(chat.id)
@@ -476,6 +489,14 @@ export const Panel = memo(function Panel() {
     [copilotEditQueuedMessage]
   )
 
+  const handleCopilotStopGeneration = useCallback(() => {
+    captureEvent(posthogRef.current, 'task_generation_aborted', {
+      workspace_id: workspaceId,
+      view: 'copilot',
+    })
+    copilotStopGeneration()
+  }, [copilotStopGeneration, workspaceId])
+
   const handleCopilotSubmit = useCallback(
     (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
       const trimmed = text.trim()
@@ -492,6 +513,28 @@ export const Panel = memo(function Panel() {
   useEffect(() => {
     setHasHydrated(true)
   }, [setHasHydrated])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const message = (e as CustomEvent<{ message: string }>).detail?.message
+      if (!message) return
+      setActiveTab('copilot')
+      copilotSendMessage(message)
+    }
+    window.addEventListener('mothership-send-message', handler)
+    return () => window.removeEventListener('mothership-send-message', handler)
+  }, [setActiveTab, copilotSendMessage])
+
+  useEffect(() => {
+    if (activeTab !== 'copilot') return
+    const id = window.setTimeout(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        "[data-tab-content='copilot'] textarea"
+      )
+      textarea?.focus()
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [activeTab])
 
   /**
    * Handles tab click events
@@ -565,13 +608,13 @@ export const Panel = memo(function Panel() {
 
     setIsExporting(true)
     try {
-      const workflow = getWorkflowWithValues(activeWorkflowId)
+      const workflow = getWorkflowWithValues(activeWorkflowId, workspaceId)
 
       if (!workflow || !workflow.state) {
         throw new Error('No workflow state found')
       }
 
-      const workflowVariables = usePanelVariablesStore
+      const workflowVariables = useVariablesStore
         .getState()
         .getVariablesByWorkflowId(activeWorkflowId)
 
@@ -609,11 +652,21 @@ export const Panel = memo(function Panel() {
       return
     }
 
+    const sourceWorkflow = workflows[activeWorkflowId]
+    if (!sourceWorkflow) return
+
     setIsDuplicating(true)
     try {
-      const newWorkflow = await duplicateWorkflow(activeWorkflowId)
-      if (newWorkflow) {
-        router.push(`/workspace/${workspaceId}/w/${newWorkflow}`)
+      const result = await duplicateWorkflowMutation.mutateAsync({
+        workspaceId,
+        sourceId: activeWorkflowId,
+        name: `${sourceWorkflow.name} (Copy)`,
+        description: sourceWorkflow.description,
+        color: sourceWorkflow.color ?? '',
+        folderId: sourceWorkflow.folderId,
+      })
+      if (result?.id) {
+        router.push(`/workspace/${workspaceId}/w/${result.id}`)
       }
     } catch (error) {
       logger.error('Error duplicating workflow:', error)
@@ -624,14 +677,7 @@ export const Panel = memo(function Panel() {
         Options: 'Duplicate Workflow',
       })
     }
-  }, [
-    activeWorkflowId,
-    userPermissions.canEdit,
-    isDuplicating,
-    duplicateWorkflow,
-    router,
-    workspaceId,
-  ])
+  }, [activeWorkflowId, userPermissions.canEdit, isDuplicating, workflows, router, workspaceId])
 
   /**
    * Toggles the locked state of all blocks in the workflow
@@ -897,7 +943,7 @@ export const Panel = memo(function Panel() {
                                   >
                                     <ConversationListItem
                                       title={chat.title || 'New Chat'}
-                                      isActive={Boolean(chat.conversationId)}
+                                      isActive={Boolean(chat.activeStreamId)}
                                       titleClassName='text-[13px]'
                                       actions={
                                         <div
@@ -934,12 +980,13 @@ export const Panel = memo(function Panel() {
                   isSending={copilotIsSending}
                   isReconnecting={copilotIsReconnecting}
                   onSubmit={handleCopilotSubmit}
-                  onStopGeneration={copilotStopGeneration}
+                  onStopGeneration={handleCopilotStopGeneration}
                   messageQueue={copilotMessageQueue}
                   onRemoveQueuedMessage={copilotRemoveFromQueue}
                   onSendQueuedMessage={copilotSendNow}
                   onEditQueuedMessage={handleCopilotEditQueuedMessage}
                   userId={session?.user?.id}
+                  chatId={copilotResolvedChatId}
                   editValue={copilotEditingInputValue}
                   onEditValueConsumed={clearCopilotEditingValue}
                   layout='copilot-view'
@@ -997,9 +1044,7 @@ export const Panel = memo(function Panel() {
               <span className='text-[var(--text-error)]'>
                 All associated blocks, executions, and configuration will be removed.
               </span>{' '}
-              <span className='text-[var(--text-tertiary)]'>
-                You can restore it from Recently Deleted in Settings.
-              </span>
+              You can restore it from Recently Deleted in Settings.
             </p>
           </ModalBody>
           <ModalFooter>

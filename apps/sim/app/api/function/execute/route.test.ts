@@ -24,6 +24,36 @@ vi.mock('@/lib/auth/hybrid', () => ({
 
 vi.mock('@/lib/execution/e2b', () => ({
   executeInE2B: mockExecuteInE2B,
+  executeShellInE2B: vi.fn(),
+}))
+
+vi.mock('@/lib/copilot/request/tools/files', () => ({
+  FORMAT_TO_CONTENT_TYPE: {
+    json: 'application/json',
+    csv: 'text/csv',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    html: 'text/html',
+  },
+  normalizeOutputWorkspaceFileName: vi.fn((p: string) => p.replace(/^files\//, '')),
+  resolveOutputFormat: vi.fn(() => 'json'),
+}))
+
+vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
+  uploadWorkspaceFile: vi.fn(),
+}))
+
+vi.mock('@/lib/workflows/utils', () => ({
+  getWorkflowById: vi.fn(),
+}))
+
+vi.mock('@/lib/core/config/feature-flags', () => ({
+  isHosted: false,
+  isE2bEnabled: false,
+  isProd: false,
+  isDev: false,
+  isTest: true,
+  isEmailVerificationEnabled: false,
 }))
 
 import { validateProxyUrl } from '@/lib/core/security/input-validation'
@@ -334,7 +364,7 @@ describe('Function Execute API Route', () => {
         code: 'return "Email sent to user"',
         params: {
           email: {
-            from: 'Waleed Latif <waleed@sim.ai>',
+            from: 'Dr. Shaw <shaw@high-flying.ai>',
             to: 'User <user@example.com>',
           },
         },
@@ -370,7 +400,7 @@ describe('Function Execute API Route', () => {
       async () => {
         const emailData = {
           id: '123',
-          from: 'Waleed Latif <waleed@sim.ai>',
+          from: 'Dr. Shaw <shaw@high-flying.ai>',
           to: 'User <user@example.com>',
           subject: 'Test Email',
           bodyText: 'Hello world',

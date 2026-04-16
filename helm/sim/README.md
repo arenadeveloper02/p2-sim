@@ -709,6 +709,10 @@ kubectl create secret generic my-postgresql-secret \
 
 See `examples/values-existing-secret.yaml` for more details.
 
+### Redis
+
+Redis is optional. When configured via `REDIS_URL`, it enables features like copilot chat stream coordination and caching. Without Redis, the application uses in-memory fallbacks.
+
 ### External Secrets Parameters
 
 | Parameter | Description | Default |

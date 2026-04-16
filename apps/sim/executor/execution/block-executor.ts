@@ -1,4 +1,4 @@
-import { createLogger } from '@sim/logger'
+import { createLogger, type Logger } from '@sim/logger'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import {
@@ -81,12 +81,22 @@ function redactSensitiveKeys(value: unknown): unknown {
 }
 
 export class BlockExecutor {
+  private execLogger: Logger
+
   constructor(
     private blockHandlers: BlockHandler[],
     private resolver: VariableResolver,
     private contextExtensions: ContextExtensions,
     private state: BlockStateWriter
-  ) {}
+  ) {
+    this.execLogger = logger.withMetadata({
+      workflowId: this.contextExtensions.metadata?.workflowId,
+      workspaceId: this.contextExtensions.workspaceId,
+      executionId: this.contextExtensions.executionId,
+      userId: this.contextExtensions.userId,
+      requestId: this.contextExtensions.metadata?.requestId,
+    })
+  }
 
   async execute(
     ctx: ExecutionContext,
@@ -383,7 +393,7 @@ export class BlockExecutor {
       }
     }
 
-    logger.error(
+    this.execLogger.error(
       phase === 'input_resolution' ? 'Failed to resolve block inputs' : 'Block execution failed',
       {
         blockId: node.id,
@@ -416,7 +426,7 @@ export class BlockExecutor {
       if (blockLog) {
         blockLog.errorHandled = true
       }
-      logger.info('Block has error port - returning error output instead of throwing', {
+      this.execLogger.info('Block has error port - returning error output instead of throwing', {
         blockId: node.id,
         error: errorMessage,
       })
@@ -468,7 +478,7 @@ export class BlockExecutor {
           blockName = `${blockName} (iteration ${loopScope.iteration})`
           iterationIndex = loopScope.iteration
         } else {
-          logger.warn('Loop scope not found for block', { blockId, loopId })
+          this.execLogger.warn('Loop scope not found for block', { blockId, loopId })
         }
       }
     }
@@ -572,7 +582,7 @@ export class BlockExecutor {
           ctx.childWorkflowContext
         )
       } catch (error) {
-        logger.warn('Block start callback failed', {
+        this.execLogger.warn('Block start callback failed', {
           blockId,
           blockType,
           error: error instanceof Error ? error.message : String(error),
@@ -618,7 +628,7 @@ export class BlockExecutor {
           ctx.childWorkflowContext
         )
       } catch (error) {
-        logger.warn('Block completion callback failed', {
+        this.execLogger.warn('Block completion callback failed', {
           blockId,
           blockType,
           error: error instanceof Error ? error.message : String(error),
@@ -746,7 +756,7 @@ export class BlockExecutor {
       try {
         await ctx.onStream?.(clientStreamingExec)
       } catch (error) {
-        logger.error('Error in onStream callback', { blockId, error })
+        this.execLogger.error('Error in onStream callback', { blockId, error })
         // Cancel the client stream to release the tee'd buffer
         await processedClientStream.cancel().catch(() => {})
       }
@@ -776,7 +786,7 @@ export class BlockExecutor {
         stream: processedStream,
       })
     } catch (error) {
-      logger.error('Error in onStream callback', { blockId, error })
+      this.execLogger.error('Error in onStream callback', { blockId, error })
       await processedStream.cancel().catch(() => {})
     }
   }
@@ -803,7 +813,7 @@ export class BlockExecutor {
       const tail = decoder.decode()
       if (tail) chunks.push(tail)
     } catch (error) {
-      logger.error('Error reading executor stream for block', { blockId, error })
+      this.execLogger.error('Error reading executor stream for block', { blockId, error })
     } finally {
       try {
         await reader.cancel().catch(() => {})
@@ -835,7 +845,10 @@ export class BlockExecutor {
         // For response format, content might be in the parsed object
         fullContent = parsed.content || fullContent
       } catch (error) {
-        logger.warn('Failed to parse streamed content for response format', { blockId, error })
+        this.execLogger.warn('Failed to parse streamed content for response format', {
+          blockId,
+          error,
+        })
       }
     } else {
       executionOutput.content = fullContent
