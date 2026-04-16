@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth'
 const logger = createLogger('AgentResolveWorkspace')
 
 const AGENT_WORKSPACE_RESOLVE_URL =
-  'https://test-agent.thearena.ai/api/workflows/9b814ba1-1ef8-4803-8b4a-bde5aa1e7968/execute'
+  'https://dev-agent.thearena.ai/api/workflows/9b814ba1-1ef8-4803-8b4a-bde5aa1e7968/execute'
 
 const RequestSchema = z.object({
   message: z.string().min(1),
