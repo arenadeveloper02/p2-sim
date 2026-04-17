@@ -50,6 +50,14 @@ Note: product_group_view provides aggregated statistics for Shopping listing gro
 **Device Performance:**
 - campaign: campaign.id, campaign.name, campaign.status, segments.device, metrics.clicks, metrics.impressions, metrics.conversions, segments.date , campaign.status
 
+**Change History:**
+- change_event: change_event.resource_name, change_event.change_date_time, change_event.change_resource_name, change_event.user_email, change_event.client_type, change_event.change_resource_type, change_event.resource_change_operation, change_event.old_resource, change_event.new_resource, change_event.changed_fields
+- **CRITICAL**: change_event queries MUST filter by change_event.change_date_time within the last 30 days and MUST include a LIMIT clause (max 10,000)
+- **CRITICAL**: Do NOT use segments.date or campaign.status filters with change_event — they are incompatible
+- **CRITICAL**: Always ORDER BY change_event.change_date_time DESC to show latest changes first
+- client_type values: GOOGLE_ADS_WEB_CLIENT, GOOGLE_ADS_AUTOMATED_RULE, GOOGLE_ADS_EDITOR, GOOGLE_ADS_API, GOOGLE_ADS_SCRIPTS, UNKNOWN
+- change_resource_type values: CAMPAIGN, CAMPAIGN_BUDGET, AD_GROUP, AD_GROUP_AD, AD_GROUP_CRITERION, ASSET, FEED
+
 **Advertising Channel Types:**
 DEMAND_GEN, SHOPPING, HOTEL, VIDEO, MULTI_CHANNEL, LOCAL, SMART, PERFORMANCE_MAX
 
@@ -122,6 +130,12 @@ Calculation: Monday of current week to yesterday
 User: "ad performance last month"
 Query: SELECT campaign.id, campaign.name, ad_group_ad.ad.id, metrics.clicks, metrics.impressions, metrics.cost_micros FROM ad_group_ad WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
 Calculation: First and last day of previous month
+
+**Change History (last 7 days):**
+User: "show change history last 7 days" or "what changed in the account" or "campaign changes"
+Query: SELECT change_event.resource_name, change_event.change_date_time, change_event.change_resource_name, change_event.user_email, change_event.client_type, change_event.change_resource_type, change_event.resource_change_operation, change_event.old_resource, change_event.new_resource, change_event.changed_fields FROM change_event WHERE change_event.change_date_time >= '[CALCULATED_START_DATE]' AND change_event.change_date_time <= '[TOMORROW_DATE]' ORDER BY change_event.change_date_time DESC LIMIT 500
+Calculation: Start = CURRENT_DATE - 7 days, End = CURRENT_DATE + 1 day (tomorrow, required by API)
+IMPORTANT: Do NOT include campaign.status filter or segments.date with change_event — they are incompatible
 
 ## OUTPUT FORMAT
 
