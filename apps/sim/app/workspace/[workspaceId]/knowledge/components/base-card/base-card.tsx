@@ -22,6 +22,7 @@ interface BaseCardProps {
   updatedAt?: string
   searchQuery?: string
   connectorTypes?: string[]
+  chunkingConfig?: { maxSize: number; minSize: number; overlap: number }
   onUpdate?: (id: string, name: string, description: string) => Promise<void>
   onDelete?: (id: string) => Promise<void>
 }
@@ -81,6 +82,7 @@ export function BaseCard({
   updatedAt,
   searchQuery,
   connectorTypes = [],
+  chunkingConfig,
   onUpdate,
   onDelete,
 }: BaseCardProps) {
@@ -264,6 +266,7 @@ export function BaseCard({
           knowledgeBaseId={id}
           initialName={title}
           initialDescription={description === 'No description provided' ? '' : description}
+          chunkingConfig={chunkingConfig}
           onSave={handleSave}
         />
       )}

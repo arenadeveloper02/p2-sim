@@ -261,8 +261,8 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   data: 'Access Wealthbox data',
 
   // Linear scopes
-  read: 'Read access to workspace',
-  write: 'Write access to Linear workspace',
+  read: 'Read access to connected account data',
+  write: 'Write access to connected account data',
 
   // Slack scopes
   'channels:read': 'View public channels',
@@ -486,6 +486,11 @@ export function getServiceConfigByProviderId(providerId: string): OAuthServiceCo
   }
 
   return null
+}
+
+export function getServiceAccountProviderForProviderId(providerId: string): string | undefined {
+  const serviceConfig = getServiceConfigByProviderId(providerId)
+  return serviceConfig?.serviceAccountProviderId
 }
 
 export function getCanonicalScopesForProvider(providerId: string): string[] {

@@ -8,6 +8,7 @@ import {
   type AssistantChatFile as ChatFile,
 } from '@/lib/chat/assistant-assets'
 import type { ChatMessage } from '@/app/chat/components/message/message'
+import { generateId } from '@/lib/core/utils/uuid'
 import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
 import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 
@@ -104,7 +105,7 @@ export function useChatStreaming() {
     let pendingKnowledgeResults: ChatMessage['knowledgeResults']
 
     const messageIdMap = new Map<string, string>()
-    const messageId = crypto.randomUUID()
+    const messageId = generateId()
 
     const UI_BATCH_MAX_MS = 50
     let uiDirty = false

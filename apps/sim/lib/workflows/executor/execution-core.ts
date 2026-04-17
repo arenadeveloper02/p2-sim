@@ -370,10 +370,13 @@ export async function executeWorkflowCore(
 
     const mergedStates = mergeSubblockStateWithValues(blocks)
 
-    const personalEnvUserId = metadata.sessionUserId || metadata.userId
+    const personalEnvUserId =
+      metadata.isClientSession && metadata.sessionUserId
+        ? metadata.sessionUserId
+        : metadata.workflowUserId
 
     if (!personalEnvUserId) {
-      throw new Error('Missing execution actor for environment resolution')
+      throw new Error('Missing workflowUserId in execution metadata')
     }
 
     const { personalEncrypted, workspaceEncrypted, personalDecrypted, workspaceDecrypted } =
@@ -533,7 +536,11 @@ export async function executeWorkflowCore(
       })
     } else if (!triggerBlockId) {
       const executionKind =
-        triggerType === 'api' || triggerType === 'chat' ? (triggerType as 'api' | 'chat') : 'manual'
+        triggerType === 'api' || triggerType === 'chat'
+          ? (triggerType as 'api' | 'chat')
+          : triggerType === 'webhook' || triggerType === 'schedule'
+            ? 'external'
+            : 'manual'
 
       const startBlock = TriggerUtils.findStartBlock(mergedStates, executionKind, false)
 

@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceApiKeyAPI')
@@ -96,7 +97,12 @@ export async function PUT(
       actorName: session.user.name ?? undefined,
       actorEmail: session.user.email ?? undefined,
       resourceName: name,
-      description: `Updated workspace API key: ${name}`,
+      description: `Renamed workspace API key from "${existingKey[0].name}" to "${name}"`,
+      metadata: {
+        keyType: 'workspace',
+        previousName: existingKey[0].name,
+        newName: name,
+      },
       request,
     })
 
@@ -145,6 +151,13 @@ export async function DELETE(
 
     const deletedKey = deletedRows[0]
 
+    captureServerEvent(
+      userId,
+      'api_key_revoked',
+      { workspace_id: workspaceId, key_name: deletedKey.name },
+      { groups: { workspace: workspaceId } }
+    )
+
     recordAudit({
       workspaceId,
       actorId: userId,
@@ -155,7 +168,11 @@ export async function DELETE(
       actorEmail: session.user.email ?? undefined,
       resourceName: deletedKey.name,
       description: `Revoked workspace API key: ${deletedKey.name}`,
-      metadata: { lastUsed: deletedKey.lastUsed?.toISOString() ?? null },
+      metadata: {
+        keyType: 'workspace',
+        keyName: deletedKey.name,
+        lastUsed: deletedKey.lastUsed?.toISOString() ?? null,
+      },
       request,
     })
 

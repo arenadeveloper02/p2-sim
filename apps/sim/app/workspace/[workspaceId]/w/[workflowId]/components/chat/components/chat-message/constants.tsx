@@ -336,31 +336,15 @@ export function ImageWithViewFullOverlay({
 }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [isModalImageLoading, setIsModalImageLoading] = useState(false)
-  const [previewSize, setPreviewSize] = useState<{ width: number; height: number } | null>(null)
   const handleViewFull = useCallback(() => setModalOpen(true), [])
 
   useEffect(() => {
     if (modalOpen) {
       setIsModalImageLoading(true)
-      setPreviewSize(null)
     }
   }, [modalOpen, src])
 
-  const handleModalImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
-    const naturalWidth = event.currentTarget.naturalWidth
-    const naturalHeight = event.currentTarget.naturalHeight
-
-    if (naturalWidth > 0 && naturalHeight > 0 && typeof window !== 'undefined') {
-      const viewportWidth = Math.floor(window.innerWidth * 0.92)
-      const viewportHeight = Math.floor(window.innerHeight * 0.76)
-      const scale = Math.min(viewportWidth / naturalWidth, viewportHeight / naturalHeight, 1)
-
-      setPreviewSize({
-        width: Math.max(240, Math.floor(naturalWidth * scale)),
-        height: Math.max(180, Math.floor(naturalHeight * scale)),
-      })
-    }
-
+  const handleModalImageLoad = useCallback((_event: SyntheticEvent<HTMLImageElement>) => {
     setIsModalImageLoading(false)
   }, [])
 
@@ -419,20 +403,10 @@ export function ImageWithViewFullOverlay({
       <Modal open={modalOpen} onOpenChange={setModalOpen}>
         <ModalContent
           size='full'
-          className='flex max-h-[95vh] w-auto min-w-[95vw] flex-col items-center'
+          className='flex max-h-[min(92vh,960px)] w-[min(92vw,calc(100vw-1.5rem))] max-w-[min(92vw,1200px)] flex-col overflow-hidden'
         >
-          <ModalHeader className='w-full' />
-          <ModalBody
-            className='flex items-center justify-center overflow-auto border-t-0 p-4 pb-7'
-            style={
-              previewSize
-                ? {
-                    width: `${previewSize.width}px`,
-                    height: `${previewSize.height}px`,
-                  }
-                : undefined
-            }
-          >
+          <ModalHeader className='w-full min-w-0 shrink-0' />
+          <ModalBody className='flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto border-t-0 p-4 pb-6'>
             {isModalImageLoading ? (
               <div className='flex min-h-[180px] min-w-[240px] items-center justify-center text-muted-foreground text-sm'>
                 Loading image...
@@ -441,7 +415,7 @@ export function ImageWithViewFullOverlay({
             <img
               src={src}
               alt='Generated image'
-              className={`h-auto max-h-full w-auto max-w-full object-contain ${
+              className={`max-h-[min(78vh,calc(92vh-5.5rem))] w-auto max-w-[min(100%,calc(100vw-3rem))] object-contain ${
                 isModalImageLoading ? 'hidden' : ''
               }`}
               onLoad={handleModalImageLoad}

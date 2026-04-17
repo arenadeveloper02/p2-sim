@@ -1,7 +1,10 @@
+import { createLogger } from '@sim/logger'
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { isAuthDisabled } from '@/lib/core/config/feature-flags'
+
+const logger = createLogger('SocketTokenAPI')
 
 export async function POST() {
   if (isAuthDisabled) {
@@ -19,7 +22,23 @@ export async function POST() {
     }
 
     return NextResponse.json({ token: response.token })
-  } catch {
+  } catch (error) {
+    // better-auth's sessionMiddleware throws APIError("UNAUTHORIZED") with no message
+    // when the session is missing/expired — surface this as a 401, not a 500.
+    if (
+      error instanceof Error &&
+      ('statusCode' in error || 'status' in error) &&
+      ((error as Record<string, unknown>).statusCode === 401 ||
+        (error as Record<string, unknown>).status === 'UNAUTHORIZED')
+    ) {
+      logger.warn('Socket token request with invalid/expired session')
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    logger.error('Failed to generate socket token', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
     return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 })
   }
 }

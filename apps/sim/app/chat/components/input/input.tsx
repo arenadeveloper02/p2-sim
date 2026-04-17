@@ -7,20 +7,13 @@ import { ArrowUp, Mic, Paperclip, X } from 'lucide-react'
 import { Badge, Tooltip } from '@/components/emcn'
 import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 import { cn } from '@/lib/core/utils/cn'
+import { generateId } from '@/lib/core/utils/uuid'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
 const logger = createLogger('ChatInput')
 
 const MAX_TEXTAREA_HEIGHT = 200
-
-const IS_STT_AVAILABLE =
-  typeof window !== 'undefined' &&
-  !!(
-    (window as Window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown })
-      .SpeechRecognition ||
-    (window as Window & { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition
-  )
 
 interface AttachedFile {
   id: string
@@ -43,6 +36,7 @@ export const ChatInput: React.FC<{
   insertText?: string
   /** Called after insertText has been applied so the parent can clear it */
   onInsertConsumed?: () => void
+  sttAvailable?: boolean
 }> = ({
   onSubmit,
   isStreaming = false,
@@ -53,6 +47,7 @@ export const ChatInput: React.FC<{
   onRemoveSelectedGeneratedImage,
   insertText,
   onInsertConsumed,
+  sttAvailable = false,
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -102,7 +97,7 @@ export const ChatInput: React.FC<{
       }
 
       preparedFiles.push({
-        id: crypto.randomUUID(),
+        id: generateId(),
         name: file.name,
         size: file.size,
         type: file.type,
@@ -182,7 +177,7 @@ export const ChatInput: React.FC<{
     return (
       <Tooltip.Provider>
         <div className='flex items-center justify-center'>
-          {IS_STT_AVAILABLE && (
+          {sttAvailable && (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <div>
@@ -368,7 +363,7 @@ export const ChatInput: React.FC<{
 
               {/* Right: mic + send */}
               <div className='flex items-center gap-1.5'>
-                {IS_STT_AVAILABLE && (
+                {sttAvailable && (
                   <Tooltip.Root>
                     <Tooltip.Trigger asChild>
                       <button

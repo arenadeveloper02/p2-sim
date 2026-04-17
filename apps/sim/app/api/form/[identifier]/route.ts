@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto'
 import { db } from '@sim/db'
 import { form, workflow, workflowBlocks } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -7,8 +6,10 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { generateId } from '@/lib/core/utils/uuid'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
+import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
 import { normalizeInputFormatValue } from '@/lib/workflows/input-format'
 import { createStreamingResponse } from '@/lib/workflows/streaming/streaming'
 import { isInputDefinitionTrigger } from '@/lib/workflows/triggers/input-definition-triggers'
@@ -119,7 +120,7 @@ export async function POST(
         )
       }
 
-      const executionId = randomUUID()
+      const executionId = generateId()
       const loggingSession = new LoggingSession(
         deployment.workflowId,
         executionId,
@@ -165,7 +166,7 @@ export async function POST(
       return addCorsHeaders(createErrorResponse('No form data provided', 400), request)
     }
 
-    const executionId = randomUUID()
+    const executionId = generateId()
     const loggingSession = new LoggingSession(deployment.workflowId, executionId, 'form', requestId)
 
     const preprocessResult = await preprocessExecution({
@@ -216,45 +217,40 @@ export async function POST(
         ...formData, // Spread form fields at top level for convenience
       }
 
-      // Execute workflow using streaming (for consistency with chat)
       const stream = await createStreamingResponse({
         requestId,
-        workflow: workflowForExecution,
-        input: workflowInput,
-        executingUserId: workspaceOwnerId,
         streamConfig: {
           selectedOutputs: [],
           isSecureMode: true,
-          workflowTriggerType: 'api', // Use 'api' type since form is similar
+          workflowTriggerType: 'api',
         },
         executionId,
+        executeFn: async ({ onStream, onBlockComplete, abortSignal, sessionUserId }) =>
+          executeWorkflow(
+            workflowForExecution,
+            requestId,
+            workflowInput,
+            workspaceOwnerId,
+            {
+              enabled: true,
+              selectedOutputs: [],
+              isSecureMode: true,
+              workflowTriggerType: 'api',
+              onStream,
+              onBlockComplete,
+              skipLoggingComplete: true,
+              sessionUserId: sessionUserId ?? undefined,
+              abortSignal,
+              executionMode: 'sync',
+            },
+            executionId
+          ),
       })
 
-      // For forms, we don't stream back - we wait for completion and return success
-      // Consume the stream to wait for completion
       const reader = stream.getReader()
-      let lastOutput: any = null
-
       try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          // Parse SSE data if present
-          const text = new TextDecoder().decode(value)
-          const lines = text.split('\n')
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6))
-                if (data.type === 'complete' || data.output) {
-                  lastOutput = data.output || data
-                }
-              } catch {
-                // Ignore parse errors
-              }
-            }
-          }
+        while (!(await reader.read()).done) {
+          /* drain to let the workflow run to completion */
         }
       } finally {
         reader.releaseLock()

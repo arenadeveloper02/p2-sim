@@ -1,5 +1,9 @@
+import { db } from '@sim/db'
+import { memory } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { and, eq, sql } from 'drizzle-orm'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getAccurateTokenCount } from '@/lib/tokenization/accurate'
 import { MEMORY } from '@/executor/constants'
 import type { AgentInputs, Message } from '@/executor/handlers/agent/types'
@@ -627,6 +631,72 @@ export class Memory {
     }
 
     return messages
+  }
+
+  private async fetchMemory(workspaceId: string, key: string): Promise<Message[]> {
+    const result = await db
+      .select({ data: memory.data })
+      .from(memory)
+      .where(and(eq(memory.workspaceId, workspaceId), eq(memory.key, key)))
+      .limit(1)
+
+    if (result.length === 0) return []
+
+    const data = result[0].data
+    if (!Array.isArray(data)) return []
+
+    return data.filter(
+      (msg): msg is Message => msg && typeof msg === 'object' && 'role' in msg && 'content' in msg
+    )
+  }
+
+  private async seedMemoryRecord(
+    workspaceId: string,
+    key: string,
+    messages: Message[]
+  ): Promise<void> {
+    const now = new Date()
+
+    await db
+      .insert(memory)
+      .values({
+        id: generateId(),
+        workspaceId,
+        key,
+        data: messages,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+  }
+
+  private async appendMessage(workspaceId: string, key: string, message: Message): Promise<void> {
+    const now = new Date()
+
+    await db
+      .insert(memory)
+      .values({
+        id: generateId(),
+        workspaceId,
+        key,
+        data: [message],
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [memory.workspaceId, memory.key],
+        set: {
+          data: sql`${memory.data} || ${JSON.stringify([message])}::jsonb`,
+          updatedAt: now,
+        },
+      })
+  }
+
+  private parsePositiveInt(value: string | undefined, defaultValue: number): number {
+    if (!value) return defaultValue
+    const parsed = Number.parseInt(value, 10)
+    if (Number.isNaN(parsed) || parsed <= 0) return defaultValue
+    return parsed
   }
 
   private validateConversationId(conversationId?: string): void {

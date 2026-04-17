@@ -11,7 +11,7 @@ import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { getFormattedGitHubStars } from '@/app/(home)/actions/github'
+import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   deployedChatPromptSentEvent,
   deployedChatThreadSelectedEvent,
@@ -823,6 +823,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }
 
+  const handleWelcomeQueryClick = useCallback(
+    (query: string) => {
+      const trimmedQuery = query.trim()
+      if (!trimmedQuery || isLoading || isStreamingResponse) return
+      void handleSendMessage(trimmedQuery)
+    },
+    [handleSendMessage, isLoading, isStreamingResponse]
+  )
+
   const handleGoldenQuerySelect = useCallback(
     (query: string) => {
       setIsGoldenQueriesOpen(false)
@@ -1436,6 +1445,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             onToggleGeneratedImage={toggleGeneratedImageSelection}
             selectedGeneratedImageIds={selectedGeneratedImageIds}
             selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+            onWelcomeQueryClick={handleWelcomeQueryClick}
           />
 
           {/* Input area (free-standing at the bottom) */}

@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { MAX_EMAIL_RECIPIENTS, MAX_WORKFLOW_IDS } from '../constants'
 
@@ -261,6 +262,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       actorName: session.user.name ?? undefined,
       actorEmail: session.user.email ?? undefined,
       description: `Updated ${subscription.notificationType} notification subscription`,
+      metadata: {
+        notificationType: subscription.notificationType,
+        updatedFields: Object.keys(data).filter(
+          (k) => (data as Record<string, unknown>)[k] !== undefined
+        ),
+        ...(data.active !== undefined && { active: data.active }),
+        ...(data.alertConfig !== undefined && { alertRule: data.alertConfig?.rule ?? null }),
+      },
       request,
     })
 
@@ -339,8 +348,22 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       actorEmail: session.user.email ?? undefined,
       resourceName: deletedSubscription.notificationType,
       description: `Deleted ${deletedSubscription.notificationType} notification subscription`,
+      metadata: {
+        notificationType: deletedSubscription.notificationType,
+      },
       request,
     })
+
+    captureServerEvent(
+      session.user.id,
+      'notification_channel_deleted',
+      {
+        notification_id: notificationId,
+        notification_type: deletedSubscription.notificationType,
+        workspace_id: workspaceId,
+      },
+      { groups: { workspace: workspaceId } }
+    )
 
     return NextResponse.json({ success: true })
   } catch (error) {

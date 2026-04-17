@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
+import { Button } from '@/components/emcn'
 import { PanelLeft } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import {
@@ -10,6 +12,7 @@ import {
   type LandingWorkflowSeed,
   LandingWorkflowSeedStorage,
 } from '@/lib/core/utils/browser-storage'
+import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
 import { useChatHistory, useMarkTaskRead } from '@/hooks/queries/tasks'
 import type { ChatContext } from '@/stores/panel'
@@ -26,7 +29,12 @@ interface HomeProps {
 export function Home({ chatId }: HomeProps = {}) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialResourceId = searchParams.get('resource')
   const { data: session } = useSession()
+  const posthog = usePostHog()
+  const posthogRef = useRef(posthog)
+  posthogRef.current = posthog
   const [initialPrompt, setInitialPrompt] = useState('')
   const hasCheckedLandingStorageRef = useRef(false)
   const initialViewInputRef = useRef<HTMLDivElement>(null)
@@ -54,6 +62,7 @@ export function Home({ chatId }: HomeProps = {}) {
                 description,
                 color,
                 workspaceId,
+                deduplicate: true,
               }),
             })
 
@@ -92,23 +101,16 @@ export function Home({ chatId }: HomeProps = {}) {
       return
     }
 
-    // const templateId = LandingTemplateStorage.consume()
-    // if (templateId) {
-    //   logger.info('Retrieved landing page template, redirecting to template detail')
-    //   router.replace(`/workspace/${workspaceId}/templates/${templateId}?use=true`)
-    //   return
-    // }
-
     const prompt = LandingPromptStorage.consume()
     if (prompt) {
       logger.info('Retrieved landing page prompt, populating home input')
       setInitialPrompt(prompt)
     }
-  }, [createWorkflowFromLandingSeed, workspaceId, router])
+  }, [createWorkflowFromLandingSeed])
 
   const wasSendingRef = useRef(false)
 
-  useChatHistory(chatId)
+  const { isPending: isChatHistoryPending } = useChatHistory(chatId)
   const { mutate: markRead } = useMarkTaskRead(workspaceId)
 
   const { mothershipRef, handleResizePointerDown, clearWidth } = useMothershipResize()
@@ -122,10 +124,6 @@ export function Home({ chatId }: HomeProps = {}) {
     clearWidth()
     setIsResourceCollapsed(true)
   }, [clearWidth])
-
-  const expandResource = useCallback(() => {
-    setIsResourceCollapsed(false)
-  }, [])
 
   const handleResourceEvent = useCallback(() => {
     if (isResourceCollapsedRef.current) {
@@ -150,12 +148,15 @@ export function Home({ chatId }: HomeProps = {}) {
     removeFromQueue,
     sendNow,
     editQueuedMessage,
-    streamingFile,
+    previewSession,
     genericResourceData,
   } = useChat(
     workspaceId,
     chatId,
-    getMothershipUseChatOptions({ onResourceEvent: handleResourceEvent })
+    getMothershipUseChatOptions({
+      onResourceEvent: handleResourceEvent,
+      initialActiveResourceId: initialResourceId,
+    })
   )
 
   const [editingInputValue, setEditingInputValue] = useState('')
@@ -179,9 +180,25 @@ export function Home({ chatId }: HomeProps = {}) {
   )
 
   useEffect(() => {
+    const url = new URL(window.location.href)
+    if (activeResourceId) {
+      url.searchParams.set('resource', activeResourceId)
+    } else {
+      url.searchParams.delete('resource')
+    }
+    url.hash = ''
+    window.history.replaceState(null, '', url.toString())
+  }, [activeResourceId])
+
+  useEffect(() => {
     wasSendingRef.current = false
-    if (resolvedChatId) markRead(resolvedChatId)
-  }, [resolvedChatId, markRead])
+    if (resolvedChatId) {
+      markRead(resolvedChatId)
+    } else {
+      clearWidth()
+      setIsResourceCollapsed(true)
+    }
+  }, [resolvedChatId, markRead, clearWidth])
 
   useEffect(() => {
     if (wasSendingRef.current && !isSending && resolvedChatId) {
@@ -198,10 +215,31 @@ export function Home({ chatId }: HomeProps = {}) {
     return () => cancelAnimationFrame(id)
   }, [resources])
 
+  useEffect(() => {
+    if (resources.length === 0 && !isResourceCollapsedRef.current) {
+      collapseResource()
+    }
+  }, [resources, collapseResource])
+
+  const handleStopGeneration = useCallback(() => {
+    captureEvent(posthogRef.current, 'task_generation_aborted', {
+      workspace_id: workspaceId,
+      view: 'mothership',
+    })
+    void stopGeneration().catch(() => {})
+  }, [stopGeneration, workspaceId])
+
   const handleSubmit = useCallback(
     (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
       const trimmed = text.trim()
       if (!trimmed && !(fileAttachments && fileAttachments.length > 0)) return
+
+      captureEvent(posthogRef.current, 'task_message_sent', {
+        workspace_id: workspaceId,
+        has_attachments: !!(fileAttachments && fileAttachments.length > 0),
+        has_contexts: !!(contexts && contexts.length > 0),
+        is_new_task: !chatId,
+      })
 
       if (initialViewInputRef.current) {
         setIsInputEntering(true)
@@ -209,7 +247,7 @@ export function Home({ chatId }: HomeProps = {}) {
 
       sendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts)
     },
-    [sendMessage]
+    [sendMessage, workspaceId, chatId]
   )
 
   useEffect(() => {
@@ -221,54 +259,58 @@ export function Home({ chatId }: HomeProps = {}) {
     return () => window.removeEventListener('mothership-send-message', handler)
   }, [sendMessage])
 
-  const handleContextAdd = useCallback(
-    (context: ChatContext) => {
-      let resourceType: MothershipResourceType | null = null
-      let resourceId: string | null = null
-      const resourceTitle: string = context.label
-
+  const resolveResourceFromContext = useCallback(
+    (context: ChatContext): { type: MothershipResourceType; id: string } | null => {
       switch (context.kind) {
         case 'workflow':
         case 'current_workflow':
-          resourceType = 'workflow'
-          resourceId = context.workflowId
-          break
+          return context.workflowId ? { type: 'workflow', id: context.workflowId } : null
         case 'knowledge':
-          if (context.knowledgeId) {
-            resourceType = 'knowledgebase'
-            resourceId = context.knowledgeId
-          }
-          break
+          return context.knowledgeId ? { type: 'knowledgebase', id: context.knowledgeId } : null
         case 'table':
-          if (context.tableId) {
-            resourceType = 'table'
-            resourceId = context.tableId
-          }
-          break
+          return context.tableId ? { type: 'table', id: context.tableId } : null
         case 'file':
-          if (context.fileId) {
-            resourceType = 'file'
-            resourceId = context.fileId
-          }
-          break
+          return context.fileId ? { type: 'file', id: context.fileId } : null
         default:
-          break
+          return null
       }
+    },
+    []
+  )
 
-      if (resourceType && resourceId) {
-        const resource: MothershipResource = {
-          type: resourceType,
-          id: resourceId,
-          title: resourceTitle,
-        }
-        addResource(resource)
+  const handleContextAdd = useCallback(
+    (context: ChatContext) => {
+      const resolved = resolveResourceFromContext(context)
+      if (resolved) {
+        addResource({ ...resolved, title: context.label })
         handleResourceEvent()
       }
     },
-    [addResource, handleResourceEvent]
+    [resolveResourceFromContext, addResource, handleResourceEvent]
+  )
+
+  const handleInitialContextRemove = useCallback(
+    (context: ChatContext) => {
+      const resolved = resolveResourceFromContext(context)
+      if (!resolved) return
+      removeResource(resolved.type, resolved.id)
+    },
+    [resolveResourceFromContext, removeResource]
+  )
+
+  const handleWorkspaceResourceSelect = useCallback(
+    (resource: MothershipResource) => {
+      const wasAdded = addResource(resource)
+      if (!wasAdded) {
+        setActiveResourceId(resource.id)
+      }
+      handleResourceEvent()
+    },
+    [addResource, handleResourceEvent, setActiveResourceId]
   )
 
   const hasMessages = messages.length > 0
+  const showChatSkeleton = Boolean(chatId) && !hasMessages && isChatHistoryPending
 
   useEffect(() => {
     if (hasMessages) return
@@ -302,9 +344,10 @@ export function Home({ chatId }: HomeProps = {}) {
               defaultValue={initialPrompt}
               onSubmit={handleSubmit}
               isSending={isSending}
-              onStopGeneration={stopGeneration}
+              onStopGeneration={handleStopGeneration}
               userId={session?.user?.id}
               onContextAdd={handleContextAdd}
+              onContextRemove={handleInitialContextRemove}
             />
           </div>
         </div>
@@ -326,14 +369,17 @@ export function Home({ chatId }: HomeProps = {}) {
           messages={messages}
           isSending={isSending}
           isReconnecting={isReconnecting}
+          isLoading={showChatSkeleton}
           onSubmit={handleSubmit}
-          onStopGeneration={stopGeneration}
+          onStopGeneration={handleStopGeneration}
           messageQueue={messageQueue}
           onRemoveQueuedMessage={removeFromQueue}
           onSendQueuedMessage={sendNow}
           onEditQueuedMessage={handleEditQueuedMessage}
           userId={session?.user?.id}
+          chatId={resolvedChatId}
           onContextAdd={handleContextAdd}
+          onWorkspaceResourceSelect={handleWorkspaceResourceSelect}
           editValue={editingInputValue}
           onEditValueConsumed={clearEditingValue}
           animateInput={isInputEntering}
@@ -367,21 +413,23 @@ export function Home({ chatId }: HomeProps = {}) {
         onReorderResources={reorderResources}
         onCollapse={collapseResource}
         isCollapsed={isResourceCollapsed}
-        streamingFile={streamingFile}
-        genericResourceData={genericResourceData}
+        previewSession={previewSession}
+        genericResourceData={genericResourceData ?? undefined}
         className={skipResourceTransition ? '!transition-none' : undefined}
       />
 
       {isResourceCollapsed && (
         <div className='absolute top-[8.5px] right-[16px]'>
-          <button
+          <Button
+            variant='ghost'
+            size={null}
             type='button'
-            onClick={expandResource}
-            className='flex h-[30px] w-[30px] items-center justify-center rounded-[8px] hover-hover:bg-[var(--surface-active)]'
+            onClick={() => setIsResourceCollapsed(false)}
+            className='h-[30px] w-[30px] rounded-[8px] hover-hover:bg-[var(--surface-active)]'
             aria-label='Expand resource view'
           >
             <PanelLeft className='h-[16px] w-[16px] text-[var(--text-icon)]' />
-          </button>
+          </Button>
         </div>
       )}
     </div>

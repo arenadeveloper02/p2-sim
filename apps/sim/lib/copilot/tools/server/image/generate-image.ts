@@ -1,6 +1,6 @@
 import { GoogleGenAI, type Part } from '@google/genai'
 import { createLogger } from '@sim/logger'
-import { appendCopilotLogContext } from '@/lib/copilot/logging'
+import { GenerateImage } from '@/lib/copilot/generated/tool-catalog-v1'
 import {
   assertServerToolNotAborted,
   type BaseServerTool,
@@ -55,14 +55,14 @@ interface GenerateImageResult {
 }
 
 export const generateImageServerTool: BaseServerTool<GenerateImageArgs, GenerateImageResult> = {
-  name: 'generate_image',
+  name: GenerateImage.id,
 
   async execute(
     params: GenerateImageArgs,
     context?: ServerToolContext
   ): Promise<GenerateImageResult> {
     const withMessageId = (message: string) =>
-      appendCopilotLogContext(message, { messageId: context?.messageId })
+      context?.messageId ? `${message} [messageId:${context.messageId}]` : message
 
     if (!context?.userId) {
       throw new Error('Authentication required')
@@ -85,29 +85,31 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
       const sizeHint = ASPECT_RATIO_TO_SIZE[aspectRatio]
 
       const parts: Part[] = []
+      const referenceRecords: Array<{ id: string; name: string }> = []
 
       if (params.referenceFileIds?.length) {
         for (const fileId of params.referenceFileIds) {
           try {
             const fileRecord = await getWorkspaceFile(workspaceId, fileId)
             if (fileRecord) {
+              referenceRecords.push({ id: fileRecord.id, name: fileRecord.name })
               const buffer = await downloadWorkspaceFile(fileRecord)
               const base64 = buffer.toString('base64')
               const mime = fileRecord.type || 'image/png'
               parts.push({
                 inlineData: { mimeType: mime, data: base64 },
               })
-              logger.info(withMessageId('Loaded reference image'), {
+              logger.info('Loaded reference image', {
                 fileId,
                 name: fileRecord.name,
                 size: buffer.length,
                 mimeType: mime,
               })
             } else {
-              logger.warn(withMessageId('Reference file not found, skipping'), { fileId })
+              logger.warn('Reference file not found, skipping', { fileId })
             }
           } catch (err) {
-            logger.warn(withMessageId('Failed to load reference image, skipping'), {
+            logger.warn('Failed to load reference image, skipping', {
               fileId,
               error: err instanceof Error ? err.message : String(err),
             })
@@ -121,7 +123,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
 
       parts.push({ text: prompt + sizeInstruction })
 
-      logger.info(withMessageId('Generating image with Nano Banana 2'), {
+      logger.info('Generating image with Nano Banana 2', {
         model: NANO_BANANA_MODEL,
         aspectRatio,
         promptLength: prompt.length,
@@ -169,24 +171,36 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
         return { success: false, message: fileNameValidationError }
       }
       const imageBuffer = Buffer.from(imageBase64, 'base64')
+      const inferredOverwriteFileId =
+        !params.overwriteFileId && params.fileName
+          ? referenceRecords.find((record) => record.name === fileName)?.id
+          : undefined
+      const overwriteFileId = params.overwriteFileId ?? inferredOverwriteFileId
 
-      if (params.overwriteFileId) {
-        const existing = await getWorkspaceFile(workspaceId, params.overwriteFileId)
+      if (inferredOverwriteFileId) {
+        logger.info('Inferring overwrite target from referenced file name', {
+          fileName,
+          overwriteFileId: inferredOverwriteFileId,
+        })
+      }
+
+      if (overwriteFileId) {
+        const existing = await getWorkspaceFile(workspaceId, overwriteFileId)
         if (!existing) {
           return {
             success: false,
-            message: `File not found for overwrite: ${params.overwriteFileId}`,
+            message: `File not found for overwrite: ${overwriteFileId}`,
           }
         }
         assertServerToolNotAborted(context)
         const updated = await updateWorkspaceFileContent(
           workspaceId,
-          params.overwriteFileId,
+          overwriteFileId,
           context.userId,
           imageBuffer,
           mimeType
         )
-        logger.info(withMessageId('Generated image overwritten'), {
+        logger.info('Generated image overwritten', {
           fileId: updated.id,
           fileName: updated.name,
           size: imageBuffer.length,
@@ -212,7 +226,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
         mimeType
       )
 
-      logger.info(withMessageId('Generated image saved'), {
+      logger.info('Generated image saved', {
         fileId: uploaded.id,
         fileName: uploaded.name,
         size: imageBuffer.length,
@@ -229,7 +243,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error'
-      logger.error(withMessageId('Image generation failed'), { error: msg })
+      logger.error('Image generation failed', { error: msg })
       return { success: false, message: `Failed to generate image: ${msg}` }
     }
   },

@@ -1,7 +1,6 @@
 import { createLogger } from '@sim/logger'
 import type { AsyncBackendType, JobQueueBackend } from '@/lib/core/async-jobs/types'
 import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
-import { getRedisClient } from '@/lib/core/config/redis'
 
 const logger = createLogger('AsyncJobsConfig')
 
@@ -11,16 +10,11 @@ let cachedInlineBackend: JobQueueBackend | null = null
 
 /**
  * Determines which async backend to use based on environment configuration.
- * Follows the fallback chain: trigger.dev → redis → database
+ * Follows the fallback chain: trigger.dev → database
  */
 export function getAsyncBackendType(): AsyncBackendType {
   if (isTriggerDevEnabled) {
     return 'trigger-dev'
-  }
-
-  const redis = getRedisClient()
-  if (redis) {
-    return 'redis'
   }
 
   return 'database'
@@ -43,15 +37,6 @@ export async function getJobQueue(): Promise<JobQueueBackend> {
       cachedBackend = new TriggerDevJobQueue()
       break
     }
-    case 'redis': {
-      const redis = getRedisClient()
-      if (!redis) {
-        throw new Error('Redis client not available but redis backend was selected')
-      }
-      const { RedisJobQueue } = await import('@/lib/core/async-jobs/backends/redis')
-      cachedBackend = new RedisJobQueue(redis)
-      break
-    }
     case 'database': {
       const { DatabaseJobQueue } = await import('@/lib/core/async-jobs/backends/database')
       cachedBackend = new DatabaseJobQueue()
@@ -61,6 +46,10 @@ export async function getJobQueue(): Promise<JobQueueBackend> {
 
   cachedBackendType = type
   logger.info(`Async job backend initialized: ${type}`)
+
+  if (!cachedBackend) {
+    throw new Error(`Failed to initialize async backend: ${type}`)
+  }
 
   return cachedBackend
 }
@@ -73,36 +62,27 @@ export function getCurrentBackendType(): AsyncBackendType | null {
 }
 
 /**
- * Gets a job queue backend that bypasses Trigger.dev (Redis -> Database).
- * Used for non-polling webhooks that should always execute inline.
+ * Gets a job queue backend that bypasses Trigger.dev (Database only).
+ * Used for execution paths that must avoid Trigger.dev cold starts.
  */
 export async function getInlineJobQueue(): Promise<JobQueueBackend> {
   if (cachedInlineBackend) {
     return cachedInlineBackend
   }
 
-  const redis = getRedisClient()
-  let type: string
-  if (redis) {
-    const { RedisJobQueue } = await import('@/lib/core/async-jobs/backends/redis')
-    cachedInlineBackend = new RedisJobQueue(redis)
-    type = 'redis'
-  } else {
-    const { DatabaseJobQueue } = await import('@/lib/core/async-jobs/backends/database')
-    cachedInlineBackend = new DatabaseJobQueue()
-    type = 'database'
-  }
+  const { DatabaseJobQueue } = await import('@/lib/core/async-jobs/backends/database')
+  cachedInlineBackend = new DatabaseJobQueue()
 
-  logger.info(`Inline job backend initialized: ${type}`)
+  logger.info('Inline job backend initialized: database')
   return cachedInlineBackend
 }
 
 /**
- * Checks if jobs should be executed inline (fire-and-forget).
- * For Redis/DB backends, we execute inline. Trigger.dev handles execution itself.
+ * Checks if jobs should be executed inline in-process.
+ * Database fallback is the only mode that still relies on inline execution.
  */
 export function shouldExecuteInline(): boolean {
-  return getAsyncBackendType() !== 'trigger-dev'
+  return getAsyncBackendType() === 'database'
 }
 
 /**

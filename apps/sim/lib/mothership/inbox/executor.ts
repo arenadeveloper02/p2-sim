@@ -1,14 +1,19 @@
 import { copilotChats, db, mothershipInboxTask, permissions, user, workspace } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, eq, sql } from 'drizzle-orm'
-import { resolveOrCreateChat } from '@/lib/copilot/chat-lifecycle'
-import { buildIntegrationToolSchemas } from '@/lib/copilot/chat-payload'
-import { requestChatTitle } from '@/lib/copilot/chat-streaming'
-import { orchestrateCopilotStream } from '@/lib/copilot/orchestrator'
-import type { OrchestratorResult } from '@/lib/copilot/orchestrator/types'
-import { taskPubSub } from '@/lib/copilot/task-events'
-import { generateWorkspaceContext } from '@/lib/copilot/workspace-context'
+import { resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
+import { buildIntegrationToolSchemas } from '@/lib/copilot/chat/payload'
+import {
+  buildPersistedAssistantMessage,
+  buildPersistedUserMessage,
+} from '@/lib/copilot/chat/persisted-message'
+import { generateWorkspaceContext } from '@/lib/copilot/chat/workspace-context'
+import { runHeadlessCopilotLifecycle } from '@/lib/copilot/request/lifecycle/headless'
+import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
+import type { OrchestratorResult } from '@/lib/copilot/request/types'
+import { taskPubSub } from '@/lib/copilot/tasks'
 import { isHosted } from '@/lib/core/config/feature-flags'
+import { generateId } from '@/lib/core/utils/uuid'
 import * as agentmail from '@/lib/mothership/inbox/agentmail-client'
 import { formatEmailAsMessage } from '@/lib/mothership/inbox/format'
 import { sendInboxResponse } from '@/lib/mothership/inbox/response'
@@ -173,7 +178,7 @@ export async function executeInboxTask(taskId: string): Promise<void> {
     }
     const messageContent = formatEmailAsMessage(truncatedTask, attachments)
 
-    const userMessageId = crypto.randomUUID()
+    const userMessageId = generateId()
     const requestPayload: Record<string, unknown> = {
       message: messageContent,
       userId,
@@ -187,7 +192,7 @@ export async function executeInboxTask(taskId: string): Promise<void> {
       ...(fileAttachments.length > 0 ? { fileAttachments } : {}),
     }
 
-    const result = await orchestrateCopilotStream(requestPayload, {
+    const result = await runHeadlessCopilotLifecycle(requestPayload, {
       userId,
       workspaceId: ws.id,
       chatId: chatId ?? undefined,
@@ -308,23 +313,13 @@ async function persistChatMessages(
   storedAttachments: StoredAttachment[] = []
 ): Promise<void> {
   try {
-    const now = new Date().toISOString()
-
-    const userMessage = {
+    const userMessage = buildPersistedUserMessage({
       id: userMessageId,
-      role: 'user' as const,
       content: userContent,
-      timestamp: now,
-      ...(storedAttachments.length > 0 ? { fileAttachments: storedAttachments } : {}),
-    }
+      fileAttachments: storedAttachments.length > 0 ? storedAttachments : undefined,
+    })
 
-    const assistantMessage = {
-      id: crypto.randomUUID(),
-      role: 'assistant' as const,
-      content: result.content || '',
-      timestamp: now,
-      ...(result.error ? { errorType: 'internal' } : {}),
-    }
+    const assistantMessage = buildPersistedAssistantMessage(result)
 
     const newMessages = JSON.stringify([userMessage, assistantMessage])
     await db

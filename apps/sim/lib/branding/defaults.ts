@@ -8,6 +8,8 @@ export const defaultBrandConfig: BrandConfig = {
   logoUrl: 'https://arenav2image.s3.us-west-1.amazonaws.com/arena_svg_white.svg',
   logoUrlBlacktext:
     'https://arenav2image.s3.us-west-1.amazonaws.com/rt/calibrate/Arena_Logo_WebDashboard.svg',
+  wordmarkUrl:
+    'https://arenav2image.s3.us-west-1.amazonaws.com/rt/calibrate/Arena_Logo_WebDashboard.svg',
   faviconUrl: '/sim.svg',
   customCssUrl: undefined,
   supportEmail: 'arenadeveloper@position2.com',

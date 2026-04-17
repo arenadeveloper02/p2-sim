@@ -434,7 +434,7 @@ export function BaseTagsModal({
                   This will remove this tag from {selectedTagUsage?.documentCount || 0} document
                   {selectedTagUsage?.documentCount !== 1 ? 's' : ''}.
                 </span>{' '}
-                <span className='text-[var(--text-error)]'>This action cannot be undone.</span>
+                This action cannot be undone.
               </p>
 
               {selectedTagUsage && selectedTagUsage.documentCount > 0 && (

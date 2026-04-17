@@ -58,10 +58,17 @@ export function buildCanonicalIndex(subBlocks: SubBlockConfig[]): CanonicalIndex
       groupsById[canonicalId] = { canonicalId, advancedIds: [] }
     }
     const group = groupsById[canonicalId]
-    if (subBlock.mode === 'advanced') {
-      group.advancedIds.push(subBlock.id)
+    if (subBlock.mode === 'advanced' || subBlock.mode === 'trigger-advanced') {
+      // Deduplicate: trigger spreads may repeat the same advanced ID as the regular block
+      if (!group.advancedIds.includes(subBlock.id)) {
+        group.advancedIds.push(subBlock.id)
+      }
     } else {
-      group.basicId = subBlock.id
+      // A trigger-mode subblock must not overwrite a basicId already claimed by a non-trigger subblock.
+      // Blocks spread their trigger's subBlocks after their own, so the regular subblock always wins.
+      if (!group.basicId || subBlock.mode !== 'trigger') {
+        group.basicId = subBlock.id
+      }
     }
     canonicalIdBySubBlockId[subBlock.id] = canonicalId
   })
@@ -277,23 +284,39 @@ export function resolveDependencyValue(
 
   const { basicValue, advancedValue } = getCanonicalValues(group, values)
   const mode = resolveCanonicalMode(group, values, overrides)
-  if (mode === 'advanced') return advancedValue ?? basicValue
-  return basicValue ?? advancedValue
+  const canonicalResult =
+    mode === 'advanced' ? (advancedValue ?? basicValue) : (basicValue ?? advancedValue)
+
+  if (canonicalResult != null) return canonicalResult
+
+  for (const [memberId, memberCanonicalId] of Object.entries(
+    canonicalIndex.canonicalIdBySubBlockId
+  )) {
+    if (memberCanonicalId === canonicalId && isNonEmptyValue(values[memberId])) {
+      return values[memberId]
+    }
+  }
+
+  return values[dependencyKey]
 }
 
 /**
  * Check if a subblock is gated by a feature flag.
  */
 export function isSubBlockFeatureEnabled(subBlock: SubBlockConfig): boolean {
-  if (!subBlock.requiresFeature) return true
-  return isTruthy(getEnv(subBlock.requiresFeature))
+  if (!subBlock.showWhenEnvSet) return true
+  return isTruthy(getEnv(subBlock.showWhenEnvSet))
 }
 
 /**
- * Check if a subblock should be hidden because we're running on hosted Sim.
- * Used for tool API key fields that should be hidden when Sim provides hosted keys.
+ * Check if a subblock should be hidden based on environment conditions.
+ * Covers two cases:
+ * - `hideWhenHosted`: hidden when running on hosted Sim (tool API key fields)
+ * - `hideWhenEnvSet`: hidden when a specific NEXT_PUBLIC_ env var is truthy
+ *   (credential fields hidden when the deployment provides them server-side)
  */
-export function isSubBlockHiddenByHostedKey(subBlock: SubBlockConfig): boolean {
-  if (!subBlock.hideWhenHosted) return false
-  return isHosted
+export function isSubBlockHidden(subBlock: SubBlockConfig): boolean {
+  if (subBlock.hideWhenHosted && isHosted) return true
+  if (subBlock.hideWhenEnvSet && isTruthy(getEnv(subBlock.hideWhenEnvSet))) return true
+  return false
 }

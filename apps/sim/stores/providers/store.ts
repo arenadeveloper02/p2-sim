@@ -11,6 +11,7 @@ export const useProvidersStore = create<ProvidersStore>((set, get) => ({
     vllm: { models: [], isLoading: false },
     openrouter: { models: [], isLoading: false },
     sambanova: { models: [], isLoading: false },
+    fireworks: { models: [], isLoading: false },
   },
   openRouterModelInfo: {},
 

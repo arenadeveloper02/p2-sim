@@ -38,6 +38,8 @@ interface ChatMessageContainerProps {
   ) => void
   selectedGeneratedImageIds?: Set<string>
   selectedGeneratedImageIdsKey?: string
+  /** When welcome message query chips are clicked, trigger execution with this query */
+  onWelcomeQueryClick?: (text: string) => void
 }
 
 export const ChatMessageContainer = memo(function ChatMessageContainer({
@@ -56,6 +58,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   onToggleGeneratedImage,
   selectedGeneratedImageIds,
   selectedGeneratedImageIdsKey,
+  onWelcomeQueryClick,
 }: ChatMessageContainerProps) {
   const loadingLabel = isStreaming ? 'Fetching' : 'Thinking'
   const [selectionTip, setSelectionTip] = useState<{
@@ -173,6 +176,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
                 onToggleGeneratedImage={onToggleGeneratedImage}
                 selectedGeneratedImageIds={selectedGeneratedImageIds}
                 selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+                onWelcomeQueryClick={onWelcomeQueryClick}
               />
             ))
           )}

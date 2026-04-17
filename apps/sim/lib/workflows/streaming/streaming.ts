@@ -12,7 +12,6 @@ import {
   cleanupExecutionBase64Cache,
   hydrateUserFilesWithBase64,
 } from '@/lib/uploads/utils/user-file-base64.server'
-import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
 import type { BlockLog, ExecutionResult, StreamingExecution } from '@/executor/types'
 
 /**
@@ -38,19 +37,19 @@ export interface StreamingConfig {
   sessionUserId?: string | null
 }
 
+export type StreamingExecutorFn = (callbacks: {
+  onStream: (streamingExec: StreamingExecution) => Promise<void>
+  onBlockComplete: (blockId: string, output: unknown) => Promise<void>
+  abortSignal: AbortSignal
+  /** Mirrors `streamConfig.sessionUserId` for `executeWorkflow` / Arena token resolution. */
+  sessionUserId?: string | null
+}) => Promise<ExecutionResult>
+
 export interface StreamingResponseOptions {
   requestId: string
-  workflow: {
-    id: string
-    userId: string
-    workspaceId?: string | null
-    isDeployed?: boolean
-    variables?: Record<string, unknown>
-  }
-  input: unknown
-  executingUserId: string
   streamConfig: StreamingConfig
   executionId?: string
+  executeFn: StreamingExecutorFn
 }
 
 interface StreamingState {
@@ -58,6 +57,7 @@ interface StreamingState {
   processedOutputs: Set<string>
   streamCompletionTimes: Map<string, number>
   streamedContent: Map<string, string>
+  completedBlockIds: Set<string>
 }
 
 function resolveStreamedContent(state: StreamingState): Map<string, string> {
@@ -97,6 +97,7 @@ async function buildMinimalResult(
   result: ExecutionResult,
   selectedOutputs: string[] | undefined,
   streamedContent: Map<string, string>,
+  completedBlockIds: Set<string>,
   requestId: string,
   executionId?: string,
   includeFileBase64?: boolean,
@@ -187,6 +188,11 @@ async function buildMinimalResult(
     }
   }
 
+  if (result.status === 'paused') {
+    minimalResult.output = result.output || {}
+    return minimalResult
+  }
+
   if (!selectedOutputs?.length) {
     minimalResult.output = result.output || {}
     return minimalResult
@@ -200,6 +206,10 @@ async function buildMinimalResult(
     const blockId = extractBlockIdFromOutputId(outputId)
 
     if (streamedContent.has(blockId)) {
+      continue
+    }
+
+    if (!completedBlockIds.has(blockId)) {
       continue
     }
 
@@ -298,7 +308,7 @@ async function completeLoggingSession(result: ExecutionResult): Promise<void> {
 export async function createStreamingResponse(
   options: StreamingResponseOptions
 ): Promise<ReadableStream> {
-  const { requestId, workflow, input, executingUserId, streamConfig, executionId } = options
+  const { requestId, streamConfig, executionId, executeFn } = options
   const timeoutController = createTimeoutAbortController(streamConfig.timeoutMs)
 
   return new ReadableStream({
@@ -308,6 +318,7 @@ export async function createStreamingResponse(
         streamedContent: new Map(),
         processedOutputs: new Set(),
         streamCompletionTimes: new Map(),
+        completedBlockIds: new Set(),
       }
 
       const sendChunk = (blockId: string, content: string) => {
@@ -367,6 +378,8 @@ export async function createStreamingResponse(
       const base64MaxBytes = streamConfig.base64MaxBytes
 
       const onBlockCompleteCallback = async (blockId: string, output: unknown) => {
+        state.completedBlockIds.add(blockId)
+
         if (!streamConfig.selectedOutputs?.length) {
           return
         }
@@ -404,26 +417,12 @@ export async function createStreamingResponse(
       }
 
       try {
-        const result = await executeWorkflow(
-          workflow,
-          requestId,
-          input,
-          executingUserId,
-          {
-            enabled: true,
-            selectedOutputs: streamConfig.selectedOutputs,
-            isSecureMode: streamConfig.isSecureMode,
-            workflowTriggerType: streamConfig.workflowTriggerType,
-            onStream: onStreamCallback,
-            onBlockComplete: onBlockCompleteCallback,
-            skipLoggingComplete: true,
-            includeFileBase64: streamConfig.includeFileBase64,
-            base64MaxBytes: streamConfig.base64MaxBytes,
-            sessionUserId: streamConfig.sessionUserId,
-            abortSignal: timeoutController.signal,
-          },
-          executionId
-        )
+        const result = await executeFn({
+          onStream: onStreamCallback,
+          onBlockComplete: onBlockCompleteCallback,
+          abortSignal: timeoutController.signal,
+          sessionUserId: streamConfig.sessionUserId,
+        })
 
         // Handle skipped workflows - stream the skip response immediately
         // Mark it as streamed so it won't be included in final result
@@ -486,13 +485,22 @@ export async function createStreamingResponse(
             result,
             streamConfig.selectedOutputs,
             streamedContent,
+            state.completedBlockIds,
             requestId,
             executionId,
             streamConfig.includeFileBase64 ?? true,
             streamConfig.base64MaxBytes
           )
 
-          controller.enqueue(encodeSSE({ event: 'final', data: minimalResult }))
+          controller.enqueue(
+            encodeSSE({
+              event: 'final',
+              data: {
+                ...minimalResult,
+                ...(result.status === 'paused' && { status: 'paused' }),
+              },
+            })
+          )
         }
 
         controller.enqueue(encodeSSE('[DONE]'))
