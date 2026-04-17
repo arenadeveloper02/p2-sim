@@ -54,6 +54,10 @@ export const P2ImageGeneratorBlockV2: BlockConfig = {
       integer: true,
       step: 1,
       defaultValue: 1,
+      description:
+        'Maximum number of distinct images to generate. Each image is a separate provider call, so cost scales linearly.',
+      tooltip:
+        'DALL-E 3 only supports one image per API call, so requesting N here issues N separate calls and bills N times.',
     },
     {
       id: 'prompt',

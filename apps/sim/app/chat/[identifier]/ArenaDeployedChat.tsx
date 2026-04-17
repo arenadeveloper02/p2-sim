@@ -4,11 +4,11 @@ import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } fro
 import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
-import { v4 as uuidv4 } from 'uuid'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
+import { generateId } from '@/lib/core/utils/uuid'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
@@ -597,7 +597,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
     fetchChatConfig()
-    setConversationId(uuidv4())
+    setConversationId(generateId())
 
     getFormattedGitHubStars()
       .then((formattedStars) => {
@@ -672,7 +672,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       if (messageToSend.trim() || combinedFiles.length > 0) {
         const userMessage: ChatMessage = {
-          id: crypto.randomUUID(),
+          id: generateId(),
           content: messageToSend,
           type: 'user',
           timestamp: new Date(),
@@ -814,7 +814,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       logger.error('Error sending message:', error)
       setIsLoading(false)
       const errorMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         content: CHAT_ERROR_MESSAGES.GENERIC_ERROR,
         type: 'assistant',
         timestamp: new Date(),
@@ -996,7 +996,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         .join(', ')
 
       const inputMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         content: `Inputs received: ${formattedInputs}`,
         type: 'assistant',
         timestamp: new Date(),
@@ -1103,7 +1103,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               router.push(newUrl)
             } else {
               // No threads exist yet: generate a new UUID chatId for a fresh chat
-              const newId = uuidv4()
+              const newId = generateId()
               setCurrentChatId(newId)
               params.set('chatId', newId)
               const newUrl = `/chat/${workflowId}?${params.toString()}`
@@ -1189,7 +1189,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setShowFeedbackView(false)
     setFeedbackError(null)
     setShowScrollButton(false)
-    const id = uuidv4()
+    const id = generateId()
     setCurrentChatId(id)
     // Clear messages except initial messages (greeting + welcome)
     setMessages((prev) => {

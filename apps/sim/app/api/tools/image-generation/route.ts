@@ -16,10 +16,46 @@ export const maxDuration = 300
 
 const logger = createLogger('ImageGenerationWrapperApi')
 
+/**
+ * Maximum number of concurrent base-tool executions per wrapper request.
+ * Keep this low so that requesting N images does not amplify provider rate-limit pressure.
+ */
+const MAX_CONCURRENT_GENERATIONS = 2
+
+interface ResolvedContext {
+  workflowId?: string
+}
+
 const ImageGenerationWrapperSchema = z.object({
   baseToolId: z.enum(['openai_image', 'google_imagen', 'google_nano_banana']),
   params: z.record(z.string(), z.unknown()),
 })
+
+type ToolResult = Awaited<ReturnType<typeof executeTool>>
+
+/**
+ * Run `task` over `count` invocations with bounded concurrency.
+ * Preserves invocation order in the returned array.
+ */
+async function runWithConcurrency<T>(
+  count: number,
+  concurrency: number,
+  task: (index: number) => Promise<T>
+): Promise<T[]> {
+  const results: T[] = new Array(count)
+  let cursor = 0
+
+  const workers = Array.from({ length: Math.min(concurrency, count) }, async () => {
+    while (true) {
+      const index = cursor++
+      if (index >= count) return
+      results[index] = await task(index)
+    }
+  })
+
+  await Promise.all(workers)
+  return results
+}
 
 function clampImageCount(value: unknown): number {
   const numericValue = Number(value)
@@ -120,31 +156,83 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    const resolvedContext = resolvedBaseParams._context as ResolvedContext | undefined
+
     logger.info('Executing image generation wrapper', {
       baseToolId: validated.baseToolId,
       imageCount,
       hasPromptImageUrl: Boolean(promptImageUrl),
-      workflowId:
-        (resolvedBaseParams._context as { workflowId?: string } | undefined)?.workflowId ?? undefined,
+      workflowId: resolvedContext?.workflowId,
+      concurrency: Math.min(MAX_CONCURRENT_GENERATIONS, imageCount),
     })
 
-    const results = await Promise.all(
-      Array.from({ length: imageCount }, () => executeTool(validated.baseToolId, { ...resolvedBaseParams }))
+    /**
+     * Execute base-tool calls with bounded concurrency. allSettled lets a single failure
+     * not discard sibling successful generations (which the user has already paid for).
+     */
+    const settled = await runWithConcurrency<PromiseSettledResult<ToolResult>>(
+      imageCount,
+      MAX_CONCURRENT_GENERATIONS,
+      async () => {
+        try {
+          const result = await executeTool(validated.baseToolId, { ...resolvedBaseParams })
+          return { status: 'fulfilled' as const, value: result }
+        } catch (err) {
+          return {
+            status: 'rejected' as const,
+            reason: err instanceof Error ? err : new Error(String(err)),
+          }
+        }
+      }
     )
 
-    const failedResult = results.find((result) => !result.success)
-    if (failedResult) {
-      return NextResponse.json(failedResult, { status: 500 })
+    const successfulResults: ToolResult[] = []
+    const failureMessages: string[] = []
+
+    for (const item of settled) {
+      if (item.status === 'fulfilled' && item.value.success) {
+        successfulResults.push(item.value)
+      } else if (item.status === 'fulfilled') {
+        failureMessages.push(item.value.error || 'Image generation failed')
+      } else {
+        failureMessages.push(item.reason?.message || 'Image generation failed')
+      }
     }
 
-    const firstOutput = isRecord(results[0]?.output) ? results[0].output : {}
-    const images = results.flatMap((result) =>
+    if (successfulResults.length === 0) {
+      logger.error('All image generation attempts failed', {
+        baseToolId: validated.baseToolId,
+        imageCount,
+        failures: failureMessages,
+      })
+      return NextResponse.json(
+        {
+          success: false,
+          error: failureMessages[0] || 'Image generation failed',
+          failures: failureMessages,
+        },
+        { status: 500 }
+      )
+    }
+
+    if (failureMessages.length > 0) {
+      logger.warn('Partial image generation failure', {
+        baseToolId: validated.baseToolId,
+        requested: imageCount,
+        succeeded: successfulResults.length,
+        failed: failureMessages.length,
+      })
+    }
+
+    const firstOutput = isRecord(successfulResults[0]?.output) ? successfulResults[0].output : {}
+    const images = successfulResults.flatMap((result) =>
       isRecord(result.output) ? extractImagesFromOutput(result.output) : []
     )
-    const s3UploadFailed = results.some((result) => {
+    const s3UploadFailed = successfulResults.some((result) => {
       if (!isRecord(result.output)) return false
       return (
-        result.output.s3UploadFailed === true || getOutputMetadata(result.output).s3UploadFailed === true
+        result.output.s3UploadFailed === true ||
+        getOutputMetadata(result.output).s3UploadFailed === true
       )
     })
       ? true
@@ -160,6 +248,11 @@ export async function POST(request: NextRequest) {
     const warnings = [
       ...getMetadataWarnings(outputMetadata),
       ...(inputImageWarning ? [inputImageWarning] : []),
+      ...(failureMessages.length > 0
+        ? [
+            `Generated ${successfulResults.length} of ${imageCount} requested images; ${failureMessages.length} failed.`,
+          ]
+        : []),
     ]
 
     return NextResponse.json({
@@ -171,6 +264,8 @@ export async function POST(request: NextRequest) {
         metadata: {
           ...outputMetadata,
           count: images.length,
+          requested: imageCount,
+          failed: failureMessages.length,
           ...(warnings.length > 0 ? { warnings } : {}),
           ...(s3UploadFailed ? { s3UploadFailed } : {}),
         },

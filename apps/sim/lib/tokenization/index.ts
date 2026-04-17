@@ -1,4 +1,11 @@
 export {
+  batchByTokenLimit,
+  clearEncodingCache,
+  getAccurateTokenCount,
+  getTokenStrings,
+  truncateToTokenLimit,
+} from '@/lib/tokenization/accurate'
+export {
   calculateStreamingCost,
   calculateTokenizationCost,
   createCostResultFromProviderData,

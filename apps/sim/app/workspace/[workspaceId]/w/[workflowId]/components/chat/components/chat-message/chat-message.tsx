@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'
@@ -7,7 +7,7 @@ import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assi
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components'
 import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import { useThrottledValue } from '@/hooks/use-throttled-value'
-import ArenaCopilotMarkdownRenderer from '../../../panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
+import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
 import {
   downloadImage,
   extractAllBase64Images,

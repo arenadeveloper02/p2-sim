@@ -1,5 +1,6 @@
 import type { Candidate } from '@google/genai'
 import { createLogger } from '@sim/logger'
+import { z } from 'zod'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
 import { extractTextContent } from '@/providers/google/utils'
@@ -8,7 +9,28 @@ const logger = createLogger('ImageGenerationCount')
 
 const SLM_MODEL = 'gemini-2.5-flash-lite'
 
+/** Hard timeout for the SLM call so a hung Gemini request never blocks generation. */
+const SLM_TIMEOUT_MS = 8000
+
 const PROMPT_IMAGE_URL_REGEX = /https?:\/\/[^\s"'<>`]+/i
+
+/**
+ * Quick pre-check that decides whether the SLM is even worth calling.
+ * Looks for plural/numeric/multi-image keywords. If none are present, the prompt almost
+ * certainly maps to a single image and we can skip the extra Gemini round-trip entirely.
+ */
+const MULTI_IMAGE_KEYWORD_REGEX =
+  /\b(\d+|two|three|four|five|six|seven|eight|nine|ten|several|multiple|variations?|versions?|options?|angles?|alternatives?|separate|grid|sheet|collage|side[\s-]by[\s-]side|set of|series|each|every|repeat|times)\b/i
+
+function promptCouldImplyMultipleImages(prompt: string): boolean {
+  return MULTI_IMAGE_KEYWORD_REGEX.test(prompt)
+}
+
+const SlmResponseSchema = z.object({
+  imageCount: z.number().int().min(1).max(MAX_IMAGES_TO_GENERATE),
+  imageUrl: z.string().nullish(),
+  singleImagePrompt: z.string().nullish(),
+})
 
 function clampCount(n: number): number {
   return Math.min(MAX_IMAGES_TO_GENERATE, Math.max(1, Math.round(n)))
@@ -46,28 +68,35 @@ interface ParsedSlmFields {
 
 /**
  * Parses SLM output for a suggested image count, image URL, and per-image prompt.
+ * Tries strict JSON first (we request `responseMimeType: application/json`),
+ * then falls back to extracting an embedded JSON object, and finally to a digit heuristic.
  */
 function parseSuggestedFieldsFromSlmText(text: string): ParsedSlmFields {
   const trimmed = text.trim()
-  const jsonBlock = trimmed.match(/\{[\s\S]*?"imageCount"[\s\S]*?\}/)
-  if (jsonBlock) {
+
+  const candidates: string[] = []
+  if (trimmed.startsWith('{')) {
+    candidates.push(trimmed)
+  }
+  const embedded = trimmed.match(/\{[\s\S]*?"imageCount"[\s\S]*?\}/)
+  if (embedded && embedded[0] !== trimmed) {
+    candidates.push(embedded[0])
+  }
+
+  for (const candidate of candidates) {
     try {
-      const j = JSON.parse(jsonBlock[0]) as {
-        imageCount?: unknown
-        imageUrl?: unknown
-        singleImagePrompt?: unknown
-      }
-      const n = Number(j.imageCount)
-      return {
-        imageCount: Number.isFinite(n) ? clampCount(n) : 1,
-        imageUrl: typeof j.imageUrl === 'string' ? normalizePromptImageUrl(j.imageUrl) : undefined,
-        singleImagePrompt:
-          typeof j.singleImagePrompt === 'string' && j.singleImagePrompt.trim().length > 0
-            ? j.singleImagePrompt.trim()
-            : undefined,
+      const parsed = SlmResponseSchema.safeParse(JSON.parse(candidate))
+      if (parsed.success) {
+        const { imageCount, imageUrl, singleImagePrompt } = parsed.data
+        const trimmedSingle = singleImagePrompt?.trim()
+        return {
+          imageCount: clampCount(imageCount),
+          imageUrl: imageUrl ? normalizePromptImageUrl(imageUrl) : undefined,
+          singleImagePrompt: trimmedSingle && trimmedSingle.length > 0 ? trimmedSingle : undefined,
+        }
       }
     } catch {
-      // fall through
+      // try next candidate
     }
   }
 
@@ -97,6 +126,12 @@ export interface ResolveImageGenerationCountResult {
 /**
  * Uses a small Gemini model to estimate how many distinct images the prompt implies,
  * then returns `min(MAX_IMAGES_TO_GENERATE, max(askedCount, slmSuggested))`.
+ *
+ * Skips the SLM call entirely when:
+ *   - the prompt is empty
+ *   - the slider already asks for the maximum (no upside in asking for more)
+ *   - the prompt contains no plural/numeric/multi-image keywords (single-image case)
+ * This avoids burning a Google API key slot and adding latency on the common case.
  */
 export async function resolveImageGenerationCount(
   input: ResolveImageGenerationCountInput
@@ -106,6 +141,24 @@ export async function resolveImageGenerationCount(
   const promptImageUrl = extractPromptImageUrl(prompt)
   if (!prompt) {
     return { imageCount: asked, slmSuggested: asked, singleImagePrompt: '' }
+  }
+
+  if (asked >= MAX_IMAGES_TO_GENERATE) {
+    return {
+      imageCount: asked,
+      slmSuggested: asked,
+      promptImageUrl,
+      singleImagePrompt: prompt,
+    }
+  }
+
+  if (!promptCouldImplyMultipleImages(prompt)) {
+    return {
+      imageCount: asked,
+      slmSuggested: asked,
+      promptImageUrl,
+      singleImagePrompt: prompt,
+    }
   }
 
   const systemInstruction = `You estimate how many distinct image files the user wants generated and rewrite the prompt for one output image file.
@@ -137,6 +190,10 @@ Examples:
   let slmSuggested = 1
   let resolvedPromptImageUrl = promptImageUrl
   let singleImagePrompt = prompt
+
+  const controller = new AbortController()
+  const timeoutHandle = setTimeout(() => controller.abort(), SLM_TIMEOUT_MS)
+
   try {
     const apiKey = getRotatingApiKey('google')
 
@@ -148,8 +205,13 @@ Examples:
         body: JSON.stringify({
           contents: [{ parts: [{ text: userText }] }],
           systemInstruction: { parts: [{ text: systemInstruction }] },
-          generationConfig: { temperature: 0, maxOutputTokens: 128 },
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: 128,
+            responseMimeType: 'application/json',
+          },
         }),
+        signal: controller.signal,
       }
     )
 
@@ -185,10 +247,16 @@ Examples:
       hasPromptImageUrl: Boolean(resolvedPromptImageUrl),
     })
   } catch (error) {
+    const isAbort =
+      (error instanceof DOMException && error.name === 'AbortError') ||
+      (error instanceof Error && error.name === 'AbortError')
     logger.warn('SLM image-count threw', {
+      timedOut: isAbort,
       message: error instanceof Error ? error.message : String(error),
     })
     return { imageCount: asked, slmSuggested: asked, promptImageUrl, singleImagePrompt: prompt }
+  } finally {
+    clearTimeout(timeoutHandle)
   }
 
   const imageCount = clampCount(Math.max(asked, slmSuggested))
