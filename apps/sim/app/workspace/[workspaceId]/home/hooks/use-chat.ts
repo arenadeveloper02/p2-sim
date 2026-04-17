@@ -2762,10 +2762,11 @@ export function useChat(
         let effectiveWorkspaceId = workspaceId
         if (resolveWorkspaceBeforeSendRef.current) {
           try {
+            const currentMessages = messagesRef.current
             const resolveResponse = await fetch('/api/agent/resolve-workspace', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ message: message, context: messages.map((m) => m.content).join('\n') }),
+              body: JSON.stringify({ message: message, context: currentMessages.map((m) => m.content).join('\n') }),
               signal: abortController.signal,
             })
             if (resolveResponse.ok) {
