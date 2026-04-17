@@ -3,6 +3,7 @@ import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
 import { sendToProfound } from './lib/analytics/profound'
 import { isAuthDisabled, isDev } from './lib/core/config/feature-flags'
+import { apiCorsPatch, apiCorsPreflight } from './lib/core/security/api-cors'
 import { generateRuntimeCSP } from './lib/core/security/csp'
 import { getClientIp } from './lib/core/utils/request'
 import { getLoginRedirectUrl } from './lib/core/utils/urls'
@@ -157,6 +158,9 @@ function handleSecurityFiltering(request: NextRequest): NextResponse | null {
 export async function proxy(request: NextRequest) {
   const url = request.nextUrl
 
+  const cors = apiCorsPreflight(request)
+  if (cors) return cors
+
   const sessionCookie = getSessionCookie(request)
   const hasActiveSession = isAuthDisabled || !!sessionCookie
 
@@ -234,7 +238,7 @@ export async function proxy(request: NextRequest) {
  */
 function track(request: NextRequest, response: NextResponse): NextResponse {
   sendToProfound(request, response.status)
-  return response
+  return apiCorsPatch(request, response)
 }
 
 export const config = {
