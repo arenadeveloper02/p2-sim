@@ -16,6 +16,8 @@ export interface ChatDeployPayload {
   identifier: string
   title: string
   description?: string
+  remarks?: string | null
+  department?: string | null
   customizations?: { primaryColor?: string; welcomeMessage?: string; imageUrl?: string }
   authType?: 'public' | 'password' | 'email' | 'sso'
   password?: string | null
@@ -53,6 +55,9 @@ export async function performChatDeploy(
     allowedEmails = [],
     outputConfigs = [],
   } = params
+
+  const departmentValue = params.department?.trim() ? params.department.trim() : null
+  const remarksValue = params.remarks?.trim() ? params.remarks.trim() : null
 
   const customizations = {
     primaryColor: params.customizations?.primaryColor || 'var(--brand-hover)',
@@ -96,6 +101,8 @@ export async function performChatDeploy(
         identifier,
         title,
         description: description || null,
+        remarks: remarksValue,
+        department: departmentValue,
         customizations,
         authType,
         password: passwordToStore,
@@ -120,6 +127,8 @@ export async function performChatDeploy(
       identifier,
       title,
       description: description || null,
+      remarks: remarksValue,
+      department: departmentValue,
       customizations,
       isActive: true,
       authType,

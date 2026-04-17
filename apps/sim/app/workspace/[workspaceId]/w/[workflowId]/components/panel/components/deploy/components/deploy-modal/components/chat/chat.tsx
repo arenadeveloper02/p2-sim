@@ -172,6 +172,22 @@ export function ChatDeploy({
   const [hasInitializedForm, setHasInitializedForm] = useState(false)
   const existingPassword = hasExistingPassword(existingChat)
 
+  /** When switching workflows, clear form + init flags so we never show the previous workflow's chat/API-derived fields. */
+  const prevWorkflowIdForFormRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (
+      prevWorkflowIdForFormRef.current !== null &&
+      prevWorkflowIdForFormRef.current !== workflowId
+    ) {
+      setFormData({ ...initialFormData, identifier: workflowId || '' })
+      setImageUrl(null)
+      setHasInitializedForm(false)
+      hasSetDefaultKnowledgeOutputs.current = false
+      setErrors({})
+    }
+    prevWorkflowIdForFormRef.current = workflowId
+  }, [workflowId])
+
   const updateField = <K extends keyof ChatFormData>(field: K, value: ChatFormData[K]) => {
     setFormData((prev) => ({ ...prev, identifier: workflowId, [field]: value }))
     if (errors[field as keyof FormErrors]) {
