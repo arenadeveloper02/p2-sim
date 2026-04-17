@@ -4,6 +4,7 @@ import { createElement, useCallback, useEffect, useMemo, useRef, useState } from
 import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
 import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
+import Image from 'next/image'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   Avatar,
@@ -37,6 +38,7 @@ import { getCanonicalScopesForProvider, getServiceConfigByProviderId } from '@/l
 import { getScopeDescription } from '@/lib/oauth/utils'
 import { getUserColor } from '@/lib/workspaces/colors'
 import { CredentialSkeleton } from '@/app/workspace/[workspaceId]/settings/components/credentials/credential-skeleton'
+import { useBrandConfig } from '@/ee/whitelabeling'
 import {
   useCreateCredentialDraft,
   useCreateWorkspaceCredential,
@@ -73,6 +75,7 @@ export function IntegrationsManager() {
   const searchParams = useSearchParams()
   const workspaceId = (params?.workspaceId as string) || ''
   const isArenaV3IntegrationsEmbed = searchParams.get('from') === 'arena_v3'
+  const brandConfig = useBrandConfig()
 
   const requestedIntegrationProviderIds = useMemo(() => {
     const raw = searchParams.get('integrations')
@@ -1559,7 +1562,15 @@ export function IntegrationsManager() {
       return null
     }
     return (
-      <div className='flex flex-col gap-2'>
+      <div className='flex w-[52vw] flex-col gap-2 rounded-lg bg-white p-[24px]'>
+        <div className='relative right-[2%] mb-4 w-max'>
+          <Image
+            src={brandConfig?.logoUrlBlacktext || ''}
+            alt='Vimi Logo'
+            width={100}
+            height={100}
+          />
+        </div>
         <h1 className='font-semibold text-heading-darker text-lg'>
           VIMI is your always-on AI assistant that listens across your work ecosystem.
         </h1>
@@ -1633,7 +1644,7 @@ export function IntegrationsManager() {
   if (isArenaV3IntegrationsEmbed) {
     return (
       <>
-        <div className='flex h-full flex-col gap-4.5'>
+        <div className='flex h-[80vh] flex-col items-center justify-center gap-4.5'>
           {credentialsLoading ? (
             <div className='flex flex-col gap-2'>
               <CredentialSkeleton />
