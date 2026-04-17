@@ -209,7 +209,9 @@ export function SettingsPage({ section }: SettingsPageProps) {
 
   return (
     <div className={cn(effectiveSection === 'access-control' && 'flex h-full flex-col')}>
-      <h2 className='mb-7 font-medium text-[22px] text-[var(--text-primary)]'>{label}</h2>
+      {searchParams.get('from') !== 'arena_v3' && (
+        <h2 className='mb-7 font-medium text-[22px] text-[var(--text-primary)]'>{label}</h2>
+      )}
       {effectiveSection === 'general' && <General />}
       {effectiveSection === 'integrations' && <Integrations />}
       {effectiveSection === 'secrets' && <Credentials />}

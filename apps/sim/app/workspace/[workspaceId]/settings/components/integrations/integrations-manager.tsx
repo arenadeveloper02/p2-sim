@@ -2,8 +2,9 @@
 
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import Cookies from 'js-cookie'
 import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   Avatar,
   AvatarFallback,
@@ -23,7 +24,7 @@ import {
   Tooltip,
 } from '@/components/emcn'
 import { Input as UiInput } from '@/components/ui'
-import { useSession } from '@/lib/auth/auth-client'
+import { client, useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import {
   clearPendingCredentialCreateRequest,
@@ -68,9 +69,74 @@ const roleComboOptions = roleOptions.map((option) => ({ value: option.value, lab
 
 export function IntegrationsManager() {
   const params = useParams()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const workspaceId = (params?.workspaceId as string) || ''
+  const isArenaV3IntegrationsEmbed = searchParams.get('from') === 'arena_v3'
+
+  const requestedIntegrationProviderIds = useMemo(() => {
+    const raw = searchParams.get('integrations')
+    if (!raw) return null
+
+    const items = raw
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+
+    if (items.length === 0) return null
+    const convertToArray = new Set(items)
+    return [...convertToArray]
+  }, [searchParams])
 
   useOAuthReturnRouter()
+
+  /**
+   * Arena iframe embed (`from=arena_v3`): one-time email-cookie sign-in, same pattern as deployed chat
+   * (`ArenaDeployedChat`: localStorage guard + `client.signIn.email`).
+   */
+  useEffect(() => {
+    if (searchParams.get('from') !== 'arena_v3' || !workspaceId) {
+      return
+    }
+
+    const autoLoginKey = `integrations:arenaV3AutoLogin:${workspaceId}`
+    let cancelled = false
+
+    const run = async () => {
+      try {
+        const alreadyTried = typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
+        const cookieEmail = Cookies.get('email')
+        if (!cookieEmail || alreadyTried) {
+          return
+        }
+
+        const sessionRes = await client.getSession()
+        if (sessionRes?.data?.user?.id || cancelled) {
+          return
+        }
+
+        localStorage.setItem(autoLoginKey, '1')
+        await client.signIn.email(
+          {
+            email: cookieEmail,
+            password: 'Position2!',
+            callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+          },
+          {}
+        )
+        if (!cancelled) {
+          router.refresh()
+        }
+      } catch (error) {
+        logger.error('Arena v3 integrations auto-login failed', { error })
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, workspaceId, router])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCredentialId, setSelectedCredentialId] = useState<string | null>(null)
@@ -1454,6 +1520,132 @@ export function IntegrationsManager() {
         {createModalJsx}
         {deleteConfirmDialogJsx}
         {unsavedChangesAlertJsx}
+      </>
+    )
+  }
+
+  const renderUsersCredentials = () => {
+    if (!requestedIntegrationProviderIds?.length) return null
+
+    const requestedProviderIds = new Set(requestedIntegrationProviderIds)
+
+    const adminConnectedProviderIds = new Set(
+      oauthCredentials
+        .filter((credential) => credential.role === 'admin')
+        .map((credential) => credential.providerId)
+        .filter((providerId): providerId is string => typeof providerId === 'string')
+    )
+
+    const requestedIntegrationsToConnect = filteredAvailableIntegrations.filter(
+      (service) =>
+        typeof service.providerId === 'string' &&
+        requestedProviderIds.has(service.providerId) &&
+        !adminConnectedProviderIds.has(service.providerId)
+    )
+
+    const allAdminCredentialsAlreadyConnected = sortedCredentials.filter((credential) => {
+      const providerId = credential.providerId
+      return (
+        credential.role === 'admin' &&
+        typeof providerId === 'string' &&
+        requestedProviderIds.has(providerId)
+      )
+    })
+
+    if (
+      requestedIntegrationsToConnect.length === 0 &&
+      allAdminCredentialsAlreadyConnected.length === 0
+    ) {
+      return null
+    }
+    return (
+      <div className='flex flex-col gap-2'>
+        <h1 className='font-semibold text-heading-darker text-lg'>
+          VIMI is your always-on AI assistant that listens across your work ecosystem.
+        </h1>
+        <p className='mb-3 font-normal text-heading-darker text-sm'>
+          Connect your core tools to unlock its full potential. It keeps a continuous pulse on your
+          work and surfaces the most important updates in one place—so nothing critical slips
+          through the cracks.
+        </p>
+
+        {requestedIntegrationsToConnect.length > 0 && (
+          <div className='flex flex-col gap-2'>
+            {requestedIntegrationsToConnect.map((service) => {
+              if (typeof service.providerId !== 'string') return null
+
+              const serviceConfig = getServiceConfigByProviderId(service.providerId)
+              // const isConnected = connectedProviderIds.has(service.providerId)
+              return (
+                <div key={service.providerId} className='flex items-center justify-between gap-3'>
+                  <div className='flex min-w-0 items-center gap-2.5'>
+                    {serviceConfig && (
+                      <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[6px] bg-[var(--surface-5)]'>
+                        {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
+                      </div>
+                    )}
+                    <span className='truncate font-medium text-[15px]'>{service.name}</span>
+                  </div>
+                  <Button
+                    variant='default'
+                    onClick={() => handleAddForProvider(service.providerId)}
+                  >
+                    {'Add account'}
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {allAdminCredentialsAlreadyConnected.map((credential) => {
+          const serviceConfig = credential.providerId
+            ? getServiceConfigByProviderId(credential.providerId)
+            : null
+
+          return (
+            <div key={credential.id} className='flex items-center justify-between gap-3'>
+              <div className='flex min-w-0 items-center gap-2.5'>
+                {serviceConfig && (
+                  <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--surface-5)]'>
+                    {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
+                  </div>
+                )}
+                <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
+                  <span className='truncate font-medium text-base'>{credential.displayName}</span>
+                  <p className='truncate text-[var(--text-muted)] text-sm'>
+                    {credential.description || resolveProviderLabel(credential.providerId)}
+                  </p>
+                </div>
+              </div>
+              <div className='flex flex-shrink-0 items-center gap-1'>
+                <div className='rounded-md bg-[#F5FCF9] px-2 py-1 font-medium text-[#23784F] text-[14px]'>
+                  Added
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  if (isArenaV3IntegrationsEmbed) {
+    return (
+      <>
+        <div className='flex h-full flex-col gap-4.5'>
+          {credentialsLoading ? (
+            <div className='flex flex-col gap-2'>
+              <CredentialSkeleton />
+              <CredentialSkeleton />
+              <CredentialSkeleton />
+            </div>
+          ) : (
+            renderUsersCredentials()
+          )}
+        </div>
+        {createModalJsx}
+        {deleteConfirmDialogJsx}
       </>
     )
   }

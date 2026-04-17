@@ -34,6 +34,16 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (
+        params.get('from') === 'arena_v3' &&
+        window.location.pathname.includes('/settings/integrations')
+      ) {
+        return
+      }
+    }
+
     const attemptAutoLogin = async () => {
       try {
         // Check if there's an active session

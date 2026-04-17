@@ -2,6 +2,28 @@ import { env, getEnv } from '../config/env'
 import { isDev, isHosted, isReactGrabEnabled } from '../config/feature-flags'
 
 /**
+ * Arena hub (dev/test/sandbox/prod) and Sim agent hosts on thearena.ai for `frame-ancestors`, `connect-src`, and `frame-src`.
+ */
+export const ARENA_APP_CSP_ORIGINS = [
+  'http://dev.thearena.ai',
+  'http://test.thearena.ai',
+  'https://sandbox.thearena.ai',
+  'https://app.thearena.ai',
+  'https://dev-agent.thearena.ai',
+  'https://test-agent.thearena.ai',
+  'https://sandbox-agent.thearena.ai',
+  'https://agent.thearena.ai',
+] as const
+
+/**
+ * Local development origins allowed to embed Sim via iframe.
+ *
+ * `frame-ancestors` is evaluated by the browser against the parent page's origin.
+ * In local dev, the Arena app typically runs on `http://localhost:3001`.
+ */
+const LOCAL_DEV_FRAME_ANCESTORS = ['http://localhost:3001'] as const
+
+/**
  * Content Security Policy (CSP) configuration builder
  */
 
@@ -92,9 +114,15 @@ export const buildTimeCSPDirectives: CSPDirectives = {
           env.NEXT_PUBLIC_SOCKET_URL,
           env.NEXT_PUBLIC_SOCKET_URL.replace('http://', 'ws://').replace('https://', 'wss://'),
         ]
-      : isDev
-        ? ['http://localhost:3002', 'ws://localhost:3002']
-        : []),
+      : []),
+    ...(isDev
+      ? [
+          'http://localhost:3001',
+          'ws://localhost:3001',
+          'http://localhost:3002',
+          'ws://localhost:3002',
+        ]
+      : []),
     'https://api.browser-use.com',
     'https://api.elevenlabs.io',
     'wss://api.elevenlabs.io',
@@ -122,10 +150,13 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_LOGO_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_PRIVACY_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_TERMS_URL),
+    ...ARENA_APP_CSP_ORIGINS,
   ],
 
   'frame-src': [
     "'self'",
+    ...(isDev ? ['http://localhost:3001'] : []),
+    ...ARENA_APP_CSP_ORIGINS,
     'https://challenges.cloudflare.com',
     'https://drive.google.com',
     'https://docs.google.com',
@@ -133,7 +164,11 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     ...(isHosted ? ['https://www.googletagmanager.com'] : []),
   ],
 
-  'frame-ancestors': ["'self'"],
+  'frame-ancestors': [
+    "'self'",
+    ...(isDev ? [...LOCAL_DEV_FRAME_ANCESTORS] : []),
+    ...ARENA_APP_CSP_ORIGINS,
+  ],
   'form-action': ["'self'"],
   'base-uri': ["'self'"],
   'object-src': ["'none'"],
@@ -169,6 +204,9 @@ export function generateRuntimeCSP(): string {
       ? 'ws://localhost:3002'
       : ''
   const ollamaUrl = getEnv('OLLAMA_URL') || (isDev ? 'http://localhost:11434' : '')
+  const localDevPort3001 = isDev ? 'http://localhost:3001 ws://localhost:3001' : ''
+  const localDevFrame3001 = isDev ? 'http://localhost:3001' : ''
+  const localDevFrameAncestors = isDev ? LOCAL_DEV_FRAME_ANCESTORS.join(' ') : ''
 
   const brandLogoDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_LOGO_URL'))
   const brandFaviconDomains = getHostnameFromUrl(getEnv('NEXT_PUBLIC_BRAND_FAVICON_URL'))
@@ -186,6 +224,7 @@ export function generateRuntimeCSP(): string {
   const brandLogoDomain = brandLogoDomains[0] || ''
   const brandFaviconDomain = brandFaviconDomains[0] || ''
   const reactGrabScript = isReactGrabEnabled ? 'https://unpkg.com' : ''
+  const arenaAppOriginsStr = ARENA_APP_CSP_ORIGINS.join(' ')
   const gtmScript = isHosted
     ? 'https://www.googletagmanager.com https://www.google-analytics.com'
     : ''
@@ -206,9 +245,9 @@ export function generateRuntimeCSP(): string {
     img-src ${imgSrcLocal};
     media-src 'self' blob:;
     font-src 'self' https://fonts.gstatic.com;
-    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} https://api.browser-use.com https://api.elevenlabs.io wss://api.elevenlabs.io https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://challenges.cloudflare.com https://collector.onedollarstats.com ${gtmConnect} ${dynamicDomainsStr};
-    frame-src 'self' https://challenges.cloudflare.com https://drive.google.com https://docs.google.com https://*.google.com ${gtmFrame};
-    frame-ancestors 'self';
+    connect-src 'self' ${appUrl} ${ollamaUrl} ${socketUrl} ${socketWsUrl} ${localDevPort3001} ${arenaAppOriginsStr} https://api.browser-use.com https://api.elevenlabs.io wss://api.elevenlabs.io https://api.exa.ai https://api.firecrawl.dev https://*.googleapis.com https://*.amazonaws.com https://*.s3.amazonaws.com https://*.blob.core.windows.net https://api.github.com https://github.com/* https://*.atlassian.com https://*.supabase.co https://challenges.cloudflare.com https://collector.onedollarstats.com https://api-js.mixpanel.com https://api.mixpanel.com ${gtmConnect} ${dynamicDomainsStr};
+    frame-src 'self' ${localDevFrame3001} ${arenaAppOriginsStr} https://challenges.cloudflare.com https://drive.google.com https://docs.google.com https://*.google.com ${gtmFrame};
+    frame-ancestors 'self' ${localDevFrameAncestors} ${arenaAppOriginsStr};
     form-action 'self';
     base-uri 'self';
     object-src 'none';

@@ -149,6 +149,7 @@ const ModalContent = React.forwardRef<
     /** Full-bleed embed routes; no sidebar offset (avoids stale --sidebar-width after client nav from workspace). */
     const isPublicEmbedPage =
       pathname?.startsWith('/chat/') === true || pathname?.startsWith('/form/') === true
+    const isRenderFromIframe = window.self !== window.top
 
     React.useEffect(() => {
       const timer = setTimeout(() => setIsInteractionReady(true), 100)
@@ -161,11 +162,12 @@ const ModalContent = React.forwardRef<
         <div
           className='pointer-events-none fixed inset-0 z-[var(--z-modal)] flex items-center justify-center'
           style={{
-            paddingLeft: isPublicEmbedPage
-              ? '0'
-              : isWorkflowPage
-                ? 'calc(var(--sidebar-width) - var(--panel-width))'
-                : 'var(--sidebar-width)',
+            paddingLeft:
+              isPublicEmbedPage || isRenderFromIframe
+                ? '0'
+                : isWorkflowPage
+                  ? 'calc(var(--sidebar-width) - var(--panel-width))'
+                  : 'var(--sidebar-width)',
           }}
         >
           <DialogPrimitive.Content
