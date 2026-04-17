@@ -112,6 +112,7 @@ const ChatMessageSchema = z.object({
   contexts: z.array(ChatContextSchema).optional(),
   commands: z.array(z.string()).optional(),
   userTimezone: z.string().optional(),
+  effectiveWorkspaceId: z.string(),
 })
 
 type UnifiedChatRequest = z.infer<typeof ChatMessageSchema>
@@ -619,7 +620,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       : Promise.resolve(null)
     const workspaceContextPromise =
       branch.kind === 'workspace'
-        ? generateWorkspaceContext(branch.workspaceId, authenticatedUserId)
+        ? generateWorkspaceContext(body.effectiveWorkspaceId, authenticatedUserId)
         : Promise.resolve(undefined)
     const agentContextsPromise = resolveAgentContexts({
       contexts: normalizedContexts,

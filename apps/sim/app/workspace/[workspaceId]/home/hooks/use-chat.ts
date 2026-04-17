@@ -2791,7 +2791,7 @@ export function useChat(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message,
-            workspaceId: effectiveWorkspaceId,
+            workspaceId,
             userMessageId,
             createNewChat: !requestChatId,
             ...(requestChatId ? { chatId: requestChatId } : {}),
@@ -2800,6 +2800,7 @@ export function useChat(
             ...(contexts && contexts.length > 0 ? { contexts } : {}),
             ...(workflowIdRef.current ? { workflowId: workflowIdRef.current } : {}),
             userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            effectiveWorkspaceId
           }),
           signal: abortController.signal,
         })
