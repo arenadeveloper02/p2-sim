@@ -149,7 +149,7 @@ const ModalContent = React.forwardRef<
     /** Full-bleed embed routes; no sidebar offset (avoids stale --sidebar-width after client nav from workspace). */
     const isPublicEmbedPage =
       pathname?.startsWith('/chat/') === true || pathname?.startsWith('/form/') === true
-    const isRenderFromIframe = window.self !== window.top
+    const isRenderFromIframe = typeof window !== 'undefined' && window.self !== window.top
 
     React.useEffect(() => {
       const timer = setTimeout(() => setIsInteractionReady(true), 100)
