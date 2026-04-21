@@ -107,7 +107,7 @@ async function replaceWorkflowQueries({
 
     await tx.insert(workflowQueries).values(
       queries.map((item, index) => ({
-        id: item.id ?? randomUUID(),
+        id: item.id ?? generateId(),
         userId,
         workflowId,
         query: item.query,
