@@ -324,7 +324,7 @@ export function getToolParametersConfig(
           )
 
           if (subBlock) {
-            if (isSubBlockHidden(subBlock)) {
+            if (subBlock.hidden || isSubBlockHidden(subBlock)) {
               toolParam.visibility = 'hidden'
             }
 
@@ -1013,6 +1013,9 @@ export function getSubBlocksForToolInput(
 
       // Skip trigger-mode-only subblocks
       if (sb.mode === 'trigger' || sb.mode === 'trigger-advanced') continue
+
+      // Match block editor: never surface hidden subblocks in tool-input UI
+      if (sb.hidden) continue
 
       // Hide tool API key fields when running on hosted Sim or when env var is set
       if (isSubBlockHidden(sb)) continue
