@@ -49,9 +49,12 @@ export function AuthSessionResetProvider({ children }: { children: React.ReactNo
           },
         })
       } catch (error) {
-        logger.warn('Auth session reset sign-out failed; still advancing marker to avoid reload loop', {
-          error,
-        })
+        logger.warn(
+          'Auth session reset sign-out failed; still advancing marker to avoid reload loop',
+          {
+            error,
+          }
+        )
       }
 
       if (cancelled) {

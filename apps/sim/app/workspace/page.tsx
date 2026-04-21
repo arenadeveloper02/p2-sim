@@ -13,8 +13,8 @@ interface WorkspaceSummary {
   createdAt?: string
 }
 
-import { WorkspaceConicLoader } from '@/app/workspace/workspace-conic-loader'
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
+import { WorkspaceConicLoader } from '@/app/workspace/workspace-conic-loader'
 import { useWorkspacesWithMetadata } from '@/hooks/queries/workspace'
 
 const logger = createLogger('WorkspacePage')

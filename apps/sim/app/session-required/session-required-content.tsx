@@ -15,10 +15,7 @@ type SessionRequiredContentProps = {
   hasEmailCookie: boolean
 }
 
-export function SessionRequiredContent({
-  arenaUrl,
-  hasEmailCookie,
-}: SessionRequiredContentProps) {
+export function SessionRequiredContent({ arenaUrl, hasEmailCookie }: SessionRequiredContentProps) {
   const router = useRouter()
   const [showMainMessage, setShowMainMessage] = useState(!hasEmailCookie)
 
