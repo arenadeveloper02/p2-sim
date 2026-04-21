@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react'
+import { WorkspaceConicLoader } from '@/app/workspace/workspace-conic-loader'
 
 /**
  * Full-screen loader for /workspace routes while RSC streaming / Suspense resolves.
@@ -6,10 +6,7 @@ import { Loader2 } from 'lucide-react'
 export function WorkspaceRouteLoading() {
   return (
     <div className='flex h-screen w-full items-center justify-center bg-[var(--surface-1)]'>
-      <Loader2
-        className='h-8 w-8 animate-spin text-muted-foreground'
-        aria-hidden
-      />
+      <WorkspaceConicLoader />
       <span className='sr-only'>Loading workspace…</span>
     </div>
   )
