@@ -40,6 +40,20 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
         visibility: 'user-or-llm',
         description: 'Include private channels the bot is a member of (default: true)',
       },
+      includeDMs: {
+        type: 'boolean',
+        required: false,
+        visibility: 'user-or-llm',
+        description:
+          'Include 1:1 direct message conversations (requires im:read scope; default: false)',
+      },
+      includeGroupDMs: {
+        type: 'boolean',
+        required: false,
+        visibility: 'user-or-llm',
+        description:
+          'Include multi-person direct messages / group DMs (requires mpim:read scope; default: false)',
+      },
       excludeArchived: {
         type: 'boolean',
         required: false,
@@ -58,13 +72,14 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
       url: (params: SlackListChannelsParams) => {
         const url = new URL('https://slack.com/api/conversations.list')
 
-        // Determine channel types to include
-        const includePrivate = params.includePrivate !== false
-        if (includePrivate) {
-          url.searchParams.append('types', 'public_channel,private_channel')
-        } else {
-          url.searchParams.append('types', 'public_channel')
-        }
+        // Build conversation types list. public_channel is always on;
+        // private_channel defaults on; im/mpim are opt-in because they
+        // require extra scopes (im:read / mpim:read).
+        const types: string[] = ['public_channel']
+        if (params.includePrivate !== false) types.push('private_channel')
+        if (params.includeDMs === true) types.push('im')
+        if (params.includeGroupDMs === true) types.push('mpim')
+        url.searchParams.append('types', types.join(','))
 
         // Exclude archived by default
         const excludeArchived = params.excludeArchived !== false
@@ -88,8 +103,9 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
 
       if (!data.ok) {
         if (data.error === 'missing_scope') {
+          const needed = data.needed ? ` Missing scope: ${data.needed}.` : ''
           throw new Error(
-            'Missing required permissions. Please reconnect your Slack account with the necessary scopes (channels:read, groups:read).'
+            `Missing required permissions. Please reconnect your Slack account with the necessary scopes (channels:read for public channels, groups:read for private channels, im:read for DMs, mpim:read for group DMs).${needed}`
           )
         }
         if (data.error === 'invalid_auth') {
@@ -98,18 +114,28 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
         throw new Error(data.error || 'Failed to list channels from Slack')
       }
 
-      const channels = (data.channels || []).map((channel: any) => ({
-        id: channel.id,
-        name: channel.name,
-        is_private: channel.is_private || false,
-        is_archived: channel.is_archived || false,
-        is_member: channel.is_member || false,
-        num_members: channel.num_members,
-        topic: channel.topic?.value || '',
-        purpose: channel.purpose?.value || '',
-        created: channel.created,
-        creator: channel.creator,
-      }))
+      const channels = (data.channels || []).map((channel: any) => {
+        const isIm = Boolean(channel.is_im)
+        const isMpim = Boolean(channel.is_mpim)
+        return {
+          id: channel.id,
+          // DMs have no `name`; fall back to a stable label so downstream
+          // consumers that expect a string don't break.
+          name:
+            channel.name || (isIm ? `dm:${channel.user || ''}` : isMpim ? 'group_dm' : ''),
+          is_private: channel.is_private || isIm || isMpim,
+          is_archived: channel.is_archived || false,
+          is_member: channel.is_member || false,
+          num_members: channel.num_members,
+          topic: channel.topic?.value || '',
+          purpose: channel.purpose?.value || '',
+          created: channel.created,
+          creator: channel.creator,
+          is_im: isIm,
+          is_mpim: isMpim,
+          user: channel.user,
+        }
+      })
 
       const ids = channels.map((channel: { id: string }) => channel.id)
       const names = channels.map((channel: { name: string }) => channel.name)

@@ -317,6 +317,13 @@ export const CHANNEL_OUTPUT_PROPERTIES = {
   },
   creator: { type: 'string', description: 'User ID of channel creator', optional: true },
   updated: { type: 'number', description: 'Unix timestamp of last update', optional: true },
+  is_im: { type: 'boolean', description: 'Whether this is a 1:1 DM channel', optional: true },
+  is_mpim: { type: 'boolean', description: 'Whether this is a group DM (mpim)', optional: true },
+  user: {
+    type: 'string',
+    description: 'For DMs, the user ID of the other participant',
+    optional: true,
+  },
 } as const satisfies Record<string, OutputProperty>
 
 /**
@@ -719,6 +726,8 @@ export interface SlackRemoveReactionParams extends SlackBaseParams {
 
 export interface SlackListChannelsParams extends SlackBaseParams {
   includePrivate?: boolean
+  includeDMs?: boolean
+  includeGroupDMs?: boolean
   excludeArchived?: boolean
   limit?: number
 }

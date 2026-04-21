@@ -535,6 +535,34 @@ Do not include any explanations, markdown formatting, or other text outside the 
       },
     },
     {
+      id: 'includeDMs',
+      title: 'Include Direct Messages',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      condition: {
+        field: 'operation',
+        value: 'list_channels',
+      },
+    },
+    {
+      id: 'includeGroupDMs',
+      title: 'Include Group DMs',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      condition: {
+        field: 'operation',
+        value: 'list_channels',
+      },
+    },
+    {
       id: 'channelLimit',
       title: 'Channel Limit',
       type: 'short-input',
@@ -1360,6 +1388,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
           reactionTimestamp,
           emojiName,
           includePrivate,
+          includeDMs,
+          includeGroupDMs,
           channelLimit,
           memberLimit,
           includeDeleted,
@@ -1628,6 +1658,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
 
           case 'list_channels': {
             baseParams.includePrivate = includePrivate !== 'false'
+            baseParams.includeDMs = includeDMs === 'true'
+            baseParams.includeGroupDMs = includeGroupDMs === 'true'
             baseParams.excludeArchived = true
             baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 100
             break
@@ -1893,6 +1925,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
     thread_ts: { type: 'string', description: 'Thread timestamp for reply' },
     // List Channels inputs
     includePrivate: { type: 'string', description: 'Include private channels (true/false)' },
+    includeDMs: {
+      type: 'string',
+      description: 'Include 1:1 direct messages (true/false). Requires im:read scope.',
+    },
+    includeGroupDMs: {
+      type: 'string',
+      description: 'Include group DMs / mpims (true/false). Requires mpim:read scope.',
+    },
     channelLimit: { type: 'string', description: 'Maximum number of channels to return' },
     // List Members inputs
     memberLimit: { type: 'string', description: 'Maximum number of members to return' },

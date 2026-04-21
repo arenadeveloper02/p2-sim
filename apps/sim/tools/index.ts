@@ -193,8 +193,15 @@ async function injectOAuthCredentialFromUserContextIfNeeded(
   if (
     pick(params.credential) ||
     pick(params.oauthCredential) ||
-    pick(params.credentialId)
+    pick(params.credentialId) ||
+    pick(params.accessToken) ||
+    pick(params.botToken)
   ) {
+    if (pick(params.accessToken) || pick(params.botToken)) {
+      logger.info(
+        `[${requestId}] Using user-supplied token for ${tool.id}; skipping OAuth auto-resolve`
+      )
+    }
     return
   }
   const ctx = params._context as { userId?: string; workspaceId?: string } | undefined
