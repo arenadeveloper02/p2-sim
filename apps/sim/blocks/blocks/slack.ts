@@ -37,6 +37,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'List Channel Members', id: 'list_members' },
         { label: 'List Users', id: 'list_users' },
         { label: 'Get User Info', id: 'get_user' },
+        { label: 'Auth User', id: 'get_auth_user' },
         { label: 'Download File', id: 'download' },
         { label: 'Update Message', id: 'update' },
         { label: 'Delete Message', id: 'delete' },
@@ -145,6 +146,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             'list_channels',
             'list_users',
             'get_user',
+            'get_auth_user',
             'search_all',
             'get_user_presence',
             'edit_canvas',
@@ -182,6 +184,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             'list_channels',
             'list_users',
             'get_user',
+            'get_auth_user',
             'search_all',
             'get_user_presence',
             'edit_canvas',
@@ -1294,6 +1297,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       'slack_update_view',
       'slack_push_view',
       'slack_publish_view',
+      'slack_get_auth_user',
     ],
     config: {
       tool: (params) => {
@@ -1318,6 +1322,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
             return 'slack_list_users'
           case 'get_user':
             return 'slack_get_user'
+          case 'get_auth_user':
+            return 'slack_get_auth_user'
           case 'download':
             return 'slack_download'
           case 'update':
@@ -1678,6 +1684,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
 
           case 'get_user':
             baseParams.userId = userId
+            break
+
+          case 'get_auth_user':
+            // No extra inputs — only the access/bot token (already in baseParams).
             break
 
           case 'download': {
@@ -2106,6 +2116,28 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'json',
       description:
         'Detailed user object with properties: id, name, real_name, display_name, first_name, last_name, title, is_bot, is_admin, deleted, timezone, avatars, status',
+    },
+
+    // slack_get_auth_user outputs (get_auth_user operation)
+    userId: { type: 'string', description: 'Slack user ID of the token owner (e.g., U1234567890)' },
+    teamId: {
+      type: 'string',
+      description: 'Slack workspace/team ID (e.g., T0123456789)',
+    },
+    team: { type: 'string', description: 'Slack workspace/team name' },
+    url: { type: 'string', description: 'Workspace URL (e.g., https://acme.slack.com/)' },
+    botId: {
+      type: 'string',
+      description: 'Bot user ID — present only when the token is a bot token (xoxb-)',
+    },
+    appId: { type: 'string', description: 'Slack app ID associated with the token, when applicable' },
+    isEnterpriseInstall: {
+      type: 'boolean',
+      description: 'Whether the token belongs to an Enterprise Grid org-level install',
+    },
+    enterpriseId: {
+      type: 'string',
+      description: 'Enterprise Grid org ID, when isEnterpriseInstall is true',
     },
 
     // slack_download outputs

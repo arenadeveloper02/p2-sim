@@ -72,20 +72,26 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
       url: (params: SlackListChannelsParams) => {
         const url = new URL('https://slack.com/api/conversations.list')
 
+        // Accept both booleans and their string representations, because the
+        // block wiring may forward raw form values ('true' / 'false') through
+        // the tool runner depending on the caller path.
+        const isTrue = (v: unknown): boolean => v === true || v === 'true'
+        const isFalse = (v: unknown): boolean => v === false || v === 'false'
+
         // Build conversation types list. public_channel is always on;
-        // private_channel defaults on; im/mpim are opt-in because they
-        // require extra scopes (im:read / mpim:read).
+        // private_channel defaults on (opt-out); im/mpim are opt-in because
+        // they require extra scopes (im:read / mpim:read).
         const types: string[] = ['public_channel']
-        if (params.includePrivate !== false) types.push('private_channel')
-        if (params.includeDMs === true) types.push('im')
-        if (params.includeGroupDMs === true) types.push('mpim')
+        if (!isFalse(params.includePrivate)) types.push('private_channel')
+        if (isTrue(params.includeDMs)) types.push('im')
+        if (isTrue(params.includeGroupDMs)) types.push('mpim')
         url.searchParams.append('types', types.join(','))
 
-        // Exclude archived by default
-        const excludeArchived = params.excludeArchived !== false
+        // Exclude archived by default (opt-out).
+        const excludeArchived = !isFalse(params.excludeArchived)
         url.searchParams.append('exclude_archived', String(excludeArchived))
 
-        // Set limit (default 100, max 200)
+        // Set limit (default 100, max 200).
         const limit = params.limit ? Math.min(Number(params.limit), 200) : 100
         url.searchParams.append('limit', String(limit))
 

@@ -6,6 +6,7 @@ import { slackDeleteMessageTool } from '@/tools/slack/delete_message'
 import { slackDownloadTool } from '@/tools/slack/download'
 import { slackEditCanvasTool } from '@/tools/slack/edit_canvas'
 import { slackEphemeralMessageTool } from '@/tools/slack/ephemeral_message'
+import { slackGetAuthUserTool } from '@/tools/slack/get_auth_user'
 import { slackGetChannelInfoTool } from '@/tools/slack/get_channel_info'
 import { slackGetMessageTool } from '@/tools/slack/get_message'
 import { slackGetThreadTool } from '@/tools/slack/get_thread'
@@ -52,4 +53,5 @@ export {
   slackGetMessageTool,
   slackGetThreadTool,
   slackInviteToConversationTool,
+  slackGetAuthUserTool,
 }

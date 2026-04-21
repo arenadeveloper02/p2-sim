@@ -746,6 +746,8 @@ export interface SlackGetUserParams extends SlackBaseParams {
   userId: string
 }
 
+export interface SlackGetAuthUserParams extends SlackBaseParams {}
+
 export interface SlackGetMessageParams extends SlackBaseParams {
   channel: string
   timestamp: string
@@ -1086,6 +1088,20 @@ export interface SlackGetUserResponse extends ToolResponse {
   }
 }
 
+export interface SlackGetAuthUserResponse extends ToolResponse {
+  output: {
+    userId: string
+    user: string
+    teamId: string
+    team: string
+    url: string
+    botId: string
+    appId: string
+    isEnterpriseInstall: boolean
+    enterpriseId: string
+  }
+}
+
 export interface SlackGetMessageResponse extends ToolResponse {
   output: {
     message: SlackMessage
@@ -1225,6 +1241,7 @@ export type SlackResponse =
   | SlackListMembersResponse
   | SlackListUsersResponse
   | SlackGetUserResponse
+  | SlackGetAuthUserResponse
   | SlackSearchAllResponse
   | SlackEphemeralMessageResponse
   | SlackGetMessageResponse
