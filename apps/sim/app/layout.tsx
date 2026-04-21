@@ -8,6 +8,7 @@ import '@/app/_styles/globals.css'
 import { OneDollarStats } from '@/components/analytics/onedollarstats'
 import { isHosted, isReactGrabEnabled, isReactScanEnabled } from '@/lib/core/config/feature-flags'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
+import { AuthSessionResetProvider } from '@/app/_shell/providers/auth-session-reset-provider'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
@@ -297,11 +298,13 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           <ThemeProvider>
             <QueryProvider>
               <SessionProvider>
-                <AutoLoginProvider>
-                  <TooltipProvider>
-                    <BrandedLayout>{children}</BrandedLayout>
-                  </TooltipProvider>
-                </AutoLoginProvider>
+                <AuthSessionResetProvider>
+                  <AutoLoginProvider>
+                    <TooltipProvider>
+                      <BrandedLayout>{children}</BrandedLayout>
+                    </TooltipProvider>
+                  </AutoLoginProvider>
+                </AuthSessionResetProvider>
               </SessionProvider>
             </QueryProvider>
           </ThemeProvider>
