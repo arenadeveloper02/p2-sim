@@ -214,6 +214,11 @@ export async function proxy(request: NextRequest) {
       }
       const arenaHub = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
       if (arenaHub) {
+        // Same as dev: allow workspace to load so AutoLoginProvider can run sign-in
+        // when the email cookie is present (avoids flashing session-required first).
+        if (hasEmailCookie(request)) {
+          return track(request, NextResponse.next())
+        }
         return track(request, NextResponse.redirect(new URL('/session-required', request.url)))
       }
       return track(request, NextResponse.next())
