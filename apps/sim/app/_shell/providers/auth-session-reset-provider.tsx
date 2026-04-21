@@ -1,21 +1,19 @@
 'use client'
 
 import { useEffect } from 'react'
-import { createLogger } from '@sim/logger'
-import { signOut } from '@/lib/auth/auth-client'
-
-const logger = createLogger('AuthSessionReset')
-
-const STORAGE_KEY = 'sim_auth_session_reset_version'
+import {
+  AUTH_SESSION_RESET_QUERY_KEY,
+  AUTH_SESSION_RESET_STORAGE_KEY,
+  AUTH_SESSION_RESET_VERSION,
+} from '@/app/_shell/providers/auth-session-reset-constants'
 
 /**
- * One-time forced sign-out + reload for this deploy (e.g. cookie domain change).
- * Remove `AuthSessionResetProvider` from `app/layout.tsx` and delete this file on the next deployment.
+ * One-time forced sign-out for this deploy (e.g. cookie domain change).
+ * Uses a **full navigation** to `/api/auth/session-migration-sign-out` so HttpOnly cookies clear reliably.
+ * Remove `AuthSessionResetProvider` from `app/layout.tsx`, delete this file, the constants file,
+ * and `app/api/auth/session-migration-sign-out/route.ts` on the next deployment.
  */
-const AUTH_SESSION_RESET_VERSION = '2026-04-arena-cookie-domain'
-
 function shouldSkipPath(pathname: string): boolean {
-  // Public embeds: avoid clearing app auth for viewers who only use these routes.
   if (pathname.startsWith('/chat/') || pathname.startsWith('/form/')) {
     return true
   }
@@ -28,9 +26,23 @@ export function AuthSessionResetProvider({ children }: { children: React.ReactNo
       return
     }
 
+    const params = new URLSearchParams(window.location.search)
+    if (params.get(AUTH_SESSION_RESET_QUERY_KEY) === AUTH_SESSION_RESET_VERSION) {
+      try {
+        localStorage.setItem(AUTH_SESSION_RESET_STORAGE_KEY, AUTH_SESSION_RESET_VERSION)
+      } catch {
+        // ignore
+      }
+      params.delete(AUTH_SESSION_RESET_QUERY_KEY)
+      const qs = params.toString()
+      const nextUrl = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`
+      window.history.replaceState({}, '', nextUrl)
+      return
+    }
+
     let stored: string | null = null
     try {
-      stored = localStorage.getItem(STORAGE_KEY)
+      stored = localStorage.getItem(AUTH_SESSION_RESET_STORAGE_KEY)
     } catch {
       return
     }
@@ -39,40 +51,9 @@ export function AuthSessionResetProvider({ children }: { children: React.ReactNo
       return
     }
 
-    let cancelled = false
-
-    ;(async () => {
-      try {
-        await signOut({
-          fetchOptions: {
-            credentials: 'include',
-          },
-        })
-      } catch (error) {
-        logger.warn(
-          'Auth session reset sign-out failed; still advancing marker to avoid reload loop',
-          {
-            error,
-          }
-        )
-      }
-
-      if (cancelled) {
-        return
-      }
-
-      try {
-        localStorage.setItem(STORAGE_KEY, AUTH_SESSION_RESET_VERSION)
-      } catch {
-        // ignore
-      }
-
-      window.location.reload()
-    })()
-
-    return () => {
-      cancelled = true
-    }
+    const next = `${window.location.pathname}${window.location.search}`
+    const migrationUrl = `/api/auth/session-migration-sign-out?${new URLSearchParams({ next }).toString()}`
+    window.location.replace(migrationUrl)
   }, [])
 
   return <>{children}</>
