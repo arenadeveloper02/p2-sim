@@ -732,6 +732,20 @@ export interface SlackListChannelsParams extends SlackBaseParams {
   limit?: number
 }
 
+/**
+ * Params for `slack_get_user_channels` (Slack `users.conversations`).
+ * Shape matches `SlackListChannelsParams`; kept as a distinct interface so
+ * the two tools can diverge independently.
+ */
+export interface SlackGetUserChannelsParams extends SlackBaseParams {
+  includePublic?: boolean
+  includePrivate?: boolean
+  includeDMs?: boolean
+  includeGroupDMs?: boolean
+  excludeArchived?: boolean
+  limit?: number
+}
+
 export interface SlackListMembersParams extends SlackBaseParams {
   channel: string
   limit?: number
@@ -1033,6 +1047,15 @@ export interface SlackListChannelsResponse extends ToolResponse {
   }
 }
 
+export interface SlackGetUserChannelsResponse extends ToolResponse {
+  output: {
+    channels: SlackChannel[]
+    ids: string[]
+    names: string[]
+    count: number
+  }
+}
+
 export interface SlackListMembersResponse extends ToolResponse {
   output: {
     members: string[]
@@ -1238,6 +1261,7 @@ export type SlackResponse =
   | SlackAddReactionResponse
   | SlackRemoveReactionResponse
   | SlackListChannelsResponse
+  | SlackGetUserChannelsResponse
   | SlackListMembersResponse
   | SlackListUsersResponse
   | SlackGetUserResponse

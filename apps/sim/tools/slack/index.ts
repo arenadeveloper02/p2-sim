@@ -11,6 +11,7 @@ import { slackGetChannelInfoTool } from '@/tools/slack/get_channel_info'
 import { slackGetMessageTool } from '@/tools/slack/get_message'
 import { slackGetThreadTool } from '@/tools/slack/get_thread'
 import { slackGetUserTool } from '@/tools/slack/get_user'
+import { slackGetUserChannelsTool } from '@/tools/slack/get_user_channels'
 import { slackGetUserPresenceTool } from '@/tools/slack/get_user_presence'
 import { slackInviteToConversationTool } from '@/tools/slack/invite_to_conversation'
 import { slackListChannelsTool } from '@/tools/slack/list_channels'
@@ -54,4 +55,5 @@ export {
   slackGetThreadTool,
   slackInviteToConversationTool,
   slackGetAuthUserTool,
+  slackGetUserChannelsTool,
 }

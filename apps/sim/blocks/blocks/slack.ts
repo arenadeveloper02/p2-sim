@@ -34,6 +34,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Get Message', id: 'get_message' },
         { label: 'Get Thread', id: 'get_thread' },
         { label: 'List Channels', id: 'list_channels' },
+        { label: 'Get User Channels', id: 'get_user_channels' },
         { label: 'List Channel Members', id: 'list_members' },
         { label: 'List Users', id: 'list_users' },
         { label: 'Get User Info', id: 'get_user' },
@@ -144,6 +145,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           field: 'operation',
           value: [
             'list_channels',
+            'get_user_channels',
             'list_users',
             'get_user',
             'get_auth_user',
@@ -182,6 +184,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           field: 'operation',
           value: [
             'list_channels',
+            'get_user_channels',
             'list_users',
             'get_user',
             'get_auth_user',
@@ -524,6 +527,20 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     // List Channels specific fields
     {
+      id: 'includePublic',
+      title: 'Include Public Channels',
+      type: 'dropdown',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
+      condition: {
+        field: 'operation',
+        value: 'get_user_channels',
+      },
+    },
+    {
       id: 'includePrivate',
       title: 'Include Private Channels',
       type: 'dropdown',
@@ -534,7 +551,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       value: () => 'true',
       condition: {
         field: 'operation',
-        value: 'list_channels',
+        value: ['list_channels', 'get_user_channels'],
       },
     },
     {
@@ -548,7 +565,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       value: () => 'false',
       condition: {
         field: 'operation',
-        value: 'list_channels',
+        value: ['list_channels', 'get_user_channels'],
       },
     },
     {
@@ -562,7 +579,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       value: () => 'false',
       condition: {
         field: 'operation',
-        value: 'list_channels',
+        value: ['list_channels', 'get_user_channels'],
       },
     },
     {
@@ -572,7 +589,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       placeholder: '100',
       condition: {
         field: 'operation',
-        value: 'list_channels',
+        value: ['list_channels', 'get_user_channels'],
       },
     },
     // List Members specific fields
@@ -1278,6 +1295,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       'slack_get_message',
       'slack_get_thread',
       'slack_list_channels',
+      'slack_get_user_channels',
       'slack_list_members',
       'slack_list_users',
       'slack_get_user',
@@ -1316,6 +1334,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
             return 'slack_get_thread'
           case 'list_channels':
             return 'slack_list_channels'
+          case 'get_user_channels':
+            return 'slack_get_user_channels'
           case 'list_members':
             return 'slack_list_members'
           case 'list_users':
@@ -1393,6 +1413,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
           deleteTimestamp,
           reactionTimestamp,
           emojiName,
+          includePublic,
           includePrivate,
           includeDMs,
           includeGroupDMs,
@@ -1662,7 +1683,13 @@ Do not include any explanations, markdown formatting, or other text outside the 
             break
           }
 
-          case 'list_channels': {
+          case 'list_channels':
+          case 'get_user_channels': {
+            // includePublic is only exposed in the UI for get_user_channels;
+            // list_channels always includes public channels (there is no
+            // dropdown for it there, so includePublic is undefined and the
+            // tool falls back to its default "include").
+            baseParams.includePublic = includePublic !== 'false'
             baseParams.includePrivate = includePrivate !== 'false'
             baseParams.includeDMs = includeDMs === 'true'
             baseParams.includeGroupDMs = includeGroupDMs === 'true'
@@ -1934,6 +1961,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     threadTs: { type: 'string', description: 'Thread timestamp' },
     thread_ts: { type: 'string', description: 'Thread timestamp for reply' },
     // List Channels inputs
+    includePublic: {
+      type: 'string',
+      description: 'Include public channels (true/false). Get User Channels only.',
+    },
     includePrivate: { type: 'string', description: 'Include private channels (true/false)' },
     includeDMs: {
       type: 'string',
