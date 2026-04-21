@@ -688,7 +688,10 @@ export interface UseChatOptions {
 }
 
 export function getMothershipUseChatOptions(
-  options: Pick<UseChatOptions, 'onResourceEvent' | 'onStreamEnd' | 'initialActiveResourceId'> = {}
+  options: Pick<
+    UseChatOptions,
+    'onResourceEvent' | 'onStreamEnd' | 'initialActiveResourceId' | 'resolveWorkspaceBeforeSend'
+  > = {}
 ): UseChatOptions {
   return {
     apiPath: MOTHERSHIP_CHAT_API_PATH,

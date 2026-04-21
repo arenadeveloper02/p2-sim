@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { Button } from '@/components/emcn'
 import { PanelLeft } from '@/components/emcn/icons'
@@ -28,9 +28,11 @@ interface HomeProps {
 
 export function Home({ chatId }: HomeProps = {}) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
+  const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialResourceId = searchParams.get('resource')
+  const resolveWorkspaceBeforeSend = pathname.endsWith('/home/embed')
   const { data: session } = useSession()
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
@@ -156,6 +158,7 @@ export function Home({ chatId }: HomeProps = {}) {
     getMothershipUseChatOptions({
       onResourceEvent: handleResourceEvent,
       initialActiveResourceId: initialResourceId,
+      resolveWorkspaceBeforeSend,
     })
   )
 
