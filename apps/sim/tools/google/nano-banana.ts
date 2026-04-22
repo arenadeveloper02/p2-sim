@@ -98,6 +98,7 @@ const nanoBananaTool: ToolConfig = {
     },
     inputImages: {
       type: 'array',
+      items: { type: 'string' },
       required: false,
       visibility: 'user-or-llm',
       description:

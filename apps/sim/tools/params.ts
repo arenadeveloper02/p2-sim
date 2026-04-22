@@ -413,12 +413,17 @@ function buildParameterSchema(
     description: param.description || '',
   }
 
-  if (param.type === 'array' && param.items) {
-    propertySchema.items = {
-      ...param.items,
-      ...(param.items.properties && {
-        properties: { ...param.items.properties },
-      }),
+  if (param.type === 'array') {
+    if (param.items) {
+      propertySchema.items = {
+        ...param.items,
+        ...(param.items.properties && {
+          properties: { ...param.items.properties },
+        }),
+      }
+    } else {
+      // Fallback to string items if missing, to prevent API validation errors
+      propertySchema.items = { type: 'string' }
     }
   } else if (param.items) {
     logger.warn(`items property ignored for non-array param "${paramId}" in tool "${toolId}"`)
@@ -663,12 +668,17 @@ export function createExecutionToolSchema(toolConfig: ToolConfig): ToolSchema {
     }
 
     // Include items property for arrays
-    if (param.type === 'array' && param.items) {
-      propertySchema.items = {
-        ...param.items,
-        ...(param.items.properties && {
-          properties: { ...param.items.properties },
-        }),
+    if (param.type === 'array') {
+      if (param.items) {
+        propertySchema.items = {
+          ...param.items,
+          ...(param.items.properties && {
+            properties: { ...param.items.properties },
+          }),
+        }
+      } else {
+        // Fallback to string items if missing, to prevent API validation errors
+        propertySchema.items = { type: 'string' }
       }
     } else if (param.items) {
       logger.warn(
