@@ -6837,6 +6837,25 @@ export function CloudflareIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function UnipileIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} xmlns='http://www.w3.org/2000/svg' viewBox='0 0 265 214.96'>
+      <path
+        fill='#45bab9'
+        d='m114.42 117.57-44.717 56.275a14.746 14.746 0 0 1-23.211-.189L3.055 117.381a14.784 14.784 0 0 1 0-18l43.438-56.276a14.746 14.746 0 0 1 23.211-.189L114.42 99.19a14.8 14.8 0 0 1 0 18.38'
+      />
+      <path
+        fill='#43b072'
+        d='m188.6 99.242-44.716-56.278a14.746 14.746 0 0 0-23.211.189L105.42 62.906l28.9 36.332a14.736 14.736 0 0 1 0 18.332l-28.9 36.332 15.253 19.753a14.746 14.746 0 0 0 23.211.189L188.6 117.57a14.736 14.736 0 0 0 0-18.328'
+      />
+      <path
+        fill='#dddf4c'
+        d='m259.984 99.242-44.716-56.278a14.746 14.746 0 0 0-23.211.189l-13.263 17.195 30.932 38.89a14.736 14.736 0 0 1 0 18.332l-30.932 38.89 13.263 17.195a14.746 14.746 0 0 0 23.211.189l44.716-56.274a14.61 14.61 0 0 0 0-18.328'
+      />
+    </svg>
+  )
+}
+
 export function UpstashIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...props} xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 341' width='24' height='24'>

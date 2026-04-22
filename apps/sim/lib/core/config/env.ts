@@ -418,6 +418,8 @@ export const env = createEnv({
     // Arena
     ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL
+
+    UNIPILE_API_KEY:                      z.string().min(1).optional(),           // Unipile API key (X-API-KEY)
   },
 
   client: {
