@@ -1,12 +1,14 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { normalizeMessage, type PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import { taskPubSub } from '@/lib/copilot/tasks'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('CopilotChatStopAPI')
 
@@ -62,7 +64,7 @@ const StopSchema = z.object({
  * The chat stream lock is intentionally left alone here; it is released only once
  * the aborted server stream actually unwinds.
  */
-export async function POST(req: NextRequest) {
+export const POST = withRouteHandler(async (req: NextRequest) => {
   try {
     const session = await getSession()
     if (!session?.user?.id) {
@@ -70,7 +72,6 @@ export async function POST(req: NextRequest) {
     }
 
     const { chatId, streamId, content, contentBlocks } = StopSchema.parse(await req.json())
-
     const [row] = await db
       .select({
         workspaceId: copilotChats.workspaceId,
@@ -106,14 +107,18 @@ export async function POST(req: NextRequest) {
 
     const hasContent = content.trim().length > 0
     const hasBlocks = Array.isArray(contentBlocks) && contentBlocks.length > 0
-
-    if ((hasContent || hasBlocks) && canAppendAssistant) {
+    const synthesizedStoppedBlocks = hasBlocks
+      ? contentBlocks
+      : hasContent
+        ? [{ type: 'text', channel: 'assistant', content }, { type: 'stopped' }]
+        : [{ type: 'stopped' }]
+    if (canAppendAssistant) {
       const normalized = normalizeMessage({
-        id: crypto.randomUUID(),
+        id: generateId(),
         role: 'assistant',
         content,
         timestamp: new Date().toISOString(),
-        ...(hasBlocks ? { contentBlocks } : {}),
+        contentBlocks: synthesizedStoppedBlocks,
       })
       const assistantMessage: PersistedMessage = normalized
       setClause.messages = sql`${copilotChats.messages} || ${JSON.stringify([assistantMessage])}::jsonb`
@@ -141,4 +146,4 @@ export async function POST(req: NextRequest) {
     logger.error('Error stopping chat stream:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-}
+})

@@ -1,16 +1,18 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { NextResponse } from 'next/server'
 import { getLatestRunForStream } from '@/lib/copilot/async-runs/repository'
 import { SIM_AGENT_API_URL } from '@/lib/copilot/constants'
 import { authenticateCopilotRequestSessionOnly } from '@/lib/copilot/request/http'
 import { abortActiveStream, waitForPendingChatStream } from '@/lib/copilot/request/session'
 import { env } from '@/lib/core/config/env'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('CopilotChatAbortAPI')
 const GO_EXPLICIT_ABORT_TIMEOUT_MS = 3000
 const STREAM_ABORT_SETTLE_TIMEOUT_MS = 8000
 
-export async function POST(request: Request) {
+export const POST = withRouteHandler(async (request: Request) => {
   const { userId: authenticatedUserId, isAuthenticated } =
     await authenticateCopilotRequestSessionOnly()
 
@@ -20,7 +22,7 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch((err) => {
     logger.warn('Abort request body parse failed; continuing with empty object', {
-      error: err instanceof Error ? err.message : String(err),
+      error: toError(err).message,
     })
     return {}
   })
@@ -35,7 +37,7 @@ export async function POST(request: Request) {
     const run = await getLatestRunForStream(streamId, authenticatedUserId).catch((err) => {
       logger.warn('getLatestRunForStream failed while resolving chatId for abort', {
         streamId,
-        error: err instanceof Error ? err.message : String(err),
+        error: toError(err).message,
       })
       return null
     })
@@ -70,7 +72,7 @@ export async function POST(request: Request) {
   } catch (err) {
     logger.warn('Explicit abort marker request failed; proceeding with local abort', {
       streamId,
-      error: err instanceof Error ? err.message : String(err),
+      error: toError(err).message,
     })
   }
 
@@ -87,4 +89,4 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ aborted })
-}
+})

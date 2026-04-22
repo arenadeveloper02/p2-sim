@@ -1,4 +1,6 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getLatestRunForStream } from '@/lib/copilot/async-runs/repository'
 import {
@@ -15,6 +17,7 @@ import {
   SSE_RESPONSE_HEADERS,
 } from '@/lib/copilot/request/session'
 import { toStreamBatchEvent } from '@/lib/copilot/request/session/types'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 export const maxDuration = 3600
 
@@ -77,7 +80,7 @@ function buildResumeTerminalEnvelopes(options: {
   return envelopes
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRouteHandler(async (request: NextRequest) => {
   const { userId: authenticatedUserId, isAuthenticated } =
     await authenticateCopilotRequestSessionOnly()
 
@@ -97,7 +100,7 @@ export async function GET(request: NextRequest) {
   const run = await getLatestRunForStream(streamId, authenticatedUserId).catch((err) => {
     logger.warn('Failed to fetch latest run for stream', {
       streamId,
-      error: err instanceof Error ? err.message : String(err),
+      error: toError(err).message,
     })
     return null
   })
@@ -119,7 +122,7 @@ export async function GET(request: NextRequest) {
       readFilePreviewSessions(streamId).catch((error) => {
         logger.warn('Failed to read preview sessions for stream batch', {
           streamId,
-          error: error instanceof Error ? error.message : String(error),
+          error: toError(error).message,
         })
         return []
       }),
@@ -235,7 +238,7 @@ export async function GET(request: NextRequest) {
             (err) => {
               logger.warn('Failed to poll latest run for stream', {
                 streamId,
-                error: err instanceof Error ? err.message : String(err),
+                error: toError(err).message,
               })
               return null
             }
@@ -273,7 +276,7 @@ export async function GET(request: NextRequest) {
             break
           }
 
-          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+          await sleep(POLL_INTERVAL_MS)
         }
         if (!controllerClosed && Date.now() - startTime >= MAX_STREAM_MS) {
           emitTerminalIfMissing(MothershipStreamV1CompletionStatus.error, {
@@ -286,7 +289,7 @@ export async function GET(request: NextRequest) {
         if (!controllerClosed && !request.signal.aborted) {
           logger.warn('Stream replay failed', {
             streamId,
-            error: error instanceof Error ? error.message : String(error),
+            error: toError(error).message,
           })
           emitTerminalIfMissing(MothershipStreamV1CompletionStatus.error, {
             message: 'The stream replay failed before completion.',
@@ -302,4 +305,4 @@ export async function GET(request: NextRequest) {
   })
 
   return new Response(stream, { headers: SSE_RESPONSE_HEADERS })
-}
+})

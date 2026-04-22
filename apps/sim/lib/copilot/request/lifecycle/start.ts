@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { eq } from 'drizzle-orm'
 import { createRunSegment } from '@/lib/copilot/async-runs/repository'
 import { SIM_AGENT_API_URL } from '@/lib/copilot/constants'
@@ -112,7 +113,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
           requestContext: { requestId },
         }).catch((error) => {
           logger.warn(`[${requestId}] Failed to create copilot run segment`, {
-            error: error instanceof Error ? error.message : String(error),
+            error: toError(error).message,
           })
         })
       }
@@ -202,7 +203,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
           await publisher.close()
         } catch (error) {
           logger.warn(`[${requestId}] Failed to flush stream persistence during close`, {
-            error: error instanceof Error ? error.message : String(error),
+            error: toError(error).message,
           })
         }
         unregisterActiveStream(streamId)

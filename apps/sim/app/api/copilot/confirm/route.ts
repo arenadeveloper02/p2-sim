@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
@@ -22,6 +23,7 @@ import {
   createRequestTracker,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request/http'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('CopilotConfirmAPI')
 
@@ -106,7 +108,7 @@ async function updateToolCallStatus(
     logger.error('Failed to update tool call status', {
       toolCallId,
       status,
-      error: error instanceof Error ? error.message : String(error),
+      error: toError(error).message,
     })
     return false
   }
@@ -116,7 +118,7 @@ async function updateToolCallStatus(
  * POST /api/copilot/confirm
  * Accept client tool completion or detach confirmations.
  */
-export async function POST(req: NextRequest) {
+export const POST = withRouteHandler(async (req: NextRequest) => {
   const tracker = createRequestTracker()
 
   try {
@@ -133,7 +135,7 @@ export async function POST(req: NextRequest) {
     const existing = await getAsyncToolCall(toolCallId).catch((err) => {
       logger.warn('Failed to fetch async tool call', {
         toolCallId,
-        error: err instanceof Error ? err.message : String(err),
+        error: toError(err).message,
       })
       return null
     })
@@ -145,7 +147,7 @@ export async function POST(req: NextRequest) {
     const run = await getRunSegment(existing.runId).catch((err) => {
       logger.warn('Failed to fetch run segment', {
         runId: existing.runId,
-        error: err instanceof Error ? err.message : String(err),
+        error: toError(err).message,
       })
       return null
     })
@@ -201,4 +203,4 @@ export async function POST(req: NextRequest) {
       error instanceof Error ? error.message : 'Internal server error'
     )
   }
-}
+})

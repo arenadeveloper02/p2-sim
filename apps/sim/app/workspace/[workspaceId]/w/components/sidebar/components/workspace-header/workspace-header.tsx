@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal, Search } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import {
   Button,
   ChevronDown,
@@ -11,6 +12,7 @@ import {
   DropdownMenuGroup,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Input,
   Modal,
   ModalBody,
   ModalContent,
@@ -28,11 +30,14 @@ import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
 import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
-import type { Workspace } from '@/hooks/queries/workspace'
+import type { Workspace, WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 
 const logger = createLogger('WorkspaceHeader')
+
+/** Minimum workspace count before the search input and keyboard navigation are shown. */
+const WORKSPACE_SEARCH_THRESHOLD = 3
 
 interface WorkspaceHeaderProps {
   /** The active workspace object */
@@ -41,6 +46,8 @@ interface WorkspaceHeaderProps {
   workspaceId: string
   /** List of available workspaces */
   workspaces: Workspace[]
+  /** Server-derived workspace creation policy for the current user context */
+  workspaceCreationPolicy?: WorkspaceCreationPolicy | null
   /** Whether workspaces are loading */
   isWorkspacesLoading: boolean
   /** Whether workspace creation is in progress */
@@ -86,10 +93,11 @@ interface WorkspaceHeaderProps {
 /**
  * Workspace header component that displays workspace name and switcher.
  */
-export function WorkspaceHeader({
+function WorkspaceHeaderImpl({
   activeWorkspace,
   workspaceId,
   workspaces,
+  workspaceCreationPolicy,
   isWorkspacesLoading,
   isCreatingWorkspace,
   isWorkspaceMenuOpen,
@@ -111,6 +119,7 @@ export function WorkspaceHeader({
   sessionUserId,
   isCollapsed = false,
 }: WorkspaceHeaderProps) {
+  const router = useRouter()
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -120,6 +129,22 @@ export function WorkspaceHeader({
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const [isListRenaming, setIsListRenaming] = useState(false)
+  const [workspaceSearch, setWorkspaceSearch] = useState('')
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const workspaceListRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const row = workspaceListRef.current?.querySelector<HTMLElement>(
+      `[data-workspace-row-idx="${highlightedIndex}"]`
+    )
+    row?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedIndex])
+
+  const searchQuery = workspaceSearch.trim().toLowerCase()
+  const filteredWorkspaces = searchQuery
+    ? workspaces.filter((w) => w.name.toLowerCase().includes(searchQuery))
+    : workspaces
 
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
@@ -148,17 +173,34 @@ export function WorkspaceHeader({
       : `${rawPlanName} Plan`
     : ''
   const isFreePlan = showPlanInfo && isFree(currentPlan)
+  const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId) || null
+  const canCreateWorkspace = workspaceCreationPolicy?.canCreate ?? true
+  const createWorkspaceDisabledReason =
+    workspaceCreationPolicy?.canCreate === false ? workspaceCreationPolicy.reason : null
+  const inviteMembersEnabled = activeWorkspaceFull?.inviteMembersEnabled ?? false
+  const inviteUpgradeRequired = activeWorkspaceFull?.inviteUpgradeRequired ?? false
+  const inviteDisabledReason = inviteMembersEnabled
+    ? null
+    : (activeWorkspaceFull?.inviteDisabledReason ?? null)
+  const inviteButtonDisabled = !inviteMembersEnabled && !inviteUpgradeRequired
 
-  // Listen for open-invite-modal event from context menu
+  const handleInviteClick = useCallback(() => {
+    if (isInvitationsDisabled) return
+    if (!inviteMembersEnabled && inviteUpgradeRequired && workspaceId) {
+      router.push(`/workspace/${workspaceId}/settings/subscription`)
+      return
+    }
+    if (!inviteMembersEnabled) return
+    setIsInviteModalOpen(true)
+  }, [isInvitationsDisabled, inviteMembersEnabled, inviteUpgradeRequired, workspaceId, router])
+
   useEffect(() => {
     const handleOpenInvite = () => {
-      if (!isInvitationsDisabled) {
-        setIsInviteModalOpen(true)
-      }
+      handleInviteClick()
     }
     window.addEventListener('open-invite-modal', handleOpenInvite)
     return () => window.removeEventListener('open-invite-modal', handleOpenInvite)
-  }, [isInvitationsDisabled])
+  }, [handleInviteClick])
 
   /**
    * Save and exit edit mode when popover closes
@@ -173,8 +215,14 @@ export function WorkspaceHeader({
     }
   }, [isWorkspaceMenuOpen, editingWorkspaceId, editingName, workspaces, onRenameWorkspace])
 
-  const activeWorkspaceFull = workspaces.find((w) => w.id === workspaceId) || null
-
+  useEffect(() => {
+    if (isWorkspaceMenuOpen) {
+      setHighlightedIndex(0)
+      const id = requestAnimationFrame(() => searchInputRef.current?.focus())
+      return () => cancelAnimationFrame(id)
+    }
+    setWorkspaceSearch('')
+  }, [isWorkspaceMenuOpen])
   const workspaceInitial = (() => {
     const name = activeWorkspace?.name || ''
     const stripped = name.replace(/workspace/gi, '').trim()
@@ -466,10 +514,57 @@ export function WorkspaceHeader({
                     </div>
                   </div>
 
-                  <DropdownMenuGroup className='mt-1 min-h-0 flex-1'>
-                    <div className='flex max-h-[130px] flex-col gap-0.5 overflow-y-auto'>
-                      {workspaces.map((workspace) => (
-                        <div key={workspace.id}>
+                  {workspaces.length > WORKSPACE_SEARCH_THRESHOLD && (
+                    <div className='mt-1 flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-transparent px-2 py-1 transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover-hover:border-[var(--border-1)] dark:hover-hover:bg-[var(--surface-5)]'>
+                      <Search
+                        className='h-[12px] w-[12px] flex-shrink-0 text-[var(--text-tertiary)]'
+                        strokeWidth={2}
+                      />
+                      <Input
+                        ref={searchInputRef}
+                        placeholder='Search workspaces...'
+                        value={workspaceSearch}
+                        onChange={(e) => {
+                          setWorkspaceSearch(e.target.value)
+                          setHighlightedIndex(0)
+                        }}
+                        onKeyDown={(e) => {
+                          e.stopPropagation()
+                          if (filteredWorkspaces.length === 0) return
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault()
+                            setHighlightedIndex((i) => (i + 1) % filteredWorkspaces.length)
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault()
+                            setHighlightedIndex(
+                              (i) => (i - 1 + filteredWorkspaces.length) % filteredWorkspaces.length
+                            )
+                          } else if (e.key === 'Enter') {
+                            e.preventDefault()
+                            const target = filteredWorkspaces[highlightedIndex]
+                            if (target) onWorkspaceSwitch(target)
+                          }
+                        }}
+                        className='h-auto flex-1 border-0 bg-transparent p-0 text-caption leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
+                      />
+                    </div>
+                  )}
+                  <DropdownMenuGroup className='mt-2 min-h-0 flex-1'>
+                    <div
+                      ref={workspaceListRef}
+                      className='flex max-h-[130px] flex-col gap-0.5 overflow-y-auto'
+                    >
+                      {filteredWorkspaces.length === 0 && workspaceSearch && (
+                        <div className='px-2 py-[5px] text-[var(--text-tertiary)] text-caption'>
+                          No workspaces match "{workspaceSearch}"
+                        </div>
+                      )}
+                      {filteredWorkspaces.map((workspace, idx) => (
+                        <div
+                          key={workspace.id}
+                          data-workspace-row-idx={idx}
+                          onMouseEnter={() => setHighlightedIndex(idx)}
+                        >
                           {editingWorkspaceId === workspace.id ? (
                             <div className='flex items-center gap-2 rounded-[5px] bg-[var(--surface-active)] px-2 py-[5px]'>
                               <input
@@ -532,9 +627,26 @@ export function WorkspaceHeader({
                                   'hover-hover:bg-[var(--surface-hover)]',
                                 (workspace.id === workspaceId ||
                                   menuOpenWorkspaceId === workspace.id) &&
-                                  'bg-[var(--surface-active)]'
+                                  'bg-[var(--surface-active)]',
+                                idx === highlightedIndex &&
+                                  workspaces.length > WORKSPACE_SEARCH_THRESHOLD &&
+                                  workspace.id !== workspaceId &&
+                                  menuOpenWorkspaceId !== workspace.id &&
+                                  'bg-[var(--surface-hover)]'
                               )}
-                              onClick={() => onWorkspaceSwitch(workspace)}
+                              onClick={(e) => {
+                                if (e.metaKey || e.ctrlKey) {
+                                  window.open(`/workspace/${workspace.id}/home`, '_blank')
+                                  return
+                                }
+                                onWorkspaceSwitch(workspace)
+                              }}
+                              onAuxClick={(e) => {
+                                if (e.button === 1) {
+                                  e.preventDefault()
+                                  window.open(`/workspace/${workspace.id}/home`, '_blank')
+                                }
+                              }}
                               onContextMenu={(e) => handleContextMenu(e, workspace)}
                             >
                               <span className='min-w-0 flex-1 truncate'>{workspace.name}</span>
@@ -573,7 +685,8 @@ export function WorkspaceHeader({
                         setIsWorkspaceMenuOpen(false)
                         setIsCreateModalOpen(true)
                       }}
-                      disabled={isCreatingWorkspace}
+                      disabled={isCreatingWorkspace || !canCreateWorkspace}
+                      title={createWorkspaceDisabledReason ?? undefined}
                     >
                       <Plus className='h-[14px] w-[14px] shrink-0 text-[var(--text-icon)]' />
                       Create new workspace
@@ -585,11 +698,13 @@ export function WorkspaceHeader({
                       <DropdownMenuSeparator />
                       <button
                         type='button'
-                        className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-hover)]'
+                        className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-hover)] disabled:pointer-events-none disabled:opacity-50'
                         onClick={() => {
-                          setIsInviteModalOpen(true)
                           setIsWorkspaceMenuOpen(false)
+                          handleInviteClick()
                         }}
+                        disabled={inviteButtonDisabled}
+                        title={inviteDisabledReason ?? undefined}
                       >
                         <UserPlus className='h-[14px] w-[14px] shrink-0 text-[var(--text-icon)]' />
                         Invite members
@@ -698,6 +813,8 @@ export function WorkspaceHeader({
         open={isInviteModalOpen}
         onOpenChange={setIsInviteModalOpen}
         workspaceName={activeWorkspace?.name || 'Workspace'}
+        inviteDisabledReason={inviteDisabledReason}
+        organizationId={activeWorkspaceFull?.organizationId ?? null}
       />
       {/* Delete Confirmation Modal */}
       <DeleteModal
@@ -741,3 +858,5 @@ export function WorkspaceHeader({
     </div>
   )
 }
+
+export const WorkspaceHeader = memo(WorkspaceHeaderImpl)

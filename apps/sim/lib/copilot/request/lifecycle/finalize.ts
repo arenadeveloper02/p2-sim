@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { updateRunStatus } from '@/lib/copilot/async-runs/repository'
 import {
   MothershipStreamV1CompletionStatus,
@@ -127,7 +128,7 @@ async function loggedRunStatusUpdate(
   } catch (error) {
     logger.warn(`[${requestId}] Failed to update run status to ${status}`, {
       runId,
-      error: error instanceof Error ? error.message : String(error),
+      error: toError(error).message,
     })
   }
 }

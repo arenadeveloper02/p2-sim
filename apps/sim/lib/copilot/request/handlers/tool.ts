@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { upsertAsyncToolCall } from '@/lib/copilot/async-runs/repository'
 import { STREAM_TIMEOUT_MS } from '@/lib/copilot/constants'
 import {
@@ -334,7 +335,7 @@ async function dispatchToolExecution(
       logger.error(`Parallel ${scopeLabel}tool execution failed`, {
         toolCallId,
         toolName,
-        error: err instanceof Error ? err.message : String(err),
+        error: toError(err).message,
       })
       return {
         status: MothershipStreamV1ToolOutcome.error,
@@ -373,7 +374,7 @@ async function dispatchToolExecution(
           logger.warn(`Failed to persist async tool row for client-executable ${scopeLabel}tool`, {
             toolCallId,
             toolName,
-            error: err instanceof Error ? err.message : String(err),
+            error: toError(err).message,
           })
         })
         const completion = await waitForToolCompletion(
@@ -394,7 +395,7 @@ async function dispatchToolExecution(
         logger.error(`Client-executable ${scopeLabel}tool wait failed`, {
           toolCallId,
           toolName,
-          error: err instanceof Error ? err.message : String(err),
+          error: toError(err).message,
         })
         return {
           status: MothershipStreamV1ToolOutcome.error,

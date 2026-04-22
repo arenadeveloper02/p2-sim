@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { ORCHESTRATION_TIMEOUT_MS } from '@/lib/copilot/constants'
 import { MothershipStreamV1SpanLifecycleEvent } from '@/lib/copilot/generated/mothership-stream-v1'
 import {
@@ -200,7 +201,7 @@ export async function runStreamLoop(
       } catch (error) {
         logger.warn('Failed to forward stream event', {
           type: streamEvent.type,
-          error: error instanceof Error ? error.message : String(error),
+          error: toError(error).message,
         })
       }
 
