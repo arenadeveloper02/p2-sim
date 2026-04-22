@@ -6,15 +6,57 @@ import type { UnipileResponse } from '@/tools/unipile/types'
 export const UnipileBlock: BlockConfig<UnipileResponse> = {
   type: 'unipile',
   name: 'Unipile',
-  description: 'LinkedIn company data and messaging via Unipile (server-configured API key)',
+  description: 'LinkedIn company data and messaging via Unipile',
   longDescription:
-    'Uses `UNIPILE_API_KEY` from the deployment environment. Covers LinkedIn company and user profiles, posts, post comments and reactions, user comments and reactions, LinkedIn search, chats, messages, attendees, relations, and attachments.',
+    'Uses `UNIPILE_API_KEY` from the deployment environment. Pick a Unipile connected account first (from `GET /api/v1/accounts`), then choose the operation. Covers LinkedIn company and user profiles, posts, post comments and reactions, user comments and reactions, LinkedIn search, chats, messages, attendees, relations, and attachments.',
   category: 'tools',
   integrationType: IntegrationType.Communication,
   tags: ['messaging', 'sales-engagement'],
   bgColor: '#0F2736',
   icon: UnipileIcon,
   subBlocks: [
+    {
+      id: 'account_id',
+      title: 'Unipile Account',
+      type: 'dropdown',
+      options: [],
+      placeholder: 'Select a connected account',
+      required: true,
+      value: () => '',
+      description:
+        'Accounts returned from your deployment Unipile workspace (`GET /api/v1/accounts`).',
+      fetchOptions: async () => {
+        try {
+          const response = await fetch('/api/unipile/accounts')
+          const data = (await response.json()) as {
+            success?: boolean
+            items?: Array<{ id: string; label: string }>
+          }
+          if (data?.success && Array.isArray(data.items)) {
+            return data.items
+          }
+          return []
+        } catch {
+          return []
+        }
+      },
+      fetchOptionById: async (_blockId: string, optionId: string) => {
+        try {
+          const response = await fetch('/api/unipile/accounts')
+          const data = (await response.json()) as {
+            success?: boolean
+            items?: Array<{ id: string; label: string }>
+          }
+          if (!data?.success || !Array.isArray(data.items)) {
+            return null
+          }
+          const match = data.items.find((item) => item.id === optionId)
+          return match ?? null
+        } catch {
+          return null
+        }
+      },
+    },
     {
       id: 'operation',
       title: 'Operation',
@@ -124,20 +166,6 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       required: {
         field: 'operation',
         value: ['get_chat', 'list_chat_messages', 'send_chat_message'],
-      },
-    },
-    {
-      id: 'account_id',
-      title: 'Account ID',
-      type: 'short-input',
-      placeholder: 'Unipile connected account id',
-      condition: {
-        field: 'operation',
-        value: ['start_new_chat', 'send_chat_message', 'create_post', 'comment_post'],
-      },
-      required: {
-        field: 'operation',
-        value: ['start_new_chat', 'send_chat_message', 'create_post', 'comment_post'],
       },
     },
     {
@@ -538,7 +566,10 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     attachment_id: { type: 'string', description: 'Attachment id' },
     post_id: { type: 'string', description: 'Post id' },
     chat_id: { type: 'string', description: 'Unipile chat id' },
-    account_id: { type: 'string', description: 'Unipile account id' },
+    account_id: {
+      type: 'string',
+      description: 'Unipile connected account id (from account picker)',
+    },
     text: { type: 'string', description: 'Message or post text' },
     linkedin_search_body: { type: 'string', description: 'LinkedIn search request JSON string' },
     linkedin_comment_parent_id: { type: 'string', description: 'Parent comment id for replies' },
