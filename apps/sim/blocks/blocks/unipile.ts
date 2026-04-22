@@ -12,7 +12,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
   category: 'tools',
   integrationType: IntegrationType.Communication,
   tags: ['messaging', 'sales-engagement'],
-  bgColor: '#45BAB9',
+  bgColor: '#0F2736',
   icon: UnipileIcon,
   subBlocks: [
     {
