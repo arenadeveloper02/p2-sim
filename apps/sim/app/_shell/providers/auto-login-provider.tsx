@@ -3,9 +3,12 @@
 import { useEffect, useRef } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
-import { client } from '@/lib/auth/auth-client'
+import { client, signOut } from '@/lib/auth/auth-client'
 
 const logger = createLogger('AutoLoginProvider')
+
+/** Set after a one-time sign-out so we do not call sign out / forced re-sign-in again. */
+const AUTO_LOGIN_MIGRATION_KEY = 'sim_auth_auto_login_migration_v1'
 
 /**
  * Helper function to get a cookie value by name
@@ -36,17 +39,27 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
 
     const attemptAutoLogin = async () => {
       try {
-        // Check if there's an active session
-        const session = await client.getSession()
-        if (session?.data?.user?.id) {
-          // Session exists, no need to auto-login
+        if (typeof localStorage !== 'undefined' && localStorage.getItem(AUTO_LOGIN_MIGRATION_KEY)) {
           return
         }
 
-        // No session, check for email cookie
         const emailFromCookie = getCookie('email')
         if (!emailFromCookie) {
-          // No email cookie, nothing to do
+          return
+        }
+
+        try {
+          await signOut()
+        } catch (error) {
+          logger.error('One-time sign-out before auto-login failed:', error)
+          return
+        }
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(AUTO_LOGIN_MIGRATION_KEY, '1')
+        }
+
+        const session = await client.getSession()
+        if (session?.data?.user?.id) {
           return
         }
 
