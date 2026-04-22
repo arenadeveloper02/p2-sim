@@ -12,8 +12,8 @@ interface ToolSubBlockRendererProps {
   toolIndex: number
   subBlock: BlockSubBlockConfig
   effectiveParamId: string
-  toolParams: Record<string, string> | undefined
-  onParamChange: (toolIndex: number, paramId: string, value: string) => void
+  toolParams: Record<string, any> | undefined
+  onParamChange: (toolIndex: number, paramId: string, value: any) => void
   disabled: boolean
   canonicalToggle?: {
     mode: 'basic' | 'advanced'
@@ -48,7 +48,7 @@ export function ToolSubBlockRenderer({
   const toolParamValue = toolParams?.[effectiveParamId] ?? ''
   const isObjectType = OBJECT_SUBBLOCK_TYPES.has(subBlock.type)
 
-  const syncedRef = useRef<string | null>(null)
+  const syncedRef = useRef<any>(null)
   const onParamChangeRef = useRef(onParamChange)
   onParamChangeRef.current = onParamChange
 
@@ -59,11 +59,11 @@ export function ToolSubBlockRenderer({
       const newVal = state.workflowValues[wfId]?.[blockId]?.[syntheticId]
       const oldVal = prevState.workflowValues[wfId]?.[blockId]?.[syntheticId]
       if (newVal === oldVal) return
-      const stringified =
-        newVal == null ? '' : typeof newVal === 'string' ? newVal : JSON.stringify(newVal)
-      if (stringified === syncedRef.current) return
-      syncedRef.current = stringified
-      onParamChangeRef.current(toolIndex, effectiveParamId, stringified)
+      const processedVal =
+        newVal == null ? '' : newVal
+      if (processedVal === syncedRef.current) return
+      syncedRef.current = processedVal
+      onParamChangeRef.current(toolIndex, effectiveParamId, processedVal)
     })
     return unsub
   }, [blockId, syntheticId, toolIndex, effectiveParamId])

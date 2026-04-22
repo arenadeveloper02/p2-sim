@@ -767,7 +767,7 @@ export const ToolInput = memo(function ToolInput({
       const toolParams = getToolParametersConfig(toolId, toolBlock.type)
       if (!toolParams) return
 
-      const initialParams: Record<string, string> = {}
+      const initialParams: Record<string, any> = {}
 
       toolParams.userInputParameters.forEach((param) => {
         if (param.uiComponent?.value && !initialParams[param.id]) {
@@ -929,7 +929,7 @@ export const ToolInput = memo(function ToolInput({
   )
 
   const handleParamChange = useCallback(
-    (toolIndex: number, paramId: string, paramValue: string) => {
+    (toolIndex: number, paramId: string, paramValue: any) => {
       if (isPreview || disabled) return
 
       setStoreValue(
@@ -971,7 +971,7 @@ export const ToolInput = memo(function ToolInput({
 
       const newParamIds = new Set(toolParams.userInputParameters.map((p) => p.id))
 
-      const preservedParams: Record<string, string> = {}
+      const preservedParams: Record<string, any> = {}
       Object.entries(tool.params || {}).forEach(([paramId, value]) => {
         if (newParamIds.has(paramId) && value) {
           preservedParams[paramId] = value
@@ -1127,10 +1127,10 @@ export const ToolInput = memo(function ToolInput({
    */
   const renderParameterInput = (
     param: ToolParameterConfig,
-    value: string,
-    onChange: (value: string) => void,
+    value: any,
+    onChange: (value: any) => void,
     toolIndex?: number,
-    currentToolParams?: Record<string, string>,
+    currentToolParams?: Record<string, any>,
     wandControlRef?: React.MutableRefObject<WandControlHandlers | null>
   ) => {
     const uniqueSubBlockId =
@@ -1181,8 +1181,8 @@ export const ToolInput = memo(function ToolInput({
       case 'switch':
         return (
           <Switch
-            checked={value === 'true' || value === 'True'}
-            onCheckedChange={(checked) => onChange(checked ? 'true' : 'false')}
+            checked={value === true || value === 'true' || value === 'True'}
+            onCheckedChange={(checked) => onChange(checked)}
           />
         )
 
