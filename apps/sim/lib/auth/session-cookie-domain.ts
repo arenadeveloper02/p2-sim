@@ -1,11 +1,10 @@
 import { env } from '@/lib/core/config/env'
 
 /**
- * `Domain=` for session cookie clears: hostname from `NEXT_PUBLIC_APP_URL` only
- * (e.g. `https://agent.thearena.ai` → `agent.thearena.ai`). No `BETTER_AUTH_COOKIE_DOMAIN`.
- * `undefined` for localhost → host-only Set-Cookie clears.
+ * Hostname from `NEXT_PUBLIC_APP_URL` (e.g. `https://test-agent.thearena.ai` → `test-agent.thearena.ai`).
+ * `undefined` for localhost in URL or bad env; callers then use only host-only clears.
  */
-export function resolveSessionCookieDomainForClearing(): string | undefined {
+export function resolvePublicUrlHostnameForCookieClearing(): string | undefined {
   const appUrl = env.NEXT_PUBLIC_APP_URL?.trim()
   if (!appUrl) {
     return undefined
