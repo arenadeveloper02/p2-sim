@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
-import { client, signOut } from '@/lib/auth/auth-client'
+import { client } from '@/lib/auth/auth-client'
 
 const logger = createLogger('AutoLoginProvider')
 
@@ -49,9 +49,16 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
         }
 
         try {
-          await signOut()
+          const res = await fetch('/api/auth/clear-domain-session-cookies', {
+            method: 'POST',
+            credentials: 'include',
+          })
+          if (!res.ok) {
+            logger.error('One-time session cookie clear before auto-login failed:', res.status)
+            return
+          }
         } catch (error) {
-          logger.error('One-time sign-out before auto-login failed:', error)
+          logger.error('One-time session cookie clear before auto-login failed:', error)
           return
         }
         if (typeof localStorage !== 'undefined') {
