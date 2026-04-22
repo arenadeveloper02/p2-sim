@@ -71,7 +71,11 @@ export const unipileLinkedinSearchTool: ToolConfig<
   },
 
   outputs: {
-    object: { type: 'string', description: 'Unipile object type (e.g. LinkedinSearch)', optional: true },
+    object: {
+      type: 'string',
+      description: 'Unipile object type (e.g. LinkedinSearch)',
+      optional: true,
+    },
     item_count: { type: 'number', description: 'Number of search results in this page' },
     items: { type: 'json', description: 'Search result items' },
     cursor: { type: 'string', description: 'Next page cursor', optional: true },

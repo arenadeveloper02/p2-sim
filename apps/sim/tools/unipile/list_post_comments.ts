@@ -53,11 +53,19 @@ export const unipileListPostCommentsTool: ToolConfig<
   },
 
   outputs: {
-    object: { type: 'string', description: 'Unipile object type (e.g. CommentList)', optional: true },
+    object: {
+      type: 'string',
+      description: 'Unipile object type (e.g. CommentList)',
+      optional: true,
+    },
     item_count: { type: 'number', description: 'Number of comments in this page' },
     items: { type: 'json', description: 'Comment items' },
     cursor: { type: 'string', description: 'Next page cursor', optional: true },
     paging: { type: 'json', description: 'Paging metadata', optional: true },
-    total_items: { type: 'number', description: 'Total items when returned by API', optional: true },
+    total_items: {
+      type: 'number',
+      description: 'Total items when returned by API',
+      optional: true,
+    },
   },
 }

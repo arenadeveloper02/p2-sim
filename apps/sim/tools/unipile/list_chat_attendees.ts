@@ -43,6 +43,10 @@ export const unipileListChatAttendeesTool: ToolConfig<
     items: { type: 'json', description: 'ChatAttendee items' },
     cursor: { type: 'string', description: 'Pagination cursor when present', optional: true },
     paging: { type: 'json', description: 'Paging metadata when present', optional: true },
-    total_items: { type: 'number', description: 'Total items when returned by API', optional: true },
+    total_items: {
+      type: 'number',
+      description: 'Total items when returned by API',
+      optional: true,
+    },
   },
 }

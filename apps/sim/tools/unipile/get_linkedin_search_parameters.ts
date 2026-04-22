@@ -55,6 +55,10 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
     items: { type: 'json', description: 'LinkedIn search parameter items' },
     cursor: { type: 'string', description: 'Next page cursor', optional: true },
     paging: { type: 'json', description: 'Paging metadata', optional: true },
-    total_items: { type: 'number', description: 'Total items when returned by API', optional: true },
+    total_items: {
+      type: 'number',
+      description: 'Total items when returned by API',
+      optional: true,
+    },
   },
 }
