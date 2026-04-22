@@ -130,14 +130,8 @@ function sanitizeChangeEventQuery(response: GAQLResponse): GAQLResponse {
   query = query.replace(/,\s*segments\.date\b/gi, '')
   query = query.replace(/\bsegments\.date\s*,\s*/gi, '')
 
-  query = query.replace(
-    /\s+AND\s+segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'/gi,
-    ''
-  )
-  query = query.replace(
-    /\bsegments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'\s+AND\s+/gi,
-    ''
-  )
+  query = query.replace(/\s+AND\s+segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'/gi, '')
+  query = query.replace(/\bsegments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'\s+AND\s+/gi, '')
   query = query.replace(
     /\bWHERE\s+segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'(?=\s*(ORDER|LIMIT|$))/gi,
     'WHERE '
