@@ -203,14 +203,10 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // API routes CORS headers
+        // API CORS Allow-Origin: NEXT_PUBLIC_APP_URL + ALLOWED_ORIGINS (proxy.ts api-cors.ts)
         source: '/api/:path*',
         headers: [
           { key: 'Access-Control-Allow-Credentials', value: 'true' },
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001',
-          },
           {
             key: 'Access-Control-Allow-Methods',
             value: 'GET,POST,OPTIONS,PUT,DELETE',

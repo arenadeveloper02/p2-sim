@@ -9,6 +9,7 @@ import { OneDollarStats } from '@/components/analytics/onedollarstats'
 import { isHosted, isReactGrabEnabled, isReactScanEnabled } from '@/lib/core/config/feature-flags'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
+import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
@@ -298,6 +299,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             <QueryProvider>
               <SessionProvider>
                 <AutoLoginProvider>
+                  <AutoLoginSessionMigrationProvider />
                   <TooltipProvider>
                     <BrandedLayout>{children}</BrandedLayout>
                   </TooltipProvider>
