@@ -19,6 +19,7 @@ export const env = createEnv({
     DATABASE_URL:                          z.string().url(),                       // Primary database connection string
     BETTER_AUTH_URL:                       z.string().url(),                       // Base URL for Better Auth service
     BETTER_AUTH_SECRET:                    z.string().min(32),                     // Secret key for Better Auth JWT signing
+    BETTER_AUTH_COOKIE_DOMAIN:             z.string().optional(),                  // Parent domain for session cookies (e.g. thearena.ai); enables sharing across subdomains. Ignored on localhost. Omit for host-only cookies.
     DISABLE_REGISTRATION:                  z.boolean().optional(),                 // Flag to disable new user registration
     EMAIL_PASSWORD_SIGNUP_ENABLED:         z.boolean().optional().default(true),   // Enable email/password authentication (server-side enforcement)
     DISABLE_AUTH:                          z.boolean().optional(),                 // Bypass authentication entirely (self-hosted only, creates anonymous session)
