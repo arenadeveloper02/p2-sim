@@ -11,7 +11,10 @@ interface WorkspaceChromeProps {
  * Returns true when the workspace shell should hide the left sidebar (duplicate full-bleed views).
  */
 function isFullscreenWorkspaceRoute(pathname: string): boolean {
-  return /^\/workspace\/[^/]+\/home\/embed\/?$/.test(pathname)
+  return (
+    /^\/workspace\/[^/]+\/home\/embed\/?$/.test(pathname) ||
+    /^\/workspace\/[^/]+\/task\/[^/]+\/embed\/?$/.test(pathname)
+  )
 }
 
 /**
