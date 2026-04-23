@@ -2413,10 +2413,20 @@ export const auth = betterAuth({
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
-          // Add user_scope parameter to request user token for search.all API
-          // Note: search.all requires 'search:read' user scope in addition to channels:read
           authorizationUrlParams: {
-            user_scope: 'search:read,channels:read',
+            user_scope: [
+              'search:read',
+              'channels:read',
+              'channels:history',
+              'groups:read',
+              'groups:history',
+              'im:read',
+              'im:history',
+              'mpim:read',
+              'mpim:history',
+              'users:read',
+              'chat:write',
+            ].join(','),
           },
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
