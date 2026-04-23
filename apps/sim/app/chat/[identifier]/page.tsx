@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 
 export default async function ChatPage({ params }: { params: Promise<{ identifier: string }> }) {
   const { identifier } = await params
-  return <ArenaChatClient identifier={identifier} />
+  return <ArenaChatClient  identifier={identifier} />
 }

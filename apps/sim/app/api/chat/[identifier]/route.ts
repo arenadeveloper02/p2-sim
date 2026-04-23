@@ -7,14 +7,14 @@ import {
   workflowQueries,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { generateId } from '@/lib/core/utils/uuid'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { ChatFiles } from '@/lib/uploads'
@@ -45,6 +45,25 @@ const departmentLabelMap: Record<string, string> = agentDepartments.reduce(
   },
   {} as Record<string, string>
 )
+interface ChatConfigSource {
+  id: string
+  title: string
+  description: string | null
+  customizations: unknown
+  authType: string | null
+  outputConfigs: unknown
+}
+
+function toChatConfigResponse(deployment: ChatConfigSource) {
+  return {
+    id: deployment.id,
+    title: deployment.title,
+    description: deployment.description,
+    customizations: deployment.customizations,
+    authType: deployment.authType,
+    outputConfigs: deployment.outputConfigs,
+  }
+}
 
 const chatFileSchema = z.object({
   name: z.string().min(1, 'File name is required'),
@@ -150,108 +169,113 @@ async function softDeleteWorkflowQueries({
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ identifier: string }> }
-) {
-  const { identifier } = await params
-  const requestId = generateRequestId()
+export const POST = withRouteHandler(
+  async (request: NextRequest, { params }: { params: Promise<{ identifier: string }> }) => {
+    const { identifier } = await params
+    const requestId = generateRequestId()
 
-  try {
-    let parsedBody
     try {
-      const rawBody = await request.json()
-      const validation = chatPostBodySchema.safeParse(rawBody)
+      let parsedBody
+      try {
+        const rawBody = await request.json()
+        const validation = chatPostBodySchema.safeParse(rawBody)
 
-      if (!validation.success) {
-        const errorMessage = validation.error.errors
-          .map((err) => `${err.path.join('.')}: ${err.message}`)
-          .join(', ')
-        logger.warn(`[${requestId}] Validation error: ${errorMessage}`)
-        return addCorsHeaders(
-          createErrorResponse(`Invalid request body: ${errorMessage}`, 400),
-          request
-        )
+        if (!validation.success) {
+          const errorMessage = validation.error.errors
+            .map((err) => `${err.path.join('.')}: ${err.message}`)
+            .join(', ')
+          logger.warn(`[${requestId}] Validation error: ${errorMessage}`)
+          return addCorsHeaders(
+            createErrorResponse(`Invalid request body: ${errorMessage}`, 400),
+            request
+          )
+        }
+
+        parsedBody = validation.data
+      } catch (_error) {
+        return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
       }
 
-      parsedBody = validation.data
-    } catch (_error) {
-      return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
-    }
-
-    const deploymentResult = await db
-      .select({
-        id: chat.id,
-        workflowId: chat.workflowId,
-        userId: chat.userId,
-        isActive: chat.isActive,
-        authType: chat.authType,
-        password: chat.password,
-        allowedEmails: chat.allowedEmails,
-        outputConfigs: chat.outputConfigs,
-      })
-      .from(chat)
-      .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
-      .limit(1)
-
-    if (deploymentResult.length === 0) {
-      logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
-      return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
-    }
-
-    const deployment = deploymentResult[0]
-
-    if (!deployment.isActive) {
-      logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
-
-      const [workflowRecord] = await db
-        .select({ workspaceId: workflow.workspaceId })
-        .from(workflow)
-        .where(and(eq(workflow.id, deployment.workflowId), isNull(workflow.archivedAt)))
+      const deploymentResult = await db
+        .select({
+          id: chat.id,
+          title: chat.title,
+          description: chat.description,
+          customizations: chat.customizations,
+          workflowId: chat.workflowId,
+          userId: chat.userId,
+          isActive: chat.isActive,
+          authType: chat.authType,
+          password: chat.password,
+          allowedEmails: chat.allowedEmails,
+          outputConfigs: chat.outputConfigs,
+        })
+        .from(chat)
+        .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
         .limit(1)
 
-      const workspaceId = workflowRecord?.workspaceId
-      if (!workspaceId) {
-        logger.warn(`[${requestId}] Cannot log: workflow ${deployment.workflowId} has no workspace`)
+      if (deploymentResult.length === 0) {
+        logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
+        return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+      }
+
+      const deployment = deploymentResult[0]
+
+      if (!deployment.isActive) {
+        logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
+
+        const [workflowRecord] = await db
+          .select({ workspaceId: workflow.workspaceId })
+          .from(workflow)
+          .where(and(eq(workflow.id, deployment.workflowId), isNull(workflow.archivedAt)))
+          .limit(1)
+
+        const workspaceId = workflowRecord?.workspaceId
+        if (!workspaceId) {
+          logger.warn(
+            `[${requestId}] Cannot log: workflow ${deployment.workflowId} has no workspace`
+          )
+          return addCorsHeaders(
+            createErrorResponse('This chat is currently unavailable', 403),
+            request
+          )
+        }
+
+        const executionId = generateId()
+        const loggingSession = new LoggingSession(
+          deployment.workflowId,
+          executionId,
+          'chat',
+          requestId
+        )
+
+        await loggingSession.safeStart({
+          userId: deployment.userId,
+          workspaceId,
+          variables: {},
+        })
+
+        await loggingSession.safeCompleteWithError({
+          error: {
+            message: 'This chat is currently unavailable. The chat has been disabled.',
+            stackTrace: undefined,
+          },
+          traceSpans: [],
+        })
+
         return addCorsHeaders(
           createErrorResponse('This chat is currently unavailable', 403),
           request
         )
       }
 
-      const executionId = generateId()
-      const loggingSession = new LoggingSession(
-        deployment.workflowId,
-        executionId,
-        'chat',
-        requestId
-      )
-
-      await loggingSession.safeStart({
-        userId: deployment.userId,
-        workspaceId,
-        variables: {},
-        conversationId: undefined,
-      })
-
-      await loggingSession.safeCompleteWithError({
-        error: {
-          message: 'This chat is currently unavailable. The chat has been disabled.',
-          stackTrace: undefined,
-        },
-        traceSpans: [],
-      })
-
-      return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
-    }
-
-    const authResult = await validateChatAuth(requestId, deployment, request, parsedBody)
-    if (!authResult.authorized) {
-      return addCorsHeaders(
-        createErrorResponse(authResult.error || 'Authentication required', 401),
-        request
-      )
-    }
+      const authResult = await validateChatAuth(requestId, deployment, request, parsedBody)
+      if (!authResult.authorized) {
+        return addCorsHeaders(
+          createErrorResponse(authResult.error || 'Authentication required', 401),
+          request
+        )
+      }
 
     // Store chat details in deployed_chat table if chatId is provided
     // Ensures each chatId is added only once, even with concurrent requests
@@ -315,7 +339,7 @@ export async function POST(
               ? startBlockValues.join(', ')
               : words.slice(0, 5).join(' ') || 'New Chat'
 
-          const deployedChatId = uuidv4()
+          const deployedChatId = generateId()
           const now = new Date()
 
           logger.debug(`[${requestId}] Creating new deployed_chat record:`, {
@@ -928,6 +952,13 @@ export async function POST(
         headers: SSE_HEADERS,
       })
       return addCorsHeaders(streamResponse, request)
+      } catch (error: any) {
+        logger.error(`[${requestId}] Error processing chat request:`, error)
+        return addCorsHeaders(
+          createErrorResponse(error.message || 'Failed to process request', 500),
+          request
+        )
+      }
     } catch (error: any) {
       logger.error(`[${requestId}] Error processing chat request:`, error)
       return addCorsHeaders(
@@ -935,157 +966,156 @@ export async function POST(
         request
       )
     }
-  } catch (error: any) {
-    logger.error(`[${requestId}] Error processing chat request:`, error)
-    return addCorsHeaders(
-      createErrorResponse(error.message || 'Failed to process request', 500),
-      request
-    )
   }
-}
+);
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ identifier: string }> }
-) {
-  const { identifier } = await params
-  const requestId = generateRequestId()
+export const PATCH = withRouteHandler(
+  async (request: NextRequest, { params }: { params: Promise<{ identifier: string }> }) => {
+    const { identifier } = await params
+    const requestId = generateRequestId()
 
-  try {
-    let parsedBody
     try {
-      const rawBody = await request.json()
-      const validation = goldenQueriesSchema.safeParse(rawBody)
-      if (!validation.success) {
-        const errorMessage = validation.error.errors
-          .map((err) => `${err.path.join('.')}: ${err.message}`)
-          .join(', ')
+      let parsedBody
+      try {
+        const rawBody = await request.json()
+        const validation = goldenQueriesSchema.safeParse(rawBody)
+        if (!validation.success) {
+          const errorMessage = validation.error.errors
+            .map((err) => `${err.path.join('.')}: ${err.message}`)
+            .join(', ')
+          return addCorsHeaders(
+            createErrorResponse(`Invalid request body: ${errorMessage}`, 400),
+            request
+          )
+        }
+        parsedBody = validation.data
+      } catch (_error) {
+        return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
+      }
+
+      const deploymentResult = await db
+        .select({
+          id: chat.id,
+          isActive: chat.isActive,
+          authType: chat.authType,
+          password: chat.password,
+          allowedEmails: chat.allowedEmails,
+          workflowId: chat.workflowId,
+          userId: chat.userId,
+        })
+        .from(chat)
+        .where(eq(chat.identifier, identifier))
+        .limit(1)
+
+      if (deploymentResult.length === 0) {
+        logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
+        return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+      }
+
+      const deployment = deploymentResult[0]
+      if (!deployment.isActive) {
+        logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
         return addCorsHeaders(
-          createErrorResponse(`Invalid request body: ${errorMessage}`, 400),
+          createErrorResponse('This chat is currently unavailable', 403),
           request
         )
       }
-      parsedBody = validation.data
-    } catch (_error) {
-      return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
-    }
 
-    const deploymentResult = await db
-      .select({
-        id: chat.id,
-        isActive: chat.isActive,
-        authType: chat.authType,
-        password: chat.password,
-        allowedEmails: chat.allowedEmails,
-        workflowId: chat.workflowId,
-        userId: chat.userId,
-      })
-      .from(chat)
-      .where(eq(chat.identifier, identifier))
-      .limit(1)
-
-    if (deploymentResult.length === 0) {
-      logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
-      return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
-    }
-
-    const deployment = deploymentResult[0]
-    if (!deployment.isActive) {
-      logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
-      return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
-    }
-
-    const cookieName = `chat_auth_${deployment.id}`
-    const authCookie = request.cookies.get(cookieName)
-    if (
-      deployment.authType !== 'public' &&
-      (!authCookie || !validateAuthToken(authCookie.value, deployment.id, deployment.password))
-    ) {
-      const authResult = await validateChatAuth(requestId, deployment, request)
-      if (!authResult.authorized) {
-        return addCorsHeaders(
-          createErrorResponse(authResult.error || 'Authentication required', 401),
-          request
-        )
+      const cookieName = `chat_auth_${deployment.id}`
+      const authCookie = request.cookies.get(cookieName)
+      if (
+        deployment.authType !== 'public' &&
+        (!authCookie || !validateAuthToken(authCookie.value, deployment.id, deployment.password))
+      ) {
+        const authResult = await validateChatAuth(requestId, deployment, request)
+        if (!authResult.authorized) {
+          return addCorsHeaders(
+            createErrorResponse(authResult.error || 'Authentication required', 401),
+            request
+          )
+        }
       }
+
+      const sanitizedQueries = sanitizeGoldenQueries(parsedBody.goldenQueries)
+      const deleteMode = parsedBody.deleteMode ?? 'hard'
+
+      if (deleteMode === 'soft') {
+        await softDeleteWorkflowQueries({
+          workflowId: deployment.workflowId,
+          keepQueries: sanitizedQueries,
+        })
+      } else {
+        await replaceWorkflowQueries({
+          workflowId: deployment.workflowId,
+          userId: deployment.userId,
+          queries: sanitizedQueries,
+        })
+      }
+
+      await db.update(chat).set({ updatedAt: new Date() }).where(eq(chat.id, deployment.id))
+
+      return addCorsHeaders(createSuccessResponse({ goldenQueries: sanitizedQueries }), request)
+    } catch (error: any) {
+      logger.error(`[${requestId}] Error updating golden queries:`, error)
+      return addCorsHeaders(
+        createErrorResponse(error.message || 'Failed to update golden queries', 500),
+        request
+      )
     }
-
-    const sanitizedQueries = sanitizeGoldenQueries(parsedBody.goldenQueries)
-    const deleteMode = parsedBody.deleteMode ?? 'hard'
-
-    if (deleteMode === 'soft') {
-      await softDeleteWorkflowQueries({
-        workflowId: deployment.workflowId,
-        keepQueries: sanitizedQueries,
-      })
-    } else {
-      await replaceWorkflowQueries({
-        workflowId: deployment.workflowId,
-        userId: deployment.userId,
-        queries: sanitizedQueries,
-      })
-    }
-
-    await db.update(chat).set({ updatedAt: new Date() }).where(eq(chat.id, deployment.id))
-
-    return addCorsHeaders(createSuccessResponse({ goldenQueries: sanitizedQueries }), request)
-  } catch (error: any) {
-    logger.error(`[${requestId}] Error updating golden queries:`, error)
-    return addCorsHeaders(
-      createErrorResponse(error.message || 'Failed to update golden queries', 500),
-      request
-    )
   }
-}
+);
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ identifier: string }> }
-) {
-  const { identifier } = await params
-  const requestId = generateRequestId()
+export const GET = withRouteHandler(
+  async (request: NextRequest, { params }: { params: Promise<{ identifier: string }> }) => {
+    const { identifier } = await params
+    const requestId = generateRequestId()
 
-  try {
-    const deploymentResult = await db
-      .select({
-        id: chat.id,
-        title: chat.title,
-        description: chat.description,
-        customizations: chat.customizations,
-        isActive: chat.isActive,
-        workflowId: chat.workflowId,
-        authType: chat.authType,
-        password: chat.password,
-        allowedEmails: chat.allowedEmails,
-        outputConfigs: chat.outputConfigs,
-        department: chat.department,
-      })
-      .from(chat)
-      .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
-      .limit(1)
+    try {
+      const deploymentResult = await db
+        .select({
+          id: chat.id,
+          title: chat.title,
+          description: chat.description,
+          customizations: chat.customizations,
+          isActive: chat.isActive,
+          workflowId: chat.workflowId,
+          authType: chat.authType,
+          password: chat.password,
+          allowedEmails: chat.allowedEmails,
+          outputConfigs: chat.outputConfigs,
+          department: chat.department,
+        })
+        .from(chat)
+        .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
+        .limit(1)
 
-    if (deploymentResult.length === 0) {
-      logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
-      return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
-    }
+      if (deploymentResult.length === 0) {
+        logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
+        return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+      }
 
-    const deployment = deploymentResult[0]
+      const deployment = deploymentResult[0]
 
-    if (!deployment.isActive) {
-      logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
-      return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
-    }
+      if (!deployment.isActive) {
+        logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
+        return addCorsHeaders(
+          createErrorResponse('This chat is currently unavailable', 403),
+          request
+        )
+      }
 
     // Extract Start Block inputFormat for chat UI (before auth checks so it's available in all responses)
     let inputFormat: InputFormatField[] = []
     try {
-      const deployedData = await loadDeployedWorkflowState(deployment.workflowId)
-      // Find Start Block manually from BlockState
-      const startBlock = Object.values(deployedData.blocks).find(
+      const deployedData = (await loadDeployedWorkflowState(deployment.workflowId)) as unknown as {
+        blocks?: Record<string, unknown>
+      }
+      const blocks = Object.values(deployedData.blocks ?? {}) as Array<Record<string, unknown>>
+      const startBlock = blocks.find(
         (block) => block.type === 'start_trigger' || block.type === 'starter'
-      )
-      if (startBlock?.subBlocks?.inputFormat?.value) {
-        const inputFormatValue = startBlock.subBlocks.inputFormat.value
+      ) as { subBlocks?: Record<string, unknown> } | undefined
+      const inputFormatValue = (startBlock?.subBlocks as any)?.inputFormat?.value as unknown
+      if (inputFormatValue) {
         if (Array.isArray(inputFormatValue)) {
           inputFormat = inputFormatValue
             .filter((field) => {
@@ -1191,4 +1221,5 @@ export async function GET(
       request
     )
   }
-}
+  }
+);

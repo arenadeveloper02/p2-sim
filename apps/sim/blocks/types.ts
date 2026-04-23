@@ -1,22 +1,22 @@
 import type { JSX, SVGProps } from 'react'
+import type {
+  OutputCondition,
+  OutputFieldDefinition,
+  PrimitiveValueType,
+  SubBlockType,
+} from '@sim/workflow-types/blocks'
+import type { SelectorKey } from '@/hooks/selectors/types'
+import type { ToolResponse } from '@/tools/types'
 import type { ImageProps } from 'next/image'
+
+export type { OutputCondition, OutputFieldDefinition, PrimitiveValueType, SubBlockType }
+export { isHiddenFromDisplay } from '@sim/workflow-types/blocks'
 
 export type BlockIcon =
   | ((props: SVGProps<SVGSVGElement>) => JSX.Element) // for Lucide SVGs
   | ((props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) => JSX.Element) // for Next Image
 
-import type { SelectorKey } from '@/hooks/selectors/types'
-import type { ToolResponse } from '@/tools/types'
 export type ParamType = 'string' | 'number' | 'boolean' | 'json' | 'array' | 'file'
-export type PrimitiveValueType =
-  | 'string'
-  | 'number'
-  | 'boolean'
-  | 'json'
-  | 'array'
-  | 'file'
-  | 'file[]'
-  | 'any'
 
 export type BlockCategory = 'blocks' | 'tools' | 'triggers'
 
@@ -121,62 +121,6 @@ export type GenerationType =
   | 'cron-expression'
   | 'odata-expression'
 
-export type SubBlockType =
-  | 'short-input' // Single line input
-  | 'long-input' // Multi-line input
-  | 'dropdown' // Select menu
-  | 'combobox' // Searchable dropdown with text input
-  | 'slider' // Range input
-  | 'table' // Grid layout
-  | 'code' // Code editor
-  | 'switch' // Toggle button
-  | 'tool-input' // Tool configuration
-  | 'skill-input' // Skill selection for agent blocks
-  | 'checkbox-list' // Multiple selection
-  | 'grouped-checkbox-list' // Grouped, scrollable checkbox list with select all
-  | 'condition-input' // Conditional logic
-  | 'eval-input' // Evaluation input
-  | 'time-input' // Time input
-  | 'date-input' // Date input
-  | 'oauth-input' // OAuth credential selector
-  | 'webhook-config' // Webhook configuration
-  | 'schedule-info' // Schedule status display (next run, last ran, failure badge)
-  | 'file-selector' // File selector for Google Drive, etc.
-  | 'sheet-selector' // Sheet/tab selector for Google Sheets, Microsoft Excel
-  | 'project-selector' // Project selector for Jira, Discord, etc.
-  | 'channel-selector' // Channel selector for Slack, Discord, etc.
-  | 'user-selector' // User selector for Slack, Discord, etc.
-  | 'mention-input' // Message input with inline user mentions
-  | 'folder-selector' // Folder selector for Gmail, etc.
-  | 'knowledge-base-selector' // Knowledge base selector
-  | 'knowledge-tag-filters' // Multiple tag filters for knowledge bases
-  | 'document-selector' // Document selector for knowledge bases
-  | 'document-tag-entry' // Document tag entry for creating documents
-  | 'mcp-server-selector' // MCP server selector
-  | 'mcp-tool-selector' // MCP tool selector
-  | 'mcp-dynamic-args' // MCP dynamic arguments based on tool schema
-  | 'input-format' // Input structure format
-  | 'response-format' // Response structure format
-  | 'filter-builder' // Filter conditions builder
-  | 'sort-builder' // Sort conditions builder
-  | 'file-upload' // File uploader
-  | 'input-mapping' // Map parent variables to child workflow input schema
-  | 'variables-input' // Variable assignments for updating workflow variables
-  | 'messages-input' // Multiple message inputs with role and content for LLM message history
-  | 'workflow-selector' // Workflow selector for agent tools
-  | 'workflow-input-mapper' // Dynamic workflow input mapper based on selected workflow
-  | 'text' // Read-only text display
-  | 'arena-project-selector'
-  | 'arena-group-selector'
-  | 'arena-assignee-selector'
-  | 'arena-task-selector'
-  | 'arena-states-selector'
-  | 'arena-client-selector'
-  | 'slack-client-selector'
-  | 'slack-channel-selector'
-  | 'router-input' // Router route definitions with descriptions
-  | 'table-selector' // Table selector with link to view table
-
 /**
  * Selector types that require display name hydration
  * These show IDs/keys that need to be resolved to human-readable names
@@ -215,51 +159,6 @@ export type ToolOutputToValueType<T> = T extends Record<string, any>
   : never
 
 export type BlockOutput = PrimitiveValueType | { [key: string]: any }
-
-/**
- * Condition for showing an output field.
- * Uses the same pattern as SubBlockConfig.condition
- */
-export interface OutputCondition {
-  field: string
-  value: string | number | boolean | Array<string | number | boolean>
-  not?: boolean
-  and?: {
-    field: string
-    value:
-      | string
-      | number
-      | boolean
-      | Array<string | number | boolean | undefined | null>
-      | undefined
-      | null
-    not?: boolean
-  }
-}
-
-export type OutputFieldDefinition =
-  | PrimitiveValueType
-  | {
-      type: PrimitiveValueType
-      description?: string
-      /**
-       * Optional condition for when this output should be shown.
-       * If not specified, the output is always shown.
-       * Uses the same condition format as subBlocks.
-       */
-      condition?: OutputCondition
-      /**
-       * If true, this output is hidden from display in the tag dropdown and logs,
-       * but still available for resolution and execution.
-       */
-      hiddenFromDisplay?: boolean
-    }
-
-export function isHiddenFromDisplay(def: unknown): boolean {
-  return Boolean(
-    def && typeof def === 'object' && 'hiddenFromDisplay' in def && def.hiddenFromDisplay
-  )
-}
 
 export interface ParamConfig {
   type: ParamType
@@ -316,6 +215,8 @@ export interface SubBlockConfig {
         icon?: React.ComponentType<{ className?: string }>
         group?: string
         hidden?: boolean
+        defaultChecked?: boolean
+        description?: string
       }[]
     | (() => {
         label: string
@@ -323,6 +224,8 @@ export interface SubBlockConfig {
         icon?: React.ComponentType<{ className?: string }>
         group?: string
         hidden?: boolean
+        defaultChecked?: boolean
+        description?: string
       }[])
   min?: number
   max?: number
@@ -339,6 +242,7 @@ export interface SubBlockConfig {
   hideWhenEnvSet?: string // Hide this subblock when the named NEXT_PUBLIC_ env var is truthy
   description?: string
   tooltip?: string // Tooltip text displayed via info icon next to the title
+  modalId?: string // Registry key when type is 'modal'; see sub-block/components/modal-registry.ts
   value?: (params: Record<string, any>) => string
   grouped?: boolean
   scrollable?: boolean

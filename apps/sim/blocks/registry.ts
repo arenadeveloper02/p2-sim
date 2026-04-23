@@ -19,6 +19,7 @@ import { AthenaBlock } from '@/blocks/blocks/athena'
 import { AttioBlock } from '@/blocks/blocks/attio'
 import { BoxBlock } from '@/blocks/blocks/box'
 import { BrandfetchBlock } from '@/blocks/blocks/brandfetch'
+import { BrightDataBlock } from '@/blocks/blocks/brightdata'
 import { BrowserUseBlock } from '@/blocks/blocks/browser_use'
 import { CalComBlock } from '@/blocks/blocks/calcom'
 import { CalendlyBlock } from '@/blocks/blocks/calendly'
@@ -97,6 +98,7 @@ import { HumanInTheLoopBlock } from '@/blocks/blocks/human_in_the_loop'
 import { HunterBlock } from '@/blocks/blocks/hunter'
 import { IAMBlock } from '@/blocks/blocks/iam'
 import { ImageFusionBlock } from '@/blocks/blocks/image_fusion'
+import { IdentityCenterBlock } from '@/blocks/blocks/identity_center'
 import { ImageGeneratorBlock } from '@/blocks/blocks/image_generator'
 import { ImapBlock } from '@/blocks/blocks/imap'
 import { IncidentioBlock } from '@/blocks/blocks/incidentio'
@@ -133,6 +135,7 @@ import {
   MistralParseV2Block,
   MistralParseV3Block,
 } from '@/blocks/blocks/mistral_parse'
+import { MondayBlock } from '@/blocks/blocks/monday'
 import { MongoDBBlock } from '@/blocks/blocks/mongodb'
 import { MothershipBlock } from '@/blocks/blocks/mothership'
 import { MySQLBlock } from '@/blocks/blocks/mysql'
@@ -178,6 +181,7 @@ import { SendGridBlock } from '@/blocks/blocks/sendgrid'
 import { SentryBlock } from '@/blocks/blocks/sentry'
 import { SerperBlock } from '@/blocks/blocks/serper'
 import { ServiceNowBlock } from '@/blocks/blocks/servicenow'
+import { SESBlock } from '@/blocks/blocks/ses'
 import { SftpBlock } from '@/blocks/blocks/sftp'
 import { SharepointBlock } from '@/blocks/blocks/sharepoint'
 import { ShopifyBlock } from '@/blocks/blocks/shopify'
@@ -230,7 +234,7 @@ import { ZendeskBlock } from '@/blocks/blocks/zendesk'
 import { ZepBlock } from '@/blocks/blocks/zep'
 import { ZoomBlock } from '@/blocks/blocks/zoom'
 import type { BlockConfig } from '@/blocks/types'
-import { SemrushBlock } from './blocks/semrush'
+import { SemrushBlock } from '@/blocks/blocks/semrush'
 
 // Registry of all available blocks, alphabetically sorted
 export const registry: Record<string, BlockConfig> = {
@@ -253,8 +257,9 @@ export const registry: Record<string, BlockConfig> = {
   ashby: AshbyBlock,
   athena: AthenaBlock,
   attio: AttioBlock,
-  brandfetch: BrandfetchBlock,
   box: BoxBlock,
+  brandfetch: BrandfetchBlock,
+  brightdata: BrightDataBlock,
   browser_use: BrowserUseBlock,
   calcom: CalComBlock,
   calendly: CalendlyBlock,
@@ -345,6 +350,7 @@ export const registry: Record<string, BlockConfig> = {
   hunter: HunterBlock,
   image_fusion: ImageFusionBlock,
   iam: IAMBlock,
+  identity_center: IdentityCenterBlock,
   image_generator: ImageGeneratorBlock,
   imap: ImapBlock,
   incidentio: IncidentioBlock,
@@ -384,6 +390,7 @@ export const registry: Record<string, BlockConfig> = {
   mistral_parse: MistralParseBlock,
   mistral_parse_v2: MistralParseV2Block,
   mistral_parse_v3: MistralParseV3Block,
+  monday: MondayBlock,
   mongodb: MongoDBBlock,
   mothership: MothershipBlock,
   mysql: MySQLBlock,
@@ -442,6 +449,7 @@ export const registry: Record<string, BlockConfig> = {
   smtp: SmtpBlock,
   spotify: SpotifyBlock,
   secrets_manager: SecretsManagerBlock,
+  ses: SESBlock,
   sqs: SQSBlock,
   ssh: SSHBlock,
   sts: STSBlock,

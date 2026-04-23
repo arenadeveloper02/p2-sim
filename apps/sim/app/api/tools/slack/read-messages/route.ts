@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import type { SlackMessage } from '@/tools/slack/types'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { openDMChannel } from '../utils'
 
 export const dynamic = 'force-dynamic'
@@ -295,7 +296,7 @@ const SlackReadMessagesSchema = z
     message: 'Either channel or userId is required',
   })
 
-export async function POST(request: NextRequest) {
+export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
   try {
@@ -972,4 +973,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

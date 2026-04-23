@@ -3,16 +3,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import Cookies from 'js-cookie'
+import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { client, useSession } from '@/lib/auth/auth-client'
 import { getLoginRedirectUrl } from '@/lib/core/utils/urls'
 import { changeWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { InviteLayout, InviteStatusCard } from '@/app/invite/components'
 import { useBrandConfig } from '@/ee/whitelabeling'
+import { organizationKeys } from '@/hooks/queries/organization'
+import { subscriptionKeys } from '@/hooks/queries/subscription'
 
 const logger = createLogger('InviteById')
 
-/** Error codes that can occur during invitation processing */
 type InviteErrorCode =
   | 'missing-token'
   | 'invalid-token'
@@ -23,6 +25,7 @@ type InviteErrorCode =
   | 'user-not-found'
   | 'already-member'
   | 'already-in-organization'
+  | 'no-seats-available'
   | 'invalid-invitation'
   | 'missing-invitation-id'
   | 'server-error'
@@ -38,10 +41,27 @@ interface InviteError {
   canRetry?: boolean
 }
 
-/**
- * Maps error codes to user-friendly error objects with contextual information
- */
-function getInviteError(reason: string): InviteError {
+type InvitationKind = 'organization' | 'workspace'
+
+interface InvitationDetails {
+  id: string
+  kind: InvitationKind
+  email: string
+  organizationId: string | null
+  organizationName: string | null
+  role: string
+  status: string
+  expiresAt: string
+  inviterName: string | null
+  inviterEmail: string | null
+  grants: Array<{
+    workspaceId: string
+    workspaceName: string | null
+    permission: 'admin' | 'write' | 'read'
+  }>
+}
+
+function getInviteError(code: string): InviteError {
   const errorMap: Record<string, InviteError> = {
     'missing-token': {
       code: 'missing-token',
@@ -83,14 +103,18 @@ function getInviteError(reason: string): InviteError {
       message:
         'You are already a member of an organization. Leave your current organization before accepting a new invitation.',
     },
+    'no-seats-available': {
+      code: 'no-seats-available',
+      message:
+        'This organization has no available seats right now. Ask an admin to add seats or retry after capacity changes.',
+    },
     'invalid-invitation': {
       code: 'invalid-invitation',
       message: 'This invitation is invalid or no longer exists.',
     },
-    'missing-invitation-id': {
-      code: 'missing-invitation-id',
-      message:
-        'The invitation link is missing required information. Please use the original invitation link.',
+    'not-found': {
+      code: 'invalid-invitation',
+      message: 'This invitation is invalid or no longer exists.',
     },
     'server-error': {
       code: 'server-error',
@@ -118,7 +142,7 @@ function getInviteError(reason: string): InviteError {
   }
 
   return (
-    errorMap[reason] || {
+    errorMap[code] || {
       code: 'unknown',
       message:
         'An unexpected error occurred while processing your invitation. Please try again or contact support.',
@@ -127,40 +151,12 @@ function getInviteError(reason: string): InviteError {
   )
 }
 
-/**
- * Parses API error responses and extracts a standardized error code
- */
-function parseApiError(error: unknown, statusCode?: number): InviteErrorCode {
-  // Handle network/fetch errors
-  if (error instanceof TypeError && error.message.includes('fetch')) {
-    return 'network-error'
-  }
-
-  // Handle error message patterns first (more specific matching)
-  const errorMessage =
-    typeof error === 'string' ? error.toLowerCase() : (error as Error)?.message?.toLowerCase() || ''
-
-  // Check specific patterns before falling back to status codes
-  // Order matters: more specific patterns must come first
-  if (errorMessage.includes('already a member of an organization')) return 'already-in-organization'
-  if (errorMessage.includes('already a member')) return 'already-member'
-  if (errorMessage.includes('email mismatch') || errorMessage.includes('different email'))
-    return 'email-mismatch'
-  if (errorMessage.includes('already processed')) return 'already-processed'
-  if (errorMessage.includes('unauthorized')) return 'unauthorized'
-  if (errorMessage.includes('forbidden') || errorMessage.includes('permission')) return 'forbidden'
-  if (errorMessage.includes('not found') || errorMessage.includes('expired'))
-    return 'invalid-invitation'
-
-  // Handle HTTP status codes as fallback
-  if (statusCode) {
-    if (statusCode === 401) return 'unauthorized'
-    if (statusCode === 403) return 'forbidden'
-    if (statusCode === 404) return 'invalid-invitation'
-    if (statusCode === 409) return 'already-in-organization'
-    if (statusCode >= 500) return 'server-error'
-  }
-
+function codeFromStatus(status: number): InviteErrorCode {
+  if (status === 401) return 'unauthorized'
+  if (status === 403) return 'forbidden'
+  if (status === 404) return 'invalid-invitation'
+  if (status === 409) return 'already-in-organization'
+  if (status >= 500) return 'server-error'
   return 'unknown'
 }
 
@@ -168,18 +164,18 @@ export default function Invite() {
   const router = useRouter()
   const params = useParams()
   const inviteId = params.id as string
+  const inviteTokenStorageKey = `inviteToken:${inviteId}`
   const searchParams = useSearchParams()
   const { data: session, isPending } = useSession()
   const brandConfig = useBrandConfig()
-  const [invitationDetails, setInvitationDetails] = useState<any>(null)
+  const queryClient = useQueryClient()
+  const [invitation, setInvitation] = useState<InvitationDetails | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<InviteError | null>(null)
   const [isAccepting, setIsAccepting] = useState(false)
   const [accepted, setAccepted] = useState(false)
   const [isNewUser, setIsNewUser] = useState(false)
   const [token, setToken] = useState<string | null>(null)
-  const [invitationType, setInvitationType] = useState<'organization' | 'workspace'>('workspace')
-  const [currentOrgName, setCurrentOrgName] = useState<string | null>(null)
   const userEmail = Cookies.get('email')
   const [autoLoginAttempted, setAutoLoginAttempted] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
@@ -194,10 +190,10 @@ export default function Invite() {
     const tokenFromQuery = searchParams.get('token')
     if (tokenFromQuery) {
       setToken(tokenFromQuery)
-      sessionStorage.setItem('inviteToken', tokenFromQuery)
+      sessionStorage.setItem(inviteTokenStorageKey, tokenFromQuery)
     } else {
-      const storedToken = sessionStorage.getItem('inviteToken')
-      if (storedToken && storedToken !== inviteId) {
+      const storedToken = sessionStorage.getItem(inviteTokenStorageKey)
+      if (storedToken) {
         setToken(storedToken)
       }
     }
@@ -205,9 +201,8 @@ export default function Invite() {
     if (errorReason) {
       setError(getInviteError(errorReason))
       setIsLoading(false)
-      return
     }
-  }, [searchParams, inviteId])
+  }, [searchParams, inviteId, inviteTokenStorageKey])
 
   const handleAutoLogin = useCallback(async () => {
     try {
@@ -237,175 +232,85 @@ export default function Invite() {
   useEffect(() => {
     if (!token) return
 
-    async function fetchInvitationDetails() {
+    async function fetchInvitation() {
       setIsLoading(true)
       try {
-        const workspaceInviteResponse = await fetch(`/api/workspaces/invitations/${inviteId}`, {
-          method: 'GET',
-        })
+        const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
+        const response = await fetch(`/api/invitations/${inviteId}${tokenParam}`)
 
-        if (workspaceInviteResponse.ok) {
-          const data = await workspaceInviteResponse.json()
-          setInvitationType('workspace')
-          setInvitationDetails({
-            type: 'workspace',
-            data,
-            name: data.workspaceName || 'a workspace',
-          })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          const code = data.error || codeFromStatus(response.status)
+          setError(getInviteError(code))
           setIsLoading(false)
           return
         }
 
-        if (!workspaceInviteResponse.ok && workspaceInviteResponse.status !== 404) {
-          const errorCode = parseApiError(null, workspaceInviteResponse.status)
-          const errorData = await workspaceInviteResponse.json().catch(() => ({}))
-          logger.error('Workspace invitation fetch failed:', {
-            status: workspaceInviteResponse.status,
-            error: errorData,
-          })
-
-          if (errorData.error) {
-            const refinedCode = parseApiError(errorData.error, workspaceInviteResponse.status)
-            setError(getInviteError(refinedCode))
-          } else {
-            setError(getInviteError(errorCode))
-          }
-          setIsLoading(false)
-          return
-        }
-
-        try {
-          const { data, error: orgError } = await client.organization.getInvitation({
-            query: { id: inviteId },
-          })
-
-          if (orgError) {
-            logger.error('Organization invitation fetch error:', orgError)
-            const errorCode = parseApiError(orgError.message || orgError)
-            throw { code: errorCode, original: orgError }
-          }
-
-          if (data) {
-            setInvitationType('organization')
-
-            const activeOrgResponse = await client.organization
-              .getFullOrganization()
-              .catch(() => ({ data: null }))
-
-            if (activeOrgResponse?.data) {
-              setCurrentOrgName(activeOrgResponse.data.name)
-              setError(getInviteError('already-in-organization'))
-              setIsLoading(false)
-              return
-            }
-
-            setInvitationDetails({
-              type: 'organization',
-              data,
-              name: data.organizationName || 'an organization',
-            })
-
-            if (data.organizationId) {
-              const orgResponse = await client.organization.getFullOrganization({
-                query: { organizationId: data.organizationId },
-              })
-
-              if (orgResponse.data) {
-                setInvitationDetails((prev: any) => ({
-                  ...prev,
-                  name: orgResponse.data.name || 'an organization',
-                }))
-              }
-            }
-          } else {
-            throw { code: 'invalid-invitation' }
-          }
-        } catch (orgErr: any) {
-          if (orgErr.code) {
-            throw orgErr
-          }
-          throw { code: parseApiError(orgErr) }
-        }
-      } catch (err: any) {
-        logger.error('Error fetching invitation:', err)
-        const errorCode = err.code || parseApiError(err)
-        setError(getInviteError(errorCode))
+        const data = await response.json()
+        setInvitation(data.invitation as InvitationDetails)
+        setError(null)
+      } catch (fetchError) {
+        logger.error('Error fetching invitation:', fetchError)
+        setError(getInviteError('network-error'))
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchInvitationDetails()
-  }, [session?.user, inviteId])
+    fetchInvitation()
+  }, [session?.user, inviteId, token])
 
   const handleAcceptInvitation = async () => {
-    if (!session?.user) return
-
+    if (!session?.user || !invitation) return
     setIsAccepting(true)
 
-    if (invitationType === 'workspace') {
-      changeWorkspaceEvent({
-        'Workspace Name': invitationDetails?.data?.workspaceName,
-        'Workspace ID': invitationDetails?.data?.workspaceId,
-        'Workspace LP Source': 'Invitation',
+    try {
+      const response = await fetch(`/api/invitations/${inviteId}/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ token: token ?? undefined }),
       })
-      window.location.href = `/api/workspaces/invitations/${encodeURIComponent(inviteId)}?token=${encodeURIComponent(token || '')}`
-    } else {
-      try {
-        const orgId = invitationDetails?.data?.organizationId
 
-        if (!orgId) {
-          setError(getInviteError('invalid-invitation'))
-          setIsAccepting(false)
-          return
-        }
-
-        const response = await fetch(`/api/organizations/${orgId}/invitations/${inviteId}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({ status: 'accepted' }),
-        })
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}))
-          const errorCode = parseApiError(data.error || '', response.status)
-          logger.error('Failed to accept organization invitation:', {
-            status: response.status,
-            error: data,
-          })
-          setError(getInviteError(errorCode))
-          setIsAccepting(false)
-          return
-        }
-
-        await client.organization.setActive({
-          organizationId: orgId,
-        })
-
-        setAccepted(true)
-
-        setTimeout(() => {
-          router.push('/workspace')
-        }, 2000)
-      } catch (err: any) {
-        logger.error('Error accepting invitation:', err)
-
-        setAccepted(false)
-
-        const errorCode = parseApiError(err)
-        setError(getInviteError(errorCode))
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        const code = data.error || codeFromStatus(response.status)
+        setError(getInviteError(code))
         setIsAccepting(false)
+        return
       }
+
+      const data = await response.json()
+
+      if (invitation.organizationId) {
+        try {
+          await client.organization.setActive({ organizationId: invitation.organizationId })
+        } catch (setActiveError) {
+          logger.warn('Failed to set active organization after accept', setActiveError)
+        }
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: subscriptionKeys.all }),
+        queryClient.invalidateQueries({ queryKey: organizationKeys.all }),
+      ])
+
+      setAccepted(true)
+      setIsAccepting(false)
+
+      const redirectPath = typeof data.redirectPath === 'string' ? data.redirectPath : '/workspace'
+      setTimeout(() => router.push(redirectPath), 1200)
+    } catch (acceptError) {
+      logger.error('Error accepting invitation:', acceptError)
+      setError(getInviteError('network-error'))
+      setIsAccepting(false)
     }
   }
 
   const getCallbackUrl = () => {
     const effectiveToken =
-      token || sessionStorage.getItem('inviteToken') || searchParams.get('token')
-    return `/invite/${inviteId}${effectiveToken && effectiveToken !== inviteId ? `?token=${effectiveToken}` : ''}`
+      token || sessionStorage.getItem(inviteTokenStorageKey) || searchParams.get('token')
+    return `/invite/${inviteId}${effectiveToken ? `?token=${effectiveToken}` : ''}`
   }
 
   const getExternalLoginUrl = (callbackUrl: string) => {
@@ -478,33 +383,6 @@ export default function Invite() {
   if (error) {
     const callbackUrl = encodeURIComponent(getCallbackUrl())
 
-    if (error.code === 'already-in-organization') {
-      return (
-        <InviteLayout>
-          <InviteStatusCard
-            type='warning'
-            title='Already Part of a Team'
-            description={
-              currentOrgName
-                ? `You are currently a member of "${currentOrgName}". You must leave your current organization before accepting a new invitation.`
-                : error.message
-            }
-            icon='users'
-            actions={[
-              {
-                label: 'Manage Team Settings',
-                onClick: () => router.push('/workspace'),
-              },
-              {
-                label: 'Return to Home',
-                onClick: () => router.push('/'),
-              },
-            ]}
-          />
-        </InviteLayout>
-      )
-    }
-
     if (error.code === 'email-mismatch') {
       return (
         <InviteLayout>
@@ -521,10 +399,24 @@ export default function Invite() {
                   router.push(`/login?callbackUrl=${callbackUrl}&invite_flow=true`)
                 },
               },
-              {
-                label: 'Return to Home',
-                onClick: () => router.push('/'),
-              },
+              { label: 'Return to Home', onClick: () => router.push('/') },
+            ]}
+          />
+        </InviteLayout>
+      )
+    }
+
+    if (error.code === 'already-in-organization') {
+      return (
+        <InviteLayout>
+          <InviteStatusCard
+            type='warning'
+            title='Already Part of a Team'
+            description={error.message}
+            icon='users'
+            actions={[
+              { label: 'Manage Team Settings', onClick: () => router.push('/workspace') },
+              { label: 'Return to Home', onClick: () => router.push('/') },
             ]}
           />
         </InviteLayout>
@@ -548,32 +440,18 @@ export default function Invite() {
                 label: 'Create an account',
                 onClick: () => router.push(`/signup?callbackUrl=${callbackUrl}&invite_flow=true`),
               },
-              {
-                label: 'Return to Home',
-                onClick: () => router.push('/'),
-              },
+              { label: 'Return to Home', onClick: () => router.push('/') },
             ]}
           />
         </InviteLayout>
       )
     }
 
-    const actions: Array<{
-      label: string
-      onClick: () => void
-    }> = []
-
+    const actions: Array<{ label: string; onClick: () => void }> = []
     if (error.canRetry) {
-      actions.push({
-        label: 'Try Again',
-        onClick: () => window.location.reload(),
-      })
+      actions.push({ label: 'Try Again', onClick: () => window.location.reload() })
     }
-
-    actions.push({
-      label: 'Return to Home',
-      onClick: () => router.push('/'),
-    })
+    actions.push({ label: 'Return to Home', onClick: () => router.push('/') })
 
     return (
       <InviteLayout>
@@ -589,13 +467,18 @@ export default function Invite() {
     )
   }
 
-  if (accepted && !error) {
+  const displayName =
+    invitation?.kind === 'workspace'
+      ? invitation.grants[0]?.workspaceName || 'a workspace'
+      : invitation?.organizationName || 'an organization'
+
+  if (accepted) {
     return (
       <InviteLayout>
         <InviteStatusCard
           type='success'
           title='Welcome!'
-          description={`You have successfully joined ${invitationDetails?.name || 'the workspace'}. Redirecting to your workspace...`}
+          description={`You have successfully joined ${displayName}. Redirecting...`}
           icon='success'
           actions={[
             {
@@ -608,16 +491,15 @@ export default function Invite() {
     )
   }
 
+  const isOrg = invitation?.kind === 'organization'
+
   return (
     <InviteLayout>
       <InviteStatusCard
         type='invitation'
-        title={
-          invitationType === 'organization' ? 'Organization Invitation' : 'Workspace Invitation'
-        }
-        description={`You've been invited to join ${invitationDetails?.name || `a ${invitationType}`}. Click accept below to join.`}
-        icon={invitationType === 'organization' ? 'users' : undefined}
-        logoUrl={invitationType === 'workspace' ? brandConfig.logoUrl : undefined}
+        title={isOrg ? 'Organization Invitation' : 'Workspace Invitation'}
+        description={`You've been invited to join ${displayName}. Click accept below to join.`}
+        icon={isOrg ? 'users' : 'mail'}
         actions={[
           {
             label: 'Accept Invitation',
