@@ -5,6 +5,12 @@ import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 const logger = createLogger('BrowserUseTool')
 
+function resolveBrowserUseApiKey(params: BrowserUseRunTaskParams): string {
+  const fromBlock = params.apiKey?.trim()
+  if (fromBlock) return fromBlock
+  return process.env.BROWSER_USE_API_KEY?.trim() ?? ''
+}
+
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_TIME_MS = getMaxExecutionTimeout()
 const MAX_CONSECUTIVE_ERRORS = 3
@@ -244,9 +250,10 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'API key for BrowserUse API',
+      description:
+        'API key for BrowserUse API (optional if BROWSER_USE_API_KEY is set on the server)',
     },
     profile_id: {
       type: 'string',
@@ -266,11 +273,27 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
   },
 
   directExecution: async (params: BrowserUseRunTaskParams): Promise<ToolResponse> => {
+    const apiKey = resolveBrowserUseApiKey(params)
+    if (!apiKey) {
+      return {
+        success: false,
+        output: {
+          id: null,
+          success: false,
+          output: null,
+          steps: [],
+        },
+        error:
+          'Browser Use API key is required. Enter it in the block or set BROWSER_USE_API_KEY in the server environment.',
+      }
+    }
+
+    const paramsWithKey: BrowserUseRunTaskParams = { ...params, apiKey }
     let sessionId: string | undefined
 
     if (params.profile_id) {
       logger.info(`Creating session with profile ID: ${params.profile_id}`)
-      const sessionResult = await createSessionWithProfile(params.profile_id, params.apiKey)
+      const sessionResult = await createSessionWithProfile(params.profile_id, apiKey)
       if ('error' in sessionResult) {
         return {
           success: false,
@@ -286,7 +309,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
       sessionId = sessionResult.sessionId
     }
 
-    const requestBody = buildRequestBody(params, sessionId)
+    const requestBody = buildRequestBody(paramsWithKey, sessionId)
     logger.info('Creating BrowserUse task', { hasSession: !!sessionId })
 
     try {
@@ -294,7 +317,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Browser-Use-API-Key': params.apiKey,
+          'X-Browser-Use-API-Key': apiKey,
         },
         body: JSON.stringify(requestBody),
       })
@@ -318,10 +341,10 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
       const taskId = data.id
       logger.info(`Created BrowserUse task: ${taskId}`)
 
-      const result = await pollForCompletion(taskId, params.apiKey)
+      const result = await pollForCompletion(taskId, apiKey)
 
       if (sessionId) {
-        await stopSession(sessionId, params.apiKey)
+        await stopSession(sessionId, apiKey)
       }
 
       return {
@@ -338,7 +361,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
       logger.error('Error creating BrowserUse task:', error)
 
       if (sessionId) {
-        await stopSession(sessionId, params.apiKey)
+        await stopSession(sessionId, apiKey)
       }
 
       return {

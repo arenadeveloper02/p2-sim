@@ -2,7 +2,8 @@ import type { ToolResponse } from '@/tools/types'
 
 export interface BrowserUseRunTaskParams {
   task: string
-  apiKey: string
+  /** Optional when `BROWSER_USE_API_KEY` is set on the server */
+  apiKey?: string
   variables?: Record<string, string>
   model?: string
   save_browser_data?: boolean
