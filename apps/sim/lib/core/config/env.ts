@@ -176,6 +176,7 @@ export const env = createEnv({
     // Infrastructure & Deployment
     NEXT_RUNTIME:                          z.string().optional(),                  // Next.js runtime environment
     DOCKER_BUILD:                          z.boolean().optional(),                 // Flag indicating Docker build environment
+    APP_BANNER_MESSAGE:                    z.string().optional(),                  // Plain-text global banner (GET /api/app/banner); omit or empty hides it
 
     // Background Jobs & Scheduling
     TRIGGER_PROJECT_ID:                    z.string().optional(),                  // Trigger.dev project ID
