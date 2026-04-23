@@ -2161,7 +2161,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'string',
       description: 'Bot user ID — present only when the token is a bot token (xoxb-)',
     },
-    appId: { type: 'string', description: 'Slack app ID associated with the token, when applicable' },
+    appId: {
+      type: 'string',
+      description: 'Slack app ID associated with the token, when applicable',
+    },
     isEnterpriseInstall: {
       type: 'boolean',
       description: 'Whether the token belongs to an Enterprise Grid org-level install',

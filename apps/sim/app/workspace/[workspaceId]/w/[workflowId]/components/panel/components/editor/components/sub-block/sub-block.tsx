@@ -53,6 +53,7 @@ import {
   VariablesInput,
   WorkflowSelectorInput,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components'
+import { MODAL_REGISTRY } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/modal-registry'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
@@ -881,9 +882,14 @@ function SubBlockComponent({
         return (
           <CheckboxList
             blockId={blockId}
-            subBlockId={config.id}
-            title={config.title ?? ''}
-            options={config.options as { label: string; id: string }[]}
+            options={
+              config.options as {
+                label: string
+                id: string
+                defaultChecked?: boolean
+                description?: string
+              }[]
+            }
             isPreview={isPreview}
             subBlockValues={subBlockValues}
             disabled={isDisabled}
@@ -1222,6 +1228,17 @@ function SubBlockComponent({
             }
           />
         )
+      case 'modal': {
+        const ModalComponent = config.modalId ? MODAL_REGISTRY[config.modalId] : undefined
+        if (!ModalComponent) {
+          return (
+            <div className='text-[var(--text-error)] text-sm'>
+              Unknown modal: {String(config.modalId)}
+            </div>
+          )
+        }
+        return <ModalComponent blockId={blockId} isPreview={isPreview} disabled={isDisabled} />
+      }
       case 'messages-input':
         return (
           <MessagesInput
