@@ -257,7 +257,8 @@ export const PATCH = withRouteHandler(
 
         await db.update(chat).set(updateData).where(eq(chat.id, chatId))
 
-        if (customizations?.goldenQueries) {
+        const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
+        if (goldenQueries.length > 0 || customizations?.goldenQueries) {
           await replaceWorkflowQueries({
             workflowId: workflowId || existingChat[0].workflowId,
             userId: session.user.id,
