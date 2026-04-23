@@ -21,6 +21,7 @@ interface SidebarLink {
   label: string
   href: string
   external?: boolean
+  icon: ComponentType<SVGProps<SVGSVGElement>>
 }
 
 const WORKSPACE: ProductLink[] = [
