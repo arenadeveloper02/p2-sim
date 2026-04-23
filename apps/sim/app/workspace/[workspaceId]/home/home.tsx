@@ -29,6 +29,7 @@ interface HomeProps {
 export function Home({ chatId }: HomeProps = {}) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const pathname = usePathname()
+  const isEmbedPage = pathname.endsWith('/embed')
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialResourceId = searchParams.get('resource')
@@ -354,13 +355,15 @@ export function Home({ chatId }: HomeProps = {}) {
             />
           </div>
         </div>
-        <div
-          ref={templateRef}
-          data-tour='home-templates'
-          className='-mt-[30vh] mx-auto w-full max-w-[68rem] px-4 pb-8 sm:px-6 lg:px-10'
-        >
-          <TemplatePrompts onSelect={handleSubmit} />
-        </div>
+        {!isEmbedPage && (
+          <div
+            ref={templateRef}
+            data-tour='home-templates'
+            className='-mt-[30vh] mx-auto w-full max-w-[68rem] px-4 pb-8 sm:px-6 lg:px-10'
+          >
+            <TemplatePrompts onSelect={handleSubmit} />
+          </div>
+        )}
       </div>
     )
   }
