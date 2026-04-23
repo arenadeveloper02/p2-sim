@@ -399,8 +399,15 @@ function buildParameterSchema(
 ): SchemaProperty {
   const surface = options.surface ?? 'default'
 
-  if (surface === 'copilot' && (param.type === 'file' || param.type === 'file[]')) {
-    return buildCopilotFileParameterSchema(param)
+  if (param.type === 'file' || param.type === 'file[]') {
+    const visibility = param.visibility
+    const useStructuredFileSchema =
+      surface === 'copilot' ||
+      visibility === 'user-or-llm' ||
+      visibility === 'llm-only'
+    if (useStructuredFileSchema) {
+      return buildCopilotFileParameterSchema(param)
+    }
   }
 
   let schemaType = param.type
@@ -439,7 +446,7 @@ function buildCopilotFileParameterSchema(param: ToolParamDefinition): SchemaProp
       ? 'A file object for tool execution.'
       : 'An array of file objects for tool execution.')
   const resolutionDescription =
-    'For copilot and mothership tool calls, prefer passing canonical workspace file IDs such as "wf_123". The runtime will resolve them into full file objects before tool execution.'
+    'For agent, copilot, and mothership tool calls, prefer passing a file object with id, name, url, size, type, and key (workspace file metadata). The runtime resolves these before execution.'
 
   const fileObjectSchema: SchemaProperty = {
     type: 'object',

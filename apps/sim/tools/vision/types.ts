@@ -2,7 +2,8 @@ import type { UserFile } from '@/executor/types'
 import type { ToolResponse } from '@/tools/types'
 
 export interface VisionParams {
-  apiKey: string
+  /** Optional when the matching provider key is set on the server (see Vision analyze API). */
+  apiKey?: string
   imageUrl?: string
   imageFile?: UserFile
   model?: string
@@ -10,8 +11,9 @@ export interface VisionParams {
 }
 
 export interface VisionV2Params {
-  apiKey: string
-  imageFile: UserFile
+  apiKey?: string
+  imageFile?: UserFile
+  imageUrl?: string
   model?: string
   prompt?: string
 }

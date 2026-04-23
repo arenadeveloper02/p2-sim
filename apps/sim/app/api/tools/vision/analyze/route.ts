@@ -15,13 +15,14 @@ import {
   resolveInternalFileUrl,
 } from '@/lib/uploads/utils/file-utils.server'
 import { convertUsageMetadata, extractTextContent } from '@/providers/google/utils'
+import { resolveVisionApiKey } from '@/tools/vision/server-keys'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('VisionAnalyzeAPI')
 
 const VisionAnalyzeSchema = z.object({
-  apiKey: z.string().min(1, 'API key is required'),
+  apiKey: z.string().optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   imageFile: RawFileInputSchema.optional().nullable(),
   model: z.string().optional().default('gpt-5.2'),
@@ -52,6 +53,23 @@ export async function POST(request: NextRequest) {
     const userId = authResult.userId
     const body = await request.json()
     const validatedData = VisionAnalyzeSchema.parse(body)
+
+    const apiKey = resolveVisionApiKey(validatedData.model, validatedData.apiKey)
+    if (!apiKey) {
+      const m = validatedData.model || 'gpt-5.2'
+      const hint = m.startsWith('claude-')
+        ? 'ANTHROPIC_API_KEY'
+        : m.startsWith('gemini-')
+          ? 'GEMINI_API_KEY'
+          : 'OPENAI_API_KEY'
+      return NextResponse.json(
+        {
+          success: false,
+          error: `API key is required. Enter it in the block or set ${hint} in the server environment.`,
+        },
+        { status: 400 }
+      )
+    }
 
     if (!validatedData.imageUrl && !validatedData.imageFile) {
       return NextResponse.json(
@@ -163,10 +181,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (isClaude) {
-      headers['x-api-key'] = validatedData.apiKey
+      headers['x-api-key'] = apiKey
       headers['anthropic-version'] = '2023-06-01'
     } else {
-      headers.Authorization = `Bearer ${validatedData.apiKey}`
+      headers.Authorization = `Bearer ${apiKey}`
     }
 
     let requestBody: any
@@ -214,7 +232,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const ai = new GoogleGenAI({ apiKey: validatedData.apiKey })
+      const ai = new GoogleGenAI({ apiKey })
       const geminiResponse = await ai.models.generateContent({
         model: validatedData.model,
         contents: [

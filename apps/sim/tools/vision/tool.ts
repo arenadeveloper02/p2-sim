@@ -11,21 +11,24 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
   params: {
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'API key for the selected model provider',
+      description:
+        'API key for the selected model provider (optional if OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY is set on the server for that model)',
     },
     imageUrl: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Publicly accessible image URL',
+      visibility: 'user-or-llm',
+      description:
+        'HTTPS URL of a publicly accessible image to analyze. Use when no workspace image file is provided.',
     },
     imageFile: {
       type: 'file',
       required: false,
-      visibility: 'user-only',
-      description: 'Image file to analyze',
+      visibility: 'user-or-llm',
+      description:
+        'Workspace image file metadata (object with id, name, url, etc.). Use when the image is not available as a public URL.',
     },
     model: {
       type: 'string',
@@ -49,7 +52,7 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
     }),
     body: (params) => {
       return {
-        apiKey: params.apiKey,
+        apiKey: params.apiKey ?? null,
         imageUrl: params.imageUrl || null,
         imageFile: params.imageFile || null,
         model: params.model || 'gpt-5.2',
@@ -103,20 +106,17 @@ export const visionToolV2: ToolConfig<VisionV2Params, VisionResponse> = {
   name: 'Vision Tool',
   params: {
     apiKey: visionTool.params.apiKey,
-    imageFile: {
-      type: 'file',
-      required: true,
-      visibility: 'user-only',
-      description: 'Image file to analyze',
-    },
+    imageFile: visionTool.params.imageFile,
+    imageUrl: visionTool.params.imageUrl,
     model: visionTool.params.model,
     prompt: visionTool.params.prompt,
   },
   request: {
     ...visionTool.request,
     body: (params: VisionV2Params) => ({
-      apiKey: params.apiKey,
-      imageFile: params.imageFile,
+      apiKey: params.apiKey ?? null,
+      imageUrl: params.imageUrl || null,
+      imageFile: params.imageFile || null,
       model: params.model || 'gpt-5.2',
       prompt: params.prompt || null,
     }),
