@@ -161,6 +161,8 @@ export const PATCH = withRouteHandler(
           identifier,
           title,
           description,
+          remarks,
+          department,
           customizations,
           authType,
           password,
@@ -218,7 +220,14 @@ export const PATCH = withRouteHandler(
         if (identifier) updateData.identifier = identifier
         if (title) updateData.title = title
         if (description !== undefined) updateData.description = description
-        if (customizations) updateData.customizations = customizations
+        // if (customizations) updateData.customizations = customizations
+        if (remarks !== undefined) updateData.remarks = remarks
+        if (department !== undefined) updateData.department = department
+        const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
+        if (customizations) {
+          const { goldenQueries: _goldenQueries, ...restCustomizations } = customizations
+          updateData.customizations = restCustomizations
+        }
 
         if (authType) {
           updateData.authType = authType
@@ -257,8 +266,8 @@ export const PATCH = withRouteHandler(
 
         await db.update(chat).set(updateData).where(eq(chat.id, chatId))
 
-        const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
-        if (goldenQueries.length > 0 || customizations?.goldenQueries) {
+        // const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
+        if (customizations?.goldenQueries) {
           await replaceWorkflowQueries({
             workflowId: workflowId || existingChat[0].workflowId,
             userId: session.user.id,
