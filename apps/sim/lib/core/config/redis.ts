@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import Redis from 'ioredis'
+import type Redis from 'ioredis'
 import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('Redis')

@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import Cookies from 'js-cookie'
 import { useQueryClient } from '@tanstack/react-query'
+import Cookies from 'js-cookie'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { client, useSession } from '@/lib/auth/auth-client'
 import { getLoginRedirectUrl } from '@/lib/core/utils/urls'
-import { changeWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { InviteLayout, InviteStatusCard } from '@/app/invite/components'
 import { useBrandConfig } from '@/ee/whitelabeling'
 import { organizationKeys } from '@/hooks/queries/organization'

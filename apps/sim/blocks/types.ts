@@ -5,9 +5,9 @@ import type {
   PrimitiveValueType,
   SubBlockType,
 } from '@sim/workflow-types/blocks'
+import type { ImageProps } from 'next/image'
 import type { SelectorKey } from '@/hooks/selectors/types'
 import type { ToolResponse } from '@/tools/types'
-import type { ImageProps } from 'next/image'
 
 export type { OutputCondition, OutputFieldDefinition, PrimitiveValueType, SubBlockType }
 export { isHiddenFromDisplay } from '@sim/workflow-types/blocks'

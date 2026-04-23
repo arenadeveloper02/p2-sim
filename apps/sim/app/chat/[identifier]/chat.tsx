@@ -2,13 +2,13 @@
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
-import { generateId } from '@sim/utils/id'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import {
@@ -27,11 +27,10 @@ import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constan
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import SSOAuth from '@/ee/sso/components/sso-auth'
-import LeftNavThread from './leftNavThread'
 import { useDeployedChatConfig } from '@/hooks/queries/chats'
 import { useGitHubStars } from '@/hooks/queries/github-stars'
 import { useVoiceSettings } from '@/hooks/queries/voice-settings'
-
+import LeftNavThread from './leftNavThread'
 
 const logger = createLogger('ChatClient')
 
@@ -397,7 +396,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             }
           }
 
-          
           // If user email is not authorized, show error and redirect
           if (
             errorData.error === 'Email not authorized' ||
@@ -418,9 +416,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         throw new Error(`Failed to load chat configuration: ${response.status}`)
       }
 
-
       const data = await response.json()
-
 
       if (data?.customizations?.welcomeMessage) {
         setMessages([

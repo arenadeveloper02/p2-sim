@@ -25,7 +25,7 @@ export default function StructuredData() {
     '@graph': [
       {
         '@type': 'Organization',
-        '@id':  `${SITE_URL}/#organization`,
+        '@id': `${SITE_URL}/#organization`,
         name: 'Arena',
         alternateName: 'Arena Studio',
         description:

@@ -277,681 +277,688 @@ export const POST = withRouteHandler(
         )
       }
 
-    // Store chat details in deployed_chat table if chatId is provided
-    // Ensures each chatId is added only once, even with concurrent requests
-    if (parsedBody.chatId) {
-      try {
-        const chatId = parsedBody.chatId
-        logger.debug(`[${requestId}] Processing chatId: ${chatId}`)
-
-        // Get the executing user ID from session
-        let executingUserId: string | undefined
+      // Store chat details in deployed_chat table if chatId is provided
+      // Ensures each chatId is added only once, even with concurrent requests
+      if (parsedBody.chatId) {
         try {
-          const session = await getSession()
-          executingUserId = session?.user?.id
-          logger.debug(`[${requestId}] Executing user ID from session:`, executingUserId)
-        } catch (error) {
-          logger.debug(
-            `[${requestId}] Could not get session (user may not be authenticated):`,
-            error
-          )
-        }
+          const chatId = parsedBody.chatId
+          logger.debug(`[${requestId}] Processing chatId: ${chatId}`)
 
-        // Check if chatId already exists in deployed_chat table
-        // Using both chatId and workflowId to ensure proper context
-        const existingChat = await db
-          .select({ id: deployedChat.id })
-          .from(deployedChat)
-          .where(eq(deployedChat.chatId, chatId))
-          .limit(1)
-
-        if (existingChat.length > 0) {
-          // ChatId already exists - just update the timestamp and user ID
-          const existingChatId = existingChat[0].id
-          logger.debug(`[${requestId}] ChatId already exists, updating timestamp: ${chatId}`)
-
-          await db
-            .update(deployedChat)
-            .set({
-              updatedAt: new Date(),
-              executingUserId: executingUserId || null,
-            })
-            .where(eq(deployedChat.id, existingChatId))
-
-          logger.debug(`[${requestId}] Successfully updated existing chat: ${chatId}`)
-        } else {
-          // ChatId doesn't exist - create a new record
-          // Prefer Start Block input values for title; otherwise use first 5 words of input
-          const startBlockValues =
-            parsedBody.startBlockInputs && typeof parsedBody.startBlockInputs === 'object'
-              ? Object.values(parsedBody.startBlockInputs)
-                  .filter((value) => value !== undefined && value !== null)
-                  .map((value) => {
-                    const stringValue = typeof value === 'string' ? value.trim() : `${value}`.trim()
-                    return stringValue
-                  })
-                  .filter((value) => value.length > 0)
-              : []
-
-          const words = parsedBody.input?.trim().split(/\s+/).filter(Boolean) || []
-          const title =
-            startBlockValues.length > 0
-              ? startBlockValues.join(', ')
-              : words.slice(0, 5).join(' ') || 'New Chat'
-
-          const deployedChatId = generateId()
-          const now = new Date()
-
-          logger.debug(`[${requestId}] Creating new deployed_chat record:`, {
-            id: deployedChatId,
-            chatId,
-            title,
-            workflowId: identifier,
-            executingUserId,
-          })
-
+          // Get the executing user ID from session
+          let executingUserId: string | undefined
           try {
-            await db.insert(deployedChat).values({
+            const session = await getSession()
+            executingUserId = session?.user?.id
+            logger.debug(`[${requestId}] Executing user ID from session:`, executingUserId)
+          } catch (error) {
+            logger.debug(
+              `[${requestId}] Could not get session (user may not be authenticated):`,
+              error
+            )
+          }
+
+          // Check if chatId already exists in deployed_chat table
+          // Using both chatId and workflowId to ensure proper context
+          const existingChat = await db
+            .select({ id: deployedChat.id })
+            .from(deployedChat)
+            .where(eq(deployedChat.chatId, chatId))
+            .limit(1)
+
+          if (existingChat.length > 0) {
+            // ChatId already exists - just update the timestamp and user ID
+            const existingChatId = existingChat[0].id
+            logger.debug(`[${requestId}] ChatId already exists, updating timestamp: ${chatId}`)
+
+            await db
+              .update(deployedChat)
+              .set({
+                updatedAt: new Date(),
+                executingUserId: executingUserId || null,
+              })
+              .where(eq(deployedChat.id, existingChatId))
+
+            logger.debug(`[${requestId}] Successfully updated existing chat: ${chatId}`)
+          } else {
+            // ChatId doesn't exist - create a new record
+            // Prefer Start Block input values for title; otherwise use first 5 words of input
+            const startBlockValues =
+              parsedBody.startBlockInputs && typeof parsedBody.startBlockInputs === 'object'
+                ? Object.values(parsedBody.startBlockInputs)
+                    .filter((value) => value !== undefined && value !== null)
+                    .map((value) => {
+                      const stringValue =
+                        typeof value === 'string' ? value.trim() : `${value}`.trim()
+                      return stringValue
+                    })
+                    .filter((value) => value.length > 0)
+                : []
+
+            const words = parsedBody.input?.trim().split(/\s+/).filter(Boolean) || []
+            const title =
+              startBlockValues.length > 0
+                ? startBlockValues.join(', ')
+                : words.slice(0, 5).join(' ') || 'New Chat'
+
+            const deployedChatId = generateId()
+            const now = new Date()
+
+            logger.debug(`[${requestId}] Creating new deployed_chat record:`, {
               id: deployedChatId,
               chatId,
               title,
               workflowId: identifier,
               executingUserId,
-              createdAt: now,
-              updatedAt: now,
             })
 
-            logger.info(`[${requestId}] Successfully created new chat record: ${chatId}`)
-          } catch (insertError: any) {
-            // Handle race condition: if another request created the record between our check and insert
-            if (
-              insertError?.code === '23505' || // PostgreSQL unique violation
-              (insertError instanceof Error && insertError.message.includes('unique'))
-            ) {
-              logger.debug(
-                `[${requestId}] Race condition detected - chatId was created by another request: ${chatId}`
-              )
+            try {
+              await db.insert(deployedChat).values({
+                id: deployedChatId,
+                chatId,
+                title,
+                workflowId: identifier,
+                executingUserId,
+                createdAt: now,
+                updatedAt: now,
+              })
 
-              // Verify the record exists and update it
-              const raceConditionCheck = await db
-                .select({ id: deployedChat.id })
-                .from(deployedChat)
-                .where(eq(deployedChat.chatId, chatId))
-                .limit(1)
+              logger.info(`[${requestId}] Successfully created new chat record: ${chatId}`)
+            } catch (insertError: any) {
+              // Handle race condition: if another request created the record between our check and insert
+              if (
+                insertError?.code === '23505' || // PostgreSQL unique violation
+                (insertError instanceof Error && insertError.message.includes('unique'))
+              ) {
+                logger.debug(
+                  `[${requestId}] Race condition detected - chatId was created by another request: ${chatId}`
+                )
 
-              if (raceConditionCheck.length > 0) {
-                await db
-                  .update(deployedChat)
-                  .set({
-                    updatedAt: new Date(),
-                    executingUserId: executingUserId || null,
-                  })
-                  .where(eq(deployedChat.id, raceConditionCheck[0].id))
+                // Verify the record exists and update it
+                const raceConditionCheck = await db
+                  .select({ id: deployedChat.id })
+                  .from(deployedChat)
+                  .where(eq(deployedChat.chatId, chatId))
+                  .limit(1)
 
-                logger.debug(`[${requestId}] Updated chat record after race condition: ${chatId}`)
+                if (raceConditionCheck.length > 0) {
+                  await db
+                    .update(deployedChat)
+                    .set({
+                      updatedAt: new Date(),
+                      executingUserId: executingUserId || null,
+                    })
+                    .where(eq(deployedChat.id, raceConditionCheck[0].id))
+
+                  logger.debug(`[${requestId}] Updated chat record after race condition: ${chatId}`)
+                }
+              } else {
+                // Re-throw if it's a different error
+                throw insertError
               }
-            } else {
-              // Re-throw if it's a different error
-              throw insertError
             }
           }
+        } catch (error: any) {
+          // Log error but don't fail the request - chat functionality should continue
+          logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, {
+            message: error.message,
+            code: error.code,
+            chatId: parsedBody.chatId,
+          })
         }
-      } catch (error: any) {
-        // Log error but don't fail the request - chat functionality should continue
-        logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, {
-          message: error.message,
-          code: error.code,
-          chatId: parsedBody.chatId,
-        })
-      }
-    } else {
-      logger.debug(`[${requestId}] No chatId (payload) provided in request body`)
-    }
-
-    const {
-      input,
-      password,
-      email,
-      conversationId,
-      chatId: payload,
-      files,
-      startBlockInputs,
-    } = parsedBody
-
-    // Get userId from session for external chat API requests
-    const session = await getSession()
-    const userId = session?.user?.id || null
-
-    if ((password || email) && !input) {
-      const response = addCorsHeaders(createSuccessResponse({ authenticated: true }), request)
-
-      setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
-
-      return response
-    }
-
-    // Check if we have any input: either input field, files, or startBlockInputs with values
-    const hasStartBlockInputs =
-      startBlockInputs &&
-      typeof startBlockInputs === 'object' &&
-      Object.keys(startBlockInputs).length > 0
-    const hasStartBlockInputValues =
-      hasStartBlockInputs &&
-      Object.values(startBlockInputs).some(
-        (value) => value !== null && value !== undefined && value !== ''
-      )
-
-    if (!input && (!files || files.length === 0) && !hasStartBlockInputValues) {
-      return addCorsHeaders(createErrorResponse('No input provided', 400), request)
-    }
-
-    const executionId = generateId()
-
-    const loggingSession = new LoggingSession(deployment.workflowId, executionId, 'chat', requestId)
-
-    const preprocessResult = await preprocessExecution({
-      workflowId: deployment.workflowId,
-      userId: deployment.userId,
-      triggerType: 'chat',
-      executionId,
-      requestId,
-      checkRateLimit: true,
-      checkDeployment: true,
-      loggingSession,
-    })
-
-    if (!preprocessResult.success) {
-      logger.warn(`[${requestId}] Preprocessing failed: ${preprocessResult.error?.message}`)
-      return addCorsHeaders(
-        createErrorResponse(
-          preprocessResult.error?.message || 'Failed to process request',
-          preprocessResult.error?.statusCode || 500
-        ),
-        request
-      )
-    }
-
-    const { actorUserId, workflowRecord } = preprocessResult
-    const workspaceOwnerId = actorUserId!
-    const workspaceId = workflowRecord?.workspaceId
-    if (!workspaceId) {
-      logger.error(`[${requestId}] Workflow ${deployment.workflowId} has no workspaceId`)
-      return addCorsHeaders(
-        createErrorResponse('Workflow has no associated workspace', 500),
-        request
-      )
-    }
-
-    // Format startBlockInputs into initialInput format
-    // Format: variable1: Value entered by User\nvariable2: value entered by User
-    let formattedInitialInput = input || ''
-    if (startBlockInputs && typeof startBlockInputs === 'object') {
-      const startBlockInputLines: string[] = []
-      for (const [key, value] of Object.entries(startBlockInputs)) {
-        // Skip reserved fields and empty values
-        if (key === 'input' || key === 'conversationId' || key === 'files') {
-          continue
-        }
-        if (value !== null && value !== undefined && value !== '') {
-          const formattedValue = typeof value === 'string' ? value : String(value)
-          startBlockInputLines.push(`${key}: ${formattedValue}`)
-        }
-      }
-      if (startBlockInputLines.length > 0) {
-        const startBlockInputsFormatted = startBlockInputLines.join('\n')
-        formattedInitialInput = formattedInitialInput
-          ? `${formattedInitialInput}\n${startBlockInputsFormatted}`
-          : startBlockInputsFormatted
-      }
-    }
-
-    // Start logging session with chat metadata
-    await loggingSession.safeStart({
-      userId: userId || workspaceOwnerId,
-      workspaceId,
-      variables: {},
-      isExternalChat: true,
-      chatId: payload || conversationId || undefined,
-      conversationId: conversationId || undefined,
-      initialInput: formattedInitialInput || undefined,
-    })
-
-    try {
-      const selectedOutputs: string[] = []
-      if (deployment.outputConfigs && Array.isArray(deployment.outputConfigs)) {
-        for (const config of deployment.outputConfigs) {
-          const outputId = config.path
-            ? `${config.blockId}_${config.path}`
-            : `${config.blockId}_content`
-          selectedOutputs.push(outputId)
-        }
-      }
-
-      const { createStreamingResponse } = await import('@/lib/workflows/streaming/streaming')
-      const { executeWorkflow } = await import('@/lib/workflows/executor/execute-workflow')
-      const { SSE_HEADERS } = await import('@/lib/core/utils/sse')
-
-      const workflowInput: any = { input, conversationId }
-
-      // Merge additional Start Block inputs (custom fields from inputFormat)
-      // Always merge to ensure all Start Block fields are included, even if empty
-      if (startBlockInputs && typeof startBlockInputs === 'object') {
-        Object.assign(workflowInput, startBlockInputs)
-        logger.debug(
-          `[${requestId}] Merged ${Object.keys(startBlockInputs).length} Start Block inputs`
-        )
       } else {
-        // Even if startBlockInputs is not provided, ensure empty values for consistency
-        // The client should always send startBlockInputs, but this is a safety check
-        logger.debug(`[${requestId}] No Start Block inputs provided in request`)
+        logger.debug(`[${requestId}] No chatId (payload) provided in request body`)
       }
 
-      if (files && Array.isArray(files) && files.length > 0) {
-        const executionContext = {
-          workspaceId,
-          workflowId: deployment.workflowId,
-          executionId,
-        }
+      const {
+        input,
+        password,
+        email,
+        conversationId,
+        chatId: payload,
+        files,
+        startBlockInputs,
+      } = parsedBody
 
-        try {
-          const uploadedFiles = await ChatFiles.processChatFiles(
-            files,
-            executionContext,
-            requestId,
-            deployment.userId
-          )
+      // Get userId from session for external chat API requests
+      const session = await getSession()
+      const userId = session?.user?.id || null
 
-          if (uploadedFiles.length > 0) {
-            workflowInput.files = uploadedFiles
-            logger.info(`[${requestId}] Successfully processed ${uploadedFiles.length} files`)
-          }
-        } catch (fileError: any) {
-          logger.error(`[${requestId}] Failed to process chat files:`, fileError)
+      if ((password || email) && !input) {
+        const response = addCorsHeaders(createSuccessResponse({ authenticated: true }), request)
 
-          await loggingSession.safeStart({
-            userId: workspaceOwnerId,
-            workspaceId,
-            variables: {},
-            conversationId: undefined,
-          })
+        setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
 
-          await loggingSession.safeCompleteWithError({
-            error: {
-              message: `File upload failed: ${fileError.message || 'Unable to process uploaded files'}`,
-              stackTrace: fileError.stack,
-            },
-            traceSpans: [],
-          })
-
-          throw fileError
-        }
+        return response
       }
 
-      const workflowForExecution = {
-        id: deployment.workflowId,
-        userId: deployment.userId,
-        workspaceId,
-        isDeployed: workflowRecord?.isDeployed ?? false,
-        variables: (workflowRecord?.variables as Record<string, unknown>) ?? undefined,
+      // Check if we have any input: either input field, files, or startBlockInputs with values
+      const hasStartBlockInputs =
+        startBlockInputs &&
+        typeof startBlockInputs === 'object' &&
+        Object.keys(startBlockInputs).length > 0
+      const hasStartBlockInputValues =
+        hasStartBlockInputs &&
+        Object.values(startBlockInputs).some(
+          (value) => value !== null && value !== undefined && value !== ''
+        )
+
+      if (!input && (!files || files.length === 0) && !hasStartBlockInputValues) {
+        return addCorsHeaders(createErrorResponse('No input provided', 400), request)
       }
 
-      const originalStream = await createStreamingResponse({
-        requestId,
-        streamConfig: {
-          selectedOutputs,
-          isSecureMode: true,
-          workflowTriggerType: 'chat',
-          sessionUserId: userId ?? undefined,
-        },
+      const executionId = generateId()
+
+      const loggingSession = new LoggingSession(
+        deployment.workflowId,
         executionId,
-        executeFn: async ({ onStream, onBlockComplete, abortSignal, sessionUserId }) =>
-          executeWorkflow(
-            workflowForExecution,
-            requestId,
-            workflowInput,
-            workspaceOwnerId,
-            {
-              enabled: true,
-              selectedOutputs,
-              isSecureMode: true,
-              workflowTriggerType: 'chat',
-              onStream,
-              onBlockComplete,
-              skipLoggingComplete: true,
-              sessionUserId: sessionUserId ?? undefined,
-              abortSignal,
-              executionMode: 'stream',
-            },
-            executionId
-          ),
+        'chat',
+        requestId
+      )
+
+      const preprocessResult = await preprocessExecution({
+        workflowId: deployment.workflowId,
+        userId: deployment.userId,
+        triggerType: 'chat',
+        executionId,
+        requestId,
+        checkRateLimit: true,
+        checkDeployment: true,
+        loggingSession,
       })
 
-      // Wrap the stream to capture final output and update workflowExecutionLogs
-      const wrappedStream = new ReadableStream({
-        async start(controller) {
-          const reader = originalStream.getReader()
-          const decoder = new TextDecoder()
-          const encoder = new TextEncoder()
-          let buffer = ''
-          let accumulatedContent = ''
+      if (!preprocessResult.success) {
+        logger.warn(`[${requestId}] Preprocessing failed: ${preprocessResult.error?.message}`)
+        return addCorsHeaders(
+          createErrorResponse(
+            preprocessResult.error?.message || 'Failed to process request',
+            preprocessResult.error?.statusCode || 500
+          ),
+          request
+        )
+      }
+
+      const { actorUserId, workflowRecord } = preprocessResult
+      const workspaceOwnerId = actorUserId!
+      const workspaceId = workflowRecord?.workspaceId
+      if (!workspaceId) {
+        logger.error(`[${requestId}] Workflow ${deployment.workflowId} has no workspaceId`)
+        return addCorsHeaders(
+          createErrorResponse('Workflow has no associated workspace', 500),
+          request
+        )
+      }
+
+      // Format startBlockInputs into initialInput format
+      // Format: variable1: Value entered by User\nvariable2: value entered by User
+      let formattedInitialInput = input || ''
+      if (startBlockInputs && typeof startBlockInputs === 'object') {
+        const startBlockInputLines: string[] = []
+        for (const [key, value] of Object.entries(startBlockInputs)) {
+          // Skip reserved fields and empty values
+          if (key === 'input' || key === 'conversationId' || key === 'files') {
+            continue
+          }
+          if (value !== null && value !== undefined && value !== '') {
+            const formattedValue = typeof value === 'string' ? value : String(value)
+            startBlockInputLines.push(`${key}: ${formattedValue}`)
+          }
+        }
+        if (startBlockInputLines.length > 0) {
+          const startBlockInputsFormatted = startBlockInputLines.join('\n')
+          formattedInitialInput = formattedInitialInput
+            ? `${formattedInitialInput}\n${startBlockInputsFormatted}`
+            : startBlockInputsFormatted
+        }
+      }
+
+      // Start logging session with chat metadata
+      await loggingSession.safeStart({
+        userId: userId || workspaceOwnerId,
+        workspaceId,
+        variables: {},
+        isExternalChat: true,
+        chatId: payload || conversationId || undefined,
+        conversationId: conversationId || undefined,
+        initialInput: formattedInitialInput || undefined,
+      })
+
+      try {
+        const selectedOutputs: string[] = []
+        if (deployment.outputConfigs && Array.isArray(deployment.outputConfigs)) {
+          for (const config of deployment.outputConfigs) {
+            const outputId = config.path
+              ? `${config.blockId}_${config.path}`
+              : `${config.blockId}_content`
+            selectedOutputs.push(outputId)
+          }
+        }
+
+        const { createStreamingResponse } = await import('@/lib/workflows/streaming/streaming')
+        const { executeWorkflow } = await import('@/lib/workflows/executor/execute-workflow')
+        const { SSE_HEADERS } = await import('@/lib/core/utils/sse')
+
+        const workflowInput: any = { input, conversationId }
+
+        // Merge additional Start Block inputs (custom fields from inputFormat)
+        // Always merge to ensure all Start Block fields are included, even if empty
+        if (startBlockInputs && typeof startBlockInputs === 'object') {
+          Object.assign(workflowInput, startBlockInputs)
+          logger.debug(
+            `[${requestId}] Merged ${Object.keys(startBlockInputs).length} Start Block inputs`
+          )
+        } else {
+          // Even if startBlockInputs is not provided, ensure empty values for consistency
+          // The client should always send startBlockInputs, but this is a safety check
+          logger.debug(`[${requestId}] No Start Block inputs provided in request`)
+        }
+
+        if (files && Array.isArray(files) && files.length > 0) {
+          const executionContext = {
+            workspaceId,
+            workflowId: deployment.workflowId,
+            executionId,
+          }
 
           try {
-            while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
+            const uploadedFiles = await ChatFiles.processChatFiles(
+              files,
+              executionContext,
+              requestId,
+              deployment.userId
+            )
 
-              // Decode and process the chunk
-              const chunk = decoder.decode(value, { stream: true })
-              buffer += chunk
+            if (uploadedFiles.length > 0) {
+              workflowInput.files = uploadedFiles
+              logger.info(`[${requestId}] Successfully processed ${uploadedFiles.length} files`)
+            }
+          } catch (fileError: any) {
+            logger.error(`[${requestId}] Failed to process chat files:`, fileError)
 
-              // Process complete SSE messages
-              const lines = buffer.split('\n\n')
-              buffer = lines.pop() || ''
+            await loggingSession.safeStart({
+              userId: workspaceOwnerId,
+              workspaceId,
+              variables: {},
+              conversationId: undefined,
+            })
 
-              for (const line of lines) {
-                if (!line.trim() || !line.startsWith('data: ')) {
-                  controller.enqueue(encoder.encode(`${line}\n\n`))
-                  continue
-                }
+            await loggingSession.safeCompleteWithError({
+              error: {
+                message: `File upload failed: ${fileError.message || 'Unable to process uploaded files'}`,
+                stackTrace: fileError.stack,
+              },
+              traceSpans: [],
+            })
 
-                const data = line.substring(6).trim()
-                if (data === '[DONE]') {
-                  controller.enqueue(encoder.encode(`${line}\n\n`))
-                  continue
-                }
+            throw fileError
+          }
+        }
 
-                try {
-                  const json = JSON.parse(data)
-                  const { event, data: eventData, chunk: contentChunk } = json
+        const workflowForExecution = {
+          id: deployment.workflowId,
+          userId: deployment.userId,
+          workspaceId,
+          isDeployed: workflowRecord?.isDeployed ?? false,
+          variables: (workflowRecord?.variables as Record<string, unknown>) ?? undefined,
+        }
 
-                  // Capture streaming content chunks
-                  if (contentChunk) {
-                    accumulatedContent += contentChunk
+        const originalStream = await createStreamingResponse({
+          requestId,
+          streamConfig: {
+            selectedOutputs,
+            isSecureMode: true,
+            workflowTriggerType: 'chat',
+            sessionUserId: userId ?? undefined,
+          },
+          executionId,
+          executeFn: async ({ onStream, onBlockComplete, abortSignal, sessionUserId }) =>
+            executeWorkflow(
+              workflowForExecution,
+              requestId,
+              workflowInput,
+              workspaceOwnerId,
+              {
+                enabled: true,
+                selectedOutputs,
+                isSecureMode: true,
+                workflowTriggerType: 'chat',
+                onStream,
+                onBlockComplete,
+                skipLoggingComplete: true,
+                sessionUserId: sessionUserId ?? undefined,
+                abortSignal,
+                executionMode: 'stream',
+              },
+              executionId
+            ),
+        })
+
+        // Wrap the stream to capture final output and update workflowExecutionLogs
+        const wrappedStream = new ReadableStream({
+          async start(controller) {
+            const reader = originalStream.getReader()
+            const decoder = new TextDecoder()
+            const encoder = new TextEncoder()
+            let buffer = ''
+            let accumulatedContent = ''
+
+            try {
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                // Decode and process the chunk
+                const chunk = decoder.decode(value, { stream: true })
+                buffer += chunk
+
+                // Process complete SSE messages
+                const lines = buffer.split('\n\n')
+                buffer = lines.pop() || ''
+
+                for (const line of lines) {
+                  if (!line.trim() || !line.startsWith('data: ')) {
+                    controller.enqueue(encoder.encode(`${line}\n\n`))
+                    continue
                   }
 
-                  // Handle final event - format output and update log
-                  if (event === 'final' && eventData) {
-                    const finalData = eventData as {
-                      success: boolean
-                      error?: string | { message?: string }
-                      output?: Record<string, Record<string, any>>
+                  const data = line.substring(6).trim()
+                  if (data === '[DONE]') {
+                    controller.enqueue(encoder.encode(`${line}\n\n`))
+                    continue
+                  }
+
+                  try {
+                    const json = JSON.parse(data)
+                    const { event, data: eventData, chunk: contentChunk } = json
+
+                    // Capture streaming content chunks
+                    if (contentChunk) {
+                      accumulatedContent += contentChunk
                     }
 
-                    const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
-                      if (!path || path === 'content') {
-                        if (blockOutputs.content !== undefined) return blockOutputs.content
-                        if (blockOutputs.result !== undefined) return blockOutputs.result
-                        return blockOutputs
+                    // Handle final event - format output and update log
+                    if (event === 'final' && eventData) {
+                      const finalData = eventData as {
+                        success: boolean
+                        error?: string | { message?: string }
+                        output?: Record<string, Record<string, any>>
                       }
-                      if (blockOutputs[path] !== undefined) {
-                        return blockOutputs[path]
-                      }
-                      if (path.includes('.')) {
-                        return path.split('.').reduce<any>((current, segment) => {
-                          if (current && typeof current === 'object' && segment in current) {
-                            return current[segment]
-                          }
-                          return undefined
-                        }, blockOutputs)
-                      }
-                      return undefined
-                    }
 
-                    /** Check if value is a knowledge base results array (documentId, documentName, content, chunkIndex) */
-                    const isKnowledgeResultsArray = (
-                      value: unknown
-                    ): value is Array<Record<string, unknown>> =>
-                      Array.isArray(value) &&
-                      value.length > 0 &&
-                      value.every(
-                        (item) =>
-                          item &&
-                          typeof item === 'object' &&
-                          'documentId' in item &&
-                          'documentName' in item &&
-                          'content' in item &&
-                          'chunkIndex' in item
-                      )
-
-                    const mapToKnowledgePayload = (value: Array<Record<string, unknown>>) =>
-                      value.map((item) => ({
-                        documentId: String(item.documentId),
-                        documentName: String(item.documentName ?? item.documentId),
-                        content: String(item.content),
-                        chunkIndex: Number(item.chunkIndex),
-                        ...(item.metadata && typeof item.metadata === 'object'
-                          ? { metadata: item.metadata as Record<string, unknown> }
-                          : {}),
-                        ...(typeof item.similarity === 'number'
-                          ? { similarity: item.similarity }
-                          : {}),
-                        ...(item.chunkId != null ? { chunkId: String(item.chunkId) } : {}),
-                        ...(item.knowledgeBaseId != null
-                          ? { knowledgeBaseId: String(item.knowledgeBaseId) }
-                          : {}),
-                        ...(item.workspaceId != null
-                          ? {
-                              workspaceId:
-                                item.workspaceId === null ? null : String(item.workspaceId),
-                            }
-                          : {}),
-                      }))
-
-                    let knowledgeResultsPayload: Array<{
-                      documentId: string
-                      documentName: string
-                      content: string
-                      chunkIndex: number
-                      metadata?: Record<string, unknown>
-                      similarity?: number
-                      chunkId?: string
-                      knowledgeBaseId?: string
-                      workspaceId?: string | null
-                    }> = []
-
-                    if (finalData.output) {
-                      const fromOutputConfig =
-                        deployment.outputConfigs &&
-                        Array.isArray(deployment.outputConfigs) &&
-                        (() => {
-                          const aggregated: Array<{
-                            documentId: string
-                            documentName: string
-                            content: string
-                            chunkIndex: number
-                            metadata?: Record<string, unknown>
-                            similarity?: number
-                            chunkId?: string
-                            knowledgeBaseId?: string
-                            workspaceId?: string | null
-                          }> = []
-                          for (const config of deployment.outputConfigs) {
-                            if (config.path === 'results') {
-                              const blockOutputs = finalData.output[config.blockId]
-                              if (!blockOutputs) continue
-                              const value = getOutputValue(blockOutputs, config.path)
-                              if (isKnowledgeResultsArray(value)) {
-                                aggregated.push(...mapToKnowledgePayload(value))
-                              }
-                            }
-                          }
-                          return aggregated.length > 0 ? aggregated : null
-                        })()
-
-                      if (Array.isArray(fromOutputConfig) && fromOutputConfig.length > 0) {
-                        knowledgeResultsPayload = fromOutputConfig
-                      } else {
-                        for (const blockOutputs of Object.values(finalData.output)) {
-                          if (!blockOutputs || typeof blockOutputs !== 'object') continue
-                          const value = getOutputValue(blockOutputs, 'results')
-                          if (isKnowledgeResultsArray(value)) {
-                            knowledgeResultsPayload.push(...mapToKnowledgePayload(value))
-                          }
+                      const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
+                        if (!path || path === 'content') {
+                          if (blockOutputs.content !== undefined) return blockOutputs.content
+                          if (blockOutputs.result !== undefined) return blockOutputs.result
+                          return blockOutputs
                         }
+                        if (blockOutputs[path] !== undefined) {
+                          return blockOutputs[path]
+                        }
+                        if (path.includes('.')) {
+                          return path.split('.').reduce<any>((current, segment) => {
+                            if (current && typeof current === 'object' && segment in current) {
+                              return current[segment]
+                            }
+                            return undefined
+                          }, blockOutputs)
+                        }
+                        return undefined
                       }
-                    }
 
-                    if (knowledgeResultsPayload.length > 0) {
-                      const knowledgeResultsEvent = JSON.stringify({
-                        event: 'knowledgeResults',
-                        data: knowledgeResultsPayload,
-                      })
-                      controller.enqueue(encoder.encode(`data: ${knowledgeResultsEvent}\n\n`))
-                    }
+                      /** Check if value is a knowledge base results array (documentId, documentName, content, chunkIndex) */
+                      const isKnowledgeResultsArray = (
+                        value: unknown
+                      ): value is Array<Record<string, unknown>> =>
+                        Array.isArray(value) &&
+                        value.length > 0 &&
+                        value.every(
+                          (item) =>
+                            item &&
+                            typeof item === 'object' &&
+                            'documentId' in item &&
+                            'documentName' in item &&
+                            'content' in item &&
+                            'chunkIndex' in item
+                        )
 
-                    /** Minimal refs for history: one per chunk (document name + chunk index + chunk link). */
-                    const knowledgeRefs =
-                      knowledgeResultsPayload.length > 0
-                        ? (() => {
-                            const refs: Array<{
+                      const mapToKnowledgePayload = (value: Array<Record<string, unknown>>) =>
+                        value.map((item) => ({
+                          documentId: String(item.documentId),
+                          documentName: String(item.documentName ?? item.documentId),
+                          content: String(item.content),
+                          chunkIndex: Number(item.chunkIndex),
+                          ...(item.metadata && typeof item.metadata === 'object'
+                            ? { metadata: item.metadata as Record<string, unknown> }
+                            : {}),
+                          ...(typeof item.similarity === 'number'
+                            ? { similarity: item.similarity }
+                            : {}),
+                          ...(item.chunkId != null ? { chunkId: String(item.chunkId) } : {}),
+                          ...(item.knowledgeBaseId != null
+                            ? { knowledgeBaseId: String(item.knowledgeBaseId) }
+                            : {}),
+                          ...(item.workspaceId != null
+                            ? {
+                                workspaceId:
+                                  item.workspaceId === null ? null : String(item.workspaceId),
+                              }
+                            : {}),
+                        }))
+
+                      let knowledgeResultsPayload: Array<{
+                        documentId: string
+                        documentName: string
+                        content: string
+                        chunkIndex: number
+                        metadata?: Record<string, unknown>
+                        similarity?: number
+                        chunkId?: string
+                        knowledgeBaseId?: string
+                        workspaceId?: string | null
+                      }> = []
+
+                      if (finalData.output) {
+                        const fromOutputConfig =
+                          deployment.outputConfigs &&
+                          Array.isArray(deployment.outputConfigs) &&
+                          (() => {
+                            const aggregated: Array<{
                               documentId: string
                               documentName: string
-                              chunkId: string
+                              content: string
                               chunkIndex: number
-                              knowledgeBaseId: string
-                              workspaceId: string | null
+                              metadata?: Record<string, unknown>
+                              similarity?: number
+                              chunkId?: string
+                              knowledgeBaseId?: string
+                              workspaceId?: string | null
                             }> = []
-                            for (const item of knowledgeResultsPayload) {
-                              if (
-                                item.chunkId != null &&
-                                item.knowledgeBaseId != null &&
-                                item.workspaceId !== undefined &&
-                                typeof item.chunkIndex === 'number'
-                              ) {
-                                refs.push({
-                                  documentId: item.documentId,
-                                  documentName: item.documentName || item.documentId,
-                                  chunkId: String(item.chunkId),
-                                  chunkIndex: item.chunkIndex,
-                                  knowledgeBaseId: String(item.knowledgeBaseId),
-                                  workspaceId:
-                                    item.workspaceId === null ? null : String(item.workspaceId),
-                                })
+                            for (const config of deployment.outputConfigs) {
+                              if (config.path === 'results') {
+                                const blockOutputs = finalData.output[config.blockId]
+                                if (!blockOutputs) continue
+                                const value = getOutputValue(blockOutputs, config.path)
+                                if (isKnowledgeResultsArray(value)) {
+                                  aggregated.push(...mapToKnowledgePayload(value))
+                                }
                               }
                             }
-                            return refs
+                            return aggregated.length > 0 ? aggregated : null
                           })()
-                        : []
 
-                    // Format final output based on outputConfigs (exclude raw "results" for knowledge block)
-                    let finalChatOutput = accumulatedContent.trim()
-
-                    if (
-                      deployment.outputConfigs &&
-                      Array.isArray(deployment.outputConfigs) &&
-                      finalData.output
-                    ) {
-                      const formatValue = (value: any): string | null => {
-                        if (value === null || value === undefined) {
-                          return null
-                        }
-                        if (typeof value === 'string') {
-                          return value
-                        }
-                        if (typeof value === 'object') {
-                          try {
-                            return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
-                          } catch {
-                            return String(value)
+                        if (Array.isArray(fromOutputConfig) && fromOutputConfig.length > 0) {
+                          knowledgeResultsPayload = fromOutputConfig
+                        } else {
+                          for (const blockOutputs of Object.values(finalData.output)) {
+                            if (!blockOutputs || typeof blockOutputs !== 'object') continue
+                            const value = getOutputValue(blockOutputs, 'results')
+                            if (isKnowledgeResultsArray(value)) {
+                              knowledgeResultsPayload.push(...mapToKnowledgePayload(value))
+                            }
                           }
-                        }
-                        return String(value)
-                      }
-
-                      const formattedOutputs: string[] = []
-                      for (const config of deployment.outputConfigs) {
-                        const blockOutputs = finalData.output[config.blockId]
-                        if (!blockOutputs) continue
-
-                        const value = getOutputValue(blockOutputs, config.path)
-                        if (config.path === 'results' && isKnowledgeResultsArray(value)) {
-                          continue
-                        }
-                        const formatted = formatValue(value)
-                        if (formatted) {
-                          formattedOutputs.push(formatted)
                         }
                       }
 
-                      if (formattedOutputs.length > 0) {
-                        const trimmedStreamingContent = accumulatedContent.trim()
-                        const uniqueOutputs = formattedOutputs.filter((output) => {
-                          const trimmedOutput = output.trim()
-                          if (!trimmedOutput) return false
-                          if (
-                            trimmedStreamingContent &&
-                            trimmedOutput === trimmedStreamingContent
-                          ) {
-                            return false
-                          }
-                          return true
+                      if (knowledgeResultsPayload.length > 0) {
+                        const knowledgeResultsEvent = JSON.stringify({
+                          event: 'knowledgeResults',
+                          data: knowledgeResultsPayload,
                         })
-
-                        if (uniqueOutputs.length > 0) {
-                          const combinedOutputs = uniqueOutputs.join('\n\n')
-                          finalChatOutput = finalChatOutput
-                            ? `${finalChatOutput}\n\n${combinedOutputs}`
-                            : combinedOutputs
-                        }
+                        controller.enqueue(encoder.encode(`data: ${knowledgeResultsEvent}\n\n`))
                       }
-                    }
 
-                    // Update workflowExecutionLogs with final output and optional knowledgeRefs (for history)
-                    if (finalChatOutput) {
-                      try {
-                        const updatePayload: { finalChatOutput: string; executionData?: object } = {
-                          finalChatOutput,
+                      /** Minimal refs for history: one per chunk (document name + chunk index + chunk link). */
+                      const knowledgeRefs =
+                        knowledgeResultsPayload.length > 0
+                          ? (() => {
+                              const refs: Array<{
+                                documentId: string
+                                documentName: string
+                                chunkId: string
+                                chunkIndex: number
+                                knowledgeBaseId: string
+                                workspaceId: string | null
+                              }> = []
+                              for (const item of knowledgeResultsPayload) {
+                                if (
+                                  item.chunkId != null &&
+                                  item.knowledgeBaseId != null &&
+                                  item.workspaceId !== undefined &&
+                                  typeof item.chunkIndex === 'number'
+                                ) {
+                                  refs.push({
+                                    documentId: item.documentId,
+                                    documentName: item.documentName || item.documentId,
+                                    chunkId: String(item.chunkId),
+                                    chunkIndex: item.chunkIndex,
+                                    knowledgeBaseId: String(item.knowledgeBaseId),
+                                    workspaceId:
+                                      item.workspaceId === null ? null : String(item.workspaceId),
+                                  })
+                                }
+                              }
+                              return refs
+                            })()
+                          : []
+
+                      // Format final output based on outputConfigs (exclude raw "results" for knowledge block)
+                      let finalChatOutput = accumulatedContent.trim()
+
+                      if (
+                        deployment.outputConfigs &&
+                        Array.isArray(deployment.outputConfigs) &&
+                        finalData.output
+                      ) {
+                        const formatValue = (value: any): string | null => {
+                          if (value === null || value === undefined) {
+                            return null
+                          }
+                          if (typeof value === 'string') {
+                            return value
+                          }
+                          if (typeof value === 'object') {
+                            try {
+                              return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
+                            } catch {
+                              return String(value)
+                            }
+                          }
+                          return String(value)
                         }
-                        if (knowledgeRefs.length > 0) {
-                          const [row] = await db
-                            .select({ executionData: workflowExecutionLogs.executionData })
-                            .from(workflowExecutionLogs)
-                            .where(eq(workflowExecutionLogs.executionId, executionId))
-                          const existing = (row?.executionData as object) ?? {}
-                          updatePayload.executionData = {
-                            ...existing,
-                            knowledgeRefs,
+
+                        const formattedOutputs: string[] = []
+                        for (const config of deployment.outputConfigs) {
+                          const blockOutputs = finalData.output[config.blockId]
+                          if (!blockOutputs) continue
+
+                          const value = getOutputValue(blockOutputs, config.path)
+                          if (config.path === 'results' && isKnowledgeResultsArray(value)) {
+                            continue
+                          }
+                          const formatted = formatValue(value)
+                          if (formatted) {
+                            formattedOutputs.push(formatted)
                           }
                         }
-                        await db
-                          .update(workflowExecutionLogs)
-                          .set(updatePayload)
-                          .where(eq(workflowExecutionLogs.executionId, executionId))
-                        logger.debug(
-                          `[${requestId}] Updated finalChatOutput for execution ${executionId}`
-                        )
-                      } catch (updateError) {
-                        logger.error(
-                          `[${requestId}] Failed to update finalChatOutput:`,
-                          updateError
-                        )
+
+                        if (formattedOutputs.length > 0) {
+                          const trimmedStreamingContent = accumulatedContent.trim()
+                          const uniqueOutputs = formattedOutputs.filter((output) => {
+                            const trimmedOutput = output.trim()
+                            if (!trimmedOutput) return false
+                            if (
+                              trimmedStreamingContent &&
+                              trimmedOutput === trimmedStreamingContent
+                            ) {
+                              return false
+                            }
+                            return true
+                          })
+
+                          if (uniqueOutputs.length > 0) {
+                            const combinedOutputs = uniqueOutputs.join('\n\n')
+                            finalChatOutput = finalChatOutput
+                              ? `${finalChatOutput}\n\n${combinedOutputs}`
+                              : combinedOutputs
+                          }
+                        }
+                      }
+
+                      // Update workflowExecutionLogs with final output and optional knowledgeRefs (for history)
+                      if (finalChatOutput) {
+                        try {
+                          const updatePayload: { finalChatOutput: string; executionData?: object } =
+                            {
+                              finalChatOutput,
+                            }
+                          if (knowledgeRefs.length > 0) {
+                            const [row] = await db
+                              .select({ executionData: workflowExecutionLogs.executionData })
+                              .from(workflowExecutionLogs)
+                              .where(eq(workflowExecutionLogs.executionId, executionId))
+                            const existing = (row?.executionData as object) ?? {}
+                            updatePayload.executionData = {
+                              ...existing,
+                              knowledgeRefs,
+                            }
+                          }
+                          await db
+                            .update(workflowExecutionLogs)
+                            .set(updatePayload)
+                            .where(eq(workflowExecutionLogs.executionId, executionId))
+                          logger.debug(
+                            `[${requestId}] Updated finalChatOutput for execution ${executionId}`
+                          )
+                        } catch (updateError) {
+                          logger.error(
+                            `[${requestId}] Failed to update finalChatOutput:`,
+                            updateError
+                          )
+                        }
                       }
                     }
-                  }
 
-                  // Pass through the original data
-                  controller.enqueue(encoder.encode(`${line}\n\n`))
-                } catch (parseError) {
-                  // If parsing fails, just pass through the original line
-                  controller.enqueue(encoder.encode(`${line}\n\n`))
+                    // Pass through the original data
+                    controller.enqueue(encoder.encode(`${line}\n\n`))
+                  } catch (parseError) {
+                    // If parsing fails, just pass through the original line
+                    controller.enqueue(encoder.encode(`${line}\n\n`))
+                  }
                 }
               }
+            } catch (error) {
+              logger.error(`[${requestId}] Error in stream wrapper:`, error)
+              controller.error(error)
+            } finally {
+              reader.releaseLock()
+              controller.close()
             }
-          } catch (error) {
-            logger.error(`[${requestId}] Error in stream wrapper:`, error)
-            controller.error(error)
-          } finally {
-            reader.releaseLock()
-            controller.close()
-          }
-        },
-      })
+          },
+        })
 
-      const streamResponse = new NextResponse(wrappedStream, {
-        status: 200,
-        headers: SSE_HEADERS,
-      })
-      return addCorsHeaders(streamResponse, request)
+        const streamResponse = new NextResponse(wrappedStream, {
+          status: 200,
+          headers: SSE_HEADERS,
+        })
+        return addCorsHeaders(streamResponse, request)
       } catch (error: any) {
         logger.error(`[${requestId}] Error processing chat request:`, error)
         return addCorsHeaders(
@@ -967,7 +974,7 @@ export const POST = withRouteHandler(
       )
     }
   }
-);
+)
 
 export const PATCH = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ identifier: string }> }) => {
@@ -1063,7 +1070,7 @@ export const PATCH = withRouteHandler(
       )
     }
   }
-);
+)
 
 export const GET = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ identifier: string }> }) => {
@@ -1104,76 +1111,101 @@ export const GET = withRouteHandler(
         )
       }
 
-    // Extract Start Block inputFormat for chat UI (before auth checks so it's available in all responses)
-    let inputFormat: InputFormatField[] = []
-    try {
-      const deployedData = (await loadDeployedWorkflowState(deployment.workflowId)) as unknown as {
-        blocks?: Record<string, unknown>
-      }
-      const blocks = Object.values(deployedData.blocks ?? {}) as Array<Record<string, unknown>>
-      const startBlock = blocks.find(
-        (block) => block.type === 'start_trigger' || block.type === 'starter'
-      ) as { subBlocks?: Record<string, unknown> } | undefined
-      const inputFormatValue = (startBlock?.subBlocks as any)?.inputFormat?.value as unknown
-      if (inputFormatValue) {
-        if (Array.isArray(inputFormatValue)) {
-          inputFormat = inputFormatValue
-            .filter((field) => {
-              return (
-                field !== null &&
-                field !== undefined &&
-                typeof field === 'object' &&
-                !Array.isArray(field) &&
-                'name' in field &&
-                typeof (field as any).name === 'string'
-              )
-            })
-            .map((field: any) => ({
-              name: field.name,
-              type: field.type,
-              value: field.value,
-            }))
+      // Extract Start Block inputFormat for chat UI (before auth checks so it's available in all responses)
+      let inputFormat: InputFormatField[] = []
+      try {
+        const deployedData = (await loadDeployedWorkflowState(
+          deployment.workflowId
+        )) as unknown as {
+          blocks?: Record<string, unknown>
         }
+        const blocks = Object.values(deployedData.blocks ?? {}) as Array<Record<string, unknown>>
+        const startBlock = blocks.find(
+          (block) => block.type === 'start_trigger' || block.type === 'starter'
+        ) as { subBlocks?: Record<string, unknown> } | undefined
+        const inputFormatValue = (startBlock?.subBlocks as any)?.inputFormat?.value as unknown
+        if (inputFormatValue) {
+          if (Array.isArray(inputFormatValue)) {
+            inputFormat = inputFormatValue
+              .filter((field) => {
+                return (
+                  field !== null &&
+                  field !== undefined &&
+                  typeof field === 'object' &&
+                  !Array.isArray(field) &&
+                  'name' in field &&
+                  typeof (field as any).name === 'string'
+                )
+              })
+              .map((field: any) => ({
+                name: field.name,
+                type: field.type,
+                value: field.value,
+              }))
+          }
+        }
+      } catch (error) {
+        logger.warn(`[${requestId}] Failed to extract inputFormat:`, error)
+        // Continue without inputFormat - not critical for chat config
       }
-    } catch (error) {
-      logger.warn(`[${requestId}] Failed to extract inputFormat:`, error)
-      // Continue without inputFormat - not critical for chat config
-    }
-    const goldenQueries = await fetchGoldenQueries(deployment.workflowId)
+      const goldenQueries = await fetchGoldenQueries(deployment.workflowId)
 
-    /**
-     * Helper function to build chat config response with inputFormat always included.
-     * When userWorkspaceIds is provided (logged-in user with workspace access), KB "View in Knowledge Base" links are shown.
-     */
-    const buildChatConfigResponse = (userWorkspaceIds?: string[]) => {
-      const departmentValue = deployment.department ?? null
-      const departmentLabel =
-        departmentValue != null ? (departmentLabelMap[departmentValue] ?? departmentValue) : null
+      /**
+       * Helper function to build chat config response with inputFormat always included.
+       * When userWorkspaceIds is provided (logged-in user with workspace access), KB "View in Knowledge Base" links are shown.
+       */
+      const buildChatConfigResponse = (userWorkspaceIds?: string[]) => {
+        const departmentValue = deployment.department ?? null
+        const departmentLabel =
+          departmentValue != null ? (departmentLabelMap[departmentValue] ?? departmentValue) : null
 
-      return createSuccessResponse({
-        id: deployment.id,
-        title: deployment.title,
-        description: deployment.description,
-        customizations: {
-          ...(deployment.customizations ?? {}),
-          goldenQueries,
-        },
-        authType: deployment.authType,
-        outputConfigs: deployment.outputConfigs,
-        inputFormat, // Always included in successful responses
-        department: departmentLabel, // Department in label format
-        ...(userWorkspaceIds && userWorkspaceIds.length > 0 && { userWorkspaceIds }),
-      })
-    }
+        return createSuccessResponse({
+          id: deployment.id,
+          title: deployment.title,
+          description: deployment.description,
+          customizations: {
+            ...(deployment.customizations ?? {}),
+            goldenQueries,
+          },
+          authType: deployment.authType,
+          outputConfigs: deployment.outputConfigs,
+          inputFormat, // Always included in successful responses
+          department: departmentLabel, // Department in label format
+          ...(userWorkspaceIds && userWorkspaceIds.length > 0 && { userWorkspaceIds }),
+        })
+      }
 
-    const cookieName = `chat_auth_${deployment.id}`
-    const authCookie = request.cookies.get(cookieName)
+      const cookieName = `chat_auth_${deployment.id}`
+      const authCookie = request.cookies.get(cookieName)
 
-    if (
-      deployment.authType !== 'public' &&
-      authCookie &&
-      validateAuthToken(authCookie.value, deployment.id, deployment.password)
-    ) {
+      if (
+        deployment.authType !== 'public' &&
+        authCookie &&
+        validateAuthToken(authCookie.value, deployment.id, deployment.password)
+      ) {
+        let userWorkspaceIds: string[] | undefined
+        try {
+          const session = await getSession()
+          if (session?.user?.id) {
+            userWorkspaceIds = await getWorkspaceIdsForUser(session.user.id)
+          }
+        } catch {
+          // Non-fatal; proceed without userWorkspaceIds
+        }
+        return addCorsHeaders(buildChatConfigResponse(userWorkspaceIds), request)
+      }
+
+      const authResult = await validateChatAuth(requestId, deployment, request)
+      if (!authResult.authorized) {
+        logger.info(
+          `[${requestId}] Authentication required for chat: ${identifier}, type: ${deployment.authType}`
+        )
+        return addCorsHeaders(
+          createErrorResponse(authResult.error || 'Authentication required', 401),
+          request
+        )
+      }
+
       let userWorkspaceIds: string[] | undefined
       try {
         const session = await getSession()
@@ -1183,43 +1215,20 @@ export const GET = withRouteHandler(
       } catch {
         // Non-fatal; proceed without userWorkspaceIds
       }
-      return addCorsHeaders(buildChatConfigResponse(userWorkspaceIds), request)
-    }
 
-    const authResult = await validateChatAuth(requestId, deployment, request)
-    if (!authResult.authorized) {
-      logger.info(
-        `[${requestId}] Authentication required for chat: ${identifier}, type: ${deployment.authType}`
-      )
+      const response = buildChatConfigResponse(userWorkspaceIds)
+
+      if (deployment.authType !== 'public') {
+        setChatAuthCookie(response, deployment.id, deployment.authType)
+      }
+
+      return addCorsHeaders(response, request)
+    } catch (error: any) {
+      logger.error(`[${requestId}] Error fetching chat info:`, error)
       return addCorsHeaders(
-        createErrorResponse(authResult.error || 'Authentication required', 401),
+        createErrorResponse(error.message || 'Failed to fetch chat information', 500),
         request
       )
     }
-
-    let userWorkspaceIds: string[] | undefined
-    try {
-      const session = await getSession()
-      if (session?.user?.id) {
-        userWorkspaceIds = await getWorkspaceIdsForUser(session.user.id)
-      }
-    } catch {
-      // Non-fatal; proceed without userWorkspaceIds
-    }
-
-    const response = buildChatConfigResponse(userWorkspaceIds)
-
-    if (deployment.authType !== 'public') {
-      setChatAuthCookie(response, deployment.id, deployment.authType)
-    }
-
-    return addCorsHeaders(response, request)
-  } catch (error: any) {
-    logger.error(`[${requestId}] Error fetching chat info:`, error)
-    return addCorsHeaders(
-      createErrorResponse(error.message || 'Failed to fetch chat information', 500),
-      request
-    )
   }
-  }
-);
+)

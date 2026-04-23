@@ -40,7 +40,10 @@ export function buildHostOnlySessionCookieClearHeaderValues(useHttps: boolean): 
 /**
  * Set-Cookie header values that clear session cookies with `Domain=` (cross-subdomain cookies).
  */
-export function buildDomainSessionCookieClearHeaderValues(domain: string, useHttps: boolean): string[] {
+export function buildDomainSessionCookieClearHeaderValues(
+  domain: string,
+  useHttps: boolean
+): string[] {
   const namePrefix = useHttps ? '__Secure-' : ''
   const secure = useHttps ? 'Secure; ' : ''
   return SESSION_RELATED.map(

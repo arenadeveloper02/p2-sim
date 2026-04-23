@@ -1,8 +1,8 @@
 import { createLogger } from '@sim/logger'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { InputFormatField } from '@/lib/workflows/types'
 import type { OutputConfig } from '@/stores/chat/types'
 import { deploymentKeys } from './deployments'
-import { InputFormatField } from '@/lib/workflows/types'
 
 const logger = createLogger('ChatMutations')
 

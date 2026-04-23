@@ -24,10 +24,7 @@ function respond(request: Request) {
         }
       : { mode: 'host-only' },
   })
-  const lines = buildComprehensiveSessionCookieClearHeaderValues(
-    hostname ?? 'localhost',
-    useHttps
-  )
+  const lines = buildComprehensiveSessionCookieClearHeaderValues(hostname ?? 'localhost', useHttps)
   for (const value of lines) {
     res.headers.append('Set-Cookie', value)
   }

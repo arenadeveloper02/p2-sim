@@ -526,7 +526,7 @@ export function InviteModal({
       workspaceId,
       userPermissions,
       batchSendInvitations,
-      session?.user?.email
+      session?.user?.email,
     ]
   )
 

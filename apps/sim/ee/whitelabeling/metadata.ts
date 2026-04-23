@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { getBaseUrl, SITE_URL } from '@/lib/core/utils/urls'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 import { getBrandConfig } from '@/ee/whitelabeling/branding'
 
 /**

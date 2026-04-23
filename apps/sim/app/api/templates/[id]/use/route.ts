@@ -9,7 +9,10 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { canAccessTemplate, verifyTemplateOwnership } from '@/lib/templates/permissions'
-import {type RegenerateStateInput, regenerateWorkflowStateIds } from '@/lib/workflows/persistence/utils'
+import {
+  type RegenerateStateInput,
+  regenerateWorkflowStateIds,
+} from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
 import { getUserEntityPermissions, getWorkspaceById } from '@/lib/workspaces/permissions/utils'
 
