@@ -14,6 +14,7 @@ interface WorkspaceSummary {
 }
 
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
+import { WorkspaceConicLoader } from '@/app/workspace/workspace-conic-loader'
 import { useWorkspacesWithMetadata } from '@/hooks/queries/workspace'
 
 const logger = createLogger('WorkspacePage')
@@ -72,16 +73,7 @@ export default function WorkspacePage() {
   if (isSessionPending || isWorkspacesLoading) {
     return (
       <div className='flex h-screen w-full items-center justify-center'>
-        <div
-          className='h-[18px] w-[18px] animate-spin rounded-full'
-          style={{
-            background:
-              'conic-gradient(from 0deg, hsl(var(--muted-foreground)) 0deg 120deg, transparent 120deg 180deg, hsl(var(--muted-foreground)) 180deg 300deg, transparent 300deg 360deg)',
-            mask: 'radial-gradient(farthest-side, transparent calc(100% - 1.5px), black calc(100% - 1.5px))',
-            WebkitMask:
-              'radial-gradient(farthest-side, transparent calc(100% - 1.5px), black calc(100% - 1.5px))',
-          }}
-        />
+        <WorkspaceConicLoader />
       </div>
     )
   }

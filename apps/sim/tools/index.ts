@@ -11,8 +11,8 @@ import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { isUserFile } from '@/lib/core/utils/user-file'
-import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
+import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { resolveWorkspaceFileReference } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
@@ -193,8 +193,15 @@ async function injectOAuthCredentialFromUserContextIfNeeded(
   if (
     pick(params.credential) ||
     pick(params.oauthCredential) ||
-    pick(params.credentialId)
+    pick(params.credentialId) ||
+    pick(params.accessToken) ||
+    pick(params.botToken)
   ) {
+    if (pick(params.accessToken) || pick(params.botToken)) {
+      logger.info(
+        `[${requestId}] Using user-supplied token for ${tool.id}; skipping OAuth auto-resolve`
+      )
+    }
     return
   }
   const ctx = params._context as { userId?: string; workspaceId?: string } | undefined
@@ -216,7 +223,6 @@ async function injectOAuthCredentialFromUserContextIfNeeded(
     })
   }
 }
-
 
 /**
  * Inject hosted API key if tool supports it and user didn't provide one.

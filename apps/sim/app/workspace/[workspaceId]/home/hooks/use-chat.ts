@@ -2754,12 +2754,14 @@ export function useChat(
         const currentResources = resourcesRef.current
         const resourceAttachments =
           currentResources.length > 0
-            ? currentResources.map((r) => ({
-                type: r.type,
-                id: r.id,
-                title: r.title,
-                active: r.id === currentActiveId,
-              }))
+            ? currentResources
+                .filter((r) => r.type !== 'log')
+                .map((r) => ({
+                  type: r.type,
+                  id: r.id,
+                  title: r.title,
+                  active: r.id === currentActiveId,
+                }))
             : undefined
 
         let effectiveWorkspaceId = workspaceId

@@ -150,6 +150,35 @@ if (validStripeKey) {
   })
 }
 
+/**
+ * Parent domain for Set-Cookie Domain= (no leading dot). Only applied when the app host is under that
+ * domain. If you set BETTER_AUTH_COOKIE_DOMAIN while using localhost, browsers reject the cookie
+ * (domain must match the request host), so we skip cross-subdomain cookies and use host-only cookies.
+ */
+function resolveBetterAuthCrossSubdomainCookieDomain(): string | undefined {
+  const raw = env.BETTER_AUTH_COOKIE_DOMAIN?.trim()
+  if (!raw) return undefined
+
+  const domain = raw.replace(/^\./, '').trim().toLowerCase()
+  if (!domain) return undefined
+
+  try {
+    const hostname = new URL(getBaseUrl()).hostname
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+      return undefined
+    }
+    if (hostname !== domain && !hostname.endsWith(`.${domain}`)) {
+      return undefined
+    }
+  } catch {
+    return undefined
+  }
+
+  return domain
+}
+
+const betterAuthCrossSubdomainCookieDomain = resolveBetterAuthCrossSubdomainCookieDomain()
+
 export const auth = betterAuth({
   baseURL: getBaseUrl(),
   trustedOrigins: [
@@ -163,6 +192,16 @@ export const auth = betterAuth({
     'https://claude.ai',
     'https://claude.com',
   ].filter(Boolean),
+  ...(betterAuthCrossSubdomainCookieDomain
+    ? {
+        advanced: {
+          crossSubDomainCookies: {
+            enabled: true,
+            domain: betterAuthCrossSubdomainCookieDomain,
+          },
+        },
+      }
+    : {}),
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema,
@@ -2374,10 +2413,20 @@ export const auth = betterAuth({
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
-          // Add user_scope parameter to request user token for search.all API
-          // Note: search.all requires 'search:read' user scope in addition to channels:read
           authorizationUrlParams: {
-            user_scope: 'search:read,channels:read',
+            user_scope: [
+              'search:read',
+              'channels:read',
+              'channels:history',
+              'groups:read',
+              'groups:history',
+              'im:read',
+              'im:history',
+              'mpim:read',
+              'mpim:history',
+              'users:read',
+              'chat:write',
+            ].join(','),
           },
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
