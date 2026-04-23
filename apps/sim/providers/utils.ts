@@ -529,7 +529,14 @@ export async function transformBlockTool(
 
   const { createLLMToolSchema } = await import('@/tools/params')
 
-  const userProvidedParams = block.params || {}
+  // Agent tools store the selected operation on `block.operation`; merge into params so
+  // block `tools.config.params` and tool execution see the same shape as canvas blocks.
+  const userProvidedParams = {
+    ...(block.params || {}),
+    ...(block.operation != null && String(block.operation) !== ''
+      ? { operation: block.operation }
+      : {}),
+  }
 
   const { schema: llmSchema, enrichedDescription } = await createLLMToolSchema(
     toolConfig,

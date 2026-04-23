@@ -78,17 +78,19 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
   version: '1.0.0',
 
   params: {
-    reportType: {
+    url: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description: 'Semrush report type (e.g., url_organic, domain_rank, backlinks_overview)',
+      description:
+        'For URL-based report types (operation starting with url_, e.g. url_organic): full page URL to analyze',
     },
-    target: {
+    domain: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description: 'URL or domain to analyze (depending on report type)',
+      description:
+        'For domain-based report types (e.g. domain_organic, domain_rank): root domain to analyze (e.g. example.com)',
     },
     database: {
       type: 'string',
@@ -100,7 +102,7 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'Number of results to return',
+      description: 'Number of results to return (default 10)',
     },
     exportColumns: {
       type: 'string',
@@ -123,20 +125,21 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
   },
 
   request: {
-    url: (params: SemrushParams & { url?: string; domain?: string }) => {
+    url: (params: SemrushParams) => {
       const queryParams = new URLSearchParams()
-      const reportType = params.reportType ?? 'domain_organic'
+      const reportType =
+        params.operation || params.reportType || 'domain_organic'
 
-      const rawTarget =
-        params.target ?? (reportType.startsWith('url_') ? params.url : params.domain) ?? ''
+      const rawFromFields = reportType.startsWith('url_') ? params.url : params.domain
+      const rawTarget = (rawFromFields ?? params.target ?? '').trim()
       const target = normalizeSemrushTarget(rawTarget, reportType)
 
       if (!target) {
-        logger.error('Semrush: Missing or empty target (URL or domain)', {
+        logger.error('Semrush: Missing or empty URL or domain for report type', {
           reportType,
-          hasTarget: Boolean(params.target),
           hasUrl: Boolean(params.url),
           hasDomain: Boolean(params.domain),
+          hasLegacyTarget: Boolean(params.target),
         })
         throw new Error(
           'Semrush requires a valid URL or domain. For "Get Domain Organic Keywords" use a domain (e.g. apple.com) or paste a full URL; for "Get Organic Keywords for URL" use a full page URL.'
@@ -245,7 +248,11 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
 
     // Extract report type from URL or params
     const url = new URL(response.url)
-    const reportType = url.searchParams.get('type') || params?.reportType || ''
+    const reportType =
+      url.searchParams.get('type') ||
+      params?.operation ||
+      params?.reportType ||
+      ''
 
     // Parse CSV using generic parser (Semrush uses semicolon delimiter)
     const parseResult = parseCsvResponse(csvText, {

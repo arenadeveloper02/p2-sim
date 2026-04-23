@@ -1,16 +1,23 @@
 import type { ToolResponse } from '@/tools/types'
 
 export interface SemrushParams {
-  reportType: string
-  /** Set by block config; callers may send url or domain instead. */
-  target?: string
+  /**
+   * Block operation id (e.g. url_organic, domain_organic). Mirrors Exa-style tools
+   * where the block + tool share the same field names; execution merges this from
+   * `tool.operation` in agent flows.
+   */
+  operation?: string
   url?: string
   domain?: string
   database?: string
   displayLimit?: number | string
   exportColumns?: string
-  additionalParams?: string // Raw query string for extra params
+  additionalParams?: string
   apiKey?: string
+  /** @deprecated Legacy tool/agent saves that used the raw API shape */
+  reportType?: string
+  /** @deprecated Legacy tool/agent saves */
+  target?: string
 }
 
 export interface SemrushResponse extends ToolResponse {

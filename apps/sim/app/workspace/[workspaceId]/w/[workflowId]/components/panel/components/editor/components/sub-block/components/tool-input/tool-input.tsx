@@ -1943,7 +1943,7 @@ export const ToolInput = memo(function ToolInput({
                     const renderedElements: React.ReactNode[] = []
 
                     const renderSubBlock = (sb: BlockSubBlockConfig): React.ReactNode => {
-                      const effectiveParamId = sb.id
+                      const effectiveParamId = sb.canonicalParamId || sb.id
                       const canonicalId = toolCanonicalIndex?.canonicalIdBySubBlockId[sb.id]
                       const canonicalGroup = canonicalId
                         ? toolCanonicalIndex?.groupsById[canonicalId]
