@@ -17,6 +17,10 @@ const MAX_HTTP_BUFFER_SIZE = 1e6
 let adapterPubClient: RedisClientType | null = null
 let adapterSubClient: RedisClientType | null = null
 
+function isValidRedisUrl(value: string): boolean {
+  return value.startsWith('redis://') || value.startsWith('rediss://')
+}
+
 function getAllowedOrigins(): string[] {
   const allowedOrigins = [
     getBaseUrl(),
@@ -58,11 +62,15 @@ export async function createSocketIOServer(httpServer: HttpServer): Promise<Serv
     },
   })
 
-  if (env.REDIS_URL) {
+  const redisUrl = env.REDIS_URL
+
+  if (redisUrl && !isValidRedisUrl(redisUrl)) {
+    logger.error('REDIS_URL is set but has invalid protocol; expected redis:// or rediss://', { redisUrl })
+  } else if (redisUrl) {
     logger.info('Configuring Socket.IO Redis adapter...')
 
     const redisOptions = {
-      url: env.REDIS_URL,
+      url: redisUrl,
       socket: {
         reconnectStrategy: (retries: number) => {
           if (retries > 10) {
@@ -113,7 +121,7 @@ export async function createSocketIOServer(httpServer: HttpServer): Promise<Serv
     maxHttpBufferSize: MAX_HTTP_BUFFER_SIZE,
     cookieSecure: isProd,
     corsCredentials: true,
-    redisAdapter: !!env.REDIS_URL,
+    redisAdapter: Boolean(redisUrl && isValidRedisUrl(redisUrl)),
   })
 
   return io
