@@ -1,4 +1,13 @@
 services:
+  maintenance:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - '3000:80'
+    volumes:
+      # Serve your static maintenance page at "/"
+      - ./deployment/maintenance.html:/usr/share/nginx/html/index.html:ro
+
   simstudio:
     build:
       context: .
