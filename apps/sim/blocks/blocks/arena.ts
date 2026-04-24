@@ -42,6 +42,14 @@ export const ArenaBlock: BlockConfig = {
           label: 'Get Token',
           id: 'arena_get_token',
         },
+        {
+          label: 'Get My Tasks',
+          id: 'arena_get_my_tasks',
+        },
+        {
+          label: 'Get My Overdue Tasks',
+          id: 'arena_get_my_overdue_tasks',
+        },
       ],
       value: () => 'arena_create_task',
     },
@@ -518,9 +526,12 @@ export const ArenaBlock: BlockConfig = {
   tools: {
     access: [
       'arena_create_task',
+      'arena_search_task',
       'arena_save_summary',
       'arena_comments',
       'arena_get_meetings',
+      'arena_get_my_tasks',
+      'arena_get_my_overdue_tasks',
       'arena_get_token',
     ],
     config: {
@@ -538,6 +549,10 @@ export const ArenaBlock: BlockConfig = {
             return 'arena_comments'
           case 'arena_get_meetings':
             return 'arena_get_meetings'
+          case 'arena_get_my_tasks':
+            return 'arena_get_my_tasks'
+          case 'arena_get_my_overdue_tasks':
+            return 'arena_get_my_overdue_tasks'
           case 'arena_get_token':
             return 'arena_get_token'
           default:

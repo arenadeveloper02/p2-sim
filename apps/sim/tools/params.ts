@@ -169,7 +169,7 @@ function getBlockConfigurations(): Record<string, BlockConfig> {
         blockConfigCache![block.type] = block
       })
     } catch (error) {
-      console.warn('Could not load block configuration:', error)
+      logger.warn('Could not load block configuration:', error)
       blockConfigCache = {}
     }
   }
@@ -483,6 +483,7 @@ export function createUserToolSchema(
   toolConfig: ToolConfig,
   options: UserToolSchemaOptions = {}
 ): ToolSchema {
+  const surface = options.surface ?? 'default'
   const schema: ToolSchema = {
     type: 'object',
     properties: {},
@@ -504,12 +505,13 @@ export function createUserToolSchema(
     }
   }
 
-  if (toolConfig.oauth?.required) {
+  if (toolConfig.oauth?.required && surface === 'copilot') {
     schema.properties.credentialId = {
       type: 'string',
       description:
-        'Optional credential ID to use when multiple accounts are connected for this provider. Get IDs from environment/credentials.json. If omitted, auto-selects the first available credential.',
+        'Credential ID to use for this OAuth tool call. Required for Copilot/Superagent execution. Get valid IDs from environment/credentials.json.',
     }
+    schema.required.push('credentialId')
   }
 
   return schema

@@ -127,8 +127,7 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
           id: channel.id,
           // DMs have no `name`; fall back to a stable label so downstream
           // consumers that expect a string don't break.
-          name:
-            channel.name || (isIm ? `dm:${channel.user || ''}` : isMpim ? 'group_dm' : ''),
+          name: channel.name || (isIm ? `dm:${channel.user || ''}` : isMpim ? 'group_dm' : ''),
           is_private: channel.is_private || isIm || isMpim,
           is_archived: channel.is_archived || false,
           is_member: channel.is_member || false,

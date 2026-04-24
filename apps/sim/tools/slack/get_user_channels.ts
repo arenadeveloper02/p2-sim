@@ -1,7 +1,4 @@
-import type {
-  SlackGetUserChannelsParams,
-  SlackGetUserChannelsResponse,
-} from '@/tools/slack/types'
+import type { SlackGetUserChannelsParams, SlackGetUserChannelsResponse } from '@/tools/slack/types'
 import { CHANNEL_OUTPUT_PROPERTIES } from '@/tools/slack/types'
 import type { ToolConfig } from '@/tools/types'
 

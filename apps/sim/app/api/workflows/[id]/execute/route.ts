@@ -1,4 +1,10 @@
+import { db } from '@sim/db'
+import { workflow as workflowTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
+import { generateId, isValidUuid } from '@sim/utils/id'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
+import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { AuthType, checkHybridAuth, hasExternalApiCredentials } from '@/lib/auth/hybrid'
@@ -13,7 +19,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { extractBlockIdFromOutputId } from '@/lib/core/utils/response-format'
 import { SSE_HEADERS } from '@/lib/core/utils/sse'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { generateId, isValidUuid } from '@/lib/core/utils/uuid'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   buildNextCallChain,
   parseCallChain,
@@ -41,12 +47,12 @@ import {
   loadWorkflowFromNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
 import { createStreamingResponse } from '@/lib/workflows/streaming/streaming'
-import {
-  authorizeWorkflowByWorkspacePermission,
-  createHttpResponseFromBlock,
-  workflowHasResponseBlock,
-} from '@/lib/workflows/utils'
+import { createHttpResponseFromBlock, workflowHasResponseBlock } from '@/lib/workflows/utils'
 import { executeWorkflowJob, type WorkflowExecutionPayload } from '@/background/workflow-execution'
+import {
+  PublicApiNotAllowedError,
+  validatePublicApiAllowed,
+} from '@/ee/access-control/utils/permission-check'
 import { normalizeName } from '@/executor/constants'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type {
@@ -219,7 +225,7 @@ async function handleAsyncExecution(params: AsyncExecutionParams): Promise<NextR
           const output = await executeWorkflowJob(payload)
           await jobQueue.completeJob(jobId, output)
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error)
+          const errorMessage = toError(error).message
           asyncLogger.error('Async workflow execution failed', {
             jobId,
             error: errorMessage,
@@ -229,10 +235,7 @@ async function handleAsyncExecution(params: AsyncExecutionParams): Promise<NextR
           } catch (markFailedError) {
             asyncLogger.error('Failed to mark job as failed', {
               jobId,
-              error:
-                markFailedError instanceof Error
-                  ? markFailedError.message
-                  : String(markFailedError),
+              error: toError(markFailedError).message,
             })
           }
         }
@@ -265,23 +268,25 @@ async function handleAsyncExecution(params: AsyncExecutionParams): Promise<NextR
  * Unified server-side workflow execution endpoint.
  * Supports both SSE streaming (for interactive/manual runs) and direct JSON responses (for background jobs).
  */
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const isSessionRequest = req.headers.has('cookie') && !hasExternalApiCredentials(req.headers)
-  if (isSessionRequest) {
-    return handleExecutePost(req, params)
-  }
+export const POST = withRouteHandler(
+  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+    const isSessionRequest = req.headers.has('cookie') && !hasExternalApiCredentials(req.headers)
+    if (isSessionRequest) {
+      return handleExecutePost(req, params)
+    }
 
-  const ticket = tryAdmit()
-  if (!ticket) {
-    return admissionRejectedResponse()
-  }
+    const ticket = tryAdmit()
+    if (!ticket) {
+      return admissionRejectedResponse()
+    }
 
-  try {
-    return await handleExecutePost(req, params)
-  } finally {
-    ticket.release()
+    try {
+      return await handleExecutePost(req, params)
+    } finally {
+      ticket.release()
+    }
   }
-}
+)
 
 async function handleExecutePost(
   req: NextRequest,
@@ -312,31 +317,28 @@ async function handleExecutePost(
         return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
       }
 
-      const { db: dbClient, workflow: workflowTable } = await import('@sim/db')
-      const { eq } = await import('drizzle-orm')
-      const [wf] = await dbClient
+      const [wf] = await db
         .select({
           isPublicApi: workflowTable.isPublicApi,
           isDeployed: workflowTable.isDeployed,
           userId: workflowTable.userId,
+          workspaceId: workflowTable.workspaceId,
         })
         .from(workflowTable)
         .where(eq(workflowTable.id, workflowId))
         .limit(1)
 
-      if (!wf?.isPublicApi || !wf.isDeployed) {
+      if (!wf?.isPublicApi || !wf.isDeployed || !wf.workspaceId) {
         return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
       }
 
-      const { isPublicApiDisabled } = await import('@/lib/core/config/feature-flags')
-      if (isPublicApiDisabled) {
-        return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
-      }
-
-      const { getUserPermissionConfig } = await import('@/ee/access-control/utils/permission-check')
-      const ownerConfig = await getUserPermissionConfig(wf.userId)
-      if (ownerConfig?.disablePublicApi) {
-        return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
+      try {
+        await validatePublicApiAllowed(wf.userId, wf.workspaceId)
+      } catch (err) {
+        if (err instanceof PublicApiNotAllowedError) {
+          return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
+        }
+        throw err
       }
 
       userId = wf.userId
@@ -1400,7 +1402,7 @@ async function handleExecutePost(
             await eventWriter.close()
           } catch (closeError) {
             reqLogger.warn('Failed to close event writer', {
-              error: closeError instanceof Error ? closeError.message : String(closeError),
+              error: toError(closeError).message,
             })
           }
           if (finalMetaStatus) {
