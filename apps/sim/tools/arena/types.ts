@@ -120,6 +120,24 @@ export type ArenaGetMeetingsParams = {
 
 export interface ArenaGetMeetingsResponse extends ToolResponse {}
 
+export type ArenaGetMyTasksParams = {
+  operation: string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaGetMyTasksResponse extends ToolResponse {}
+
+export type ArenaGetMyOverdueTasksParams = {
+  operation: string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaGetMyOverdueTasksResponse extends ToolResponse {}
+
 export type ArenaGetTokenParams = {
   operation: string
   _context?: {
