@@ -13,6 +13,56 @@ import { PROVIDER_DEFINITIONS } from '@/providers/models'
 const logger = createLogger('Memory')
 
 export class Memory {
+  async getMemoryContextMessages(ctx: ExecutionContext, inputs: AgentInputs): Promise<Message[]> {
+    const memoryType = inputs.memoryType
+    if (!memoryType || memoryType === 'none') {
+      return []
+    }
+
+    if (!ctx.workspaceId) {
+      logger.warn('Skipping memory context: workspaceId not available', {
+        workflowId: ctx.workflowId,
+      })
+      return []
+    }
+
+    const conversationId = inputs.conversationId
+    if (!conversationId) {
+      return []
+    }
+
+    this.validateConversationId(conversationId)
+
+    const allMessages = await this.fetchMemory(ctx.workspaceId, conversationId)
+    const conversationMessages = allMessages.filter((m) => m.role !== 'system')
+    if (conversationMessages.length === 0) {
+      return []
+    }
+
+    if (memoryType === 'conversation') {
+      return this.applyContextWindowLimit(conversationMessages, inputs.model)
+    }
+
+    if (memoryType === 'sliding_window') {
+      const size = this.parsePositiveInt(
+        inputs.slidingWindowSize,
+        MEMORY.DEFAULT_SLIDING_WINDOW_SIZE
+      )
+      const windowed = conversationMessages.slice(-size)
+      return this.applyContextWindowLimit(windowed, inputs.model)
+    }
+
+    if (memoryType === 'sliding_window_tokens') {
+      const maxTokens = this.parsePositiveInt(
+        inputs.slidingWindowTokens,
+        MEMORY.DEFAULT_SLIDING_WINDOW_TOKENS
+      )
+      return this.applyTokenWindow(conversationMessages, maxTokens, inputs.model)
+    }
+
+    return []
+  }
+
   async fetchMemoryMessages(ctx: ExecutionContext, inputs: AgentInputs): Promise<Message[]> {
     if (!inputs.memoryType || inputs.memoryType === 'none') {
       return []
@@ -445,112 +495,48 @@ export class Memory {
       return
     }
 
-    // Skip if userId is not available (required for Mem0 API)
-    if (!ctx.userId) {
-      logger.debug('Skipping memory storage: userId not available in execution context')
-      return
-    }
-
     this.validateContent(message.content)
 
-    // Only call Mem0 API for chat trigger type
-    const triggerType = ctx.metadata?.triggerType
-    if (triggerType !== 'chat') {
-      logger.debug('Skipping memory storage: triggerType is not "chat"', { triggerType })
-      return
-    }
-
-    // Don't store user messages separately - they will be stored together with the assistant response
-    // in callMem0API to avoid duplicates. User messages are only stored when the assistant response
-    // is persisted, as part of the conversation turn.
-    if (message.role === 'user') {
-      logger.debug('User message received - will be stored with assistant response', {
+    if (!ctx.workspaceId) {
+      logger.warn('Skipping memory storage: workspaceId not available', {
         workflowId: ctx.workflowId,
-        conversationId: inputs.conversationId,
-        blockId,
       })
       return
     }
 
-    // Call Mem0 API to store in external service when assistant message is persisted
-    // This stores both the user prompt and assistant response together
-    if (message.role === 'assistant') {
-      // Use blockId if provided, otherwise use conversationId as fallback
-      const blockIdForMem0 = blockId || inputs.conversationId || 'unknown'
-      // Call asynchronously without blocking - this is an add-on feature
-      this.callMem0API(ctx, inputs, message, blockIdForMem0, lastUserMessage || null).catch(
-        (error) => {
-          logger.warn('Failed to call Mem0 API after appending assistant message (non-blocking)', {
-            error,
-            workflowId: ctx.workflowId,
-          })
-        }
-      )
+    const conversationId = inputs.conversationId
+    if (!conversationId) {
+      return
     }
+
+    this.validateConversationId(conversationId)
+
+    if (message.role === 'assistant') {
+      if (lastUserMessage) {
+        this.validateContent(lastUserMessage.content)
+        await this.appendMessage(ctx.workspaceId, conversationId, lastUserMessage)
+      }
+      await this.appendMessage(ctx.workspaceId, conversationId, message)
+      return
+    }
+
+    await this.appendMessage(ctx.workspaceId, conversationId, message)
   }
 
   async seedMemory(ctx: ExecutionContext, inputs: AgentInputs, messages: Message[]): Promise<void> {
     if (!inputs.memoryType || inputs.memoryType === 'none') {
       return
     }
+    if (!ctx.workspaceId) return
 
-    // Only call Mem0 API for chat trigger type
-    const triggerType = ctx.metadata?.triggerType
-    if (triggerType !== 'chat') {
-      logger.debug('Skipping memory seeding: triggerType is not "chat"', { triggerType })
-      return
-    }
-
-    // Skip if userId is not available (required for Mem0 API)
-    if (!ctx.userId) {
-      logger.debug('Skipping memory seeding: userId not available in execution context')
-      return
-    }
+    const conversationId = inputs.conversationId
+    if (!conversationId) return
+    this.validateConversationId(conversationId)
 
     const conversationMessages = messages.filter((m) => m.role !== 'system')
-    if (conversationMessages.length === 0) {
-      return
-    }
+    if (conversationMessages.length === 0) return
 
-    // Store all conversation messages to Mem0
-    const chatId = ctx.executionId || ctx.workflowId
-    const requestId = generateRequestId()
-    const isDeployed = ctx.isDeployedContext ?? false
-
-    try {
-      const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
-
-      const messagesForAPI = conversationMessages.map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }))
-
-      // Store as conversation memory
-      await callMemoryAPI(
-        requestId,
-        messagesForAPI,
-        ctx.userId,
-        chatId,
-        inputs.conversationId, // Can be undefined
-        false, // infer: false
-        'conversation', // memoryType: 'conversation'
-        undefined, // blockId not needed for seeding
-        isDeployed,
-        ctx.workflowId,
-        ctx.workspaceId
-      )
-
-      logger.debug('Seeded memory to Mem0', {
-        workflowId: ctx.workflowId,
-        conversationId: inputs.conversationId,
-        count: conversationMessages.length,
-      })
-    } catch (error) {
-      logger.warn('Failed to seed memory to Mem0 (non-blocking)', {
-        error,
-        workflowId: ctx.workflowId,
-      })
-    }
+    await this.seedMemoryRecord(ctx.workspaceId, conversationId, conversationMessages)
   }
 
   wrapStreamForPersistence(
