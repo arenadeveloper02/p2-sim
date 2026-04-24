@@ -210,8 +210,17 @@ export const buildTimeCSPDirectives: CSPDirectives = {
     ...ARENA_APP_CSP_ORIGINS,
   ],
 
-  'frame-src': ["'self'", ...(isDev ? ['http://localhost:3001'] : []), ...ARENA_APP_CSP_ORIGINS, ...STATIC_FRAME_SRC.filter((s) => s !== "'self'")],
-  'frame-ancestors': ["'self'", ...(isDev ? [...LOCAL_DEV_FRAME_ANCESTORS] : []), ...ARENA_APP_CSP_ORIGINS],
+  'frame-src': [
+    "'self'",
+    ...(isDev ? ['http://localhost:3001'] : []),
+    ...ARENA_APP_CSP_ORIGINS,
+    ...STATIC_FRAME_SRC.filter((s) => s !== "'self'"),
+  ],
+  'frame-ancestors': [
+    "'self'",
+    ...(isDev ? [...LOCAL_DEV_FRAME_ANCESTORS] : []),
+    ...ARENA_APP_CSP_ORIGINS,
+  ],
   'form-action': ["'self'"],
   'base-uri': ["'self'"],
   'object-src': ["'none'"],
@@ -261,17 +270,19 @@ export function generateRuntimeCSP(): string {
     ],
 
     'connect-src': Array.from(
-      new Set([
-        ...(buildTimeCSPDirectives['connect-src'] ?? []),
-        appUrl,
-        ollamaUrl,
-        socketUrl,
-        socketWsUrl,
-        ...(isDev ? ['http://localhost:3001', 'ws://localhost:3001'] : []),
-        ...brandLogoDomains,
-        ...privacyDomains,
-        ...termsDomains,
-      ].filter(Boolean))
+      new Set(
+        [
+          ...(buildTimeCSPDirectives['connect-src'] ?? []),
+          appUrl,
+          ollamaUrl,
+          socketUrl,
+          socketWsUrl,
+          ...(isDev ? ['http://localhost:3001', 'ws://localhost:3001'] : []),
+          ...brandLogoDomains,
+          ...privacyDomains,
+          ...termsDomains,
+        ].filter(Boolean)
+      )
     ),
   }
 

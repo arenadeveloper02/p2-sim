@@ -65,7 +65,9 @@ export async function createSocketIOServer(httpServer: HttpServer): Promise<Serv
   const redisUrl = env.REDIS_URL
 
   if (redisUrl && !isValidRedisUrl(redisUrl)) {
-    logger.error('REDIS_URL is set but has invalid protocol; expected redis:// or rediss://', { redisUrl })
+    logger.error('REDIS_URL is set but has invalid protocol; expected redis:// or rediss://', {
+      redisUrl,
+    })
   } else if (redisUrl) {
     logger.info('Configuring Socket.IO Redis adapter...')
 
