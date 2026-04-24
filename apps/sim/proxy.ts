@@ -95,26 +95,6 @@ function handleInvitationRedirects(
 }
 
 /**
- * Handles workspace invitation API endpoint access
- */
-function handleWorkspaceInvitationAPI(
-  request: NextRequest,
-  hasActiveSession: boolean
-): NextResponse | null {
-  if (!request.nextUrl.pathname.startsWith('/api/workspaces/invitations')) {
-    return null
-  }
-
-  if (request.nextUrl.pathname.includes('/accept') && !hasActiveSession) {
-    const token = request.nextUrl.searchParams.get('token')
-    if (token) {
-      return NextResponse.redirect(new URL(`/invite/${token}?token=${token}`, request.url))
-    }
-  }
-  return NextResponse.next()
-}
-
-/**
  * Handles security filtering for suspicious user agents
  */
 function handleSecurityFiltering(request: NextRequest): NextResponse | null {
@@ -186,6 +166,8 @@ export async function proxy(request: NextRequest) {
     }
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    response.headers.set('X-Frame-Options', 'SAMEORIGIN')
     return track(request, response)
   }
 
@@ -223,14 +205,15 @@ export async function proxy(request: NextRequest) {
       }
       return track(request, NextResponse.next())
     }
-    return track(request, NextResponse.next())
+    const response = NextResponse.next()
+    response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    response.headers.set('X-Frame-Options', 'SAMEORIGIN')
+    return track(request, response)
   }
 
   const invitationRedirect = handleInvitationRedirects(request, hasActiveSession)
   if (invitationRedirect) return track(request, invitationRedirect)
-
-  const workspaceInvitationRedirect = handleWorkspaceInvitationAPI(request, hasActiveSession)
-  if (workspaceInvitationRedirect) return track(request, workspaceInvitationRedirect)
 
   const securityBlock = handleSecurityFiltering(request)
   if (securityBlock) return track(request, securityBlock)
@@ -238,8 +221,10 @@ export async function proxy(request: NextRequest) {
   const response = NextResponse.next()
   response.headers.set('Vary', 'User-Agent')
 
-  if (url.pathname.startsWith('/workspace') || url.pathname === '/') {
+  if (url.pathname === '/') {
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    response.headers.set('X-Frame-Options', 'SAMEORIGIN')
   }
 
   return track(request, response)
