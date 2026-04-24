@@ -1,13 +1,18 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileListChatAttendeesAPI')
 
+const RequestSchema = z.object({
+  chat_id: z.string().min(1, 'chat_id is required'),
+})
+
 /**
- * Proxies GET `/api/v1/chat_attendees` to Unipile.
+ * Proxies GET `/api/v1/chats/{chat_id}/attendees` to Unipile.
  */
 export async function POST(request: NextRequest) {
   const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
@@ -21,31 +26,42 @@ export async function POST(request: NextRequest) {
   }
 
   const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
-  const url = `${baseUrl}/api/v1/chat_attendees`
-  const upstream = await fetch(url, {
-    method: 'GET',
-    headers: {
-      accept: 'application/json',
-      'X-API-KEY': apiKey,
-    },
-  })
-
-  const responseText = await upstream.text()
-  if (!upstream.ok) {
-    logger.warn('Unipile list chat attendees failed', {
-      status: upstream.status,
-      snippet: responseText.slice(0, 500),
-    })
-    return NextResponse.json(
-      { error: responseText || upstream.statusText || 'Unipile request failed' },
-      { status: upstream.status }
-    )
-  }
 
   try {
-    return NextResponse.json(JSON.parse(responseText) as unknown)
-  } catch {
-    logger.error('Unipile returned non-JSON for list chat attendees')
-    return NextResponse.json({ error: 'Invalid JSON from Unipile' }, { status: 502 })
+    const body = await request.json()
+    const { chat_id } = RequestSchema.parse(body)
+    const encoded = encodeURIComponent(chat_id.trim())
+    const url = `${baseUrl}/api/v1/chats/${encoded}/attendees`
+
+    const upstream = await fetch(url, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        'X-API-KEY': apiKey,
+      },
+    })
+
+    const responseText = await upstream.text()
+    if (!upstream.ok) {
+      logger.warn('Unipile list chat attendees failed', {
+        status: upstream.status,
+        snippet: responseText.slice(0, 500),
+      })
+      return NextResponse.json(
+        { error: responseText || upstream.statusText || 'Unipile request failed' },
+        { status: upstream.status }
+      )
+    }
+
+    try {
+      return NextResponse.json(JSON.parse(responseText) as unknown)
+    } catch {
+      logger.error('Unipile returned non-JSON for list chat attendees')
+      return NextResponse.json({ error: 'Invalid JSON from Unipile' }, { status: 502 })
+    }
+  } catch (error) {
+    const message = error instanceof z.ZodError ? error.message : 'Invalid request body'
+    logger.warn('Unipile list chat attendees validation failed', { error })
+    return NextResponse.json({ error: message }, { status: 400 })
   }
 }

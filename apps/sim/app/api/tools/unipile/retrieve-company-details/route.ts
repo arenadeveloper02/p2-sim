@@ -9,10 +9,11 @@ const logger = createLogger('UnipileRetrieveCompanyDetailsAPI')
 
 const RequestSchema = z.object({
   identifier: z.string().min(1, 'Company identifier is required'),
+  account_id: z.string().min(1, 'account_id is required'),
 })
 
 /**
- * Proxies GET `/api/v1/linkedin/company/{identifier}` to Unipile using server env credentials.
+ * Proxies `GET /api/v1/linkedin/company/{identifier}?account_id=…` to Unipile using server env credentials.
  */
 export async function POST(request: NextRequest) {
   const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
@@ -29,9 +30,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { identifier } = RequestSchema.parse(body)
+    const { identifier, account_id } = RequestSchema.parse(body)
     const encoded = encodeURIComponent(identifier.trim())
-    const url = `${baseUrl}/api/v1/linkedin/company/${encoded}`
+    const query = new URLSearchParams()
+    query.set('account_id', account_id.trim())
+    const url = `${baseUrl}/api/v1/linkedin/company/${encoded}?${query.toString()}`
 
     const upstream = await fetch(url, {
       method: 'GET',

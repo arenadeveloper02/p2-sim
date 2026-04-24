@@ -1,24 +1,36 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
-import type { UnipileListChatAttendeesToolResponse } from '@/tools/unipile/types'
+import type {
+  UnipileListChatAttendeesParams,
+  UnipileListChatAttendeesToolResponse,
+} from '@/tools/unipile/types'
 
 export const unipileListChatAttendeesTool: ToolConfig<
-  Record<string, never>,
+  UnipileListChatAttendeesParams,
   UnipileListChatAttendeesToolResponse
 > = {
   id: 'unipile_list_chat_attendees',
   name: 'Unipile List Chat Attendees',
   description:
-    'Lists chat attendees (`GET /api/v1/chat_attendees`). Uses server `UNIPILE_API_KEY`.',
+    'Lists attendees for a chat (`GET /api/v1/chats/{chat_id}/attendees`). Uses server `UNIPILE_API_KEY`.',
   version: '1.0.0',
 
-  params: {},
+  params: {
+    chat_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile chat id',
+    },
+  },
 
   request: {
     url: '/api/tools/unipile/list-chat-attendees',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: () => ({}),
+    body: (params) => ({
+      chat_id: params.chat_id?.trim(),
+    }),
   },
 
   transformResponse: async (response: Response) => {

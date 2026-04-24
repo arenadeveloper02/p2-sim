@@ -3,10 +3,11 @@ import type { ToolResponse } from '@/tools/types'
 export const UNIPILE_BASE_URL = 'https://api27.unipile.com:15703'
 
 /**
- * LinkedIn company profile lookup (Unipile `CompanyProfile`).
+ * LinkedIn company profile lookup (Unipile `GET /api/v1/linkedin/company/{identifier}?account_id=…`).
  */
 export interface UnipileRetrieveCompanyDetailsParams {
   identifier: string
+  account_id: string
 }
 
 export interface UnipileRetrieveCompanyDetailsToolResponse extends ToolResponse {
@@ -120,6 +121,10 @@ export interface UnipileListPagedItemsOutput {
   cursor: string | null
   paging: Record<string, unknown> | null
   total_items: number | null
+}
+
+export interface UnipileListChatAttendeesParams {
+  chat_id: string
 }
 
 export type UnipileListChatAttendeesToolResponse = ToolResponse & {

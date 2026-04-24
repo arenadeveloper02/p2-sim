@@ -126,12 +126,30 @@ export function validateValueForSubBlockType(
 
   switch (type) {
     case 'dropdown': {
+      if (subBlockConfig.multiSelect && Array.isArray(value)) {
+        return { valid: true, value }
+      }
+      if (subBlockConfig.fetchOptions) {
+        if (typeof value === 'string' || typeof value === 'number') {
+          return { valid: true, value: String(value) }
+        }
+        return {
+          valid: false,
+          error: {
+            blockId,
+            blockType,
+            field: fieldName,
+            value,
+            error: `Invalid dropdown value for field "${fieldName}" - expected a string`,
+          },
+        }
+      }
       // Validate against allowed options
       const options =
         typeof subBlockConfig.options === 'function'
           ? subBlockConfig.options()
           : subBlockConfig.options
-      if (options && Array.isArray(options)) {
+      if (options && Array.isArray(options) && options.length > 0) {
         const validIds = options.map((opt) => opt.id)
         if (!validIds.includes(value)) {
           return {

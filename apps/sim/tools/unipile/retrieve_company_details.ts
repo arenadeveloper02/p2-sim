@@ -11,7 +11,7 @@ export const unipileRetrieveCompanyDetailsTool: ToolConfig<
   id: 'unipile_retrieve_company_details',
   name: 'Unipile Retrieve LinkedIn Company Profile',
   description:
-    'Fetches a LinkedIn company profile via Unipile (`GET /api/v1/linkedin/company/{identifier}`). Uses `UNIPILE_API_KEY` from the server environment.',
+    'Fetches a LinkedIn company profile via Unipile (`GET /api/v1/linkedin/company/{identifier}?account_id=…`). Uses `UNIPILE_API_KEY` from the server environment.',
   version: '1.0.0',
 
   params: {
@@ -19,7 +19,13 @@ export const unipileRetrieveCompanyDetailsTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'LinkedIn company identifier for the Unipile API path',
+      description: 'LinkedIn company public identifier (URL path segment, e.g. position2)',
+    },
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile connected account id (`account_id` query parameter)',
     },
   },
 
@@ -29,6 +35,7 @@ export const unipileRetrieveCompanyDetailsTool: ToolConfig<
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
       identifier: params.identifier?.trim(),
+      account_id: params.account_id?.trim(),
     }),
   },
 

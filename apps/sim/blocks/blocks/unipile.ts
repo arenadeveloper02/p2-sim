@@ -2,13 +2,87 @@ import { UnipileIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
 import type { UnipileResponse } from '@/tools/unipile/types'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+
+function unipileAccountIdForBlock(blockId: string): string {
+  const wfId = useWorkflowRegistry.getState().activeWorkflowId
+  if (!wfId) return ''
+  const raw = useSubBlockStore.getState().workflowValues[wfId]?.[blockId]?.account_id
+  if (typeof raw === 'string') return raw.trim()
+  return ''
+}
+
+async function unipileFetchChatsOptions(blockId: string) {
+  const accountId = unipileAccountIdForBlock(blockId)
+  if (!accountId) return []
+  try {
+    const response = await fetch(
+      `/api/unipile/chats?account_id=${encodeURIComponent(accountId)}`
+    )
+    const data = (await response.json()) as {
+      success?: boolean
+      items?: Array<{ id: string; label: string }>
+    }
+    if (data?.success && Array.isArray(data.items)) {
+      return data.items
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
+async function unipileFetchChatOptionById(blockId: string, optionId: string) {
+  const items = await unipileFetchChatsOptions(blockId)
+  return items.find((item) => item.id === optionId) ?? null
+}
+
+async function unipileFetchRelationsOptions(blockId: string) {
+  const accountId = unipileAccountIdForBlock(blockId)
+  if (!accountId) return []
+  try {
+    const response = await fetch(
+      `/api/unipile/user-relations?account_id=${encodeURIComponent(accountId)}`
+    )
+    const data = (await response.json()) as {
+      success?: boolean
+      items?: Array<{ id: string; label: string }>
+    }
+    if (data?.success && Array.isArray(data.items)) {
+      return data.items
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
+async function unipileFetchRelationOptionById(blockId: string, optionId: string) {
+  const items = await unipileFetchRelationsOptions(blockId)
+  return items.find((item) => item.id === optionId) ?? null
+}
+
+function unipileSerializeAttendeesIds(raw: unknown): string | undefined {
+  if (Array.isArray(raw) && raw.length > 0) {
+    const parts = raw
+      .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+      .map((x) => x.trim())
+    if (parts.length === 0) return undefined
+    return parts.join(',')
+  }
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    return raw.trim()
+  }
+  return undefined
+}
 
 export const UnipileBlock: BlockConfig<UnipileResponse> = {
   type: 'unipile',
   name: 'Unipile',
   description: 'LinkedIn company data and messaging via Unipile',
   longDescription:
-    'Uses `UNIPILE_API_KEY` from the deployment environment. Pick a Unipile connected account first (from `GET /api/v1/accounts`), then choose the operation. Covers LinkedIn company and user profiles, posts, post comments and reactions, user comments and reactions, LinkedIn search, chats, messages, attendees, relations, and attachments.',
+    'Uses `UNIPILE_API_KEY` from the deployment environment. Pick a Unipile account first, then an operation. Chats and start-chat attendees load from Unipile (`GET /api/v1/chats`, `GET /api/v1/users/relations`) for faster setup. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, attendees, relations, and attachments.',
   category: 'tools',
   integrationType: IntegrationType.Communication,
   tags: ['messaging', 'sales-engagement'],
@@ -88,7 +162,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       id: 'identifier',
       title: 'Company Identifier',
       type: 'short-input',
-      placeholder: 'LinkedIn company identifier (URL segment or id)',
+      placeholder: 'LinkedIn company public id (e.g. position2)',
       condition: { field: 'operation', value: 'retrieve_company_details' },
       required: { field: 'operation', value: 'retrieve_company_details' },
     },
@@ -156,17 +230,31 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     },
     {
       id: 'chat_id',
-      title: 'Chat ID',
-      type: 'short-input',
-      placeholder: 'Unipile chat id',
+      title: 'Chat',
+      type: 'dropdown',
+      options: [],
+      placeholder: 'Select a chat (pick account first)',
+      dependsOn: ['account_id'],
       condition: {
         field: 'operation',
-        value: ['get_chat', 'list_chat_messages', 'send_chat_message'],
+        value: [
+          'get_chat',
+          'list_chat_messages',
+          'send_chat_message',
+          'list_chat_attendees',
+        ],
       },
       required: {
         field: 'operation',
-        value: ['get_chat', 'list_chat_messages', 'send_chat_message'],
+        value: [
+          'get_chat',
+          'list_chat_messages',
+          'send_chat_message',
+          'list_chat_attendees',
+        ],
       },
+      fetchOptions: unipileFetchChatsOptions,
+      fetchOptionById: unipileFetchChatOptionById,
     },
     {
       id: 'text',
@@ -336,11 +424,18 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     },
     {
       id: 'attendees_ids',
-      title: 'Attendees IDs',
-      type: 'short-input',
-      placeholder: 'Attendees ids (string)',
+      title: 'Attendees',
+      type: 'dropdown',
+      options: [],
+      placeholder: 'Select relation(s) to invite (pick account first)',
+      dependsOn: ['account_id'],
+      multiSelect: true,
+      selectAllOption: true,
+      searchable: true,
       condition: { field: 'operation', value: 'start_new_chat' },
       mode: 'advanced',
+      fetchOptions: unipileFetchRelationsOptions,
+      fetchOptionById: unipileFetchRelationOptionById,
     },
     {
       id: 'chat_api',
@@ -427,6 +522,11 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             out.cursor = params.list_cursor.trim()
           }
           return out
+        }
+        if (op === 'list_chat_attendees') {
+          return {
+            chat_id: typeof params.chat_id === 'string' ? params.chat_id.trim() : '',
+          }
         }
         if (op === 'list_post_comments' || op === 'list_post_reactions') {
           const out: Record<string, unknown> = {
@@ -539,7 +639,10 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           copyIfString('attachments')
           copyIfString('voice_message')
           copyIfString('video_message')
-          copyIfString('attendees_ids')
+          const attendeesSerialized = unipileSerializeAttendeesIds(params.attendees_ids)
+          if (attendeesSerialized) {
+            out.attendees_ids = attendeesSerialized
+          }
           copyIfString('applicant_id')
           copyIfString('invitation_id')
           if (typeof params.chat_api === 'string' && params.chat_api.trim() !== '') {
@@ -553,13 +656,22 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           }
           return out
         }
+        if (op === 'retrieve_company_details') {
+          return {
+            identifier: typeof params.identifier === 'string' ? params.identifier.trim() : '',
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+          }
+        }
         return {}
       },
     },
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    identifier: { type: 'string', description: 'LinkedIn company identifier' },
+    identifier: {
+      type: 'string',
+      description: 'LinkedIn company public identifier for /linkedin/company/{identifier}',
+    },
     user_identifier: { type: 'string', description: 'Unipile user identifier' },
     list_cursor: { type: 'string', description: 'Pagination cursor' },
     message_id: { type: 'string', description: 'Message id' },
@@ -592,7 +704,10 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     attachments: { type: 'string', description: 'Attachments form field' },
     voice_message: { type: 'string', description: 'Voice message form field' },
     video_message: { type: 'string', description: 'Video message form field' },
-    attendees_ids: { type: 'string', description: 'Attendees ids form field' },
+    attendees_ids: {
+      type: 'json',
+      description: 'Start chat: selected relation ids (multi-select) or legacy string',
+    },
     chat_api: { type: 'string', description: 'Unipile api form field' },
     chat_topic: { type: 'string', description: 'Unipile topic form field' },
     applicant_id: { type: 'string', description: 'Applicant id' },
