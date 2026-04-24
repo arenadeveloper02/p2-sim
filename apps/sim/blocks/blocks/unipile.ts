@@ -1,9 +1,9 @@
 import { UnipileIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
-import type { UnipileResponse } from '@/tools/unipile/types'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import type { UnipileResponse } from '@/tools/unipile/types'
 
 function unipileAccountIdForBlock(blockId: string): string {
   const wfId = useWorkflowRegistry.getState().activeWorkflowId
@@ -17,9 +17,7 @@ async function unipileFetchChatsOptions(blockId: string) {
   const accountId = unipileAccountIdForBlock(blockId)
   if (!accountId) return []
   try {
-    const response = await fetch(
-      `/api/unipile/chats?account_id=${encodeURIComponent(accountId)}`
-    )
+    const response = await fetch(`/api/unipile/chats?account_id=${encodeURIComponent(accountId)}`)
     const data = (await response.json()) as {
       success?: boolean
       items?: Array<{ id: string; label: string }>
@@ -237,21 +235,11 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       dependsOn: ['account_id'],
       condition: {
         field: 'operation',
-        value: [
-          'get_chat',
-          'list_chat_messages',
-          'send_chat_message',
-          'list_chat_attendees',
-        ],
+        value: ['get_chat', 'list_chat_messages', 'send_chat_message', 'list_chat_attendees'],
       },
       required: {
         field: 'operation',
-        value: [
-          'get_chat',
-          'list_chat_messages',
-          'send_chat_message',
-          'list_chat_attendees',
-        ],
+        value: ['get_chat', 'list_chat_messages', 'send_chat_message', 'list_chat_attendees'],
       },
       fetchOptions: unipileFetchChatsOptions,
       fetchOptionById: unipileFetchChatOptionById,

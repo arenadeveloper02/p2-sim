@@ -69,7 +69,11 @@ export async function GET(request: NextRequest) {
     } catch {
       logger.error('Unipile returned non-JSON for user relations')
       return NextResponse.json(
-        { success: false, error: 'Invalid JSON from Unipile', items: [] as UnipileRelationOption[] },
+        {
+          success: false,
+          error: 'Invalid JSON from Unipile',
+          items: [] as UnipileRelationOption[],
+        },
         { status: 502 }
       )
     }
