@@ -969,6 +969,20 @@ const EXCLUDED_SUBBLOCK_TYPES = new Set([
   'text',
 ])
 
+/**
+ * HubSpot block duplicates OAuth as `credential` / `manualCredential` (title "HubSpot Account").
+ * Tool-input keeps the **Accounts** dropdown (`accounts` → shared workspace pickers) and hides
+ * those canonical oauthCredential rows; auth still resolves via tool OAuth + `accounts` in params.
+ */
+function shouldExcludeSubBlockFromToolInput(
+  blockType: string,
+  sb: BlockSubBlockConfig
+): boolean {
+  if (blockType !== 'hubspot') return false
+  if (sb.canonicalParamId === 'oauthCredential') return true
+  return false
+}
+
 export interface SubBlocksForToolInput {
   toolConfig: ToolConfig
   subBlocks: BlockSubBlockConfig[]
@@ -1033,6 +1047,8 @@ export function getSubBlocksForToolInput(
       // Skip trigger-mode-only subblocks
       if (sb.mode === 'trigger' || sb.mode === 'trigger-advanced') continue
 
+      if (shouldExcludeSubBlockFromToolInput(blockType, sb)) continue
+
       // Match block editor: never surface hidden subblocks in tool-input UI
       if (sb.hidden) continue
 
@@ -1072,7 +1088,9 @@ export function getSubBlocksForToolInput(
         } else if (sb.canonicalParamId) {
           visibility = 'user-or-llm'
         } else {
-          continue
+          // Block-only fields (e.g. HubSpot routing inputs) still need tool-input UI when their
+          // condition matches the selected operation, even if the resolved tool id omits them.
+          visibility = 'user-only'
         }
       }
 

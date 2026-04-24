@@ -772,6 +772,9 @@ export interface HubSpotListContactsResponse extends ToolResponse {
 
 export interface HubSpotListContactsParams {
   accessToken: string
+  /** When set, fetches that contact (same as Get Contact); leave empty to list. */
+  contactId?: string
+  idProperty?: string
   limit?: string
   after?: string
   properties?: string
