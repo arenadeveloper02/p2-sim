@@ -1,10 +1,14 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, desc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getLatestRunForStream } from '@/lib/copilot/async-runs/repository'
+import { buildEffectiveChatTranscript } from '@/lib/copilot/chat/effective-transcript'
 import { getAccessibleCopilotChat } from '@/lib/copilot/chat/lifecycle'
+import { normalizeMessage } from '@/lib/copilot/chat/persisted-message'
 import {
   authenticateCopilotRequestSessionOnly,
   createBadRequestResponse,
@@ -14,7 +18,6 @@ import {
 import { readFilePreviewSessions } from '@/lib/copilot/request/session'
 import { readEvents } from '@/lib/copilot/request/session/buffer'
 import { toStreamBatchEvent } from '@/lib/copilot/request/session/types'
-import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import { assertActiveWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CopilotChatAPI')
@@ -80,7 +83,7 @@ export async function GET(req: NextRequest) {
               logger.warn('Failed to read preview sessions for copilot chat', {
                 chatId,
                 conversationId: chat.conversationId,
-                error: error instanceof Error ? error.message : String(error),
+                error: toError(error).message,
               })
               return []
             }),
@@ -88,7 +91,7 @@ export async function GET(req: NextRequest) {
               logger.warn('Failed to fetch latest run for copilot chat snapshot', {
                 chatId,
                 conversationId: chat.conversationId,
-                error: error instanceof Error ? error.message : String(error),
+                error: toError(error).message,
               })
               return null
             }),
@@ -108,16 +111,28 @@ export async function GET(req: NextRequest) {
           logger.warn('Failed to load copilot chat stream snapshot', {
             chatId,
             conversationId: chat.conversationId,
-            error: error instanceof Error ? error.message : String(error),
+            error: toError(error).message,
           })
         }
       }
+
+      const normalizedMessages = Array.isArray(chat.messages)
+        ? chat.messages
+            .filter((message): message is Record<string, unknown> => Boolean(message))
+            .map(normalizeMessage)
+        : []
+      const effectiveMessages = buildEffectiveChatTranscript({
+        messages: normalizedMessages,
+        activeStreamId: chat.conversationId || null,
+        ...(streamSnapshot ? { streamSnapshot } : {}),
+      })
 
       logger.info(`Retrieved chat ${chatId}`)
       return NextResponse.json({
         success: true,
         chat: {
           ...transformChat(chat),
+          messages: effectiveMessages,
           ...(streamSnapshot ? { streamSnapshot } : {}),
         },
       })

@@ -1,4 +1,4 @@
-import { createEnvMock } from '@sim/testing'
+import { createEnvMock, featureFlagsMock } from '@sim/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/core/config/env', () =>
@@ -17,11 +17,24 @@ vi.mock('@/lib/core/config/env', () =>
   })
 )
 
-vi.mock('@/lib/core/config/feature-flags', () => ({
-  isDev: false,
-  isHosted: false,
-  isReactGrabEnabled: false,
-}))
+// `csp.ts` imports env via a relative path (needed for next.config.ts), so mock that path too.
+vi.mock('../config/env', () =>
+  createEnvMock({
+    NEXT_PUBLIC_APP_URL: 'https://example.com',
+    NEXT_PUBLIC_SOCKET_URL: 'https://socket.example.com',
+    OLLAMA_URL: 'http://localhost:11434',
+    S3_BUCKET_NAME: 'test-bucket',
+    AWS_REGION: 'us-east-1',
+    S3_KB_BUCKET_NAME: 'test-kb-bucket',
+    S3_CHAT_BUCKET_NAME: 'test-chat-bucket',
+    NEXT_PUBLIC_BRAND_LOGO_URL: 'https://brand.example.com/logo.png',
+    NEXT_PUBLIC_BRAND_FAVICON_URL: 'https://brand.example.com/favicon.ico',
+    NEXT_PUBLIC_PRIVACY_URL: 'https://legal.example.com/privacy',
+    NEXT_PUBLIC_TERMS_URL: 'https://legal.example.com/terms',
+  })
+)
+
+vi.mock('@/lib/core/config/feature-flags', () => featureFlagsMock)
 
 import {
   addCSPSource,
@@ -220,6 +233,16 @@ describe('generateRuntimeCSP', () => {
     expect(csp).toContain('https://sandbox-agent.thearena.ai')
     expect(csp).toContain('https://agent.thearena.ai')
     expect(csp).toContain("frame-ancestors 'self'")
+  })
+
+  it('should allow blob URLs for iframe-based PDF previews', () => {
+    const csp = generateRuntimeCSP()
+    const frameSrcDirective = csp
+      .split('; ')
+      .find((directive) => directive.startsWith('frame-src '))
+
+    expect(frameSrcDirective).toBeDefined()
+    expect(frameSrcDirective).toContain('blob:')
   })
 })
 

@@ -4,6 +4,8 @@ import { stripe } from '@better-auth/stripe'
 import { db } from '@sim/db'
 import * as schema from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { nextCookies } from 'better-auth/next-js'
@@ -37,15 +39,18 @@ import {
 } from '@/lib/auth/cimd'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
 import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
-import { writeBillingInterval } from '@/lib/billing/core/subscription'
+import {
+  getOrganizationIdForSubscriptionReference,
+  syncSubscriptionPlan,
+  writeBillingInterval,
+} from '@/lib/billing/core/subscription'
 import { handleNewUser } from '@/lib/billing/core/usage'
 import {
   ensureOrganizationForTeamSubscription,
   syncSubscriptionUsageLimits,
 } from '@/lib/billing/organization'
-import { isOrgPlan, isTeam } from '@/lib/billing/plan-helpers'
+import { isTeam } from '@/lib/billing/plan-helpers'
 import { getPlans, resolvePlanFromStripeSubscription } from '@/lib/billing/plans'
-import { hasPaidSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
 import { syncSeatsFromStripeQuantity } from '@/lib/billing/validation/seat-management'
 import { handleAbandonedCheckout } from '@/lib/billing/webhooks/checkout'
 import { handleChargeDispute, handleDisputeClosed } from '@/lib/billing/webhooks/disputes'
@@ -56,6 +61,7 @@ import {
   handleInvoicePaymentSucceeded,
 } from '@/lib/billing/webhooks/invoices'
 import {
+  handleOrganizationPlanDowngrade,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
 } from '@/lib/billing/webhooks/subscription'
@@ -74,7 +80,6 @@ import {
 } from '@/lib/core/config/feature-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { generateId } from '@/lib/core/utils/uuid'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
@@ -169,6 +174,34 @@ const devArenaEmbedCallbackOrigins: string[] =
         'http://localhost:4173',
       ]
     : []
+/**
+ * Parent domain for Set-Cookie Domain= (no leading dot). Only applied when the app host is under that
+ * domain. If you set BETTER_AUTH_COOKIE_DOMAIN while using localhost, browsers reject the cookie
+ * (domain must match the request host), so we skip cross-subdomain cookies and use host-only cookies.
+ */
+function resolveBetterAuthCrossSubdomainCookieDomain(): string | undefined {
+  const raw = env.BETTER_AUTH_COOKIE_DOMAIN?.trim()
+  if (!raw) return undefined
+
+  const domain = raw.replace(/^\./, '').trim().toLowerCase()
+  if (!domain) return undefined
+
+  try {
+    const hostname = new URL(getBaseUrl()).hostname
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+      return undefined
+    }
+    if (hostname !== domain && !hostname.endsWith(`.${domain}`)) {
+      return undefined
+    }
+  } catch {
+    return undefined
+  }
+
+  return domain
+}
+
+const betterAuthCrossSubdomainCookieDomain = resolveBetterAuthCrossSubdomainCookieDomain()
 
 export const auth = betterAuth({
   baseURL: getBaseUrl(),
@@ -185,6 +218,16 @@ export const auth = betterAuth({
     'https://claude.ai',
     'https://claude.com',
   ].filter(Boolean),
+  ...(betterAuthCrossSubdomainCookieDomain
+    ? {
+        advanced: {
+          crossSubDomainCookies: {
+            enabled: true,
+            domain: betterAuthCrossSubdomainCookieDomain,
+          },
+        },
+      }
+    : {}),
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema,
@@ -197,6 +240,30 @@ export const auth = betterAuth({
     expiresIn: 30 * 24 * 60 * 60, // 30 days (how long a session can last overall)
     updateAge: 24 * 60 * 60, // 24 hours (how often to refresh the expiry)
     freshAge: 60 * 60, // 1 hour (or set to 0 to disable completely)
+  },
+  user: {
+    deleteUser: {
+      enabled: false,
+      beforeDelete: async (deletingUser) => {
+        const { isSoleOwnerOfPaidOrganization } = await import(
+          '@/lib/billing/organizations/membership'
+        )
+        const check = await isSoleOwnerOfPaidOrganization(deletingUser.id)
+        if (check.isBlocker) {
+          throw new Error(
+            `You are the owner of ${check.organizationName ?? 'an active paid organization'}. Transfer ownership before deleting your account.`
+          )
+        }
+
+        const { reassignBilledAccountForUser } = await import('@/lib/workspaces/utils')
+        const { unresolved } = await reassignBilledAccountForUser(deletingUser.id)
+        if (unresolved.length > 0) {
+          throw new Error(
+            `Your account is the billing account for ${unresolved.length} workspace${unresolved.length === 1 ? '' : 's'} with no other admin to take it over. Add another admin to ${unresolved.length === 1 ? 'that workspace' : 'those workspaces'} or delete ${unresolved.length === 1 ? 'it' : 'them'} before deleting your account.`
+          )
+        }
+      },
+    },
   },
   databaseHooks: {
     user: {
@@ -651,6 +718,7 @@ export const auth = betterAuth({
         'zoom',
         'wordpress',
         'linear',
+        'monday',
         'attio',
         'shopify',
         'trello',
@@ -744,7 +812,7 @@ export const auth = betterAuth({
       }
     },
     onPasswordReset: async ({ user: resetUser }) => {
-      const { AuditAction, AuditResourceType, recordAudit } = await import('@/lib/audit/log')
+      const { AuditAction, AuditResourceType, recordAudit } = await import('@sim/audit')
       recordAudit({
         actorId: resetUser.id,
         actorName: resetUser.name,
@@ -823,7 +891,7 @@ export const auth = betterAuth({
           } catch (err) {
             logger.warn('CIMD resolution failed', {
               clientId,
-              error: err instanceof Error ? err.message : String(err),
+              error: toError(err).message,
             })
           }
         }
@@ -2055,6 +2123,59 @@ export const auth = betterAuth({
           },
         },
 
+        // Monday.com provider
+        {
+          providerId: 'monday',
+          clientId: env.MONDAY_CLIENT_ID as string,
+          clientSecret: env.MONDAY_CLIENT_SECRET as string,
+          authorizationUrl: 'https://auth.monday.com/oauth2/authorize',
+          tokenUrl: 'https://auth.monday.com/oauth2/token',
+          userInfoUrl: 'https://api.monday.com/v2',
+          scopes: getCanonicalScopesForProvider('monday'),
+          responseType: 'code',
+          pkce: false,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/monday`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://api.monday.com/v2', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'API-Version': '2024-10',
+                  Authorization: tokens.accessToken ?? '',
+                },
+                body: JSON.stringify({ query: '{ me { id name email } }' }),
+              })
+
+              if (!response.ok) {
+                await response.text().catch(() => {})
+                logger.error('Error fetching Monday.com user info:', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                return null
+              }
+
+              const data = await response.json()
+              const user = data.data?.me
+              if (!user) return null
+
+              const now = new Date()
+              return {
+                id: `${user.id.toString()}-${generateId()}`,
+                name: user.name || 'Monday.com User',
+                email: user.email || `${user.id}@monday.user`,
+                emailVerified: !!user.email,
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Monday.com getUserInfo:', { error })
+              return null
+            }
+          },
+        },
+
         // Reddit provider
         {
           providerId: 'reddit',
@@ -2396,10 +2517,20 @@ export const auth = betterAuth({
           responseType: 'code',
           accessType: 'offline',
           prompt: 'consent',
-          // Add user_scope parameter to request user token for search.all API
-          // Note: search.all requires 'search:read' user scope in addition to channels:read
           authorizationUrlParams: {
-            user_scope: 'search:read,channels:read',
+            user_scope: [
+              'search:read',
+              'channels:read',
+              'channels:history',
+              'groups:read',
+              'groups:history',
+              'im:read',
+              'im:history',
+              'mpim:read',
+              'mpim:history',
+              'users:read',
+              'chat:write',
+            ].join(','),
           },
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/slack`,
           getUserInfo: async (tokens) => {
@@ -2820,7 +2951,16 @@ export const auth = betterAuth({
       ],
     }),
     // Include SSO plugin when enabled
-    ...(env.SSO_ENABLED ? [sso()] : []),
+    ...(env.SSO_ENABLED
+      ? [
+          sso({
+            organizationProvisioning: {
+              disabled: false,
+              defaultRole: 'member',
+            },
+          }),
+        ]
+      : []),
     // Only include the Stripe plugin when billing is enabled
     ...(isBillingEnabled && stripeClient
       ? [
@@ -2893,6 +3033,9 @@ export const auth = betterAuth({
                     { subscriptionId: subscription.id, dbPlan: subscription.plan, priceId }
                   )
                 }
+
+                await syncSubscriptionPlan(subscription.id, subscription.plan, planFromStripe)
+
                 const subscriptionForOrg = {
                   ...subscription,
                   plan: planFromStripe ?? subscription.plan,
@@ -2910,7 +3053,7 @@ export const auth = betterAuth({
                       referenceId: subscription.referenceId,
                       dbPlan: subscription.plan,
                       planFromStripe,
-                      error: orgError instanceof Error ? orgError.message : String(orgError),
+                      error: toError(orgError).message,
                       stack: orgError instanceof Error ? orgError.stack : undefined,
                     }
                   )
@@ -2947,10 +3090,11 @@ export const auth = betterAuth({
                   )
                 }
 
+                const referenceOrganizationId = await getOrganizationIdForSubscriptionReference(
+                  subscription.referenceId
+                )
                 const isUpgradeToTeam =
-                  isTeamPlan &&
-                  !isTeam(subscription.plan) &&
-                  !subscription.referenceId.startsWith('org_')
+                  isTeamPlan && !isTeam(subscription.plan) && referenceOrganizationId == null
 
                 const effectivePlanForTeamFeatures = planFromStripe ?? subscription.plan
 
@@ -2962,6 +3106,7 @@ export const auth = betterAuth({
                   isUpgradeToTeam,
                   isAnnual,
                   referenceId: subscription.referenceId,
+                  referenceOrganizationId,
                 })
 
                 if (!planFromStripe) {
@@ -2970,6 +3115,9 @@ export const auth = betterAuth({
                     { subscriptionId: subscription.id, dbPlan: subscription.plan }
                   )
                 }
+
+                await syncSubscriptionPlan(subscription.id, subscription.plan, planFromStripe)
+
                 const subscriptionForOrg = {
                   ...subscription,
                   plan: planFromStripe ?? subscription.plan,
@@ -3000,7 +3148,7 @@ export const auth = betterAuth({
                       dbPlan: subscription.plan,
                       planFromStripe,
                       isUpgradeToTeam,
-                      error: orgError instanceof Error ? orgError.message : String(orgError),
+                      error: toError(orgError).message,
                       stack: orgError instanceof Error ? orgError.stack : undefined,
                     }
                   )
@@ -3042,11 +3190,22 @@ export const auth = betterAuth({
                       error,
                     })
                   }
+                } else {
+                  await handleOrganizationPlanDowngrade(
+                    {
+                      id: resolvedSubscription.id,
+                      plan: effectivePlanForTeamFeatures ?? null,
+                      referenceId: resolvedSubscription.referenceId,
+                      status: resolvedSubscription.status ?? null,
+                    },
+                    event.id
+                  )
                 }
 
                 await writeBillingInterval(resolvedSubscription.id, isAnnual ? 'year' : 'month')
               },
               onSubscriptionDeleted: async ({
+                event,
                 subscription,
               }: {
                 event: Stripe.Event
@@ -3054,18 +3213,24 @@ export const auth = betterAuth({
                 subscription: any
               }) => {
                 logger.info('[onSubscriptionDeleted] Subscription deleted', {
+                  eventId: event.id,
                   subscriptionId: subscription.id,
                   referenceId: subscription.referenceId,
                 })
 
                 try {
-                  await handleSubscriptionDeleted(subscription)
+                  await handleSubscriptionDeleted(subscription, event.id)
                 } catch (error) {
                   logger.error('[onSubscriptionDeleted] Failed to handle subscription deletion', {
+                    eventId: event.id,
                     subscriptionId: subscription.id,
                     referenceId: subscription.referenceId,
                     error,
                   })
+                  // Rethrow so the Stripe webhook retries — otherwise
+                  // the final overage invoice, usage reset, org cleanup,
+                  // and personal Pro restore can be permanently skipped.
+                  throw error
                 }
               },
             },
@@ -3132,21 +3297,8 @@ export const auth = betterAuth({
     ...(isOrganizationsEnabled
       ? [
           organization({
-            allowUserToCreateOrganization: async (user) => {
-              if (!isBillingEnabled) {
-                return true
-              }
-              const dbSubscriptions = await db
-                .select()
-                .from(schema.subscription)
-                .where(eq(schema.subscription.referenceId, user.id))
-
-              const hasTeamPlan = dbSubscriptions.some(
-                (sub) => hasPaidSubscriptionStatus(sub.status) && isOrgPlan(sub.plan)
-              )
-
-              return hasTeamPlan
-            },
+            allowUserToCreateOrganization: async () => false,
+            disableOrganizationDeletion: true,
             organizationCreation: {
               afterCreate: async ({ organization, user }) => {
                 logger.info('[organizationCreation.afterCreate] Organization created', {
