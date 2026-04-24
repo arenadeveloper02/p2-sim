@@ -108,6 +108,31 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   }, [onAskInChat, handleMouseUp, messagesContainerRef])
 
   useEffect(() => {
+    if (!onAskInChat) return
+
+    const handleSelectionChange = () => {
+      const container = messagesContainerRef?.current
+      if (!container) return
+
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed) {
+        setSelectionTip(null)
+        return
+      }
+
+      const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+      const anchor = range?.commonAncestorContainer
+      const anchorElement = anchor instanceof Element ? anchor : anchor?.parentElement
+      if (!anchorElement || !container.contains(anchorElement)) {
+        setSelectionTip(null)
+      }
+    }
+
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [onAskInChat, messagesContainerRef])
+
+  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (tipRef.current && !tipRef.current.contains(e.target as Node)) {
         setSelectionTip(null)
