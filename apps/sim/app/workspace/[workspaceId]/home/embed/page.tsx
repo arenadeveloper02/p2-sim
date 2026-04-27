@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
-import { Home } from '@/app/workspace/[workspaceId]/home/home'
+import { HomeEmbed } from '@/app/workspace/[workspaceId]/home/home-embed'
 
 export const metadata: Metadata = {
   title: 'Home',
 }
 
-export default Home
+export default HomeEmbed
