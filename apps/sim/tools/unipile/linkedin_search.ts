@@ -58,7 +58,11 @@ export const unipileLinkedinSearchTool: ToolConfig<
       if (typeof params.cursor === 'string' && params.cursor.trim() !== '') {
         out.cursor = params.cursor.trim()
       }
-      if (params.limit !== undefined && params.limit !== null && Number.isFinite(Number(params.limit))) {
+      if (
+        params.limit !== undefined &&
+        params.limit !== null &&
+        Number.isFinite(Number(params.limit))
+      ) {
         out.limit = Number(params.limit)
       }
       return out

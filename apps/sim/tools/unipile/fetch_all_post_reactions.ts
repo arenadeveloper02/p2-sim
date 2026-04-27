@@ -7,7 +7,9 @@ export const UNIPILE_POST_REACTIONS_PAGE_LIMIT = 100
 
 const MAX_REACTION_PAGES = 500
 
-export function extractUnipilePostReactionsNextCursor(body: Record<string, unknown>): string | undefined {
+export function extractUnipilePostReactionsNextCursor(
+  body: Record<string, unknown>
+): string | undefined {
   const top = body.cursor
   if (typeof top === 'string' && top.trim().length > 0) return top.trim()
   const paging = body.paging

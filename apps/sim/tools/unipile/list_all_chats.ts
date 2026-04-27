@@ -45,7 +45,8 @@ export const unipileListAllChatsTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Optional ISO 8601 UTC start boundary (exclusive), e.g. 2025-01-01T00:00:00.000Z',
+      description:
+        'Optional ISO 8601 UTC start boundary (exclusive), e.g. 2025-01-01T00:00:00.000Z',
     },
     limit: {
       type: 'number',
@@ -57,7 +58,8 @@ export const unipileListAllChatsTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Optional provider filter: WHATSAPP, LINKEDIN, SLACK, TWITTER, MESSENGER, INSTAGRAM, TELEGRAM',
+      description:
+        'Optional provider filter: WHATSAPP, LINKEDIN, SLACK, TWITTER, MESSENGER, INSTAGRAM, TELEGRAM',
     },
   },
 
@@ -82,7 +84,11 @@ export const unipileListAllChatsTool: ToolConfig<
       if (typeof params.after === 'string' && params.after.trim() !== '') {
         out.after = params.after.trim()
       }
-      if (params.limit !== undefined && params.limit !== null && Number.isFinite(Number(params.limit))) {
+      if (
+        params.limit !== undefined &&
+        params.limit !== null &&
+        Number.isFinite(Number(params.limit))
+      ) {
         out.limit = Number(params.limit)
       }
       if (typeof params.account_type === 'string' && params.account_type.trim() !== '') {

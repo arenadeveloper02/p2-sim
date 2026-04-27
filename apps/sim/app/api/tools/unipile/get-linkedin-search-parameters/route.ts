@@ -21,7 +21,9 @@ const RequestSchema = z.object({
   type: z
     .string()
     .min(1, 'type is required')
-    .refine((v) => allowedTypes.has(v), { message: 'type must be a valid LinkedIn search parameter type' }),
+    .refine((v) => allowedTypes.has(v), {
+      message: 'type must be a valid LinkedIn search parameter type',
+    }),
   service: optionalString,
   keywords: optionalString,
   limit: z.coerce.number().int().min(1).max(100).optional().nullable(),

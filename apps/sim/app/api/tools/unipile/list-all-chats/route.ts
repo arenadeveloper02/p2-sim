@@ -56,15 +56,25 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = RequestSchema.parse(body)
 
-    if (data.before != null && data.before.trim() !== '' && !ISO_UTC_MS_Z.test(data.before.trim())) {
+    if (
+      data.before != null &&
+      data.before.trim() !== '' &&
+      !ISO_UTC_MS_Z.test(data.before.trim())
+    ) {
       return NextResponse.json(
-        { error: 'before must be ISO 8601 UTC with milliseconds and Z suffix, e.g. 2025-12-31T23:59:59.999Z' },
+        {
+          error:
+            'before must be ISO 8601 UTC with milliseconds and Z suffix, e.g. 2025-12-31T23:59:59.999Z',
+        },
         { status: 400 }
       )
     }
     if (data.after != null && data.after.trim() !== '' && !ISO_UTC_MS_Z.test(data.after.trim())) {
       return NextResponse.json(
-        { error: 'after must be ISO 8601 UTC with milliseconds and Z suffix, e.g. 2025-01-01T00:00:00.000Z' },
+        {
+          error:
+            'after must be ISO 8601 UTC with milliseconds and Z suffix, e.g. 2025-01-01T00:00:00.000Z',
+        },
         { status: 400 }
       )
     }

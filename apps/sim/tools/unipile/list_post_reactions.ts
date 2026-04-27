@@ -56,7 +56,11 @@ export const unipileListPostReactionsTool: ToolConfig<
       if (typeof params.comment_id === 'string' && params.comment_id.trim() !== '') {
         out.comment_id = params.comment_id.trim()
       }
-      if (params.limit !== undefined && params.limit !== null && Number.isFinite(Number(params.limit))) {
+      if (
+        params.limit !== undefined &&
+        params.limit !== null &&
+        Number.isFinite(Number(params.limit))
+      ) {
         out.limit = Number(params.limit)
       }
       return out

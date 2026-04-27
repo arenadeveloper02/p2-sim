@@ -7,7 +7,9 @@ export const UNIPILE_RELATIONS_PAGE_LIMIT = 1000
 
 const MAX_RELATION_PAGES = 500
 
-export function extractUnipileRelationsNextCursor(body: Record<string, unknown>): string | undefined {
+export function extractUnipileRelationsNextCursor(
+  body: Record<string, unknown>
+): string | undefined {
   const top = body.cursor
   if (typeof top === 'string' && top.trim().length > 0) return top.trim()
   const paging = body.paging
@@ -92,4 +94,3 @@ export async function fetchAllUnipileUserRelationItems(
 
   return { items: allItems, object }
 }
-

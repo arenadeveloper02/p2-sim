@@ -33,7 +33,8 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'CLASSIC (default), RECRUITER, or SALES_NAVIGATOR — which LinkedIn API surface to query.',
+      description:
+        'CLASSIC (default), RECRUITER, or SALES_NAVIGATOR — which LinkedIn API surface to query.',
     },
     keywords: {
       type: 'string',
@@ -64,7 +65,11 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
       if (typeof params.keywords === 'string' && params.keywords.trim() !== '') {
         out.keywords = params.keywords.trim()
       }
-      if (params.limit !== undefined && params.limit !== null && Number.isFinite(Number(params.limit))) {
+      if (
+        params.limit !== undefined &&
+        params.limit !== null &&
+        Number.isFinite(Number(params.limit))
+      ) {
         out.limit = Number(params.limit)
       }
       return out
