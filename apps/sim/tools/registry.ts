@@ -128,7 +128,10 @@ import {
   arenaAddComment,
   arenaClientUpdatedTasks,
   arenaConversationSummary,
+  arenaCreateSubTask,
+  arenaCreateSubTaskFields,
   arenaCreateTask,
+  arenaCreateTaskFields,
   arenaGetMeetings,
   arenaGetMyOverdueTasks,
   arenaGetMyTasks,
@@ -2949,6 +2952,9 @@ import {
 // Registry of all available tools
 export const tools: Record<string, ToolConfig> = {
   arena_create_task: arenaCreateTask,
+  arena_create_task_fields: arenaCreateTaskFields,
+  arena_create_sub_task: arenaCreateSubTask,
+  arena_create_sub_task_fields: arenaCreateSubTaskFields,
   arena_search_task: arenaSearchTask,
   arena_save_summary: arenaSaveSummary,
   arena_comments: arenaAddComment,

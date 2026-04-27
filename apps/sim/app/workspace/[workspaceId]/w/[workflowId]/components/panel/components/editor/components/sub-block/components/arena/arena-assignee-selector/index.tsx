@@ -2,22 +2,16 @@
 
 import * as React from 'react'
 import axios from 'axios'
-import { Check, ChevronsUpDown } from 'lucide-react'
-import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
-import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
+import {
+  arenaEffectiveSubBlockId,
+  arenaSiblingSubBlockStoreKey,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
@@ -46,13 +40,20 @@ export function ArenaAssigneeSelector({
   disabled = false,
 }: ArenaAssigneeSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
+  const prevClientIdRef = React.useRef<string | undefined>(undefined)
+  const prevProjectIdRef = React.useRef<string | undefined>(undefined)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  const isSearchTask = subBlockId === 'search-task-assignee'
-  const isCreateTask = subBlockId === 'task-assignee'
-  const clientKey = subBlockId === 'task-assignee' ? 'task-client' : 'search-task-client'
-  const projectKey = subBlockId === 'task-assignee' ? 'task-project' : 'search-task-project'
+  const logicalId = arenaEffectiveSubBlockId(subBlockId)
+  const isSearchTask = logicalId === 'search-task-assignee'
+  const isCreateTask = logicalId === 'task-assignee'
+  const clientKey = isCreateTask
+    ? arenaSiblingSubBlockStoreKey(subBlockId, 'task-client')
+    : 'search-task-client'
+  const projectKey = isCreateTask
+    ? arenaSiblingSubBlockStoreKey(subBlockId, 'task-project')
+    : 'search-task-project'
   const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
     | { clientId?: string }
     | undefined
@@ -65,17 +66,32 @@ export function ArenaAssigneeSelector({
   const selectedValue = isPreview ? previewValue : storeValue
 
   const [assignees, setAssignees] = React.useState<Assignee[]>([])
-  const [open, setOpen] = React.useState(false)
-  const [loading, setLoading] = React.useState(false)
+  const [isLoading, setIsLoading] = React.useState(false)
 
-  // Fetch assignees when clientId & projectId change
   React.useEffect(() => {
-    if (!clientId || (isCreateTask && !projectId)) return
+    if (isPreview) return
+    const clientChanged = prevClientIdRef.current !== undefined && prevClientIdRef.current !== clientId
+    const projectChanged =
+      prevProjectIdRef.current !== undefined && prevProjectIdRef.current !== projectId
+    if (clientChanged || projectChanged) {
+      setStoreValue(null)
+    }
+    prevClientIdRef.current = clientId
+    prevProjectIdRef.current = projectId
+  }, [clientId, projectId, isPreview, setStoreValue])
 
+  React.useEffect(() => {
+    if (!clientId || (isCreateTask && !projectId)) {
+      setAssignees([])
+      setIsLoading(false)
+      return
+    }
+
+    let cancelled = false
     const fetchAssignees = async () => {
-      setLoading(true)
+      setIsLoading(true)
+      setAssignees([])
       try {
-        setAssignees([])
         const v2Token = await getArenaToken()
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
 
@@ -91,92 +107,80 @@ export function ArenaAssigneeSelector({
 
         const users = response.data?.userList || []
 
-        const formattedAssignees: Assignee[] = users.map((user: any) => ({
+        const formattedAssignees: Assignee[] = users.map((user: { sysId: string; name: string }) => ({
           value: user.sysId,
           label: user.name,
         }))
 
-        setAssignees(formattedAssignees)
+        if (!cancelled) setAssignees(formattedAssignees)
       } catch (error) {
         console.error('Error fetching assignees:', error)
-        setAssignees([])
+        if (!cancelled) setAssignees([])
       } finally {
-        setLoading(false)
+        if (!cancelled) setIsLoading(false)
       }
     }
 
     fetchAssignees()
-  }, [clientId, projectId, subBlockId])
-
-  const selectedLabel =
-    (typeof selectedValue === 'object' ? selectedValue?.customDisplayValue : null) ||
-    assignees.find(
-      (a) => a.value === (typeof selectedValue === 'object' ? selectedValue?.value : selectedValue)
-    )?.label ||
-    'Select assignee...'
-
-  const handleSelect = (assignee: Assignee) => {
-    if (!isPreview && !disabled) {
-      setStoreValue({ ...assignee, customDisplayValue: assignee.label })
-      setOpen(false)
+    return () => {
+      cancelled = true
     }
-  }
+  }, [clientId, projectId, isCreateTask, isSearchTask])
+
+  const selectedId =
+    selectedValue && typeof selectedValue === 'object' && 'value' in selectedValue
+      ? (selectedValue as Assignee).value
+      : typeof selectedValue === 'string'
+        ? selectedValue
+        : ''
+
+  const fallbackLabel =
+    selectedValue && typeof selectedValue === 'object' && 'value' in selectedValue
+      ? (selectedValue as Assignee & { customDisplayValue?: string }).customDisplayValue ||
+        (selectedValue as Assignee).label
+      : undefined
+
+  const options: ComboboxOption[] = React.useMemo(
+    () =>
+      mergeArenaComboboxOptions(
+        assignees.map((a) => ({ label: a.label, value: a.value })),
+        selectedId || undefined,
+        fallbackLabel
+      ),
+    [assignees, selectedId, fallbackLabel]
+  )
+
+  const controlDisabled = disabled || isLoading || !clientId || (isCreateTask && !projectId)
 
   return (
-    <div className={cn('flex w-full flex-col gap-2 pt-1')}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant='outline'
-            role='combobox'
-            aria-expanded={open}
-            id={`assignee-${subBlockId}`}
-            className={cn(
-              comboboxVariants(),
-              'relative w-full cursor-pointer items-center justify-between'
-            )}
-            disabled={disabled || loading || !clientId || (isCreateTask && !projectId)}
-          >
-            {loading ? 'Loading...' : selectedLabel}
-            <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
-          <Command
-            filter={(value, search) => {
-              const assignee = assignees.find((a) => a.value === value)
-              if (!assignee) return 0
-              return assignee.label.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
-            }}
-          >
-            <CommandInput placeholder='Search assignee...' className='h-9' />
-            <CommandList>
-              <CommandEmpty>{loading ? 'Loading...' : 'No assignees found.'}</CommandEmpty>
-              <CommandGroup>
-                {assignees.map((assignee) => {
-                  const isSelected =
-                    typeof selectedValue === 'object'
-                      ? selectedValue?.value === assignee.value
-                      : selectedValue === assignee.value
-                  return (
-                    <CommandItem
-                      key={assignee.value}
-                      value={assignee.value}
-                      onSelect={() => handleSelect(assignee)}
-                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                    >
-                      {assignee.label}
-                      <Check
-                        className={cn('ml-auto h-4 w-4', isSelected ? 'opacity-100' : 'opacity-0')}
-                      />
-                    </CommandItem>
-                  )
-                })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+    <div
+      className={cn('w-full pt-1', layout === 'half' && 'max-w-md')}
+      id={`assignee-${subBlockId}`}
+    >
+      <Combobox
+        key={`${clientId ?? ''}::${projectId ?? ''}`}
+        options={options}
+        value={selectedId}
+        selectedValue={selectedId}
+        onChange={(v) => {
+          if (isPreview || controlDisabled) return
+          const fromList = assignees.find((a) => a.value === v)
+          const fromOpt = options.find((o) => o.value === v)
+          if (fromList) {
+            setStoreValue({ ...fromList, customDisplayValue: fromList.label })
+          } else if (fromOpt) {
+            setStoreValue({ value: v, label: fromOpt.label, customDisplayValue: fromOpt.label })
+          }
+        }}
+        placeholder='Select assignee...'
+        disabled={controlDisabled}
+        searchable
+        searchPlaceholder='Search assignee...'
+        emptyMessage='No assignees found.'
+        isLoading={isLoading}
+        maxHeight={240}
+        dropdownWidth='trigger'
+      />
     </div>
   )
 }

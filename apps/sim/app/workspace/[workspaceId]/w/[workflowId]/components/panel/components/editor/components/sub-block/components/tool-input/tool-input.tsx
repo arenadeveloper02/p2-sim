@@ -117,6 +117,20 @@ function scopeCanonicalOverrides(
 }
 
 /**
+ * Merges `tool.params` with the block `operation` for subblock `dependsOn` / conditions.
+ * `operation` is only stored on the tool; any stray `operation` key in params is dropped.
+ */
+function subBlockDependencyValues(
+  params: Record<string, unknown> | undefined,
+  operation: string | undefined
+): Record<string, unknown> {
+  const withoutOp = Object.fromEntries(
+    Object.entries({ ...(params ?? {}) }).filter(([k]) => k !== 'operation')
+  )
+  return { ...withoutOp, operation }
+}
+
+/**
  * Renders the input for workflow_executor's inputMapping parameter.
  * This is a special case that doesn't map to any SubBlockConfig, so it's kept here.
  */
@@ -1985,7 +1999,7 @@ export const ToolInput = memo(function ToolInput({
                           toolIndex={toolIndex}
                           subBlock={sbWithTitle}
                           effectiveParamId={effectiveParamId}
-                          toolParams={tool.params}
+                          toolParams={subBlockDependencyValues(tool.params, tool.operation)}
                           onParamChange={handleParamChange}
                           disabled={disabled}
                           canonicalToggle={canonicalToggleProp}

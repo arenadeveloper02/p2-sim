@@ -1,7 +1,12 @@
 import { addComment } from '@/tools/arena/add_comment'
 import { clientUpdatedTasks } from '@/tools/arena/client_updated_tasks'
 import { conversationSummary } from '@/tools/arena/conversation_summary'
-import { createTask } from '@/tools/arena/create_task'
+import {
+  arenaCreateSubTaskFieldsTool,
+  arenaCreateSubTaskTool,
+  arenaCreateTaskFieldsTool,
+  arenaCreateTaskMainTool,
+} from '@/tools/arena/create_task'
 import { getMeetings } from '@/tools/arena/get_meetings'
 import { getMyOverdueTasks } from '@/tools/arena/get_my_overdue_tasks'
 import { getMyTasks } from '@/tools/arena/get_my_tasks'
@@ -10,7 +15,10 @@ import { projectSummary } from '@/tools/arena/project_summary'
 import { saveSummary } from '@/tools/arena/save_summary'
 import { searchTask } from '@/tools/arena/search_task'
 
-export const arenaCreateTask = createTask
+export const arenaCreateTask = arenaCreateTaskMainTool
+export const arenaCreateTaskFields = arenaCreateTaskFieldsTool
+export const arenaCreateSubTask = arenaCreateSubTaskTool
+export const arenaCreateSubTaskFields = arenaCreateSubTaskFieldsTool
 export const arenaClientUpdatedTasks = clientUpdatedTasks
 export const arenaConversationSummary = conversationSummary
 export const arenaSearchTask = searchTask

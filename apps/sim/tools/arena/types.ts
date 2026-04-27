@@ -1,7 +1,7 @@
 import type { ToolResponse } from '@/tools/types'
 
-export type ArenaCreateTaskParams = {
-  operation: string
+/** Arena create-task tools: the tool id selects the flow; params do not include `operation`. */
+export type ArenaCreateTaskToolParams = {
   'task-name': string
   'task-description': string
   // Basic mode fields (optional when in advanced mode)

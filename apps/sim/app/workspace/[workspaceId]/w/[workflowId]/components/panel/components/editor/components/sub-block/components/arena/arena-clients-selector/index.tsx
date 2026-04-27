@@ -2,22 +2,12 @@
 
 import * as React from 'react'
 import axios from 'axios'
-import { Check, ChevronsUpDown } from 'lucide-react'
-import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
-import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
 
 interface Client {
   clientId: string
@@ -50,10 +40,12 @@ export function ArenaClientsSelector({
   const selectedValue = isPreview ? previewValue : storeValue
 
   const [clients, setClients] = React.useState<Client[]>([])
-  const [open, setOpen] = React.useState(false)
+  const [isLoading, setIsLoading] = React.useState(true)
 
   React.useEffect(() => {
+    let cancelled = false
     const fetchClients = async () => {
+      setIsLoading(true)
       try {
         setClients([])
         const v2Token = await getArenaToken()
@@ -66,104 +58,73 @@ export function ArenaClientsSelector({
             },
           }
         )
-        // Ensure response.data.response is an array
         const clientsData = response.data?.response
-        console.log('Arena API response:', response.data)
-        console.log('Clients data:', clientsData, 'Type:', typeof clientsData)
         const clientsArray = Array.isArray(clientsData) ? clientsData : []
-        console.log('Final clients array:', clientsArray)
-        setClients(clientsArray)
+        if (!cancelled) setClients(clientsArray)
       } catch (error) {
         console.error('Error fetching clients:', error)
-        // Set empty array on error to ensure clients is always an array
-        setClients([])
+        if (!cancelled) setClients([])
+      } finally {
+        if (!cancelled) setIsLoading(false)
       }
     }
 
     fetchClients()
 
     return () => {
-      setClients([])
+      cancelled = true
     }
   }, [])
 
-  const selectedClient =
-    Array.isArray(clients) &&
-    selectedValue &&
-    typeof selectedValue === 'object' &&
-    'clientId' in selectedValue
-      ? clients.find((cl) => cl.clientId === (selectedValue as Client).clientId)
-      : undefined
-  const selectedLabel = selectedClient?.name ?? 'Select client...'
+  const selectedId =
+    selectedValue && typeof selectedValue === 'object' && 'clientId' in selectedValue
+      ? (selectedValue as Client).clientId
+      : ''
 
-  const handleSelect = (client: Client) => {
-    console.log('Selected client:', client)
-    if (!isPreview && !disabled) {
-      setStoreValue({ ...client, customDisplayValue: client.name })
-      setOpen(false)
-    }
-  }
+  const fallbackLabel =
+    selectedValue && typeof selectedValue === 'object' && 'clientId' in selectedValue
+      ? (selectedValue as Client & { customDisplayValue?: string }).customDisplayValue ||
+        (selectedValue as Client).name
+      : undefined
+
+  const options: ComboboxOption[] = React.useMemo(
+    () =>
+      mergeArenaComboboxOptions(
+        clients.map((c) => ({ label: c.name, value: c.clientId })),
+        selectedId || undefined,
+        fallbackLabel
+      ),
+    [clients, selectedId, fallbackLabel]
+  )
 
   return (
-    <div className={cn('flex flex-col gap-2 pt-1', layout === 'half' ? 'max-w-md' : 'w-full')}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant='outline'
-            role='combobox'
-            aria-expanded={open}
-            id={`client-${subBlockId}`}
-            className={cn(
-              comboboxVariants(),
-              'relative w-full cursor-pointer items-center justify-between'
-            )}
-            disabled={disabled}
-          >
-            <span className='max-w-[400px] truncate'>{selectedLabel}</span>
-            <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
-          <Command
-            filter={(value, search) => {
-              const client = Array.isArray(clients)
-                ? clients.find((cl) => cl.clientId === value || cl.name === value)
-                : null
-              if (!client) return 0
-
-              return client.name.toLowerCase().includes(search.toLowerCase()) ||
-                client.clientId.toLowerCase().includes(search.toLowerCase())
-                ? 1
-                : 0
-            }}
-          >
-            <CommandInput placeholder='Search clients...' className='h-9' />
-            <CommandList>
-              <CommandEmpty>No client found.</CommandEmpty>
-              <CommandGroup>
-                {Array.isArray(clients) &&
-                  clients.map((client) => (
-                    <CommandItem
-                      key={client.clientId}
-                      value={client.clientId}
-                      onSelect={() => handleSelect(client)}
-                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                      className='max-w-full whitespace-normal break-words'
-                    >
-                      <span className='max-w-[400px] truncate'>{client.name}</span>
-                      <Check
-                        className={cn(
-                          'ml-auto h-4 w-4',
-                          selectedValue?.clientId === client.clientId ? 'opacity-100' : 'opacity-0'
-                        )}
-                      />
-                    </CommandItem>
-                  ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+    <div
+      className={cn('w-full pt-1', layout === 'half' && 'max-w-md')}
+      id={`client-${subBlockId}`}
+    >
+      <Combobox
+        options={options}
+        value={selectedId}
+        selectedValue={selectedId}
+        onChange={(v) => {
+          if (isPreview || disabled) return
+          const fromList = clients.find((cl) => cl.clientId === v)
+          const fromOpt = options.find((o) => o.value === v)
+          if (fromList) {
+            setStoreValue({ ...fromList, customDisplayValue: fromList.name })
+          } else if (fromOpt) {
+            setStoreValue({ clientId: v, name: fromOpt.label, customDisplayValue: fromOpt.label })
+          }
+        }}
+        placeholder='Select client...'
+        disabled={disabled}
+        searchable
+        searchPlaceholder='Search clients...'
+        emptyMessage='No client found.'
+        isLoading={isLoading}
+        maxHeight={240}
+        dropdownWidth='trigger'
+      />
     </div>
   )
 }

@@ -2,22 +2,16 @@
 
 import * as React from 'react'
 import axios from 'axios'
-import { Check, ChevronsUpDown } from 'lucide-react'
-import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
-import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
+import {
+  arenaEffectiveSubBlockId,
+  arenaSiblingSubBlockStoreKey,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
@@ -30,7 +24,7 @@ interface ArenaProjectSelectorProps {
   blockId: string
   subBlockId: string
   title: string
-  clientId?: string // <-- IMPORTANT: We need clientId to fetch projects
+  clientId?: string
   layout?: 'full' | 'half'
   isPreview?: boolean
   subBlockValues?: Record<string, any>
@@ -47,15 +41,16 @@ export function ArenaProjectSelector({
   disabled = false,
 }: ArenaProjectSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
+  const prevClientIdRef = React.useRef<string | undefined>(undefined)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  // Determine the client key based on the project subBlockId
+  const logicalId = arenaEffectiveSubBlockId(subBlockId)
   const clientKey =
-    subBlockId === 'task-project'
-      ? 'task-client'
-      : subBlockId === 'comment-project'
-        ? 'comment-client'
+    logicalId === 'task-project'
+      ? arenaSiblingSubBlockStoreKey(subBlockId, 'task-client')
+      : logicalId === 'comment-project'
+        ? arenaSiblingSubBlockStoreKey(subBlockId, 'comment-client')
         : 'search-task-client'
   const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
     | { clientId?: string }
@@ -66,17 +61,29 @@ export function ArenaProjectSelector({
   const selectedValue = isPreview ? previewValue : storeValue
 
   const [projects, setProjects] = React.useState<Project[]>([])
-  const [open, setOpen] = React.useState(false)
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [isLoading, setIsLoading] = React.useState(false)
 
   React.useEffect(() => {
-    if (!clientId) return // No clientId, don't fetch projects
+    if (isPreview) return
+    if (prevClientIdRef.current !== undefined && prevClientIdRef.current !== clientId) {
+      setStoreValue(null)
+    }
+    prevClientIdRef.current = clientId
+  }, [clientId, isPreview, setStoreValue])
 
+  React.useEffect(() => {
+    if (!clientId) {
+      setProjects([])
+      setIsLoading(false)
+      return
+    }
+
+    let cancelled = false
     const fetchProjects = async () => {
+      setIsLoading(true)
       setProjects([])
       try {
         const v2Token = await getArenaToken()
-
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
         const url = `${arenaBackendBaseUrl}/sol/v1/projects?cid=${clientId}&projectType=STATUS&name=${''}`
         const response = await axios.get(url, {
@@ -84,94 +91,73 @@ export function ArenaProjectSelector({
             Authorisation: v2Token || '',
           },
         })
-
-        setProjects(response.data.projectList || [])
+        if (!cancelled) setProjects(response.data.projectList || [])
       } catch (error) {
         console.error('Error fetching projects:', error)
-        setProjects([])
+        if (!cancelled) setProjects([])
+      } finally {
+        if (!cancelled) setIsLoading(false)
       }
     }
 
     fetchProjects()
 
     return () => {
-      setProjects([])
+      cancelled = true
     }
-  }, [clientId, searchQuery])
+  }, [clientId])
 
-  const selectedLabel =
-    selectedValue?.customDisplayValue ||
-    projects.find(
-      (proj) =>
-        proj.sysId === (typeof selectedValue === 'string' ? selectedValue : selectedValue?.sysId)
-    )?.name ||
-    'Select project...'
+  const selectedId =
+    typeof selectedValue === 'string'
+      ? selectedValue
+      : selectedValue && typeof selectedValue === 'object' && 'sysId' in selectedValue
+        ? (selectedValue as Project).sysId
+        : ''
 
-  const handleSelect = (project: Project) => {
-    if (!isPreview && !disabled) {
-      setStoreValue({ ...project, customDisplayValue: project.name })
-      setOpen(false)
-    }
-  }
+  const fallbackLabel =
+    selectedValue && typeof selectedValue === 'object' && 'sysId' in selectedValue
+      ? (selectedValue as Project & { customDisplayValue?: string }).customDisplayValue ||
+        (selectedValue as Project).name
+      : undefined
+
+  const options: ComboboxOption[] = React.useMemo(
+    () =>
+      mergeArenaComboboxOptions(
+        projects.map((p) => ({ label: p.name, value: p.sysId })),
+        selectedId || undefined,
+        fallbackLabel
+      ),
+    [projects, selectedId, fallbackLabel]
+  )
+
+  const controlDisabled = disabled || !clientId
 
   return (
-    <div className={cn('flex w-full flex-col gap-2 pt-1')}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant='outline'
-            role='combobox'
-            aria-expanded={open}
-            id={`project-${subBlockId}`}
-            className={cn(
-              comboboxVariants(),
-              'relative w-full cursor-pointer items-center justify-between'
-            )}
-            disabled={disabled || !clientId} // Disable if no client selected
-          >
-            <span className='block flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left'>
-              {selectedLabel}
-            </span>
-            <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
-          <Command
-            filter={(value, search) => {
-              const project = projects.find((p) => p.sysId === value)
-              if (!project) return 0
-              return project.name.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
-            }}
-          >
-            <CommandInput placeholder='Search projects...' className='h-9' />
-            <CommandList>
-              <CommandEmpty>No project found.</CommandEmpty>
-              <CommandGroup>
-                {projects.map((project) => {
-                  const isSelected =
-                    typeof selectedValue === 'string'
-                      ? selectedValue === project.sysId
-                      : selectedValue?.sysId === project.sysId
-                  return (
-                    <CommandItem
-                      key={project.sysId}
-                      value={project.sysId}
-                      onSelect={() => handleSelect(project)}
-                      className='whitespace-normal break-words'
-                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                    >
-                      <span className='flex-1 whitespace-normal break-words'>{project.name}</span>
-                      <Check
-                        className={cn('ml-auto h-4 w-4', isSelected ? 'opacity-100' : 'opacity-0')}
-                      />
-                    </CommandItem>
-                  )
-                })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+    <div className={cn('w-full pt-1', layout === 'half' && 'max-w-md')} id={`project-${subBlockId}`}>
+      <Combobox
+        key={clientId ?? 'no-client'}
+        options={options}
+        value={selectedId}
+        selectedValue={selectedId}
+        onChange={(v) => {
+          if (isPreview || controlDisabled) return
+          const fromList = projects.find((p) => p.sysId === v)
+          const fromOpt = options.find((o) => o.value === v)
+          if (fromList) {
+            setStoreValue({ ...fromList, customDisplayValue: fromList.name })
+          } else if (fromOpt) {
+            setStoreValue({ sysId: v, name: fromOpt.label, customDisplayValue: fromOpt.label })
+          }
+        }}
+        placeholder='Select project...'
+        disabled={controlDisabled}
+        searchable
+        searchPlaceholder='Search projects...'
+        emptyMessage='No project found.'
+        isLoading={isLoading}
+        maxHeight={240}
+        dropdownWidth='trigger'
+      />
     </div>
   )
 }

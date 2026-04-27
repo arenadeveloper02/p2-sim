@@ -19,8 +19,16 @@ export const ArenaBlock: BlockConfig = {
       options: [
         { label: 'Create Task', id: 'arena_create_task' },
         {
+          label: 'Create Task (names & emails)',
+          id: 'arena_create_task_fields',
+        },
+        {
           label: 'Create Sub Task',
           id: 'arena_create_sub_task',
+        },
+        {
+          label: 'Create Sub Task (names & emails)',
+          id: 'arena_create_sub_task_fields',
         },
         {
           label: 'Add Comments',
@@ -54,7 +62,7 @@ export const ArenaBlock: BlockConfig = {
       value: () => 'arena_create_task',
     },
 
-    //create task blocks - basic mode
+    // create task + sub task — selector operations (Create Task, Create Sub Task)
     {
       id: 'task-name',
       title: 'Task Name',
@@ -64,7 +72,12 @@ export const ArenaBlock: BlockConfig = {
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
-        value: ['arena_create_task', 'arena_create_sub_task'],
+        value: [
+          'arena_create_task',
+          'arena_create_sub_task',
+          'arena_create_task_fields',
+          'arena_create_sub_task_fields',
+        ],
       },
     },
     {
@@ -76,7 +89,12 @@ export const ArenaBlock: BlockConfig = {
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
-        value: ['arena_create_task', 'arena_create_sub_task'],
+        value: [
+          'arena_create_task',
+          'arena_create_sub_task',
+          'arena_create_task_fields',
+          'arena_create_sub_task_fields',
+        ],
       },
     },
     {
@@ -85,7 +103,6 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-client-selector',
       required: true,
       placeholder: 'Enter client name',
-      mode: 'basic',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: ['arena_create_task', 'arena_create_sub_task'] },
     },
@@ -95,7 +112,6 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-project-selector',
       required: true,
       placeholder: 'Enter project name',
-      mode: 'basic',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -108,7 +124,6 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-group-selector',
       required: true,
       placeholder: 'Enter group name',
-      mode: 'basic',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: ['arena_create_task'] },
     },
@@ -118,7 +133,6 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-task-selector',
       required: true,
       placeholder: 'Enter task name',
-      mode: 'basic',
       condition: {
         field: 'operation',
         value: ['arena_create_sub_task'],
@@ -130,25 +144,23 @@ export const ArenaBlock: BlockConfig = {
       type: 'arena-assignee-selector',
       required: true,
       placeholder: 'Enter assignee name',
-      mode: 'basic',
       dependsOn: ['operation', 'task-client', 'task-project'],
       condition: {
         field: 'operation',
         value: ['arena_create_task', 'arena_create_sub_task'],
       },
     },
-    //create task blocks - advanced mode
+    // create task + sub task — by names & emails (separate operations; no block “advanced” toggle)
     {
       id: 'task-client-name',
       title: 'Client Name',
       type: 'short-input',
       required: true,
       placeholder: 'Enter client name or use <function.result.client_name>',
-      mode: 'advanced',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
-        value: ['arena_create_task', 'arena_create_sub_task'],
+        value: ['arena_create_task_fields', 'arena_create_sub_task_fields'],
       },
     },
     {
@@ -157,11 +169,10 @@ export const ArenaBlock: BlockConfig = {
       type: 'short-input',
       required: true,
       placeholder: 'Enter project name or use <function.result.project_name>',
-      mode: 'advanced',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
-        value: ['arena_create_task', 'arena_create_sub_task'],
+        value: ['arena_create_task_fields', 'arena_create_sub_task_fields'],
       },
     },
     {
@@ -170,11 +181,10 @@ export const ArenaBlock: BlockConfig = {
       type: 'short-input',
       required: true,
       placeholder: 'Enter group name or use <function.result.group_name>',
-      mode: 'advanced',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
-        value: ['arena_create_task'],
+        value: ['arena_create_task_fields'],
       },
     },
     {
@@ -183,11 +193,10 @@ export const ArenaBlock: BlockConfig = {
       type: 'short-input',
       required: true,
       placeholder: 'Enter assignee email or use <function.result.assignee_email>',
-      mode: 'advanced',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
-        value: ['arena_create_task', 'arena_create_sub_task'],
+        value: ['arena_create_task_fields', 'arena_create_sub_task_fields'],
       },
     },
     {
@@ -196,11 +205,10 @@ export const ArenaBlock: BlockConfig = {
       type: 'short-input',
       required: true,
       placeholder: 'Enter task number or use <function.result.task_number>',
-      mode: 'advanced',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
-        value: ['arena_create_sub_task'],
+        value: ['arena_create_sub_task_fields'],
       },
     },
 
@@ -526,6 +534,9 @@ export const ArenaBlock: BlockConfig = {
   tools: {
     access: [
       'arena_create_task',
+      'arena_create_task_fields',
+      'arena_create_sub_task',
+      'arena_create_sub_task_fields',
       'arena_search_task',
       'arena_save_summary',
       'arena_comments',
@@ -539,8 +550,12 @@ export const ArenaBlock: BlockConfig = {
         switch (params.operation) {
           case 'arena_create_task':
             return 'arena_create_task'
+          case 'arena_create_task_fields':
+            return 'arena_create_task_fields'
           case 'arena_create_sub_task':
-            return 'arena_create_task'
+            return 'arena_create_sub_task'
+          case 'arena_create_sub_task_fields':
+            return 'arena_create_sub_task_fields'
           case 'arena_search_task':
             return 'arena_search_task'
           case 'arena_save_summary':
