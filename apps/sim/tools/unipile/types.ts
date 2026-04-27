@@ -29,16 +29,26 @@ export interface UnipileRetrieveCompanyDetailsToolResponse extends ToolResponse 
 export interface UnipileStartNewChatParams {
   account_id: string
   text: string
+  /** Comma-separated relation ids; required by Unipile to start a chat. */
+  attendees_ids: string
   attachments?: string
   voice_message?: string
   video_message?: string
-  attendees_ids?: string
   subject?: string
+  /** Unipile `api` form field: `classic` | `recruiter` | `sales_navigator` */
   api?: string
   topic?: string
   applicant_id?: string
   invitation_id?: string
   inmail?: string
+  signature?: string
+  hiring_project_id?: string
+  job_posting_id?: string
+  sourcing_channel?: string
+  email_address?: string
+  visibility?: string
+  /** JSON string of `{ subject, text, scheduled_time }` for Recruiter API */
+  follow_up?: string
 }
 
 export interface UnipileStartNewChatToolResponse extends ToolResponse {
@@ -131,12 +141,27 @@ export type UnipileListChatAttendeesToolResponse = ToolResponse & {
   output: UnipileListPagedItemsOutput
 }
 
+export interface UnipileListUserRelationsParams {
+  account_id: string
+  /** Optional name filter forwarded to Unipile `filter` query param */
+  filter?: string
+}
+
 export type UnipileListUserRelationsToolResponse = ToolResponse & {
   output: UnipileListPagedItemsOutput
 }
 
 export interface UnipileGetUserProfileParams {
+  /** Path `{identifier}`: provider internal id or public id. */
   user_identifier: string
+  /** Required Unipile query `account_id`. */
+  account_id: string
+  /** Optional JSON string array of `linkedin_sections` (throttling risk—see Unipile limits doc). */
+  linkedin_sections_json?: string
+  /** Optional `linkedin_api`: recruiter | sales_navigator (subscription features). */
+  linkedin_api?: 'recruiter' | 'sales_navigator'
+  /** Optional `notify`: whether LinkedIn notifies the viewee (default false upstream). */
+  notify?: boolean
 }
 
 export interface UnipileGetUserProfileToolResponse extends ToolResponse {
@@ -148,6 +173,7 @@ export interface UnipileGetUserProfileToolResponse extends ToolResponse {
     last_name: string | null
     headline: string | null
     public_profile_url: string | null
+    throttled_sections: string[] | null
     profile: Record<string, unknown>
   }
 }
@@ -225,14 +251,20 @@ export type UnipileListPostCommentsToolResponse = ToolResponse & {
 }
 
 export interface UnipileCommentPostParams {
+  /** Path: LinkedIn `social_id` from post object; Instagram use `provider_id` (not short code). */
   post_id: string
   account_id: string
+  /** Max 1250 chars; LinkedIn: `{{0}}` references index in `mentions` JSON array */
   text: string
+  /** JSON string: array of `{ name, profile_id, is_company? }` (LinkedIn mentions) */
+  mentions?: string
   name?: string
   profile_id?: string
   is_company?: string
+  /** LinkedIn: https URL, must appear in text or it is appended */
   external_link?: string
   as_organization?: string
+  /** Reply to this comment id (LinkedIn: from comments list) */
   comment_id?: string
   attachments?: string
 }
@@ -245,8 +277,13 @@ export interface UnipileCommentPostToolResponse extends ToolResponse {
 }
 
 export interface UnipileListPostReactionsParams {
+  /** Path param: LinkedIn uses `social_id` from GET post / list posts (not always the URL id). */
   post_id: string
-  cursor?: string
+  account_id: string
+  /** Optional: reactions on a specific comment (LinkedIn: id from comments list) */
+  comment_id?: string
+  /** Optional page size per upstream request (1–100, default 100). Server aggregates all pages. */
+  limit?: number
 }
 
 export type UnipileListPostReactionsToolResponse = ToolResponse & {
@@ -254,8 +291,14 @@ export type UnipileListPostReactionsToolResponse = ToolResponse & {
 }
 
 export interface UnipileLinkedinSearchParams {
-  /** JSON object matching Unipile LinkedIn search request body */
+  /** Unipile account id (required query param). */
+  account_id: string
+  /** JSON object: Classic / Sales Navigator / Recruiter search body, or `{ "url": "…" }`, or `{ "cursor": "…" }` for long cursors. */
   search_body: string
+  /** Optional pagination cursor (query or use cursor-in-body pattern). */
+  cursor?: string
+  /** Optional 0–100; Classic searches should use ≤50 per Unipile docs. */
+  limit?: number
 }
 
 export interface UnipileLinkedinSearchToolResponse extends ToolResponse {
@@ -270,8 +313,30 @@ export interface UnipileLinkedinSearchToolResponse extends ToolResponse {
   }
 }
 
-export interface UnipileGetLinkedinSearchParametersParams {
+export interface UnipileListAllChatsParams {
+  account_id?: string
+  unread?: boolean
   cursor?: string
+  before?: string
+  after?: string
+  limit?: number
+  account_type?: string
+}
+
+export type UnipileListAllChatsToolResponse = ToolResponse & {
+  output: UnipileListPagedItemsOutput
+}
+
+export interface UnipileGetLinkedinSearchParametersParams {
+  account_id: string
+  /** Parameter category to list IDs for (Unipile `type` query, required). */
+  type: string
+  /** CLASSIC | RECRUITER | SALES_NAVIGATOR (default CLASSIC upstream). */
+  service?: string
+  /** Optional keywords (not used when type is EMPLOYMENT_TYPE). */
+  keywords?: string
+  /** Optional 1–100 (default 10 upstream). */
+  limit?: number
 }
 
 export type UnipileGetLinkedinSearchParametersToolResponse = ToolResponse & {
@@ -283,6 +348,7 @@ export type UnipileResponse =
   | UnipileStartNewChatToolResponse
   | UnipileGetChatToolResponse
   | UnipileListChatMessagesToolResponse
+  | UnipileListAllChatsToolResponse
   | UnipileSendChatMessageToolResponse
   | UnipileGetMessageAttachmentToolResponse
   | UnipileListChatAttendeesToolResponse

@@ -10,9 +10,9 @@ export const unipileListPostReactionsTool: ToolConfig<
   UnipileListPostReactionsToolResponse
 > = {
   id: 'unipile_list_post_reactions',
-  name: 'Unipile List Post Reactions',
+  name: 'Unipile List All Post Reactions',
   description:
-    'Lists reactions on a post (`GET /api/v1/posts/{post_id}/reactions`). Optional `cursor` for pagination. Uses server `UNIPILE_API_KEY`.',
+    'Lists every reaction on a post (`GET /api/v1/posts/{post_id}/reactions`), following Unipile paging until complete. LinkedIn: use the post social_id from GET post or list posts; see https://developer.unipile.com/docs/posts-and-comments Uses server UNIPILE_API_KEY.',
   version: '1.0.0',
 
   params: {
@@ -20,13 +20,27 @@ export const unipileListPostReactionsTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Unipile post id',
+      description:
+        'Post id path param. LinkedIn: use `social_id` from the post object (GET post / list posts); the id visible in the URL may not work.',
     },
-    cursor: {
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile connected account id (query param)',
+    },
+    comment_id: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Pagination cursor from a previous response',
+      description:
+        'Optional: list reactions on a comment instead of the post. LinkedIn: comment id from the comments list.',
+    },
+    limit: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional page size per upstream request (1–100, default 100).',
     },
   },
 
@@ -34,10 +48,19 @@ export const unipileListPostReactionsTool: ToolConfig<
     url: '/api/tools/unipile/list-post-reactions',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      post_id: params.post_id?.trim(),
-      cursor: params.cursor,
-    }),
+    body: (params) => {
+      const out: Record<string, unknown> = {
+        post_id: params.post_id?.trim(),
+        account_id: params.account_id?.trim(),
+      }
+      if (typeof params.comment_id === 'string' && params.comment_id.trim() !== '') {
+        out.comment_id = params.comment_id.trim()
+      }
+      if (params.limit !== undefined && params.limit !== null && Number.isFinite(Number(params.limit))) {
+        out.limit = Number(params.limit)
+      }
+      return out
+    },
   },
 
   transformResponse: async (response: Response) => {
@@ -58,7 +81,10 @@ export const unipileListPostReactionsTool: ToolConfig<
       description: 'Unipile object type (e.g. PostReactionList)',
       optional: true,
     },
-    item_count: { type: 'number', description: 'Number of reactions in this page' },
+    item_count: {
+      type: 'number',
+      description: 'Total number of reactions after loading all pages',
+    },
     items: { type: 'json', description: 'Post reaction items' },
     cursor: { type: 'string', description: 'Next page cursor', optional: true },
     paging: { type: 'json', description: 'Paging metadata', optional: true },

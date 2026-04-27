@@ -1,64 +1,116 @@
 import { UnipileIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { UNIPILE_LINKEDIN_PROFILE_SECTIONS } from '@/tools/unipile/linkedin_profile_query'
+import { getLinkedinSearchParameterTypeDropdownOptions } from '@/tools/unipile/linkedin_search_parameter_types'
 import type { UnipileResponse } from '@/tools/unipile/types'
 
-function unipileAccountIdForBlock(blockId: string): string {
-  const wfId = useWorkflowRegistry.getState().activeWorkflowId
-  if (!wfId) return ''
-  const raw = useSubBlockStore.getState().workflowValues[wfId]?.[blockId]?.account_id
-  if (typeof raw === 'string') return raw.trim()
-  return ''
+/** Normalizes attendees to a comma-separated string for Unipile `attendees_ids`. */
+const UNIPILE_COMMENT_MENTION_COL_NAME = 'Display name'
+const UNIPILE_COMMENT_MENTION_COL_PROFILE_ID = 'Profile ID'
+const UNIPILE_COMMENT_MENTION_COL_IS_COMPANY = 'Is company'
+
+function unipileParseMentionIsCompanyCell(raw: string): boolean | undefined {
+  const s = raw.trim().toLowerCase()
+  if (s === '') return undefined
+  if (['yes', 'true', '1', 'y', 'company'].includes(s)) return true
+  if (['no', 'false', '0', 'n'].includes(s)) return false
+  return undefined
 }
 
-async function unipileFetchChatsOptions(blockId: string) {
-  const accountId = unipileAccountIdForBlock(blockId)
-  if (!accountId) return []
-  try {
-    const response = await fetch(`/api/unipile/chats?account_id=${encodeURIComponent(accountId)}`)
-    const data = (await response.json()) as {
-      success?: boolean
-      items?: Array<{ id: string; label: string }>
+type UnipileCommentMentionRow = { name: string; profile_id: string; is_company?: boolean }
+
+/** Same row shape as Start block `input-format` fields (id, name, type, value, description). */
+function unipileMentionsFromInputFormat(raw: unknown): UnipileCommentMentionRow[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: UnipileCommentMentionRow[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const f = item as {
+      name?: string
+      value?: string
+      description?: string
     }
-    if (data?.success && Array.isArray(data.items)) {
-      return data.items
-    }
-    return []
-  } catch {
-    return []
+    const displayName = (f.name ?? '').trim()
+    const profileId = (f.value ?? '').trim()
+    if (!displayName || !profileId) continue
+    const row: UnipileCommentMentionRow = { name: displayName, profile_id: profileId }
+    const desc = (f.description ?? '').trim().toLowerCase()
+    if (desc === 'true' || desc === 'yes' || desc === 'company') row.is_company = true
+    if (desc === 'false' || desc === 'no') row.is_company = false
+    out.push(row)
   }
+  return out.length > 0 ? out : undefined
 }
 
-async function unipileFetchChatOptionById(blockId: string, optionId: string) {
-  const items = await unipileFetchChatsOptions(blockId)
-  return items.find((item) => item.id === optionId) ?? null
-}
-
-async function unipileFetchRelationsOptions(blockId: string) {
-  const accountId = unipileAccountIdForBlock(blockId)
-  if (!accountId) return []
-  try {
-    const response = await fetch(
-      `/api/unipile/user-relations?account_id=${encodeURIComponent(accountId)}`
-    )
-    const data = (await response.json()) as {
-      success?: boolean
-      items?: Array<{ id: string; label: string }>
-    }
-    if (data?.success && Array.isArray(data.items)) {
-      return data.items
-    }
-    return []
-  } catch {
-    return []
+/** Input-format rows: `name` holds the Unipile section enum; order preserved, duplicates dropped. */
+function unipileLinkedinSectionsFromInputFormat(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const allowed = new Set<string>(UNIPILE_LINKEDIN_PROFILE_SECTIONS as readonly string[])
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const id =
+      typeof (item as { name?: string }).name === 'string'
+        ? (item as { name: string }).name.trim()
+        : ''
+    if (!id || !allowed.has(id) || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
   }
+  return out.length > 0 ? out : undefined
 }
 
-async function unipileFetchRelationOptionById(blockId: string, optionId: string) {
-  const items = await unipileFetchRelationsOptions(blockId)
-  return items.find((item) => item.id === optionId) ?? null
+function unipileMentionsFromTable(raw: unknown): UnipileCommentMentionRow[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: UnipileCommentMentionRow[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object' || !('cells' in row)) continue
+    const cells = (row as { cells?: Record<string, string> }).cells
+    if (!cells || typeof cells !== 'object') continue
+    const name = (cells[UNIPILE_COMMENT_MENTION_COL_NAME] ?? '').trim()
+    const profileId = (cells[UNIPILE_COMMENT_MENTION_COL_PROFILE_ID] ?? '').trim()
+    if (!name || !profileId) continue
+    const entry: UnipileCommentMentionRow = { name, profile_id: profileId }
+    const ic = unipileParseMentionIsCompanyCell(cells[UNIPILE_COMMENT_MENTION_COL_IS_COMPANY] ?? '')
+    if (ic === true) entry.is_company = true
+    if (ic === false) entry.is_company = false
+    out.push(entry)
+  }
+  return out.length > 0 ? out : undefined
+}
+
+/** Legacy JSON / single fields / mention table → mentions JSON string for POST comment. */
+function unipileBuildCommentMentionsJson(params: Record<string, unknown>): string | undefined {
+  const raw = params.comment_mentions_json
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    return raw.trim()
+  }
+  const fromInputFormat = unipileMentionsFromInputFormat(params.comment_mentions_input)
+  if (fromInputFormat) {
+    return JSON.stringify(fromInputFormat)
+  }
+  const fromTable = unipileMentionsFromTable(params.comment_mentions_table)
+  if (fromTable) {
+    return JSON.stringify(fromTable)
+  }
+  const name =
+    typeof params.comment_mention_display_name === 'string'
+      ? params.comment_mention_display_name.trim()
+      : ''
+  const profileId =
+    typeof params.comment_mention_profile_id === 'string'
+      ? params.comment_mention_profile_id.trim()
+      : ''
+  if (name && profileId) {
+    const entry: Record<string, unknown> = { name, profile_id: profileId }
+    const ic = params.comment_mention_is_company
+    if (ic === 'true') entry.is_company = true
+    if (ic === 'false') entry.is_company = false
+    return JSON.stringify([entry])
+  }
+  return undefined
 }
 
 function unipileSerializeAttendeesIds(raw: unknown): string | undefined {
@@ -70,7 +122,12 @@ function unipileSerializeAttendeesIds(raw: unknown): string | undefined {
     return parts.join(',')
   }
   if (typeof raw === 'string' && raw.trim() !== '') {
-    return raw.trim()
+    const parts = raw
+      .split(',')
+      .map((x) => x.trim())
+      .filter((x) => x.length > 0)
+    if (parts.length === 0) return undefined
+    return parts.join(',')
   }
   return undefined
 }
@@ -80,7 +137,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
   name: 'Unipile',
   description: 'LinkedIn company data and messaging via Unipile',
   longDescription:
-    'Uses `UNIPILE_API_KEY` from the deployment environment. Pick a Unipile account first, then an operation. Chats and start-chat attendees load from Unipile (`GET /api/v1/chats`, `GET /api/v1/users/relations`) for faster setup. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, attendees, relations, and attachments.',
+    'Uses `UNIPILE_API_KEY` from the deployment environment. Pick a Unipile account first, then an operation. Enter chat ids and comma-separated attendee relation ids as plain text. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
   category: 'tools',
   integrationType: IntegrationType.Communication,
   tags: ['messaging', 'sales-engagement'],
@@ -95,8 +152,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'Select a connected account',
       required: true,
       value: () => '',
-      description:
-        'Accounts returned from your deployment Unipile workspace (`GET /api/v1/accounts`).',
+      description: 'Accounts returned from your deployment workspace (`GET /api/v1/accounts`).',
       fetchOptions: async () => {
         try {
           const response = await fetch('/api/unipile/accounts')
@@ -134,18 +190,19 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Operation',
       type: 'dropdown',
       options: [
-        { label: 'Comment on Post', id: 'comment_post' },
+        { label: 'Comment a post', id: 'comment_post' },
         { label: 'Create Post', id: 'create_post' },
-        { label: 'Get Chat', id: 'get_chat' },
+        { label: 'Retrieve a chat', id: 'get_chat' },
         { label: 'Get Message Attachment', id: 'get_message_attachment' },
-        { label: 'Get LinkedIn Search Parameters', id: 'get_linkedin_search_parameters' },
+        { label: 'Retrieve LinkedIn search parameters', id: 'get_linkedin_search_parameters' },
         { label: 'Get Post', id: 'get_post' },
-        { label: 'Get User Profile', id: 'get_user_profile' },
+        { label: 'Retrieve a profile', id: 'get_user_profile' },
         { label: 'List Chat Attendees', id: 'list_chat_attendees' },
         { label: 'List Chat Messages', id: 'list_chat_messages' },
-        { label: 'LinkedIn Search', id: 'linkedin_search' },
+        { label: 'List all chats', id: 'list_all_chats' },
+        { label: 'Perform Linkedin search', id: 'linkedin_search' },
         { label: 'List Post Comments', id: 'list_post_comments' },
-        { label: 'List Post Reactions', id: 'list_post_reactions' },
+        { label: 'List all reactions from a post', id: 'list_post_reactions' },
         { label: 'List User Comments', id: 'list_user_comments' },
         { label: 'List User Posts', id: 'list_user_posts' },
         { label: 'List User Reactions', id: 'list_user_reactions' },
@@ -166,9 +223,11 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     },
     {
       id: 'user_identifier',
-      title: 'User Identifier',
+      title: 'User identifier',
       type: 'short-input',
-      placeholder: 'Unipile user identifier (path segment)',
+      placeholder: 'Public slug or provider internal id (path segment)',
+      description:
+        'Unipile path `{identifier}` for this user. For **Retrieve a profile** only: internal id or public id. Same field is reused for list posts/comments/reactions.',
       condition: {
         field: 'operation',
         value: ['get_user_profile', 'list_user_posts', 'list_user_comments', 'list_user_reactions'],
@@ -177,6 +236,46 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         field: 'operation',
         value: ['get_user_profile', 'list_user_posts', 'list_user_comments', 'list_user_reactions'],
       },
+    },
+    {
+      id: 'linkedin_profile_sections_input',
+      title: 'LinkedIn profile sections',
+      type: 'input-format',
+      inputFormatVariant: 'linkedin_profile_sections',
+      description:
+        'Optional `linkedin_sections` query: use **+** to add rows; pick each section from the list. Prefer preview or specific sections—full “all sections” is heavy and LinkedIn may throttle (see response `throttled_sections`). [Provider limits](https://developer.unipile.com/docs/provider-limits-and-restrictions)',
+      condition: { field: 'operation', value: 'get_user_profile' },
+      mode: 'advanced',
+    },
+    {
+      id: 'linkedin_profile_api',
+      title: 'LinkedIn API surface',
+      type: 'dropdown',
+      options: [
+        { label: 'Default (classic)', id: '' },
+        { label: 'recruiter', id: 'recruiter' },
+        { label: 'sales_navigator', id: 'sales_navigator' },
+      ],
+      value: () => '',
+      description:
+        'Optional `linkedin_api` query when the account has Recruiter or Sales Navigator (relative features must be subscribed).',
+      condition: { field: 'operation', value: 'get_user_profile' },
+      mode: 'advanced',
+    },
+    {
+      id: 'linkedin_profile_notify',
+      title: 'Notify profile visit',
+      type: 'dropdown',
+      options: [
+        { label: 'Default (false)', id: '' },
+        { label: 'true', id: 'true' },
+        { label: 'false', id: 'false' },
+      ],
+      value: () => '',
+      description:
+        'Optional `notify` query: whether LinkedIn notifies the person that their profile was viewed (default upstream is false).',
+      condition: { field: 'operation', value: 'get_user_profile' },
+      mode: 'advanced',
     },
     {
       id: 'list_cursor',
@@ -190,17 +289,69 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           'list_user_comments',
           'list_user_reactions',
           'list_post_comments',
-          'list_post_reactions',
-          'get_linkedin_search_parameters',
+          'list_all_chats',
+          'linkedin_search',
         ],
       },
+      mode: 'advanced',
+    },
+    {
+      id: 'relations_filter',
+      title: 'Relations name filter',
+      type: 'short-input',
+      placeholder: 'Optional: filter relations by user name',
+      condition: { field: 'operation', value: 'list_user_relations' },
+      mode: 'advanced',
+    },
+    {
+      id: 'linkedin_search_param_type',
+      title: 'Parameter type',
+      type: 'dropdown',
+      options: () => getLinkedinSearchParameterTypeDropdownOptions(),
+      value: () => 'PEOPLE',
+      description:
+        'Required Unipile `type` query: which ID list to return. LinkedIn search bodies use these IDs—not raw text. Guide: https://developer.unipile.com/docs/linkedin-search',
+      condition: { field: 'operation', value: 'get_linkedin_search_parameters' },
+      required: { field: 'operation', value: 'get_linkedin_search_parameters' },
+    },
+    {
+      id: 'linkedin_search_param_service',
+      title: 'LinkedIn API surface',
+      type: 'dropdown',
+      options: [
+        { label: 'Classic', id: 'CLASSIC' },
+        { label: 'Recruiter', id: 'RECRUITER' },
+        { label: 'Sales Navigator', id: 'SALES_NAVIGATOR' },
+      ],
+      value: () => 'CLASSIC',
+      description:
+        'Unipile `service` query (default CLASSIC). Affects which parameter sets are available for common types.',
+      condition: { field: 'operation', value: 'get_linkedin_search_parameters' },
+    },
+    {
+      id: 'linkedin_search_param_keywords',
+      title: 'Keywords (optional)',
+      type: 'short-input',
+      placeholder: 'Seed keywords (not used when type is EMPLOYMENT_TYPE)',
+      description:
+        'Optional Unipile `keywords` query. Not applicable when parameter type is EMPLOYMENT_TYPE.',
+      condition: { field: 'operation', value: 'get_linkedin_search_parameters' },
+      mode: 'advanced',
+    },
+    {
+      id: 'linkedin_search_param_limit',
+      title: 'Result limit',
+      type: 'short-input',
+      placeholder: '1–100',
+      description: 'Optional Unipile `limit` query (1–100 per response page).',
+      condition: { field: 'operation', value: 'get_linkedin_search_parameters' },
       mode: 'advanced',
     },
     {
       id: 'message_id',
       title: 'Message ID',
       type: 'short-input',
-      placeholder: 'Unipile message id',
+      placeholder: 'Message id',
       condition: { field: 'operation', value: 'get_message_attachment' },
       required: { field: 'operation', value: 'get_message_attachment' },
     },
@@ -216,7 +367,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       id: 'post_id',
       title: 'Post ID',
       type: 'short-input',
-      placeholder: 'Unipile post id',
+      placeholder: 'Post id (LinkedIn: social_id; Instagram: provider_id)',
+      description:
+        'Path param for the post. LinkedIn: use social_id from GET post or list posts (URL id may not work). Instagram: use provider_id, not the post short code. See https://developer.unipile.com/docs/posts-and-comments',
       condition: {
         field: 'operation',
         value: ['get_post', 'list_post_comments', 'comment_post', 'list_post_reactions'],
@@ -227,12 +380,26 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       },
     },
     {
+      id: 'reactions_comment_id',
+      title: 'Comment ID (reactions)',
+      type: 'short-input',
+      placeholder: 'Optional: reactions on this comment (LinkedIn: id from comments list)',
+      condition: { field: 'operation', value: 'list_post_reactions' },
+      mode: 'advanced',
+    },
+    {
+      id: 'reactions_limit',
+      title: 'Reactions page size',
+      type: 'short-input',
+      placeholder: '1–100 per upstream page (default 100); all pages are still fetched',
+      condition: { field: 'operation', value: 'list_post_reactions' },
+      mode: 'advanced',
+    },
+    {
       id: 'chat_id',
-      title: 'Chat',
-      type: 'dropdown',
-      options: [],
-      placeholder: 'Select a chat (pick account first)',
-      dependsOn: ['account_id'],
+      title: 'Chat ID',
+      type: 'short-input',
+      placeholder: 'Chat id (e.g. from list chats)',
       condition: {
         field: 'operation',
         value: ['get_chat', 'list_chat_messages', 'send_chat_message', 'list_chat_attendees'],
@@ -241,14 +408,106 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         field: 'operation',
         value: ['get_chat', 'list_chat_messages', 'send_chat_message', 'list_chat_attendees'],
       },
-      fetchOptions: unipileFetchChatsOptions,
-      fetchOptionById: unipileFetchChatOptionById,
+    },
+    {
+      id: 'list_chats_account_ids_csv',
+      title: 'Account IDs (optional override)',
+      type: 'short-input',
+      placeholder: 'Comma-separated Unipile account ids (overrides picker if set)',
+      description:
+        'Optional `account_id` query: one id or comma-separated list. If empty, uses the Unipile Account picker above.',
+      condition: { field: 'operation', value: 'list_all_chats' },
+      mode: 'advanced',
+    },
+    {
+      id: 'chats_unread_filter',
+      title: 'Unread filter',
+      type: 'dropdown',
+      options: [
+        { label: 'All chats', id: '' },
+        { label: 'Unread only', id: 'unread' },
+        { label: 'Read only', id: 'read' },
+      ],
+      value: () => '',
+      description: 'Maps to Unipile `unread` query (boolean).',
+      condition: { field: 'operation', value: 'list_all_chats' },
+    },
+    {
+      id: 'chats_account_type_filter',
+      title: 'Account type filter',
+      type: 'dropdown',
+      options: [
+        { label: 'Any', id: '' },
+        { label: 'WhatsApp', id: 'WHATSAPP' },
+        { label: 'LinkedIn', id: 'LINKEDIN' },
+        { label: 'Slack', id: 'SLACK' },
+        { label: 'Twitter', id: 'TWITTER' },
+        { label: 'Messenger', id: 'MESSENGER' },
+        { label: 'Instagram', id: 'INSTAGRAM' },
+        { label: 'Telegram', id: 'TELEGRAM' },
+      ],
+      value: () => '',
+      description: 'Optional Unipile `account_type` query.',
+      condition: { field: 'operation', value: 'list_all_chats' },
+      mode: 'advanced',
+    },
+    {
+      id: 'chats_before_iso',
+      title: 'Created before (ISO UTC)',
+      type: 'short-input',
+      placeholder: '2025-12-31T23:59:59.999Z',
+      description: 'Exclusive upper bound; must match …T… .sssZ (milliseconds + Z).',
+      condition: { field: 'operation', value: 'list_all_chats' },
+      mode: 'advanced',
+    },
+    {
+      id: 'chats_after_iso',
+      title: 'Created after (ISO UTC)',
+      type: 'short-input',
+      placeholder: '2025-01-01T00:00:00.000Z',
+      description: 'Exclusive lower bound; same ISO 8601 UTC format as Unipile docs.',
+      condition: { field: 'operation', value: 'list_all_chats' },
+      mode: 'advanced',
+    },
+    {
+      id: 'chats_list_limit',
+      title: 'Page limit',
+      type: 'short-input',
+      placeholder: '1–250',
+      condition: { field: 'operation', value: 'list_all_chats' },
+      mode: 'advanced',
+    },
+    {
+      id: 'start_chat_api_mode',
+      title: 'LinkedIn chat API',
+      type: 'dropdown',
+      options: [
+        { label: 'Classic', id: 'classic' },
+        { label: 'Recruiter', id: 'recruiter' },
+        { label: 'Sales Navigator', id: 'sales_navigator' },
+      ],
+      value: () => 'classic',
+      description: 'Mode for start new chat',
+      condition: { field: 'operation', value: 'start_new_chat' },
+    },
+    {
+      id: 'attendees_ids',
+      title: 'Attendees (CSV)',
+      type: 'long-input',
+      rows: 3,
+      placeholder: 'Comma-separated relation / member ids',
+      description:
+        'Required for starting a chat: one id per comma-separated value; spaces around commas are trimmed. Legacy multi-select values are still accepted as arrays.',
+      condition: { field: 'operation', value: 'start_new_chat' },
+      required: { field: 'operation', value: 'start_new_chat' },
     },
     {
       id: 'text',
       title: 'Message / Post Text',
       type: 'long-input',
       placeholder: 'Message or post body',
+      description:
+        'For Comment a post: max 1250 characters; LinkedIn `{{0}}`, `{{1}}`, … match each mention below in order (same pattern as Start block inputs).',
       condition: {
         field: 'operation',
         value: ['start_new_chat', 'send_chat_message', 'create_post', 'comment_post'],
@@ -259,12 +518,34 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       },
     },
     {
+      id: 'comment_mentions_input',
+      title: 'LinkedIn mentions',
+      type: 'input-format',
+      inputFormatVariant: 'linkedin_comment_mentions',
+      description:
+        'Optional LinkedIn @mentions: use **+** to add more. **Display name** is how the mention appears in the comment; **Profile ID** is the provider id (ACo…/ADo… for people, numeric id for companies). **Mention target**: Person or Company. Use `{{0}}`, `{{1}}`, … in the comment text in the same order. Tag references supported in fields. Rows with empty name or profile id are ignored.',
+      condition: { field: 'operation', value: 'comment_post' },
+    },
+    {
       id: 'linkedin_search_body',
-      title: 'LinkedIn Search (JSON)',
-      type: 'long-input',
-      placeholder: '{"api":"classic","category":"people","keywords":"..."}',
+      title: 'Search body (JSON)',
+      type: 'code',
+      language: 'json',
+      placeholder: '{"api":"classic","category":"people","keywords":"engineer"}',
+      description:
+        'POST body for Unipile `POST /api/v1/linkedin/search`: Classic / Sales Navigator / Recruiter filters, or `{"url":"…"}` from a public search URL, or `{"cursor":"…"}` for a long cursor. Use **Retrieve LinkedIn search parameters** for typed filter IDs. Guide: https://developer.unipile.com/docs/linkedin-search',
       condition: { field: 'operation', value: 'linkedin_search' },
       required: { field: 'operation', value: 'linkedin_search' },
+    },
+    {
+      id: 'linkedin_search_page_limit',
+      title: 'Result limit',
+      type: 'short-input',
+      placeholder: '10 (default upstream); max 100; Classic ≤50',
+      description:
+        'Optional query `limit` (0–100). Sales Navigator / Recruiter allow up to 100; LinkedIn Classic should stay at or below 50.',
+      condition: { field: 'operation', value: 'linkedin_search' },
+      mode: 'advanced',
     },
     {
       id: 'linkedin_post_video_thumbnail',
@@ -295,7 +576,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Name (form)',
       type: 'short-input',
       placeholder: 'name form field',
-      condition: { field: 'operation', value: ['create_post', 'comment_post'] },
+      condition: { field: 'operation', value: 'create_post' },
       mode: 'advanced',
     },
     {
@@ -303,7 +584,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Profile ID',
       type: 'short-input',
       placeholder: 'profile_id form field',
-      condition: { field: 'operation', value: ['create_post', 'comment_post'] },
+      condition: { field: 'operation', value: 'create_post' },
       mode: 'advanced',
     },
     {
@@ -316,14 +597,16 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         { label: 'False', id: 'false' },
       ],
       value: () => '',
-      condition: { field: 'operation', value: ['create_post', 'comment_post'] },
+      condition: { field: 'operation', value: 'create_post' },
       mode: 'advanced',
     },
     {
       id: 'linkedin_post_external_link',
       title: 'External Link',
       type: 'short-input',
-      placeholder: 'external_link form field',
+      placeholder: 'https://… (must start with http:// or https://)',
+      description:
+        'LinkedIn only: URL for link preview; include the same URL in the post/comment text (or Unipile may append it).',
       condition: { field: 'operation', value: ['create_post', 'comment_post'] },
       mode: 'advanced',
     },
@@ -331,15 +614,18 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       id: 'linkedin_post_as_organization',
       title: 'As Organization',
       type: 'short-input',
-      placeholder: 'as_organization form field',
+      placeholder: 'Organization id (comment or post on its behalf)',
+      description: 'LinkedIn only: id of an organization you control.',
       condition: { field: 'operation', value: ['create_post', 'comment_post'] },
       mode: 'advanced',
     },
     {
       id: 'linkedin_comment_parent_id',
-      title: 'Parent Comment ID',
+      title: 'Comment ID (reply)',
       type: 'short-input',
-      placeholder: 'Optional comment_id (reply to comment)',
+      placeholder: 'Parent comment id to reply to',
+      description:
+        'Optional `comment_id` in the API body. LinkedIn: use the comment id returned by the comments list.',
       condition: { field: 'operation', value: 'comment_post' },
       mode: 'advanced',
     },
@@ -387,7 +673,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       id: 'attachments',
       title: 'Attachments',
       type: 'short-input',
-      placeholder: 'Unipile attachments field (string)',
+      placeholder: 'Attachments field',
       condition: {
         field: 'operation',
         value: ['start_new_chat', 'send_chat_message', 'create_post', 'comment_post'],
@@ -411,34 +697,23 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       mode: 'advanced',
     },
     {
-      id: 'attendees_ids',
-      title: 'Attendees',
-      type: 'dropdown',
-      options: [],
-      placeholder: 'Select relation(s) to invite (pick account first)',
-      dependsOn: ['account_id'],
-      multiSelect: true,
-      selectAllOption: true,
-      searchable: true,
-      condition: { field: 'operation', value: 'start_new_chat' },
-      mode: 'advanced',
-      fetchOptions: unipileFetchRelationsOptions,
-      fetchOptionById: unipileFetchRelationOptionById,
-    },
-    {
-      id: 'chat_api',
-      title: 'API',
-      type: 'short-input',
-      placeholder: 'classic',
-      condition: { field: 'operation', value: 'start_new_chat' },
-      mode: 'advanced',
-    },
-    {
       id: 'chat_topic',
       title: 'Topic',
-      type: 'short-input',
-      placeholder: 'service_request',
-      condition: { field: 'operation', value: 'start_new_chat' },
+      type: 'dropdown',
+      options: [
+        { label: 'Omit', id: '' },
+        { label: 'Service request', id: 'service_request' },
+        { label: 'Request demo', id: 'request_demo' },
+        { label: 'Support', id: 'support' },
+        { label: 'Careers', id: 'careers' },
+        { label: 'Other', id: 'other' },
+      ],
+      value: () => '',
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'classic' },
+      },
       mode: 'advanced',
     },
     {
@@ -446,7 +721,11 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Applicant ID',
       type: 'short-input',
       placeholder: 'Optional applicant id',
-      condition: { field: 'operation', value: 'start_new_chat' },
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'classic' },
+      },
       mode: 'advanced',
     },
     {
@@ -454,7 +733,11 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Invitation ID',
       type: 'short-input',
       placeholder: 'Optional invitation id',
-      condition: { field: 'operation', value: 'start_new_chat' },
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'classic' },
+      },
       mode: 'advanced',
     },
     {
@@ -467,8 +750,99 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         { label: 'False', id: 'false' },
       ],
       value: () => '',
-      condition: { field: 'operation', value: 'start_new_chat' },
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'classic' },
+      },
       mode: 'advanced',
+    },
+    {
+      id: 'recruiter_signature',
+      title: 'Signature',
+      type: 'short-input',
+      placeholder: 'Recruiter signature',
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'recruiter' },
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'recruiter_hiring_project_id',
+      title: 'Hiring project ID',
+      type: 'short-input',
+      placeholder: 'hiring_project_id',
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'recruiter' },
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'recruiter_job_posting_id',
+      title: 'Job posting ID',
+      type: 'short-input',
+      placeholder: 'job_posting_id',
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'recruiter' },
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'recruiter_sourcing_channel',
+      title: 'Sourcing channel',
+      type: 'dropdown',
+      options: [
+        { label: 'Omit', id: '' },
+        { label: 'Job posting recommended matches', id: 'JOB_POSTING_RECOMMENDED_MATCHES' },
+        { label: 'Job posting', id: 'JOB_POSTING' },
+        { label: 'Referral', id: 'REFERRAL' },
+        { label: 'Internal candidates', id: 'INTERNAL_CANDIDATES' },
+        { label: 'Automated sourcing', id: 'AUTOMATED_SOURCING' },
+        { label: 'Recruiter search', id: 'RECRUITER_SEARCH' },
+        { label: 'Career site', id: 'CAREER_SITE' },
+      ],
+      value: () => '',
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'recruiter' },
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'recruiter_email_address',
+      title: 'Email address',
+      type: 'short-input',
+      placeholder: 'Recruiter email_address',
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'recruiter' },
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'recruiter_visibility',
+      title: 'Visibility',
+      type: 'dropdown',
+      options: [
+        { label: 'Omit', id: '' },
+        { label: 'Public', id: 'PUBLIC' },
+        { label: 'Private', id: 'PRIVATE' },
+        { label: 'Project', id: 'PROJECT' },
+      ],
+      value: () => '',
+      condition: {
+        field: 'operation',
+        value: 'start_new_chat',
+        and: { field: 'start_chat_api_mode', value: 'recruiter' },
+      },
     },
   ],
   tools: {
@@ -481,6 +855,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       'unipile_get_post',
       'unipile_get_user_profile',
       'unipile_linkedin_search',
+      'unipile_list_all_chats',
       'unipile_list_chat_attendees',
       'unipile_list_chat_messages',
       'unipile_list_post_comments',
@@ -497,6 +872,35 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       tool: (params) => `unipile_${params.operation}`,
       params: (params) => {
         const op = params.operation as string
+        if (op === 'get_user_profile') {
+          const out: Record<string, unknown> = {
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            user_identifier:
+              typeof params.user_identifier === 'string' ? params.user_identifier.trim() : '',
+          }
+          const fromRows = unipileLinkedinSectionsFromInputFormat(
+            params.linkedin_profile_sections_input
+          )
+          if (fromRows) {
+            out.linkedin_sections_json = JSON.stringify(fromRows)
+          } else {
+            const sec = params.linkedin_profile_sections_json
+            if (typeof sec === 'string' && sec.trim() !== '') {
+              out.linkedin_sections_json = sec.trim()
+            }
+          }
+          const api = params.linkedin_profile_api
+          if (api === 'recruiter' || api === 'sales_navigator') {
+            out.linkedin_api = api
+          }
+          const notify = params.linkedin_profile_notify
+          if (notify === 'true') {
+            out.notify = true
+          } else if (notify === 'false') {
+            out.notify = false
+          }
+          return out
+        }
         if (
           op === 'list_user_posts' ||
           op === 'list_user_comments' ||
@@ -511,12 +915,59 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           }
           return out
         }
+        if (op === 'list_all_chats') {
+          const out: Record<string, unknown> = {}
+          const csv =
+            typeof params.list_chats_account_ids_csv === 'string'
+              ? params.list_chats_account_ids_csv.trim()
+              : ''
+          const picker = typeof params.account_id === 'string' ? params.account_id.trim() : ''
+          if (csv) {
+            out.account_id = csv
+          } else if (picker) {
+            out.account_id = picker
+          }
+          if (typeof params.list_cursor === 'string' && params.list_cursor.trim() !== '') {
+            out.cursor = params.list_cursor.trim()
+          }
+          const unread = params.chats_unread_filter
+          if (unread === 'unread') {
+            out.unread = true
+          } else if (unread === 'read') {
+            out.unread = false
+          }
+          if (
+            typeof params.chats_before_iso === 'string' &&
+            params.chats_before_iso.trim() !== ''
+          ) {
+            out.before = params.chats_before_iso.trim()
+          }
+          if (typeof params.chats_after_iso === 'string' && params.chats_after_iso.trim() !== '') {
+            out.after = params.chats_after_iso.trim()
+          }
+          const limRaw = params.chats_list_limit
+          if (typeof limRaw === 'string' && limRaw.trim() !== '') {
+            const n = Number.parseInt(limRaw.trim(), 10)
+            if (Number.isFinite(n)) {
+              out.limit = n
+            }
+          } else if (typeof limRaw === 'number' && Number.isFinite(limRaw)) {
+            out.limit = Math.trunc(limRaw)
+          }
+          if (
+            typeof params.chats_account_type_filter === 'string' &&
+            params.chats_account_type_filter.trim() !== ''
+          ) {
+            out.account_type = params.chats_account_type_filter.trim()
+          }
+          return out
+        }
         if (op === 'list_chat_attendees') {
           return {
             chat_id: typeof params.chat_id === 'string' ? params.chat_id.trim() : '',
           }
         }
-        if (op === 'list_post_comments' || op === 'list_post_reactions') {
+        if (op === 'list_post_comments') {
           const out: Record<string, unknown> = {
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
           }
@@ -525,18 +976,85 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           }
           return out
         }
+        if (op === 'list_post_reactions') {
+          const out: Record<string, unknown> = {
+            post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+          }
+          if (
+            typeof params.reactions_comment_id === 'string' &&
+            params.reactions_comment_id.trim() !== ''
+          ) {
+            out.comment_id = params.reactions_comment_id.trim()
+          }
+          const limRaw = params.reactions_limit
+          if (typeof limRaw === 'string' && limRaw.trim() !== '') {
+            const n = Number.parseInt(limRaw.trim(), 10)
+            if (Number.isFinite(n)) {
+              out.limit = n
+            }
+          } else if (typeof limRaw === 'number' && Number.isFinite(limRaw)) {
+            out.limit = Math.trunc(limRaw)
+          }
+          return out
+        }
         if (op === 'get_linkedin_search_parameters') {
-          const out: Record<string, unknown> = {}
-          if (typeof params.list_cursor === 'string' && params.list_cursor.trim() !== '') {
-            out.cursor = params.list_cursor.trim()
+          const out: Record<string, unknown> = {
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            type:
+              typeof params.linkedin_search_param_type === 'string' &&
+              params.linkedin_search_param_type.trim() !== ''
+                ? params.linkedin_search_param_type.trim()
+                : 'PEOPLE',
+          }
+          const svc = params.linkedin_search_param_service
+          if (typeof svc === 'string' && svc.trim() !== '') {
+            out.service = svc.trim()
+          }
+          const kw = params.linkedin_search_param_keywords
+          if (typeof kw === 'string' && kw.trim() !== '') {
+            out.keywords = kw.trim()
+          }
+          const limRaw = params.linkedin_search_param_limit
+          if (typeof limRaw === 'string' && limRaw.trim() !== '') {
+            const n = Number.parseInt(limRaw.trim(), 10)
+            if (Number.isFinite(n)) {
+              out.limit = n
+            }
+          } else if (typeof limRaw === 'number' && Number.isFinite(limRaw)) {
+            out.limit = Math.trunc(limRaw)
+          }
+          return out
+        }
+        if (op === 'list_user_relations') {
+          const out: Record<string, unknown> = {
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+          }
+          if (
+            typeof params.relations_filter === 'string' &&
+            params.relations_filter.trim() !== ''
+          ) {
+            out.filter = params.relations_filter.trim()
           }
           return out
         }
         if (op === 'linkedin_search') {
-          return {
+          const out: Record<string, unknown> = {
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             search_body:
               typeof params.linkedin_search_body === 'string' ? params.linkedin_search_body : '{}',
           }
+          if (typeof params.list_cursor === 'string' && params.list_cursor.trim() !== '') {
+            out.cursor = params.list_cursor.trim()
+          }
+          const limRaw = params.linkedin_search_page_limit
+          if (typeof limRaw === 'string' && limRaw.trim() !== '') {
+            const n = Number.parseInt(limRaw.trim(), 10)
+            if (Number.isFinite(n)) out.limit = n
+          } else if (typeof limRaw === 'number' && Number.isFinite(limRaw)) {
+            out.limit = Math.trunc(limRaw)
+          }
+          return out
         }
         if (op === 'comment_post') {
           const out: Record<string, unknown> = {
@@ -551,16 +1069,12 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             }
           }
           copyIfString('attachments', 'attachments')
-          copyIfString('linkedin_post_brand_name', 'name')
-          copyIfString('linkedin_post_profile_id', 'profile_id')
           copyIfString('linkedin_post_external_link', 'external_link')
           copyIfString('linkedin_post_as_organization', 'as_organization')
           copyIfString('linkedin_comment_parent_id', 'comment_id')
-          if (
-            params.linkedin_post_is_company === 'true' ||
-            params.linkedin_post_is_company === 'false'
-          ) {
-            out.is_company = params.linkedin_post_is_company
+          const mentions = unipileBuildCommentMentionsJson(params as Record<string, unknown>)
+          if (mentions) {
+            out.mentions = mentions
           }
           return out
         }
@@ -627,21 +1141,47 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           copyIfString('attachments')
           copyIfString('voice_message')
           copyIfString('video_message')
-          const attendeesSerialized = unipileSerializeAttendeesIds(params.attendees_ids)
-          if (attendeesSerialized) {
-            out.attendees_ids = attendeesSerialized
+          out.attendees_ids = unipileSerializeAttendeesIds(params.attendees_ids) ?? ''
+
+          const modeRaw =
+            typeof params.start_chat_api_mode === 'string' &&
+            params.start_chat_api_mode.trim() !== ''
+              ? params.start_chat_api_mode.trim()
+              : typeof params.chat_api === 'string' && params.chat_api.trim() !== ''
+                ? params.chat_api.trim()
+                : 'classic'
+          out.api = modeRaw
+
+          if (modeRaw === 'classic') {
+            if (typeof params.chat_topic === 'string' && params.chat_topic.trim() !== '') {
+              out.topic = params.chat_topic.trim()
+            }
+            copyIfString('applicant_id')
+            copyIfString('invitation_id')
+            if (params.inmail === 'true' || params.inmail === 'false') {
+              out.inmail = params.inmail
+            }
           }
-          copyIfString('applicant_id')
-          copyIfString('invitation_id')
-          if (typeof params.chat_api === 'string' && params.chat_api.trim() !== '') {
-            out.api = params.chat_api.trim()
+
+          if (modeRaw === 'recruiter') {
+            const copyTo = (fromKey: string, toKey: string) => {
+              const v = params[fromKey]
+              if (typeof v === 'string' && v.trim() !== '') {
+                out[toKey] = v.trim()
+              }
+            }
+            copyTo('recruiter_signature', 'signature')
+            copyTo('recruiter_hiring_project_id', 'hiring_project_id')
+            copyTo('recruiter_job_posting_id', 'job_posting_id')
+            copyTo('recruiter_sourcing_channel', 'sourcing_channel')
+            copyTo('recruiter_email_address', 'email_address')
+            copyTo('recruiter_visibility', 'visibility')
+            const follow = params.recruiter_follow_up_json
+            if (typeof follow === 'string' && follow.trim() !== '') {
+              out.follow_up = follow.trim()
+            }
           }
-          if (typeof params.chat_topic === 'string' && params.chat_topic.trim() !== '') {
-            out.topic = params.chat_topic.trim()
-          }
-          if (params.inmail === 'true' || params.inmail === 'false') {
-            out.inmail = params.inmail
-          }
+
           return out
         }
         if (op === 'retrieve_company_details') {
@@ -660,19 +1200,117 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'string',
       description: 'LinkedIn company public identifier for /linkedin/company/{identifier}',
     },
-    user_identifier: { type: 'string', description: 'Unipile user identifier' },
-    list_cursor: { type: 'string', description: 'Pagination cursor' },
+    user_identifier: {
+      type: 'string',
+      description:
+        'User path id: for Retrieve a profile, provider internal or public id; for list posts/comments/reactions, path segment',
+    },
+    linkedin_profile_sections_input: {
+      type: 'json',
+      description:
+        'Retrieve a profile: optional rows of LinkedIn section enums → sent as Unipile `linkedin_sections` (see provider limits)',
+    },
+    linkedin_profile_sections_json: {
+      type: 'string',
+      description:
+        'Retrieve a profile: legacy JSON array string for linkedin_sections if present in saved workflow (prefer LinkedIn profile sections rows)',
+    },
+    linkedin_profile_api: {
+      type: 'string',
+      description: 'Retrieve a profile: optional linkedin_api recruiter | sales_navigator',
+    },
+    linkedin_profile_notify: {
+      type: 'string',
+      description: 'Retrieve a profile: optional notify true | false (default upstream false)',
+    },
+    relations_filter: {
+      type: 'string',
+      description: 'List user relations: optional name filter',
+    },
+    list_cursor: {
+      type: 'string',
+      description:
+        'Pagination cursor (list posts/comments/reactions, list all chats, Perform Linkedin search)',
+    },
     message_id: { type: 'string', description: 'Message id' },
     attachment_id: { type: 'string', description: 'Attachment id' },
-    post_id: { type: 'string', description: 'Post id' },
-    chat_id: { type: 'string', description: 'Unipile chat id' },
+    post_id: {
+      type: 'string',
+      description: 'Post id path param; LinkedIn social_id from GET post / list posts',
+    },
+    reactions_comment_id: {
+      type: 'string',
+      description:
+        'List post reactions: optional comment_id to list reactions on that comment (LinkedIn: id from comments list)',
+    },
+    reactions_limit: {
+      type: 'string',
+      description:
+        'List post reactions: optional 1–100 page size per upstream request (default 100); server still loads every page',
+    },
+    chat_id: { type: 'string', description: 'Chat id' },
+    list_chats_account_ids_csv: {
+      type: 'string',
+      description: 'List all chats: optional comma-separated account_id query (overrides picker)',
+    },
+    chats_unread_filter: {
+      type: 'string',
+      description: 'List all chats: unread | read | empty for Unipile unread query',
+    },
+    chats_account_type_filter: {
+      type: 'string',
+      description: 'List all chats: optional WHATSAPP, LINKEDIN, … account_type filter',
+    },
+    chats_before_iso: { type: 'string', description: 'List all chats: optional before ISO UTC' },
+    chats_after_iso: { type: 'string', description: 'List all chats: optional after ISO UTC' },
+    chats_list_limit: { type: 'string', description: 'List all chats: optional limit 1–250' },
     account_id: {
       type: 'string',
       description: 'Unipile connected account id (from account picker)',
     },
     text: { type: 'string', description: 'Message or post text' },
-    linkedin_search_body: { type: 'string', description: 'LinkedIn search request JSON string' },
-    linkedin_comment_parent_id: { type: 'string', description: 'Parent comment id for replies' },
+    linkedin_search_param_type: {
+      type: 'string',
+      description:
+        'Retrieve LinkedIn search parameters: required Unipile type enum (e.g. PEOPLE, LOCATION)',
+    },
+    linkedin_search_param_service: {
+      type: 'string',
+      description: 'Retrieve LinkedIn search parameters: CLASSIC | RECRUITER | SALES_NAVIGATOR',
+    },
+    linkedin_search_param_keywords: {
+      type: 'string',
+      description:
+        'Retrieve LinkedIn search parameters: optional keywords (not for EMPLOYMENT_TYPE)',
+    },
+    linkedin_search_param_limit: {
+      type: 'string',
+      description: 'Retrieve LinkedIn search parameters: optional limit 1–100 as string or number',
+    },
+    linkedin_search_body: {
+      type: 'string',
+      description:
+        'Perform Linkedin search: JSON body (Classic / Sales Nav / Recruiter, url, or body cursor)',
+    },
+    linkedin_search_page_limit: {
+      type: 'string',
+      description: 'Perform Linkedin search: optional limit query 0–100 (Classic ≤50 recommended)',
+    },
+    linkedin_comment_parent_id: {
+      type: 'string',
+      description:
+        'Comment a post: optional parent comment_id (reply); LinkedIn id from comments list',
+    },
+    comment_mentions_input: {
+      type: 'json',
+      description:
+        'Comment a post: dynamic mention rows (Start-style input-format → name, profile_id, is_company)',
+    },
+    comment_mentions_json: {
+      type: 'string',
+      description:
+        'Legacy only: JSON mentions array if present in saved workflow state (normally use LinkedIn mentions table)',
+    },
     linkedin_post_video_thumbnail: { type: 'string', description: 'Create post video_thumbnail' },
     linkedin_post_repost: { type: 'string', description: 'Create post repost' },
     linkedin_post_include_job_posting: {
@@ -693,14 +1331,37 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     voice_message: { type: 'string', description: 'Voice message form field' },
     video_message: { type: 'string', description: 'Video message form field' },
     attendees_ids: {
-      type: 'json',
-      description: 'Start chat: selected relation ids (multi-select) or legacy string',
+      type: 'string',
+      description:
+        'Start new chat (required): comma-separated attendee/relation ids for Unipile `attendees_ids`',
     },
-    chat_api: { type: 'string', description: 'Unipile api form field' },
-    chat_topic: { type: 'string', description: 'Unipile topic form field' },
-    applicant_id: { type: 'string', description: 'Applicant id' },
-    invitation_id: { type: 'string', description: 'Invitation id' },
-    inmail: { type: 'string', description: 'inmail form field (true/false)' },
+    start_chat_api_mode: {
+      type: 'string',
+      description: 'Start new chat: classic | recruiter | sales_navigator',
+    },
+    chat_topic: {
+      type: 'string',
+      description: 'Classic API: topic (service_request, request_demo, support, careers, other)',
+    },
+    applicant_id: { type: 'string', description: 'Classic API: applicant_id' },
+    invitation_id: { type: 'string', description: 'Classic API: invitation_id' },
+    inmail: { type: 'string', description: 'Classic API: inmail true/false' },
+    recruiter_signature: { type: 'string', description: 'Recruiter API: signature' },
+    recruiter_hiring_project_id: {
+      type: 'string',
+      description: 'Recruiter API: hiring_project_id',
+    },
+    recruiter_job_posting_id: { type: 'string', description: 'Recruiter API: job_posting_id' },
+    recruiter_sourcing_channel: { type: 'string', description: 'Recruiter API: sourcing_channel' },
+    recruiter_email_address: { type: 'string', description: 'Recruiter API: email_address' },
+    recruiter_visibility: {
+      type: 'string',
+      description: 'Recruiter API: PUBLIC | PRIVATE | PROJECT',
+    },
+    recruiter_follow_up_json: {
+      type: 'string',
+      description: 'Recruiter API: JSON for follow_up { subject, text, scheduled_time }',
+    },
   },
   outputs: {
     object: { type: 'string', description: 'Unipile object discriminator' },
@@ -718,6 +1379,11 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     first_name: { type: 'string', description: 'First name (user profile)' },
     last_name: { type: 'string', description: 'Last name (user profile)' },
     headline: { type: 'string', description: 'Headline (user profile)' },
+    public_profile_url: { type: 'string', description: 'Public profile URL (Retrieve a profile)' },
+    throttled_sections: {
+      type: 'json',
+      description: 'LinkedIn section names omitted/throttled on profile fetch (Retrieve a profile)',
+    },
     account_type: { type: 'string', description: 'Chat account type (get chat)' },
     provider_id: { type: 'string', description: 'Provider id (get chat)' },
     subject: {

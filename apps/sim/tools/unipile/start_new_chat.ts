@@ -11,7 +11,7 @@ export const unipileStartNewChatTool: ToolConfig<
   id: 'unipile_start_new_chat',
   name: 'Unipile Start New Chat',
   description:
-    'Starts a new chat via Unipile (`POST /api/v1/chats` as multipart form). Uses `UNIPILE_API_KEY` from the server environment.',
+    'Starts a new chat via Unipile (`POST /api/v1/chats` as multipart form). Requires `attendees_ids` (comma-separated relation ids). Uses `UNIPILE_API_KEY` from the server environment.',
   version: '1.0.0',
 
   params: {
@@ -26,6 +26,13 @@ export const unipileStartNewChatTool: ToolConfig<
       required: true,
       visibility: 'user-or-llm',
       description: 'Initial message text',
+    },
+    attendees_ids: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description:
+        'Comma-separated attendee/relation ids for Unipile `attendees_ids` (required to open a new chat)',
     },
     attachments: {
       type: 'string',
@@ -44,12 +51,6 @@ export const unipileStartNewChatTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description: 'Video message field (Unipile form string)',
-    },
-    attendees_ids: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Attendee ids (Unipile form string)',
     },
     subject: {
       type: 'string',
@@ -87,6 +88,48 @@ export const unipileStartNewChatTool: ToolConfig<
       visibility: 'user-or-llm',
       description: "Set to 'true' or 'false' to send the `inmail` form field",
     },
+    signature: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Recruiter API: signature',
+    },
+    hiring_project_id: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Recruiter API: hiring_project_id',
+    },
+    job_posting_id: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Recruiter API: job_posting_id',
+    },
+    sourcing_channel: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Recruiter API: sourcing_channel',
+    },
+    email_address: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Recruiter API: email_address',
+    },
+    visibility: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Recruiter API: PUBLIC | PRIVATE | PROJECT',
+    },
+    follow_up: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Recruiter API: JSON string for follow_up object',
+    },
   },
 
   request: {
@@ -96,16 +139,23 @@ export const unipileStartNewChatTool: ToolConfig<
     body: (params) => ({
       account_id: params.account_id?.trim(),
       text: params.text,
+      attendees_ids: params.attendees_ids,
       attachments: params.attachments,
       voice_message: params.voice_message,
       video_message: params.video_message,
-      attendees_ids: params.attendees_ids,
       subject: params.subject,
       api: params.api,
       topic: params.topic,
       applicant_id: params.applicant_id,
       invitation_id: params.invitation_id,
       inmail: params.inmail,
+      signature: params.signature,
+      hiring_project_id: params.hiring_project_id,
+      job_posting_id: params.job_posting_id,
+      sourcing_channel: params.sourcing_channel,
+      email_address: params.email_address,
+      visibility: params.visibility,
+      follow_up: params.follow_up,
     }),
   },
 

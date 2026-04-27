@@ -1090,6 +1090,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             config={config}
             showValue={true}
+            variant={config.inputFormatVariant ?? 'default'}
           />
         )
 

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import { Trash } from '@/components/emcn/icons/trash'
 import { generateId } from '@/lib/core/utils/uuid'
@@ -25,6 +25,10 @@ import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/compon
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
+import {
+  getLinkedinProfileSectionComboboxOptions,
+  getLinkedinProfileSectionLabel,
+} from '@/tools/unipile/linkedin_profile_query'
 
 interface Field {
   id: string
@@ -41,6 +45,9 @@ interface FieldFormatProps {
   isPreview?: boolean
   previewValue?: Field[] | null
   disabled?: boolean
+  /** `linkedin_comment_mentions`: same add/remove cards as Start inputs, fixed fields for Unipile @mentions. */
+  /** `linkedin_profile_sections`: one enum per row for Unipile `linkedin_sections`. */
+  variant?: 'default' | 'linkedin_comment_mentions' | 'linkedin_profile_sections'
   title?: string
   placeholder?: string
   showType?: boolean
@@ -71,6 +78,12 @@ const BOOLEAN_OPTIONS: ComboboxOption[] = [
   { label: 'false', value: 'false' },
 ]
 
+/** LinkedIn comment mention: `is_company` omitted for person, `true` for company. */
+const LINKEDIN_MENTION_IS_COMPANY_OPTIONS: ComboboxOption[] = [
+  { label: 'Person', value: '' },
+  { label: 'Company', value: 'true' },
+]
+
 /**
  * Creates a new field with default values
  */
@@ -96,6 +109,7 @@ export function FieldFormat({
   isPreview = false,
   previewValue,
   disabled = false,
+  variant = 'default',
   title = 'Field',
   placeholder = 'fieldName',
   showType = true,
@@ -104,6 +118,19 @@ export function FieldFormat({
   valuePlaceholder = 'Enter default value',
   descriptionPlaceholder = 'Describe this field',
 }: FieldFormatProps) {
+  const isLinkedinMentions = variant === 'linkedin_comment_mentions'
+  const isLinkedinProfileSections = variant === 'linkedin_profile_sections'
+  const showTypeEffective = isLinkedinMentions || isLinkedinProfileSections ? false : showType
+  const showDescriptionEffective = isLinkedinMentions
+    ? true
+    : isLinkedinProfileSections
+      ? false
+      : showDescription
+  const showValueEffective = isLinkedinProfileSections ? false : showValue
+  const linkedinProfileSectionOptions = useMemo(
+    () => getLinkedinProfileSectionComboboxOptions(),
+    []
+  )
   const [storeValue, setStoreValue] = useSubBlockValue<Field[]>(blockId, subBlockId)
   const valueInputRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement>>({})
   const nameInputRefs = useRef<Record<string, HTMLInputElement>>({})
@@ -314,9 +341,13 @@ export function FieldFormat({
     >
       <div className='flex min-w-0 flex-1 items-center gap-2'>
         <span className='block truncate font-medium text-[var(--text-tertiary)] text-sm'>
-          {field.name || `${title} ${index + 1}`}
+          {isLinkedinProfileSections
+            ? field.name.trim()
+              ? getLinkedinProfileSectionLabel(field.name.trim())
+              : `${title} ${index + 1}`
+            : field.name || `${title} ${index + 1}`}
         </span>
-        {field.name && showType && (
+        {field.name && showTypeEffective && (
           <Badge variant='type' size='sm'>
             {field.type}
           </Badge>
@@ -555,11 +586,30 @@ export function FieldFormat({
             <ExpandableContent>
               <div className='flex flex-col gap-2 rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-2.5 pt-1.5 pb-2.5'>
                 <div className='flex flex-col gap-1.5'>
-                  <Label className='text-small'>Name</Label>
-                  <div className='relative'>{renderNameInput(field)}</div>
+                  <Label className='text-small'>
+                    {isLinkedinMentions
+                      ? 'Display name'
+                      : isLinkedinProfileSections
+                        ? 'Profile section'
+                        : 'Name'}
+                  </Label>
+                  <div className='relative'>
+                    {isLinkedinProfileSections ? (
+                      <Combobox
+                        options={linkedinProfileSectionOptions}
+                        value={field.name ?? ''}
+                        onChange={(v) => !isReadOnly && updateField(field.id, 'name', v)}
+                        placeholder='Select a section…'
+                        disabled={isReadOnly}
+                        searchable
+                      />
+                    ) : (
+                      renderNameInput(field)
+                    )}
+                  </div>
                 </div>
 
-                {showType && (
+                {showTypeEffective && (
                   <div className='flex flex-col gap-1.5'>
                     <Label className='text-small'>Type</Label>
                     <Combobox
@@ -571,21 +621,38 @@ export function FieldFormat({
                   </div>
                 )}
 
-                {showDescription && (
-                  <div className='flex flex-col gap-1.5'>
-                    <Label className='text-small'>Description</Label>
-                    <Input
-                      value={field.description ?? ''}
-                      onChange={(e) => updateField(field.id, 'description', e.target.value)}
-                      placeholder={descriptionPlaceholder}
-                      disabled={isReadOnly}
-                    />
-                  </div>
-                )}
+                {showDescriptionEffective &&
+                  (isLinkedinMentions ? (
+                    <div className='flex flex-col gap-1.5'>
+                      <Label className='text-small'>Mention target</Label>
+                      <Combobox
+                        options={LINKEDIN_MENTION_IS_COMPANY_OPTIONS}
+                        value={field.description === 'true' ? 'true' : ''}
+                        onChange={(v) => {
+                          if (isReadOnly) return
+                          updateField(field.id, 'description', v === 'true' ? 'true' : '')
+                        }}
+                        placeholder='Person or company'
+                        disabled={isReadOnly}
+                      />
+                    </div>
+                  ) : (
+                    <div className='flex flex-col gap-1.5'>
+                      <Label className='text-small'>Description</Label>
+                      <Input
+                        value={field.description ?? ''}
+                        onChange={(e) => updateField(field.id, 'description', e.target.value)}
+                        placeholder={descriptionPlaceholder}
+                        disabled={isReadOnly}
+                      />
+                    </div>
+                  ))}
 
-                {showValue && (
+                {showValueEffective && (
                   <div className='flex flex-col gap-1.5'>
-                    <Label className='text-small'>Value</Label>
+                    <Label className='text-small'>
+                      {isLinkedinMentions ? 'Profile ID' : 'Value'}
+                    </Label>
                     <div className='relative'>{renderValueInput(field)}</div>
                   </div>
                 )}
@@ -599,9 +666,46 @@ export function FieldFormat({
 }
 
 export function InputFormat(
-  props: Omit<FieldFormatProps, 'title' | 'placeholder' | 'showDescription'>
+  props: Omit<FieldFormatProps, 'title' | 'placeholder' | 'showDescription'> & {
+    variant?: 'default' | 'linkedin_comment_mentions' | 'linkedin_profile_sections'
+  }
 ) {
-  return <FieldFormat {...props} title='Input' placeholder='firstName' showDescription={true} />
+  const { variant = 'default', showValue = true, ...rest } = props
+  if (variant === 'linkedin_comment_mentions') {
+    return (
+      <FieldFormat
+        {...rest}
+        variant='linkedin_comment_mentions'
+        title='Mention'
+        placeholder='How the name appears in the comment'
+        showDescription
+        showValue={showValue}
+        valuePlaceholder='Provider id (ACo…, ADo…, or company numeric id)'
+      />
+    )
+  }
+  if (variant === 'linkedin_profile_sections') {
+    return (
+      <FieldFormat
+        {...rest}
+        variant='linkedin_profile_sections'
+        title='Section'
+        placeholder='section'
+        showDescription={false}
+        showValue={false}
+      />
+    )
+  }
+  return (
+    <FieldFormat
+      {...rest}
+      variant='default'
+      title='Input'
+      placeholder='firstName'
+      showDescription
+      showValue={showValue}
+    />
+  )
 }
 
 export function ResponseFormat(

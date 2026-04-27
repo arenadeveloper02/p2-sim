@@ -6,6 +6,7 @@ export { unipileGetMessageAttachmentTool } from '@/tools/unipile/get_message_att
 export { unipileGetPostTool } from '@/tools/unipile/get_post'
 export { unipileGetUserProfileTool } from '@/tools/unipile/get_user_profile'
 export { unipileLinkedinSearchTool } from '@/tools/unipile/linkedin_search'
+export { unipileListAllChatsTool } from '@/tools/unipile/list_all_chats'
 export { unipileListChatAttendeesTool } from '@/tools/unipile/list_chat_attendees'
 export { unipileListChatMessagesTool } from '@/tools/unipile/list_chat_messages'
 export { unipileListPostCommentsTool } from '@/tools/unipile/list_post_comments'

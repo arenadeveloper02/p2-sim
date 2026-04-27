@@ -1,24 +1,43 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
-import type { UnipileListUserRelationsToolResponse } from '@/tools/unipile/types'
+import type {
+  UnipileListUserRelationsParams,
+  UnipileListUserRelationsToolResponse,
+} from '@/tools/unipile/types'
 
 export const unipileListUserRelationsTool: ToolConfig<
-  Record<string, never>,
+  UnipileListUserRelationsParams,
   UnipileListUserRelationsToolResponse
 > = {
   id: 'unipile_list_user_relations',
   name: 'Unipile List User Relations',
   description:
-    'Lists LinkedIn relations (`GET /api/v1/users/relations`). Uses server `UNIPILE_API_KEY`.',
+    'Lists all LinkedIn relations for an account (`GET /api/v1/users/relations`), following pagination until every page is loaded. Uses server `UNIPILE_API_KEY`.',
   version: '1.0.0',
 
-  params: {},
+  params: {
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile connected account id',
+    },
+    filter: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional Unipile `filter` query (match by user name)',
+    },
+  },
 
   request: {
     url: '/api/tools/unipile/list-user-relations',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: () => ({}),
+    body: (params) => ({
+      account_id: params.account_id?.trim(),
+      filter: params.filter,
+    }),
   },
 
   transformResponse: async (response: Response) => {

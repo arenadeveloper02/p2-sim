@@ -3,17 +3,22 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { fetchAllUnipilePostReactionItems } from '@/tools/unipile/fetch_all_post_reactions'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileListPostReactionsAPI')
 
+const optionalString = z.string().nullish()
+
 const RequestSchema = z.object({
-  post_id: z.string().min(1),
-  cursor: z.string().optional(),
+  post_id: z.string().min(1, 'post_id is required'),
+  account_id: z.string().min(1, 'account_id is required'),
+  comment_id: optionalString,
+  limit: z.coerce.number().int().min(1).max(100).optional().nullable(),
 })
 
 /**
- * Proxies GET `/api/v1/posts/{post_id}/reactions` to Unipile.
+ * Proxies GET `/api/v1/posts/{post_id}/reactions` to Unipile, following pagination until all reactions are loaded.
  */
 export async function POST(request: NextRequest) {
   const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
@@ -30,44 +35,31 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { post_id, cursor } = RequestSchema.parse(body)
-    const encoded = encodeURIComponent(post_id.trim())
-    const params = new URLSearchParams()
-    if (cursor?.trim()) {
-      params.set('cursor', cursor.trim())
-    }
-    const qs = params.toString()
-    const url = `${baseUrl}/api/v1/posts/${encoded}/reactions${qs ? `?${qs}` : ''}`
+    const data = RequestSchema.parse(body)
 
-    const upstream = await fetch(url, {
-      method: 'GET',
-      headers: {
-        accept: 'application/json',
-        'X-API-KEY': apiKey,
-      },
+    const { items, object, paging } = await fetchAllUnipilePostReactionItems({
+      baseUrl,
+      apiKey,
+      postId: data.post_id.trim(),
+      accountId: data.account_id.trim(),
+      commentId: data.comment_id,
+      limit: data.limit ?? undefined,
     })
 
-    const responseText = await upstream.text()
-    if (!upstream.ok) {
-      logger.warn('Unipile list post reactions failed', {
-        status: upstream.status,
-        snippet: responseText.slice(0, 500),
-      })
-      return NextResponse.json(
-        { error: responseText || upstream.statusText || 'Unipile request failed' },
-        { status: upstream.status }
-      )
-    }
-
-    try {
-      return NextResponse.json(JSON.parse(responseText) as unknown)
-    } catch {
-      logger.error('Unipile returned non-JSON for list post reactions')
-      return NextResponse.json({ error: 'Invalid JSON from Unipile' }, { status: 502 })
-    }
+    return NextResponse.json({
+      object,
+      items,
+      item_count: items.length,
+      cursor: null,
+      paging,
+    })
   } catch (error) {
-    const message = error instanceof z.ZodError ? error.message : 'Invalid request body'
-    logger.warn('Unipile list post reactions validation failed', { error })
-    return NextResponse.json({ error: message }, { status: 400 })
+    if (error instanceof z.ZodError) {
+      logger.warn('Unipile list post reactions validation failed', { error })
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+    const message = error instanceof Error ? error.message : 'Unipile request failed'
+    logger.warn('Unipile list post reactions failed', { message })
+    return NextResponse.json({ error: message }, { status: 502 })
   }
 }

@@ -10,17 +10,42 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
   UnipileGetLinkedinSearchParametersToolResponse
 > = {
   id: 'unipile_get_linkedin_search_parameters',
-  name: 'Unipile Get LinkedIn Search Parameters',
+  name: 'Unipile Retrieve LinkedIn search parameters',
   description:
-    'Lists LinkedIn search parameter options (`GET /api/v1/linkedin/search/parameters`). Optional `cursor` for pagination. Uses server `UNIPILE_API_KEY`.',
+    'Returns LinkedIn search parameter IDs for building a search body (`GET /api/v1/linkedin/search/parameters`). LinkedIn expects IDs, not raw labels. Guide: https://developer.unipile.com/docs/linkedin-search Uses server UNIPILE_API_KEY.',
   version: '1.0.0',
 
   params: {
-    cursor: {
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile account id (required query param)',
+    },
+    type: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description:
+        'Required: which parameter list to fetch (e.g. LOCATION, PEOPLE, COMPANY, … per Unipile docs).',
+    },
+    service: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Pagination cursor from a previous response',
+      description: 'CLASSIC (default), RECRUITER, or SALES_NAVIGATOR — which LinkedIn API surface to query.',
+    },
+    keywords: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional keywords seed (not applicable when type is EMPLOYMENT_TYPE).',
+    },
+    limit: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional page size 1–100 (Unipile default 10).',
     },
   },
 
@@ -28,9 +53,22 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
     url: '/api/tools/unipile/get-linkedin-search-parameters',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      cursor: params.cursor,
-    }),
+    body: (params) => {
+      const out: Record<string, unknown> = {
+        account_id: params.account_id?.trim(),
+        type: typeof params.type === 'string' ? params.type.trim() : '',
+      }
+      if (typeof params.service === 'string' && params.service.trim() !== '') {
+        out.service = params.service.trim()
+      }
+      if (typeof params.keywords === 'string' && params.keywords.trim() !== '') {
+        out.keywords = params.keywords.trim()
+      }
+      if (params.limit !== undefined && params.limit !== null && Number.isFinite(Number(params.limit))) {
+        out.limit = Number(params.limit)
+      }
+      return out
+    },
   },
 
   transformResponse: async (response: Response) => {
@@ -51,10 +89,10 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
       description: 'Unipile object type (e.g. LinkedinSearchParametersList)',
       optional: true,
     },
-    item_count: { type: 'number', description: 'Number of parameter rows in this page' },
-    items: { type: 'json', description: 'LinkedIn search parameter items' },
-    cursor: { type: 'string', description: 'Next page cursor', optional: true },
-    paging: { type: 'json', description: 'Paging metadata', optional: true },
+    item_count: { type: 'number', description: 'Number of parameter rows returned' },
+    items: { type: 'json', description: 'LinkedIn search parameter items (id, title, …)' },
+    cursor: { type: 'string', description: 'Pagination cursor when present', optional: true },
+    paging: { type: 'json', description: 'Paging metadata (e.g. page_count)', optional: true },
     total_items: {
       type: 'number',
       description: 'Total items when returned by API',

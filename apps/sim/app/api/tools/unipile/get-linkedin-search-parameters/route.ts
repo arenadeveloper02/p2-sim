@@ -3,16 +3,33 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import {
+  UNIPILE_LINKEDIN_SEARCH_PARAMETER_TYPES,
+  UNIPILE_LINKEDIN_SEARCH_SERVICES,
+} from '@/tools/unipile/linkedin_search_parameter_types'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileGetLinkedinSearchParametersAPI')
 
+const optionalString = z.string().nullish()
+
+const allowedTypes = new Set<string>(UNIPILE_LINKEDIN_SEARCH_PARAMETER_TYPES)
+const allowedServices = new Set<string>(UNIPILE_LINKEDIN_SEARCH_SERVICES)
+
 const RequestSchema = z.object({
-  cursor: z.string().optional(),
+  account_id: z.string().min(1, 'account_id is required'),
+  type: z
+    .string()
+    .min(1, 'type is required')
+    .refine((v) => allowedTypes.has(v), { message: 'type must be a valid LinkedIn search parameter type' }),
+  service: optionalString,
+  keywords: optionalString,
+  limit: z.coerce.number().int().min(1).max(100).optional().nullable(),
 })
 
 /**
  * Proxies GET `/api/v1/linkedin/search/parameters` to Unipile.
+ * @see https://developer.unipile.com/docs/linkedin-search
  */
 export async function POST(request: NextRequest) {
   const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
@@ -29,13 +46,29 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { cursor } = RequestSchema.parse(body)
-    const params = new URLSearchParams()
-    if (cursor?.trim()) {
-      params.set('cursor', cursor.trim())
+    const data = RequestSchema.parse(body)
+
+    const serviceTrim =
+      typeof data.service === 'string' && data.service.trim() !== '' ? data.service.trim() : null
+    if (serviceTrim != null && !allowedServices.has(serviceTrim)) {
+      return NextResponse.json(
+        { error: 'service must be CLASSIC, RECRUITER, or SALES_NAVIGATOR' },
+        { status: 400 }
+      )
     }
-    const qs = params.toString()
-    const url = `${baseUrl}/api/v1/linkedin/search/parameters${qs ? `?${qs}` : ''}`
+
+    const params = new URLSearchParams()
+    params.set('account_id', data.account_id.trim())
+    params.set('type', data.type.trim())
+    params.set('service', serviceTrim ?? 'CLASSIC')
+    if (data.keywords != null && data.keywords.trim() !== '') {
+      params.set('keywords', data.keywords.trim())
+    }
+    if (data.limit != null && Number.isFinite(data.limit)) {
+      params.set('limit', String(data.limit))
+    }
+
+    const url = `${baseUrl}/api/v1/linkedin/search/parameters?${params.toString()}`
 
     const upstream = await fetch(url, {
       method: 'GET',

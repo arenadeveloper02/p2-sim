@@ -9,17 +9,37 @@ export const unipileLinkedinSearchTool: ToolConfig<
   UnipileLinkedinSearchToolResponse
 > = {
   id: 'unipile_linkedin_search',
-  name: 'Unipile LinkedIn Search',
+  name: 'Unipile Perform Linkedin search',
   description:
-    'Runs a LinkedIn search (`POST /api/v1/linkedin/search`). Pass a JSON object as `search_body` (category, keywords, filters, etc.). Uses server `UNIPILE_API_KEY`.',
+    'Runs LinkedIn Classic, Sales Navigator, or Recruiter search (`POST /api/v1/linkedin/search`). Use Retrieve LinkedIn search parameters for filter IDs. Guide: https://developer.unipile.com/docs/linkedin-search Query: account_id (required), optional cursor, limit (0–100; Classic should stay ≤50). Body: JSON per Unipile (e.g. api+category+filters, or { url }, or { cursor }). Uses server UNIPILE_API_KEY.',
   version: '1.0.0',
 
   params: {
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile account id (required query parameter)',
+    },
     search_body: {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Stringified JSON object for the Unipile LinkedIn search request body',
+      description:
+        'JSON string for the POST body: classic people/companies/posts/jobs, sales_navigator, recruiter, { "url": "…" } to search from a public URL, or { "cursor": "…" } for a long cursor in the body.',
+    },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional cursor query param for pagination (short cursors)',
+    },
+    limit: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Optional result limit 0–100 (Unipile default 10). Sales Navigator / Recruiter up to 100; LinkedIn Classic should not exceed 50.',
     },
   },
 
@@ -27,9 +47,22 @@ export const unipileLinkedinSearchTool: ToolConfig<
     url: '/api/tools/unipile/linkedin-search',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      search_body: params.search_body,
-    }),
+    body: (params) => {
+      const out: Record<string, unknown> = {
+        account_id: params.account_id?.trim(),
+        search_body:
+          typeof params.search_body === 'string' && params.search_body.trim() !== ''
+            ? params.search_body
+            : '{}',
+      }
+      if (typeof params.cursor === 'string' && params.cursor.trim() !== '') {
+        out.cursor = params.cursor.trim()
+      }
+      if (params.limit !== undefined && params.limit !== null && Number.isFinite(Number(params.limit))) {
+        out.limit = Number(params.limit)
+      }
+      return out
+    },
   },
 
   transformResponse: async (response: Response) => {
@@ -52,8 +85,6 @@ export const unipileLinkedinSearchTool: ToolConfig<
       data.metadata && typeof data.metadata === 'object' && data.metadata !== null
         ? (data.metadata as Record<string, unknown>)
         : null
-    const pagingCursor =
-      paging && typeof paging.cursor === 'string' ? (paging.cursor as string) : null
     const topCursor = typeof data.cursor === 'string' ? data.cursor : null
 
     return {
@@ -62,7 +93,7 @@ export const unipileLinkedinSearchTool: ToolConfig<
         object: typeof data.object === 'string' ? data.object : null,
         item_count: items.length,
         items,
-        cursor: topCursor ?? pagingCursor,
+        cursor: topCursor,
         paging,
         config,
         metadata,

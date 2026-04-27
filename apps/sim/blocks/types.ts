@@ -403,6 +403,8 @@ export interface SubBlockConfig {
   // Slider-specific properties
   step?: number
   integer?: boolean
+  /** When `type` is `input-format`, selects row UI (default matches Start block structured inputs). */
+  inputFormatVariant?: 'default' | 'linkedin_comment_mentions' | 'linkedin_profile_sections'
   // Long input specific properties
   rows?: number
   // Multi-select functionality

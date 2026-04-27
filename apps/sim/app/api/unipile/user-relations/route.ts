@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { fetchAllUnipileUserRelationItems } from '@/tools/unipile/fetch_all_user_relations'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileUserRelationsUIAPI')
@@ -13,7 +14,7 @@ interface UnipileRelationOption {
 
 /**
  * Lists user relations for attendee pickers (`GET /api/v1/users/relations` upstream).
- * Optional `account_id` query is forwarded when present.
+ * Requires `account_id`; loads every paginated page before mapping to picker options.
  */
 export async function GET(request: NextRequest) {
   const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
@@ -30,57 +31,27 @@ export async function GET(request: NextRequest) {
   }
 
   const accountId = request.nextUrl.searchParams.get('account_id')?.trim()
-  const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
-  const query = new URLSearchParams()
-  if (accountId) {
-    query.set('account_id', accountId)
+  if (!accountId) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'account_id query parameter is required',
+        items: [] as UnipileRelationOption[],
+      },
+      { status: 400 }
+    )
   }
-  const qs = query.toString()
-  const url = `${baseUrl}/api/v1/users/relations${qs ? `?${qs}` : ''}`
+
+  const filter = request.nextUrl.searchParams.get('filter')?.trim()
+  const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
 
   try {
-    const upstream = await fetch(url, {
-      method: 'GET',
-      headers: {
-        accept: 'application/json',
-        'X-API-KEY': apiKey,
-      },
+    const { items } = await fetchAllUnipileUserRelationItems({
+      baseUrl,
+      apiKey,
+      accountId,
+      filter: filter || undefined,
     })
-
-    const responseText = await upstream.text()
-    if (!upstream.ok) {
-      logger.warn('Unipile list user relations failed', {
-        status: upstream.status,
-        snippet: responseText.slice(0, 500),
-      })
-      return NextResponse.json(
-        {
-          success: false,
-          error: responseText || upstream.statusText || 'Unipile request failed',
-          items: [] as UnipileRelationOption[],
-        },
-        { status: upstream.status }
-      )
-    }
-
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(responseText) as unknown
-    } catch {
-      logger.error('Unipile returned non-JSON for user relations')
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid JSON from Unipile',
-          items: [] as UnipileRelationOption[],
-        },
-        { status: 502 }
-      )
-    }
-
-    const body = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
-    const rawItems = body.items
-    const items = Array.isArray(rawItems) ? rawItems : []
 
     const options: UnipileRelationOption[] = items
       .map((row) => {
@@ -105,9 +76,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ success: true, items: options })
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to list relations'
     logger.error('Unipile user relations UI error', { error })
     return NextResponse.json(
-      { success: false, error: 'Failed to list relations', items: [] as UnipileRelationOption[] },
+      { success: false, error: message, items: [] as UnipileRelationOption[] },
       { status: 500 }
     )
   }

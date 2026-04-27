@@ -7,25 +7,39 @@ import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileStartChatAPI')
 
+/** Optional strings from workflows are often JSON `null`, not omitted. */
+const optionalString = z.string().nullish()
+
 const RequestSchema = z.object({
   account_id: z.string().min(1),
   text: z.string().min(1),
-  attachments: z.string().optional(),
-  voice_message: z.string().optional(),
-  video_message: z.string().optional(),
-  attendees_ids: z.string().optional(),
-  subject: z.string().optional(),
-  api: z.string().optional(),
-  topic: z.string().optional(),
-  applicant_id: z.string().optional(),
-  invitation_id: z.string().optional(),
-  inmail: z.union([z.boolean(), z.string()]).optional(),
+  attendees_ids: z
+    .string()
+    .transform((s) => s.trim())
+    .refine((s) => s.length > 0, {
+      message: 'attendees_ids is required (comma-separated relation / member ids)',
+    }),
+  attachments: optionalString,
+  voice_message: optionalString,
+  video_message: optionalString,
+  subject: optionalString,
+  api: optionalString,
+  topic: optionalString,
+  applicant_id: optionalString,
+  invitation_id: optionalString,
+  inmail: z.union([z.boolean(), z.string()]).nullish(),
+  signature: optionalString,
+  hiring_project_id: optionalString,
+  job_posting_id: optionalString,
+  sourcing_channel: optionalString,
+  email_address: optionalString,
+  visibility: optionalString,
+  follow_up: optionalString,
 })
 
-function appendIfNonEmpty(form: FormData, key: string, value: string | undefined) {
-  if (value !== undefined && value.trim() !== '') {
-    form.append(key, value.trim())
-  }
+function appendIfNonEmpty(form: FormData, key: string, value: string | null | undefined) {
+  if (value == null || value.trim() === '') return
+  form.append(key, value.trim())
 }
 
 /**
@@ -54,18 +68,40 @@ export async function POST(request: NextRequest) {
     appendIfNonEmpty(form, 'attachments', data.attachments)
     appendIfNonEmpty(form, 'voice_message', data.voice_message)
     appendIfNonEmpty(form, 'video_message', data.video_message)
-    appendIfNonEmpty(form, 'attendees_ids', data.attendees_ids)
+    form.append('attendees_ids', data.attendees_ids)
     appendIfNonEmpty(form, 'subject', data.subject)
-    form.append('api', (data.api ?? 'classic').trim())
-    form.append('topic', (data.topic ?? 'service_request').trim())
-    appendIfNonEmpty(form, 'applicant_id', data.applicant_id)
-    appendIfNonEmpty(form, 'invitation_id', data.invitation_id)
 
-    if (data.inmail !== undefined) {
-      const flag =
-        data.inmail === true ||
-        (typeof data.inmail === 'string' && data.inmail.toLowerCase() === 'true')
-      form.append('inmail', flag ? 'true' : 'false')
+    const apiMode = (data.api ?? 'classic').trim()
+    form.append('api', apiMode)
+
+    if (apiMode === 'classic') {
+      appendIfNonEmpty(form, 'topic', data.topic)
+      appendIfNonEmpty(form, 'applicant_id', data.applicant_id)
+      appendIfNonEmpty(form, 'invitation_id', data.invitation_id)
+      if (data.inmail != null) {
+        const flag =
+          data.inmail === true ||
+          (typeof data.inmail === 'string' && data.inmail.toLowerCase() === 'true')
+        form.append('inmail', flag ? 'true' : 'false')
+      }
+    }
+
+    if (apiMode === 'recruiter') {
+      appendIfNonEmpty(form, 'signature', data.signature)
+      appendIfNonEmpty(form, 'hiring_project_id', data.hiring_project_id)
+      appendIfNonEmpty(form, 'job_posting_id', data.job_posting_id)
+      appendIfNonEmpty(form, 'sourcing_channel', data.sourcing_channel)
+      appendIfNonEmpty(form, 'email_address', data.email_address)
+      appendIfNonEmpty(form, 'visibility', data.visibility)
+      if (data.follow_up != null && data.follow_up.trim() !== '') {
+        const trimmed = data.follow_up.trim()
+        try {
+          JSON.parse(trimmed)
+        } catch {
+          return NextResponse.json({ error: 'follow_up must be valid JSON' }, { status: 400 })
+        }
+        form.append('follow_up', trimmed)
+      }
     }
 
     const url = `${baseUrl}/api/v1/chats`
