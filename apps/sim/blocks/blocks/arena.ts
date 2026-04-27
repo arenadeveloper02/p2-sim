@@ -468,14 +468,29 @@ export const ArenaBlock: BlockConfig = {
       },
     },
 
-    //get meetings blocks - basic mode
+    // Get meetings — one operation; client vs client ID via basic/advanced (same pattern as Telegram photo / photo + canonical)
     {
       id: 'get-meetings-client',
       title: 'Client',
       type: 'arena-client-selector',
       required: true,
-      placeholder: 'Enter client name',
+      placeholder: 'Select client...',
       mode: 'basic',
+      canonicalParamId: 'get-meetings-client',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_get_meetings'],
+      },
+    },
+    {
+      id: 'get-meetings-client-id',
+      title: 'Client ID',
+      type: 'short-input',
+      required: true,
+      placeholder: 'Enter client ID or use <function.result.client_id>',
+      mode: 'advanced',
+      canonicalParamId: 'get-meetings-client',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -495,20 +510,6 @@ export const ArenaBlock: BlockConfig = {
         { label: '14 days', id: '14days' },
       ],
       value: () => '7days',
-      condition: {
-        field: 'operation',
-        value: ['arena_get_meetings'],
-      },
-    },
-    //get meetings blocks - advanced mode
-    {
-      id: 'get-meetings-client-id',
-      title: 'Client ID',
-      type: 'short-input',
-      required: true,
-      placeholder: 'Enter client ID or use <function.result.client_id>',
-      mode: 'advanced',
-      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['arena_get_meetings'],

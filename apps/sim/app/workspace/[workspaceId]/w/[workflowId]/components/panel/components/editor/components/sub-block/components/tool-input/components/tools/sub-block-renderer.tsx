@@ -44,7 +44,8 @@ export function ToolSubBlockRenderer({
   disabled,
   canonicalToggle,
 }: ToolSubBlockRendererProps) {
-  const syntheticId = `${subBlockId}-tool-${toolIndex}-${effectiveParamId}`
+  // Use real subBlock id so canonical pairs (shared effectiveParamId) do not share one store cell.
+  const syntheticId = `${subBlockId}-tool-${toolIndex}-${subBlock.id}`
   const toolParamValue = toolParams?.[effectiveParamId] ?? ''
   const isObjectType = OBJECT_SUBBLOCK_TYPES.has(subBlock.type)
 
@@ -59,29 +60,90 @@ export function ToolSubBlockRenderer({
       const newVal = state.workflowValues[wfId]?.[blockId]?.[syntheticId]
       const oldVal = prevState.workflowValues[wfId]?.[blockId]?.[syntheticId]
       if (newVal === oldVal) return
-      const processedVal =
-        newVal == null ? '' : newVal
+      let processedVal = newVal == null ? '' : newVal
+      if (
+        (subBlock.mode === 'advanced' || subBlock.mode === 'trigger-advanced') &&
+        typeof processedVal === 'object' &&
+        processedVal !== null &&
+        !Array.isArray(processedVal) &&
+        !isObjectType
+      ) {
+        processedVal = ''
+      }
       if (processedVal === syncedRef.current) return
       syncedRef.current = processedVal
       onParamChangeRef.current(toolIndex, effectiveParamId, processedVal)
     })
     return unsub
-  }, [blockId, syntheticId, toolIndex, effectiveParamId])
+  }, [blockId, syntheticId, toolIndex, effectiveParamId, isObjectType, subBlock.mode])
 
   useEffect(() => {
-    if (toolParamValue === syncedRef.current) return
-    syncedRef.current = toolParamValue
     if (isObjectType && toolParamValue) {
       try {
         const parsed = JSON.parse(toolParamValue)
         if (typeof parsed === 'object' && parsed !== null) {
+          if (toolParamValue === syncedRef.current) return
+          syncedRef.current = toolParamValue
           useSubBlockStore.getState().setValue(blockId, syntheticId, parsed)
           return
         }
-      } catch {}
+      } catch {
+        // fall through
+      }
     }
+
+    const isAdvanced = subBlock.mode === 'advanced' || subBlock.mode === 'trigger-advanced'
+    if (!isAdvanced && !isObjectType) {
+      const existing = useSubBlockStore.getState().getValue(blockId, syntheticId)
+      const toolEmpty = toolParamValue === '' || toolParamValue == null
+      if (toolEmpty && typeof existing === 'string' && existing.trim().length > 0) {
+        if (existing === syncedRef.current) return
+        syncedRef.current = existing
+        return
+      }
+      if (
+        existing &&
+        typeof existing === 'object' &&
+        !Array.isArray(existing) &&
+        'clientId' in existing &&
+        typeof (existing as { clientId?: unknown }).clientId === 'string'
+      ) {
+        const id = (existing as { clientId: string }).clientId
+        const toolMatchesClientId =
+          typeof toolParamValue === 'string' && id === toolParamValue
+        if (toolEmpty || toolMatchesClientId) {
+          if (existing === syncedRef.current) return
+          syncedRef.current = existing
+          return
+        }
+      }
+    }
+
+    if (
+      isAdvanced &&
+      toolParamValue &&
+      typeof toolParamValue === 'object' &&
+      !Array.isArray(toolParamValue) &&
+      !isObjectType
+    ) {
+      // Merged tool param is still the basic value (e.g. client object) while the advanced
+      // subblock has its own key — keep a previously typed string when toggling back.
+      const existing = useSubBlockStore.getState().getValue(blockId, syntheticId)
+      if (typeof existing === 'string' && existing.trim().length > 0) {
+        if (existing === syncedRef.current) return
+        syncedRef.current = existing
+        return
+      }
+      if (toolParamValue === syncedRef.current) return
+      useSubBlockStore.getState().setValue(blockId, syntheticId, '')
+      syncedRef.current = ''
+      return
+    }
+
+    if (toolParamValue === syncedRef.current) return
+    syncedRef.current = toolParamValue
     useSubBlockStore.getState().setValue(blockId, syntheticId, toolParamValue)
-  }, [toolParamValue, blockId, syntheticId, isObjectType])
+  }, [toolParamValue, blockId, syntheticId, isObjectType, subBlock.mode])
 
   const visibility = subBlock.paramVisibility ?? 'user-or-llm'
   const isOptionalForUser = visibility !== 'user-only'

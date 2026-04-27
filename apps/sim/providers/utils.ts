@@ -10,6 +10,7 @@ import {
   type CanonicalGroup,
   getCanonicalValues,
   isCanonicalPair,
+  isNonEmptyValue,
 } from '@/lib/workflows/subblocks/visibility'
 import { isCustomTool } from '@/executor/constants'
 import {
@@ -581,10 +582,18 @@ export async function transformBlockTool(
         let result = { ...params }
 
         for (const group of canonicalGroups) {
+          const merged = result[group.canonicalId]
           const { basicValue, advancedValue } = getCanonicalValues(group, result)
           const scopedKey = `${block.type}:${group.canonicalId}`
           const pairMode = canonicalModes?.[scopedKey] ?? 'basic'
-          const chosen = pairMode === 'advanced' ? advancedValue : basicValue
+          let chosen = pairMode === 'advanced' ? advancedValue : basicValue
+
+          // Agent tool-input (and similar) only persist the merged canonical key on StoredTool.params,
+          // not the sibling subBlock id (e.g. get-meetings-client-id). Advanced mode would otherwise
+          // pick undefined from getCanonicalValues, delete the merged key, and drop the user value.
+          if (chosen === undefined && isNonEmptyValue(merged)) {
+            chosen = merged
+          }
 
           const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
           sourceIds.forEach((id) => delete result[id])

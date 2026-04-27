@@ -1,11 +1,9 @@
 'use client'
 
 import * as React from 'react'
-import axios from 'axios'
 import { Combobox, type ComboboxOption } from '@/components/emcn'
-import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
-import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
+import { useArenaClientsByUser } from '@/hooks/queries/arena-clients'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
 
@@ -39,42 +37,8 @@ export function ArenaClientsSelector({
 
   const selectedValue = isPreview ? previewValue : storeValue
 
-  const [clients, setClients] = React.useState<Client[]>([])
-  const [isLoading, setIsLoading] = React.useState(true)
-
-  React.useEffect(() => {
-    let cancelled = false
-    const fetchClients = async () => {
-      setIsLoading(true)
-      try {
-        setClients([])
-        const v2Token = await getArenaToken()
-        const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
-        const response = await axios.get(
-          `${arenaBackendBaseUrl}/list/userservice/getclientbyuser`,
-          {
-            headers: {
-              Authorisation: v2Token || '',
-            },
-          }
-        )
-        const clientsData = response.data?.response
-        const clientsArray = Array.isArray(clientsData) ? clientsData : []
-        if (!cancelled) setClients(clientsArray)
-      } catch (error) {
-        console.error('Error fetching clients:', error)
-        if (!cancelled) setClients([])
-      } finally {
-        if (!cancelled) setIsLoading(false)
-      }
-    }
-
-    fetchClients()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const { data: clients = [], isLoading: isLoadingClients } = useArenaClientsByUser()
+  const isLoading = isLoadingClients
 
   const selectedId =
     selectedValue && typeof selectedValue === 'object' && 'clientId' in selectedValue

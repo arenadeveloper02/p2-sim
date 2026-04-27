@@ -122,12 +122,9 @@ export type ArenaCommentsByTaskNumberParams = {
 
 export interface ArenaCommentsByTaskNumberResponse extends ToolResponse {}
 
+/** Canonical merge puts the active client here: selector object (basic) or client ID string (advanced). */
 export type ArenaGetMeetingsParams = {
-  'get-meetings-client'?: {
-    clientId: string
-    name: string
-  }
-  'get-meetings-client-id'?: string
+  'get-meetings-client'?: string | { clientId: string; name: string }
   'get-meetings-period': string
   _context: {
     workflowId: string
