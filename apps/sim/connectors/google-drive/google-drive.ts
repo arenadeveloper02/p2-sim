@@ -1,11 +1,15 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { GoogleDriveIcon } from '@/components/icons'
+import { parseBuffer } from '@/lib/file-parsers'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { getExtensionFromMimeType } from '@/lib/uploads/utils/file-utils'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { htmlToPlainText, joinTagArray, parseTagDate } from '@/connectors/utils'
 
 const logger = createLogger('GoogleDriveConnector')
+
+const MAX_KB_FILE_SIZE_BYTES = 100 * 1024 * 1024
 
 const GOOGLE_WORKSPACE_MIME_TYPES: Record<string, string> = {
   'application/vnd.google-apps.document': 'text/plain',
@@ -20,7 +24,21 @@ const SUPPORTED_TEXT_MIME_TYPES = [
   'text/markdown',
   'application/json',
   'application/xml',
+  'text/yaml',
+  'text/x-yaml',
+  'application/yaml',
+  'application/x-yaml',
 ]
+
+const SUPPORTED_BINARY_MIME_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+] as const
 
 const MAX_EXPORT_SIZE = 10 * 1024 * 1024 // 10 MB (Google export limit)
 
@@ -30,6 +48,35 @@ function isGoogleWorkspaceFile(mimeType: string): boolean {
 
 function isSupportedTextFile(mimeType: string): boolean {
   return SUPPORTED_TEXT_MIME_TYPES.some((t) => mimeType.startsWith(t))
+}
+
+function isSupportedBinaryFile(mimeType: string): boolean {
+  return SUPPORTED_BINARY_MIME_TYPES.includes(
+    mimeType as (typeof SUPPORTED_BINARY_MIME_TYPES)[number]
+  )
+}
+
+function getExtensionFromFilename(fileName: string | undefined): string | null {
+  if (!fileName) return null
+  const lastDot = fileName.lastIndexOf('.')
+  if (lastDot <= 0 || lastDot === fileName.length - 1) return null
+  return fileName.slice(lastDot + 1).toLowerCase()
+}
+
+async function downloadBinaryFile(accessToken: string, fileId: string): Promise<Buffer> {
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`
+
+  const response = await fetchWithRetry(url, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to download file ${fileId}: ${response.status}`)
+  }
+
+  const arrayBuffer = await response.arrayBuffer()
+  return Buffer.from(arrayBuffer)
 }
 
 async function exportGoogleWorkspaceFile(
@@ -82,7 +129,8 @@ async function downloadTextFile(accessToken: string, fileId: string): Promise<st
 async function fetchFileContent(
   accessToken: string,
   fileId: string,
-  mimeType: string
+  mimeType: string,
+  fileName?: string
 ): Promise<string> {
   if (isGoogleWorkspaceFile(mimeType)) {
     return exportGoogleWorkspaceFile(accessToken, fileId, mimeType)
@@ -93,6 +141,16 @@ async function fetchFileContent(
   }
   if (isSupportedTextFile(mimeType)) {
     return downloadTextFile(accessToken, fileId)
+  }
+  if (isSupportedBinaryFile(mimeType)) {
+    const buffer = await downloadBinaryFile(accessToken, fileId)
+    const extension =
+      getExtensionFromFilename(fileName) ?? getExtensionFromMimeType(mimeType) ?? null
+    if (!extension) {
+      throw new Error(`Unable to infer file extension for MIME type: ${mimeType}`)
+    }
+    const parsed = await parseBuffer(buffer, extension)
+    return parsed.content
   }
 
   throw new Error(`Unsupported MIME type for content extraction: ${mimeType}`)
@@ -135,10 +193,11 @@ function buildQuery(sourceConfig: Record<string, unknown>): string {
       parts.push(`(${SUPPORTED_TEXT_MIME_TYPES.map((t) => `mimeType = '${t}'`).join(' or ')})`)
       break
     default: {
-      // Include Google Workspace files + plain text files, exclude folders
+      // Include Google Workspace files + supported text/binary files, exclude folders
       const allMimeTypes = [
         ...Object.keys(GOOGLE_WORKSPACE_MIME_TYPES),
         ...SUPPORTED_TEXT_MIME_TYPES,
+        ...SUPPORTED_BINARY_MIME_TYPES,
       ]
       parts.push(`(${allMimeTypes.map((t) => `mimeType = '${t}'`).join(' or ')})`)
       break
@@ -269,7 +328,12 @@ export const googleDriveConnector: ConnectorConfig = {
     const files = (data.files || []) as DriveFile[]
 
     const documents = files
-      .filter((f) => isGoogleWorkspaceFile(f.mimeType) || isSupportedTextFile(f.mimeType))
+      .filter(
+        (f) =>
+          isGoogleWorkspaceFile(f.mimeType) ||
+          isSupportedTextFile(f.mimeType) ||
+          isSupportedBinaryFile(f.mimeType)
+      )
       .map(fileToStub)
 
     const totalFetched = previouslyFetched + documents.length
@@ -313,7 +377,17 @@ export const googleDriveConnector: ConnectorConfig = {
     if (file.trashed) return null
 
     try {
-      const content = await fetchFileContent(accessToken, file.id, file.mimeType)
+      const fileSize = file.size ? Number(file.size) : undefined
+      if (typeof fileSize === 'number' && fileSize > MAX_KB_FILE_SIZE_BYTES) {
+        logger.warn('Skipping file exceeding KB max size', {
+          fileId: file.id,
+          fileName: file.name,
+          fileSize,
+        })
+        return null
+      }
+
+      const content = await fetchFileContent(accessToken, file.id, file.mimeType, file.name)
       if (!content.trim()) return null
 
       const stub = fileToStub(file)
