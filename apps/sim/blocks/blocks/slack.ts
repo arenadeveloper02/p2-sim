@@ -1884,7 +1884,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     authMethod: { type: 'string', description: 'Authentication method' },
     destinationType: { type: 'string', description: 'Destination type (channel or dm)' },
     oauthCredential: { type: 'string', description: 'Slack access token' },
-    useUserToken: { type: 'boolean', description: 'Use user token (id_token) instead of bot token' },
+    useUserToken: {
+      type: 'boolean',
+      description: 'Use user token (id_token) instead of bot token',
+    },
     channel: { type: 'string', description: 'Channel identifier (canonical param)' },
     dmUserId: { type: 'string', description: 'User ID for DM recipient (canonical param)' },
     text: { type: 'string', description: 'Message text' },
@@ -2132,7 +2135,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'string',
       description: 'Bot user ID — present only when the token is a bot token (xoxb-)',
     },
-    appId: { type: 'string', description: 'Slack app ID associated with the token, when applicable' },
+    appId: {
+      type: 'string',
+      description: 'Slack app ID associated with the token, when applicable',
+    },
     isEnterpriseInstall: {
       type: 'boolean',
       description: 'Whether the token belongs to an Enterprise Grid org-level install',
