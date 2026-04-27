@@ -30,7 +30,9 @@ import {
 } from '@/lib/copilot/request/handlers/types'
 import { getCopilotTracer } from '@/lib/copilot/request/otel'
 import {
+  AbortReason,
   eventToStreamEvent,
+  hasAbortMarker,
   isSubagentSpanStreamEvent,
   parsePersistedStreamEventEnvelope,
 } from '@/lib/copilot/request/session'
@@ -134,17 +136,27 @@ export async function runStreamLoop(
     requestBodyBytes,
   })
   const fetchStart = performance.now()
-  const response = await fetchGo(fetchUrl, {
-    ...fetchOptions,
-    signal: abortSignal,
-    otelContext: options.otelContext,
-    spanName: `sim → go ${pathname}`,
-    operation: 'stream',
-    attributes: {
-      [TraceAttr.CopilotStream]: true,
-      ...(requestBodyBytes ? { [TraceAttr.HttpRequestContentLength]: requestBodyBytes } : {}),
-    },
-  })
+  let response: Response
+  try {
+    response = await fetchGo(fetchUrl, {
+      ...fetchOptions,
+      signal: abortSignal,
+      otelContext: options.otelContext,
+      spanName: `sim → go ${pathname}`,
+      operation: 'stream',
+      attributes: {
+        [TraceAttr.CopilotStream]: true,
+        ...(requestBodyBytes ? { [TraceAttr.HttpRequestContentLength]: requestBodyBytes } : {}),
+      },
+    })
+  } catch (error) {
+    fetchSpan.attributes = {
+      ...(fetchSpan.attributes ?? {}),
+      headersMs: Math.round(performance.now() - fetchStart),
+    }
+    context.trace.endSpan(fetchSpan, abortSignal?.aborted ? 'cancelled' : 'error')
+    throw error
+  }
   const headersElapsedMs = Math.round(performance.now() - fetchStart)
   fetchSpan.attributes = {
     ...(fetchSpan.attributes ?? {}),
@@ -426,16 +438,32 @@ export async function runStreamLoop(
     })
 
     if (!context.streamComplete && !abortSignal?.aborted && !context.wasAborted) {
-      const streamPath = new URL(fetchUrl).pathname
-      const message = `Copilot backend stream ended before a terminal event on ${streamPath}`
-      context.errors.push(message)
-      logger.error('Copilot backend stream ended before a terminal event', {
-        path: streamPath,
-        requestId: context.requestId,
-        messageId: context.messageId,
-      })
-      endedOn = CopilotSseCloseReason.ClosedNoTerminal
-      throw new CopilotBackendError(message, { status: 503 })
+      let abortRequested = false
+      try {
+        abortRequested = await hasAbortMarker(context.messageId)
+      } catch (error) {
+        logger.warn('Failed to read abort marker at body close', {
+          streamId: context.messageId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+
+      if (abortRequested) {
+        options.onAbortObserved?.(AbortReason.MarkerObservedAtBodyClose)
+        context.wasAborted = true
+        endedOn = CopilotSseCloseReason.Aborted
+      } else {
+        const streamPath = new URL(fetchUrl).pathname
+        const message = `Copilot backend stream ended before a terminal event on ${streamPath}`
+        context.errors.push(message)
+        logger.error('Copilot backend stream ended before a terminal event', {
+          path: streamPath,
+          requestId: context.requestId,
+          messageId: context.messageId,
+        })
+        endedOn = CopilotSseCloseReason.ClosedNoTerminal
+        throw new CopilotBackendError(message, { status: 503 })
+      }
     }
   } catch (error) {
     if (error instanceof FatalSseEventError && !context.errors.includes(error.message)) {
@@ -561,14 +589,14 @@ function stampSseReadLoopSpan(
   const nowWall = Date.now()
   const startWall = nowWall - (nowPerf - startPerfMs)
 
-  const terminalEventSeen = counters.eventsByType.complete > 0
+  const terminalEventSeen = counters.eventsByType.complete > 0 || counters.eventsByType.error > 0
   // `terminal_event_missing` is the single-attribute dashboard signal
   // for the "disappeared response" bug class: the caller considered
   // this leg to be the final one (`context.streamComplete === true`)
-  // but no `complete` event arrived on the wire. Tool-pause legs have
-  // expectedTerminal=false and never trip this, so dashboards can
-  // filter on `{ .copilot.sse.terminal_event_missing = true }` without
-  // false positives.
+  // but no terminal `complete` or `error` event arrived on the wire.
+  // Tool-pause legs have expectedTerminal=false and never trip this, so
+  // dashboards can filter on `{ .copilot.sse.terminal_event_missing = true }`
+  // without false positives.
   const terminalEventMissing = opts.expectedTerminal && !terminalEventSeen
 
   const tracer = getCopilotTracer()
