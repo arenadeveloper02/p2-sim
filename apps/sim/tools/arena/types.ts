@@ -46,26 +46,32 @@ export interface SearchTaskApiResponse {
   }
   tasks: Task[]
 }
+/** `arena_search_task` — client/project/state/filters only (no name param; use `arena_search_task_simple` for name search). */
 export interface SearchTaskQueryParams {
-  operation: string
-  'search-task-name': string
-  'search-task-client': {
+  'search-task-client'?: {
     clientId: string
     name: string
   }
-  'search-task-project': string | { sysId: string; name: string; customDisplayValue?: string }
-  'search-task-state': string[]
-  'search-task-visibility': string
-  'search-task-assignee': string | { value: string; label: string; customDisplayValue?: string }
-  'search-task-due-date': string
-  'search-task-max-results': number
+  'search-task-project'?: string | { sysId: string; name: string; customDisplayValue?: string }
+  'search-task-state'?: string[]
+  'search-task-visibility'?: string
+  'search-task-assignee'?: string | { value: string; label: string; customDisplayValue?: string }
+  'search-task-due-date'?: string
+  'search-task-max-results'?: number
+  _context: {
+    workflowId: string
+  }
+}
+
+/** `arena_search_task_simple` — task name/number only; same search API, minimal query. */
+export interface SearchTaskSimpleQueryParams {
+  'search-task-name'?: string
   _context: {
     workflowId: string
   }
 }
 
 export type ArenaSaveSummaryParams = {
-  operation: string
   'save-summary-client': {
     clientId: string
     name: string
@@ -78,8 +84,8 @@ export type ArenaSaveSummaryParams = {
 
 export interface ArenaSaveSummaryResponse extends ToolResponse {}
 
+/** `arena_comments` — selectors on the block; uses the standard comments API. */
 export type ArenaCommentsParams = {
-  operation: string
   'comment-client'?: {
     clientId: string
     name: string
@@ -93,9 +99,6 @@ export type ArenaCommentsParams = {
   'comment-task'?:
     | string
     | { sysId: string; id?: string; name: string; customDisplayValue?: string }
-  'comment-task-number'?: string
-  'comment-to'?: string
-  'comment-cc'?: string
   'comment-text': string
   'comment-client-note'?: boolean
   _context: {
@@ -105,8 +108,21 @@ export type ArenaCommentsParams = {
 
 export interface ArenaCommentsResponse extends ToolResponse {}
 
+/** `arena_comments_task_number` — task # + To/CC; uses comments-updated API. */
+export type ArenaCommentsByTaskNumberParams = {
+  'comment-task-number': string
+  'comment-to'?: string
+  'comment-cc'?: string
+  'comment-text': string
+  'comment-client-note'?: boolean
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaCommentsByTaskNumberResponse extends ToolResponse {}
+
 export type ArenaGetMeetingsParams = {
-  operation: string
   'get-meetings-client'?: {
     clientId: string
     name: string
@@ -121,7 +137,6 @@ export type ArenaGetMeetingsParams = {
 export interface ArenaGetMeetingsResponse extends ToolResponse {}
 
 export type ArenaGetMyTasksParams = {
-  operation: string
   _context: {
     workflowId: string
   }
@@ -130,7 +145,6 @@ export type ArenaGetMyTasksParams = {
 export interface ArenaGetMyTasksResponse extends ToolResponse {}
 
 export type ArenaGetMyOverdueTasksParams = {
-  operation: string
   _context: {
     workflowId: string
   }
@@ -139,7 +153,6 @@ export type ArenaGetMyOverdueTasksParams = {
 export interface ArenaGetMyOverdueTasksResponse extends ToolResponse {}
 
 export type ArenaGetTokenParams = {
-  operation: string
   _context?: {
     workflowId?: string
     workspaceId?: string
@@ -155,7 +168,6 @@ export type ArenaGetTokenParams = {
 export interface ArenaGetTokenResponse extends ToolResponse {}
 
 export type ArenaClientUpdatedTasksParams = {
-  operation: string
   'client-updated-tasks-client'?: {
     clientId: string
     name: string
@@ -188,7 +200,6 @@ export interface ArenaClientUpdatedTasksApiResponse {
 }
 
 export type ArenaConversationSummaryParams = {
-  operation: string
   'conversation-summary-task-id': string
   _context: {
     workflowId: string
@@ -198,7 +209,6 @@ export type ArenaConversationSummaryParams = {
 export interface ArenaConversationSummaryResponse extends ToolResponse {}
 
 export type ArenaProjectSummaryParams = {
-  operation: string
   'project-summary-cid': string
   _context: {
     workflowId: string

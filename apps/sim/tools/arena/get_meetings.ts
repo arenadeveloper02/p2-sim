@@ -8,12 +8,6 @@ export const getMeetings: ToolConfig<ArenaGetMeetingsParams, ArenaGetMeetingsRes
   version: '1.0.0',
 
   params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (e.g., get_meetings)',
-    },
     'get-meetings-client': {
       type: 'object',
       required: false,

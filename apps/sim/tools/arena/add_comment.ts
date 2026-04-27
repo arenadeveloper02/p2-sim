@@ -2,147 +2,90 @@ import type { ArenaCommentsParams, ArenaCommentsResponse } from '@/tools/arena/t
 import type { ToolConfig } from '@/tools/types'
 import { extractMentionedUserIds } from './utils'
 
+/**
+ * Selector-based add comment: always uses `/api/tools/arena/comments`.
+ * Task-by-number flow is `arena_comments_task_number` (separate tool).
+ */
 export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> = {
   id: 'arena_comments',
   name: 'Arena Add Comment',
-  description: 'Add a comment to a task in Arena.',
+  description:
+    'Add a comment to an Arena task using client, project, group, and task selectors. Set those on the block; you supply the comment text and optional client note.',
   version: '1.0.0',
 
   params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (e.g., comments)',
-    },
     'comment-client': {
       type: 'object',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Client associated with the comment (basic mode)',
+      required: true,
+      visibility: 'user-only',
+      description: 'Client (set in the block; not an LLM argument)',
     },
     'comment-project': {
       type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Project under which the task belongs (basic mode)',
+      required: true,
+      visibility: 'user-only',
+      description: 'Project (set in the block; not an LLM argument)',
     },
     'comment-group': {
       type: 'object',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Optional task group with id and name (basic mode)',
+      required: true,
+      visibility: 'user-only',
+      description: 'Task group (set in the block; not an LLM argument)',
     },
     'comment-task': {
       type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Task to add comment to (basic mode)',
-    },
-    'comment-task-number': {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description:
-        'Task number (advanced mode) - accepts dynamic values like <function.result.task_number>',
-    },
-    'comment-to': {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'To (advanced mode) - e.g. variable for emails like <function.result.to_emails>',
-    },
-    'comment-cc': {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'CC (advanced mode) - e.g. variable for emails like <function.result.cc_emails>',
+      required: true,
+      visibility: 'user-only',
+      description: 'Target task (set in the block; not an LLM argument)',
     },
     'comment-text': {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Comment text to add',
+      description: 'Comment body to post.',
     },
     'comment-client-note': {
       type: 'boolean',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Whether this is a client note',
+      description: 'Client-facing note (optional). Default false if unsure.',
     },
   },
 
   request: {
-    url: (params: ArenaCommentsParams) => {
-      // Use advanced mode endpoint if task number is provided
-      const isAdvancedMode = !!params['comment-task-number']
-      const url = isAdvancedMode ? `/api/tools/arena/comments-updated` : `/api/tools/arena/comments`
-      return url
-    },
+    url: () => `/api/tools/arena/comments`,
     method: 'POST',
-    headers: (params: ArenaCommentsParams) => {
-      return {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      }
-    },
+    headers: () => ({
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    }),
     body: (params: ArenaCommentsParams) => {
-      // ✅ Validation checks
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
 
       if (!params['comment-text']) throw new Error('Missing required field: Comment Text')
 
-      // Handle client note toggle: if true, internal=false and showToClient=true
-      // If false or undefined, internal=true and showToClient=false
       const clientNote = Boolean(params['comment-client-note'])
 
       const commentText = params['comment-text'] || ''
 
-      // Check if we're in advanced mode (task number provided)
-      const isAdvancedMode = !!params['comment-task-number']
+      const userMentionedIds: string[] = extractMentionedUserIds(commentText)
 
-      // Extract user mentioned IDs from HTML content (only for basic mode)
-      let userMentionedIds: string[] = []
-      if (!isAdvancedMode) {
-        userMentionedIds = extractMentionedUserIds(commentText)
+      if (commentText?.includes('@') && userMentionedIds.length === 0) {
+        const hasMentionTag =
+          commentText.includes('class="mention"') || commentText.includes("class='mention'")
+        const hasDataUserId = commentText.includes('data-user-id')
 
-        // Debug logging to help identify issues
-        if (commentText?.includes('@') && userMentionedIds.length === 0) {
-          const hasMentionTag =
-            commentText.includes('class="mention"') || commentText.includes("class='mention'")
-          const hasDataUserId = commentText.includes('data-user-id')
-
-          if (hasMentionTag || hasDataUserId) {
-            console.warn('[Arena Comments] Mention tags found but no user IDs extracted:', {
-              commentTextLength: commentText.length,
-              commentTextPreview: commentText.substring(0, 300),
-              hasMentionClass: hasMentionTag,
-              hasDataUserId: hasDataUserId,
-              extractedIds: userMentionedIds,
-            })
-          }
+        if (hasMentionTag || hasDataUserId) {
+          console.warn('[Arena Comments] Mention tags found but no user IDs extracted:', {
+            commentTextLength: commentText.length,
+            commentTextPreview: commentText.substring(0, 300),
+            hasMentionClass: hasMentionTag,
+            hasDataUserId: hasDataUserId,
+            extractedIds: userMentionedIds,
+          })
         }
       }
 
-      if (isAdvancedMode) {
-        // Advanced mode: use task number (no @ mentions extraction)
-        const taskNumber = params['comment-task-number']?.trim()
-        if (!taskNumber) throw new Error('Missing required field: Task Number')
-
-        const body: Record<string, any> = {
-          workflowId: params._context.workflowId,
-          taskNumber: taskNumber,
-          comment: commentText,
-          userMentionedIds: [],
-          showToClient: clientNote,
-          to: params['comment-to']?.trim() ?? '',
-          cc: params['comment-cc']?.trim() ?? '',
-        }
-
-        return body
-      }
-
-      // Basic mode: use existing logic with client, project, group, task
       const clientValue = params['comment-client']
       const clientId = typeof clientValue === 'string' ? clientValue : clientValue?.clientId
       if (!clientId) throw new Error('Missing required field: Client')
@@ -158,7 +101,7 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
         typeof taskValue === 'string' ? taskValue : taskValue?.sysId || taskValue?.id
       if (!elementId) throw new Error('Missing required field: Task')
 
-      const body: Record<string, any> = {
+      const body: Record<string, unknown> = {
         workflowId: params._context.workflowId,
         elementId: elementId,
         value: commentText,
@@ -171,7 +114,6 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
         parentId: '',
       }
 
-      // Only include element key when client note is OFF (normal comment)
       if (!clientNote) {
         body.element = 'WORK_NOTES'
       }
@@ -180,10 +122,7 @@ export const addComment: ToolConfig<ArenaCommentsParams, ArenaCommentsResponse> 
     },
   },
 
-  transformResponse: async (
-    response: Response,
-    params?: ArenaCommentsParams
-  ): Promise<ArenaCommentsResponse> => {
+  transformResponse: async (response: Response): Promise<ArenaCommentsResponse> => {
     const data = await response.json()
     return {
       success: true,

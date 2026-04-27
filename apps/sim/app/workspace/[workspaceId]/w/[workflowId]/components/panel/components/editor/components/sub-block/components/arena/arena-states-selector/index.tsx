@@ -3,22 +3,12 @@
 import * as React from 'react'
 import { createLogger } from '@sim/logger'
 import axios from 'axios'
-import { Check, ChevronsUpDown } from 'lucide-react'
-import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
-import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '../../../hooks/use-sub-block-value'
+import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
 
 interface ArenaState {
   id: string
@@ -54,14 +44,15 @@ export function ArenaStatesSelector({
     : Array.isArray(storeValue)
       ? storeValue
       : storeValue
-        ? storeValue.split(',') // fallback if stored as CSV
+        ? String(storeValue).split(',')
         : []
 
   const [states, setStates] = React.useState<ArenaState[]>([])
-  const [open, setOpen] = React.useState(false)
+  const [isLoading, setIsLoading] = React.useState(false)
 
   React.useEffect(() => {
     const fetchStates = async () => {
+      setIsLoading(true)
       setStates([])
       try {
         const v2Token = await getArenaToken()
@@ -89,87 +80,52 @@ export function ArenaStatesSelector({
           error: error instanceof Error ? error.message : String(error),
         })
         setStates([])
+      } finally {
+        setIsLoading(false)
       }
     }
 
     fetchStates()
-
-    return () => {
-      setStates([])
-    }
   }, [])
 
-  const handleSelect = (stateName: string) => {
-    if (isPreview || disabled) return
-
-    let newValues: string[]
-    if (selectedValues.includes(stateName)) {
-      newValues = selectedValues.filter((s) => s !== stateName)
-    } else {
-      newValues = [...selectedValues, stateName]
+  const options: ComboboxOption[] = React.useMemo(() => {
+    let base: ComboboxOption[] = states.map((s) => ({ label: s.name, value: s.name }))
+    for (const sv of selectedValues) {
+      base = mergeArenaComboboxOptions(base, sv, sv)
     }
+    return base
+  }, [states, selectedValues])
 
-    setStoreValue(newValues) // store as array (or newValues.join(",") if backend expects CSV)
+  const onMultiSelectChange = (values: string[]) => {
+    if (isPreview || disabled) return
+    setStoreValue(values)
   }
 
-  const selectedLabel = selectedValues.length > 0 ? selectedValues.join(', ') : 'Select states...'
-
   return (
-    <div className={cn('flex flex-col gap-2 pt-1', layout === 'half' ? 'max-w-md' : 'w-full')}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant='outline'
-            role='combobox'
-            aria-expanded={open}
-            id={`state-${subBlockId}`}
-            className={cn(
-              comboboxVariants(),
-              'flex h-auto min-h-[2.5rem] w-full items-start justify-between whitespace-normal break-words py-2 text-left'
-            )}
-            disabled={disabled}
-          >
-            <div className='flex-1 whitespace-normal break-words text-left'>{selectedLabel}</div>
-            <ChevronsUpDown className='mt-1 ml-2 h-4 w-4 shrink-0 opacity-50' />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
-          <Command
-            filter={(value, search) => {
-              const state = states.find((s) => s.id === value || s.name === value)
-              if (!state) return 0
-
-              return state.name.toLowerCase().includes(search.toLowerCase()) ||
-                state.id.toLowerCase().includes(search.toLowerCase())
-                ? 1
-                : 0
-            }}
-          >
-            <CommandInput placeholder='Search states...' className='h-9' />
-            <CommandList>
-              <CommandEmpty>No state found.</CommandEmpty>
-              <CommandGroup>
-                {states.map((state) => (
-                  <CommandItem
-                    key={state.id}
-                    value={state.name}
-                    onSelect={() => handleSelect(state.name)}
-                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                  >
-                    {state.name}
-                    <Check
-                      className={cn(
-                        'ml-auto h-4 w-4',
-                        selectedValues.includes(state.name) ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+    <div
+      className={cn('w-full pt-1', layout === 'half' && 'max-w-md')}
+      id={`state-${subBlockId}`}
+    >
+      <Combobox
+        options={options}
+        multiSelect
+        multiSelectValues={selectedValues}
+        onMultiSelectChange={onMultiSelectChange}
+        placeholder='Select states...'
+        searchable
+        searchPlaceholder='Search states...'
+        emptyMessage='No state found.'
+        isLoading={isLoading}
+        maxHeight={240}
+        dropdownWidth='trigger'
+        disabled={disabled}
+        className='w-full'
+        overlayContent={
+          selectedValues.length > 0 ? (
+            <span className='truncate text-[var(--text-primary)]'>{selectedValues.join(', ')}</span>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

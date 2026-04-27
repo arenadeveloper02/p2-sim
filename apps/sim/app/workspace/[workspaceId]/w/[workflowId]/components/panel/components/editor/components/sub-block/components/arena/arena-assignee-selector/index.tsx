@@ -50,10 +50,10 @@ export function ArenaAssigneeSelector({
   const isCreateTask = logicalId === 'task-assignee'
   const clientKey = isCreateTask
     ? arenaSiblingSubBlockStoreKey(subBlockId, 'task-client')
-    : 'search-task-client'
+    : arenaSiblingSubBlockStoreKey(subBlockId, 'search-task-client')
   const projectKey = isCreateTask
     ? arenaSiblingSubBlockStoreKey(subBlockId, 'task-project')
-    : 'search-task-project'
+    : arenaSiblingSubBlockStoreKey(subBlockId, 'search-task-project')
   const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
     | { clientId?: string }
     | undefined

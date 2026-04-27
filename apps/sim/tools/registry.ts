@@ -126,6 +126,7 @@ import {
 } from '@/tools/apollo'
 import {
   arenaAddComment,
+  arenaAddCommentTaskNumber,
   arenaClientUpdatedTasks,
   arenaConversationSummary,
   arenaCreateSubTask,
@@ -139,6 +140,7 @@ import {
   arenaProjectSummary,
   arenaSaveSummary,
   arenaSearchTask,
+  arenaSearchTaskSimple,
 } from '@/tools/arena'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
@@ -2956,8 +2958,10 @@ export const tools: Record<string, ToolConfig> = {
   arena_create_sub_task: arenaCreateSubTask,
   arena_create_sub_task_fields: arenaCreateSubTaskFields,
   arena_search_task: arenaSearchTask,
+  arena_search_task_simple: arenaSearchTaskSimple,
   arena_save_summary: arenaSaveSummary,
   arena_comments: arenaAddComment,
+  arena_comments_task_number: arenaAddCommentTaskNumber,
   arena_get_meetings: arenaGetMeetings,
   arena_get_my_tasks: arenaGetMyTasks,
   arena_get_my_overdue_tasks: arenaGetMyOverdueTasks,

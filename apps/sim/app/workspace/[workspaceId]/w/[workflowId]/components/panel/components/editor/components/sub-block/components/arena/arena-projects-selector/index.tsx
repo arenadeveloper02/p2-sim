@@ -51,7 +51,7 @@ export function ArenaProjectSelector({
       ? arenaSiblingSubBlockStoreKey(subBlockId, 'task-client')
       : logicalId === 'comment-project'
         ? arenaSiblingSubBlockStoreKey(subBlockId, 'comment-client')
-        : 'search-task-client'
+        : arenaSiblingSubBlockStoreKey(subBlockId, 'search-task-client')
   const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
     | { clientId?: string }
     | undefined
