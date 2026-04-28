@@ -6,6 +6,61 @@
 export const UNIPILE_RELATIONS_PAGE_LIMIT = 1000
 
 const MAX_RELATION_PAGES = 500
+const MAX_RELATION_ITEMS = 100_000
+const MAX_PAGE_FETCH_RETRIES = 3
+const INITIAL_RETRY_DELAY_MS = 300
+
+type RelationsStopReason = 'completed' | 'max_pages' | 'max_items' | 'repeated_cursor'
+
+function getRetryDelayMs(retry: number, retryAfterHeader: string | null): number {
+  if (retryAfterHeader) {
+    const retryAfterSeconds = Number(retryAfterHeader)
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+      return Math.ceil(retryAfterSeconds * 1000)
+    }
+  }
+  const exp = INITIAL_RETRY_DELAY_MS * 2 ** retry
+  const jitter = Math.floor(Math.random() * 150)
+  return exp + jitter
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function fetchRelationsPageWithRetry(
+  url: string,
+  apiKey: string
+): Promise<Record<string, unknown>> {
+  let attempt = 0
+  while (true) {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        'X-API-KEY': apiKey,
+      },
+    })
+
+    const responseText = await res.text()
+    if (res.ok) {
+      try {
+        return JSON.parse(responseText) as Record<string, unknown>
+      } catch {
+        throw new Error('Invalid JSON from Unipile')
+      }
+    }
+
+    const isRetryable = res.status === 429 || res.status >= 500
+    if (!isRetryable || attempt >= MAX_PAGE_FETCH_RETRIES) {
+      throw new Error(responseText || res.statusText || 'Unipile request failed')
+    }
+
+    const delayMs = getRetryDelayMs(attempt, res.headers.get('retry-after'))
+    await wait(delayMs)
+    attempt += 1
+  }
+}
 
 export function extractUnipileRelationsNextCursor(
   body: Record<string, unknown>
@@ -33,7 +88,13 @@ export interface FetchAllUnipileUserRelationsOptions {
  */
 export async function fetchAllUnipileUserRelationItems(
   options: FetchAllUnipileUserRelationsOptions
-): Promise<{ items: unknown[]; object: string | null }> {
+): Promise<{
+  items: unknown[]
+  object: string | null
+  pagesFetched: number
+  truncated: boolean
+  stopReason: RelationsStopReason
+}> {
   const { baseUrl, apiKey, accountId } = options
   const filterTrim =
     typeof options.filter === 'string' && options.filter.trim() !== ''
@@ -46,8 +107,9 @@ export async function fetchAllUnipileUserRelationItems(
   let pageCursor: string | undefined
 
   let pages = 0
+  let stopReason: RelationsStopReason = 'completed'
+  let brokeEarly = false
   while (pages < MAX_RELATION_PAGES) {
-    pages += 1
     const qs = new URLSearchParams()
     qs.set('account_id', accountId)
     qs.set('limit', String(UNIPILE_RELATIONS_PAGE_LIMIT))
@@ -55,25 +117,8 @@ export async function fetchAllUnipileUserRelationItems(
     if (pageCursor) qs.set('cursor', pageCursor)
 
     const url = `${baseUrl}/api/v1/users/relations?${qs.toString()}`
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        accept: 'application/json',
-        'X-API-KEY': apiKey,
-      },
-    })
-
-    const responseText = await res.text()
-    if (!res.ok) {
-      throw new Error(responseText || res.statusText || 'Unipile request failed')
-    }
-
-    let parsed: Record<string, unknown>
-    try {
-      parsed = JSON.parse(responseText) as Record<string, unknown>
-    } catch {
-      throw new Error('Invalid JSON from Unipile')
-    }
+    const parsed = await fetchRelationsPageWithRetry(url, apiKey)
+    pages += 1
 
     if (typeof parsed.object === 'string') {
       object = parsed.object
@@ -81,16 +126,35 @@ export async function fetchAllUnipileUserRelationItems(
 
     const pageItems = Array.isArray(parsed.items) ? parsed.items : []
     allItems.push(...pageItems)
+    if (allItems.length >= MAX_RELATION_ITEMS) {
+      stopReason = 'max_items'
+      brokeEarly = true
+      break
+    }
 
     const next = extractUnipileRelationsNextCursor(parsed)
     if (!next) {
+      stopReason = 'completed'
+      brokeEarly = true
       break
     }
     if (next === pageCursor) {
+      stopReason = 'repeated_cursor'
+      brokeEarly = true
       break
     }
     pageCursor = next
   }
 
-  return { items: allItems, object }
+  if (!brokeEarly && pages >= MAX_RELATION_PAGES) {
+    stopReason = 'max_pages'
+  }
+
+  return {
+    items: allItems,
+    object,
+    pagesFetched: pages,
+    truncated: stopReason === 'max_pages' || stopReason === 'max_items',
+    stopReason,
+  }
 }

@@ -12,7 +12,7 @@ export const unipileListUserRelationsTool: ToolConfig<
   id: 'unipile_list_user_relations',
   name: 'Unipile List User Relations',
   description:
-    'Lists all LinkedIn relations for an account (`GET /api/v1/users/relations`), following pagination until every page is loaded. Uses server `UNIPILE_API_KEY`.',
+    'Lists all LinkedIn relations for an account (`GET /api/v1/users/relations`), following cursor pagination internally until complete (with safety caps). Uses server `UNIPILE_API_KEY`.',
   version: '1.0.0',
 
   params: {
@@ -65,6 +65,26 @@ export const unipileListUserRelationsTool: ToolConfig<
     total_items: {
       type: 'number',
       description: 'Total items when returned by API',
+      optional: true,
+    },
+    fetch_all: {
+      type: 'boolean',
+      description: 'True when backend fetched all pages internally',
+      optional: true,
+    },
+    pages_fetched: {
+      type: 'number',
+      description: 'Number of upstream pages fetched',
+      optional: true,
+    },
+    truncated: {
+      type: 'boolean',
+      description: 'True when a safety cap stopped early',
+      optional: true,
+    },
+    truncation_reason: {
+      type: 'string',
+      description: 'When truncated: max_pages or max_items',
       optional: true,
     },
   },

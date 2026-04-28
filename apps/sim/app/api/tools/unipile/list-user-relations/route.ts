@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = RequestSchema.parse(body)
 
-    const { items, object } = await fetchAllUnipileUserRelationItems({
+    const { items, object, pagesFetched, truncated, stopReason } =
+      await fetchAllUnipileUserRelationItems({
       baseUrl,
       apiKey,
       accountId: data.account_id.trim(),
@@ -48,6 +49,11 @@ export async function POST(request: NextRequest) {
       item_count: items.length,
       cursor: null,
       paging: null,
+      fetch_all: true,
+      pages_fetched: pagesFetched,
+      truncated,
+      truncation_reason:
+        stopReason === 'max_pages' || stopReason === 'max_items' ? stopReason : null,
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

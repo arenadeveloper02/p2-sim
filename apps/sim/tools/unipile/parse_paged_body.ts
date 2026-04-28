@@ -21,5 +21,12 @@ export function parseUnipilePagedBody(data: Record<string, unknown>): UnipileLis
     cursor: topCursor ?? pagingCursor,
     paging,
     total_items: typeof data.total_items === 'number' ? data.total_items : null,
+    fetch_all: data.fetch_all === true ? true : undefined,
+    pages_fetched: typeof data.pages_fetched === 'number' ? data.pages_fetched : undefined,
+    truncated: data.truncated === true ? true : undefined,
+    truncation_reason:
+      data.truncation_reason === 'max_pages' || data.truncation_reason === 'max_items'
+        ? data.truncation_reason
+        : undefined,
   }
 }

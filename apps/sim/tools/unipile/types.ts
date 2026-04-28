@@ -131,6 +131,14 @@ export interface UnipileListPagedItemsOutput {
   cursor: string | null
   paging: Record<string, unknown> | null
   total_items: number | null
+  /** True when the backend fetched all pages internally before responding. */
+  fetch_all?: boolean
+  /** Number of upstream pages fetched when `fetch_all` is true. */
+  pages_fetched?: number
+  /** True when a safety cap stopped pagination before exhaustion. */
+  truncated?: boolean
+  /** If truncated, the reason for stopping early. */
+  truncation_reason?: 'max_pages' | 'max_items' | null
 }
 
 export interface UnipileListChatAttendeesParams {
