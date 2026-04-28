@@ -2,7 +2,6 @@
  * @vitest-environment node
  */
 
-import { loggerMock } from '@sim/testing'
 import { describe, expect, it, vi } from 'vitest'
 import { JsonYamlChunker } from './json-yaml-chunker'
 

@@ -2,8 +2,8 @@
 import { existsSync, promises as fs } from 'fs'
 import { join } from 'path'
 import { createLogger } from '@sim/logger'
+import { generateShortId } from '@sim/utils/id'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { generateShortId } from '@/lib/core/utils/uuid'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG, USE_S3_STORAGE } from '@/lib/uploads/config'
 import { uploadFile } from '@/lib/uploads/core/storage-service'
 

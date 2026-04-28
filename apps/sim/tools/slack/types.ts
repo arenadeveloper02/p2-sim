@@ -317,6 +317,13 @@ export const CHANNEL_OUTPUT_PROPERTIES = {
   },
   creator: { type: 'string', description: 'User ID of channel creator', optional: true },
   updated: { type: 'number', description: 'Unix timestamp of last update', optional: true },
+  is_im: { type: 'boolean', description: 'Whether this is a 1:1 DM channel', optional: true },
+  is_mpim: { type: 'boolean', description: 'Whether this is a group DM (mpim)', optional: true },
+  user: {
+    type: 'string',
+    description: 'For DMs, the user ID of the other participant',
+    optional: true,
+  },
 } as const satisfies Record<string, OutputProperty>
 
 /**
@@ -719,6 +726,22 @@ export interface SlackRemoveReactionParams extends SlackBaseParams {
 
 export interface SlackListChannelsParams extends SlackBaseParams {
   includePrivate?: boolean
+  includeDMs?: boolean
+  includeGroupDMs?: boolean
+  excludeArchived?: boolean
+  limit?: number
+}
+
+/**
+ * Params for `slack_get_user_channels` (Slack `users.conversations`).
+ * Shape matches `SlackListChannelsParams`; kept as a distinct interface so
+ * the two tools can diverge independently.
+ */
+export interface SlackGetUserChannelsParams extends SlackBaseParams {
+  includePublic?: boolean
+  includePrivate?: boolean
+  includeDMs?: boolean
+  includeGroupDMs?: boolean
   excludeArchived?: boolean
   limit?: number
 }
@@ -736,6 +759,8 @@ export interface SlackListUsersParams extends SlackBaseParams {
 export interface SlackGetUserParams extends SlackBaseParams {
   userId: string
 }
+
+export interface SlackGetAuthUserParams extends SlackBaseParams {}
 
 export interface SlackGetMessageParams extends SlackBaseParams {
   channel: string
@@ -1022,6 +1047,15 @@ export interface SlackListChannelsResponse extends ToolResponse {
   }
 }
 
+export interface SlackGetUserChannelsResponse extends ToolResponse {
+  output: {
+    channels: SlackChannel[]
+    ids: string[]
+    names: string[]
+    count: number
+  }
+}
+
 export interface SlackListMembersResponse extends ToolResponse {
   output: {
     members: string[]
@@ -1074,6 +1108,20 @@ export interface SlackListUsersResponse extends ToolResponse {
 export interface SlackGetUserResponse extends ToolResponse {
   output: {
     user: SlackUser
+  }
+}
+
+export interface SlackGetAuthUserResponse extends ToolResponse {
+  output: {
+    userId: string
+    user: string
+    teamId: string
+    team: string
+    url: string
+    botId: string
+    appId: string
+    isEnterpriseInstall: boolean
+    enterpriseId: string
   }
 }
 
@@ -1213,9 +1261,11 @@ export type SlackResponse =
   | SlackAddReactionResponse
   | SlackRemoveReactionResponse
   | SlackListChannelsResponse
+  | SlackGetUserChannelsResponse
   | SlackListMembersResponse
   | SlackListUsersResponse
   | SlackGetUserResponse
+  | SlackGetAuthUserResponse
   | SlackSearchAllResponse
   | SlackEphemeralMessageResponse
   | SlackGetMessageResponse

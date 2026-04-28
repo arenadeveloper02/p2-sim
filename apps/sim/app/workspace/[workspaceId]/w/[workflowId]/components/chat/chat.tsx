@@ -2,6 +2,7 @@
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import {
   AlertCircle,
   ArrowDownToLine,
@@ -38,7 +39,6 @@ import {
   extractPathFromOutputId,
   parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
-import { generateId } from '@/lib/core/utils/uuid'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format'

@@ -15,8 +15,8 @@ import {
 import { createLogger } from '@sim/logger'
 import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
-import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 import type { KnowledgeRef, KnowledgeResultChunk } from '@/app/chat/components/message/message'
@@ -414,18 +414,15 @@ export const ArenaClientChatMessage = memo(
       [message.isInitialMessage, onCopySegmentToInput, renderWelcomeMessage]
     )
 
-    const handleUserAttachmentDownload = useCallback(
-      (attachment: { dataUrl: string }) => {
-        if (attachment.dataUrl.startsWith('data:image/')) {
-          const [, base64Data = ''] = attachment.dataUrl.split(',', 2)
-          void downloadImage(true, base64Data || undefined)
-          return
-        }
+    const handleUserAttachmentDownload = useCallback((attachment: { dataUrl: string }) => {
+      if (attachment.dataUrl.startsWith('data:image/')) {
+        const [, base64Data = ''] = attachment.dataUrl.split(',', 2)
+        void downloadImage(true, base64Data || undefined)
+        return
+      }
 
-        void downloadImage(false, undefined, attachment.dataUrl)
-      },
-      []
-    )
+      void downloadImage(false, undefined, attachment.dataUrl)
+    }, [])
 
     const renderContent = (content: unknown) => {
       if (!content) {
@@ -471,7 +468,11 @@ export const ArenaClientChatMessage = memo(
                 ))}
                 {imageBase64 && (
                   <div className='w-full'>
-                    {renderBs64Img({ isBase64: true, imageData: imageBase64 })}
+                    {renderBs64Img({
+                      isBase64: true,
+                      imageData: imageBase64,
+                      ...getGeneratedImageSelectionProps(imgRaw),
+                    })}
                   </div>
                 )}
               </>
@@ -508,7 +509,11 @@ export const ArenaClientChatMessage = memo(
 
         if (typeof content === 'string' && isBase64(content)) {
           const cleanedContent = content.replace(/\s+/g, '')
-          return renderBs64Img({ isBase64: true, imageData: cleanedContent })
+          return renderBs64Img({
+            isBase64: true,
+            imageData: cleanedContent,
+            ...getGeneratedImageSelectionProps(content),
+          })
         }
 
         if (typeof content === 'string') {

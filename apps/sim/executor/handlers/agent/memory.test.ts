@@ -1,4 +1,3 @@
-import { loggerMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MEMORY } from '@/executor/constants'
 import { Memory } from '@/executor/handlers/agent/memory'

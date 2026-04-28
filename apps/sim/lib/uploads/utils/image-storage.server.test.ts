@@ -46,7 +46,7 @@ vi.mock('@/lib/core/utils/urls', () => ({
   getBaseUrl: mockGetBaseUrl,
 }))
 
-vi.mock('@/lib/core/utils/uuid', () => ({
+vi.mock('@sim/utils/id', () => ({
   generateShortId: mockGenerateShortId,
 }))
 

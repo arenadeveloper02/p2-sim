@@ -46,8 +46,8 @@ export function EmailLayout({
               // src={logoPng || brand.logoUrl || `${baseUrl}/brand/color/email/type.png`}
               // width='70'
               src={logoPng || brand.logoUrl || `${baseUrl}/brand/color/email/wordmark.png`}
-              width='107'
-              height='33'
+              width='48'
+              height='48'
               alt={brand.name}
               style={{ display: 'block' }}
             />

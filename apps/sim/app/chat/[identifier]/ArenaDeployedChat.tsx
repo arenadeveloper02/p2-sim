@@ -2,16 +2,16 @@
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
-import { generateId } from '@/lib/core/utils/uuid'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
+// import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   deployedChatPromptSentEvent,
   deployedChatThreadSelectedEvent,
@@ -599,13 +599,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     fetchChatConfig()
     setConversationId(generateId())
 
-    getFormattedGitHubStars()
-      .then((formattedStars) => {
-        setStarCount(formattedStars)
-      })
-      .catch((err) => {
-        logger.error('Failed to fetch GitHub stars:', err)
-      })
+    // getFormattedGitHubStars()
+    //   .then((formattedStars) => {
+    //     setStarCount(formattedStars)
+    //   })
+    //   .catch((err) => {
+    //     logger.error('Failed to fetch GitHub stars:', err)
+    //   })
   }, [identifier])
 
   const refreshChat = () => {
@@ -1343,10 +1343,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // If authentication is required, use the extracted components
   if (authRequired) {
     if (authRequired === 'password') {
-      return <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
+      return <PasswordAuth identifier={identifier} />
     }
     if (authRequired === 'email') {
-      return <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
+      return <EmailAuth identifier={identifier} />
     }
     // if (authRequired === 'sso') {
     //   return <SSOAuth identifier={identifier} />

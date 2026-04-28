@@ -2,13 +2,13 @@
 
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
   type AssistantChatFile as ChatFile,
 } from '@/lib/chat/assistant-assets'
 import type { ChatMessage } from '@/app/chat/components/message/message'
-import { generateId } from '@/lib/core/utils/uuid'
 import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
 import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 

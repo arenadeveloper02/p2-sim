@@ -20,6 +20,23 @@ export interface AssistantGeneratedImage {
   context?: string
 }
 
+function isDataImageUrl(value: string): boolean {
+  return /^data:image\/[a-z0-9.+-]+;base64,/i.test(value.trim())
+}
+
+function getDataImageMimeType(value: string): string {
+  const match = value.trim().match(/^data:(image\/[a-z0-9.+-]+);base64,/i)
+  return match?.[1]?.toLowerCase() ?? 'image/*'
+}
+
+function getGeneratedImageId(value: string): string {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0
+  }
+  return `generated-image:${value.length}:${Math.abs(hash)}`
+}
+
 /**
  * Returns whether the value is a renderable image URL we can show in chat.
  */
@@ -27,9 +44,10 @@ export function isAssistantImageUrl(value: unknown): value is string {
   return (
     typeof value === 'string' &&
     value.length > 0 &&
-    (value.startsWith('http') || value.startsWith('/api/files/serve/')) &&
-    (/\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(value.trim()) ||
-      value.includes('agent-generated-images'))
+    (isDataImageUrl(value) ||
+      ((value.startsWith('http') || value.startsWith('/api/files/serve/')) &&
+        (/\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(value.trim()) ||
+          value.includes('agent-generated-images'))))
   )
 }
 
@@ -147,11 +165,12 @@ export function extractGeneratedImagesFromData(
   if (typeof data === 'string') {
     if (isAssistantImageUrl(data) && !seenUrls.has(data)) {
       seenUrls.add(data)
+      const type = isDataImageUrl(data) ? getDataImageMimeType(data) : 'image/*'
       images.push({
-        id: `generated-image:${data}`,
+        id: getGeneratedImageId(data),
         name: 'Generated image',
         url: data,
-        type: 'image/*',
+        type,
       })
     }
     return images
@@ -166,13 +185,18 @@ export function extractGeneratedImagesFromData(
 
   if (typeof data === 'object') {
     for (const [key, value] of Object.entries(data)) {
-      if ((key === 'image' || key === 'url') && isAssistantImageUrl(value) && !seenUrls.has(value)) {
+      if (
+        (key === 'image' || key === 'url') &&
+        isAssistantImageUrl(value) &&
+        !seenUrls.has(value)
+      ) {
         seenUrls.add(value)
+        const type = isDataImageUrl(value) ? getDataImageMimeType(value) : 'image/*'
         images.push({
-          id: `generated-image:${value}`,
+          id: getGeneratedImageId(value),
           name: key === 'image' ? 'Generated image' : 'Image file',
           url: value,
-          type: 'image/*',
+          type,
         })
         continue
       }

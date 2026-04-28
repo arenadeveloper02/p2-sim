@@ -123,6 +123,14 @@ function getMimeFromBase64(cleanBase64: string): string {
   return 'image/png'
 }
 
+function getBase64Payload(imageData: string): string {
+  const cleanImageData = imageData.replace(/\s+/g, '')
+  if (!cleanImageData.startsWith('data:image')) {
+    return cleanImageData
+  }
+  return cleanImageData.split(',', 2)[1] ?? ''
+}
+
 /**
  * Renders large base64 images via Blob URL to avoid data URL length limits
  * (browsers often fail with data URLs > ~2MB; 2K/4K images exceed this).
@@ -132,9 +140,15 @@ function getMimeFromBase64(cleanBase64: string): string {
 function Base64ImageWithBlobUrl({
   cleanImageData,
   imageWrapperClass = 'my-2 w-full max-h-[70vh] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]',
+  onSelect,
+  selectLabel,
+  compactActions,
 }: {
   cleanImageData: string
   imageWrapperClass?: string
+  onSelect?: () => void
+  selectLabel?: string
+  compactActions?: boolean
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -208,6 +222,9 @@ function Base64ImageWithBlobUrl({
       src={objectUrl}
       wrapperClassName={imageWrapperClass}
       onDownload={() => downloadImage(true, cleanImageData)}
+      onSelect={onSelect}
+      selectLabel={selectLabel}
+      compactActions={compactActions}
     >
       <img
         src={objectUrl}
@@ -354,7 +371,9 @@ export function ImageWithViewFullOverlay({
         {children}
         <div
           className={`pointer-events-none absolute inset-0 flex pt-8 ${
-            compactActions ? 'items-start justify-end gap-1 p-2' : 'items-end justify-center gap-2 pb-3'
+            compactActions
+              ? 'items-start justify-end gap-1 p-2'
+              : 'items-end justify-center gap-2 pb-3'
           }`}
           aria-hidden
         >
@@ -446,7 +465,7 @@ export const renderBs64Img = ({
   compactActions?: boolean
 }) => {
   try {
-    const cleanImageData = typeof imageData === 'string' ? imageData.replace(/\s+/g, '') : ''
+    const cleanImageData = typeof imageData === 'string' ? getBase64Payload(imageData) : ''
     const singleImageUrl = normalizeImageUrl(imageUrl)
     const displayUrl = singleImageUrl ? getImageDisplayUrl(singleImageUrl) : ''
 
@@ -514,6 +533,9 @@ export const renderBs64Img = ({
         <Base64ImageWithBlobUrl
           cleanImageData={cleanImageData}
           imageWrapperClass={imageWrapperClass}
+          onSelect={onSelect}
+          selectLabel={selectLabel}
+          compactActions={compactActions}
         />
       )
     }
@@ -990,7 +1012,9 @@ export function resolveMessageImagesAndProse(raw: string): { urls: string[]; pro
       return []
     }
 
-    return value.filter((item): item is string => typeof item === 'string' && isRenderableImageUrl(item))
+    return value.filter(
+      (item): item is string => typeof item === 'string' && isRenderableImageUrl(item)
+    )
   }
 
   if (t.startsWith('[')) {
