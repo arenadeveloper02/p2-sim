@@ -1,12 +1,12 @@
 'use client'
 
 import type React from 'react'
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import { ArrowUp, Mic, Paperclip, X } from 'lucide-react'
 import { Badge, Tooltip } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
-import { generateId } from '@/lib/core/utils/uuid'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
@@ -52,6 +52,29 @@ export const ChatInput: React.FC<{
   const [uploadErrors, setUploadErrors] = useState<string[]>([])
   const [dragCounter, setDragCounter] = useState(0)
   const isDragOver = dragCounter > 0
+
+  // When parent injects text (e.g. "Ask this in chat"), append it + space and focus the input.
+  useEffect(() => {
+    const text = insertText?.trim()
+    if (!text) return
+
+    setInputValue((prev) => {
+      const prefix = prev.length > 0 ? `${prev.replace(/\s+$/, '')} ` : ''
+      return `${prefix}${text} `
+    })
+
+    onInsertConsumed?.()
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = textareaRef.current
+        if (!el) return
+        el.focus()
+        const end = el.value.length
+        el.setSelectionRange(end, end)
+      })
+    })
+  }, [insertText, onInsertConsumed])
 
   useLayoutEffect(() => {
     const el = textareaRef.current

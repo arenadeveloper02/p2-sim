@@ -34,9 +34,11 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Get Message', id: 'get_message' },
         { label: 'Get Thread', id: 'get_thread' },
         { label: 'List Channels', id: 'list_channels' },
+        { label: 'Get User Channels', id: 'get_user_channels' },
         { label: 'List Channel Members', id: 'list_members' },
         { label: 'List Users', id: 'list_users' },
         { label: 'Get User Info', id: 'get_user' },
+        { label: 'Auth User', id: 'get_auth_user' },
         { label: 'Download File', id: 'download' },
         { label: 'Update Message', id: 'update' },
         { label: 'Delete Message', id: 'delete' },
@@ -64,7 +66,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Sim Bot', id: 'oauth' },
         { label: 'Custom Bot', id: 'bot_token' },
       ],
-      value: () => 'oauth',
+      value: () => 'bot_token',
       required: true,
     },
     {
@@ -90,11 +92,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       serviceId: 'slack',
       requiredScopes: getScopesForService('slack'),
       placeholder: 'Select Slack workspace',
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'oauth',
-      },
       required: true,
     },
     {
@@ -104,24 +101,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
       placeholder: 'Enter credential ID',
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'oauth',
-      },
-      required: true,
-    },
-    {
-      id: 'botToken',
-      title: 'Bot Token',
-      type: 'short-input',
-      placeholder: 'Enter your Slack bot token (xoxb-...)',
-      password: true,
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'bot_token',
-      },
       required: true,
     },
     {
@@ -133,7 +112,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.channels',
       placeholder: 'Select Slack channel',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: (values?: Record<string, unknown>) => {
         const op = values?.operation as string
         if (op === 'ephemeral') {
@@ -143,8 +122,10 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           field: 'operation',
           value: [
             'list_channels',
+            'get_user_channels',
             'list_users',
             'get_user',
+            'get_auth_user',
             'search_all',
             'get_user_presence',
             'edit_canvas',
@@ -180,8 +161,10 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           field: 'operation',
           value: [
             'list_channels',
+            'get_user_channels',
             'list_users',
             'get_user',
+            'get_auth_user',
             'search_all',
             'get_user_presence',
             'edit_canvas',
@@ -210,7 +193,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'destinationType',
         value: 'dm',
@@ -239,7 +222,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'ephemeral',
@@ -521,6 +504,20 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     // List Channels specific fields
     {
+      id: 'includePublic',
+      title: 'Include Public Channels',
+      type: 'dropdown',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
+      condition: {
+        field: 'operation',
+        value: 'get_user_channels',
+      },
+    },
+    {
       id: 'includePrivate',
       title: 'Include Private Channels',
       type: 'dropdown',
@@ -531,7 +528,35 @@ Do not include any explanations, markdown formatting, or other text outside the 
       value: () => 'true',
       condition: {
         field: 'operation',
-        value: 'list_channels',
+        value: ['list_channels', 'get_user_channels'],
+      },
+    },
+    {
+      id: 'includeDMs',
+      title: 'Include Direct Messages',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      condition: {
+        field: 'operation',
+        value: ['list_channels', 'get_user_channels'],
+      },
+    },
+    {
+      id: 'includeGroupDMs',
+      title: 'Include Group DMs',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      condition: {
+        field: 'operation',
+        value: ['list_channels', 'get_user_channels'],
       },
     },
     {
@@ -541,7 +566,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       placeholder: '100',
       condition: {
         field: 'operation',
-        value: 'list_channels',
+        value: ['list_channels', 'get_user_channels'],
       },
     },
     // List Members specific fields
@@ -590,7 +615,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'get_user',
@@ -846,7 +871,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'get_user_presence',
@@ -1151,7 +1176,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       selectorKey: 'slack.users',
       placeholder: 'Select user to publish Home tab to',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'publish_view',
@@ -1247,6 +1272,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       'slack_get_message',
       'slack_get_thread',
       'slack_list_channels',
+      'slack_get_user_channels',
       'slack_list_members',
       'slack_list_users',
       'slack_get_user',
@@ -1266,6 +1292,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       'slack_update_view',
       'slack_push_view',
       'slack_publish_view',
+      'slack_get_auth_user',
     ],
     config: {
       tool: (params) => {
@@ -1284,12 +1311,16 @@ Do not include any explanations, markdown formatting, or other text outside the 
             return 'slack_get_thread'
           case 'list_channels':
             return 'slack_list_channels'
+          case 'get_user_channels':
+            return 'slack_get_user_channels'
           case 'list_members':
             return 'slack_list_members'
           case 'list_users':
             return 'slack_list_users'
           case 'get_user':
             return 'slack_get_user'
+          case 'get_auth_user':
+            return 'slack_get_auth_user'
           case 'download':
             return 'slack_download'
           case 'update':
@@ -1330,7 +1361,6 @@ Do not include any explanations, markdown formatting, or other text outside the 
         const {
           oauthCredential,
           authMethod,
-          botToken,
           operation,
           destinationType,
           channel,
@@ -1359,7 +1389,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
           deleteTimestamp,
           reactionTimestamp,
           emojiName,
+          includePublic,
           includePrivate,
+          includeDMs,
+          includeGroupDMs,
           channelLimit,
           memberLimit,
           includeDeleted,
@@ -1438,12 +1471,11 @@ Do not include any explanations, markdown formatting, or other text outside the 
         }
 
         // Handle authentication based on method
-        if (authMethod === 'bot_token') {
-          baseParams.accessToken = botToken
-        } else {
-          // Default to OAuth
-          baseParams.credential = oauthCredential
-        }
+        // Always use the selected Slack OAuth credential; choose token type later.
+        // - Sim Bot (oauth): uses bot token (accessToken) from the credential
+        // - Custom Bot (bot_token): uses user token (idToken) from the credential
+        baseParams.credential = oauthCredential
+        baseParams.useUserToken = authMethod === 'bot_token'
 
         switch (operation) {
           case 'send': {
@@ -1626,8 +1658,16 @@ Do not include any explanations, markdown formatting, or other text outside the 
             break
           }
 
-          case 'list_channels': {
+          case 'list_channels':
+          case 'get_user_channels': {
+            // includePublic is only exposed in the UI for get_user_channels;
+            // list_channels always includes public channels (there is no
+            // dropdown for it there, so includePublic is undefined and the
+            // tool falls back to its default "include").
+            baseParams.includePublic = includePublic !== 'false'
             baseParams.includePrivate = includePrivate !== 'false'
+            baseParams.includeDMs = includeDMs === 'true'
+            baseParams.includeGroupDMs = includeGroupDMs === 'true'
             baseParams.excludeArchived = true
             baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 100
             break
@@ -1646,6 +1686,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
 
           case 'get_user':
             baseParams.userId = userId
+            break
+
+          case 'get_auth_user':
+            // No extra inputs — only the access/bot token (already in baseParams).
             break
 
           case 'download': {
@@ -1738,16 +1782,12 @@ Do not include any explanations, markdown formatting, or other text outside the 
             baseParams.sort = sortBy || 'timestamp'
             baseParams.sort_dir = sortDir || 'desc'
             baseParams.highlight = highlight !== 'false' // default to true
-            // For search_all, use user token instead of bot token
-            if (authMethod === 'bot_token') {
-              throw new Error('Search All operation requires OAuth authentication with user token')
-            }
-            // Use credential for OAuth, but we'll need to get user token from idToken
+            // For search_all, use user token instead of bot token (handled by useUserToken flag).
             if (!oauthCredential) {
               throw new Error('Slack account credential is required for Search All operation')
             }
             baseParams.credential = oauthCredential
-            baseParams.useUserToken = true // Flag to indicate user token should be used
+            baseParams.useUserToken = true // Ensure user token is used for Search All
             break
           }
           case 'get_channel_info':
@@ -1844,7 +1884,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     authMethod: { type: 'string', description: 'Authentication method' },
     destinationType: { type: 'string', description: 'Destination type (channel or dm)' },
     oauthCredential: { type: 'string', description: 'Slack access token' },
-    botToken: { type: 'string', description: 'Bot token' },
+    useUserToken: {
+      type: 'boolean',
+      description: 'Use user token (id_token) instead of bot token',
+    },
     channel: { type: 'string', description: 'Channel identifier (canonical param)' },
     dmUserId: { type: 'string', description: 'User ID for DM recipient (canonical param)' },
     text: { type: 'string', description: 'Message text' },
@@ -1892,7 +1935,19 @@ Do not include any explanations, markdown formatting, or other text outside the 
     threadTs: { type: 'string', description: 'Thread timestamp' },
     thread_ts: { type: 'string', description: 'Thread timestamp for reply' },
     // List Channels inputs
+    includePublic: {
+      type: 'string',
+      description: 'Include public channels (true/false). Get User Channels only.',
+    },
     includePrivate: { type: 'string', description: 'Include private channels (true/false)' },
+    includeDMs: {
+      type: 'string',
+      description: 'Include 1:1 direct messages (true/false). Requires im:read scope.',
+    },
+    includeGroupDMs: {
+      type: 'string',
+      description: 'Include group DMs / mpims (true/false). Requires mpim:read scope.',
+    },
     channelLimit: { type: 'string', description: 'Maximum number of channels to return' },
     // List Members inputs
     memberLimit: { type: 'string', description: 'Maximum number of members to return' },
@@ -2066,6 +2121,31 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'json',
       description:
         'Detailed user object with properties: id, name, real_name, display_name, first_name, last_name, title, is_bot, is_admin, deleted, timezone, avatars, status',
+    },
+
+    // slack_get_auth_user outputs (get_auth_user operation)
+    userId: { type: 'string', description: 'Slack user ID of the token owner (e.g., U1234567890)' },
+    teamId: {
+      type: 'string',
+      description: 'Slack workspace/team ID (e.g., T0123456789)',
+    },
+    team: { type: 'string', description: 'Slack workspace/team name' },
+    url: { type: 'string', description: 'Workspace URL (e.g., https://acme.slack.com/)' },
+    botId: {
+      type: 'string',
+      description: 'Bot user ID — present only when the token is a bot token (xoxb-)',
+    },
+    appId: {
+      type: 'string',
+      description: 'Slack app ID associated with the token, when applicable',
+    },
+    isEnterpriseInstall: {
+      type: 'boolean',
+      description: 'Whether the token belongs to an Enterprise Grid org-level install',
+    },
+    enterpriseId: {
+      type: 'string',
+      description: 'Enterprise Grid org ID, when isEnterpriseInstall is true',
     },
 
     // slack_download outputs

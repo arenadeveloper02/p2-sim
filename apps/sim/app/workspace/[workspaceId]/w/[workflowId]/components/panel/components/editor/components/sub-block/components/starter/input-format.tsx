@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react'
+import { generateId } from '@sim/utils/id'
 import { Plus } from 'lucide-react'
 import { Trash } from '@/components/emcn/icons/trash'
-import { generateId } from '@/lib/core/utils/uuid'
 import 'prismjs/components/prism-json'
 import Editor from 'react-simple-code-editor'
 import {
@@ -632,25 +632,25 @@ export function FieldFormat({
             <ExpandableContent>
               <div className='flex flex-col gap-2 rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-2.5 pt-1.5 pb-2.5'>
                 <div className='flex flex-col gap-1.5'>
-                    <Label className='text-small'>
-                      {inputFormatConfig?.fieldNameLabel ??
-                        (isLinkedinMentions
-                          ? 'Display name'
-                          : isLinkedinProfileSections
-                            ? 'Profile section'
-                            : isLinkedinSearchFilters
-                              ? 'Filter'
-                              : 'Name')}
-                    </Label>
+                  <Label className='text-small'>
+                    {inputFormatConfig?.fieldNameLabel ??
+                      (isLinkedinMentions
+                        ? 'Display name'
+                        : isLinkedinProfileSections
+                          ? 'Profile section'
+                          : isLinkedinSearchFilters
+                            ? 'Filter'
+                            : 'Name')}
+                  </Label>
                   <div className='relative'>
                     {isLinkedinProfileSections ? (
                       <Combobox
                         options={linkedinProfileSectionOptions}
                         value={field.name ?? ''}
                         onChange={(v) => !isReadOnly && updateField(field.id, 'name', v)}
-                          placeholder={
-                            inputFormatConfig?.profileSectionPlaceholder ?? 'Select a section…'
-                          }
+                        placeholder={
+                          inputFormatConfig?.profileSectionPlaceholder ?? 'Select a section…'
+                        }
                         disabled={isReadOnly}
                         searchable
                       />
@@ -659,9 +659,9 @@ export function FieldFormat({
                         options={linkedinSearchFilterOptions}
                         value={field.name ?? ''}
                         onChange={(v) => !isReadOnly && updateField(field.id, 'name', v)}
-                          placeholder={
-                            inputFormatConfig?.searchFilterPlaceholder ?? 'Select a filter type…'
-                          }
+                        placeholder={
+                          inputFormatConfig?.searchFilterPlaceholder ?? 'Select a filter type…'
+                        }
                         disabled={isReadOnly}
                         searchable
                       />
@@ -754,7 +754,9 @@ export function InputFormat(
         config={config}
         variant='linkedin_comment_mentions'
         title={inputFormatConfig?.title ?? 'Mention'}
-        placeholder={inputFormatConfig?.fieldNamePlaceholder ?? 'How the name appears in the comment'}
+        placeholder={
+          inputFormatConfig?.fieldNamePlaceholder ?? 'How the name appears in the comment'
+        }
         showDescription
         showValue={showValue}
         valuePlaceholder={
@@ -788,8 +790,7 @@ export function InputFormat(
         showDescription={false}
         showValue
         valuePlaceholder={
-          inputFormatConfig?.fieldValuePlaceholder ??
-          'IDs from Retrieve LinkedIn search parameters'
+          inputFormatConfig?.fieldValuePlaceholder ?? 'IDs from Retrieve LinkedIn search parameters'
         }
       />
     )

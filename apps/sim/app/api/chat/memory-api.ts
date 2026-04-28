@@ -1,10 +1,14 @@
 import { createLogger } from '@sim/logger'
-import { v4 as uuidv4 } from 'uuid'
+import { generateId } from '@sim/utils/id'
 import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('MemoryAPI')
 
 const MEMORY_API_BASE_URL = env.MEMORY_API_BASE_URL
+
+function isMemoryApiEnabled(): boolean {
+  return typeof MEMORY_API_BASE_URL === 'string' && MEMORY_API_BASE_URL.trim().length > 0
+}
 
 /**
  * Helper function to call the memory API to store memories
@@ -22,6 +26,11 @@ export async function callMemoryAPI(
   workflowId?: string,
   workspaceId?: string
 ): Promise<void> {
+  if (!isMemoryApiEnabled()) {
+    logger.debug(`[${requestId}] Memory API disabled (MEMORY_API_BASE_URL not set)`)
+    return
+  }
+
   try {
     const timestamp = new Date().toISOString()
     // Always use conversationId if provided, otherwise fallback based on infer flag
@@ -50,7 +59,7 @@ export async function callMemoryAPI(
     }
 
     if (infer === false) {
-      metadata.executionId = uuidv4()
+      metadata.executionId = generateId()
     }
 
     const payload = {
@@ -106,6 +115,11 @@ export async function searchMemoryAPI(
   agentId?: string,
   isDeployed?: boolean
 ): Promise<any | null> {
+  if (!isMemoryApiEnabled()) {
+    logger.debug(`[${requestId}] Memory search API disabled (MEMORY_API_BASE_URL not set)`)
+    return null
+  }
+
   try {
     const payload: {
       query: string
@@ -197,6 +211,11 @@ export async function getMemoriesAPI(
   runId?: string,
   agentId?: string
 ): Promise<any | null> {
+  if (!isMemoryApiEnabled()) {
+    logger.debug(`[${requestId}] Get memories API disabled (MEMORY_API_BASE_URL not set)`)
+    return null
+  }
+
   try {
     // Validate that at least one parameter is provided
     if (!userId && !runId && !agentId) {

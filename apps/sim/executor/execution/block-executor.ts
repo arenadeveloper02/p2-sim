@@ -1,4 +1,5 @@
 import { createLogger, type Logger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import {
@@ -137,7 +138,7 @@ export class BlockExecutor {
 
     try {
       if (!isSentinel && blockType) {
-        await validateBlockType(ctx.userId, blockType, ctx)
+        await validateBlockType(ctx.userId, ctx.workspaceId, blockType, ctx)
       }
 
       logger.info('BlockExecutor: resolving inputs', {
@@ -585,7 +586,7 @@ export class BlockExecutor {
         this.execLogger.warn('Block start callback failed', {
           blockId,
           blockType,
-          error: error instanceof Error ? error.message : String(error),
+          error: toError(error).message,
         })
       }
     }
@@ -631,7 +632,7 @@ export class BlockExecutor {
         this.execLogger.warn('Block completion callback failed', {
           blockId,
           blockType,
-          error: error instanceof Error ? error.message : String(error),
+          error: toError(error).message,
         })
       }
     }
