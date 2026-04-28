@@ -204,7 +204,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         { label: 'List Post Comments', id: 'list_post_comments' },
         { label: 'List all reactions from a post', id: 'list_post_reactions' },
         { label: 'List User Comments', id: 'list_user_comments' },
-        { label: 'List User Posts', id: 'list_user_posts' },
+        { label: 'List all posts', id: 'list_user_posts' },
         { label: 'List User Reactions', id: 'list_user_reactions' },
         { label: 'List User Relations', id: 'list_user_relations' },
         { label: 'Retrieve LinkedIn Company Profile', id: 'retrieve_company_details' },
@@ -227,7 +227,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'short-input',
       placeholder: 'Public slug or provider internal id (path segment)',
       description:
-        'Unipile path `{identifier}` for this user. For **Retrieve a profile** only: internal id or public id. Same field is reused for list posts/comments/reactions.',
+        'Unipile path `{identifier}` for this user. For **Retrieve a profile** only: internal id or public id. Reused for **List all posts**, list comments, and list reactions (provider id or public id per Unipile docs).',
       condition: {
         field: 'operation',
         value: ['get_user_profile', 'list_user_posts', 'list_user_comments', 'list_user_reactions'],
@@ -252,9 +252,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'LinkedIn API surface',
       type: 'dropdown',
       options: [
-        { label: 'Default (classic)', id: '' },
-        { label: 'recruiter', id: 'recruiter' },
-        { label: 'sales_navigator', id: 'sales_navigator' },
+        { label: 'Classic)', id: '' },
+        { label: 'Recruiter', id: 'recruiter' },
+        { label: 'Sales Navigator', id: 'sales_navigator' },
       ],
       value: () => '',
       description:
@@ -293,6 +293,30 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           'linkedin_search',
         ],
       },
+      mode: 'advanced',
+    },
+    {
+      id: 'list_user_posts_limit',
+      title: 'Page size (limit)',
+      type: 'short-input',
+      placeholder: '1–100',
+      description: 'Optional `limit` query on **List all posts** (1–100 posts per request).',
+      condition: { field: 'operation', value: 'list_user_posts' },
+      mode: 'advanced',
+    },
+    {
+      id: 'list_user_posts_is_company',
+      title: 'Company posts (LinkedIn)',
+      type: 'dropdown',
+      options: [
+        { label: 'Default (omit)', id: '' },
+        { label: 'true (company page)', id: 'true' },
+        { label: 'false', id: 'false' },
+      ],
+      value: () => '',
+      description:
+        'Optional `is_company` query: set **true** when the identifier is a LinkedIn company (numeric id).',
+      condition: { field: 'operation', value: 'list_user_posts' },
       mode: 'advanced',
     },
     {
@@ -907,11 +931,27 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           op === 'list_user_reactions'
         ) {
           const out: Record<string, unknown> = {
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             user_identifier:
               typeof params.user_identifier === 'string' ? params.user_identifier.trim() : '',
           }
           if (typeof params.list_cursor === 'string' && params.list_cursor.trim() !== '') {
             out.cursor = params.list_cursor.trim()
+          }
+          if (op === 'list_user_posts') {
+            const limitRaw = params.list_user_posts_limit
+            if (typeof limitRaw === 'string' && limitRaw.trim() !== '') {
+              const n = Number.parseInt(limitRaw.trim(), 10)
+              if (!Number.isNaN(n) && n >= 1 && n <= 100) {
+                out.limit = n
+              }
+            }
+            const isCo = params.list_user_posts_is_company
+            if (isCo === 'true') {
+              out.is_company = true
+            } else if (isCo === 'false') {
+              out.is_company = false
+            }
           }
           return out
         }
@@ -1203,7 +1243,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     user_identifier: {
       type: 'string',
       description:
-        'User path id: for Retrieve a profile, provider internal or public id; for list posts/comments/reactions, path segment',
+        'User path id: for Retrieve a profile, provider internal or public id; for List all posts / list comments/reactions, path segment',
     },
     linkedin_profile_sections_input: {
       type: 'json',
@@ -1230,7 +1270,15 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     list_cursor: {
       type: 'string',
       description:
-        'Pagination cursor (list posts/comments/reactions, list all chats, Perform Linkedin search)',
+        'Pagination cursor (List all posts, list comments/reactions, list all chats, Perform Linkedin search)',
+    },
+    list_user_posts_limit: {
+      type: 'string',
+      description: 'List all posts: optional limit query 1–100',
+    },
+    list_user_posts_is_company: {
+      type: 'string',
+      description: 'List all posts: optional is_company true | false (LinkedIn company pages)',
     },
     message_id: { type: 'string', description: 'Message id' },
     attachment_id: { type: 'string', description: 'Attachment id' },

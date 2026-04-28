@@ -179,8 +179,13 @@ export interface UnipileGetUserProfileToolResponse extends ToolResponse {
 }
 
 export interface UnipileListUserPostsParams {
+  account_id: string
   user_identifier: string
   cursor?: string
+  /** 1–100, optional query `limit` */
+  limit?: number
+  /** LinkedIn: set true for company post lists */
+  is_company?: boolean
 }
 
 export type UnipileListUserPostsToolResponse = ToolResponse & {

@@ -8,12 +8,15 @@ import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 const logger = createLogger('UnipileListUserPostsAPI')
 
 const RequestSchema = z.object({
+  account_id: z.string().min(1),
   user_identifier: z.string().min(1),
-  cursor: z.string().optional(),
+  cursor: z.string().optional().nullable(),
+  limit: z.coerce.number().int().min(1).max(100).optional().nullable(),
+  is_company: z.boolean().optional().nullable(),
 })
 
 /**
- * Proxies GET `/api/v1/users/{identifier}/posts` to Unipile.
+ * Proxies GET `/api/v1/users/{identifier}/posts` to Unipile (list all posts).
  */
 export async function POST(request: NextRequest) {
   const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
@@ -30,11 +33,20 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { user_identifier, cursor } = RequestSchema.parse(body)
-    const encoded = encodeURIComponent(user_identifier.trim())
+    const data = RequestSchema.parse(body)
+    const encoded = encodeURIComponent(data.user_identifier.trim())
     const params = new URLSearchParams()
-    if (cursor?.trim()) {
-      params.set('cursor', cursor.trim())
+    params.set('account_id', data.account_id.trim())
+    if (data.cursor != null && String(data.cursor).trim() !== '') {
+      params.set('cursor', String(data.cursor).trim())
+    }
+    if (data.limit != null && Number.isFinite(data.limit)) {
+      params.set('limit', String(data.limit))
+    }
+    if (data.is_company === true) {
+      params.set('is_company', 'true')
+    } else if (data.is_company === false) {
+      params.set('is_company', 'false')
     }
     const qs = params.toString()
     const url = `${baseUrl}/api/v1/users/${encoded}/posts${qs ? `?${qs}` : ''}`
@@ -49,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     const responseText = await upstream.text()
     if (!upstream.ok) {
-      logger.warn('Unipile list user posts failed', {
+      logger.warn('Unipile list all posts failed', {
         status: upstream.status,
         snippet: responseText.slice(0, 500),
       })
@@ -62,12 +74,12 @@ export async function POST(request: NextRequest) {
     try {
       return NextResponse.json(JSON.parse(responseText) as unknown)
     } catch {
-      logger.error('Unipile returned non-JSON for list user posts')
+      logger.error('Unipile returned non-JSON for list all posts')
       return NextResponse.json({ error: 'Invalid JSON from Unipile' }, { status: 502 })
     }
   } catch (error) {
     const message = error instanceof z.ZodError ? error.message : 'Invalid request body'
-    logger.warn('Unipile list user posts validation failed', { error })
+    logger.warn('Unipile list all posts validation failed', { error })
     return NextResponse.json({ error: message }, { status: 400 })
   }
 }
