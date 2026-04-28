@@ -1,7 +1,7 @@
 // file: utils/isBase64.ts
 
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Download, Expand, X } from 'lucide-react'
+import { AlertTriangle, Check, Download, Expand, X } from 'lucide-react'
 import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 
 /**
@@ -123,6 +123,14 @@ function getMimeFromBase64(cleanBase64: string): string {
   return 'image/png'
 }
 
+function getBase64Payload(imageData: string): string {
+  const cleanImageData = imageData.replace(/\s+/g, '')
+  if (!cleanImageData.startsWith('data:image')) {
+    return cleanImageData
+  }
+  return cleanImageData.split(',', 2)[1] ?? ''
+}
+
 /**
  * Renders large base64 images via Blob URL to avoid data URL length limits
  * (browsers often fail with data URLs > ~2MB; 2K/4K images exceed this).
@@ -132,9 +140,15 @@ function getMimeFromBase64(cleanBase64: string): string {
 function Base64ImageWithBlobUrl({
   cleanImageData,
   imageWrapperClass = 'my-2 w-full max-h-[70vh] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]',
+  onSelect,
+  selectLabel,
+  compactActions,
 }: {
   cleanImageData: string
   imageWrapperClass?: string
+  onSelect?: () => void
+  selectLabel?: string
+  compactActions?: boolean
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -208,6 +222,9 @@ function Base64ImageWithBlobUrl({
       src={objectUrl}
       wrapperClassName={imageWrapperClass}
       onDownload={() => downloadImage(true, cleanImageData)}
+      onSelect={onSelect}
+      selectLabel={selectLabel}
+      compactActions={compactActions}
     >
       <img
         src={objectUrl}
@@ -314,19 +331,25 @@ const overlayButtonClass =
   'pointer-events-auto shrink-0 gap-1.5 rounded-md border-white/20 bg-black/40 px-3 py-2 text-white shadow-sm hover:bg-black/55 hover:text-white dark:border-white/20 dark:bg-black/50 dark:hover:bg-black/65'
 
 /**
- * Wraps an image with a transparent overlay and bottom-center CTAs: Preview and Download.
- * Preview opens a modal with the full-size image; Download triggers the provided callback.
+ * Wraps an image with a transparent overlay and bottom-center CTAs.
+ * Preview opens a modal with the full-size image; Download and Select trigger the provided callbacks.
  */
-function ImageWithViewFullOverlay({
+export function ImageWithViewFullOverlay({
   src,
   wrapperClassName,
   children,
   onDownload,
+  onSelect,
+  selectLabel,
+  compactActions = false,
 }: {
   src: string
   wrapperClassName: string
   children: React.ReactNode
   onDownload?: () => void
+  onSelect?: () => void
+  selectLabel?: string
+  compactActions?: boolean
 }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [isModalImageLoading, setIsModalImageLoading] = useState(false)
@@ -347,31 +370,51 @@ function ImageWithViewFullOverlay({
       <div className={`relative ${wrapperClassName}`}>
         {children}
         <div
-          className='pointer-events-none absolute inset-0 flex items-end justify-center gap-2 pt-8 pb-3'
+          className={`pointer-events-none absolute inset-0 flex pt-8 ${
+            compactActions
+              ? 'items-start justify-end gap-1 p-2'
+              : 'items-end justify-center gap-2 pb-3'
+          }`}
           aria-hidden
         >
           <Button
             type='button'
             variant='secondary'
             size='sm'
-            className={overlayButtonClass}
+            className={`${overlayButtonClass} ${compactActions ? 'h-8 w-8 px-0 py-0' : ''}`}
             onClick={handleViewFull}
             aria-label='Preview image'
+            title='Preview image'
           >
             <Expand className='h-4 w-4' />
-            <span>Preview</span>
+            <span className={compactActions ? 'sr-only' : ''}>Preview</span>
           </Button>
           {onDownload && (
             <Button
               type='button'
               variant='secondary'
               size='sm'
-              className={overlayButtonClass}
+              className={`${overlayButtonClass} ${compactActions ? 'h-8 w-8 px-0 py-0' : ''}`}
               onClick={onDownload}
               aria-label='Download image'
+              title='Download image'
             >
               <Download className='h-4 w-4' />
-              <span>Download</span>
+              <span className={compactActions ? 'sr-only' : ''}>Download</span>
+            </Button>
+          )}
+          {onSelect && (
+            <Button
+              type='button'
+              variant='secondary'
+              size='sm'
+              className={`${overlayButtonClass} ${compactActions ? 'h-8 w-8 px-0 py-0' : ''}`}
+              onClick={onSelect}
+              aria-label={selectLabel ?? 'Select image'}
+              title={selectLabel ?? 'Select image'}
+            >
+              <Check className='h-4 w-4' />
+              <span className={compactActions ? 'sr-only' : ''}>{selectLabel ?? 'Select'}</span>
             </Button>
           )}
         </div>
@@ -408,18 +451,27 @@ export const renderBs64Img = ({
   isBase64,
   imageData,
   imageUrl,
+  onSelect,
+  selectLabel,
+  isSelected,
+  compactActions,
 }: {
   isBase64: boolean
   imageData: string
   imageUrl?: string
+  onSelect?: () => void
+  selectLabel?: string
+  isSelected?: boolean
+  compactActions?: boolean
 }) => {
   try {
-    const cleanImageData = typeof imageData === 'string' ? imageData.replace(/\s+/g, '') : ''
+    const cleanImageData = typeof imageData === 'string' ? getBase64Payload(imageData) : ''
     const singleImageUrl = normalizeImageUrl(imageUrl)
     const displayUrl = singleImageUrl ? getImageDisplayUrl(singleImageUrl) : ''
 
-    const imageWrapperClass =
-      'my-2 w-fit max-w-full h-[500px] min-h-0 overflow-auto rounded-lg border bg-[var(--surface-5)]'
+    const imageWrapperClass = isSelected
+      ? 'my-2 h-[500px] min-h-0 w-fit max-w-full overflow-auto rounded-lg border border-[var(--selection)] bg-[var(--surface-5)] ring-1 ring-[var(--selection)] transition-[border-color,box-shadow]'
+      : 'my-2 h-[500px] min-h-0 w-fit max-w-full overflow-auto rounded-lg border border-[var(--border-1)] bg-[var(--surface-5)] transition-[border-color,box-shadow]'
 
     if (!isBase64 && singleImageUrl && (!cleanImageData || cleanImageData.length === 0)) {
       return (
@@ -427,6 +479,9 @@ export const renderBs64Img = ({
           src={displayUrl}
           wrapperClassName={imageWrapperClass}
           onDownload={() => downloadImage(false, undefined, singleImageUrl)}
+          onSelect={onSelect}
+          selectLabel={selectLabel}
+          compactActions={compactActions}
         >
           <img
             src={displayUrl}
@@ -451,6 +506,9 @@ export const renderBs64Img = ({
             src={displayUrl}
             wrapperClassName={imageWrapperClass}
             onDownload={() => downloadImage(false, undefined, singleImageUrl)}
+            onSelect={onSelect}
+            selectLabel={selectLabel}
+            compactActions={compactActions}
           >
             <img
               src={displayUrl}
@@ -475,6 +533,9 @@ export const renderBs64Img = ({
         <Base64ImageWithBlobUrl
           cleanImageData={cleanImageData}
           imageWrapperClass={imageWrapperClass}
+          onSelect={onSelect}
+          selectLabel={selectLabel}
+          compactActions={compactActions}
         />
       )
     }
@@ -495,6 +556,9 @@ export const renderBs64Img = ({
         onDownload={() =>
           downloadImage(isBase64, cleanImageData || undefined, singleImageUrl || undefined)
         }
+        onSelect={onSelect}
+        selectLabel={selectLabel}
+        compactActions={compactActions}
       >
         <img
           src={imageSrc}
@@ -943,6 +1007,43 @@ export function resolveMessageImagesAndProse(raw: string): { urls: string[]; pro
     }
   }
 
+  const parseImageUrlArray = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      return []
+    }
+
+    return value.filter(
+      (item): item is string => typeof item === 'string' && isRenderableImageUrl(item)
+    )
+  }
+
+  if (t.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(t) as unknown
+      const urls = parseImageUrlArray(parsed)
+      if (urls.length > 0) {
+        return { urls, prose: '' }
+      }
+    } catch {
+      /* not JSON */
+    }
+  }
+
+  if (t.startsWith('```')) {
+    const fencedMatch = t.match(/^```(?:json|javascript|js)?\s*([\s\S]*?)\s*```$/i)
+    if (fencedMatch?.[1]) {
+      try {
+        const parsed = JSON.parse(fencedMatch[1]) as unknown
+        const urls = parseImageUrlArray(parsed)
+        if (urls.length > 0) {
+          return { urls, prose: '' }
+        }
+      } catch {
+        /* not JSON */
+      }
+    }
+  }
+
   return { urls: [], prose: raw }
 }
 
@@ -999,6 +1100,15 @@ export function getImageUrlFromContent(content: unknown): string | null {
       const single = extractFirstImageUrlFromString(contentStr)
       if (single) return single
       if (isImageUrlString(contentStr)) return contentStr.trim()
+    }
+    const images = o.images ?? (o.output as Record<string, unknown> | undefined)?.images
+    if (Array.isArray(images)) {
+      for (const item of images) {
+        if (typeof item !== 'string') continue
+        const single = extractFirstImageUrlFromString(item)
+        if (single) return single
+        if (isImageUrlString(item)) return item.trim()
+      }
     }
   }
   return null
@@ -1284,7 +1394,8 @@ export function collectUniqueImageUrls(imageField: string, contentField: string)
  */
 export function mergeToolOutputImageUrls(
   imageField: string,
-  contentField: string
+  contentField: string,
+  imagesField?: unknown
 ): { uniqueUrls: string[]; prose: string } {
   const { urls: urlsFromProse, prose } = resolveMessageImagesAndProse(contentField)
   const fromFields = collectUniqueImageUrls(imageField, contentField)
@@ -1299,6 +1410,13 @@ export function mergeToolOutputImageUrls(
     uniqueUrls.push(t)
   }
   for (const u of fromFields) add(u)
+  if (Array.isArray(imagesField)) {
+    for (const value of imagesField) {
+      if (typeof value === 'string' && isRenderableImageUrl(value)) {
+        add(value)
+      }
+    }
+  }
   for (const u of urlsFromProse) add(u)
   return { uniqueUrls, prose }
 }

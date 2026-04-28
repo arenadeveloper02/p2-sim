@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import type { SlackMessage } from '@/tools/slack/types'
 import { openDMChannel } from '../utils'
 
@@ -295,7 +296,7 @@ const SlackReadMessagesSchema = z
     message: 'Either channel or userId is required',
   })
 
-export async function POST(request: NextRequest) {
+export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
   try {
@@ -419,10 +420,14 @@ export async function POST(request: NextRequest) {
 
     const autoPaginate = validatedData.autoPaginate || false
     const maxTotalMessages = 1000 // Safety limit: maximum 1000 messages
+    const requestedTotalLimit = validatedData.limit ?? 10
+    const effectiveTotalLimit = Math.min(requestedTotalLimit, maxTotalMessages)
 
     logger.info(`[${requestId}] Reading Slack messages`, {
       channel,
       limit,
+      requestedTotalLimit,
+      effectiveTotalLimit,
       autoPaginate,
       autoPaginateType: typeof autoPaginate,
       validatedAutoPaginate: validatedData.autoPaginate,
@@ -437,14 +442,14 @@ export async function POST(request: NextRequest) {
     let finalNextCursor: string | null = null
     const allUserIds: string[] = []
 
-    // If auto-paginate is enabled, fetch all pages starting from cursor (or beginning)
+    // If auto-paginate is enabled, fetch pages until we reach the requested total limit.
     if (autoPaginate) {
       logger.info(`[${requestId}] 🚀 AUTO-PAGINATION ENABLED - Starting multi-page fetch`)
       logger.info(
         `[${requestId}] Initial state: cursor=${currentCursor}, hasMore=${hasMore}, pagesFetched=${pagesFetched}`
       )
 
-      while (hasMore && allMessages.length < maxTotalMessages) {
+      while (hasMore && allMessages.length < effectiveTotalLimit) {
         pagesFetched++ // Increment at start of loop
 
         const pageUrl = new URL('https://slack.com/api/conversations.history')
@@ -458,8 +463,17 @@ export async function POST(request: NextRequest) {
           pageUrl.searchParams.append('latest', latestTimestamp)
         }
 
-        // Use per-page limit (smaller for pagination)
-        const perPageLimit = Math.min(limit || 50, 100) // Max 100 per page for efficiency
+        const remaining = effectiveTotalLimit - allMessages.length
+        if (remaining <= 0) {
+          logger.info(
+            `[${requestId}] Reached requested total limit (${effectiveTotalLimit}); stopping pagination`
+          )
+          hasMore = false
+          break
+        }
+
+        // Use per-page limit based on remaining budget (Slack max 200; we cap at 100 for efficiency).
+        const perPageLimit = Math.min(remaining, 100)
         pageUrl.searchParams.append('limit', String(perPageLimit))
 
         if (currentCursor) {
@@ -515,11 +529,10 @@ export async function POST(request: NextRequest) {
 
         logger.info(`[${requestId}] Page ${pagesFetched}: got ${pageRawMessages.length} messages`)
 
-        // Check if we've reached the message limit
-        if (allMessages.length >= maxTotalMessages) {
-          logger.warn(`[${requestId}] Reached maximum message limit (${maxTotalMessages})`)
+        // Check if we've reached the requested total limit (or safety limit)
+        if (allMessages.length >= effectiveTotalLimit) {
+          logger.info(`[${requestId}] Reached requested total limit (${effectiveTotalLimit})`)
           hasMore = false
-          break
         }
 
         // Update cursor for next page
@@ -528,15 +541,15 @@ export async function POST(request: NextRequest) {
         finalNextCursor = currentCursor || null
 
         logger.info(
-          `[${requestId}] Page ${pagesFetched}: hasMore=${hasMore}, nextCursor=${currentCursor?.substring(0, 20)}..., willContinue=${hasMore && allMessages.length < maxTotalMessages}`
+          `[${requestId}] Page ${pagesFetched}: hasMore=${hasMore}, nextCursor=${currentCursor?.substring(0, 20)}..., willContinue=${hasMore && allMessages.length < effectiveTotalLimit}`
         )
 
         // Add small delay between requests to avoid rate limits
-        if (hasMore) {
+        if (hasMore && allMessages.length < effectiveTotalLimit) {
           await new Promise((resolve) => setTimeout(resolve, 100))
         } else {
           logger.info(
-            `[${requestId}] Stopping pagination: hasMore=${hasMore}, pagesFetched=${pagesFetched}, messages=${allMessages.length}/${maxTotalMessages}`
+            `[${requestId}] Stopping pagination: hasMore=${hasMore}, pagesFetched=${pagesFetched}, messages=${allMessages.length}/${effectiveTotalLimit}`
           )
         }
       }
@@ -700,6 +713,8 @@ export async function POST(request: NextRequest) {
             autoPaginated: true,
             mode: 'auto-pagination',
             maxMessagesReached: allMessages.length >= maxTotalMessages,
+            requestedLimit: requestedTotalLimit,
+            limitReached: allMessages.length >= effectiveTotalLimit,
           },
         },
       })
@@ -972,4 +987,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

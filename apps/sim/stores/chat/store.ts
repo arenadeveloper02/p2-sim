@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import { create } from 'zustand'
 import { devtools, type PersistStorage, persist } from 'zustand/middleware'
-import { generateId } from '@/lib/core/utils/uuid'
 import { sanitizeMessagesForPersistence } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { ChatMessage, ChatState } from './types'
 import { MAX_CHAT_HEIGHT, MAX_CHAT_WIDTH, MIN_CHAT_HEIGHT, MIN_CHAT_WIDTH } from './utils'
@@ -319,13 +319,14 @@ export const useChatStore = create<ChatState>()(
           })
         },
 
-        finalizeMessageStream: (messageId, finalContent) => {
+        finalizeMessageStream: (messageId, finalContent, messageUpdates) => {
           set((state) => {
             const newMessages = state.messages.map((message) => {
               if (message.id === messageId) {
                 const { isStreaming, ...rest } = message
                 return {
                   ...rest,
+                  ...(messageUpdates ?? {}),
                   ...(finalContent !== undefined && { content: finalContent }),
                 }
               }

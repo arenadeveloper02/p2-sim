@@ -1,5 +1,9 @@
 import { getDocumentIcon } from '@/components/icons/document-icons'
 import { cn } from '@/lib/core/utils/cn'
+import {
+  downloadImage,
+  ImageWithViewFullOverlay,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { ChatMessageAttachment } from '../types'
 
 function FileAttachmentPill(props: { mediaType: string; filename: string }) {
@@ -16,8 +20,10 @@ export function ChatMessageAttachments(props: {
   attachments: ChatMessageAttachment[]
   align?: 'start' | 'end'
   className?: string
+  onImageSelect?: (attachment: ChatMessageAttachment, index: number) => void
+  selectedImageIds?: Set<string>
 }) {
-  const { attachments, align = 'end', className } = props
+  const { attachments, align = 'end', className, onImageSelect, selectedImageIds } = props
 
   if (!attachments.length) return null
 
@@ -29,12 +35,25 @@ export function ChatMessageAttachments(props: {
         className
       )}
     >
-      {attachments.map((att) => {
+      {attachments.map((att, index) => {
         const isImage = att.media_type.startsWith('image/')
+        const isSelected = selectedImageIds?.has(att.id) ?? false
         return isImage && att.previewUrl ? (
-          <div key={att.id} className='h-[56px] w-[56px] overflow-hidden rounded-[8px]'>
+          <ImageWithViewFullOverlay
+            key={att.id}
+            src={att.previewUrl}
+            wrapperClassName={
+              isSelected
+                ? 'h-[120px] w-[120px] overflow-hidden rounded-[8px] border border-[var(--selection)] bg-[var(--surface-5)] ring-1 ring-[var(--selection)] transition-[border-color,box-shadow]'
+                : 'h-[120px] w-[120px] overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-5)] transition-[border-color,box-shadow]'
+            }
+            onDownload={() => downloadImage(false, undefined, att.previewUrl)}
+            onSelect={onImageSelect ? () => onImageSelect(att, index) : undefined}
+            selectLabel={onImageSelect ? (isSelected ? 'Selected' : 'Select') : undefined}
+            compactActions
+          >
             <img src={att.previewUrl} alt={att.filename} className='h-full w-full object-cover' />
-          </div>
+          </ImageWithViewFullOverlay>
         ) : (
           <FileAttachmentPill key={att.id} mediaType={att.media_type} filename={att.filename} />
         )

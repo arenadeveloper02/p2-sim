@@ -55,9 +55,62 @@ export interface StreamingResponseOptions {
 interface StreamingState {
   streamedChunks: Map<string, string[]>
   processedOutputs: Set<string>
+  streamedOutputIds: Set<string>
   streamCompletionTimes: Map<string, number>
   streamedContent: Map<string, string>
   completedBlockIds: Set<string>
+}
+
+function isRenderableImageUrl(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  if (trimmed.startsWith('data:image/')) {
+    return true
+  }
+
+  if (trimmed.startsWith('/api/files/serve/')) {
+    return (
+      /\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(trimmed) ||
+      trimmed.includes('agent-generated-images')
+    )
+  }
+
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    return false
+  }
+
+  return (
+    /\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(trimmed) ||
+    trimmed.includes('agent-generated-images') ||
+    trimmed.includes('/api/files/serve/')
+  )
+}
+
+function containsRenderableImageOutput(value: unknown): boolean {
+  if (!value) {
+    return false
+  }
+
+  if (isRenderableImageUrl(value)) {
+    return true
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => containsRenderableImageOutput(item))
+  }
+
+  if (typeof value === 'object') {
+    return Object.values(value).some((item) => containsRenderableImageOutput(item))
+  }
+
+  return false
 }
 
 function resolveStreamedContent(state: StreamingState): Map<string, string> {
@@ -97,6 +150,7 @@ async function buildMinimalResult(
   result: ExecutionResult,
   selectedOutputs: string[] | undefined,
   streamedContent: Map<string, string>,
+  streamedOutputIds: Set<string>,
   completedBlockIds: Set<string>,
   requestId: string,
   executionId?: string,
@@ -205,10 +259,6 @@ async function buildMinimalResult(
   for (const outputId of selectedOutputs) {
     const blockId = extractBlockIdFromOutputId(outputId)
 
-    if (streamedContent.has(blockId)) {
-      continue
-    }
-
     if (!completedBlockIds.has(blockId)) {
       continue
     }
@@ -221,6 +271,14 @@ async function buildMinimalResult(
     const path = extractPathFromOutputId(outputId, blockId)
     if (isDangerousKey(path)) {
       logger.warn(`[${requestId}] Blocked dangerous path: ${path}`)
+      continue
+    }
+
+    if (streamedOutputIds.has(outputId)) {
+      continue
+    }
+
+    if (streamedContent.has(blockId) && (path === 'content' || path === 'result' || path === '')) {
       continue
     }
 
@@ -317,6 +375,7 @@ export async function createStreamingResponse(
         streamedChunks: new Map(),
         streamedContent: new Map(),
         processedOutputs: new Set(),
+        streamedOutputIds: new Set(),
         streamCompletionTimes: new Map(),
         completedBlockIds: new Set(),
       }
@@ -407,11 +466,17 @@ export async function createStreamingResponse(
                   maxBytes: base64MaxBytes,
                 })
               : outputValue
+
+            if (containsRenderableImageOutput(hydratedOutput)) {
+              continue
+            }
+
             const formattedOutput =
               typeof hydratedOutput === 'string'
                 ? hydratedOutput
                 : JSON.stringify(hydratedOutput, null, 2)
             sendChunk(blockId, formattedOutput)
+            state.streamedOutputIds.add(outputId)
           }
         }
       }
@@ -485,6 +550,7 @@ export async function createStreamingResponse(
             result,
             streamConfig.selectedOutputs,
             streamedContent,
+            state.streamedOutputIds,
             state.completedBlockIds,
             requestId,
             executionId,

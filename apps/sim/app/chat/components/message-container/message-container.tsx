@@ -32,6 +32,12 @@ interface ChatMessageContainerProps {
   workspaceIdsForKbLinks?: string[]
   /** When user selects text and clicks "Ask this in chat", this is called with the selected text */
   onAskInChat?: (text: string) => void
+  onToggleGeneratedImage?: (
+    messageId: string,
+    image: { id: string; name: string; url: string; type: string }
+  ) => void
+  selectedGeneratedImageIds?: Set<string>
+  selectedGeneratedImageIdsKey?: string
   /** When welcome message query chips are clicked, trigger execution with this query */
   onWelcomeQueryClick?: (text: string) => void
 }
@@ -49,6 +55,9 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   setMessages,
   workspaceIdsForKbLinks,
   onAskInChat,
+  onToggleGeneratedImage,
+  selectedGeneratedImageIds,
+  selectedGeneratedImageIdsKey,
   onWelcomeQueryClick,
 }: ChatMessageContainerProps) {
   const loadingLabel = isStreaming ? 'Fetching' : 'Thinking'
@@ -108,6 +117,31 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   }, [onAskInChat, handleMouseUp, messagesContainerRef])
 
   useEffect(() => {
+    if (!onAskInChat) return
+
+    const handleSelectionChange = () => {
+      const container = messagesContainerRef?.current
+      if (!container) return
+
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed) {
+        setSelectionTip(null)
+        return
+      }
+
+      const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+      const anchor = range?.commonAncestorContainer
+      const anchorElement = anchor instanceof Element ? anchor : anchor?.parentElement
+      if (!anchorElement || !container.contains(anchorElement)) {
+        setSelectionTip(null)
+      }
+    }
+
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [onAskInChat, messagesContainerRef])
+
+  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (tipRef.current && !tipRef.current.contains(e.target as Node)) {
         setSelectionTip(null)
@@ -164,6 +198,9 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
                 setMessages={setMessages}
                 workspaceIdsForKbLinks={workspaceIdsForKbLinks}
                 onCopySegmentToInput={onAskInChat}
+                onToggleGeneratedImage={onToggleGeneratedImage}
+                selectedGeneratedImageIds={selectedGeneratedImageIds}
+                selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
                 onWelcomeQueryClick={onWelcomeQueryClick}
               />
             ))

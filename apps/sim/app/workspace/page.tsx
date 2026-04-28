@@ -15,7 +15,7 @@ interface WorkspaceSummary {
 
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
 import { WorkspaceConicLoader } from '@/app/workspace/workspace-conic-loader'
-import { useWorkspacesWithMetadata } from '@/hooks/queries/workspace'
+import { useWorkspacesWithMetadata, type WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
 
 const logger = createLogger('WorkspacePage')
 
@@ -47,10 +47,10 @@ export default function WorkspacePage() {
     const urlParams = new URLSearchParams(window.location.search)
     const redirectWorkflowId = urlParams.get('redirect_workflow')
 
-    const { workspaces, lastActiveWorkspaceId } = data
+    const { workspaces, lastActiveWorkspaceId, creationPolicy } = data
 
     if (workspaces.length === 0) {
-      handleNoWorkspaces(router)
+      handleNoWorkspaces(router, creationPolicy)
       return
     }
 
@@ -103,7 +103,20 @@ async function handleWorkflowRedirect(
   router.replace(`/workspace/${fallbackWorkspaceId}/home`)
 }
 
-async function handleNoWorkspaces(router: ReturnType<typeof useRouter>): Promise<void> {
+async function handleNoWorkspaces(
+  router: ReturnType<typeof useRouter>,
+  creationPolicy: WorkspaceCreationPolicy | null
+): Promise<void> {
+  if (creationPolicy && !creationPolicy.canCreate) {
+    logger.warn('No workspaces found and workspace creation is blocked', {
+      reason: creationPolicy.reason,
+      workspaceMode: creationPolicy.workspaceMode,
+      organizationId: creationPolicy.organizationId,
+    })
+    router.replace('/')
+    return
+  }
+
   logger.warn('No workspaces found, creating default workspace')
   try {
     const response = await fetch('/api/workspaces', {

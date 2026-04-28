@@ -1,12 +1,13 @@
 'use client'
 
 import type React from 'react'
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import { ArrowUp, Mic, Paperclip, X } from 'lucide-react'
 import { Badge, Tooltip } from '@/components/emcn'
+import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 import { cn } from '@/lib/core/utils/cn'
-import { generateId } from '@/lib/core/utils/uuid'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
@@ -29,6 +30,8 @@ export const ChatInput: React.FC<{
   onStopStreaming?: () => void
   onVoiceStart?: () => void
   voiceOnly?: boolean
+  selectedGeneratedImages?: SelectedGeneratedImage[]
+  onRemoveSelectedGeneratedImage?: (imageId: string) => void
   /** When set, this text is inserted into the input followed by a space and the input is focused; then onInsertConsumed is called */
   insertText?: string
   /** Called after insertText has been applied so the parent can clear it */
@@ -40,6 +43,8 @@ export const ChatInput: React.FC<{
   onStopStreaming,
   onVoiceStart,
   voiceOnly = false,
+  selectedGeneratedImages = [],
+  onRemoveSelectedGeneratedImage,
   insertText,
   onInsertConsumed,
   sttAvailable = false,
@@ -52,6 +57,29 @@ export const ChatInput: React.FC<{
   const [uploadErrors, setUploadErrors] = useState<string[]>([])
   const [dragCounter, setDragCounter] = useState(0)
   const isDragOver = dragCounter > 0
+
+  // When parent injects text (e.g. "Ask this in chat"), append it + space and focus the input.
+  useEffect(() => {
+    const text = insertText?.trim()
+    if (!text) return
+
+    setInputValue((prev) => {
+      const prefix = prev.length > 0 ? `${prev.replace(/\s+$/, '')} ` : ''
+      return `${prefix}${text} `
+    })
+
+    onInsertConsumed?.()
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = textareaRef.current
+        if (!el) return
+        el.focus()
+        const end = el.value.length
+        el.setSelectionRange(end, end)
+      })
+    })
+  }, [insertText, onInsertConsumed])
 
   useLayoutEffect(() => {
     const el = textareaRef.current
@@ -142,12 +170,12 @@ export const ChatInput: React.FC<{
 
   const handleSubmit = useCallback(() => {
     if (isStreaming) return
-    if (!inputValue.trim() && attachedFiles.length === 0) return
+    if (!inputValue.trim() && attachedFiles.length === 0 && selectedGeneratedImages.length === 0) return
     onSubmit?.(inputValue.trim(), false, attachedFiles)
     setInputValue('')
     setAttachedFiles([])
     setUploadErrors([])
-  }, [isStreaming, inputValue, attachedFiles, onSubmit])
+  }, [isStreaming, inputValue, attachedFiles, onSubmit, selectedGeneratedImages.length])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -164,7 +192,9 @@ export const ChatInput: React.FC<{
     textareaRef.current?.focus()
   }, [])
 
-  const canSubmit = (inputValue.trim().length > 0 || attachedFiles.length > 0) && !isStreaming
+  const canSubmit =
+    (inputValue.trim().length > 0 || attachedFiles.length > 0 || selectedGeneratedImages.length > 0) &&
+    !isStreaming
 
   if (voiceOnly) {
     return (
@@ -236,6 +266,39 @@ export const ChatInput: React.FC<{
             }}
           >
             {/* File thumbnails */}
+            {selectedGeneratedImages.length > 0 && (
+              <div className='mb-1.5 flex flex-wrap gap-1.5'>
+                {selectedGeneratedImages.map((image) => (
+                  <Tooltip.Root key={image.id}>
+                    <Tooltip.Trigger asChild>
+                      <div className='group relative h-[56px] w-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--landing-bg)]'>
+                        <img
+                          src={image.url}
+                          alt={image.name}
+                          className='h-full w-full object-cover'
+                        />
+                        {onRemoveSelectedGeneratedImage && (
+                          <button
+                            type='button'
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onRemoveSelectedGeneratedImage(image.id)
+                            }}
+                            className='absolute top-[2px] right-[2px] flex h-[16px] w-[16px] items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100'
+                          >
+                            <X className='h-[10px] w-[10px] text-white' />
+                          </button>
+                        )}
+                      </div>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content side='top'>
+                      <p className='max-w-[240px] truncate'>{image.name}</p>
+                    </Tooltip.Content>
+                  </Tooltip.Root>
+                ))}
+              </div>
+            )}
+
             {attachedFiles.length > 0 && (
               <div className='mb-1.5 flex flex-wrap gap-1.5'>
                 {attachedFiles.map((file) => (
