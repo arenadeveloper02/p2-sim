@@ -41,7 +41,7 @@ import {
 } from '@/providers/models'
 import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useProvidersStore } from '@/stores/providers/store'
-import { mergeToolParameters } from '@/tools/params'
+import { mergeToolParameters, type SchemaProperty } from '@/tools/params'
 
 const logger = createLogger('ProviderUtils')
 
@@ -584,10 +584,29 @@ export async function transformBlockTool(
     }
   }
 
-  const { schema: llmSchema, enrichedDescription } = await createLLMToolSchema(
-    toolConfig,
-    userProvidedParams
-  )
+  const llmResult = await createLLMToolSchema(toolConfig, userProvidedParams)
+  let llmSchema = llmResult.schema
+  const enrichedDescription = llmResult.enrichedDescription
+
+  // Image Fusion only uses fusion inputs (block); shared tool still lists single-image edit params.
+  if (
+    toolId === 'google_nano_banana' &&
+    block.type === 'image_fusion' &&
+    llmSchema?.properties &&
+    typeof llmSchema.properties === 'object'
+  ) {
+    const props = llmSchema.properties as Record<string, SchemaProperty>
+    const properties = Object.fromEntries(
+      Object.entries(props).filter(([key]) => key !== 'inputImage' && key !== 'inputImageMimeType')
+    ) as Record<string, SchemaProperty>
+    llmSchema = {
+      ...llmSchema,
+      properties,
+      required: (llmSchema.required || []).filter(
+        (r) => r !== 'inputImage' && r !== 'inputImageMimeType'
+      ),
+    }
+  }
 
   let uniqueToolId = toolConfig.id
   let toolName = toolConfig.name

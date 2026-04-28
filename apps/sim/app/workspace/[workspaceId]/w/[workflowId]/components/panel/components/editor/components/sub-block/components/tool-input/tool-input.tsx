@@ -99,6 +99,20 @@ import {
  */
 const OAUTH_ROUTING_KEYS_PRESERVED_ON_OPERATION_CHANGE = new Set(['oauthCredential'])
 
+/**
+ * Shared tool `google_nano_banana` lists single-image edit fields (`inputImage` + MIME) for Image
+ * Generator Nano edit flows. Image Fusion (`image_fusion`) only exposes fusion inputs via block
+ * subblocks—those edit params stay uncovered vs the tool schema, so suppress them here.
+ */
+const IMAGE_FUSION_EXCLUDED_UNCOVERED_PARAM_IDS = new Set(['inputImage', 'inputImageMimeType'])
+
+function shouldIncludeUncoveredToolParam(toolType: string | undefined, paramId: string): boolean {
+  if (toolType === 'image_fusion' && IMAGE_FUSION_EXCLUDED_UNCOVERED_PARAM_IDS.has(paramId)) {
+    return false
+  }
+  return true
+}
+
 const logger = createLogger('ToolInput')
 
 /**
@@ -2046,7 +2060,9 @@ export const ToolInput = memo(function ToolInput({
 
                       const uncoveredParams = displayParams.filter(
                         (param) =>
-                          !coveredParamIds.has(param.id) && evaluateParameterCondition(param, tool)
+                          shouldIncludeUncoveredToolParam(tool.type, param.id) &&
+                          !coveredParamIds.has(param.id) &&
+                          evaluateParameterCondition(param, tool)
                       )
 
                       uncoveredParams.forEach((param) => {
