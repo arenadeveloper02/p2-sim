@@ -75,7 +75,7 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
         })
 
         if (result?.workflowId) {
-          window.location.href = `/workspace/${workspaceId}/w/${result.workflowId}`
+          window.location.href = `/workspace/${workspaceId}/w/${result.workflowId}/embed`
           return
         }
 
