@@ -315,6 +315,53 @@ Return ONLY the JSON array.`,
       },
     },
     {
+      id: 'memoryType',
+      title: 'Memory',
+      type: 'dropdown',
+      defaultValue: 'none',
+      options: [
+        { label: 'none', id: 'none' },
+        { label: 'conversation', id: 'conversation' },
+        { label: 'sliding window (messages)', id: 'sliding_window' },
+        { label: 'sliding window (tokens)', id: 'sliding_window_tokens' },
+      ],
+    },
+    {
+      id: 'conversationId',
+      title: 'Conversation ID',
+      type: 'short-input',
+      placeholder: 'Defaults to <start.conversationId> when available',
+      condition: {
+        field: 'memoryType',
+        value: 'none',
+        not: true,
+      },
+    },
+    {
+      id: 'slidingWindowSize',
+      title: 'Sliding Window Size',
+      type: 'short-input',
+      placeholder: 'e.g., 5',
+      defaultValue: '5',
+      mode: 'advanced',
+      condition: {
+        field: 'memoryType',
+        value: 'sliding_window',
+      },
+    },
+    {
+      id: 'slidingWindowTokens',
+      title: 'Max Tokens',
+      type: 'short-input',
+      placeholder: 'e.g., 4000',
+      defaultValue: '4000',
+      mode: 'advanced',
+      condition: {
+        field: 'memoryType',
+        value: 'sliding_window_tokens',
+      },
+    },
+    {
       id: 'temperature',
       title: 'Temperature',
       type: 'slider',
@@ -478,6 +525,16 @@ Return ONLY the JSON array.`,
       type: 'string',
       description:
         'Conversation ID to retrieve and store memories. Automatically retrieved from Start block output if not provided.',
+    },
+    slidingWindowSize: {
+      type: 'string',
+      description:
+        'Sliding window size (messages). Only used when memoryType is sliding_window. Defaults to 5.',
+    },
+    slidingWindowTokens: {
+      type: 'string',
+      description:
+        'Sliding window max tokens. Only used when memoryType is sliding_window_tokens. Defaults to 4000.',
     },
     model: { type: 'string', description: 'AI model to use' },
     apiKey: { type: 'string', description: 'Provider API key' },
