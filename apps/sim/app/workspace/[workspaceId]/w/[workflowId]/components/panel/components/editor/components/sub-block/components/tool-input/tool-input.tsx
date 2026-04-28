@@ -93,6 +93,12 @@ import {
   type SubBlockCondition,
 } from '@/tools/params-resolver'
 
+/**
+ * Block-level OAuth routing on StoredTool.params (not operation-scoped tool schema).
+ * Preserved when switching operation so credentials are not cleared.
+ */
+const OAUTH_ROUTING_KEYS_PRESERVED_ON_OPERATION_CHANGE = new Set(['oauthCredential'])
+
 const logger = createLogger('ToolInput')
 
 /**
@@ -987,6 +993,16 @@ export const ToolInput = memo(function ToolInput({
 
       const preservedParams: Record<string, any> = {}
       Object.entries(tool.params || {}).forEach(([paramId, value]) => {
+        if (OAUTH_ROUTING_KEYS_PRESERVED_ON_OPERATION_CHANGE.has(paramId)) {
+          preservedParams[paramId] = value
+          return
+        }
+        // HubSpot: `accounts` is the shared-account dropdown id; it's not on each tool schema.
+        // Other integrations also use id `accounts` with different meanings — preserve only here.
+        if (paramId === 'accounts' && tool.type === 'hubspot') {
+          preservedParams[paramId] = value
+          return
+        }
         if (newParamIds.has(paramId) && value) {
           preservedParams[paramId] = value
         }

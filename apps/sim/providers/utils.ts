@@ -441,6 +441,35 @@ export function extractAndParseJSON(content: string): any {
 }
 
 /**
+ * When an integration tool is nested in an Agent block, StoredTool.params often omit the OAuth
+ * account field while the standalone block still resolves auth from subBlock defaults (`value()`).
+ * Merge `accounts` (etc.) from the block definition so HubSpot/Gmail-style tools receive the same
+ * credential routing as canvas blocks — e.g. HubSpot `accounts` default → oauthCredential via block tools.config.params.
+ */
+function mergeOAuthCredentialDefaultsFromSubBlocks(
+  blockDef: { subBlocks?: Array<{ id?: string; value?: unknown }> },
+  params: Record<string, unknown>
+): void {
+  const hasCredentialPick =
+    (typeof params.accounts === 'string' && params.accounts.trim() !== '') ||
+    (typeof params.oauthCredential === 'string' && params.oauthCredential.trim() !== '') ||
+    (typeof params.credential === 'string' && params.credential.trim() !== '')
+  if (hasCredentialPick) return
+
+  const accountsSb = blockDef.subBlocks?.find((sb) => sb.id === 'accounts')
+  if (!accountsSb || typeof accountsSb.value !== 'function') return
+
+  try {
+    const defVal = (accountsSb.value as (p: Record<string, unknown>) => unknown)(params)
+    if (typeof defVal === 'string' && defVal.trim() !== '') {
+      params.accounts = defVal.trim()
+    }
+  } catch {
+    // Ignore invalid defaults
+  }
+}
+
+/**
  * Transforms a block tool into a provider tool config with operation selection
  *
  * @param block The block to transform
@@ -537,6 +566,22 @@ export async function transformBlockTool(
     ...(block.operation != null && String(block.operation) !== ''
       ? { operation: block.operation }
       : {}),
+  }
+
+  mergeOAuthCredentialDefaultsFromSubBlocks(blockDef, userProvidedParams as Record<string, unknown>)
+
+  // HubSpot `tools.config.params` maps `accounts` → oauthCredential; some persisted shapes only have `oauthCredential`.
+  if (block.type === 'hubspot') {
+    const p = userProvidedParams as Record<string, unknown>
+    const hasAccounts = typeof p.accounts === 'string' && p.accounts.trim() !== ''
+    const oauth = p.oauthCredential
+    if (
+      !hasAccounts &&
+      typeof oauth === 'string' &&
+      oauth.trim() !== ''
+    ) {
+      p.accounts = oauth.trim()
+    }
   }
 
   const { schema: llmSchema, enrichedDescription } = await createLLMToolSchema(
