@@ -2,6 +2,7 @@ import { UnipileIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
 import { UNIPILE_LINKEDIN_PROFILE_SECTIONS } from '@/tools/unipile/linkedin_profile_query'
+import { buildLinkedinSearchBodyFromForm } from '@/tools/unipile/linkedin_search_form'
 import { getLinkedinSearchParameterTypeDropdownOptions } from '@/tools/unipile/linkedin_search_parameter_types'
 import type { UnipileResponse } from '@/tools/unipile/types'
 
@@ -551,15 +552,60 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       condition: { field: 'operation', value: 'comment_post' },
     },
     {
-      id: 'linkedin_search_body',
-      title: 'Search body (JSON)',
-      type: 'code',
-      language: 'json',
-      placeholder: '{"api":"classic","category":"people","keywords":"engineer"}',
+      id: 'linkedin_search_api',
+      title: 'API',
+      type: 'dropdown',
+      options: [
+        { label: 'classic', id: 'classic' },
+        { label: 'sales_navigator', id: 'sales_navigator' },
+        { label: 'recruiter', id: 'recruiter' },
+      ],
+      value: () => 'classic',
       description:
-        'POST body for Unipile `POST /api/v1/linkedin/search`: Classic / Sales Navigator / Recruiter filters, or `{"url":"…"}` from a public search URL, or `{"cursor":"…"}` for a long cursor. Use **Retrieve LinkedIn search parameters** for typed filter IDs. Guide: https://developer.unipile.com/docs/linkedin-search',
+        'Request body `api`. Multi-value filter rows apply to **classic**; `sales_navigator` / `recruiter` send `api`, `category`, and `keywords` only unless you use **Search from LinkedIn URL**. [Guide](https://developer.unipile.com/docs/linkedin-search)',
       condition: { field: 'operation', value: 'linkedin_search' },
-      required: { field: 'operation', value: 'linkedin_search' },
+    },
+    {
+      id: 'linkedin_search_category',
+      title: 'Category',
+      type: 'dropdown',
+      options: [
+        { label: 'people', id: 'people' },
+        { label: 'companies', id: 'companies' },
+        { label: 'posts', id: 'posts' },
+        { label: 'jobs', id: 'jobs' },
+      ],
+      value: () => 'people',
+      description:
+        'Request body `category` (match to `api` per Unipile: e.g. Classic people / companies / posts / jobs).',
+      condition: { field: 'operation', value: 'linkedin_search' },
+    },
+    {
+      id: 'linkedin_search_keywords',
+      title: 'Keywords',
+      type: 'long-input',
+      placeholder:
+        'e.g. engineer (optional for some Classic searches; required for Recruiter in many cases)',
+      description: 'Search keywords (`keywords` in the POST body).',
+      condition: { field: 'operation', value: 'linkedin_search' },
+    },
+    {
+      id: 'linkedin_search_public_url',
+      title: 'Search from LinkedIn URL (optional)',
+      type: 'long-input',
+      placeholder: 'https://www.linkedin.com/search/…',
+      description:
+        'If set, the body is only `{ "url": "…" }` and overrides other fields below (paste a public LinkedIn search URL).',
+      condition: { field: 'operation', value: 'linkedin_search' },
+    },
+    {
+      id: 'linkedin_search_filters_input',
+      title: 'Search filters (Classic)',
+      type: 'input-format',
+      inputFormatVariant: 'linkedin_search_filters',
+      description:
+        '**+** to add rows: pick a **filter** (industry, location, …) and the **id or value** from [Retrieve LinkedIn search parameters](https://developer.unipile.com/docs/linkedin-search). Multiple rows for the same filter become an array. **network_distance**: `1`, `2`, or `3`. **open_to**: `proBono` or `boardMember`. **has_job_offers**: `true` or `false` (companies). Ignored when **API** is not `classic`.',
+      condition: { field: 'operation', value: 'linkedin_search' },
     },
     {
       id: 'linkedin_search_page_limit',
@@ -1081,8 +1127,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'linkedin_search') {
           const out: Record<string, unknown> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
-            search_body:
-              typeof params.linkedin_search_body === 'string' ? params.linkedin_search_body : '{}',
+            search_body: JSON.stringify(
+              buildLinkedinSearchBodyFromForm(params as Record<string, unknown>)
+            ),
           }
           if (typeof params.list_cursor === 'string' && params.list_cursor.trim() !== '') {
             out.cursor = params.list_cursor.trim()
@@ -1335,10 +1382,26 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'string',
       description: 'Retrieve LinkedIn search parameters: optional limit 1–100 as string or number',
     },
-    linkedin_search_body: {
+    linkedin_search_api: {
       type: 'string',
+      description: 'Perform Linkedin search: api field',
+    },
+    linkedin_search_category: {
+      type: 'string',
+      description: 'Perform Linkedin search: category field',
+    },
+    linkedin_search_keywords: {
+      type: 'string',
+      description: 'Perform Linkedin search: keywords',
+    },
+    linkedin_search_public_url: {
+      type: 'string',
+      description: 'Perform Linkedin search: optional public search URL → body { url }',
+    },
+    linkedin_search_filters_input: {
+      type: 'json',
       description:
-        'Perform Linkedin search: JSON body (Classic / Sales Nav / Recruiter, url, or body cursor)',
+        'Perform Linkedin search: Classic filter rows (filter type + id/value); merged into POST body arrays',
     },
     linkedin_search_page_limit: {
       type: 'string',

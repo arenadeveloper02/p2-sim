@@ -11,7 +11,7 @@ export const unipileLinkedinSearchTool: ToolConfig<
   id: 'unipile_linkedin_search',
   name: 'Unipile Perform Linkedin search',
   description:
-    'Runs LinkedIn Classic, Sales Navigator, or Recruiter search (`POST /api/v1/linkedin/search`). Use Retrieve LinkedIn search parameters for filter IDs. Guide: https://developer.unipile.com/docs/linkedin-search Query: account_id (required), optional cursor, limit (0–100; Classic should stay ≤50). Body: JSON per Unipile (e.g. api+category+filters, or { url }, or { cursor }). Uses server UNIPILE_API_KEY.',
+    'Runs LinkedIn Classic, Sales Navigator, or Recruiter search (`POST /api/v1/linkedin/search`). Pass `search_body` as a JSON string built from api, category, keywords, filters, optional `{ url }`, etc. Use Retrieve LinkedIn search parameters for filter IDs. Guide: https://developer.unipile.com/docs/linkedin-search Query: account_id (required), optional cursor, limit (0–100; Classic should stay ≤50). Uses server UNIPILE_API_KEY.',
   version: '1.0.0',
 
   params: {

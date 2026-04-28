@@ -404,7 +404,11 @@ export interface SubBlockConfig {
   step?: number
   integer?: boolean
   /** When `type` is `input-format`, selects row UI (default matches Start block structured inputs). */
-  inputFormatVariant?: 'default' | 'linkedin_comment_mentions' | 'linkedin_profile_sections'
+  inputFormatVariant?:
+    | 'default'
+    | 'linkedin_comment_mentions'
+    | 'linkedin_profile_sections'
+    | 'linkedin_search_filters'
   // Long input specific properties
   rows?: number
   // Multi-select functionality
