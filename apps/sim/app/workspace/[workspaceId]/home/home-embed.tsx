@@ -295,7 +295,7 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
   if (!hasMessages && !chatId) {
     return (
       <div className='h-full overflow-y-auto bg-[var(--bg)] [scrollbar-gutter:stable_both-edges]'>
-        <div className='flex flex-col items-center justify-center px-6 pb-[4vh]'>
+        <div className='flex flex-col items-center justify-center p-6'>
           <h1
             data-tour='home-greeting'
             className='mb-6 max-w-[42rem] text-balance font-[430] font-season text-[32px] text-[var(--text-primary)] tracking-[-0.02em]'

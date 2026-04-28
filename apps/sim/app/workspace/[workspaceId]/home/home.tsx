@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { Button } from '@/components/emcn'
 import { PanelLeft } from '@/components/emcn/icons'
@@ -28,12 +28,9 @@ interface HomeProps {
 
 export function Home({ chatId }: HomeProps = {}) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const pathname = usePathname()
-  const isEmbedPage = pathname.endsWith('/embed')
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialResourceId = searchParams.get('resource')
-  const resolveWorkspaceBeforeSend = pathname.endsWith('/home/embed')
   const { data: session } = useSession()
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
@@ -159,7 +156,6 @@ export function Home({ chatId }: HomeProps = {}) {
     getMothershipUseChatOptions({
       onResourceEvent: handleResourceEvent,
       initialActiveResourceId: initialResourceId,
-      resolveWorkspaceBeforeSend,
     })
   )
 
@@ -335,15 +331,13 @@ export function Home({ chatId }: HomeProps = {}) {
             />
           </div>
         </div>
-        {!isEmbedPage && (
-          <div
-            ref={templateRef}
-            data-tour='home-templates'
-            className='-mt-[30vh] mx-auto w-full max-w-[68rem] px-4 pb-8 sm:px-6 lg:px-10'
-          >
-            <TemplatePrompts onSelect={handleSubmit} />
-          </div>
-        )}
+        <div
+          ref={templateRef}
+          data-tour='home-templates'
+          className='-mt-[30vh] mx-auto w-full max-w-[68rem] px-4 pb-8 sm:px-6 lg:px-10'
+        >
+          <TemplatePrompts onSelect={handleSubmit} />
+        </div>
       </div>
     )
   }

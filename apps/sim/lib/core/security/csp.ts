@@ -187,7 +187,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
   ],
 
   'frame-src': [...STATIC_FRAME_SRC],
-  'frame-ancestors': ["'self'"],
+  // 'frame-ancestors': ["'self'"],
   'form-action': ["'self'"],
   'base-uri': ["'self'"],
   'object-src': ["'none'"],
