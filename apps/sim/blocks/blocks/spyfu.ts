@@ -8,6 +8,7 @@ import {
   spyfuKeywordOperationIds,
   spyfuOperationOptions,
   spyfuQueryOperationIds,
+  SPYFU_DEFAULT_OPERATION_ID,
   spyfuTermOperationIds,
 } from '@/tools/spyfu/operations'
 import type { SpyfuResponse } from '@/tools/spyfu/types'
@@ -31,6 +32,7 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
       options: spyfuOperationOptions,
       description:
         'Pick any supported SpyFu endpoint. Required text inputs below (Domain, Keyword, Date) automatically appear when the selected endpoint needs them.',
+      value: () => SPYFU_DEFAULT_OPERATION_ID,
     },
     {
       id: 'domain',

@@ -42,6 +42,7 @@ import {
 import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useProvidersStore } from '@/stores/providers/store'
 import { mergeToolParameters, type SchemaProperty } from '@/tools/params'
+import { SPYFU_DEFAULT_OPERATION_ID } from '@/tools/spyfu/operations'
 
 const logger = createLogger('ProviderUtils')
 
@@ -581,6 +582,18 @@ export async function transformBlockTool(
       oauth.trim() !== ''
     ) {
       p.accounts = oauth.trim()
+    }
+  }
+
+  if (block.type === 'spyfu') {
+    const p = userProvidedParams as Record<string, unknown>
+    const oid = p.operationId
+    const missing =
+      oid === undefined ||
+      oid === null ||
+      (typeof oid === 'string' && oid.trim() === '')
+    if (missing) {
+      p.operationId = SPYFU_DEFAULT_OPERATION_ID
     }
   }
 
