@@ -64,7 +64,20 @@ interface FieldFormatProps {
   showDescription?: boolean
   valuePlaceholder?: string
   descriptionPlaceholder?: string
-  config?: any
+  config?: {
+    inputFormatConfig?: {
+      title?: string
+      fieldNameLabel?: string
+      fieldNamePlaceholder?: string
+      fieldValueLabel?: string
+      fieldValuePlaceholder?: string
+      mentionTargetLabel?: string
+      mentionTargetPlaceholder?: string
+      mentionTargetOptions?: ComboboxOption[]
+      profileSectionPlaceholder?: string
+      searchFilterPlaceholder?: string
+    }
+  }
 }
 
 /**
@@ -87,8 +100,8 @@ const BOOLEAN_OPTIONS: ComboboxOption[] = [
   { label: 'false', value: 'false' },
 ]
 
-/** LinkedIn comment mention: `is_company` omitted for person, `true` for company. */
-const LINKEDIN_MENTION_IS_COMPANY_OPTIONS: ComboboxOption[] = [
+/** Default mention-target options (`is_company` omitted for person, `true` for company). */
+const DEFAULT_MENTION_TARGET_OPTIONS: ComboboxOption[] = [
   { label: 'Person', value: '' },
   { label: 'Company', value: 'true' },
 ]
@@ -126,10 +139,12 @@ export function FieldFormat({
   showDescription = false,
   valuePlaceholder = 'Enter default value',
   descriptionPlaceholder = 'Describe this field',
+  config,
 }: FieldFormatProps) {
   const isLinkedinMentions = variant === 'linkedin_comment_mentions'
   const isLinkedinProfileSections = variant === 'linkedin_profile_sections'
   const isLinkedinSearchFilters = variant === 'linkedin_search_filters'
+  const inputFormatConfig = config?.inputFormatConfig
   const showTypeEffective =
     isLinkedinMentions || isLinkedinProfileSections || isLinkedinSearchFilters ? false : showType
   const showDescriptionEffective = isLinkedinMentions
@@ -143,6 +158,8 @@ export function FieldFormat({
     []
   )
   const linkedinSearchFilterOptions = useMemo(() => getLinkedinSearchFilterComboboxOptions(), [])
+  const mentionTargetOptions =
+    inputFormatConfig?.mentionTargetOptions ?? DEFAULT_MENTION_TARGET_OPTIONS
   const [storeValue, setStoreValue] = useSubBlockValue<Field[]>(blockId, subBlockId)
   const valueInputRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement>>({})
   const nameInputRefs = useRef<Record<string, HTMLInputElement>>({})
@@ -615,22 +632,25 @@ export function FieldFormat({
             <ExpandableContent>
               <div className='flex flex-col gap-2 rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-2.5 pt-1.5 pb-2.5'>
                 <div className='flex flex-col gap-1.5'>
-                  <Label className='text-small'>
-                    {isLinkedinMentions
-                      ? 'Display name'
-                      : isLinkedinProfileSections
-                        ? 'Profile section'
-                        : isLinkedinSearchFilters
-                          ? 'Filter'
-                          : 'Name'}
-                  </Label>
+                    <Label className='text-small'>
+                      {inputFormatConfig?.fieldNameLabel ??
+                        (isLinkedinMentions
+                          ? 'Display name'
+                          : isLinkedinProfileSections
+                            ? 'Profile section'
+                            : isLinkedinSearchFilters
+                              ? 'Filter'
+                              : 'Name')}
+                    </Label>
                   <div className='relative'>
                     {isLinkedinProfileSections ? (
                       <Combobox
                         options={linkedinProfileSectionOptions}
                         value={field.name ?? ''}
                         onChange={(v) => !isReadOnly && updateField(field.id, 'name', v)}
-                        placeholder='Select a section…'
+                          placeholder={
+                            inputFormatConfig?.profileSectionPlaceholder ?? 'Select a section…'
+                          }
                         disabled={isReadOnly}
                         searchable
                       />
@@ -639,7 +659,9 @@ export function FieldFormat({
                         options={linkedinSearchFilterOptions}
                         value={field.name ?? ''}
                         onChange={(v) => !isReadOnly && updateField(field.id, 'name', v)}
-                        placeholder='Select a filter type…'
+                          placeholder={
+                            inputFormatConfig?.searchFilterPlaceholder ?? 'Select a filter type…'
+                          }
                         disabled={isReadOnly}
                         searchable
                       />
@@ -664,15 +686,19 @@ export function FieldFormat({
                 {showDescriptionEffective &&
                   (isLinkedinMentions ? (
                     <div className='flex flex-col gap-1.5'>
-                      <Label className='text-small'>Mention target</Label>
+                      <Label className='text-small'>
+                        {inputFormatConfig?.mentionTargetLabel ?? 'Mention target'}
+                      </Label>
                       <Combobox
-                        options={LINKEDIN_MENTION_IS_COMPANY_OPTIONS}
+                        options={mentionTargetOptions}
                         value={field.description === 'true' ? 'true' : ''}
                         onChange={(v) => {
                           if (isReadOnly) return
                           updateField(field.id, 'description', v === 'true' ? 'true' : '')
                         }}
-                        placeholder='Person or company'
+                        placeholder={
+                          inputFormatConfig?.mentionTargetPlaceholder ?? 'Person or company'
+                        }
                         disabled={isReadOnly}
                       />
                     </div>
@@ -691,11 +717,12 @@ export function FieldFormat({
                 {showValueEffective && (
                   <div className='flex flex-col gap-1.5'>
                     <Label className='text-small'>
-                      {isLinkedinMentions
-                        ? 'Profile ID'
-                        : isLinkedinSearchFilters
-                          ? 'ID or value'
-                          : 'Value'}
+                      {inputFormatConfig?.fieldValueLabel ??
+                        (isLinkedinMentions
+                          ? 'Profile ID'
+                          : isLinkedinSearchFilters
+                            ? 'ID or value'
+                            : 'Value')}
                     </Label>
                     <div className='relative'>{renderValueInput(field)}</div>
                   </div>
@@ -718,17 +745,22 @@ export function InputFormat(
       | 'linkedin_search_filters'
   }
 ) {
-  const { variant = 'default', showValue = true, ...rest } = props
+  const { variant = 'default', showValue = true, config, ...rest } = props
+  const inputFormatConfig = config?.inputFormatConfig
   if (variant === 'linkedin_comment_mentions') {
     return (
       <FieldFormat
         {...rest}
+        config={config}
         variant='linkedin_comment_mentions'
-        title='Mention'
-        placeholder='How the name appears in the comment'
+        title={inputFormatConfig?.title ?? 'Mention'}
+        placeholder={inputFormatConfig?.fieldNamePlaceholder ?? 'How the name appears in the comment'}
         showDescription
         showValue={showValue}
-        valuePlaceholder='Provider id (ACo…, ADo…, or company numeric id)'
+        valuePlaceholder={
+          inputFormatConfig?.fieldValuePlaceholder ??
+          'Provider id (ACo…, ADo…, or company numeric id)'
+        }
       />
     )
   }
@@ -736,9 +768,10 @@ export function InputFormat(
     return (
       <FieldFormat
         {...rest}
+        config={config}
         variant='linkedin_profile_sections'
-        title='Section'
-        placeholder='section'
+        title={inputFormatConfig?.title ?? 'Section'}
+        placeholder={inputFormatConfig?.fieldNamePlaceholder ?? 'section'}
         showDescription={false}
         showValue={false}
       />
@@ -748,18 +781,23 @@ export function InputFormat(
     return (
       <FieldFormat
         {...rest}
+        config={config}
         variant='linkedin_search_filters'
-        title='Filter'
-        placeholder='filter'
+        title={inputFormatConfig?.title ?? 'Filter'}
+        placeholder={inputFormatConfig?.fieldNamePlaceholder ?? 'filter'}
         showDescription={false}
         showValue
-        valuePlaceholder='IDs from Retrieve LinkedIn search parameters'
+        valuePlaceholder={
+          inputFormatConfig?.fieldValuePlaceholder ??
+          'IDs from Retrieve LinkedIn search parameters'
+        }
       />
     )
   }
   return (
     <FieldFormat
       {...rest}
+      config={config}
       variant='default'
       title='Input'
       placeholder='firstName'

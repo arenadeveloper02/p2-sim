@@ -243,6 +243,12 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'LinkedIn profile sections',
       type: 'input-format',
       inputFormatVariant: 'linkedin_profile_sections',
+      inputFormatConfig: {
+        title: 'Section',
+        fieldNameLabel: 'Profile section',
+        fieldNamePlaceholder: 'section',
+        profileSectionPlaceholder: 'Select a section…',
+      },
       description:
         'Optional `linkedin_sections` query: use **+** to add rows; pick each section from the list. Prefer preview or specific sections—full “all sections” is heavy and LinkedIn may throttle (see response `throttled_sections`). [Provider limits](https://developer.unipile.com/docs/provider-limits-and-restrictions)',
       condition: { field: 'operation', value: 'get_user_profile' },
@@ -547,6 +553,19 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'LinkedIn mentions',
       type: 'input-format',
       inputFormatVariant: 'linkedin_comment_mentions',
+      inputFormatConfig: {
+        title: 'Mention',
+        fieldNameLabel: 'Display name',
+        fieldNamePlaceholder: 'How the name appears in the comment',
+        fieldValueLabel: 'Profile ID',
+        fieldValuePlaceholder: 'Provider id (ACo…, ADo…, or company numeric id)',
+        mentionTargetLabel: 'Mention target',
+        mentionTargetPlaceholder: 'Person or company',
+        mentionTargetOptions: [
+          { label: 'Person', value: '' },
+          { label: 'Company', value: 'true' },
+        ],
+      },
       description:
         'Optional LinkedIn @mentions: use **+** to add more. **Display name** is how the mention appears in the comment; **Profile ID** is the provider id (ACo…/ADo… for people, numeric id for companies). **Mention target**: Person or Company. Use `{{0}}`, `{{1}}`, … in the comment text in the same order. Tag references supported in fields. Rows with empty name or profile id are ignored.',
       condition: { field: 'operation', value: 'comment_post' },
@@ -603,6 +622,14 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Search filters (Classic)',
       type: 'input-format',
       inputFormatVariant: 'linkedin_search_filters',
+      inputFormatConfig: {
+        title: 'Filter',
+        fieldNameLabel: 'Filter',
+        fieldNamePlaceholder: 'filter',
+        fieldValueLabel: 'ID or value',
+        fieldValuePlaceholder: 'IDs from Retrieve LinkedIn search parameters',
+        searchFilterPlaceholder: 'Select a filter type…',
+      },
       description:
         '**+** to add rows: pick a **filter** (industry, location, …) and the **id or value** from [Retrieve LinkedIn search parameters](https://developer.unipile.com/docs/linkedin-search). Multiple rows for the same filter become an array. **network_distance**: `1`, `2`, or `3`. **open_to**: `proBono` or `boardMember`. **has_job_offers**: `true` or `false` (companies). Ignored when **API** is not `classic`.',
       condition: { field: 'operation', value: 'linkedin_search' },
