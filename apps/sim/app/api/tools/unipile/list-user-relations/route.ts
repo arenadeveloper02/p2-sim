@@ -37,11 +37,11 @@ export async function POST(request: NextRequest) {
 
     const { items, object, pagesFetched, truncated, stopReason } =
       await fetchAllUnipileUserRelationItems({
-      baseUrl,
-      apiKey,
-      accountId: data.account_id.trim(),
-      filter: data.filter,
-    })
+        baseUrl,
+        apiKey,
+        accountId: data.account_id.trim(),
+        filter: data.filter,
+      })
 
     return NextResponse.json({
       object,
