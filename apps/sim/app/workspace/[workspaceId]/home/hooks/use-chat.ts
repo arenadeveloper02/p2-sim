@@ -1048,7 +1048,8 @@ export function getWorkflowCopilotUseChatOptions(
 export function useChat(
   workspaceId: string,
   initialChatId?: string,
-  options?: UseChatOptions
+  options?: UseChatOptions,
+  isEmbedPage?: boolean
 ): UseChatReturn {
   const pathname = usePathname()
   const router = useRouter()
@@ -1997,7 +1998,7 @@ export function useChat(
                     window.history.replaceState(
                       null,
                       '',
-                      `/workspace/${workspaceId}/task/${payloadChatId}`
+                      `/workspace/${workspaceId}/task/${payloadChatId}${isEmbedPage ? '/embed' : ''}`
                     )
                   }
                 }
