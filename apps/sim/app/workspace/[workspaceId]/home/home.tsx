@@ -156,6 +156,7 @@ export function Home({ chatId }: HomeProps = {}) {
     getMothershipUseChatOptions({
       onResourceEvent: handleResourceEvent,
       initialActiveResourceId: initialResourceId,
+      resolveWorkspaceBeforeSend: false,
     })
   )
 
