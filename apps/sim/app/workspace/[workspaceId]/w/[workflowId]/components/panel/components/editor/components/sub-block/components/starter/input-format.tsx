@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { generateId } from '@sim/utils/id'
 import { Plus } from 'lucide-react'
 import { Trash } from '@/components/emcn/icons/trash'
@@ -25,6 +25,14 @@ import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/compon
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
+import {
+  getLinkedinProfileSectionComboboxOptions,
+  getLinkedinProfileSectionLabel,
+} from '@/tools/unipile/linkedin_profile_query'
+import {
+  getLinkedinSearchFilterComboboxOptions,
+  getLinkedinSearchFilterLabel,
+} from '@/tools/unipile/linkedin_search_form'
 
 interface Field {
   id: string
@@ -41,6 +49,14 @@ interface FieldFormatProps {
   isPreview?: boolean
   previewValue?: Field[] | null
   disabled?: boolean
+  /** `linkedin_comment_mentions`: same add/remove cards as Start inputs, fixed fields for Unipile @mentions. */
+  /** `linkedin_profile_sections`: one enum per row for Unipile `linkedin_sections`. */
+  /** `linkedin_search_filters`: filter type + value per row (Classic LinkedIn search). */
+  variant?:
+    | 'default'
+    | 'linkedin_comment_mentions'
+    | 'linkedin_profile_sections'
+    | 'linkedin_search_filters'
   title?: string
   placeholder?: string
   showType?: boolean
@@ -48,7 +64,20 @@ interface FieldFormatProps {
   showDescription?: boolean
   valuePlaceholder?: string
   descriptionPlaceholder?: string
-  config?: any
+  config?: {
+    inputFormatConfig?: {
+      title?: string
+      fieldNameLabel?: string
+      fieldNamePlaceholder?: string
+      fieldValueLabel?: string
+      fieldValuePlaceholder?: string
+      mentionTargetLabel?: string
+      mentionTargetPlaceholder?: string
+      mentionTargetOptions?: ComboboxOption[]
+      profileSectionPlaceholder?: string
+      searchFilterPlaceholder?: string
+    }
+  }
 }
 
 /**
@@ -69,6 +98,12 @@ const TYPE_OPTIONS: ComboboxOption[] = [
 const BOOLEAN_OPTIONS: ComboboxOption[] = [
   { label: 'true', value: 'true' },
   { label: 'false', value: 'false' },
+]
+
+/** Default mention-target options (`is_company` omitted for person, `true` for company). */
+const DEFAULT_MENTION_TARGET_OPTIONS: ComboboxOption[] = [
+  { label: 'Person', value: '' },
+  { label: 'Company', value: 'true' },
 ]
 
 /**
@@ -96,6 +131,7 @@ export function FieldFormat({
   isPreview = false,
   previewValue,
   disabled = false,
+  variant = 'default',
   title = 'Field',
   placeholder = 'fieldName',
   showType = true,
@@ -103,7 +139,27 @@ export function FieldFormat({
   showDescription = false,
   valuePlaceholder = 'Enter default value',
   descriptionPlaceholder = 'Describe this field',
+  config,
 }: FieldFormatProps) {
+  const isLinkedinMentions = variant === 'linkedin_comment_mentions'
+  const isLinkedinProfileSections = variant === 'linkedin_profile_sections'
+  const isLinkedinSearchFilters = variant === 'linkedin_search_filters'
+  const inputFormatConfig = config?.inputFormatConfig
+  const showTypeEffective =
+    isLinkedinMentions || isLinkedinProfileSections || isLinkedinSearchFilters ? false : showType
+  const showDescriptionEffective = isLinkedinMentions
+    ? true
+    : isLinkedinProfileSections || isLinkedinSearchFilters
+      ? false
+      : showDescription
+  const showValueEffective = isLinkedinProfileSections ? false : showValue
+  const linkedinProfileSectionOptions = useMemo(
+    () => getLinkedinProfileSectionComboboxOptions(),
+    []
+  )
+  const linkedinSearchFilterOptions = useMemo(() => getLinkedinSearchFilterComboboxOptions(), [])
+  const mentionTargetOptions =
+    inputFormatConfig?.mentionTargetOptions ?? DEFAULT_MENTION_TARGET_OPTIONS
   const [storeValue, setStoreValue] = useSubBlockValue<Field[]>(blockId, subBlockId)
   const valueInputRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement>>({})
   const nameInputRefs = useRef<Record<string, HTMLInputElement>>({})
@@ -164,7 +220,9 @@ export function FieldFormat({
 
       const updatedValue =
         fieldKey === 'name' && typeof fieldValue === 'string'
-          ? validateFieldName(fieldValue)
+          ? variant === 'linkedin_search_filters'
+            ? fieldValue.replace(/[\x00-\x1F"\\]/g, '').trim()
+            : validateFieldName(fieldValue)
           : fieldValue
 
       const currentStoreValue = storeValueRef.current
@@ -177,7 +235,7 @@ export function FieldFormat({
         currentFields.map((f) => (f.id === id ? { ...f, [fieldKey]: updatedValue } : f))
       )
     },
-    []
+    [variant]
   )
 
   const editorValueChangeHandlersRef = useRef<Record<string, (newValue: string) => void>>({})
@@ -314,9 +372,17 @@ export function FieldFormat({
     >
       <div className='flex min-w-0 flex-1 items-center gap-2'>
         <span className='block truncate font-medium text-[var(--text-tertiary)] text-sm'>
-          {field.name || `${title} ${index + 1}`}
+          {isLinkedinSearchFilters
+            ? field.name.trim()
+              ? getLinkedinSearchFilterLabel(field.name.trim())
+              : `${title} ${index + 1}`
+            : isLinkedinProfileSections
+              ? field.name.trim()
+                ? getLinkedinProfileSectionLabel(field.name.trim())
+                : `${title} ${index + 1}`
+              : field.name || `${title} ${index + 1}`}
         </span>
-        {field.name && showType && (
+        {field.name && showTypeEffective && (
           <Badge variant='type' size='sm'>
             {field.type}
           </Badge>
@@ -344,6 +410,17 @@ export function FieldFormat({
    * Renders the value input field based on the field type
    */
   const renderValueInput = (field: Field) => {
+    if (isLinkedinSearchFilters) {
+      return (
+        <Input
+          value={field.value ?? ''}
+          onChange={(e) => !isReadOnly && updateField(field.id, 'value', e.target.value)}
+          placeholder={valuePlaceholder}
+          disabled={isReadOnly}
+          autoComplete='off'
+        />
+      )
+    }
     if (field.type === 'boolean') {
       return (
         <Combobox
@@ -555,11 +632,46 @@ export function FieldFormat({
             <ExpandableContent>
               <div className='flex flex-col gap-2 rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-2.5 pt-1.5 pb-2.5'>
                 <div className='flex flex-col gap-1.5'>
-                  <Label className='text-small'>Name</Label>
-                  <div className='relative'>{renderNameInput(field)}</div>
+                  <Label className='text-small'>
+                    {inputFormatConfig?.fieldNameLabel ??
+                      (isLinkedinMentions
+                        ? 'Display name'
+                        : isLinkedinProfileSections
+                          ? 'Profile section'
+                          : isLinkedinSearchFilters
+                            ? 'Filter'
+                            : 'Name')}
+                  </Label>
+                  <div className='relative'>
+                    {isLinkedinProfileSections ? (
+                      <Combobox
+                        options={linkedinProfileSectionOptions}
+                        value={field.name ?? ''}
+                        onChange={(v) => !isReadOnly && updateField(field.id, 'name', v)}
+                        placeholder={
+                          inputFormatConfig?.profileSectionPlaceholder ?? 'Select a section…'
+                        }
+                        disabled={isReadOnly}
+                        searchable
+                      />
+                    ) : isLinkedinSearchFilters ? (
+                      <Combobox
+                        options={linkedinSearchFilterOptions}
+                        value={field.name ?? ''}
+                        onChange={(v) => !isReadOnly && updateField(field.id, 'name', v)}
+                        placeholder={
+                          inputFormatConfig?.searchFilterPlaceholder ?? 'Select a filter type…'
+                        }
+                        disabled={isReadOnly}
+                        searchable
+                      />
+                    ) : (
+                      renderNameInput(field)
+                    )}
+                  </div>
                 </div>
 
-                {showType && (
+                {showTypeEffective && (
                   <div className='flex flex-col gap-1.5'>
                     <Label className='text-small'>Type</Label>
                     <Combobox
@@ -571,21 +683,47 @@ export function FieldFormat({
                   </div>
                 )}
 
-                {showDescription && (
-                  <div className='flex flex-col gap-1.5'>
-                    <Label className='text-small'>Description</Label>
-                    <Input
-                      value={field.description ?? ''}
-                      onChange={(e) => updateField(field.id, 'description', e.target.value)}
-                      placeholder={descriptionPlaceholder}
-                      disabled={isReadOnly}
-                    />
-                  </div>
-                )}
+                {showDescriptionEffective &&
+                  (isLinkedinMentions ? (
+                    <div className='flex flex-col gap-1.5'>
+                      <Label className='text-small'>
+                        {inputFormatConfig?.mentionTargetLabel ?? 'Mention target'}
+                      </Label>
+                      <Combobox
+                        options={mentionTargetOptions}
+                        value={field.description === 'true' ? 'true' : ''}
+                        onChange={(v) => {
+                          if (isReadOnly) return
+                          updateField(field.id, 'description', v === 'true' ? 'true' : '')
+                        }}
+                        placeholder={
+                          inputFormatConfig?.mentionTargetPlaceholder ?? 'Person or company'
+                        }
+                        disabled={isReadOnly}
+                      />
+                    </div>
+                  ) : (
+                    <div className='flex flex-col gap-1.5'>
+                      <Label className='text-small'>Description</Label>
+                      <Input
+                        value={field.description ?? ''}
+                        onChange={(e) => updateField(field.id, 'description', e.target.value)}
+                        placeholder={descriptionPlaceholder}
+                        disabled={isReadOnly}
+                      />
+                    </div>
+                  ))}
 
-                {showValue && (
+                {showValueEffective && (
                   <div className='flex flex-col gap-1.5'>
-                    <Label className='text-small'>Value</Label>
+                    <Label className='text-small'>
+                      {inputFormatConfig?.fieldValueLabel ??
+                        (isLinkedinMentions
+                          ? 'Profile ID'
+                          : isLinkedinSearchFilters
+                            ? 'ID or value'
+                            : 'Value')}
+                    </Label>
                     <div className='relative'>{renderValueInput(field)}</div>
                   </div>
                 )}
@@ -599,9 +737,75 @@ export function FieldFormat({
 }
 
 export function InputFormat(
-  props: Omit<FieldFormatProps, 'title' | 'placeholder' | 'showDescription'>
+  props: Omit<FieldFormatProps, 'title' | 'placeholder' | 'showDescription'> & {
+    variant?:
+      | 'default'
+      | 'linkedin_comment_mentions'
+      | 'linkedin_profile_sections'
+      | 'linkedin_search_filters'
+  }
 ) {
-  return <FieldFormat {...props} title='Input' placeholder='firstName' showDescription={true} />
+  const { variant = 'default', showValue = true, config, ...rest } = props
+  const inputFormatConfig = config?.inputFormatConfig
+  if (variant === 'linkedin_comment_mentions') {
+    return (
+      <FieldFormat
+        {...rest}
+        config={config}
+        variant='linkedin_comment_mentions'
+        title={inputFormatConfig?.title ?? 'Mention'}
+        placeholder={
+          inputFormatConfig?.fieldNamePlaceholder ?? 'How the name appears in the comment'
+        }
+        showDescription
+        showValue={showValue}
+        valuePlaceholder={
+          inputFormatConfig?.fieldValuePlaceholder ??
+          'Provider id (ACo…, ADo…, or company numeric id)'
+        }
+      />
+    )
+  }
+  if (variant === 'linkedin_profile_sections') {
+    return (
+      <FieldFormat
+        {...rest}
+        config={config}
+        variant='linkedin_profile_sections'
+        title={inputFormatConfig?.title ?? 'Section'}
+        placeholder={inputFormatConfig?.fieldNamePlaceholder ?? 'section'}
+        showDescription={false}
+        showValue={false}
+      />
+    )
+  }
+  if (variant === 'linkedin_search_filters') {
+    return (
+      <FieldFormat
+        {...rest}
+        config={config}
+        variant='linkedin_search_filters'
+        title={inputFormatConfig?.title ?? 'Filter'}
+        placeholder={inputFormatConfig?.fieldNamePlaceholder ?? 'filter'}
+        showDescription={false}
+        showValue
+        valuePlaceholder={
+          inputFormatConfig?.fieldValuePlaceholder ?? 'IDs from Retrieve LinkedIn search parameters'
+        }
+      />
+    )
+  }
+  return (
+    <FieldFormat
+      {...rest}
+      config={config}
+      variant='default'
+      title='Input'
+      placeholder='firstName'
+      showDescription
+      showValue={showValue}
+    />
+  )
 }
 
 export function ResponseFormat(

@@ -214,6 +214,7 @@ import { TtsBlock } from '@/blocks/blocks/tts'
 import { TwilioSMSBlock } from '@/blocks/blocks/twilio'
 import { TwilioVoiceBlock } from '@/blocks/blocks/twilio_voice'
 import { TypeformBlock } from '@/blocks/blocks/typeform'
+import { UnipileBlock } from '@/blocks/blocks/unipile'
 import { UpstashBlock } from '@/blocks/blocks/upstash'
 import { VariablesBlock } from '@/blocks/blocks/variables'
 import { VercelBlock } from '@/blocks/blocks/vercel'
@@ -474,6 +475,7 @@ export const registry: Record<string, BlockConfig> = {
   twilio_sms: TwilioSMSBlock,
   twilio_voice: TwilioVoiceBlock,
   typeform: TypeformBlock,
+  unipile: UnipileBlock,
   upstash: UpstashBlock,
   vercel: VercelBlock,
   variables: VariablesBlock,
