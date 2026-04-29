@@ -235,16 +235,13 @@ export interface UnipileGetPostToolResponse extends ToolResponse {
 export interface UnipileCreatePostParams {
   account_id: string
   text: string
-  attachments?: string
-  video_thumbnail?: string
+  attachments?: string | unknown[]
+  video_thumbnail?: string | unknown
   repost?: string
   include_job_posting?: string
-  name?: string
-  profile_id?: string
-  is_company?: string
+  mentions?: string
   external_link?: string
   as_organization?: string
-  location?: string
 }
 
 export interface UnipileCreatePostToolResponse extends ToolResponse {

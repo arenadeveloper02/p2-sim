@@ -3,6 +3,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { RawFileInputArraySchema, RawFileInputSchema } from '@/lib/uploads/utils/file-schemas'
+import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
+import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileCreatePostAPI')
@@ -10,16 +13,13 @@ const logger = createLogger('UnipileCreatePostAPI')
 const RequestSchema = z.object({
   account_id: z.string().min(1),
   text: z.string().min(1),
-  attachments: z.string().optional(),
-  video_thumbnail: z.string().optional(),
+  attachments: z.union([RawFileInputArraySchema, z.string()]).optional(),
+  video_thumbnail: z.union([RawFileInputSchema, z.string()]).optional(),
   repost: z.string().optional(),
   include_job_posting: z.string().optional(),
-  name: z.string().optional(),
-  profile_id: z.string().optional(),
-  is_company: z.string().optional(),
+  mentions: z.string().optional(),
   external_link: z.string().optional(),
   as_organization: z.string().optional(),
-  location: z.string().optional(),
 })
 
 function appendIfNonEmpty(form: FormData, key: string, value: string | undefined) {
@@ -51,16 +51,37 @@ export async function POST(request: NextRequest) {
     const form = new FormData()
     form.append('account_id', data.account_id.trim())
     form.append('text', data.text)
-    appendIfNonEmpty(form, 'attachments', data.attachments)
-    appendIfNonEmpty(form, 'video_thumbnail', data.video_thumbnail)
+    if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+      const attachmentFiles = processFilesToUserFiles(data.attachments, data.account_id, logger)
+      for (const file of attachmentFiles) {
+        const buffer = await downloadFileFromStorage(file, data.account_id, logger)
+        const blob = new Blob([new Uint8Array(buffer)], { type: file.type || 'application/octet-stream' })
+        form.append('attachments', blob, file.name)
+      }
+    } else if (typeof data.attachments === 'string') {
+      appendIfNonEmpty(form, 'attachments', data.attachments)
+    }
+    if (
+      data.video_thumbnail &&
+      typeof data.video_thumbnail === 'object' &&
+      !Array.isArray(data.video_thumbnail)
+    ) {
+      const [thumbnailFile] = processFilesToUserFiles([data.video_thumbnail], data.account_id, logger)
+      if (thumbnailFile) {
+        const buffer = await downloadFileFromStorage(thumbnailFile, data.account_id, logger)
+        const blob = new Blob([new Uint8Array(buffer)], {
+          type: thumbnailFile.type || 'application/octet-stream',
+        })
+        form.append('video_thumbnail', blob, thumbnailFile.name)
+      }
+    } else if (typeof data.video_thumbnail === 'string') {
+      appendIfNonEmpty(form, 'video_thumbnail', data.video_thumbnail)
+    }
     appendIfNonEmpty(form, 'repost', data.repost)
     appendIfNonEmpty(form, 'include_job_posting', data.include_job_posting)
-    appendIfNonEmpty(form, 'name', data.name)
-    appendIfNonEmpty(form, 'profile_id', data.profile_id)
-    appendIfNonEmpty(form, 'is_company', data.is_company)
+    appendIfNonEmpty(form, 'mentions', data.mentions)
     appendIfNonEmpty(form, 'external_link', data.external_link)
     appendIfNonEmpty(form, 'as_organization', data.as_organization)
-    appendIfNonEmpty(form, 'location', data.location)
 
     const url = `${baseUrl}/api/v1/posts`
     const upstream = await fetch(url, {
