@@ -1028,7 +1028,6 @@ export function getMothershipUseChatOptions(
   return {
     apiPath: MOTHERSHIP_CHAT_API_PATH,
     stopPath: '/api/mothership/chat/stop',
-    resolveWorkspaceBeforeSend: true,
     ...options,
   }
 }
