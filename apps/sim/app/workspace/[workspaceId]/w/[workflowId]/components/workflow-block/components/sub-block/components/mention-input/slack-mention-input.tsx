@@ -1,14 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { AtSign, Check, User } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { Button, Textarea } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import {
   checkTagTrigger,
   TagDropdown,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
+
+const logger = createLogger('SlackMentionInput')
 
 export interface SlackUserInfo {
   id: string
@@ -85,8 +88,8 @@ export function SlackMentionInput({
       const data = await response.json()
       setUsers(data.users || [])
     } catch (err) {
-      console.error('Error fetching Slack users:', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch users')
+      logger.error('Error fetching Slack users', { error: toError(err).message })
+      setError(toError(err).message || 'Failed to fetch users')
     } finally {
       setLoading(false)
     }
@@ -365,7 +368,7 @@ export function SlackMentionInput({
   }, [selectedMentionIndex, showMentionMenu])
 
   return (
-    <div className='space-y-2'>
+    <div className='flex w-full flex-col gap-2'>
       <div className='group relative'>
         <Textarea
           ref={textareaRef}
@@ -377,15 +380,15 @@ export function SlackMentionInput({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled || !credential}
-          className='min-h-[100px] resize-none pr-10'
+          className='min-h-[100px] pr-10'
         />
 
-        {/* Insert < button */}
         {!disabled && credential && (
-          <div className='absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100'>
+          <div className='absolute top-1.5 right-1.5 z-[calc(var(--z-dropdown)-1)] flex items-center opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100'>
             <Button
+              type='button'
               variant='ghost'
-              size='icon'
+              size='sm'
               onClick={() => {
                 const cursorPosition = textareaRef.current?.selectionStart || 0
                 const beforeCursor = displayValue.substring(0, cursorPosition)
@@ -393,7 +396,6 @@ export function SlackMentionInput({
                 const newValue = `${beforeCursor}@${afterCursor}`
                 handleTextChange(newValue)
 
-                // Focus and position cursor after @
                 setTimeout(() => {
                   textareaRef.current?.focus()
                   const newCursorPosition = beforeCursor.length + 1
@@ -401,10 +403,10 @@ export function SlackMentionInput({
                 }, 0)
               }}
               disabled={disabled}
-              aria-label='Insert @ to mention users'
-              className='h-8 w-8 rounded-full border border-transparent bg-muted/80 text-muted-foreground shadow-sm transition-all duration-200 hover:border-primary/20 hover:bg-muted hover:text-foreground hover:shadow'
+              aria-label='Insert @ to mention Slack users'
+              className='h-7 w-7 shrink-0 rounded-[5px] border border-[var(--border-1)] bg-[var(--surface-5)] p-0 text-[var(--text-secondary)] shadow-subtle transition-colors hover-hover:border-[var(--border)] hover-hover:bg-[var(--surface-6)] hover-hover:text-[var(--text-primary)]'
             >
-              <AtSign className='h-4 w-4' />
+              <AtSign className='h-3.5 w-3.5' strokeWidth={2} aria-hidden />
             </Button>
           </div>
         )}
@@ -423,13 +425,13 @@ export function SlackMentionInput({
           />
         )}
 
-        {/* Mention menu */}
         {showMentionMenu && (
           <div
             ref={mentionMenuRef}
-            className='absolute top-full left-0 z-50 mt-1 max-h-60 w-80 overflow-auto rounded-md border bg-popover shadow-md'
+            role='listbox'
+            aria-label='Slack users'
+            className='absolute top-full left-0 z-[var(--z-dropdown)] mt-1 max-h-60 w-full max-w-[min(100%,20rem)] overflow-auto rounded-sm border border-[var(--border-1)] bg-[var(--surface-6)] py-0.5 shadow-overlay'
             onKeyDown={(e) => {
-              // Prevent arrow keys from scrolling the menu
               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault()
                 e.stopPropagation()
@@ -437,44 +439,53 @@ export function SlackMentionInput({
             }}
           >
             {loading && (
-              <div className='flex items-center justify-center py-4'>
-                <div className='text-muted-foreground text-sm'>Loading users...</div>
+              <div className='flex items-center justify-center py-3.5'>
+                <span className='text-[length:12px] text-[var(--text-muted)]'>Loading users…</span>
               </div>
             )}
             {error && (
-              <div className='flex items-center justify-center py-4'>
-                <div className='text-destructive text-sm'>{error}</div>
+              <div className='flex items-center justify-center px-3 py-3.5'>
+                <span className='text-center text-[length:12px] text-[var(--text-error)]'>
+                  {error}
+                </span>
               </div>
             )}
             {!loading && !error && filteredUsers.length === 0 && (
-              <div className='py-4 text-center text-muted-foreground text-sm'>No users found.</div>
+              <div className='px-3 py-3.5 text-center text-[length:12px] text-[var(--text-muted)]'>
+                No users found.
+              </div>
             )}
             {!loading && !error && filteredUsers.length > 0 && (
-              <div className='p-1'>
+              <div className='flex flex-col gap-0.5 p-0.5'>
                 {filteredUsers.map((user, index) => (
                   <div
                     key={user.id}
+                    role='option'
+                    aria-selected={index === selectedMentionIndex}
                     data-mention-index={index}
                     onClick={() => handleUserSelect(user)}
                     className={cn(
-                      'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors',
+                      'flex cursor-pointer items-center gap-2 rounded-[4px] px-2 py-1.5 text-[length:12px] transition-colors',
                       index === selectedMentionIndex
-                        ? 'bg-accent text-accent-foreground'
-                        : 'hover:bg-accent/50'
+                        ? 'bg-[var(--surface-active)] text-[var(--text-primary)]'
+                        : 'text-[var(--text-primary)] hover-hover:bg-[var(--surface-hover)]'
                     )}
                   >
                     <Check
                       className={cn(
-                        'h-4 w-4 shrink-0',
+                        'h-3.5 w-3.5 shrink-0 text-[var(--text-icon)]',
                         index === selectedMentionIndex ? 'opacity-100' : 'opacity-0'
                       )}
+                      aria-hidden
                     />
-                    <User className='h-4 w-4 shrink-0' />
-                    <div className='flex min-w-0 flex-col'>
+                    <User className='h-3.5 w-3.5 shrink-0 text-[var(--text-icon)]' aria-hidden />
+                    <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
                       <span className='truncate font-medium'>
                         {user.displayName || user.realName || user.name}
                       </span>
-                      <span className='truncate text-muted-foreground text-xs'>@{user.name}</span>
+                      <span className='truncate text-[length:11px] text-[var(--text-muted)]'>
+                        @{user.name}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -484,12 +495,9 @@ export function SlackMentionInput({
         )}
       </div>
 
-      {/* Help text */}
-      <div className='text-muted-foreground text-xs'>
-        Type @ or click the @ button to mention users. Type &lt; to reference variables and block
-        outputs.
-        <br />
-      </div>
+      <p className='m-0 text-[length:11px] text-[var(--text-muted)] leading-snug'>
+        Type @ or use the button to mention users. Type &lt; for variables and block outputs.
+      </p>
     </div>
   )
 }

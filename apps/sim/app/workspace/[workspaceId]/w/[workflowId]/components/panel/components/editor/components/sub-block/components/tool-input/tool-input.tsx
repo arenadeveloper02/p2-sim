@@ -106,8 +106,14 @@ const OAUTH_ROUTING_KEYS_PRESERVED_ON_OPERATION_CHANGE = new Set(['oauthCredenti
  */
 const IMAGE_FUSION_EXCLUDED_UNCOVERED_PARAM_IDS = new Set(['inputImage', 'inputImageMimeType'])
 
+/** Slack tools use OAuth + block authMethod; `botToken` is only for legacy/direct API paths. */
+const SLACK_EXCLUDED_UNCOVERED_PARAM_IDS = new Set(['botToken'])
+
 function shouldIncludeUncoveredToolParam(toolType: string | undefined, paramId: string): boolean {
   if (toolType === 'image_fusion' && IMAGE_FUSION_EXCLUDED_UNCOVERED_PARAM_IDS.has(paramId)) {
+    return false
+  }
+  if (toolType === 'slack' && SLACK_EXCLUDED_UNCOVERED_PARAM_IDS.has(paramId)) {
     return false
   }
   return true
@@ -798,7 +804,9 @@ export const ToolInput = memo(function ToolInput({
 
       if (isToolAlreadySelected(toolId, toolBlock.type)) return
 
-      const toolParams = getToolParametersConfig(toolId, toolBlock.type)
+      const toolParams = getToolParametersConfig(toolId, toolBlock.type, {
+        operation: defaultOperation,
+      })
       if (!toolParams) return
 
       const initialParams: Record<string, any> = {}
@@ -997,7 +1005,9 @@ export const ToolInput = memo(function ToolInput({
         return
       }
 
-      const toolParams = getToolParametersConfig(newToolId, tool.type)
+      const toolParams = getToolParametersConfig(newToolId, tool.type, {
+        operation,
+      })
 
       if (!toolParams) {
         return
@@ -1641,8 +1651,8 @@ export const ToolInput = memo(function ToolInput({
           const toolParams =
             !isCustomTool && !isMcpTool && currentToolId
               ? getToolParametersConfig(currentToolId, tool.type, {
-                  operation: tool.operation,
                   ...tool.params,
+                  operation: tool.operation,
                 })
               : null
 
@@ -1654,8 +1664,8 @@ export const ToolInput = memo(function ToolInput({
                   currentToolId,
                   tool.type,
                   {
-                    operation: tool.operation,
                     ...tool.params,
+                    operation: tool.operation,
                   },
                   toolScopedOverrides
                 )

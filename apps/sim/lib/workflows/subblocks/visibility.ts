@@ -287,7 +287,13 @@ export function resolveDependencyValue(
   const canonicalResult =
     mode === 'advanced' ? (advancedValue ?? basicValue) : (basicValue ?? advancedValue)
 
-  if (canonicalResult != null) return canonicalResult
+  if (isNonEmptyValue(canonicalResult)) return canonicalResult
+
+  // Tool-input and serialized params often store the value under the canonical id (e.g.
+  // `oauthCredential`) instead of basic/advanced subblock ids (`credential`, `manualCredential`).
+  if (isNonEmptyValue(values[canonicalId])) {
+    return values[canonicalId]
+  }
 
   for (const [memberId, memberCanonicalId] of Object.entries(
     canonicalIndex.canonicalIdBySubBlockId

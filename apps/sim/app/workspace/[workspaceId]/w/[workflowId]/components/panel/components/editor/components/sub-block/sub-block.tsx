@@ -121,6 +121,33 @@ interface SubBlockProps {
 }
 
 /**
+ * Builds a flat map of field values for conditional `required` checks.
+ * Merges tool-input `dependencyContext` (flat) with store-shaped `subBlockValues` ({ value } cells).
+ *
+ * @param subBlockValues - Sub-block store snapshot (optional)
+ * @param dependencyContext - Flat sibling values (e.g. agent tool params)
+ */
+function mergeConditionContextForRequired(
+  subBlockValues?: Record<string, any>,
+  dependencyContext?: Record<string, unknown>
+): Record<string, any> {
+  const merged: Record<string, any> = {}
+  if (dependencyContext) {
+    Object.assign(merged, dependencyContext)
+  }
+  if (subBlockValues) {
+    for (const [key, cell] of Object.entries(subBlockValues)) {
+      const v =
+        cell && typeof cell === 'object' && cell !== null && 'value' in cell
+          ? (cell as { value: unknown }).value
+          : cell
+      merged[key] = v
+    }
+  }
+  return merged
+}
+
+/**
  * Returns whether the field is required for validation.
  *
  * @remarks
@@ -128,10 +155,10 @@ interface SubBlockProps {
  * Supports boolean, condition objects, and functions that return conditions.
  *
  * @param config - The sub-block configuration containing requirement rules
- * @param subBlockValues - Current values of all subblocks for condition evaluation
+ * @param conditionValues - Flat field values for condition evaluation (store and/or tool context)
  * @returns `true` if the field is required based on current context
  */
-const isFieldRequired = (config: SubBlockConfig, subBlockValues?: Record<string, any>): boolean => {
+const isFieldRequired = (config: SubBlockConfig, conditionValues?: Record<string, any>): boolean => {
   if (!config.required) return false
   if (typeof config.required === 'boolean') return config.required
 
@@ -148,7 +175,7 @@ const isFieldRequired = (config: SubBlockConfig, subBlockValues?: Record<string,
     },
     values: Record<string, any>
   ): boolean => {
-    const fieldValue = values[cond.field]?.value
+    const fieldValue = values[cond.field]
     const condValue = cond.value
 
     let match: boolean
@@ -161,7 +188,7 @@ const isFieldRequired = (config: SubBlockConfig, subBlockValues?: Record<string,
     if (cond.not) match = !match
 
     if (cond.and) {
-      const andFieldValue = values[cond.and.field]?.value
+      const andFieldValue = values[cond.and.field]
       const andCondValue = cond.and.value
       let andMatch: boolean
       if (Array.isArray(andCondValue)) {
@@ -177,7 +204,7 @@ const isFieldRequired = (config: SubBlockConfig, subBlockValues?: Record<string,
   }
 
   const condition = typeof config.required === 'function' ? config.required() : config.required
-  return evalCond(condition, subBlockValues || {})
+  return evalCond(condition, conditionValues || {})
 }
 
 /**
@@ -212,6 +239,7 @@ const getPreviewValue = (
  * @param canonicalToggleIsDisabled - Whether the canonical toggle is disabled (includes dependsOn gating)
  * @param copyState - State and handler for the copy-to-clipboard button
  * @param labelSuffix - Additional content rendered after the label text
+ * @param dependencyContext - Flat sibling values for conditional labels in tool-input context
  * @returns The label JSX element, or `null` for switch types or when no title is defined
  */
 const renderLabel = (
@@ -248,12 +276,16 @@ const renderLabel = (
     show: boolean
     onClick: () => void
     tooltip: string
-  }
+  },
+  dependencyContext?: Record<string, unknown>
 ): JSX.Element | null => {
   if (config.type === 'switch') return null
   if (!config.title) return null
 
-  const required = isFieldRequired(config, subBlockValues)
+  const required = isFieldRequired(
+    config,
+    mergeConditionContextForRequired(subBlockValues, dependencyContext)
+  )
   const showWand = wandState?.isWandEnabled && !wandState.isPreview && !wandState.disabled
   const showCanonicalToggle = !!canonicalToggle && !wandState?.isPreview
   const showCopy = copyState?.showCopyButton && !wandState?.isPreview
@@ -1367,6 +1399,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             isPreview={isPreview}
             previewValue={previewValue}
+            dependencyContext={contextValues}
           />
         )
 
@@ -1403,7 +1436,8 @@ function SubBlockComponent({
           onCopy: handleCopy,
         },
         labelSuffix,
-        externalLink
+        externalLink,
+        dependencyContext
       )}
       {renderInput()}
     </div>
