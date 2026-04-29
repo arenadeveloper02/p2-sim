@@ -20,6 +20,10 @@ function unipileParseMentionIsCompanyCell(raw: string): boolean | undefined {
 }
 
 type UnipileCommentMentionRow = { name: string; profile_id: string; is_company?: boolean }
+type UnipileAccountOption = { id: string; label: string }
+
+let unipileAccountOptionsCache: UnipileAccountOption[] | null = null
+let unipileAccountOptionsRequest: Promise<UnipileAccountOption[]> | null = null
 
 /** Same row shape as Start block `input-format` fields (id, name, type, value, description). */
 function unipileMentionsFromInputFormat(raw: unknown): UnipileCommentMentionRow[] | undefined {
@@ -152,34 +156,51 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       options: [],
       placeholder: 'Select a connected account',
       required: true,
-      value: () => '',
       description: 'Accounts returned from your deployment workspace (`GET /api/v1/accounts`).',
       fetchOptions: async () => {
-        try {
-          const response = await fetch('/api/unipile/accounts')
-          const data = (await response.json()) as {
-            success?: boolean
-            items?: Array<{ id: string; label: string }>
-          }
-          if (data?.success && Array.isArray(data.items)) {
-            return data.items
-          }
-          return []
-        } catch {
-          return []
+        if (unipileAccountOptionsCache) {
+          return unipileAccountOptionsCache
         }
+        if (!unipileAccountOptionsRequest) {
+          unipileAccountOptionsRequest = (async () => {
+            const response = await fetch('/api/unipile/accounts')
+            const data = (await response.json()) as {
+              success?: boolean
+              error?: string
+              items?: UnipileAccountOption[]
+            }
+            if (!response.ok || !data?.success) {
+              throw new Error(data?.error || 'Failed to fetch Unipile accounts')
+            }
+            const items = Array.isArray(data.items) ? data.items : []
+            unipileAccountOptionsCache = items
+            return items
+          })().finally(() => {
+            unipileAccountOptionsRequest = null
+          })
+        }
+        return unipileAccountOptionsRequest
       },
       fetchOptionById: async (_blockId: string, optionId: string) => {
         try {
-          const response = await fetch('/api/unipile/accounts')
-          const data = (await response.json()) as {
-            success?: boolean
-            items?: Array<{ id: string; label: string }>
-          }
-          if (!data?.success || !Array.isArray(data.items)) {
+          const options =
+            unipileAccountOptionsCache ??
+            (await (async () => {
+              const response = await fetch('/api/unipile/accounts')
+              const data = (await response.json()) as {
+                success?: boolean
+                items?: UnipileAccountOption[]
+              }
+              if (!data?.success || !Array.isArray(data.items)) {
+                return []
+              }
+              unipileAccountOptionsCache = data.items
+              return data.items
+            })())
+          if (options.length === 0) {
             return null
           }
-          const match = data.items.find((item) => item.id === optionId)
+          const match = options.find((item) => item.id === optionId)
           return match ?? null
         } catch {
           return null
