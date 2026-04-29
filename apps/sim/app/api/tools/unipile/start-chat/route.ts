@@ -17,7 +17,9 @@ const RequestSchema = z.object({
   account_id: z.string().min(1),
   text: z.string().min(1),
   attendees_ids: z.union([
-    z.array(z.string().min(1)).min(1, { message: 'attendees_ids must include at least one attendee id' }),
+    z
+      .array(z.string().min(1))
+      .min(1, { message: 'attendees_ids must include at least one attendee id' }),
     z
       .string()
       .transform((s) => s.trim())
@@ -89,14 +91,20 @@ export async function POST(request: NextRequest) {
       const attachmentFiles = processFilesToUserFiles(data.attachments, data.account_id, logger)
       for (const file of attachmentFiles) {
         const buffer = await downloadFileFromStorage(file, data.account_id, logger)
-        const blob = new Blob([new Uint8Array(buffer)], { type: file.type || 'application/octet-stream' })
+        const blob = new Blob([new Uint8Array(buffer)], {
+          type: file.type || 'application/octet-stream',
+        })
         form.append('attachments', blob, file.name)
       }
     } else if (typeof data.attachments === 'string') {
       appendIfNonEmpty(form, 'attachments', data.attachments)
     }
 
-    if (data.voice_message && typeof data.voice_message === 'object' && !Array.isArray(data.voice_message)) {
+    if (
+      data.voice_message &&
+      typeof data.voice_message === 'object' &&
+      !Array.isArray(data.voice_message)
+    ) {
       const [voiceFile] = processFilesToUserFiles([data.voice_message], data.account_id, logger)
       if (voiceFile) {
         const buffer = await downloadFileFromStorage(voiceFile, data.account_id, logger)
@@ -109,7 +117,11 @@ export async function POST(request: NextRequest) {
       appendIfNonEmpty(form, 'voice_message', data.voice_message)
     }
 
-    if (data.video_message && typeof data.video_message === 'object' && !Array.isArray(data.video_message)) {
+    if (
+      data.video_message &&
+      typeof data.video_message === 'object' &&
+      !Array.isArray(data.video_message)
+    ) {
       const [videoFile] = processFilesToUserFiles([data.video_message], data.account_id, logger)
       if (videoFile) {
         const buffer = await downloadFileFromStorage(videoFile, data.account_id, logger)

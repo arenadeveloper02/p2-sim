@@ -55,7 +55,9 @@ export async function POST(request: NextRequest) {
       const attachmentFiles = processFilesToUserFiles(data.attachments, data.account_id, logger)
       for (const file of attachmentFiles) {
         const buffer = await downloadFileFromStorage(file, data.account_id, logger)
-        const blob = new Blob([new Uint8Array(buffer)], { type: file.type || 'application/octet-stream' })
+        const blob = new Blob([new Uint8Array(buffer)], {
+          type: file.type || 'application/octet-stream',
+        })
         form.append('attachments', blob, file.name)
       }
     } else if (typeof data.attachments === 'string') {
@@ -66,7 +68,11 @@ export async function POST(request: NextRequest) {
       typeof data.video_thumbnail === 'object' &&
       !Array.isArray(data.video_thumbnail)
     ) {
-      const [thumbnailFile] = processFilesToUserFiles([data.video_thumbnail], data.account_id, logger)
+      const [thumbnailFile] = processFilesToUserFiles(
+        [data.video_thumbnail],
+        data.account_id,
+        logger
+      )
       if (thumbnailFile) {
         const buffer = await downloadFileFromStorage(thumbnailFile, data.account_id, logger)
         const blob = new Blob([new Uint8Array(buffer)], {

@@ -840,7 +840,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       condition: { field: 'operation', value: 'start_new_chat' },
       mode: 'basic',
     },
-    
+
     {
       id: 'voice_message',
       title: 'Voice Message',
@@ -1273,7 +1273,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             text: typeof params.text === 'string' ? params.text : '',
           }
-          const normalizedAttachments = normalizeFileInput(params.attachment_files || params.attachments)
+          const normalizedAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
           const normalizedVideoThumbnail = normalizeFileInput(
             params.linkedin_post_video_thumbnail_file || params.linkedin_post_video_thumbnail,
             { single: true }
@@ -1310,7 +1312,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             text: typeof params.text === 'string' ? params.text : '',
           }
-          const normalizedAttachments = normalizeFileInput(params.attachment_files || params.attachments)
+          const normalizedAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
           const copyIfString = (key: string) => {
             const v = params[key]
             if (typeof v === 'string' && v.trim() !== '') {
@@ -1334,13 +1338,21 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             text: typeof params.text === 'string' ? params.text : '',
           }
-          const normalizedAttachments = normalizeFileInput(params.attachment_files || params.attachments)
-          const normalizedVoice = normalizeFileInput(params.voice_message_file || params.voice_message, {
-            single: true,
-          })
-          const normalizedVideo = normalizeFileInput(params.video_message_file || params.video_message, {
-            single: true,
-          })
+          const normalizedAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
+          const normalizedVoice = normalizeFileInput(
+            params.voice_message_file || params.voice_message,
+            {
+              single: true,
+            }
+          )
+          const normalizedVideo = normalizeFileInput(
+            params.video_message_file || params.video_message,
+            {
+              single: true,
+            }
+          )
           const copyIfString = (key: string) => {
             const v = params[key]
             if (typeof v === 'string' && v.trim() !== '') {
