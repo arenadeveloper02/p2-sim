@@ -72,6 +72,7 @@ import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { getProviderFromModel, supportsToolUsageControl } from '@/providers/utils'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import {
   formatParameterLabel,
@@ -974,8 +975,22 @@ export const ToolInput = memo(function ToolInput({
     (toolIndex: number, paramId: string, paramValue: any) => {
       if (isPreview || disabled) return
 
+      const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+      const latestRaw =
+        activeWorkflowId != null
+          ? useSubBlockStore.getState().workflowValues[activeWorkflowId]?.[blockId]?.[subBlockId]
+          : undefined
+
+      const baseTools: StoredTool[] =
+        Array.isArray(latestRaw) &&
+        latestRaw.length > 0 &&
+        latestRaw[0] !== null &&
+        typeof (latestRaw[0] as StoredTool)?.type === 'string'
+          ? (latestRaw as StoredTool[])
+          : selectedTools
+
       setStoreValue(
-        selectedTools.map((tool, index) =>
+        baseTools.map((tool, index) =>
           index === toolIndex
             ? {
                 ...tool,
@@ -988,7 +1003,7 @@ export const ToolInput = memo(function ToolInput({
         )
       )
     },
-    [isPreview, disabled, selectedTools, setStoreValue]
+    [isPreview, disabled, blockId, subBlockId, selectedTools, setStoreValue]
   )
 
   const handleOperationChange = useCallback(

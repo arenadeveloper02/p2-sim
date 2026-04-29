@@ -30,6 +30,33 @@ interface ToolSubBlockRendererProps {
 const OBJECT_SUBBLOCK_TYPES = new Set(['file-upload', 'table', 'grouped-checkbox-list'])
 
 /**
+ * Normalizes selector/store shapes (e.g. Slack `{ channel_id }`) to a string for `tool.params`.
+ */
+function normalizeToolParamForPersistence(
+  effectiveParamId: string,
+  subBlock: BlockSubBlockConfig,
+  raw: unknown
+): unknown {
+  if (raw === null || raw === undefined) return ''
+  if (typeof raw === 'string') return raw
+  const isChannelField =
+    effectiveParamId === 'channel' ||
+    subBlock.canonicalParamId === 'channel' ||
+    subBlock.type === 'channel-selector'
+  if (
+    isChannelField &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    raw !== null
+  ) {
+    const o = raw as Record<string, unknown>
+    const id = o.channel_id ?? o.channelId ?? o.id
+    if (typeof id === 'string' && id.trim()) return id.trim()
+  }
+  return raw
+}
+
+/**
  * Bridges the subblock store with StoredTool.params via a synthetic store key,
  * then delegates all rendering to SubBlock for full parity.
  */
@@ -70,12 +97,13 @@ export function ToolSubBlockRenderer({
       ) {
         processedVal = ''
       }
+      processedVal = normalizeToolParamForPersistence(effectiveParamId, subBlock, processedVal)
       if (processedVal === syncedRef.current) return
       syncedRef.current = processedVal
       onParamChangeRef.current(toolIndex, effectiveParamId, processedVal)
     })
     return unsub
-  }, [blockId, syntheticId, toolIndex, effectiveParamId, isObjectType, subBlock.mode])
+  }, [blockId, syntheticId, toolIndex, effectiveParamId, isObjectType, subBlock.mode, subBlock.id, subBlock.type, subBlock.canonicalParamId])
 
   useEffect(() => {
     if (isObjectType && toolParamValue) {
@@ -96,9 +124,19 @@ export function ToolSubBlockRenderer({
     if (!isAdvanced && !isObjectType) {
       const existing = useSubBlockStore.getState().getValue(blockId, syntheticId)
       const toolEmpty = toolParamValue === '' || toolParamValue == null
-      if (toolEmpty && typeof existing === 'string' && existing.trim().length > 0) {
-        if (existing === syncedRef.current) return
-        syncedRef.current = existing
+      const normalizedExisting = normalizeToolParamForPersistence(
+        effectiveParamId,
+        subBlock,
+        existing
+      )
+      if (
+        toolEmpty &&
+        typeof normalizedExisting === 'string' &&
+        normalizedExisting.trim().length > 0
+      ) {
+        if (normalizedExisting === syncedRef.current) return
+        syncedRef.current = normalizedExisting
+        onParamChangeRef.current(toolIndex, effectiveParamId, normalizedExisting)
         return
       }
       if (
@@ -143,7 +181,16 @@ export function ToolSubBlockRenderer({
     if (toolParamValue === syncedRef.current) return
     syncedRef.current = toolParamValue
     useSubBlockStore.getState().setValue(blockId, syntheticId, toolParamValue)
-  }, [toolParamValue, blockId, syntheticId, isObjectType, subBlock.mode])
+  }, [
+    toolParamValue,
+    blockId,
+    syntheticId,
+    isObjectType,
+    subBlock.mode,
+    effectiveParamId,
+    subBlock.type,
+    subBlock.canonicalParamId,
+  ])
 
   const visibility = subBlock.paramVisibility ?? 'user-or-llm'
   const isOptionalForUser = visibility !== 'user-only'
