@@ -29,11 +29,11 @@ export interface UnipileRetrieveCompanyDetailsToolResponse extends ToolResponse 
 export interface UnipileStartNewChatParams {
   account_id: string
   text: string
-  /** Comma-separated relation ids; required by Unipile to start a chat. */
-  attendees_ids: string
-  attachments?: string
-  voice_message?: string
-  video_message?: string
+  /** One or more attendee provider ids; legacy comma-separated string is also accepted. */
+  attendees_ids: string[] | string
+  attachments?: string | unknown[]
+  voice_message?: string | unknown
+  video_message?: string | unknown
   subject?: string
   /** Unipile `api` form field: `classic` | `recruiter` | `sales_navigator` */
   api?: string
@@ -100,7 +100,7 @@ export interface UnipileSendChatMessageParams {
   quote_id?: string
   voice_message?: string
   video_message?: string
-  attachments?: string
+  attachments?: string | unknown[]
   typing_duration?: string
 }
 

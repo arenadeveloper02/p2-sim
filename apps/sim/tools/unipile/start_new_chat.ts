@@ -11,7 +11,7 @@ export const unipileStartNewChatTool: ToolConfig<
   id: 'unipile_start_new_chat',
   name: 'Unipile Start New Chat',
   description:
-    'Starts a new chat via Unipile (`POST /api/v1/chats` as multipart form). Requires `attendees_ids` (comma-separated relation ids). Uses `UNIPILE_API_KEY` from the server environment.',
+    'Starts a new chat via Unipile (`POST /api/v1/chats` as multipart form). Requires `attendees_ids` (array of attendee provider ids). Uses `UNIPILE_API_KEY` from the server environment.',
   version: '1.0.0',
 
   params: {
@@ -28,29 +28,29 @@ export const unipileStartNewChatTool: ToolConfig<
       description: 'Initial message text',
     },
     attendees_ids: {
-      type: 'string',
+      type: 'json',
       required: true,
       visibility: 'user-or-llm',
       description:
-        'Comma-separated attendee/relation ids for Unipile `attendees_ids` (required to open a new chat)',
+        'Attendee provider ids for Unipile `attendees_ids` (array preferred; comma-separated legacy string also accepted)',
     },
     attachments: {
-      type: 'string',
+      type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Attachments field (Unipile form string)',
+      description: 'Attachments as UserFile array (preferred) or legacy string',
     },
     voice_message: {
-      type: 'string',
+      type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Voice message field (Unipile form string)',
+      description: 'Voice message as UserFile (preferred) or legacy string',
     },
     video_message: {
-      type: 'string',
+      type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Video message field (Unipile form string)',
+      description: 'Video message as UserFile (preferred) or legacy string',
     },
     subject: {
       type: 'string',

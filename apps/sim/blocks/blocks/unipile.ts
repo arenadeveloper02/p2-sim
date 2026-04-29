@@ -1,12 +1,13 @@
 import { UnipileIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import { UNIPILE_LINKEDIN_PROFILE_SECTIONS } from '@/tools/unipile/linkedin_profile_query'
 import { buildLinkedinSearchBodyFromForm } from '@/tools/unipile/linkedin_search_form'
 import { getLinkedinSearchParameterTypeDropdownOptions } from '@/tools/unipile/linkedin_search_parameter_types'
 import type { UnipileResponse } from '@/tools/unipile/types'
 
-/** Normalizes attendees to a comma-separated string for Unipile `attendees_ids`. */
+/** Normalizes attendees to a de-duplicated string array for Unipile `attendees_ids`. */
 const UNIPILE_COMMENT_MENTION_COL_NAME = 'Display name'
 const UNIPILE_COMMENT_MENTION_COL_PROFILE_ID = 'Profile ID'
 const UNIPILE_COMMENT_MENTION_COL_IS_COMPANY = 'Is company'
@@ -118,13 +119,13 @@ function unipileBuildCommentMentionsJson(params: Record<string, unknown>): strin
   return undefined
 }
 
-function unipileSerializeAttendeesIds(raw: unknown): string | undefined {
+function unipileNormalizeAttendeesIds(raw: unknown): string[] | undefined {
   if (Array.isArray(raw) && raw.length > 0) {
     const parts = raw
       .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
       .map((x) => x.trim())
     if (parts.length === 0) return undefined
-    return parts.join(',')
+    return Array.from(new Set(parts))
   }
   if (typeof raw === 'string' && raw.trim() !== '') {
     const parts = raw
@@ -132,7 +133,7 @@ function unipileSerializeAttendeesIds(raw: unknown): string | undefined {
       .map((x) => x.trim())
       .filter((x) => x.length > 0)
     if (parts.length === 0) return undefined
-    return parts.join(',')
+    return Array.from(new Set(parts))
   }
   return undefined
 }
@@ -788,6 +789,32 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       mode: 'advanced',
     },
     {
+      id: 'attachment_files',
+      title: 'Attachments',
+      type: 'file-upload',
+      canonicalParamId: 'attachments',
+      placeholder: 'Upload one or more files',
+      multiple: true,
+      condition: { field: 'operation', value: ['start_new_chat', 'send_chat_message'] },
+      mode: 'basic',
+    },
+    {
+      id: 'voice_message_file',
+      title: 'Voice Message',
+      type: 'file-upload',
+      placeholder: 'Upload voice message file (.m4a/.mp3)',
+      condition: { field: 'operation', value: 'start_new_chat' },
+      mode: 'basic',
+    },
+    {
+      id: 'video_message_file',
+      title: 'Video Message',
+      type: 'file-upload',
+      placeholder: 'Upload video message file',
+      condition: { field: 'operation', value: 'start_new_chat' },
+      mode: 'basic',
+    },
+    {
       id: 'attachments',
       title: 'Attachments',
       type: 'short-input',
@@ -1247,6 +1274,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             text: typeof params.text === 'string' ? params.text : '',
           }
+          const normalizedAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
           const copyIfString = (key: string) => {
             const v = params[key]
             if (typeof v === 'string' && v.trim() !== '') {
@@ -1257,7 +1287,11 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           copyIfString('quote_id')
           copyIfString('voice_message')
           copyIfString('video_message')
-          copyIfString('attachments')
+          if (normalizedAttachments && normalizedAttachments.length > 0) {
+            out.attachments = normalizedAttachments
+          } else {
+            copyIfString('attachments')
+          }
           copyIfString('typing_duration')
           return out
         }
@@ -1266,6 +1300,15 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             text: typeof params.text === 'string' ? params.text : '',
           }
+          const normalizedAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
+          const normalizedVoice = normalizeFileInput(params.voice_message_file || params.voice_message, {
+            single: true,
+          })
+          const normalizedVideo = normalizeFileInput(params.video_message_file || params.video_message, {
+            single: true,
+          })
           const copyIfString = (key: string) => {
             const v = params[key]
             if (typeof v === 'string' && v.trim() !== '') {
@@ -1273,10 +1316,22 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             }
           }
           copyIfString('subject')
-          copyIfString('attachments')
-          copyIfString('voice_message')
-          copyIfString('video_message')
-          out.attendees_ids = unipileSerializeAttendeesIds(params.attendees_ids) ?? ''
+          if (normalizedAttachments && normalizedAttachments.length > 0) {
+            out.attachments = normalizedAttachments
+          } else {
+            copyIfString('attachments')
+          }
+          if (normalizedVoice) {
+            out.voice_message = normalizedVoice
+          } else {
+            copyIfString('voice_message')
+          }
+          if (normalizedVideo) {
+            out.video_message = normalizedVideo
+          } else {
+            copyIfString('video_message')
+          }
+          out.attendees_ids = unipileNormalizeAttendeesIds(params.attendees_ids) ?? []
 
           const modeRaw =
             typeof params.start_chat_api_mode === 'string' &&
@@ -1485,14 +1540,26 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     thread_id: { type: 'string', description: 'Thread id for send message' },
     quote_id: { type: 'string', description: 'Quote id for send message' },
     typing_duration: { type: 'string', description: 'Typing duration form field' },
+    attachment_files: {
+      type: 'json',
+      description: 'Send chat message: uploaded attachment files (UserFile array)',
+    },
+    voice_message_file: {
+      type: 'json',
+      description: 'Start new chat: uploaded voice message file (UserFile)',
+    },
+    video_message_file: {
+      type: 'json',
+      description: 'Start new chat: uploaded video message file (UserFile)',
+    },
     subject: { type: 'string', description: 'Chat subject' },
     attachments: { type: 'string', description: 'Attachments form field' },
     voice_message: { type: 'string', description: 'Voice message form field' },
     video_message: { type: 'string', description: 'Video message form field' },
     attendees_ids: {
-      type: 'string',
+      type: 'json',
       description:
-        'Start new chat (required): comma-separated attendee/relation ids for Unipile `attendees_ids`',
+        'Start new chat (required): attendee ids as string array (legacy comma-separated string is still accepted)',
     },
     start_chat_api_mode: {
       type: 'string',

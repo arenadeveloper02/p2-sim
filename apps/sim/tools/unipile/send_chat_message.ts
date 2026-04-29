@@ -58,10 +58,11 @@ export const unipileSendChatMessageTool: ToolConfig<
       description: 'Video message field (form string)',
     },
     attachments: {
-      type: 'string',
+      type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Attachments field (form string)',
+      description:
+        'Attachments as UserFile array (preferred) or legacy string; forwarded as multipart attachments',
     },
     typing_duration: {
       type: 'string',
