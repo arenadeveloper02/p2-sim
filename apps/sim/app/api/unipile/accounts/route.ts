@@ -1,8 +1,10 @@
+import { db } from '@sim/db'
+import { outreachUserConnectionsV1 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { env } from '@/lib/core/config/env'
-import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('UnipileAccountsAPI')
 
@@ -12,77 +14,44 @@ interface UnipileAccountOption {
 }
 
 /**
- * Lists Unipile connected accounts for the block editor (`GET /api/v1/accounts` upstream).
- * Requires a signed-in session or internal JWT; uses server `UNIPILE_API_KEY`.
+ * Lists Unipile account options for the block editor from outreach_user_connections_v1.
+ * Returns only accounts marked visible via is_shown and connected.
  */
-export async function GET(request: NextRequest) {
+export const GET = withRouteHandler(async (request: NextRequest) => {
   const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
   if (!auth.success) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const apiKey = env.UNIPILE_API_KEY?.trim()
-  if (!apiKey) {
-    return NextResponse.json(
-      { success: false, error: 'UNIPILE_API_KEY is not configured', items: [] },
-      { status: 503 }
-    )
-  }
-
-  const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
-  const url = `${baseUrl}/api/v1/accounts`
-
   try {
-    const upstream = await fetch(url, {
-      method: 'GET',
-      headers: {
-        accept: 'application/json',
-        'X-API-KEY': apiKey,
-      },
-    })
-
-    const responseText = await upstream.text()
-    if (!upstream.ok) {
-      logger.warn('Unipile list accounts failed', {
-        status: upstream.status,
-        snippet: responseText.slice(0, 500),
+    const rows = await db
+      .select({
+        accountId: outreachUserConnectionsV1.accountId,
+        name: outreachUserConnectionsV1.name,
+        userEmail: outreachUserConnectionsV1.userEmail,
+        platformType: outreachUserConnectionsV1.platformType,
       })
-      return NextResponse.json(
-        {
-          success: false,
-          error: responseText || upstream.statusText || 'Unipile request failed',
-          items: [] as UnipileAccountOption[],
-        },
-        { status: upstream.status }
-      )
-    }
+      .from(outreachUserConnectionsV1)
+      .where(eq(outreachUserConnectionsV1.isShown, true))
 
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(responseText) as unknown
-    } catch {
-      logger.error('Unipile returned non-JSON for list accounts')
-      return NextResponse.json(
-        { success: false, error: 'Invalid JSON from Unipile', items: [] as UnipileAccountOption[] },
-        { status: 502 }
-      )
-    }
-
-    const body = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
-    const rawItems = body.items
-    const items = Array.isArray(rawItems) ? rawItems : []
-
-    const options: UnipileAccountOption[] = items
+    const options: UnipileAccountOption[] = rows
       .map((row) => {
-        if (!row || typeof row !== 'object') return null
-        const r = row as Record<string, unknown>
-        const id = typeof r.id === 'string' ? r.id.trim() : ''
+        const id = typeof row.accountId === 'string' ? row.accountId.trim() : ''
         if (!id) return null
-        const name = typeof r.name === 'string' && r.name.trim() !== '' ? r.name.trim() : 'Account'
-        const type = typeof r.type === 'string' && r.type.trim() !== '' ? r.type.trim() : 'unknown'
-        return { id, label: `${name} (${type})` }
+        const displayName =
+          typeof row.name === 'string' && row.name.trim() !== '' ? row.name.trim() : 'Account'
+        const email =
+          typeof row.userEmail === 'string' && row.userEmail.trim() !== ''
+            ? row.userEmail.trim()
+            : null
+        const type =
+          typeof row.platformType === 'string' && row.platformType.trim() !== ''
+            ? row.platformType.trim()
+            : 'unipile'
+        const label = email ? `${displayName} (${email}) - ${type}` : `${displayName} - ${type}`
+        return { id, label }
       })
-      .filter((o): o is UnipileAccountOption => o !== null)
+      .filter((row): row is UnipileAccountOption => row !== null)
 
     return NextResponse.json({ success: true, items: options })
   } catch (error) {
@@ -92,4 +61,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

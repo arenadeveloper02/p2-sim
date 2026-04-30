@@ -3,6 +3,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { RawFileInputArraySchema } from '@/lib/uploads/utils/file-schemas'
+import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
+import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileSendChatMessageAPI')
@@ -15,7 +18,7 @@ const RequestSchema = z.object({
   quote_id: z.string().optional(),
   voice_message: z.string().optional(),
   video_message: z.string().optional(),
-  attachments: z.string().optional(),
+  attachments: z.union([RawFileInputArraySchema, z.string()]).optional(),
   typing_duration: z.string().optional(),
 })
 
@@ -52,7 +55,18 @@ export async function POST(request: NextRequest) {
     appendIfNonEmpty(form, 'quote_id', data.quote_id)
     appendIfNonEmpty(form, 'voice_message', data.voice_message)
     appendIfNonEmpty(form, 'video_message', data.video_message)
-    appendIfNonEmpty(form, 'attachments', data.attachments)
+    if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+      const userFiles = processFilesToUserFiles(data.attachments, data.chat_id, logger)
+      for (const userFile of userFiles) {
+        const buffer = await downloadFileFromStorage(userFile, data.chat_id, logger)
+        const blob = new Blob([new Uint8Array(buffer)], {
+          type: userFile.type || 'application/octet-stream',
+        })
+        form.append('attachments', blob, userFile.name)
+      }
+    } else if (typeof data.attachments === 'string') {
+      appendIfNonEmpty(form, 'attachments', data.attachments)
+    }
     appendIfNonEmpty(form, 'typing_duration', data.typing_duration)
 
     const encoded = encodeURIComponent(data.chat_id.trim())

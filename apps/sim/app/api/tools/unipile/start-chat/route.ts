@@ -3,6 +3,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { RawFileInputArraySchema, RawFileInputSchema } from '@/lib/uploads/utils/file-schemas'
+import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
+import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileStartChatAPI')
@@ -13,15 +16,20 @@ const optionalString = z.string().nullish()
 const RequestSchema = z.object({
   account_id: z.string().min(1),
   text: z.string().min(1),
-  attendees_ids: z
-    .string()
-    .transform((s) => s.trim())
-    .refine((s) => s.length > 0, {
-      message: 'attendees_ids is required (comma-separated relation / member ids)',
-    }),
-  attachments: optionalString,
-  voice_message: optionalString,
-  video_message: optionalString,
+  attendees_ids: z.union([
+    z
+      .array(z.string().min(1))
+      .min(1, { message: 'attendees_ids must include at least one attendee id' }),
+    z
+      .string()
+      .transform((s) => s.trim())
+      .refine((s) => s.length > 0, {
+        message: 'attendees_ids is required (comma-separated relation / member ids)',
+      }),
+  ]),
+  attachments: z.union([RawFileInputArraySchema, optionalString]),
+  voice_message: z.union([RawFileInputSchema, optionalString]),
+  video_message: z.union([RawFileInputSchema, optionalString]),
   subject: optionalString,
   api: optionalString,
   topic: optionalString,
@@ -40,6 +48,20 @@ const RequestSchema = z.object({
 function appendIfNonEmpty(form: FormData, key: string, value: string | null | undefined) {
   if (value == null || value.trim() === '') return
   form.append(key, value.trim())
+}
+
+function normalizeAttendeesIds(raw: string[] | string): string[] {
+  if (Array.isArray(raw)) {
+    return Array.from(new Set(raw.map((v) => v.trim()).filter((v) => v.length > 0)))
+  }
+  return Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0)
+    )
+  )
 }
 
 /**
@@ -65,10 +87,57 @@ export async function POST(request: NextRequest) {
     const form = new FormData()
     form.append('account_id', data.account_id.trim())
     form.append('text', data.text)
-    appendIfNonEmpty(form, 'attachments', data.attachments)
-    appendIfNonEmpty(form, 'voice_message', data.voice_message)
-    appendIfNonEmpty(form, 'video_message', data.video_message)
-    form.append('attendees_ids', data.attendees_ids)
+    if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+      const attachmentFiles = processFilesToUserFiles(data.attachments, data.account_id, logger)
+      for (const file of attachmentFiles) {
+        const buffer = await downloadFileFromStorage(file, data.account_id, logger)
+        const blob = new Blob([new Uint8Array(buffer)], {
+          type: file.type || 'application/octet-stream',
+        })
+        form.append('attachments', blob, file.name)
+      }
+    } else if (typeof data.attachments === 'string') {
+      appendIfNonEmpty(form, 'attachments', data.attachments)
+    }
+
+    if (
+      data.voice_message &&
+      typeof data.voice_message === 'object' &&
+      !Array.isArray(data.voice_message)
+    ) {
+      const [voiceFile] = processFilesToUserFiles([data.voice_message], data.account_id, logger)
+      if (voiceFile) {
+        const buffer = await downloadFileFromStorage(voiceFile, data.account_id, logger)
+        const blob = new Blob([new Uint8Array(buffer)], {
+          type: voiceFile.type || 'application/octet-stream',
+        })
+        form.append('voice_message', blob, voiceFile.name)
+      }
+    } else if (typeof data.voice_message === 'string') {
+      appendIfNonEmpty(form, 'voice_message', data.voice_message)
+    }
+
+    if (
+      data.video_message &&
+      typeof data.video_message === 'object' &&
+      !Array.isArray(data.video_message)
+    ) {
+      const [videoFile] = processFilesToUserFiles([data.video_message], data.account_id, logger)
+      if (videoFile) {
+        const buffer = await downloadFileFromStorage(videoFile, data.account_id, logger)
+        const blob = new Blob([new Uint8Array(buffer)], {
+          type: videoFile.type || 'application/octet-stream',
+        })
+        form.append('video_message', blob, videoFile.name)
+      }
+    } else if (typeof data.video_message === 'string') {
+      appendIfNonEmpty(form, 'video_message', data.video_message)
+    }
+
+    const attendeesIds = normalizeAttendeesIds(data.attendees_ids)
+    for (const attendeeId of attendeesIds) {
+      form.append('attendees_ids', attendeeId)
+    }
     appendIfNonEmpty(form, 'subject', data.subject)
 
     const apiMode = (data.api ?? 'classic').trim()

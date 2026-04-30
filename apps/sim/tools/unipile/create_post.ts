@@ -25,16 +25,16 @@ export const unipileCreatePostTool: ToolConfig<
       description: 'Post body text',
     },
     attachments: {
-      type: 'string',
+      type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Attachments form field',
+      description: 'Attachments as UserFile array (preferred) or legacy string',
     },
     video_thumbnail: {
-      type: 'string',
+      type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Video thumbnail form field',
+      description: 'Video thumbnail as UserFile (preferred) or legacy string',
     },
     repost: {
       type: 'string',
@@ -48,23 +48,11 @@ export const unipileCreatePostTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'include_job_posting form field',
     },
-    name: {
+    mentions: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Display name form field',
-    },
-    profile_id: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'profile_id form field',
-    },
-    is_company: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: "is_company form field (e.g. 'true' / 'false')",
+      description: 'LinkedIn mentions JSON array (name, profile_id, is_company)',
     },
     external_link: {
       type: 'string',
@@ -77,12 +65,6 @@ export const unipileCreatePostTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description: 'as_organization form field',
-    },
-    location: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'location form field',
     },
   },
 
@@ -97,12 +79,9 @@ export const unipileCreatePostTool: ToolConfig<
       video_thumbnail: params.video_thumbnail,
       repost: params.repost,
       include_job_posting: params.include_job_posting,
-      name: params.name,
-      profile_id: params.profile_id,
-      is_company: params.is_company,
+      mentions: params.mentions,
       external_link: params.external_link,
       as_organization: params.as_organization,
-      location: params.location,
     }),
   },
 

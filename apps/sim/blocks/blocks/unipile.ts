@@ -1,12 +1,13 @@
 import { UnipileIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import { UNIPILE_LINKEDIN_PROFILE_SECTIONS } from '@/tools/unipile/linkedin_profile_query'
 import { buildLinkedinSearchBodyFromForm } from '@/tools/unipile/linkedin_search_form'
 import { getLinkedinSearchParameterTypeDropdownOptions } from '@/tools/unipile/linkedin_search_parameter_types'
 import type { UnipileResponse } from '@/tools/unipile/types'
 
-/** Normalizes attendees to a comma-separated string for Unipile `attendees_ids`. */
+/** Normalizes attendees to a de-duplicated string array for Unipile `attendees_ids`. */
 const UNIPILE_COMMENT_MENTION_COL_NAME = 'Display name'
 const UNIPILE_COMMENT_MENTION_COL_PROFILE_ID = 'Profile ID'
 const UNIPILE_COMMENT_MENTION_COL_IS_COMPANY = 'Is company'
@@ -20,6 +21,10 @@ function unipileParseMentionIsCompanyCell(raw: string): boolean | undefined {
 }
 
 type UnipileCommentMentionRow = { name: string; profile_id: string; is_company?: boolean }
+type UnipileAccountOption = { id: string; label: string }
+
+let unipileAccountOptionsCache: UnipileAccountOption[] | null = null
+let unipileAccountOptionsRequest: Promise<UnipileAccountOption[]> | null = null
 
 /** Same row shape as Start block `input-format` fields (id, name, type, value, description). */
 function unipileMentionsFromInputFormat(raw: unknown): UnipileCommentMentionRow[] | undefined {
@@ -114,13 +119,13 @@ function unipileBuildCommentMentionsJson(params: Record<string, unknown>): strin
   return undefined
 }
 
-function unipileSerializeAttendeesIds(raw: unknown): string | undefined {
+function unipileNormalizeAttendeesIds(raw: unknown): string[] | undefined {
   if (Array.isArray(raw) && raw.length > 0) {
     const parts = raw
       .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
       .map((x) => x.trim())
     if (parts.length === 0) return undefined
-    return parts.join(',')
+    return Array.from(new Set(parts))
   }
   if (typeof raw === 'string' && raw.trim() !== '') {
     const parts = raw
@@ -128,7 +133,7 @@ function unipileSerializeAttendeesIds(raw: unknown): string | undefined {
       .map((x) => x.trim())
       .filter((x) => x.length > 0)
     if (parts.length === 0) return undefined
-    return parts.join(',')
+    return Array.from(new Set(parts))
   }
   return undefined
 }
@@ -137,6 +142,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
   type: 'unipile',
   name: 'Unipile',
   description: 'LinkedIn company data and messaging via Unipile',
+  docsLink: 'https://developer.unipile.com/reference/',
   longDescription:
     'Uses `UNIPILE_API_KEY` from the deployment environment. Pick a Unipile account first, then an operation. Enter chat ids and comma-separated attendee relation ids as plain text. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
   category: 'tools',
@@ -152,34 +158,51 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       options: [],
       placeholder: 'Select a connected account',
       required: true,
-      value: () => '',
       description: 'Accounts returned from your deployment workspace (`GET /api/v1/accounts`).',
       fetchOptions: async () => {
-        try {
-          const response = await fetch('/api/unipile/accounts')
-          const data = (await response.json()) as {
-            success?: boolean
-            items?: Array<{ id: string; label: string }>
-          }
-          if (data?.success && Array.isArray(data.items)) {
-            return data.items
-          }
-          return []
-        } catch {
-          return []
+        if (unipileAccountOptionsCache) {
+          return unipileAccountOptionsCache
         }
+        if (!unipileAccountOptionsRequest) {
+          unipileAccountOptionsRequest = (async () => {
+            const response = await fetch('/api/unipile/accounts')
+            const data = (await response.json()) as {
+              success?: boolean
+              error?: string
+              items?: UnipileAccountOption[]
+            }
+            if (!response.ok || !data?.success) {
+              throw new Error(data?.error || 'Failed to fetch Unipile accounts')
+            }
+            const items = Array.isArray(data.items) ? data.items : []
+            unipileAccountOptionsCache = items
+            return items
+          })().finally(() => {
+            unipileAccountOptionsRequest = null
+          })
+        }
+        return unipileAccountOptionsRequest
       },
       fetchOptionById: async (_blockId: string, optionId: string) => {
         try {
-          const response = await fetch('/api/unipile/accounts')
-          const data = (await response.json()) as {
-            success?: boolean
-            items?: Array<{ id: string; label: string }>
-          }
-          if (!data?.success || !Array.isArray(data.items)) {
+          const options =
+            unipileAccountOptionsCache ??
+            (await (async () => {
+              const response = await fetch('/api/unipile/accounts')
+              const data = (await response.json()) as {
+                success?: boolean
+                items?: UnipileAccountOption[]
+              }
+              if (!data?.success || !Array.isArray(data.items)) {
+                return []
+              }
+              unipileAccountOptionsCache = data.items
+              return data.items
+            })())
+          if (options.length === 0) {
             return null
           }
-          const match = data.items.find((item) => item.id === optionId)
+          const match = options.find((item) => item.id === optionId)
           return match ?? null
         } catch {
           return null
@@ -219,6 +242,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Company Identifier',
       type: 'short-input',
       placeholder: 'LinkedIn company public id (e.g. position2)',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'retrieve_company_details' },
       required: { field: 'operation', value: 'retrieve_company_details' },
     },
@@ -229,6 +253,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'Public slug or provider internal id (path segment)',
       description:
         'Unipile path `{identifier}` for this user. For **Retrieve a profile** only: internal id or public id. Reused for **List all posts**, list comments, and list reactions (provider id or public id per Unipile docs).',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['get_user_profile', 'list_user_posts', 'list_user_comments', 'list_user_reactions'],
@@ -251,6 +276,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       },
       description:
         'Optional `linkedin_sections` query: use **+** to add rows; pick each section from the list. Prefer preview or specific sections—full “all sections” is heavy and LinkedIn may throttle (see response `throttled_sections`). [Provider limits](https://developer.unipile.com/docs/provider-limits-and-restrictions)',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'get_user_profile' },
       mode: 'advanced',
     },
@@ -266,6 +292,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       value: () => '',
       description:
         'Optional `linkedin_api` query when the account has Recruiter or Sales Navigator (relative features must be subscribed).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'get_user_profile' },
       mode: 'advanced',
     },
@@ -281,6 +308,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       value: () => '',
       description:
         'Optional `notify` query: whether LinkedIn notifies the person that their profile was viewed (default upstream is false).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'get_user_profile' },
       mode: 'advanced',
     },
@@ -300,6 +328,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           'linkedin_search',
         ],
       },
+      dependsOn: ['operation'],
       mode: 'advanced',
     },
     {
@@ -308,6 +337,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'short-input',
       placeholder: '1–100',
       description: 'Optional `limit` query on **List all posts** (1–100 posts per request).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_user_posts' },
       mode: 'advanced',
     },
@@ -323,6 +353,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       value: () => '',
       description:
         'Optional `is_company` query: set **true** when the identifier is a LinkedIn company (numeric id).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_user_posts' },
       mode: 'advanced',
     },
@@ -331,6 +362,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Relations name filter',
       type: 'short-input',
       placeholder: 'Optional: filter relations by user name',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_user_relations' },
       mode: 'advanced',
     },
@@ -342,6 +374,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       value: () => 'PEOPLE',
       description:
         'Required Unipile `type` query: which ID list to return. LinkedIn search bodies use these IDs—not raw text. Guide: https://developer.unipile.com/docs/linkedin-search',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'get_linkedin_search_parameters' },
       required: { field: 'operation', value: 'get_linkedin_search_parameters' },
     },
@@ -357,6 +390,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       value: () => 'CLASSIC',
       description:
         'Unipile `service` query (default CLASSIC). Affects which parameter sets are available for common types.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'get_linkedin_search_parameters' },
     },
     {
@@ -366,6 +400,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'Seed keywords (not used when type is EMPLOYMENT_TYPE)',
       description:
         'Optional Unipile `keywords` query. Not applicable when parameter type is EMPLOYMENT_TYPE.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'get_linkedin_search_parameters' },
       mode: 'advanced',
     },
@@ -375,6 +410,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'short-input',
       placeholder: '1–100',
       description: 'Optional Unipile `limit` query (1–100 per response page).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'get_linkedin_search_parameters' },
       mode: 'advanced',
     },
@@ -383,6 +419,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Message ID',
       type: 'short-input',
       placeholder: 'Message id',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'get_message_attachment' },
       required: { field: 'operation', value: 'get_message_attachment' },
     },
@@ -391,6 +428,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Attachment ID',
       type: 'short-input',
       placeholder: 'Attachment id',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'get_message_attachment' },
       required: { field: 'operation', value: 'get_message_attachment' },
     },
@@ -401,6 +439,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'Post id (LinkedIn: social_id; Instagram: provider_id)',
       description:
         'Path param for the post. LinkedIn: use social_id from GET post or list posts (URL id may not work). Instagram: use provider_id, not the post short code. See https://developer.unipile.com/docs/posts-and-comments',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['get_post', 'list_post_comments', 'comment_post', 'list_post_reactions'],
@@ -415,6 +454,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Comment ID (reactions)',
       type: 'short-input',
       placeholder: 'Optional: reactions on this comment (LinkedIn: id from comments list)',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_post_reactions' },
       mode: 'advanced',
     },
@@ -423,6 +463,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Reactions page size',
       type: 'short-input',
       placeholder: '1–100 per upstream page (default 100); all pages are still fetched',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_post_reactions' },
       mode: 'advanced',
     },
@@ -431,6 +472,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Chat ID',
       type: 'short-input',
       placeholder: 'Chat id (e.g. from list chats)',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['get_chat', 'list_chat_messages', 'send_chat_message', 'list_chat_attendees'],
@@ -447,6 +489,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'Comma-separated Unipile account ids (overrides picker if set)',
       description:
         'Optional `account_id` query: one id or comma-separated list. If empty, uses the Unipile Account picker above.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_all_chats' },
       mode: 'advanced',
     },
@@ -461,6 +504,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       ],
       value: () => '',
       description: 'Maps to Unipile `unread` query (boolean).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_all_chats' },
     },
     {
@@ -479,6 +523,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       ],
       value: () => '',
       description: 'Optional Unipile `account_type` query.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_all_chats' },
       mode: 'advanced',
     },
@@ -488,6 +533,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'short-input',
       placeholder: '2025-12-31T23:59:59.999Z',
       description: 'Exclusive upper bound; must match …T… .sssZ (milliseconds + Z).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_all_chats' },
       mode: 'advanced',
     },
@@ -497,6 +543,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'short-input',
       placeholder: '2025-01-01T00:00:00.000Z',
       description: 'Exclusive lower bound; same ISO 8601 UTC format as Unipile docs.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_all_chats' },
       mode: 'advanced',
     },
@@ -505,6 +552,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Page limit',
       type: 'short-input',
       placeholder: '1–250',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_all_chats' },
       mode: 'advanced',
     },
@@ -519,6 +567,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       ],
       value: () => 'classic',
       description: 'Mode for start new chat',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'start_new_chat' },
     },
     {
@@ -529,6 +578,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'Comma-separated relation / member ids',
       description:
         'Required for starting a chat: one id per comma-separated value; spaces around commas are trimmed. Legacy multi-select values are still accepted as arrays.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'start_new_chat' },
       required: { field: 'operation', value: 'start_new_chat' },
     },
@@ -539,6 +589,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'Message or post body',
       description:
         'For Comment a post: max 1250 characters; LinkedIn `{{0}}`, `{{1}}`, … match each mention below in order (same pattern as Start block inputs).',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['start_new_chat', 'send_chat_message', 'create_post', 'comment_post'],
@@ -567,8 +618,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         ],
       },
       description:
-        'Optional LinkedIn @mentions: use **+** to add more. **Display name** is how the mention appears in the comment; **Profile ID** is the provider id (ACo…/ADo… for people, numeric id for companies). **Mention target**: Person or Company. Use `{{0}}`, `{{1}}`, … in the comment text in the same order. Tag references supported in fields. Rows with empty name or profile id are ignored.',
-      condition: { field: 'operation', value: 'comment_post' },
+        'Optional LinkedIn @mentions: use **+** to add more. **Display name** is how the mention appears in the post/comment; **Profile ID** is the provider id (ACo…/ADo… for people, numeric id for companies). **Mention target**: Person or Company. Use `{{0}}`, `{{1}}`, … in the text in the same order. Tag references supported in fields. Rows with empty name or profile id are ignored.',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: ['comment_post', 'create_post'] },
     },
     {
       id: 'linkedin_search_api',
@@ -582,6 +634,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       value: () => 'classic',
       description:
         'Request body `api`. Multi-value filter rows apply to **classic**; `sales_navigator` / `recruiter` send `api`, `category`, and `keywords` only unless you use **Search from LinkedIn URL**. [Guide](https://developer.unipile.com/docs/linkedin-search)',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'linkedin_search' },
     },
     {
@@ -597,6 +650,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       value: () => 'people',
       description:
         'Request body `category` (match to `api` per Unipile: e.g. Classic people / companies / posts / jobs).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'linkedin_search' },
     },
     {
@@ -606,6 +660,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder:
         'e.g. engineer (optional for some Classic searches; required for Recruiter in many cases)',
       description: 'Search keywords (`keywords` in the POST body).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'linkedin_search' },
     },
     {
@@ -615,6 +670,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'https://www.linkedin.com/search/…',
       description:
         'If set, the body is only `{ "url": "…" }` and overrides other fields below (paste a public LinkedIn search URL).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'linkedin_search' },
     },
     {
@@ -632,6 +688,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       },
       description:
         '**+** to add rows: pick a **filter** (industry, location, …) and the **id or value** from [Retrieve LinkedIn search parameters](https://developer.unipile.com/docs/linkedin-search). Multiple rows for the same filter become an array. **network_distance**: `1`, `2`, or `3`. **open_to**: `proBono` or `boardMember`. **has_job_offers**: `true` or `false` (companies). Ignored when **API** is not `classic`.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'linkedin_search' },
     },
     {
@@ -641,14 +698,27 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: '10 (default upstream); max 100; Classic ≤50',
       description:
         'Optional query `limit` (0–100). Sales Navigator / Recruiter allow up to 100; LinkedIn Classic should stay at or below 50.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'linkedin_search' },
       mode: 'advanced',
+    },
+    {
+      id: 'linkedin_post_video_thumbnail_file',
+      title: 'Video Thumbnail',
+      type: 'file-upload',
+      canonicalParamId: 'video_thumbnail',
+      placeholder: 'Upload video thumbnail image',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'create_post' },
+      mode: 'basic',
     },
     {
       id: 'linkedin_post_video_thumbnail',
       title: 'Video Thumbnail',
       type: 'short-input',
+      canonicalParamId: 'video_thumbnail',
       placeholder: 'video_thumbnail form field',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'create_post' },
       mode: 'advanced',
     },
@@ -657,6 +727,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Repost',
       type: 'short-input',
       placeholder: 'repost form field',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'create_post' },
       mode: 'advanced',
     },
@@ -665,35 +736,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Include Job Posting',
       type: 'short-input',
       placeholder: 'include_job_posting form field',
-      condition: { field: 'operation', value: 'create_post' },
-      mode: 'advanced',
-    },
-    {
-      id: 'linkedin_post_brand_name',
-      title: 'Name (form)',
-      type: 'short-input',
-      placeholder: 'name form field',
-      condition: { field: 'operation', value: 'create_post' },
-      mode: 'advanced',
-    },
-    {
-      id: 'linkedin_post_profile_id',
-      title: 'Profile ID',
-      type: 'short-input',
-      placeholder: 'profile_id form field',
-      condition: { field: 'operation', value: 'create_post' },
-      mode: 'advanced',
-    },
-    {
-      id: 'linkedin_post_is_company',
-      title: 'Is Company',
-      type: 'dropdown',
-      options: [
-        { label: 'Omit', id: '' },
-        { label: 'True', id: 'true' },
-        { label: 'False', id: 'false' },
-      ],
-      value: () => '',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'create_post' },
       mode: 'advanced',
     },
@@ -704,6 +747,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'https://… (must start with http:// or https://)',
       description:
         'LinkedIn only: URL for link preview; include the same URL in the post/comment text (or Unipile may append it).',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: ['create_post', 'comment_post'] },
       mode: 'advanced',
     },
@@ -713,6 +757,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'short-input',
       placeholder: 'Organization id (comment or post on its behalf)',
       description: 'LinkedIn only: id of an organization you control.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: ['create_post', 'comment_post'] },
       mode: 'advanced',
     },
@@ -723,15 +768,8 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: 'Parent comment id to reply to',
       description:
         'Optional `comment_id` in the API body. LinkedIn: use the comment id returned by the comments list.',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'comment_post' },
-      mode: 'advanced',
-    },
-    {
-      id: 'linkedin_post_location',
-      title: 'Location',
-      type: 'short-input',
-      placeholder: 'location form field',
-      condition: { field: 'operation', value: 'create_post' },
       mode: 'advanced',
     },
     {
@@ -739,6 +777,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Thread ID',
       type: 'short-input',
       placeholder: 'Optional thread id',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'send_chat_message' },
       mode: 'advanced',
     },
@@ -747,6 +786,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Quote ID',
       type: 'short-input',
       placeholder: 'Optional quote id',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'send_chat_message' },
       mode: 'advanced',
     },
@@ -755,6 +795,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Typing Duration',
       type: 'short-input',
       placeholder: 'Optional typing duration (form string)',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'send_chat_message' },
       mode: 'advanced',
     },
@@ -763,25 +804,49 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Subject',
       type: 'short-input',
       placeholder: 'Optional chat subject',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: 'start_new_chat' },
       mode: 'advanced',
     },
     {
-      id: 'attachments',
+      id: 'attachment_files',
       title: 'Attachments',
-      type: 'short-input',
-      placeholder: 'Attachments field',
+      type: 'file-upload',
+      canonicalParamId: 'attachments',
+      placeholder: 'Upload one or more files',
+      multiple: true,
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: ['start_new_chat', 'send_chat_message', 'create_post', 'comment_post'],
       },
-      mode: 'advanced',
+      mode: 'both',
     },
+    {
+      id: 'voice_message_file',
+      title: 'Voice Message',
+      type: 'file-upload',
+      placeholder: 'Upload voice message file (.m4a/.mp3)',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'start_new_chat' },
+      mode: 'basic',
+    },
+    {
+      id: 'video_message_file',
+      title: 'Video Message',
+      type: 'file-upload',
+      placeholder: 'Upload video message file',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'start_new_chat' },
+      mode: 'basic',
+    },
+
     {
       id: 'voice_message',
       title: 'Voice Message',
       type: 'short-input',
       placeholder: 'Voice message field (string)',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: ['start_new_chat', 'send_chat_message'] },
       mode: 'advanced',
     },
@@ -790,6 +855,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Video Message',
       type: 'short-input',
       placeholder: 'Video message field (string)',
+      dependsOn: ['operation'],
       condition: { field: 'operation', value: ['start_new_chat', 'send_chat_message'] },
       mode: 'advanced',
     },
@@ -806,6 +872,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         { label: 'Other', id: 'other' },
       ],
       value: () => '',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -818,6 +885,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Applicant ID',
       type: 'short-input',
       placeholder: 'Optional applicant id',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -830,6 +898,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Invitation ID',
       type: 'short-input',
       placeholder: 'Optional invitation id',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -847,6 +916,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         { label: 'False', id: 'false' },
       ],
       value: () => '',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -859,6 +929,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Signature',
       type: 'short-input',
       placeholder: 'Recruiter signature',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -871,6 +942,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Hiring project ID',
       type: 'short-input',
       placeholder: 'hiring_project_id',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -883,6 +955,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Job posting ID',
       type: 'short-input',
       placeholder: 'job_posting_id',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -905,6 +978,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         { label: 'Career site', id: 'CAREER_SITE' },
       ],
       value: () => '',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -917,6 +991,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Email address',
       type: 'short-input',
       placeholder: 'Recruiter email_address',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -935,6 +1010,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         { label: 'Project', id: 'PROJECT' },
       ],
       value: () => '',
+      dependsOn: ['operation'],
       condition: {
         field: 'operation',
         value: 'start_new_chat',
@@ -1197,26 +1273,36 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             text: typeof params.text === 'string' ? params.text : '',
           }
+          const normalizedAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
+          const normalizedVideoThumbnail = normalizeFileInput(
+            params.linkedin_post_video_thumbnail_file || params.linkedin_post_video_thumbnail,
+            { single: true }
+          )
           const copyIfString = (fromKey: string, toKey: string) => {
             const v = params[fromKey]
             if (typeof v === 'string' && v.trim() !== '') {
               out[toKey] = v.trim()
             }
           }
-          copyIfString('attachments', 'attachments')
-          copyIfString('linkedin_post_video_thumbnail', 'video_thumbnail')
+          if (normalizedAttachments && normalizedAttachments.length > 0) {
+            out.attachments = normalizedAttachments
+          } else {
+            copyIfString('attachments', 'attachments')
+          }
+          if (normalizedVideoThumbnail) {
+            out.video_thumbnail = normalizedVideoThumbnail
+          } else {
+            copyIfString('linkedin_post_video_thumbnail', 'video_thumbnail')
+          }
           copyIfString('linkedin_post_repost', 'repost')
           copyIfString('linkedin_post_include_job_posting', 'include_job_posting')
-          copyIfString('linkedin_post_brand_name', 'name')
-          copyIfString('linkedin_post_profile_id', 'profile_id')
           copyIfString('linkedin_post_external_link', 'external_link')
           copyIfString('linkedin_post_as_organization', 'as_organization')
-          copyIfString('linkedin_post_location', 'location')
-          if (
-            params.linkedin_post_is_company === 'true' ||
-            params.linkedin_post_is_company === 'false'
-          ) {
-            out.is_company = params.linkedin_post_is_company
+          const mentions = unipileBuildCommentMentionsJson(params as Record<string, unknown>)
+          if (mentions) {
+            out.mentions = mentions
           }
           return out
         }
@@ -1226,6 +1312,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             text: typeof params.text === 'string' ? params.text : '',
           }
+          const normalizedAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
           const copyIfString = (key: string) => {
             const v = params[key]
             if (typeof v === 'string' && v.trim() !== '') {
@@ -1236,7 +1325,11 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           copyIfString('quote_id')
           copyIfString('voice_message')
           copyIfString('video_message')
-          copyIfString('attachments')
+          if (normalizedAttachments && normalizedAttachments.length > 0) {
+            out.attachments = normalizedAttachments
+          } else {
+            copyIfString('attachments')
+          }
           copyIfString('typing_duration')
           return out
         }
@@ -1245,6 +1338,21 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
             text: typeof params.text === 'string' ? params.text : '',
           }
+          const normalizedAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
+          const normalizedVoice = normalizeFileInput(
+            params.voice_message_file || params.voice_message,
+            {
+              single: true,
+            }
+          )
+          const normalizedVideo = normalizeFileInput(
+            params.video_message_file || params.video_message,
+            {
+              single: true,
+            }
+          )
           const copyIfString = (key: string) => {
             const v = params[key]
             if (typeof v === 'string' && v.trim() !== '') {
@@ -1252,10 +1360,22 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             }
           }
           copyIfString('subject')
-          copyIfString('attachments')
-          copyIfString('voice_message')
-          copyIfString('video_message')
-          out.attendees_ids = unipileSerializeAttendeesIds(params.attendees_ids) ?? ''
+          if (normalizedAttachments && normalizedAttachments.length > 0) {
+            out.attachments = normalizedAttachments
+          } else {
+            copyIfString('attachments')
+          }
+          if (normalizedVoice) {
+            out.voice_message = normalizedVoice
+          } else {
+            copyIfString('voice_message')
+          }
+          if (normalizedVideo) {
+            out.video_message = normalizedVideo
+          } else {
+            copyIfString('video_message')
+          }
+          out.attendees_ids = unipileNormalizeAttendeesIds(params.attendees_ids) ?? []
 
           const modeRaw =
             typeof params.start_chat_api_mode === 'string' &&
@@ -1450,28 +1570,40 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         'Legacy only: JSON mentions array if present in saved workflow state (normally use LinkedIn mentions table)',
     },
     linkedin_post_video_thumbnail: { type: 'string', description: 'Create post video_thumbnail' },
+    linkedin_post_video_thumbnail_file: {
+      type: 'json',
+      description: 'Create post: uploaded video thumbnail file (UserFile)',
+    },
     linkedin_post_repost: { type: 'string', description: 'Create post repost' },
     linkedin_post_include_job_posting: {
       type: 'string',
       description: 'Create post include_job_posting',
     },
-    linkedin_post_brand_name: { type: 'string', description: 'Create post name field' },
-    linkedin_post_profile_id: { type: 'string', description: 'Create post profile_id' },
-    linkedin_post_is_company: { type: 'string', description: 'Create post is_company' },
     linkedin_post_external_link: { type: 'string', description: 'Create post external_link' },
     linkedin_post_as_organization: { type: 'string', description: 'Create post as_organization' },
-    linkedin_post_location: { type: 'string', description: 'Create post location' },
     thread_id: { type: 'string', description: 'Thread id for send message' },
     quote_id: { type: 'string', description: 'Quote id for send message' },
     typing_duration: { type: 'string', description: 'Typing duration form field' },
+    attachment_files: {
+      type: 'json',
+      description: 'Send chat message: uploaded attachment files (UserFile array)',
+    },
+    voice_message_file: {
+      type: 'json',
+      description: 'Start new chat: uploaded voice message file (UserFile)',
+    },
+    video_message_file: {
+      type: 'json',
+      description: 'Start new chat: uploaded video message file (UserFile)',
+    },
     subject: { type: 'string', description: 'Chat subject' },
     attachments: { type: 'string', description: 'Attachments form field' },
     voice_message: { type: 'string', description: 'Voice message form field' },
     video_message: { type: 'string', description: 'Video message form field' },
     attendees_ids: {
-      type: 'string',
+      type: 'json',
       description:
-        'Start new chat (required): comma-separated attendee/relation ids for Unipile `attendees_ids`',
+        'Start new chat (required): attendee ids as string array (legacy comma-separated string is still accepted)',
     },
     start_chat_api_mode: {
       type: 'string',
