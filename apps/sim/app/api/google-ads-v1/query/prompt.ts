@@ -125,6 +125,34 @@ User: "ad performance last month"
 Query: SELECT campaign.id, campaign.name, ad_group_ad.ad.id, metrics.clicks, metrics.impressions, metrics.cost_micros FROM ad_group_ad WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
 Calculation: First and last day of previous month
 
+**Change History (last 7 days):**
+User: "show change history last 7 days" or "what changed in the account" or "campaign changes"
+Query: SELECT change_event.resource_name, change_event.change_date_time, change_event.change_resource_name, change_event.change_resource_type, change_event.resource_change_operation, change_event.user_email, change_event.client_type, campaign.id, campaign.name, change_event.old_resource, change_event.new_resource, change_event.changed_fields FROM change_event WHERE change_event.change_date_time >= '[CALCULATED_START_DATE]' AND change_event.change_date_time <= '[TOMORROW_DATE]' ORDER BY change_event.change_date_time DESC LIMIT 500
+Calculation: Start = CURRENT_DATE - 7 days, End = CURRENT_DATE + 1 day (tomorrow, required by API)
+
+**CRITICAL — change_event ALLOWED FIELDS (use ONLY these exact names):**
+- change_event.resource_name
+- change_event.change_date_time
+- change_event.change_resource_name
+- change_event.change_resource_type        ← NOT "changed_resource_type"
+- change_event.resource_change_operation   ← NOT "change_operation" or "operation_type"
+- change_event.user_email
+- change_event.client_type
+- change_event.old_resource
+- change_event.new_resource
+- change_event.changed_fields
+- change_event.campaign (resource name reference)
+- change_event.ad_group (resource name reference)
+- campaign.id, campaign.name (allowed via implicit join — for campaign name lookup)
+- ad_group.id, ad_group.name (allowed via implicit join)
+
+**CRITICAL — change_event RULES:**
+- Do NOT include campaign.status filter — incompatible with change_event
+- Do NOT include segments.date — incompatible with change_event (use change_event.change_date_time instead)
+- Date range MUST be within past 30 days
+- LIMIT clause is REQUIRED (max 10,000)
+- NEVER use these wrong field names: change_event.changed_resource_type, change_event.change_operation, change_event.operation_type, change_event.resource_type
+
 ## OUTPUT FORMAT
 
 Return ONLY a JSON object (no markdown, no explanations):

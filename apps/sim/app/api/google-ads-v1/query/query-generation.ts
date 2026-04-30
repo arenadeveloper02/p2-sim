@@ -107,12 +107,100 @@ function parseAIResponse(aiResponse: any): GAQLResponse {
 }
 
 /**
+ * Sanitizes GAQL queries that use the change_event resource.
+ *
+ * The Google Ads API rejects change_event queries that reference segments.date
+ * or campaign.status with a PROHIBITED_SEGMENT_IN_SELECT_OR_WHERE_CLAUSE error.
+ * This function strips those incompatible clauses and ensures the query has
+ * the required change_event.change_date_time filter and LIMIT clause.
+ *
+ * @param response - Parsed GAQL response
+ * @returns Response with sanitized change_event query
+ */
+function sanitizeChangeEventQuery(response: GAQLResponse): GAQLResponse {
+  let query = response.gaql_query
+
+  const isChangeEvent = /FROM\s+change_event/i.test(query)
+  if (!isChangeEvent) {
+    return response
+  }
+
+  const originalQuery = query
+
+  query = query.replace(/,\s*segments\.date\b/gi, '')
+  query = query.replace(/\bsegments\.date\s*,\s*/gi, '')
+
+  query = query.replace(/\s+AND\s+segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'/gi, '')
+  query = query.replace(/\bsegments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'\s+AND\s+/gi, '')
+  query = query.replace(
+    /\bWHERE\s+segments\.date\s+BETWEEN\s+'[^']+'\s+AND\s+'[^']+'(?=\s*(ORDER|LIMIT|$))/gi,
+    'WHERE '
+  )
+
+  query = query.replace(/\s+AND\s+campaign\.status\s*=\s*'[^']+'/gi, '')
+  query = query.replace(/\bcampaign\.status\s*=\s*'[^']+'\s+AND\s+/gi, '')
+  query = query.replace(
+    /\bWHERE\s+campaign\.status\s*=\s*'[^']+'(?=\s*(ORDER|LIMIT|$))/gi,
+    'WHERE '
+  )
+
+  query = query.replace(/\bWHERE\s+(?=ORDER|LIMIT|$)/gi, '').trim()
+
+  const hasChangeDateTime = /change_event\.change_date_time/i.test(query)
+  if (!hasChangeDateTime) {
+    const today = new Date()
+    const yesterday = new Date(today)
+    yesterday.setDate(today.getDate() - 1)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(today.getDate() + 1)
+
+    const startDate = yesterday.toISOString().split('T')[0]
+    const endDate = tomorrow.toISOString().split('T')[0]
+    const dateFilter = `change_event.change_date_time >= '${startDate}' AND change_event.change_date_time <= '${endDate}'`
+
+    if (/\bWHERE\b/i.test(query)) {
+      query = query.replace(/\bWHERE\b/i, `WHERE ${dateFilter} AND`)
+    } else {
+      const orderByIdx = query.search(/\bORDER\s+BY\b/i)
+      const limitIdx = query.search(/\bLIMIT\b/i)
+      const insertIdx = Math.min(
+        orderByIdx === -1 ? Number.POSITIVE_INFINITY : orderByIdx,
+        limitIdx === -1 ? Number.POSITIVE_INFINITY : limitIdx
+      )
+      if (insertIdx === Number.POSITIVE_INFINITY) {
+        query = `${query} WHERE ${dateFilter}`
+      } else {
+        query = `${query.slice(0, insertIdx).trim()} WHERE ${dateFilter} ${query.slice(insertIdx)}`
+      }
+    }
+  }
+
+  if (!/\bLIMIT\s+\d+/i.test(query)) {
+    query = `${query.trim()} LIMIT 500`
+  }
+
+  query = query.replace(/\s+/g, ' ').trim()
+
+  if (query !== originalQuery) {
+    logger.info('Sanitized change_event query (removed incompatible clauses)', {
+      originalQuery,
+      sanitizedQuery: query,
+    })
+  }
+
+  return { ...response, gaql_query: query }
+}
+
+/**
  * Validates and fixes GAQL query date filtering
  *
  * @param response - Parsed GAQL response
  * @returns Response with validated/fixed date filtering
  */
 function validateDateFiltering(response: GAQLResponse): GAQLResponse {
+  if (/FROM\s+change_event/i.test(response.gaql_query)) {
+    return response
+  }
   const hasDateFilter =
     response.gaql_query.includes('segments.date') && response.gaql_query.includes('BETWEEN')
 
@@ -181,8 +269,11 @@ export async function generateGAQLQuery(userPrompt: string): Promise<GAQLRespons
     // Parse AI response
     const parsed = parseAIResponse(aiResponse)
 
-    // Validate and fix date filtering if needed
-    const validated = validateDateFiltering(parsed)
+    // Sanitize change_event queries (strip incompatible segments.date / campaign.status clauses)
+    const sanitized = sanitizeChangeEventQuery(parsed)
+
+    // Validate and fix date filtering if needed (skipped for change_event)
+    const validated = validateDateFiltering(sanitized)
 
     logger.info('Successfully generated GAQL query', {
       gaql: validated.gaql_query,
