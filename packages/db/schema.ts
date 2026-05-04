@@ -2369,7 +2369,6 @@ export const userArenaDetails = pgTable(
   })
 )
 
-
 export const bannerMessages = pgTable('banner_messages', {
   id: text('id').notNull(),
   message: text('message'),

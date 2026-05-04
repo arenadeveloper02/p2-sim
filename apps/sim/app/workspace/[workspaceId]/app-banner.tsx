@@ -33,7 +33,7 @@ export function AppBanner() {
       role='status'
       aria-live='polite'
       className={cn(
-        'border-t border-[var(--brand-500)]/45 border-b border-[var(--border-muted)]',
+        'border-[var(--border-muted)] border-[var(--brand-500)]/45 border-t border-b',
         'bg-[var(--surface-3)] py-2',
         'shadow-[inset_0_1px_0_0_var(--divider)]'
       )}
@@ -44,11 +44,7 @@ export function AppBanner() {
           aria-hidden
           strokeWidth={2}
         />
-        <p
-          className='text-left text-[13px] leading-relaxed text-[var(--text-body)]'
-        >
-          {message}
-        </p>
+        <p className='text-left text-[13px] text-[var(--text-body)] leading-relaxed'>{message}</p>
       </div>
     </Banner>
   )
