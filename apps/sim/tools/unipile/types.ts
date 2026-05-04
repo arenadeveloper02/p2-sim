@@ -283,7 +283,8 @@ export interface UnipileCommentPostParams {
   as_organization?: string
   /** Reply to this comment id (LinkedIn: from comments list) */
   comment_id?: string
-  attachments?: string
+  /** UserFile array (multipart file parts) or legacy string id/path. */
+  attachments?: string | unknown[]
 }
 
 export interface UnipileCommentPostToolResponse extends ToolResponse {

@@ -79,11 +79,11 @@ export const unipileCommentPostTool: ToolConfig<
       description: 'Optional: reply to this comment. LinkedIn: id from the comments list.',
     },
     attachments: {
-      type: 'string',
+      type: 'json',
       required: false,
       visibility: 'user-or-llm',
       description:
-        'LinkedIn: integration-specific attachment field (e.g. one image; max resolution per Unipile docs).',
+        'Optional files as UserFile array (multipart `attachments` parts, same as send message / create post). Legacy string still accepted.',
     },
   },
 
@@ -118,8 +118,13 @@ export const unipileCommentPostTool: ToolConfig<
       if (typeof params.comment_id === 'string' && params.comment_id.trim() !== '') {
         out.comment_id = params.comment_id.trim()
       }
-      if (typeof params.attachments === 'string' && params.attachments.trim() !== '') {
-        out.attachments = params.attachments.trim()
+      const att = params.attachments
+      if (att != null) {
+        if (Array.isArray(att) && att.length > 0) {
+          out.attachments = att
+        } else if (typeof att === 'string' && att.trim() !== '') {
+          out.attachments = att.trim()
+        }
       }
       return out
     },

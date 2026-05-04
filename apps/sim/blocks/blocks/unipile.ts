@@ -1351,7 +1351,14 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
               out[toKey] = v.trim()
             }
           }
-          copyIfString('attachments', 'attachments')
+          const normalizedCommentAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
+          if (normalizedCommentAttachments && normalizedCommentAttachments.length > 0) {
+            out.attachments = normalizedCommentAttachments
+          } else {
+            copyIfString('attachments', 'attachments')
+          }
           copyIfString('linkedin_post_external_link', 'external_link')
           copyIfString('linkedin_post_as_organization', 'as_organization')
           copyIfString('linkedin_comment_parent_id', 'comment_id')
@@ -1702,7 +1709,8 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     typing_duration: { type: 'string', description: 'Typing duration form field' },
     attachment_files: {
       type: 'json',
-      description: 'Send chat message: uploaded attachment files (UserFile array)',
+      description:
+        'Uploaded files (UserFile array) for start chat, send message, create post, or comment post — proxied as multipart `attachments` parts to Unipile',
     },
     // voice_message_file: {
     //   type: 'json',
@@ -1713,7 +1721,10 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     //   description: 'Start new chat: uploaded video message file (UserFile)',
     // },
     subject: { type: 'string', description: 'Chat subject' },
-    attachments: { type: 'string', description: 'Attachments form field' },
+    attachments: {
+      type: 'json',
+      description: 'Legacy/advanced attachment reference; prefer **Attachments** file upload above',
+    },
     // voice_message: { type: 'string', description: 'Start new chat: voice message form field' },
     // video_message: { type: 'string', description: 'Start new chat: video message form field' },
     attendees_ids: {

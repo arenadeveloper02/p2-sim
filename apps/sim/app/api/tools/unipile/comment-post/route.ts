@@ -3,6 +3,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { RawFileInputArraySchema } from '@/lib/uploads/utils/file-schemas'
+import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
+import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { normalizeUnipilePostPathId } from '@/tools/unipile/normalize_post_path_id'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
@@ -27,12 +30,24 @@ const RequestSchema = z.object({
   external_link: optionalString,
   as_organization: optionalString,
   comment_id: optionalString,
-  attachments: optionalString,
+  attachments: z.union([RawFileInputArraySchema, z.string()]).optional().nullable(),
 })
 
 function appendIfNonEmpty(form: FormData, key: string, value: string | null | undefined) {
   if (value == null || value.trim() === '') return
   form.append(key, value.trim())
+}
+
+/**
+ * Drops JSON `null` so Zod optional unions do not fail on explicit nulls from merged tool params.
+ */
+function omitJsonNullProperties(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== null)
+  )
 }
 
 /**
@@ -54,7 +69,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const data = RequestSchema.parse(body)
+    const data = RequestSchema.parse(omitJsonNullProperties(body))
 
     const form = new FormData()
     form.append('account_id', data.account_id.trim())
@@ -120,7 +135,18 @@ export async function POST(request: NextRequest) {
 
     appendIfNonEmpty(form, 'as_organization', data.as_organization)
     appendIfNonEmpty(form, 'comment_id', data.comment_id)
-    appendIfNonEmpty(form, 'attachments', data.attachments)
+    if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+      const files = processFilesToUserFiles(data.attachments, data.account_id.trim(), logger)
+      for (const userFile of files) {
+        const buffer = await downloadFileFromStorage(userFile, data.account_id.trim(), logger)
+        const blob = new Blob([new Uint8Array(buffer)], {
+          type: userFile.type || 'application/octet-stream',
+        })
+        form.append('attachments', blob, userFile.name)
+      }
+    } else if (typeof data.attachments === 'string') {
+      appendIfNonEmpty(form, 'attachments', data.attachments)
+    }
 
     const postId = normalizeUnipilePostPathId(data.post_id)
     if (!postId) {
