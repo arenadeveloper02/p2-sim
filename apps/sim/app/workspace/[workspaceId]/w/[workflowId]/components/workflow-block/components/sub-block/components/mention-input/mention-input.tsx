@@ -32,7 +32,6 @@ export function MentionInput({
 
   // Reactive upstream fields
   const [authMethod] = useSubBlockValue(blockId, 'authMethod')
-  const [botToken] = useSubBlockValue(blockId, 'botToken')
   const [connectedCredential] = useSubBlockValue(blockId, 'credential')
   const [currentValue, setCurrentValue] = useState<string>('')
 
@@ -46,16 +45,14 @@ export function MentionInput({
     isPreview,
   })
 
-  // Choose credential strictly based on auth method
-  const credential: string =
-    (authMethod as string) === 'bot_token'
-      ? (botToken as string) || ''
-      : (connectedCredential as string) || ''
+  // Slack always uses the OAuth credential ID; token type is chosen server-side.
+  // We still read authMethod so the component re-renders when auth method changes.
+  const credential: string = (connectedCredential as string) || ''
 
   // Determine if connected OAuth credential is foreign
   const { isForeignCredential } = useForeignCredential(
     'slack',
-    (authMethod as string) === 'bot_token' ? '' : (connectedCredential as string) || ''
+    (connectedCredential as string) || ''
   )
 
   // Get the current value from the store or prop value if in preview mode

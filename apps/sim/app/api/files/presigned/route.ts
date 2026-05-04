@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/storage-service'
@@ -35,7 +36,7 @@ class ValidationError extends PresignedUrlError {
   }
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
     const session = await getSession()
     if (!session?.user?.id) {
@@ -182,9 +183,9 @@ export async function POST(request: NextRequest) {
       error instanceof Error ? error : new Error('Failed to generate presigned URL')
     )
   }
-}
+})
 
-export async function OPTIONS() {
+export const OPTIONS = withRouteHandler(async () => {
   return NextResponse.json(
     {},
     {
@@ -196,4 +197,4 @@ export async function OPTIONS() {
       },
     }
   )
-}
+})

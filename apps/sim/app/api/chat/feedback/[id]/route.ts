@@ -50,6 +50,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return createErrorResponse('Invalid execution Id', 400)
       }
 
+      const executionLog = workflowExectution[0]
+      if (!executionLog.workflowId) {
+        return createErrorResponse('Invalid execution: missing workflow', 400)
+      }
+
       // If liked is null, delete existing feedback records for this executionId+userId (unlike action)
       if (body.liked === null) {
         await db
@@ -73,7 +78,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         id,
         userId: session.user.id,
         executionId,
-        workflowId: workflowExectution[0].workflowId,
+        workflowId: executionLog.workflowId,
         comment: body.comment,
         inComplete: body.inComplete,
         inAccurate: body.inAccurate,

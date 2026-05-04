@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { History, Plus, Square, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
@@ -406,7 +407,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
         })
         .catch((err) => {
           logger.error('Failed to fetch/apply edit_workflow state', {
-            error: err instanceof Error ? err.message : String(err),
+            error: toError(err).message,
             workflowId,
           })
         })
@@ -477,17 +478,6 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
     }
     wasCopilotSendingRef.current = copilotIsSending
   }, [copilotIsSending, loadCopilotChats])
-
-  const [copilotEditingInputValue, setCopilotEditingInputValue] = useState('')
-  const clearCopilotEditingValue = useCallback(() => setCopilotEditingInputValue(''), [])
-
-  const handleCopilotEditQueuedMessage = useCallback(
-    (id: string) => {
-      const msg = copilotEditQueuedMessage(id)
-      if (msg) setCopilotEditingInputValue(msg.content)
-    },
-    [copilotEditQueuedMessage]
-  )
 
   const handleCopilotStopGeneration = useCallback(() => {
     captureEvent(posthogRef.current, 'task_generation_aborted', {
@@ -984,11 +974,9 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
                   messageQueue={copilotMessageQueue}
                   onRemoveQueuedMessage={copilotRemoveFromQueue}
                   onSendQueuedMessage={copilotSendNow}
-                  onEditQueuedMessage={handleCopilotEditQueuedMessage}
+                  onEditQueuedMessage={copilotEditQueuedMessage}
                   userId={session?.user?.id}
                   chatId={copilotResolvedChatId}
-                  editValue={copilotEditingInputValue}
-                  onEditValueConsumed={clearCopilotEditingValue}
                   layout='copilot-view'
                 />
               </div>

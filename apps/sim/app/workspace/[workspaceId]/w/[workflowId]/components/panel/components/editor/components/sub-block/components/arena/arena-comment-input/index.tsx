@@ -27,8 +27,8 @@ import { WandPromptBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/comp
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useWand } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-wand'
 import type { SubBlockConfig } from '@/blocks/types'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
 const logger = createLogger('ArenaCommentInput')
 
@@ -375,7 +375,7 @@ export function ArenaCommentInput({
   const [localContent, setLocalContent] = React.useState<string>('')
   const [displayText, setDisplayText] = React.useState<string>('')
   const [htmlContent, setHtmlContent] = React.useState<string>('')
-  const persistSubBlockValueRef = React.useRef<(value: string) => void>(() => { })
+  const persistSubBlockValueRef = React.useRef<(value: string) => void>(() => {})
 
   // Mention state
   const [showMentionMenu, setShowMentionMenu] = React.useState(false)
@@ -907,7 +907,7 @@ export function ArenaCommentInput({
         {({ ref, onChange: handleChange, onKeyDown, onDrop, onDragOver, onFocus }) => {
           const setRefs = (el: HTMLTextAreaElement | null) => {
             textareaRef.current = el
-              ; (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = el
+            ;(ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = el
           }
 
           const combinedKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

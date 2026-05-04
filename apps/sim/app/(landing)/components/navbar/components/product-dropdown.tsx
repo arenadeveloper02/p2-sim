@@ -1,4 +1,4 @@
-import type { ComponentType, SVGProps } from 'react'
+import type { ComponentType } from 'react'
 import Link from 'next/link'
 import {
   AgentIcon,
@@ -9,18 +9,22 @@ import {
   WorkflowIcon,
 } from '@/components/icons'
 
+/** Navbar icons may be SVG components or Next/Image-based (e.g. AgentIcon). */
+type NavbarIcon = ComponentType<{ className?: string }>
+
 interface ProductLink {
   label: string
   description: string
   href: string
   external?: boolean
-  icon: ComponentType<SVGProps<SVGSVGElement>>
+  icon: NavbarIcon
 }
 
 interface SidebarLink {
   label: string
   href: string
   external?: boolean
+  icon?: NavbarIcon
 }
 
 const WORKSPACE: ProductLink[] = [

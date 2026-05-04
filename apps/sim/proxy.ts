@@ -2,7 +2,9 @@ import { createLogger } from '@sim/logger'
 import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
 import { sendToProfound } from './lib/analytics/profound'
+import { getEnv } from './lib/core/config/env'
 import { isAuthDisabled, isDev } from './lib/core/config/feature-flags'
+import { apiCorsPatch, apiCorsPreflight } from './lib/core/security/api-cors'
 import { generateRuntimeCSP } from './lib/core/security/csp'
 import { getClientIp } from './lib/core/utils/request'
 import { getLoginRedirectUrl } from './lib/core/utils/urls'
@@ -93,26 +95,6 @@ function handleInvitationRedirects(
 }
 
 /**
- * Handles workspace invitation API endpoint access
- */
-function handleWorkspaceInvitationAPI(
-  request: NextRequest,
-  hasActiveSession: boolean
-): NextResponse | null {
-  if (!request.nextUrl.pathname.startsWith('/api/workspaces/invitations')) {
-    return null
-  }
-
-  if (request.nextUrl.pathname.includes('/accept') && !hasActiveSession) {
-    const token = request.nextUrl.searchParams.get('token')
-    if (token) {
-      return NextResponse.redirect(new URL(`/invite/${token}?token=${token}`, request.url))
-    }
-  }
-  return NextResponse.next()
-}
-
-/**
  * Handles security filtering for suspicious user agents
  */
 function handleSecurityFiltering(request: NextRequest): NextResponse | null {
@@ -157,8 +139,18 @@ function handleSecurityFiltering(request: NextRequest): NextResponse | null {
 export async function proxy(request: NextRequest) {
   const url = request.nextUrl
 
+  const cors = apiCorsPreflight(request)
+  if (cors) return cors
+
   const sessionCookie = getSessionCookie(request)
   const hasActiveSession = isAuthDisabled || !!sessionCookie
+
+  if (url.pathname === '/session-required') {
+    if (hasActiveSession) {
+      return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
+    }
+    return track(request, NextResponse.next())
+  }
 
   const redirect = handleRootPathRedirects(request, hasActiveSession)
   if (redirect) return track(request, redirect)
@@ -174,6 +166,8 @@ export async function proxy(request: NextRequest) {
     }
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    response.headers.set('X-Frame-Options', 'SAMEORIGIN')
     return track(request, response)
   }
 
@@ -194,27 +188,32 @@ export async function proxy(request: NextRequest) {
     }
 
     if (!hasActiveSession) {
-      // In local dev, check for email cookie
       if (isDev) {
         if (hasEmailCookie(request)) {
-          // Email cookie exists - allow access (auto-login will handle it)
           return track(request, NextResponse.next())
         }
-        // No email cookie in dev - redirect to login
         return track(request, NextResponse.redirect(new URL('/login', request.url)))
       }
-      // In non-local environments, allow access (auto-login will handle authentication)
+      const arenaHub = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
+      if (arenaHub) {
+        // Same as dev: allow workspace to load so AutoLoginProvider can run sign-in
+        // when the email cookie is present (avoids flashing session-required first).
+        if (hasEmailCookie(request)) {
+          return track(request, NextResponse.next())
+        }
+        return track(request, NextResponse.redirect(new URL('/session-required', request.url)))
+      }
       return track(request, NextResponse.next())
-      //return track(request, NextResponse.redirect(new URL('/login', request.url)))
     }
-    return track(request, NextResponse.next())
+    const response = NextResponse.next()
+    response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    response.headers.set('X-Frame-Options', 'SAMEORIGIN')
+    return track(request, response)
   }
 
   const invitationRedirect = handleInvitationRedirects(request, hasActiveSession)
   if (invitationRedirect) return track(request, invitationRedirect)
-
-  const workspaceInvitationRedirect = handleWorkspaceInvitationAPI(request, hasActiveSession)
-  if (workspaceInvitationRedirect) return track(request, workspaceInvitationRedirect)
 
   const securityBlock = handleSecurityFiltering(request)
   if (securityBlock) return track(request, securityBlock)
@@ -222,8 +221,10 @@ export async function proxy(request: NextRequest) {
   const response = NextResponse.next()
   response.headers.set('Vary', 'User-Agent')
 
-  if (url.pathname.startsWith('/workspace') || url.pathname === '/') {
+  if (url.pathname === '/') {
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    response.headers.set('X-Frame-Options', 'SAMEORIGIN')
   }
 
   return track(request, response)
@@ -234,7 +235,7 @@ export async function proxy(request: NextRequest) {
  */
 function track(request: NextRequest, response: NextResponse): NextResponse {
   sendToProfound(request, response.status)
-  return response
+  return apiCorsPatch(request, response)
 }
 
 export const config = {
@@ -248,6 +249,7 @@ export const config = {
     '/login',
     '/signup',
     '/invite/:path*', // Match invitation routes
+    '/session-required',
     // Catch-all for other pages, excluding static assets and public directories
     '/((?!_next/static|_next/image|ingest|favicon.ico|logo/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
   ],

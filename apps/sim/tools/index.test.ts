@@ -11,6 +11,8 @@ import {
   createExecutionContext,
   createMockFetch,
   type ExecutionContext,
+  inputValidationMock,
+  inputValidationMockFns,
   type MockFetchResponse,
 } from '@sim/testing'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -26,8 +28,6 @@ const {
   mockListCustomTools,
   mockGetCustomToolByIdOrTitle,
   mockGenerateInternalToken,
-  mockSecureFetchWithPinnedIP,
-  mockValidateUrlWithDNS,
   mockResolveWorkspaceFileReference,
 } = vi.hoisted(() => ({
   mockIsHosted: { value: false },
@@ -43,10 +43,11 @@ const {
   mockListCustomTools: vi.fn(),
   mockGetCustomToolByIdOrTitle: vi.fn(),
   mockGenerateInternalToken: vi.fn(),
-  mockSecureFetchWithPinnedIP: vi.fn(),
-  mockValidateUrlWithDNS: vi.fn(),
   mockResolveWorkspaceFileReference: vi.fn(),
 }))
+
+const mockSecureFetchWithPinnedIP = inputValidationMockFns.mockSecureFetchWithPinnedIP
+const mockValidateUrlWithDNS = inputValidationMockFns.mockValidateUrlWithDNS
 
 // Mock feature flags
 vi.mock('@/lib/core/config/feature-flags', () => ({
@@ -77,12 +78,28 @@ vi.mock('@/lib/auth/internal', () => ({
   generateInternalToken: (...args: unknown[]) => mockGenerateInternalToken(...args),
 }))
 
+vi.mock('@/ee/access-control/utils/permission-check', () => ({
+  assertPermissionsAllowed: vi.fn().mockResolvedValue(undefined),
+  validateBlockType: vi.fn().mockResolvedValue(undefined),
+  validateMcpToolsAllowed: vi.fn().mockResolvedValue(undefined),
+  validateCustomToolsAllowed: vi.fn().mockResolvedValue(undefined),
+  validateSkillsAllowed: vi.fn().mockResolvedValue(undefined),
+  validateModelProvider: vi.fn().mockResolvedValue(undefined),
+  validateInvitationsAllowed: vi.fn().mockResolvedValue(undefined),
+  validatePublicApiAllowed: vi.fn().mockResolvedValue(undefined),
+  getUserPermissionConfig: vi.fn().mockResolvedValue(null),
+  ProviderNotAllowedError: class ProviderNotAllowedError extends Error {},
+  IntegrationNotAllowedError: class IntegrationNotAllowedError extends Error {},
+  McpToolsNotAllowedError: class McpToolsNotAllowedError extends Error {},
+  CustomToolsNotAllowedError: class CustomToolsNotAllowedError extends Error {},
+  SkillsNotAllowedError: class SkillsNotAllowedError extends Error {},
+  InvitationsNotAllowedError: class InvitationsNotAllowedError extends Error {},
+  PublicApiNotAllowedError: class PublicApiNotAllowedError extends Error {},
+}))
+
 vi.mock('@/lib/billing/core/usage-log', () => ({}))
 
-vi.mock('@/lib/core/security/input-validation.server', () => ({
-  secureFetchWithPinnedIP: (...args: unknown[]) => mockSecureFetchWithPinnedIP(...args),
-  validateUrlWithDNS: (...args: unknown[]) => mockValidateUrlWithDNS(...args),
-}))
+vi.mock('@/lib/core/security/input-validation.server', () => inputValidationMock)
 
 vi.mock('@/lib/core/rate-limiter/hosted-key', () => ({
   getHostedKeyRateLimiter: () => mockRateLimiterFns,
@@ -183,6 +200,7 @@ vi.mock('@/tools/registry', () => {
       name: 'Gmail Read',
       description: 'Read Gmail messages',
       version: '1.0.0',
+      oauth: { required: true, provider: 'google-email' },
       params: {},
       request: { url: '/api/tools/gmail/read', method: 'GET' },
     },
@@ -191,6 +209,7 @@ vi.mock('@/tools/registry', () => {
       name: 'Gmail Send',
       description: 'Send Gmail messages',
       version: '1.0.0',
+      oauth: { required: true, provider: 'google-email' },
       params: {},
       request: { url: '/api/tools/gmail/send', method: 'POST' },
     },
@@ -979,6 +998,37 @@ describe('Copilot File Parameter Normalization', () => {
 
     expect(result.success).toBe(true)
     expect(mockResolveWorkspaceFileReference).not.toHaveBeenCalled()
+  })
+})
+
+describe('Copilot OAuth Credential Enforcement', () => {
+  let cleanupEnvVars: () => void
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3000'
+    cleanupEnvVars = setupEnvVars({ NEXT_PUBLIC_APP_URL: 'http://localhost:3000' })
+  })
+
+  afterEach(() => {
+    vi.resetAllMocks()
+    cleanupEnvVars()
+  })
+
+  it('fails fast when copilot executes an oauth tool without an explicit credential selector', async () => {
+    const fetchMock = vi.fn()
+    global.fetch = Object.assign(fetchMock, { preconnect: vi.fn() }) as typeof fetch
+
+    const context = createToolExecutionContext({
+      workspaceId: 'workspace-456',
+      copilotToolExecution: true,
+    } as any)
+
+    const result = await executeTool('gmail_read', { maxResults: 5 }, false, context)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('credentialId')
+    expect(result.error).toContain('environment/credentials.json')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

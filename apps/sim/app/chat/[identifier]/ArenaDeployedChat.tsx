@@ -10,7 +10,7 @@ import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
+// import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   deployedChatPromptSentEvent,
   deployedChatThreadSelectedEvent,
@@ -581,13 +581,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     fetchChatConfig()
     setConversationId(uuidv4())
 
-    getFormattedGitHubStars()
-      .then((formattedStars) => {
-        setStarCount(formattedStars)
-      })
-      .catch((err) => {
-        logger.error('Failed to fetch GitHub stars:', err)
-      })
+    // getFormattedGitHubStars()
+    //   .then((formattedStars) => {
+    //     setStarCount(formattedStars)
+    //   })
+    //   .catch((err) => {
+    //     logger.error('Failed to fetch GitHub stars:', err)
+    //   })
   }, [identifier])
 
   const refreshChat = () => {
@@ -1315,10 +1315,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // If authentication is required, use the extracted components
   if (authRequired) {
     if (authRequired === 'password') {
-      return <PasswordAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
+      return <PasswordAuth identifier={identifier} />
     }
     if (authRequired === 'email') {
-      return <EmailAuth identifier={identifier} onAuthSuccess={handleAuthSuccess} />
+      return <EmailAuth identifier={identifier} />
     }
     // if (authRequired === 'sso') {
     //   return <SSOAuth identifier={identifier} />

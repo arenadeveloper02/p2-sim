@@ -172,7 +172,7 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
     for (const row of rows) {
       if (row.workflowId && !seen.has(row.workflowId)) {
         seen.add(row.workflowId)
-        deduped.push(row)
+        deduped.push({ workflowId: row.workflowId, startedAt: row.startedAt })
       }
     }
     return deduped

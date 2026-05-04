@@ -14,7 +14,8 @@ interface WorkspaceSummary {
 }
 
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
-import { useWorkspacesWithMetadata } from '@/hooks/queries/workspace'
+import { WorkspaceConicLoader } from '@/app/workspace/workspace-conic-loader'
+import { useWorkspacesWithMetadata, type WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
 
 const logger = createLogger('WorkspacePage')
 
@@ -46,10 +47,10 @@ export default function WorkspacePage() {
     const urlParams = new URLSearchParams(window.location.search)
     const redirectWorkflowId = urlParams.get('redirect_workflow')
 
-    const { workspaces, lastActiveWorkspaceId } = data
+    const { workspaces, lastActiveWorkspaceId, creationPolicy } = data
 
     if (workspaces.length === 0) {
-      handleNoWorkspaces(router)
+      handleNoWorkspaces(router, creationPolicy)
       return
     }
 
@@ -72,16 +73,7 @@ export default function WorkspacePage() {
   if (isSessionPending || isWorkspacesLoading) {
     return (
       <div className='flex h-screen w-full items-center justify-center'>
-        <div
-          className='h-[18px] w-[18px] animate-spin rounded-full'
-          style={{
-            background:
-              'conic-gradient(from 0deg, hsl(var(--muted-foreground)) 0deg 120deg, transparent 120deg 180deg, hsl(var(--muted-foreground)) 180deg 300deg, transparent 300deg 360deg)',
-            mask: 'radial-gradient(farthest-side, transparent calc(100% - 1.5px), black calc(100% - 1.5px))',
-            WebkitMask:
-              'radial-gradient(farthest-side, transparent calc(100% - 1.5px), black calc(100% - 1.5px))',
-          }}
-        />
+        <WorkspaceConicLoader />
       </div>
     )
   }
@@ -111,7 +103,20 @@ async function handleWorkflowRedirect(
   router.replace(`/workspace/${fallbackWorkspaceId}/home`)
 }
 
-async function handleNoWorkspaces(router: ReturnType<typeof useRouter>): Promise<void> {
+async function handleNoWorkspaces(
+  router: ReturnType<typeof useRouter>,
+  creationPolicy: WorkspaceCreationPolicy | null
+): Promise<void> {
+  if (creationPolicy && !creationPolicy.canCreate) {
+    logger.warn('No workspaces found and workspace creation is blocked', {
+      reason: creationPolicy.reason,
+      workspaceMode: creationPolicy.workspaceMode,
+      organizationId: creationPolicy.organizationId,
+    })
+    router.replace('/')
+    return
+  }
+
   logger.warn('No workspaces found, creating default workspace')
   try {
     const response = await fetch('/api/workspaces', {

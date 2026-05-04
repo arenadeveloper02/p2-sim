@@ -1,4 +1,3 @@
-import crypto from 'crypto'
 import { db } from '@sim/db'
 import {
   document,
@@ -8,6 +7,9 @@ import {
   knowledgeConnector,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { sha256Hex } from '@sim/security/hash'
+import { toError } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import { tasks } from '@trigger.dev/sdk'
 import {
   and,
@@ -30,7 +32,6 @@ import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
 import { env } from '@/lib/core/config/env'
 import { getCostMultiplier, isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
-import { generateId } from '@/lib/core/utils/uuid'
 import { processDocument } from '@/lib/knowledge/documents/document-processor'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
 import { generateEmbeddings } from '@/lib/knowledge/embeddings'
@@ -519,7 +520,7 @@ export async function processDocumentAsync(
           knowledgeBaseId,
           documentId,
           chunkIndex,
-          chunkHash: crypto.createHash('sha256').update(chunk.text).digest('hex'),
+          chunkHash: sha256Hex(chunk.text),
           content: chunk.text,
           contentLength: chunk.text.length,
           tokenCount: Math.ceil(chunk.text.length / 4),
@@ -1820,7 +1821,7 @@ export async function deleteDocumentStorageFiles(
       } catch (error) {
         logger.warn(`[${requestId}] Failed to delete document storage file`, {
           documentId: doc.id,
-          error: error instanceof Error ? error.message : String(error),
+          error: toError(error).message,
         })
       }
     })

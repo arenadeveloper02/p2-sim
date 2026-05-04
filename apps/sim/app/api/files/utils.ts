@@ -139,7 +139,8 @@ export async function findLocalFile(filename: string): Promise<string | null> {
       const normalizedAllowed = path.resolve(appAllowedDir) + path.sep
       const normalizedPath = path.resolve(appPath)
       const isWithinAppDir =
-        normalizedPath.startsWith(normalizedAllowed) && normalizedPath !== path.resolve(appAllowedDir)
+        normalizedPath.startsWith(normalizedAllowed) &&
+        normalizedPath !== path.resolve(appAllowedDir)
 
       if (isWithinAppDir && existsSync(appPath)) {
         return appPath

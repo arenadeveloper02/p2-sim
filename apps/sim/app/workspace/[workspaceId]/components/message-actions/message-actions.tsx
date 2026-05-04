@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import {
   Button,
   Check,
@@ -50,7 +50,12 @@ interface MessageActionsProps {
   requestId?: string
 }
 
-export function MessageActions({ content, chatId, userQuery, requestId }: MessageActionsProps) {
+export const MessageActions = memo(function MessageActions({
+  content,
+  chatId,
+  userQuery,
+  requestId,
+}: MessageActionsProps) {
   const [copied, setCopied] = useState(false)
   const [copiedRequestId, setCopiedRequestId] = useState(false)
   const [pendingFeedback, setPendingFeedback] = useState<'up' | 'down' | null>(null)
@@ -70,7 +75,7 @@ export function MessageActions({ content, chatId, userQuery, requestId }: Messag
     }
   }, [])
 
-  const copyToClipboard = useCallback(async () => {
+  const copyToClipboard = async () => {
     if (!content) return
     const text = toPlainText(content)
     if (!text) return
@@ -84,9 +89,9 @@ export function MessageActions({ content, chatId, userQuery, requestId }: Messag
     } catch {
       /* clipboard unavailable */
     }
-  }, [content])
+  }
 
-  const copyRequestId = useCallback(async () => {
+  const copyRequestId = async () => {
     if (!requestId) return
     try {
       await navigator.clipboard.writeText(requestId)
@@ -98,20 +103,17 @@ export function MessageActions({ content, chatId, userQuery, requestId }: Messag
     } catch {
       /* clipboard unavailable */
     }
-  }, [requestId])
+  }
 
-  const handleFeedbackClick = useCallback(
-    (type: 'up' | 'down') => {
-      if (chatId && userQuery) {
-        setPendingFeedback(type)
-        setFeedbackText('')
-        setCopiedRequestId(false)
-      }
-    },
-    [chatId, userQuery]
-  )
+  const handleFeedbackClick = (type: 'up' | 'down') => {
+    if (chatId && userQuery) {
+      setPendingFeedback(type)
+      setFeedbackText('')
+      setCopiedRequestId(false)
+    }
+  }
 
-  const handleSubmitFeedback = useCallback(() => {
+  const handleSubmitFeedback = () => {
     if (!pendingFeedback || !chatId || !userQuery) return
     const text = feedbackText.trim()
     if (!text) {
@@ -128,45 +130,70 @@ export function MessageActions({ content, chatId, userQuery, requestId }: Messag
     })
     setPendingFeedback(null)
     setFeedbackText('')
-  }, [pendingFeedback, chatId, userQuery, content, feedbackText])
+  }
 
-  const handleModalClose = useCallback((open: boolean) => {
+  const handleModalClose = (open: boolean) => {
     if (!open) {
       setPendingFeedback(null)
       setFeedbackText('')
       setCopiedRequestId(false)
     }
-  }, [])
+  }
 
-  if (!content) return null
+  const hasContent = Boolean(content)
+  const canSubmitFeedback = Boolean(chatId && userQuery)
+  if (!hasContent && !canSubmitFeedback) return null
 
   return (
     <>
       <div className='flex items-center gap-0.5'>
-        <button
-          type='button'
-          aria-label='Copy message'
-          onClick={copyToClipboard}
-          className={BUTTON_CLASS}
-        >
-          {copied ? <Check className={ICON_CLASS} /> : <Copy className={ICON_CLASS} />}
-        </button>
-        <button
-          type='button'
-          aria-label='Like'
-          onClick={() => handleFeedbackClick('up')}
-          className={BUTTON_CLASS}
-        >
-          <ThumbsUp className={ICON_CLASS} />
-        </button>
-        <button
-          type='button'
-          aria-label='Dislike'
-          onClick={() => handleFeedbackClick('down')}
-          className={BUTTON_CLASS}
-        >
-          <ThumbsDown className={ICON_CLASS} />
-        </button>
+        {hasContent && (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <button
+                type='button'
+                aria-label='Copy message'
+                onClick={copyToClipboard}
+                className={BUTTON_CLASS}
+              >
+                {copied ? <Check className={ICON_CLASS} /> : <Copy className={ICON_CLASS} />}
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>
+              {copied ? 'Copied message' : 'Copy message'}
+            </Tooltip.Content>
+          </Tooltip.Root>
+        )}
+        {canSubmitFeedback && (
+          <>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <button
+                  type='button'
+                  aria-label='Like'
+                  onClick={() => handleFeedbackClick('up')}
+                  className={BUTTON_CLASS}
+                >
+                  <ThumbsUp className={ICON_CLASS} />
+                </button>
+              </Tooltip.Trigger>
+              <Tooltip.Content side='top'>Good response</Tooltip.Content>
+            </Tooltip.Root>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <button
+                  type='button'
+                  aria-label='Dislike'
+                  onClick={() => handleFeedbackClick('down')}
+                  className={BUTTON_CLASS}
+                >
+                  <ThumbsDown className={ICON_CLASS} />
+                </button>
+              </Tooltip.Trigger>
+              <Tooltip.Content side='top'>Bad response</Tooltip.Content>
+            </Tooltip.Root>
+          </>
+        )}
       </div>
 
       <Modal open={pendingFeedback !== null} onOpenChange={handleModalClose}>
@@ -224,4 +251,4 @@ export function MessageActions({ content, chatId, userQuery, requestId }: Messag
       </Modal>
     </>
   )
-}
+})

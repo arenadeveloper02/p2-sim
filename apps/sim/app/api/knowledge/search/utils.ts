@@ -1,8 +1,11 @@
 import { db } from '@sim/db'
 import { document, embedding } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { env } from '@/lib/core/config/env'
 import type { StructuredFilter } from '@/lib/knowledge/types'
+
+const logger = createLogger('KnowledgeSearchUtils')
 
 export async function getDocumentNamesByIds(
   documentIds: string[]

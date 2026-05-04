@@ -90,6 +90,8 @@ DEMAND_GEN, SHOPPING, HOTEL, VIDEO, MULTI_CHANNEL, LOCAL, SMART, PERFORMANCE_MAX
 
 5. **Segments.date in SELECT**: Only include segments.date in SELECT clause if user asks for "daily breakdown" or "by day"
 
+8. **ALWAYS include conversions_value**: For any campaign-level query, ALWAYS include metrics.conversions_value and metrics.average_cpc in SELECT so ROAS and CPC can be calculated
+
 6. **Cost Conversion**: When user mentions dollar amounts, convert to micros (multiply by 1,000,000)
 
 7. **LIMIT Clause**: Only add LIMIT if user explicitly requests a specific number (e.g., "top 10", "show me 5 campaigns"). Otherwise omit LIMIT to fetch all results.
@@ -100,12 +102,12 @@ DEMAND_GEN, SHOPPING, HOTEL, VIDEO, MULTI_CHANNEL, LOCAL, SMART, PERFORMANCE_MAX
 
 **Campaign Performance (no date mentioned):**
 User: "show campaign performance"
-Query: SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
+Query: SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.average_cpc FROM campaign WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
 Calculation: Last 30 days ending yesterday (Yesterday = CURRENT_DATE - 1, Start = Yesterday - 29 days)
 
 **Campaign Performance (last 7 days):**
 User: "campaign performance last 7 days"
-Query: SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions FROM campaign WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
+Query: SELECT campaign.id, campaign.name, campaign.status, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.average_cpc FROM campaign WHERE campaign.status = 'ENABLED' AND segments.date BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY metrics.cost_micros DESC
 Calculation: Yesterday = CURRENT_DATE - 1, Start = Yesterday - 6 days
 
 **Keywords with Quality Score:**

@@ -18,12 +18,30 @@ FROM base AS deps
 WORKDIR /app
 
 COPY package.json bun.lock turbo.json ./
-RUN mkdir -p apps packages/db packages/testing packages/logger packages/tsconfig
+RUN mkdir -p apps \
+    packages/audit \
+    packages/db \
+    packages/logger \
+    packages/realtime-protocol \
+    packages/security \
+    packages/testing \
+    packages/tsconfig \
+    packages/utils \
+    packages/workflow-authz \
+    packages/workflow-persistence \
+    packages/workflow-types
 COPY apps/sim/package.json ./apps/sim/package.json
+COPY packages/audit/package.json ./packages/audit/package.json
 COPY packages/db/package.json ./packages/db/package.json
-COPY packages/testing/package.json ./packages/testing/package.json
 COPY packages/logger/package.json ./packages/logger/package.json
+COPY packages/realtime-protocol/package.json ./packages/realtime-protocol/package.json
+COPY packages/security/package.json ./packages/security/package.json
+COPY packages/testing/package.json ./packages/testing/package.json
 COPY packages/tsconfig/package.json ./packages/tsconfig/package.json
+COPY packages/utils/package.json ./packages/utils/package.json
+COPY packages/workflow-authz/package.json ./packages/workflow-authz/package.json
+COPY packages/workflow-persistence/package.json ./packages/workflow-persistence/package.json
+COPY packages/workflow-types/package.json ./packages/workflow-types/package.json
 
 # Install dependencies, then rebuild isolated-vm for Node.js
 # Use --linker=hoisted for flat node_modules layout (required for Docker multi-stage builds)
@@ -48,9 +66,17 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy package configuration files (needed for build)
 COPY package.json bun.lock turbo.json ./
 COPY apps/sim/package.json ./apps/sim/package.json
+COPY packages/audit/package.json ./packages/audit/package.json
 COPY packages/db/package.json ./packages/db/package.json
-COPY packages/testing/package.json ./packages/testing/package.json
 COPY packages/logger/package.json ./packages/logger/package.json
+COPY packages/realtime-protocol/package.json ./packages/realtime-protocol/package.json
+COPY packages/security/package.json ./packages/security/package.json
+COPY packages/testing/package.json ./packages/testing/package.json
+COPY packages/tsconfig/package.json ./packages/tsconfig/package.json
+COPY packages/utils/package.json ./packages/utils/package.json
+COPY packages/workflow-authz/package.json ./packages/workflow-authz/package.json
+COPY packages/workflow-persistence/package.json ./packages/workflow-persistence/package.json
+COPY packages/workflow-types/package.json ./packages/workflow-types/package.json
 
 # Copy workspace configuration files (needed for turbo)
 COPY apps/sim/next.config.ts ./apps/sim/next.config.ts
@@ -164,9 +190,10 @@ COPY --from=deps --chown=nextjs:nodejs /app/node_modules/isolated-vm ./node_modu
 # Copy the isolated-vm worker script
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/execution/isolated-vm-worker.cjs ./apps/sim/lib/execution/isolated-vm-worker.cjs
 
-# Copy the bundled worker artifacts
-COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/dist/pptx-worker.cjs ./apps/sim/dist/pptx-worker.cjs
-COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/dist/doc-worker.cjs ./apps/sim/dist/doc-worker.cjs
+# Copy the pre-built sandbox library bundles (pptxgenjs, docx, pdf-lib) that
+# run inside the V8 isolate. Committed into the repo; see
+# apps/sim/lib/execution/sandbox/bundles/build.ts to regenerate.
+COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/execution/sandbox/bundles ./apps/sim/lib/execution/sandbox/bundles
 
 # Guardrails setup with pip caching
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/guardrails/requirements.txt ./apps/sim/lib/guardrails/requirements.txt

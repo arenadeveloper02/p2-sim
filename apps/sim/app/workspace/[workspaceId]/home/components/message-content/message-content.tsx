@@ -10,13 +10,28 @@ import { ClientToolCallState } from '@/lib/copilot/tools/client/tool-call-state'
 import type { ContentBlock, MothershipResource, OptionItem, ToolCallData } from '../../types'
 import { SUBAGENT_LABELS, TOOL_UI_METADATA } from '../../types'
 import type { AgentGroupItem } from './components'
-import { AgentGroup, ChatContent, CircleStop, Options, PendingTagIndicator } from './components'
+import {
+  AgentGroup,
+  ChatContent,
+  CircleStop,
+  Options,
+  PendingTagIndicator,
+  ThinkingBlock,
+} from './components'
 
 const FILE_SUBAGENT_ID = 'file'
 
 interface TextSegment {
   type: 'text'
   content: string
+}
+
+interface ThinkingSegment {
+  type: 'thinking'
+  id: string
+  content: string
+  startedAt?: number
+  endedAt?: number
 }
 
 interface AgentGroupSegment {
@@ -38,7 +53,12 @@ interface StoppedSegment {
   type: 'stopped'
 }
 
-type MessageSegment = TextSegment | AgentGroupSegment | OptionsSegment | StoppedSegment
+type MessageSegment =
+  | TextSegment
+  | ThinkingSegment
+  | AgentGroupSegment
+  | OptionsSegment
+  | StoppedSegment
 
 const SUBAGENT_KEYS = new Set(Object.keys(SUBAGENT_LABELS))
 
@@ -70,7 +90,13 @@ function resolveAgentLabel(key: string): string {
 }
 
 function isToolDone(status: ToolCallData['status']): boolean {
-  return status === 'success' || status === 'error' || status === 'cancelled'
+  return (
+    status === 'success' ||
+    status === 'error' ||
+    status === 'cancelled' ||
+    status === 'skipped' ||
+    status === 'rejected'
+  )
 }
 
 function isDelegatingTool(tc: NonNullable<ContentBlock['toolCall']>): boolean {
@@ -87,6 +113,10 @@ function mapToolStatusToClientState(
       return ClientToolCallState.error
     case 'cancelled':
       return ClientToolCallState.cancelled
+    case 'skipped':
+      return ClientToolCallState.aborted
+    case 'rejected':
+      return ClientToolCallState.rejected
     default:
       return ClientToolCallState.executing
   }
@@ -146,8 +176,48 @@ function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
       continue
     }
 
-    if (block.type === 'text') {
+    if (block.type === 'subagent_thinking') {
+      if (!block.content || !group) continue
+      group.isDelegating = false
+      const lastItem = group.items[group.items.length - 1]
+      if (lastItem?.type === 'thinking' && lastItem.endedAt === undefined) {
+        lastItem.content += block.content
+        if (block.endedAt !== undefined) lastItem.endedAt = block.endedAt
+      } else {
+        group.items.push({
+          type: 'thinking',
+          content: block.content,
+          startedAt: block.timestamp,
+          endedAt: block.endedAt,
+        })
+      }
+      continue
+    }
+
+    if (block.type === 'thinking') {
       if (!block.content?.trim()) continue
+      if (group) {
+        pushGroup(group)
+        group = null
+      }
+      const last = segments[segments.length - 1]
+      if (last?.type === 'thinking' && last.endedAt === undefined) {
+        last.content += block.content
+        if (block.endedAt !== undefined) last.endedAt = block.endedAt
+      } else {
+        segments.push({
+          type: 'thinking',
+          id: `thinking-${i}`,
+          content: block.content,
+          startedAt: block.timestamp,
+          endedAt: block.endedAt,
+        })
+      }
+      continue
+    }
+
+    if (block.type === 'text') {
+      if (!block.content) continue
       if (block.subagent) {
         if (group && group.agentName === block.subagent) {
           group.isDelegating = false
@@ -373,8 +443,9 @@ export function MessageContent({
 
   const hasSubagentEnded = blocks.some((b) => b.type === 'subagent_end')
   const showTrailingThinking =
-    isStreaming && !hasTrailingContent && (hasSubagentEnded || allLastGroupToolsDone)
-  const hasStructuredSegments = segments.some((segment) => segment.type !== 'text')
+    isStreaming &&
+    !hasTrailingContent &&
+    (lastSegment.type === 'thinking' || hasSubagentEnded || allLastGroupToolsDone)
   const lastOpenSubagentGroupId = [...segments]
     .reverse()
     .find(
@@ -394,9 +465,32 @@ export function MessageContent({
                 isStreaming={isStreaming}
                 onOptionSelect={onOptionSelect}
                 onWorkspaceResourceSelect={onWorkspaceResourceSelect}
-                smoothStreaming={!hasStructuredSegments}
               />
             )
+          case 'thinking': {
+            const isActive =
+              isStreaming && i === segments.length - 1 && segment.endedAt === undefined
+            const elapsedMs =
+              segment.startedAt !== undefined && segment.endedAt !== undefined
+                ? segment.endedAt - segment.startedAt
+                : undefined
+            // Hide completed thinking that took 3s or less — quick thinking
+            // isn't worth the visual noise. Still show while active (unknown
+            // duration yet) and still show when timing is missing (old
+            // persisted blocks) so we don't drop historical content.
+            if (elapsedMs !== undefined && elapsedMs <= 3000) return null
+            return (
+              <div key={segment.id} className={isStreaming ? 'animate-stream-fade-in' : undefined}>
+                <ThinkingBlock
+                  content={segment.content}
+                  isActive={isActive}
+                  isStreaming={isStreaming}
+                  startedAt={segment.startedAt}
+                  endedAt={segment.endedAt}
+                />
+              </div>
+            )
+          }
           case 'agent_group': {
             const toolItems = segment.items.filter((item) => item.type === 'tool')
             const allToolsDone =
@@ -411,6 +505,7 @@ export function MessageContent({
                   agentLabel={segment.agentLabel}
                   items={segment.items}
                   isDelegating={segment.isDelegating}
+                  isStreaming={isStreaming}
                   autoCollapse={allToolsDone && hasFollowingText}
                   defaultExpanded={segment.id === lastOpenSubagentGroupId}
                 />

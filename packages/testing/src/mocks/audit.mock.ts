@@ -1,16 +1,31 @@
 import { vi } from 'vitest'
 
 /**
- * Mock module for @/lib/audit/log.
- * Use with vi.mock() to replace the real audit logger in tests.
+ * Controllable mock functions for `@sim/audit`.
+ * Exposes `mockRecordAudit` so tests can assert or override behavior per test.
  *
  * @example
  * ```ts
- * vi.mock('@/lib/audit/log', () => auditMock)
+ * import { auditMockFns } from '@sim/testing'
+ *
+ * expect(auditMockFns.mockRecordAudit).toHaveBeenCalledWith(...)
+ * auditMockFns.mockRecordAudit.mockRejectedValueOnce(new Error('audit failed'))
+ * ```
+ */
+export const auditMockFns = {
+  mockRecordAudit: vi.fn(),
+}
+
+/**
+ * Static mock module for `@sim/audit`.
+ *
+ * @example
+ * ```ts
+ * vi.mock('@sim/audit', () => auditMock)
  * ```
  */
 export const auditMock = {
-  recordAudit: vi.fn(),
+  recordAudit: auditMockFns.mockRecordAudit,
   AuditAction: {
     API_KEY_CREATED: 'api_key.created',
     API_KEY_UPDATED: 'api_key.updated',
@@ -59,8 +74,10 @@ export const auditMock = {
     FORM_UPDATED: 'form.updated',
     FORM_DELETED: 'form.deleted',
     INVITATION_ACCEPTED: 'invitation.accepted',
+    INVITATION_REJECTED: 'invitation.rejected',
     INVITATION_RESENT: 'invitation.resent',
     INVITATION_REVOKED: 'invitation.revoked',
+    INVITATION_UPDATED: 'invitation.updated',
     CONNECTOR_CREATED: 'connector.created',
     CONNECTOR_UPDATED: 'connector.updated',
     CONNECTOR_DELETED: 'connector.deleted',
@@ -87,6 +104,7 @@ export const auditMock = {
     ORG_MEMBER_REMOVED: 'org_member.removed',
     ORG_MEMBER_ROLE_CHANGED: 'org_member.role_changed',
     ORG_INVITATION_CREATED: 'org_invitation.created',
+    ORG_INVITATION_UPDATED: 'org_invitation.updated',
     ORG_INVITATION_ACCEPTED: 'org_invitation.accepted',
     ORG_INVITATION_REJECTED: 'org_invitation.rejected',
     ORG_INVITATION_CANCELLED: 'org_invitation.cancelled',
