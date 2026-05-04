@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { Suspense } from 'react'
 import Script from 'next/script'
 import { PublicEnvScript } from 'next-runtime-env'
 import { BrandedLayout } from '@/components/branded-layout'
@@ -7,6 +8,7 @@ import { generateBrandedMetadata, generateThemeCSS } from '@/ee/whitelabeling'
 import '@/app/_styles/globals.css'
 import { isHosted, isReactGrabEnabled, isReactScanEnabled } from '@/lib/core/config/feature-flags'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
+import { ResumePathSync } from '@/app/_shell/resume-path-sync'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
@@ -288,6 +290,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           </noscript>
         )}
         <HydrationErrorHandler />
+        <Suspense fallback={null}>
+          <ResumePathSync />
+        </Suspense>
         <PostHogProvider>
           <ThemeProvider>
             <QueryProvider>

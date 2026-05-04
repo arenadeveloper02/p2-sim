@@ -1,0 +1,17 @@
+# Used only with deploy-ec2.sh: faster healthchecks so `compose up --wait` finishes
+# soon after the app is actually ready (default test-env uses 90s interval → long 504s at the LB).
+services:
+  simstudio:
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3000']
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 120s
+  realtime:
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3002/health']
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 45s

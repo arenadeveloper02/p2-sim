@@ -133,7 +133,8 @@
       <div class="modal-body">
         <h1 class="modal-title" id="maintenance-title">We're making updates</h1>
         <p class="modal-description" id="maintenance-desc">
-          We're sprucing things up. Check back in a few minutes.<br />
+          We're sprucing things up. This page will refresh as soon as the app is back; you'll continue
+          on the same page you were using (for example, a workspace).<br />
           Thank you for your patience.
         </p>
       </div>
@@ -144,19 +145,43 @@
 
 <script>
   (function () {
-    var REFRESH_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+    /** Must match SIM_DEPLOY_RESUME_PATH_KEY in apps/sim/app/_shell/resume-path-sync.tsx */
+    var STORAGE_KEY = 'sim_resume_path';
+    var POLL_MS = 4000;
+    var FALLBACK_REFRESH_MS = 2 * 60 * 1000;
 
-    function refreshWithCacheBust() {
+    function resumeWhenHealthy() {
+      try {
+        var stored = sessionStorage.getItem(STORAGE_KEY);
+        var here =
+          window.location.pathname + window.location.search + window.location.hash;
+        if (stored && stored !== '/' && stored !== here) {
+          window.location.replace(stored);
+          return;
+        }
+      } catch (e) {}
       window.location.reload();
     }
 
-    setInterval(function () {
-      // Avoid refreshing a background tab; refresh once when it becomes visible again.
-      if (document.visibilityState === 'visible') refreshWithCacheBust();
-    }, REFRESH_INTERVAL_MS);
+    async function pollHealth() {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        var r = await fetch('/api/health', { cache: 'no-store', method: 'GET' });
+        if (r.ok) resumeWhenHealthy();
+      } catch (e) {}
+    }
+
+    setInterval(pollHealth, POLL_MS);
+    pollHealth();
+
+    function refreshWhenVisible() {
+      if (document.visibilityState === 'visible') window.location.reload();
+    }
+
+    setInterval(refreshWhenVisible, FALLBACK_REFRESH_MS);
 
     document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'visible') refreshWithCacheBust();
+      if (document.visibilityState === 'visible') pollHealth();
     });
   })();
 </script>
