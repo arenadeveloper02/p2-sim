@@ -240,8 +240,7 @@ export const shopifyOneTimeCustomersTool: ToolConfig<
       oneTimeCustomerMap.set(customer.id, {
         customerId: customer.id,
         customerEmail: customer.email || 'N/A',
-        customerName:
-          [customer.firstName, customer.lastName].filter(Boolean).join(' ') || 'N/A',
+        customerName: [customer.firstName, customer.lastName].filter(Boolean).join(' ') || 'N/A',
         totalSpent: amount,
         orderDate: order.createdAt,
         currency,

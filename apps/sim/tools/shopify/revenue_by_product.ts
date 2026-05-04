@@ -30,7 +30,10 @@ interface RevenueByProductResponse {
   }
 }
 
-export const shopifyRevenueByProductTool: ToolConfig<RevenueByProductParams, RevenueByProductResponse> = {
+export const shopifyRevenueByProductTool: ToolConfig<
+  RevenueByProductParams,
+  RevenueByProductResponse
+> = {
   id: 'shopify_revenue_by_product',
   name: 'Shopify Revenue by Product',
   description: 'Get revenue breakdown by product within a date range',

@@ -328,9 +328,7 @@ export const shopifyNewVsReturningCustomersTool: ToolConfig<
           totalNewCustomerRevenue: Math.round(totalNewCustomerRevenue * 100) / 100,
           totalReturningCustomerRevenue: Math.round(totalReturningCustomerRevenue * 100) / 100,
           newCustomerPercentage:
-            totalOrders > 0
-              ? Math.round((totalNewCustomerOrders / totalOrders) * 10000) / 100
-              : 0,
+            totalOrders > 0 ? Math.round((totalNewCustomerOrders / totalOrders) * 10000) / 100 : 0,
           returningCustomerPercentage:
             totalOrders > 0
               ? Math.round((totalReturningCustomerOrders / totalOrders) * 10000) / 100

@@ -255,7 +255,10 @@ export const shopifyCustomersOverTimeTool: ToolConfig<
       }))
       .sort((a, b) => a.period.localeCompare(b.period))
 
-    const totalNewCustomers = sortedCustomerData.reduce((sum, item) => sum + item.newCustomerCount, 0)
+    const totalNewCustomers = sortedCustomerData.reduce(
+      (sum, item) => sum + item.newCustomerCount,
+      0
+    )
 
     return {
       success: true,

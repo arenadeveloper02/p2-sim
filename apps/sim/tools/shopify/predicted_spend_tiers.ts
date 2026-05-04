@@ -304,8 +304,9 @@ export const shopifyPredictedSpendTiersTool: ToolConfig<
     ]
 
     const totalSpend = customerSpends.reduce((s, c) => s + c.totalSpent, 0)
-    const currency = allOrders.find((o: any) => o.totalPriceSet?.shopMoney?.currencyCode)
-      ?.totalPriceSet?.shopMoney?.currencyCode || 'USD'
+    const currency =
+      allOrders.find((o: any) => o.totalPriceSet?.shopMoney?.currencyCode)?.totalPriceSet?.shopMoney
+        ?.currencyCode || 'USD'
 
     return {
       success: true,
@@ -316,8 +317,7 @@ export const shopifyPredictedSpendTiersTool: ToolConfig<
           highSpendCustomers: highCount,
           mediumSpendCustomers: mediumCount,
           lowSpendCustomers: lowCount,
-          averageCustomerSpend:
-            Math.round((totalSpend / customerSpends.length) * 100) / 100,
+          averageCustomerSpend: Math.round((totalSpend / customerSpends.length) * 100) / 100,
           currency,
         },
       },

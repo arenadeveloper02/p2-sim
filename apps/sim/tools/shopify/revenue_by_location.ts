@@ -29,7 +29,10 @@ interface RevenueByLocationResponse {
   }
 }
 
-export const shopifyRevenueByLocationTool: ToolConfig<RevenueByLocationParams, RevenueByLocationResponse> = {
+export const shopifyRevenueByLocationTool: ToolConfig<
+  RevenueByLocationParams,
+  RevenueByLocationResponse
+> = {
   id: 'shopify_revenue_by_location',
   name: 'Shopify Revenue by Location',
   description: 'Get revenue breakdown by shipping location within a date range',

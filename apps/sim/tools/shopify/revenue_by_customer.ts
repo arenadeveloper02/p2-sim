@@ -31,7 +31,10 @@ interface RevenueByCustomerResponse {
   }
 }
 
-export const shopifyRevenueByCustomerTool: ToolConfig<RevenueByCustomerParams, RevenueByCustomerResponse> = {
+export const shopifyRevenueByCustomerTool: ToolConfig<
+  RevenueByCustomerParams,
+  RevenueByCustomerResponse
+> = {
   id: 'shopify_revenue_by_customer',
   name: 'Shopify Revenue by Customer',
   description: 'Get revenue breakdown by customer within a date range',
@@ -219,7 +222,8 @@ export const shopifyRevenueByCustomerTool: ToolConfig<RevenueByCustomerParams, R
 
       const customerId = customer.id
       const customerEmail = customer.email || 'N/A'
-      const customerName = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || 'N/A'
+      const customerName =
+        [customer.firstName, customer.lastName].filter(Boolean).join(' ') || 'N/A'
       const revenue = Number.parseFloat(order.totalPriceSet?.shopMoney?.amount || '0')
 
       const existing = customerRevenueMap.get(customerId)

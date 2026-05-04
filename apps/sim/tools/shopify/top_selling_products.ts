@@ -31,7 +31,10 @@ interface TopSellingProductsResponse {
   }
 }
 
-export const shopifyTopSellingProductsTool: ToolConfig<TopSellingProductsParams, TopSellingProductsResponse> = {
+export const shopifyTopSellingProductsTool: ToolConfig<
+  TopSellingProductsParams,
+  TopSellingProductsResponse
+> = {
   id: 'shopify_top_selling_products',
   name: 'Shopify Top Selling Products',
   description: 'Get top selling products by quantity within a date range',

@@ -1,12 +1,12 @@
 // Shopify GraphQL API Types
 import type { OutputProperty, ToolResponse } from '@/tools/types'
 import {
-  MONEY_PROPERTIES,
-  MONEY_BAG_PROPERTIES,
   ADDRESS_PROPERTIES,
-  VARIANT_PROPERTIES,
   IMAGE_PROPERTIES,
+  MONEY_BAG_PROPERTIES,
+  MONEY_PROPERTIES,
   TRACKING_INFO_PROPERTIES,
+  VARIANT_PROPERTIES,
 } from './constants'
 
 /** Product output properties based on Shopify Product GraphQL object */
