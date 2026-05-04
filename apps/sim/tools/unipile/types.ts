@@ -199,6 +199,7 @@ export type UnipileListUserPostsToolResponse = ToolResponse & {
 }
 
 export interface UnipileListUserCommentsParams {
+  account_id: string
   user_identifier: string
   cursor?: string
 }
@@ -208,6 +209,7 @@ export type UnipileListUserCommentsToolResponse = ToolResponse & {
 }
 
 export interface UnipileListUserReactionsParams {
+  account_id: string
   user_identifier: string
   cursor?: string
 }

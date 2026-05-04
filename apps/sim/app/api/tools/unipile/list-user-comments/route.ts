@@ -8,6 +8,7 @@ import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 const logger = createLogger('UnipileListUserCommentsAPI')
 
 const RequestSchema = z.object({
+  account_id: z.string().min(1, 'account_id is required'),
   user_identifier: z.string().min(1),
   cursor: z.string().optional(),
 })
@@ -30,9 +31,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { user_identifier, cursor } = RequestSchema.parse(body)
+    const { account_id, user_identifier, cursor } = RequestSchema.parse(body)
     const encoded = encodeURIComponent(user_identifier.trim())
     const params = new URLSearchParams()
+    params.set('account_id', account_id.trim())
     if (cursor?.trim()) {
       params.set('cursor', cursor.trim())
     }

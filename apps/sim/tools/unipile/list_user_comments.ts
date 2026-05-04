@@ -12,10 +12,16 @@ export const unipileListUserCommentsTool: ToolConfig<
   id: 'unipile_list_user_comments',
   name: 'Unipile List User Comments',
   description:
-    'Lists comments for a user (`GET /api/v1/users/{identifier}/comments`). Optional `cursor`. Uses server `UNIPILE_API_KEY`.',
+    'Lists comments for a user (`GET /api/v1/users/{identifier}/comments`). Requires `account_id` and `user_identifier`. Optional `cursor`. Uses server `UNIPILE_API_KEY`.',
   version: '1.0.0',
 
   params: {
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile account id (required query parameter)',
+    },
     user_identifier: {
       type: 'string',
       required: true,
@@ -35,6 +41,8 @@ export const unipileListUserCommentsTool: ToolConfig<
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
+      account_id:
+        typeof params.account_id === 'string' ? params.account_id.trim() : params.account_id,
       user_identifier: params.user_identifier?.trim(),
       cursor: params.cursor,
     }),
