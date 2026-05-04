@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { normalizeUnipilePostPathId } from '@/tools/unipile/normalize_post_path_id'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileCommentPostAPI')
@@ -121,7 +122,11 @@ export async function POST(request: NextRequest) {
     appendIfNonEmpty(form, 'comment_id', data.comment_id)
     appendIfNonEmpty(form, 'attachments', data.attachments)
 
-    const encoded = encodeURIComponent(data.post_id.trim())
+    const postId = normalizeUnipilePostPathId(data.post_id)
+    if (!postId) {
+      return NextResponse.json({ error: 'post_id is empty after normalization' }, { status: 400 })
+    }
+    const encoded = encodeURIComponent(postId)
     const url = `${baseUrl}/api/v1/posts/${encoded}/comments`
     const upstream = await fetch(url, {
       method: 'POST',

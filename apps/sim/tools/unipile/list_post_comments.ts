@@ -20,7 +20,8 @@ export const unipileListPostCommentsTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Post id (path). LinkedIn: `social_id` from the post object; Instagram: `provider_id`.',
+      description:
+        'Path `post_id`. LinkedIn: use **`social_id`** (e.g. `urn:li:activity:…`) from GET post / list posts — bare activity digits from the URL are auto-normalized to that URN. Instagram: **provider_id** only (shortcode not supported for this route).',
     },
     account_id: {
       type: 'string',

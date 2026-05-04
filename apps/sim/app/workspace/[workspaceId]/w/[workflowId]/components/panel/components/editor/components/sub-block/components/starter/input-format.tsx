@@ -161,6 +161,12 @@ export function FieldFormat({
   const mentionTargetOptions =
     inputFormatConfig?.mentionTargetOptions ?? DEFAULT_MENTION_TARGET_OPTIONS
   const [storeValue, setStoreValue] = useSubBlockValue<Field[]>(blockId, subBlockId)
+
+  /**
+   * When the collaborative store has no rows yet, we must not synthesize a new default row on
+   * every render (`generateId()` would churn keys and break add / tag UI until the first persist).
+   */
+  const stableEmptyRowTemplate = useMemo(() => [createDefaultField()], [blockId, subBlockId])
   const valueInputRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement>>({})
   const nameInputRefs = useRef<Record<string, HTMLInputElement>>({})
   const overlayRefs = useRef<Record<string, HTMLDivElement>>({})
@@ -180,7 +186,8 @@ export function FieldFormat({
   })
 
   const value = isPreview ? previewValue : storeValue
-  const fields: Field[] = Array.isArray(value) && value.length > 0 ? value : [createDefaultField()]
+  const fields: Field[] = Array.isArray(value) && value.length > 0 ? value : stableEmptyRowTemplate
+
   const isReadOnly = isPreview || disabled
 
   /**
@@ -229,13 +236,13 @@ export function FieldFormat({
       const currentFields: Field[] =
         Array.isArray(currentStoreValue) && currentStoreValue.length > 0
           ? currentStoreValue
-          : [createDefaultField()]
+          : stableEmptyRowTemplate
 
       setStoreValueRef.current(
         currentFields.map((f) => (f.id === id ? { ...f, [fieldKey]: updatedValue } : f))
       )
     },
-    [variant]
+    [stableEmptyRowTemplate, variant]
   )
 
   const editorValueChangeHandlersRef = useRef<Record<string, (newValue: string) => void>>({})

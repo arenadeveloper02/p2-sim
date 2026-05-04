@@ -10,14 +10,25 @@ import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileSendChatMessageAPI')
 
+/**
+ * Drops top-level JSON `null` entries so optional fields are absent instead of `null` (Zod
+ * `optional()` does not accept `null`; clients and merges often send explicit nulls).
+ */
+function omitJsonNullProperties(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== null)
+  )
+}
+
 /** Accepts null/empty from clients; yields `undefined` so optional form fields are skipped safely. */
-const optionalFormString = z
-  .union([z.string(), z.null(), z.undefined()])
-  .transform((v) => {
-    if (v == null) return undefined
-    const t = v.trim()
-    return t === '' ? undefined : t
-  })
+const optionalFormString = z.union([z.string(), z.null(), z.undefined()]).transform((v) => {
+  if (v == null) return undefined
+  const t = v.trim()
+  return t === '' ? undefined : t
+})
 
 const RequestSchema = z.object({
   chat_id: z.string().min(1),
@@ -53,7 +64,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const data = RequestSchema.parse(body)
+    const data = RequestSchema.parse(omitJsonNullProperties(body))
 
     const form = new FormData()
     form.append('text', data.text)

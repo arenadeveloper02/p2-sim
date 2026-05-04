@@ -3,17 +3,16 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { normalizeUnipilePostPathId } from '@/tools/unipile/normalize_post_path_id'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileListPostCommentsAPI')
 
-const optionalQueryString = z
-  .union([z.string(), z.null(), z.undefined()])
-  .transform((v) => {
-    if (v == null) return undefined
-    const t = v.trim()
-    return t === '' ? undefined : t
-  })
+const optionalQueryString = z.union([z.string(), z.null(), z.undefined()]).transform((v) => {
+  if (v == null) return undefined
+  const t = v.trim()
+  return t === '' ? undefined : t
+})
 
 const RequestSchema = z.object({
   post_id: z.string().min(1),
@@ -46,7 +45,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const data = RequestSchema.parse(body)
-    const encoded = encodeURIComponent(data.post_id.trim())
+    const postId = normalizeUnipilePostPathId(data.post_id)
+    if (!postId) {
+      return NextResponse.json({ error: 'post_id is empty after normalization' }, { status: 400 })
+    }
+    const encoded = encodeURIComponent(postId)
     const params = new URLSearchParams()
     params.set('account_id', data.account_id.trim())
     if (data.cursor) {
@@ -55,7 +58,7 @@ export async function POST(request: NextRequest) {
     if (data.limit != null && Number.isFinite(data.limit)) {
       params.set('limit', String(data.limit))
     }
-    if (data.sort_by != null && data.sort_by !== '') {
+    if (data.sort_by) {
       params.set('sort_by', data.sort_by)
     }
     if (data.comment_id) {

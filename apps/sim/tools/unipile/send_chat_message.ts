@@ -64,15 +64,31 @@ export const unipileSendChatMessageTool: ToolConfig<
     url: '/api/tools/unipile/send-chat-message',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      chat_id: params.chat_id?.trim(),
-      text: params.text,
-      account_id: params.account_id?.trim(),
-      thread_id: params.thread_id,
-      quote_id: params.quote_id,
-      attachments: params.attachments,
-      typing_duration: params.typing_duration,
-    }),
+    body: (params) => {
+      const body: Record<string, unknown> = {
+        chat_id: params.chat_id?.trim() ?? '',
+        text: typeof params.text === 'string' ? params.text : '',
+        account_id: params.account_id?.trim() ?? '',
+      }
+      if (typeof params.thread_id === 'string' && params.thread_id.trim() !== '') {
+        body.thread_id = params.thread_id.trim()
+      }
+      if (typeof params.quote_id === 'string' && params.quote_id.trim() !== '') {
+        body.quote_id = params.quote_id.trim()
+      }
+      if (typeof params.typing_duration === 'string' && params.typing_duration.trim() !== '') {
+        body.typing_duration = params.typing_duration.trim()
+      }
+      const attachments = params.attachments
+      if (attachments != null) {
+        if (Array.isArray(attachments) && attachments.length > 0) {
+          body.attachments = attachments
+        } else if (typeof attachments === 'string' && attachments.trim() !== '') {
+          body.attachments = attachments.trim()
+        }
+      }
+      return body
+    },
   },
 
   transformResponse: async (response: Response) => {
