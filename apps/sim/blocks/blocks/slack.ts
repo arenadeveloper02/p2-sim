@@ -66,7 +66,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Sim Bot', id: 'oauth' },
         { label: 'Custom Bot', id: 'bot_token' },
       ],
-      value: () => 'oauth',
+      value: () => 'bot_token',
       required: true,
     },
     {
@@ -92,11 +92,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       serviceId: 'slack',
       requiredScopes: getScopesForService('slack'),
       placeholder: 'Select Slack workspace',
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'oauth',
-      },
       required: true,
     },
     {
@@ -106,24 +101,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
       placeholder: 'Enter credential ID',
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'oauth',
-      },
-      required: true,
-    },
-    {
-      id: 'botToken',
-      title: 'Bot Token',
-      type: 'short-input',
-      placeholder: 'Enter your Slack bot token (xoxb-...)',
-      password: true,
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'bot_token',
-      },
       required: true,
     },
     {
@@ -135,7 +112,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.channels',
       placeholder: 'Select Slack channel',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: (values?: Record<string, unknown>) => {
         const op = values?.operation as string
         if (op === 'ephemeral') {
@@ -216,7 +193,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'destinationType',
         value: 'dm',
@@ -245,7 +222,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'ephemeral',
@@ -638,7 +615,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'get_user',
@@ -894,7 +871,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'get_user_presence',
@@ -1199,7 +1176,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       selectorKey: 'slack.users',
       placeholder: 'Select user to publish Home tab to',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'publish_view',
@@ -1384,7 +1361,6 @@ Do not include any explanations, markdown formatting, or other text outside the 
         const {
           oauthCredential,
           authMethod,
-          botToken,
           operation,
           destinationType,
           channel,
@@ -1495,12 +1471,11 @@ Do not include any explanations, markdown formatting, or other text outside the 
         }
 
         // Handle authentication based on method
-        if (authMethod === 'bot_token') {
-          baseParams.accessToken = botToken
-        } else {
-          // Default to OAuth
-          baseParams.credential = oauthCredential
-        }
+        // Always use the selected Slack OAuth credential; choose token type later.
+        // - Sim Bot (oauth): uses bot token (accessToken) from the credential
+        // - Custom Bot (bot_token): uses user token (idToken) from the credential
+        baseParams.credential = oauthCredential
+        baseParams.useUserToken = authMethod === 'bot_token'
 
         switch (operation) {
           case 'send': {
@@ -1807,16 +1782,12 @@ Do not include any explanations, markdown formatting, or other text outside the 
             baseParams.sort = sortBy || 'timestamp'
             baseParams.sort_dir = sortDir || 'desc'
             baseParams.highlight = highlight !== 'false' // default to true
-            // For search_all, use user token instead of bot token
-            if (authMethod === 'bot_token') {
-              throw new Error('Search All operation requires OAuth authentication with user token')
-            }
-            // Use credential for OAuth, but we'll need to get user token from idToken
+            // For search_all, use user token instead of bot token (handled by useUserToken flag).
             if (!oauthCredential) {
               throw new Error('Slack account credential is required for Search All operation')
             }
             baseParams.credential = oauthCredential
-            baseParams.useUserToken = true // Flag to indicate user token should be used
+            baseParams.useUserToken = true // Ensure user token is used for Search All
             break
           }
           case 'get_channel_info':
@@ -1913,7 +1884,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     authMethod: { type: 'string', description: 'Authentication method' },
     destinationType: { type: 'string', description: 'Destination type (channel or dm)' },
     oauthCredential: { type: 'string', description: 'Slack access token' },
-    botToken: { type: 'string', description: 'Bot token' },
+    useUserToken: {
+      type: 'boolean',
+      description: 'Use user token (id_token) instead of bot token',
+    },
     channel: { type: 'string', description: 'Channel identifier (canonical param)' },
     dmUserId: { type: 'string', description: 'User ID for DM recipient (canonical param)' },
     text: { type: 'string', description: 'Message text' },
