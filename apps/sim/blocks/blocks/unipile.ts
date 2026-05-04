@@ -436,7 +436,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       id: 'post_id',
       title: 'Post ID',
       type: 'short-input',
-      placeholder: 'Post id (LinkedIn: social_id; Instagram: provider_id)',
+      placeholder: 'Post id',
       description:
         'Path param for the post. LinkedIn: use social_id from GET post or list posts (URL id may not work). Instagram: use provider_id, not the post short code. See https://developer.unipile.com/docs/posts-and-comments',
       dependsOn: ['operation'],
@@ -465,6 +465,41 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: '1–100 per upstream page (default 100); all pages are still fetched',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_post_reactions' },
+      mode: 'advanced',
+    },
+    {
+      id: 'post_comments_thread_comment_id',
+      title: 'Comment ID (replies)',
+      type: 'short-input',
+      placeholder: 'Optional: list replies for this comment (LinkedIn: id from comments list)',
+      description: 'Unipile `comment_id` query: omit to list top-level comments on the post.',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'list_post_comments' },
+      mode: 'advanced',
+    },
+    {
+      id: 'post_comments_limit',
+      title: 'Comments page size',
+      type: 'short-input',
+      placeholder: '1–100 (optional)',
+      description: 'Unipile `limit` query for this request page.',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'list_post_comments' },
+      mode: 'advanced',
+    },
+    {
+      id: 'post_comments_sort',
+      title: 'Sort comments by',
+      type: 'dropdown',
+      options: [
+        { label: 'Default (upstream)', id: '' },
+        { label: 'Most recent', id: 'MOST_RECENT' },
+        { label: 'Most relevant', id: 'MOST_RELEVANT' },
+      ],
+      value: () => '',
+      description: 'Unipile `sort_by` query when set (default upstream is MOST_RECENT).',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'list_post_comments' },
       mode: 'advanced',
     },
     {
@@ -822,43 +857,43 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       },
       mode: 'both',
     },
-    {
-      id: 'voice_message_file',
-      title: 'Voice Message',
-      type: 'file-upload',
-      placeholder: 'Upload voice message file (.m4a/.mp3)',
-      dependsOn: ['operation'],
-      condition: { field: 'operation', value: 'start_new_chat' },
-      mode: 'basic',
-    },
-    {
-      id: 'video_message_file',
-      title: 'Video Message',
-      type: 'file-upload',
-      placeholder: 'Upload video message file',
-      dependsOn: ['operation'],
-      condition: { field: 'operation', value: 'start_new_chat' },
-      mode: 'basic',
-    },
+    // {
+    //   id: 'voice_message_file',
+    //   title: 'Voice Message',
+    //   type: 'file-upload',
+    //   placeholder: 'Upload voice message file (.m4a/.mp3)',
+    //   dependsOn: ['operation'],
+    //   condition: { field: 'operation', value: 'start_new_chat' },
+    //   mode: 'basic',
+    // },
+    // {
+    //   id: 'video_message_file',
+    //   title: 'Video Message',
+    //   type: 'file-upload',
+    //   placeholder: 'Upload video message file',
+    //   dependsOn: ['operation'],
+    //   condition: { field: 'operation', value: 'start_new_chat' },
+    //   mode: 'basic',
+    // },
 
-    {
-      id: 'voice_message',
-      title: 'Voice Message',
-      type: 'short-input',
-      placeholder: 'Voice message field (string)',
-      dependsOn: ['operation'],
-      condition: { field: 'operation', value: ['start_new_chat', 'send_chat_message'] },
-      mode: 'advanced',
-    },
-    {
-      id: 'video_message',
-      title: 'Video Message',
-      type: 'short-input',
-      placeholder: 'Video message field (string)',
-      dependsOn: ['operation'],
-      condition: { field: 'operation', value: ['start_new_chat', 'send_chat_message'] },
-      mode: 'advanced',
-    },
+    // {
+    //   id: 'voice_message',
+    //   title: 'Voice Message',
+    //   type: 'short-input',
+    //   placeholder: 'Voice message field (string)',
+    //   dependsOn: ['operation'],
+    //   condition: { field: 'operation', value: 'start_new_chat' },
+    //   mode: 'advanced',
+    // },
+    // {
+    //   id: 'video_message',
+    //   title: 'Video Message',
+    //   type: 'short-input',
+    //   placeholder: 'Video message field (string)',
+    //   dependsOn: ['operation'],
+    //   condition: { field: 'operation', value: 'start_new_chat' },
+    //   mode: 'advanced',
+    // },
     {
       id: 'chat_topic',
       title: 'Topic',
@@ -1159,9 +1194,32 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'list_post_comments') {
           const out: Record<string, unknown> = {
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
           }
           if (typeof params.list_cursor === 'string' && params.list_cursor.trim() !== '') {
             out.cursor = params.list_cursor.trim()
+          }
+          const limRaw = params.post_comments_limit
+          if (typeof limRaw === 'string' && limRaw.trim() !== '') {
+            const n = Number.parseInt(limRaw.trim(), 10)
+            if (Number.isFinite(n)) {
+              out.limit = n
+            }
+          } else if (typeof limRaw === 'number' && Number.isFinite(limRaw)) {
+            out.limit = Math.trunc(limRaw)
+          }
+          if (
+            typeof params.post_comments_sort === 'string' &&
+            (params.post_comments_sort === 'MOST_RECENT' ||
+              params.post_comments_sort === 'MOST_RELEVANT')
+          ) {
+            out.sort_by = params.post_comments_sort
+          }
+          if (
+            typeof params.post_comments_thread_comment_id === 'string' &&
+            params.post_comments_thread_comment_id.trim() !== ''
+          ) {
+            out.comment_id = params.post_comments_thread_comment_id.trim()
           }
           return out
         }
@@ -1323,8 +1381,6 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           }
           copyIfString('thread_id')
           copyIfString('quote_id')
-          copyIfString('voice_message')
-          copyIfString('video_message')
           if (normalizedAttachments && normalizedAttachments.length > 0) {
             out.attachments = normalizedAttachments
           } else {
@@ -1424,6 +1480,12 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
           }
         }
+        if (op === 'get_post') {
+          return {
+            post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+          }
+        }
         return {}
       },
     },
@@ -1484,6 +1546,19 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'string',
       description:
         'List post reactions: optional comment_id to list reactions on that comment (LinkedIn: id from comments list)',
+    },
+    post_comments_thread_comment_id: {
+      type: 'string',
+      description:
+        'List post comments: optional comment_id to list replies for that comment (LinkedIn: id from comments list)',
+    },
+    post_comments_limit: {
+      type: 'string',
+      description: 'List post comments: optional limit 1–100 for the request page',
+    },
+    post_comments_sort: {
+      type: 'string',
+      description: 'List post comments: optional sort_by MOST_RECENT | MOST_RELEVANT',
     },
     reactions_limit: {
       type: 'string',
@@ -1588,18 +1663,18 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'json',
       description: 'Send chat message: uploaded attachment files (UserFile array)',
     },
-    voice_message_file: {
-      type: 'json',
-      description: 'Start new chat: uploaded voice message file (UserFile)',
-    },
-    video_message_file: {
-      type: 'json',
-      description: 'Start new chat: uploaded video message file (UserFile)',
-    },
+    // voice_message_file: {
+    //   type: 'json',
+    //   description: 'Start new chat: uploaded voice message file (UserFile)',
+    // },
+    // video_message_file: {
+    //   type: 'json',
+    //   description: 'Start new chat: uploaded video message file (UserFile)',
+    // },
     subject: { type: 'string', description: 'Chat subject' },
     attachments: { type: 'string', description: 'Attachments form field' },
-    voice_message: { type: 'string', description: 'Voice message form field' },
-    video_message: { type: 'string', description: 'Video message form field' },
+    // voice_message: { type: 'string', description: 'Start new chat: voice message form field' },
+    // video_message: { type: 'string', description: 'Start new chat: video message form field' },
     attendees_ids: {
       type: 'json',
       description:

@@ -45,18 +45,6 @@ export const unipileSendChatMessageTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Optional quote id',
     },
-    voice_message: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Voice message field (form string)',
-    },
-    video_message: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Video message field (form string)',
-    },
     attachments: {
       type: 'json',
       required: false,
@@ -82,8 +70,6 @@ export const unipileSendChatMessageTool: ToolConfig<
       account_id: params.account_id?.trim(),
       thread_id: params.thread_id,
       quote_id: params.quote_id,
-      voice_message: params.voice_message,
-      video_message: params.video_message,
       attachments: params.attachments,
       typing_duration: params.typing_duration,
     }),

@@ -9,6 +9,7 @@ const logger = createLogger('UnipileGetPostAPI')
 
 const RequestSchema = z.object({
   post_id: z.string().min(1),
+  account_id: z.string().min(1),
 })
 
 /**
@@ -29,9 +30,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { post_id } = RequestSchema.parse(body)
-    const encoded = encodeURIComponent(post_id.trim())
-    const url = `${baseUrl}/api/v1/posts/${encoded}`
+    const data = RequestSchema.parse(body)
+    const encoded = encodeURIComponent(data.post_id.trim())
+    const qs = new URLSearchParams({ account_id: data.account_id.trim() }).toString()
+    const url = `${baseUrl}/api/v1/posts/${encoded}?${qs}`
 
     const upstream = await fetch(url, {
       method: 'GET',

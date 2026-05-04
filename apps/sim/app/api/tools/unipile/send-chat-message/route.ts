@@ -10,16 +10,23 @@ import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileSendChatMessageAPI')
 
+/** Accepts null/empty from clients; yields `undefined` so optional form fields are skipped safely. */
+const optionalFormString = z
+  .union([z.string(), z.null(), z.undefined()])
+  .transform((v) => {
+    if (v == null) return undefined
+    const t = v.trim()
+    return t === '' ? undefined : t
+  })
+
 const RequestSchema = z.object({
   chat_id: z.string().min(1),
   text: z.string().min(1),
   account_id: z.string().min(1),
-  thread_id: z.string().optional(),
-  quote_id: z.string().optional(),
-  voice_message: z.string().optional(),
-  video_message: z.string().optional(),
+  thread_id: optionalFormString,
+  quote_id: optionalFormString,
   attachments: z.union([RawFileInputArraySchema, z.string()]).optional(),
-  typing_duration: z.string().optional(),
+  typing_duration: optionalFormString,
 })
 
 function appendIfNonEmpty(form: FormData, key: string, value: string | undefined) {
@@ -53,8 +60,6 @@ export async function POST(request: NextRequest) {
     form.append('account_id', data.account_id.trim())
     appendIfNonEmpty(form, 'thread_id', data.thread_id)
     appendIfNonEmpty(form, 'quote_id', data.quote_id)
-    appendIfNonEmpty(form, 'voice_message', data.voice_message)
-    appendIfNonEmpty(form, 'video_message', data.video_message)
     if (Array.isArray(data.attachments) && data.attachments.length > 0) {
       const userFiles = processFilesToUserFiles(data.attachments, data.chat_id, logger)
       for (const userFile of userFiles) {

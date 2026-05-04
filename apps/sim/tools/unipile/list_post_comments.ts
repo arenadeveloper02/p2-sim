@@ -12,7 +12,7 @@ export const unipileListPostCommentsTool: ToolConfig<
   id: 'unipile_list_post_comments',
   name: 'Unipile List Post Comments',
   description:
-    'Lists comments on a post (`GET /api/v1/posts/{post_id}/comments`). Optional `cursor` for pagination. Uses server `UNIPILE_API_KEY`.',
+    'Lists comments on a post (`GET /api/v1/posts/{post_id}/comments`). Requires `account_id` query (Unipile). Optional `cursor`, `limit` (1–100), `sort_by`, `comment_id` (replies). Uses server `UNIPILE_API_KEY`.',
   version: '1.0.0',
 
   params: {
@@ -20,7 +20,13 @@ export const unipileListPostCommentsTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Unipile post id',
+      description: 'Post id (path). LinkedIn: `social_id` from the post object; Instagram: `provider_id`.',
+    },
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile connected account id (required query param)',
     },
     cursor: {
       type: 'string',
@@ -28,16 +34,53 @@ export const unipileListPostCommentsTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Pagination cursor from a previous response',
     },
+    limit: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Page size 1–100 (Unipile default 100)',
+    },
+    sort_by: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'MOST_RECENT or MOST_RELEVANT',
+    },
+    comment_id: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional: list replies for this comment id (LinkedIn: from comments list)',
+    },
   },
 
   request: {
     url: '/api/tools/unipile/list-post-comments',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      post_id: params.post_id?.trim(),
-      cursor: params.cursor,
-    }),
+    body: (params) => {
+      const out: Record<string, unknown> = {
+        post_id: params.post_id?.trim(),
+        account_id: params.account_id?.trim(),
+      }
+      if (typeof params.cursor === 'string' && params.cursor.trim() !== '') {
+        out.cursor = params.cursor.trim()
+      }
+      if (
+        params.limit !== undefined &&
+        params.limit !== null &&
+        Number.isFinite(Number(params.limit))
+      ) {
+        out.limit = Number(params.limit)
+      }
+      if (typeof params.sort_by === 'string' && params.sort_by.trim() !== '') {
+        out.sort_by = params.sort_by.trim()
+      }
+      if (typeof params.comment_id === 'string' && params.comment_id.trim() !== '') {
+        out.comment_id = params.comment_id.trim()
+      }
+      return out
+    },
   },
 
   transformResponse: async (response: Response) => {
