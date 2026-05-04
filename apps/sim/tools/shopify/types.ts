@@ -345,7 +345,7 @@ export const COLLECTION_WITH_PRODUCTS_OUTPUT_PROPERTIES = {
         featuredImage: {
           type: 'object',
           description: 'Featured product image',
-          properties: FEATURED_IMAGE_OUTPUT_PROPERTIES,
+          properties: IMAGE_PROPERTIES,
           optional: true,
         },
       },
