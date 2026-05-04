@@ -651,9 +651,10 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       id: 'create_post_text',
       title: 'Post text',
       type: 'long-input',
-      placeholder: 'What to publish on LinkedIn…',
+      placeholder:
+        'Post text. You can add a mention by inserting the index of the corresponding entry from the mentions array between two double braces. Example: Hey {{0}}, check this out !',
       description:
-        'Used for **Create a post**. Optional `{{0}}`, `{{1}}`, … align with mention rows below.',
+        'Used for **Create a post**. LinkedIn: `{{n}}` matches the nth mention row below (same idea as Unipile’s “Hey {{0}}, …”).',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: 'create_post' },
       required: { field: 'operation', value: 'create_post' },
@@ -662,9 +663,10 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       id: 'comment_post_text',
       title: 'Comment text',
       type: 'long-input',
-      placeholder: 'Write your comment (max 1250 characters)…',
+      placeholder:
+        'Comment (max 1250). You can add a mention by inserting the index of the corresponding entry from the mentions array between two double braces. Example: Hey {{0}}, check this out !',
       description:
-        'Used for **Comment a post**. Use `{{0}}`, `{{1}}`, … in the same order as mention rows below.',
+        'Used for **Comment a post**. LinkedIn: `{{n}}` matches the nth mention row below (same idea as Unipile’s “Hey {{0}}, …”).',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: 'comment_post' },
       required: { field: 'operation', value: 'comment_post' },
@@ -688,7 +690,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         ],
       },
       description:
-        'Optional LinkedIn @mentions: use **+** to add more. **Display name** is how the mention appears in the post/comment; **Profile ID** is the provider id (ACo…/ADo… for people, numeric id for companies). **Mention target**: Person or Company. Use `{{0}}`, `{{1}}`, … in the text in the same order. Tag references supported in fields. Rows with empty name or profile id are ignored.',
+        'Optional LinkedIn @mentions: use **+** to add more. **Display name** is how the mention appears in the post/comment; **Profile ID** is the provider id (ACo…/ADo… for people, numeric id for companies). **Mention target**: Person or Company. **You must** put `{{0}}`, `{{1}}`, … in the comment/post text in the same row order — Unipile substitutes those from the `mentions` array ([reference](https://developer.unipile.com/reference/postscontroller_sendcomment)). Rows with empty name or profile id are ignored.',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: ['comment_post', 'create_post'] },
     },

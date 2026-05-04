@@ -33,14 +33,14 @@ export const unipileCommentPostTool: ToolConfig<
       required: true,
       visibility: 'user-or-llm',
       description:
-        'Comment body (1–1250 chars). LinkedIn: insert {{0}}, {{1}}, … matching indexes in the mentions JSON array.',
+        'Comment (max 1250). LinkedIn: `{{n}}` = nth entry in `mentions` — e.g. Hey {{0}}, check this out!',
     },
     mentions: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Optional LinkedIn JSON array: [{ "name": "…", "profile_id": "…", "is_company": true }]. Usually produced from the workflow block mention table.',
+        'Optional LinkedIn JSON array like Unipile docs: [{ "name": "…", "profile_id": "…" }]. The proxy sends a real JSON `mentions` array (no file parts) or an `application/json` multipart part when attachments are uploaded. Use `{{0}}`, `{{1}}` in `text` in the same order.',
     },
     name: {
       type: 'string',

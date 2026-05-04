@@ -22,7 +22,8 @@ export const unipileCreatePostTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Post body text',
+      description:
+        'Post body. LinkedIn: `{{n}}` = nth entry in `mentions` — e.g. Hey {{0}}, check this out!',
     },
     attachments: {
       type: 'json',
@@ -52,7 +53,8 @@ export const unipileCreatePostTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'LinkedIn mentions JSON array (name, profile_id, is_company)',
+      description:
+        'LinkedIn: JSON array of { name, profile_id, is_company? } (see Unipile create post). Sent as JSON `mentions` when no media upload; with files, as an `application/json` multipart part. Match `{{0}}` in post text.',
     },
     external_link: {
       type: 'string',
