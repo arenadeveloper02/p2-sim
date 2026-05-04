@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect } from 'react'
-import { Info } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { Banner } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { useAppBanner } from '@/hooks/queries/app-banner'
 
 /**
- * Full-width informational strip below the browser chrome when the platform exposes banner text via GET /api/app/banner.
+ * Full-width warning-styled strip below the browser chrome when the platform exposes banner text via GET /api/app/banner.
  */
 export function AppBanner() {
   const pathname = usePathname()
@@ -33,18 +33,19 @@ export function AppBanner() {
       role='status'
       aria-live='polite'
       className={cn(
-        'border-[var(--border-muted)] border-[var(--brand-500)]/45 border-t border-b',
-        'bg-[var(--surface-3)] py-2',
-        'shadow-[inset_0_1px_0_0_var(--divider)]'
+        'border-t border-b border-[var(--terminal-status-warning-border)]',
+        'bg-[var(--terminal-status-warning-bg)] py-2'
       )}
     >
       <div className='mx-auto flex items-start justify-center gap-2.5 px-6 sm:items-center'>
-        <Info
-          className='mt-0.5 h-[15px] w-[15px] shrink-0 text-[var(--brand-500)] opacity-90 sm:mt-0'
+        <AlertTriangle
+          className='mt-0.5 h-[15px] w-[15px] shrink-0 text-[var(--terminal-status-warning-color)] sm:mt-0'
           aria-hidden
           strokeWidth={2}
         />
-        <p className='text-left text-[13px] text-[var(--text-body)] leading-relaxed'>{message}</p>
+        <p className='text-left text-[13px] font-medium leading-relaxed text-[var(--terminal-status-warning-color)]'>
+          {message}
+        </p>
       </div>
     </Banner>
   )
