@@ -13,7 +13,11 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, count, eq, inArray, isNull } from 'drizzle-orm'
 import { normalizeVfsSegment } from '@/lib/copilot/vfs/normalize-segment'
-import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
+import { mergeOAuthIntegrationPresence, getHubSpotSharedAccountOptionIds } from '@/lib/copilot/chat/env-integration-presence'
+import {
+  getAccessibleEnvCredentials,
+  getAccessibleOAuthCredentials,
+} from '@/lib/credentials/environment'
 import { listWorkspaceFiles } from '@/lib/uploads/contexts/workspace'
 import { listCustomTools } from '@/lib/workflows/custom-tools/operations'
 import { listSkills } from '@/lib/workflows/skills/operations'
@@ -37,6 +41,7 @@ const PROVIDER_SERVICES: Record<string, string[]> = {
   airtable: ['Airtable'],
   jira: ['Jira'],
   confluence: ['Confluence'],
+  hubspot: ['HubSpot'],
 }
 
 export interface WorkspaceMdData {
@@ -73,6 +78,10 @@ export interface WorkspaceMdData {
     lifecycle: string
     sourceTaskName: string | null
   }>
+  /**
+   * When set, HubSpot uses shared `accounts` subblock ids (see HubSpot block config), not only OAuth rows.
+   */
+  hubspotSharedAccounts?: string[]
 }
 
 function normalizeFolderPathForVfs(folderPath?: string | null): string | null {
@@ -208,6 +217,16 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
     sections.push('## Connected Integrations\n(none)')
   }
 
+  if (data.hubspotSharedAccounts && data.hubspotSharedAccounts.length > 0) {
+    const idLines = data.hubspotSharedAccounts.map((id) => `- \`${id}\``)
+    sections.push(
+      `## HubSpot (shared accounts)\n` +
+        `HubSpot blocks use the **accounts** subblock with these keys (not the OAuth picker). ` +
+        `The block \`tools.config.params\` maps \`accounts\` → \`oauthCredential\` for execution—the same as the canvas editor.\n` +
+        `When mothership creates or edits HubSpot blocks, set **accounts** to one of:\n${idLines.join('\n')}`
+    )
+  }
+
   if (data.envVariables.length > 0) {
     const lines = data.envVariables.map((v) => `- ${v}`)
     sections.push(`## Environment Variables (${data.envVariables.length})\n${lines.join('\n')}`)
@@ -272,6 +291,7 @@ export async function generateWorkspaceContext(
       tables,
       files,
       credentials,
+      envCredentials,
       customTools,
       mcpServerRows,
       skillRows,
@@ -326,6 +346,8 @@ export async function generateWorkspaceContext(
       listWorkspaceFiles(workspaceId),
 
       getAccessibleOAuthCredentials(workspaceId, userId),
+
+      getAccessibleEnvCredentials(workspaceId, userId),
 
       listCustomTools({ userId, workspaceId }),
 
@@ -414,6 +436,8 @@ export async function generateWorkspaceContext(
       return path
     }
 
+    const hubspotSharedAccounts = getHubSpotSharedAccountOptionIds()
+
     return buildWorkspaceMd({
       workspace: wsRow,
       members,
@@ -427,8 +451,14 @@ export async function generateWorkspaceContext(
       })),
       tables: tables.map((t, i) => ({ ...t, rowCount: rowCounts[i] ?? 0 })),
       files: files.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.size })),
-      oauthIntegrations: credentials.map((c) => ({ providerId: c.providerId })),
-      envVariables: [],
+      oauthIntegrations: mergeOAuthIntegrationPresence(
+        credentials.map((c) => ({ providerId: c.providerId })),
+        envCredentials.map((c) => c.envKey),
+        hubspotSharedAccounts
+      ),
+      envVariables: [...new Set(envCredentials.map((c) => c.envKey).filter(Boolean))] as string[],
+      hubspotSharedAccounts:
+        hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
       customTools: customTools.map((t) => ({ id: t.id, name: t.title })),
       mcpServers: mcpServerRows,
       skills: skillRows.map((s) => ({ id: s.id, name: s.name, description: s.description })),

@@ -8,12 +8,6 @@ export const saveSummary: ToolConfig<ArenaSaveSummaryParams, ArenaSaveSummaryRes
   version: '1.0.0',
 
   params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (e.g., save_summary)',
-    },
     'save-summary-client': {
       type: 'object',
       required: true,

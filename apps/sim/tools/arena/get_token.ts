@@ -8,14 +8,7 @@ export const getToken: ToolConfig<ArenaGetTokenParams, ArenaGetTokenResponse> = 
     'Get Arena token for the logged-in user or workflow owner. Both must have @position2.com email.',
   version: '1.0.0',
 
-  params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (get_token)',
-    },
-  },
+  params: {},
 
   request: {
     url: (params: ArenaGetTokenParams) => {

@@ -74,6 +74,8 @@ export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
       password: true,
       placeholder: 'Enter your BrowserUse API key',
       required: true,
+      hideWhenHosted: true,
+      hideWhenEnvSet: 'NEXT_PUBLIC_BROWSER_USE_CONFIGURED',
     },
   ],
   tools: {

@@ -27,6 +27,7 @@ import { WandPromptBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/comp
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import { useWand } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-wand'
 import type { SubBlockConfig } from '@/blocks/types'
+import { arenaSiblingSubBlockStoreKey } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
@@ -392,11 +393,13 @@ export function ArenaCommentInput({
   // Get project and client from store
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client'] as
+  const clientKey = arenaSiblingSubBlockStoreKey(subBlockId, 'comment-client')
+  const projectKey = arenaSiblingSubBlockStoreKey(subBlockId, 'comment-project')
+  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
     | { clientId?: string }
     | undefined
   const clientId = clientRef?.clientId
-  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-project']
+  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.[projectKey]
   const projectId =
     typeof projectValue === 'string' ? projectValue : (projectValue as { sysId?: string })?.sysId
 

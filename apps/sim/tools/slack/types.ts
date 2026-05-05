@@ -730,6 +730,8 @@ export interface SlackListChannelsParams extends SlackBaseParams {
   includeGroupDMs?: boolean
   excludeArchived?: boolean
   limit?: number
+  /** Pagination cursor from a prior `conversations.list` response (`response_metadata.next_cursor`). */
+  cursor?: string
 }
 
 /**
@@ -744,16 +746,22 @@ export interface SlackGetUserChannelsParams extends SlackBaseParams {
   includeGroupDMs?: boolean
   excludeArchived?: boolean
   limit?: number
+  /** Pagination cursor from a prior `users.conversations` response (`response_metadata.next_cursor`). */
+  cursor?: string
 }
 
 export interface SlackListMembersParams extends SlackBaseParams {
   channel: string
   limit?: number
+  /** Pagination cursor from a prior `conversations.members` response (`response_metadata.next_cursor`). */
+  cursor?: string
 }
 
 export interface SlackListUsersParams extends SlackBaseParams {
   includeDeleted?: boolean
   limit?: number
+  /** Pagination cursor from a prior `users.list` response (`response_metadata.next_cursor`). */
+  cursor?: string
 }
 
 export interface SlackGetUserParams extends SlackBaseParams {
@@ -779,6 +787,8 @@ export interface SlackGetThreadParams extends SlackBaseParams {
   channel: string
   threadTs: string
   limit?: number
+  /** Pagination cursor from a prior `conversations.replies` response (`response_metadata.next_cursor`). */
+  cursor?: string
 }
 
 export interface SlackSearchAllParams extends SlackBaseParams {
@@ -1044,6 +1054,8 @@ export interface SlackListChannelsResponse extends ToolResponse {
     ids: string[]
     names: string[]
     count: number
+    /** Next-page cursor from Slack (`response_metadata.next_cursor`), or `null` when there are no more results. */
+    cursor: string | null
   }
 }
 
@@ -1053,6 +1065,8 @@ export interface SlackGetUserChannelsResponse extends ToolResponse {
     ids: string[]
     names: string[]
     count: number
+    /** Next-page cursor from Slack (`response_metadata.next_cursor`), or `null` when there are no more results. */
+    cursor: string | null
   }
 }
 
@@ -1060,6 +1074,8 @@ export interface SlackListMembersResponse extends ToolResponse {
   output: {
     members: string[]
     count: number
+    /** Next-page cursor from Slack (`response_metadata.next_cursor`), or `null` when there are no more results. */
+    cursor: string | null
   }
 }
 
@@ -1102,6 +1118,8 @@ export interface SlackListUsersResponse extends ToolResponse {
     ids: string[]
     names: string[]
     count: number
+    /** Next-page cursor from Slack (`response_metadata.next_cursor`), or `null` when there are no more results. */
+    cursor: string | null
   }
 }
 
@@ -1145,6 +1163,8 @@ export interface SlackGetThreadResponse extends ToolResponse {
     messages: SlackMessage[]
     replyCount: number
     hasMore: boolean
+    /** Next-page cursor from Slack (`response_metadata.next_cursor`), or `null` when there are no more results. */
+    cursor: string | null
   }
 }
 

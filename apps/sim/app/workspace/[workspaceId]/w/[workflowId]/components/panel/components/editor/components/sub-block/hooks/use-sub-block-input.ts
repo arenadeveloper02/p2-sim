@@ -9,6 +9,15 @@ import { useTagSelection } from '@/hooks/kb/use-tag-selection'
 
 const logger = createLogger('useSubBlockInput')
 
+/** Coerce sub-block store values to a string; objects must not use default toString in inputs. */
+function valueToInputString(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (typeof v === 'object') return ''
+  return (v as { toString?: () => string })?.toString?.() ?? ''
+}
+
 /**
  * Options for the useSubBlockInput hook.
  *
@@ -196,14 +205,14 @@ export function useSubBlockInput(options: UseSubBlockInputOptions): UseSubBlockI
     return storeValue
   }, [isStreaming, localContent, isPreview, previewValue, propValue, storeValue])
 
-  const valueString = useMemo(() => value?.toString?.() ?? '', [value])
+  const valueString = useMemo(() => valueToInputString(value), [value])
 
   const baseValue = isPreview ? previewValue : propValue !== undefined ? propValue : storeValue
 
   // Sync local content with base value when not streaming
   useEffect(() => {
     if (!isStreaming) {
-      const baseValueString = baseValue?.toString?.() ?? ''
+      const baseValueString = valueToInputString(baseValue)
       if (baseValueString !== localContent) {
         setLocalContent(baseValueString)
       }

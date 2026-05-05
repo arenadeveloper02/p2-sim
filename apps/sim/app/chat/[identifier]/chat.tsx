@@ -5,15 +5,22 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
-import { v4 as uuidv4 } from 'uuid'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
+import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
+// import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
+import {
+  deployedChatPromptSentEvent,
+  deployedChatThreadSelectedEvent,
+  deployedNewChatEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { FeedbackView } from '@/app/chat/[identifier]/FeedbackView'
+import LeftNavThread from '@/app/chat/[identifier]/leftNavThread'
 import {
   ChatErrorState,
-  ChatHeader,
   ChatInput,
   ChatLoadingState,
   type ChatMessage,
@@ -21,16 +28,14 @@ import {
   EmailAuth,
   GoldenQueriesModal,
   PasswordAuth,
+  // SSOAuth,
+  UnauthorizedEmailError,
   VoiceInterface,
 } from '@/app/chat/components'
+import { ArenaChatHeader } from '@/app/chat/components/header/arenaHeader'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
-import SSOAuth from '@/ee/sso/components/sso-auth'
-import { useDeployedChatConfig } from '@/hooks/queries/chats'
-import { useGitHubStars } from '@/hooks/queries/github-stars'
-import { useVoiceSettings } from '@/hooks/queries/voice-settings'
-import LeftNavThread from './leftNavThread'
 
 const logger = createLogger('ChatClient')
 
@@ -49,7 +54,6 @@ interface ChatConfig {
   authType?: 'public' | 'password' | 'email' | 'sso'
   outputConfigs?: Array<{ blockId: string; path?: string }>
   inputFormat?: InputFormatField[]
-  /** Workspace IDs the current user can access; when set, "View in Knowledge Base" links are shown for KB refs in that workspace */
   userWorkspaceIds?: string[]
 }
 
@@ -63,21 +67,7 @@ interface ThreadRecord {
 
 interface AudioStreamingOptions {
   voiceId: string
-  chatId?: string
   onError: (error: Error) => void
-}
-
-interface ChatRequestFile {
-  name: string
-  size: number
-  type: string
-  data: string
-}
-
-interface ChatRequestPayload {
-  input: string
-  conversationId: string
-  files?: ChatRequestFile[]
 }
 
 const DEFAULT_VOICE_SETTINGS = {
@@ -100,19 +90,16 @@ function fileToBase64(file: File): Promise<string> {
  * Creates an audio stream handler for text-to-speech conversion
  * @param streamTextToAudio - Function to stream text to audio
  * @param voiceId - The voice ID to use for TTS
- * @param chatId - Optional chat ID for deployed chat authentication
  * @returns Audio stream handler function or undefined
  */
 function createAudioStreamHandler(
   streamTextToAudio: (text: string, options: AudioStreamingOptions) => Promise<void>,
-  voiceId: string,
-  chatId?: string
+  voiceId: string
 ) {
   return async (text: string) => {
     try {
       await streamTextToAudio(text, {
         voiceId,
-        chatId,
         onError: (error: Error) => {
           logger.error('Audio streaming error:', error)
         },
@@ -123,70 +110,89 @@ function createAudioStreamHandler(
   }
 }
 
+function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T {
+  let timeoutId: NodeJS.Timeout | null = null
+  let lastExecTime = 0
+
+  return ((...args: Parameters<T>) => {
+    const currentTime = Date.now()
+
+    if (currentTime - lastExecTime > delay) {
+      func(...args)
+      lastExecTime = currentTime
+    } else {
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(
+        () => {
+          func(...args)
+          lastExecTime = Date.now()
+        },
+        delay - (currentTime - lastExecTime)
+      )
+    }
+  }) as T
+}
+
 export default function ChatClient({ identifier }: { identifier: string }) {
   const router = useRouter()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [chatConfig, setChatConfig] = useState<ChatConfig | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const [conversationId] = useState(() => generateId())
+  const [starCount, setStarCount] = useState('3.4k')
+  const [conversationId, setConversationId] = useState('')
 
   // Left threads state managed here
-  const [currentChatId, setCurrentChatId] = useState<string | null>(identifier)
+  const [currentChatId, setCurrentChatId] = useState<string | null>()
   const [threads, setThreads] = useState<ThreadRecord[]>([])
   const [isThreadsLoading, setIsThreadsLoading] = useState<boolean>(true)
   const [threadsError, setThreadsError] = useState<string | null>(null)
-  const [isHistoryLoading, setIsHistoryLoading] = useState<any>(false)
+  const [isHistoryLoading, setIsHistoryLoading] = useState<any>(true) // Start as true to prevent early modal
   const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
+  const [hasCheckedHistory, setHasCheckedHistory] = useState<boolean>(false)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [userHasScrolled, setUserHasScrolled] = useState(false)
   const isUserScrollingRef = useRef(false)
 
+  const [authRequired, setAuthRequired] = useState<'password' | 'email' | 'sso' | null>(null)
   const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState<boolean>(false)
 
   // Start Block input modal state
   const [isInputModalOpen, setIsInputModalOpen] = useState(false)
   const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
   const hasShownModalRef = useRef<boolean>(false)
+  const hasNonWelcomeMessages = useMemo(
+    () => messages.some((message) => !message.isInitialMessage),
+    [messages]
+  )
 
   const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
-  const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
-  const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
-  const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
-  const [askInChatText, setAskInChatText] = useState('')
-
-  const { data: chatConfigResult, error: chatConfigError } = useDeployedChatConfig(identifier)
-  const { data: voiceSettings } = useVoiceSettings()
-  const { data: starCount } = useGitHubStars()
-
-  const sttAvailable = voiceSettings?.sttAvailable === true
-  const authRequired = chatConfigResult?.kind === 'auth' ? chatConfigResult.authType : null
-  const chatConfig = chatConfigResult?.kind === 'config' ? chatConfigResult.config : null
-
-  const welcomeMessage = chatConfig?.customizations?.welcomeMessage
-  const welcomeChatMessage = useMemo<ChatMessage | null>(
-    () =>
-      welcomeMessage
-        ? {
-            id: 'welcome',
-            content: welcomeMessage,
-            type: 'assistant',
-            timestamp: new Date(),
-            isInitialMessage: true,
-          }
-        : null,
-    [welcomeMessage]
-  )
-  const displayMessages: ChatMessage[] = welcomeChatMessage
-    ? [welcomeChatMessage, ...messages]
-    : messages
-
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
   const audioContextRef = useRef<AudioContext | null>(null)
   const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
+
+  const [chatDepartment, setChatDepartment] = useState<string | null>('Default')
+
+  // Feedback view state
+  const [showFeedbackView, setShowFeedbackView] = useState(false)
+  const [feedbackData, setFeedbackData] = useState<any[]>([])
+  const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const [feedbackPage, setFeedbackPage] = useState(1)
+  const [feedbackPageSize] = useState(10)
+  const [feedbackTotalPages, setFeedbackTotalPages] = useState(1)
+  const [feedbackTotalCount, setFeedbackTotalCount] = useState(0)
+  const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
+  const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
+  const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
+  const [askInChatText, setAskInChatText] = useState('')
+  const [userName, setUserName] = useState<string | null>(null)
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -201,6 +207,16 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     )
     setGoldenQueries(normalized)
   }, [chatConfig?.customizations?.goldenQueries])
+
+  const {
+    effectiveGeneratedImages,
+    selectedGeneratedImageIds,
+    selectedGeneratedImageIdsKey,
+    toggleGeneratedImageSelection,
+    removeSelectedGeneratedImage,
+    clearSelectedGeneratedImages,
+    materializeSelectedGeneratedImages,
+  } = useGeneratedImageReuse(messages)
 
   const scrollToMessage = useCallback(
     (messageId: string, scrollToShowOnlyMessage = false) => {
@@ -230,8 +246,22 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [messagesContainerRef]
   )
 
-  const isStreamingResponseRef = useRef(isStreamingResponse)
-  isStreamingResponseRef.current = isStreamingResponse
+  const handleScroll = useCallback(
+    throttle(() => {
+      const container = messagesContainerRef.current
+      if (!container) return
+
+      const { scrollTop, scrollHeight, clientHeight } = container
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+      setShowScrollButton(distanceFromBottom > 100)
+
+      // Track if user is manually scrolling during streaming
+      if (isStreamingResponse && !isUserScrollingRef.current) {
+        setUserHasScrolled(true)
+      }
+    }, 100),
+    [isStreamingResponse]
+  )
 
   // Fetch history messages
   useEffect(() => {
@@ -240,7 +270,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     const fetchHistory = async (workflowId: string, chatId: string | null) => {
       // Only fetch history if we have a chatId
       if (!chatId) {
+        // No chatId means no history - can show modal
+        hasShownModalRef.current = false
         setIsHistoryLoading(false)
+        setHasCheckedHistory(true)
         return
       }
 
@@ -250,98 +283,126 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         if (response.ok) {
           const data = await response.json()
 
+          // Check if there's any chat history in the API response
           if (data?.logs?.length === 0) {
+            // No history found - mark that we can show modal after loading completes
+            hasShownModalRef.current = false
             setIsHistoryLoading(false)
+            setHasCheckedHistory(true)
           } else {
-            // Flatten and process logs as before
+            // History exists - load messages and prevent modal from showing
+            const initialMessages: ChatMessage[] = []
+
+            // Add personalized greeting if user name is available
+            if (userName) {
+              initialMessages.push({
+                id: 'greeting',
+                content: `Hi ${userName}, welcome to the chat!`,
+                type: 'assistant',
+                timestamp: new Date(),
+                isInitialMessage: true,
+              })
+            }
+
+            // Add welcome message if it exists
+            if (chatConfig?.customizations?.welcomeMessage) {
+              initialMessages.push({
+                id: 'welcome',
+                content: chatConfig.customizations.welcomeMessage,
+                type: 'assistant',
+                isInitialMessage: true,
+                timestamp: new Date(),
+              })
+            }
+
             setMessages([
-              ...(chatConfig?.customizations?.welcomeMessage
-                ? [
-                    {
-                      id: 'welcome',
-                      content: chatConfig.customizations.welcomeMessage,
-                      type: 'assistant',
-                      isInitialMessage: true,
-                      timestamp: new Date(),
-                    },
-                  ]
-                : []),
+              ...initialMessages,
               ...data.logs.flatMap((log: any) => {
                 const messages = []
-                if (log.userInput) {
+                if (
+                  log.userInput ||
+                  (Array.isArray(log.attachments) && log.attachments.length > 0)
+                ) {
                   messages.push({
                     id: `${log.id}-user`,
-                    content: log.userInput,
+                    content: log.userInput || '',
                     type: 'user',
                     timestamp: new Date(log.startedAt),
+                    attachments: Array.isArray(log.attachments) ? log.attachments : undefined,
                   })
                 }
-                if (log.modelOutput) {
+                if (
+                  log.modelOutput ||
+                  (Array.isArray(log.generatedImages) && log.generatedImages.length > 0)
+                ) {
                   messages.push({
                     id: `${log.id}-assistant`,
-                    content: log.modelOutput,
+                    content: log.modelOutput || '',
                     type: 'assistant',
                     timestamp: new Date(log.endedAt || log.startedAt),
                     isStreaming: false,
                     executionId: log?.executionId || '',
                     liked: log.liked,
+                    generatedImages: Array.isArray(log.generatedImages)
+                      ? log.generatedImages
+                      : undefined,
                     knowledgeRefs: Array.isArray(log.knowledgeRefs) ? log.knowledgeRefs : undefined,
                   })
                 }
                 return messages
               }),
             ])
-            // Reset modal ref when messages are loaded
-            hasShownModalRef.current = false
+            // History exists - mark modal as shown so it won't appear
+            hasShownModalRef.current = true
             setTimeout(() => {
               setTimeout(() => {
                 scrollToBottom()
               }, 100)
             }, 500)
             setIsHistoryLoading(false)
+            setHasCheckedHistory(true)
           }
         } else {
-          // If history fetch fails (404, etc.), treat as no history to show input form
+          // If history fetch fails (404, etc.), treat as no history - can show modal
           logger.warn(`History fetch failed with status ${response.status}, treating as no history`)
+          hasShownModalRef.current = false
           setIsHistoryLoading(false)
+          setHasCheckedHistory(true)
         }
       } catch (error) {
-        // If history fetch errors, treat as no history to show input form
+        // If history fetch errors, treat as no history - can show modal
         logger.error('Error fetching history, treating as no history:', error)
+        hasShownModalRef.current = false
         setIsHistoryLoading(false)
+        setHasCheckedHistory(true)
       }
     }
 
     if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
       fetchHistory(workflowId, currentChatId)
     } else if (workflowId && Object.keys(chatConfig || {}).length > 0 && !currentChatId) {
-      // Chat config loaded but no chatId yet - mark as no history to show input form
+      // Chat config loaded but no chatId yet - no history, can show modal
+      hasShownModalRef.current = false
       setIsHistoryLoading(false)
+      setHasCheckedHistory(true)
     }
-  }, [identifier, chatConfig, currentChatId])
+  }, [identifier, chatConfig, currentChatId, historyRefreshKey])
 
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
 
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-      setShowScrollButton(distanceFromBottom > 100)
-
-      if (isStreamingResponseRef.current && !isUserScrollingRef.current) {
-        setUserHasScrolled(true)
-      }
-    }
-
     container.addEventListener('scroll', handleScroll, { passive: true })
     return () => container.removeEventListener('scroll', handleScroll)
-  }, [chatConfig, isVoiceFirstMode, authRequired])
+  }, [handleScroll])
 
+  // Reset user scroll tracking when streaming starts
   useEffect(() => {
     if (isStreamingResponse) {
+      // Reset userHasScrolled when streaming starts
       setUserHasScrolled(false)
 
+      // Give a small delay to distinguish between programmatic scroll and user scroll
       isUserScrollingRef.current = true
       setTimeout(() => {
         isUserScrollingRef.current = false
@@ -396,19 +457,26 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             }
           }
 
-          // If user email is not authorized, show error and redirect
+          if (errorData.error === 'auth_required_password') {
+            setAuthRequired('password')
+            return
+          }
+
+          // Skip email auth screen; rely on server to auto-auth or deny
+          if (errorData.error === 'auth_required_email') {
+            setError('You do not have access to this chat')
+            return
+          }
+
+          // If user email is not authorized, show error
           if (
+            errorData.error === 'Email is not authorized for this chat' ||
             errorData.error === 'Email not authorized' ||
             errorData.message === 'Email not authorized' ||
             errorData.error === 'You do not have access to this chat' ||
             errorData.message === 'You do not have access to this chat'
           ) {
-            // Redirect after 3 seconds
-            setTimeout(() => {
-              if (typeof window !== 'undefined') {
-                window.history.back()
-              }
-            }, 3000)
+            setError('You do not have access to this chat')
             return
           }
         }
@@ -416,13 +484,46 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         throw new Error(`Failed to load chat configuration: ${response.status}`)
       }
 
+      // Reset auth required state when authentication is successful
+      setAuthRequired(null)
+
       const data = await response.json()
 
+      setChatConfig(data)
+      if (data?.department) {
+        setChatDepartment(data.department)
+      }
+
       if (data?.customizations?.welcomeMessage) {
+        const messages: ChatMessage[] = []
+
+        // Add personalized greeting if user name is available
+        if (userName) {
+          messages.push({
+            id: 'greeting',
+            content: `Hi ${userName}, welcome to the chat!`,
+            type: 'assistant',
+            timestamp: new Date(),
+            isInitialMessage: true,
+          })
+        }
+
+        // Add welcome message
+        messages.push({
+          id: 'welcome',
+          content: data.customizations.welcomeMessage,
+          type: 'assistant',
+          timestamp: new Date(),
+          isInitialMessage: true,
+        })
+
+        setMessages(messages)
+      } else if (userName) {
+        // If no welcome message but we have user name, still show greeting
         setMessages([
           {
-            id: 'welcome',
-            content: data.customizations.welcomeMessage,
+            id: 'greeting',
+            content: `Hi ${userName}, welcome to the chat!`,
             type: 'assistant',
             timestamp: new Date(),
             isInitialMessage: true,
@@ -430,22 +531,84 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         ])
       }
 
-      // Check if we should show modal on load (no messages and has inputFormat)
-      if (data.inputFormat && Array.isArray(data.inputFormat) && data.inputFormat.length > 0) {
-        const customFields = getCustomInputFields(data.inputFormat)
-
-        if (customFields.length > 0 && messages.length === 0 && !hasShownModalRef.current) {
-          hasShownModalRef.current = true
-          setIsInputModalOpen(true)
-        }
-      }
+      // Don't show modal here - let the useEffect handle it after history check completes
+      // This ensures modal only shows when there's no chat history
     } catch (error) {
       logger.error('Error fetching chat config:', error)
+      setError('This chat is currently unavailable. Please try again later.')
     }
   }
 
+  // Fetch user session to get name for personalized greeting
+  useEffect(() => {
+    const fetchUserSession = async () => {
+      try {
+        const sessionRes = await client.getSession()
+        const name = sessionRes?.data?.user?.name || sessionRes?.data?.user?.email || null
+        setUserName(name)
+      } catch (error) {
+        logger.debug('Could not fetch user session for greeting:', error)
+        // Continue without user name - greeting will show without name
+      }
+    }
+    fetchUserSession()
+  }, [])
+
+  // Update messages to include greeting when userName becomes available
+  useEffect(() => {
+    if (!userName || !chatConfig) return
+
+    setMessages((prev) => {
+      // Check if greeting already exists
+      const hasGreeting = prev.some((msg) => msg.id === 'greeting')
+      if (hasGreeting) return prev
+
+      // Check if welcome message exists
+      const welcomeMessage = prev.find((msg) => msg.id === 'welcome')
+      const otherMessages = prev.filter((msg) => msg.id !== 'welcome' && msg.id !== 'greeting')
+
+      // Build new messages array with greeting before welcome
+      const newMessages: ChatMessage[] = [
+        {
+          id: 'greeting',
+          content: `Hi ${userName}, welcome to the chat!`,
+          type: 'assistant',
+          timestamp: new Date(),
+          isInitialMessage: true,
+        },
+      ]
+
+      // Add welcome message if it exists
+      if (welcomeMessage) {
+        newMessages.push(welcomeMessage)
+      } else if (chatConfig?.customizations?.welcomeMessage) {
+        // Add welcome message if it exists in config but not in messages yet
+        newMessages.push({
+          id: 'welcome',
+          content: chatConfig.customizations.welcomeMessage,
+          type: 'assistant',
+          timestamp: new Date(),
+          isInitialMessage: true,
+        })
+      }
+
+      // Add other messages
+      return [...newMessages, ...otherMessages]
+    })
+  }, [userName, chatConfig])
+
+  // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
     fetchChatConfig()
+    setConversationId(generateId())
+
+    // getFormattedGitHubStars()
+    //   .then((formattedStars) => {
+    //     setStarCount(formattedStars)
+    //   })
+    //   .catch((err) => {
+    //     logger.error('Failed to fetch GitHub stars:', err)
+    //   })
   }, [identifier])
 
   const refreshChat = () => {
@@ -453,11 +616,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }
 
   const handleAuthSuccess = () => {
+    setAuthRequired(null)
     setTimeout(() => {
       refreshChat()
     }, 800)
   }
 
+  // Handle sending a message
   const handleSendMessage = async (
     messageParam?: string,
     isVoiceInput = false,
@@ -474,59 +639,81 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   ) => {
     const messageToSend = messageParam ?? inputValue
     // Allow execution if forceExecution is true (form submission) or if there's input/files
-    if ((!messageToSend.trim() && (!files || files.length === 0) && !forceExecution) || isLoading)
+    if (
+      (!messageToSend.trim() &&
+        (!files || files.length === 0) &&
+        effectiveGeneratedImages.length === 0 &&
+        !forceExecution) ||
+      isLoading
+    )
       return
 
     logger.info('Sending message:', {
       messageToSend,
       isVoiceInput,
       conversationId,
-      filesCount: files?.length,
+      filesCount: (files?.length ?? 0) + effectiveGeneratedImages.length,
     })
 
+    // Reset userHasScrolled when sending a new message
     setUserHasScrolled(false)
 
     let userMessageId: string | null = null
-    const userMessage: ChatMessage = {
-      id: generateId(),
-      content: messageToSend || (files && files.length > 0 ? `Sent ${files.length} file(s)` : ''),
-      type: 'user',
-      timestamp: new Date(),
-      attachments: files?.map((file) => ({
-        id: file.id,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl: file.dataUrl || '',
-      })),
-    }
-    userMessageId = userMessage.id
-
-    // Add the user's message to the chat
-    setMessages((prev) => [...prev, userMessage])
-    setInputValue('')
-    setIsLoading(true)
-
-    // Scroll to show only the user's message and loading indicator (if message exists)
-    if (userMessageId) {
-      setTimeout(() => {
-        scrollToMessage(userMessageId!, true)
-      }, 100)
-    }
-
+    // Create abort controller for request cancellation
     const abortController = new AbortController()
     const timeoutId = setTimeout(() => {
       abortController.abort()
     }, CHAT_REQUEST_TIMEOUT_MS)
 
     try {
+      const selectedImageFiles = await materializeSelectedGeneratedImages()
+      const combinedFiles = [
+        ...(files ?? []),
+        ...selectedImageFiles.map((image) => ({
+          id: image.id,
+          name: image.name,
+          size: image.size,
+          type: image.type,
+          file: image.file,
+          dataUrl: image.dataUrl,
+        })),
+      ]
+
+      if (messageToSend.trim() || combinedFiles.length > 0) {
+        const userMessage: ChatMessage = {
+          id: generateId(),
+          content: messageToSend,
+          type: 'user',
+          timestamp: new Date(),
+          attachments: combinedFiles.map((file) => ({
+            id: file.id,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataUrl: file.dataUrl || '',
+          })),
+        }
+        userMessageId = userMessage.id
+        setMessages((prev) => [...prev, userMessage])
+      }
+
+      setInputValue('')
+      clearSelectedGeneratedImages()
+      setIsLoading(true)
+
+      if (userMessageId) {
+        setTimeout(() => {
+          scrollToMessage(userMessageId!, true)
+        }, 100)
+      }
+
       // Build complete workflow input with all Start Block fields
       // Use messageToSend directly (may be empty if form was submitted)
       // Pass overrideValues if provided (e.g., from form submission)
       const completeInput = buildCompleteWorkflowInput(
         messageToSend,
         conversationId,
-        files,
+        combinedFiles,
         overrideValues
       )
 
@@ -540,23 +727,20 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         }
       }
 
-      logger.debug('Building payload with Start Block inputs:', {
-        hasCustomFields: customFields.length > 0,
-        startBlockInputsKeys: Object.keys(startBlockInputsPayload),
-        completeInputKeys: Object.keys(completeInput),
-      })
-
       const payload: any = {
         input: completeInput.input,
-        conversationId: completeInput.conversationId,
+        //conversationId: completeInput.conversationId,
+        conversationId: currentChatId,
+        chatId: currentChatId,
         // Always include startBlockInputs if there are any custom fields in inputFormat
         // This ensures all Start Block fields are passed to execution, even if empty
         startBlockInputs: customFields.length > 0 ? startBlockInputsPayload : undefined,
       }
 
-      if (files && files.length > 0) {
+      // Add files if present (convert to base64 for JSON transmission)
+      if (combinedFiles.length > 0) {
         payload.files = await Promise.all(
-          files.map(async (file) => ({
+          combinedFiles.map(async (file) => ({
             name: file.name,
             size: file.size,
             type: file.type,
@@ -595,13 +779,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         throw new Error('Response body is missing')
       }
 
+      // Use the streaming hook with audio support
       const shouldPlayAudio = isVoiceInput || isVoiceFirstMode
       const audioHandler = shouldPlayAudio
-        ? createAudioStreamHandler(
-            streamTextToAudio,
-            DEFAULT_VOICE_SETTINGS.voiceId,
-            chatConfig?.id
-          )
+        ? createAudioStreamHandler(streamTextToAudio, DEFAULT_VOICE_SETTINGS.voiceId)
         : undefined
 
       logger.info('Starting to handle streamed response:', { shouldPlayAudio })
@@ -623,10 +804,17 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           outputConfigs: chatConfig?.outputConfigs,
         }
       )
-    } catch (error) {
+      deployedChatPromptSentEvent({
+        'Prompt Content': messageToSend,
+        'Prompt Type': isVoiceInput ? `Voice` : `Text`,
+        'Conversation ID': conversationId,
+        'Attachment Used': combinedFiles.length > 0 ? 'True' : 'False',
+      })
+    } catch (error: any) {
+      // Clear timeout in case of error
       clearTimeout(timeoutId)
 
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error.name === 'AbortError') {
         logger.info('Request aborted by user or timeout')
         setIsLoading(false)
         return
@@ -695,6 +883,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [identifier]
   )
 
+  // Stop audio when component unmounts or when streaming is stopped
   useEffect(() => {
     return () => {
       stopAudio()
@@ -704,24 +893,28 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }, [stopAudio])
 
+  // Voice interruption - stop audio when user starts speaking
   const handleVoiceInterruption = useCallback(() => {
     stopAudio()
 
+    // Stop any ongoing streaming response
     if (isStreamingResponse) {
       stopStreaming(setMessages)
     }
   }, [isStreamingResponse, stopStreaming, setMessages, stopAudio])
 
+  // Handle voice mode activation
   const handleVoiceStart = useCallback(() => {
-    if (!sttAvailable) return
     setIsVoiceFirstMode(true)
-  }, [sttAvailable])
+  }, [])
 
+  // Handle exiting voice mode
   const handleExitVoiceMode = useCallback(() => {
     setIsVoiceFirstMode(false)
-    stopAudio()
+    stopAudio() // Stop any playing audio when exiting
   }, [stopAudio])
 
+  // Handle voice transcript from voice-first interface
   const handleVoiceTranscript = useCallback(
     (transcript: string) => {
       logger.info('Received voice transcript:', transcript)
@@ -738,6 +931,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   /**
    * Builds complete workflow input with all Start Block fields (including reserved ones)
    * Ensures all fields from inputFormat are present, with empty values when not provided
+   *
+   * Priority order:
+   * 1. overrideValues (when form is submitted) - highest priority, used when form is just submitted
+   * 2. field.value (persisted from Start Block inputFormat) - persisted values from workflow config
+   * 3. empty string (when user types in chat input) - default, don't use old form values
+   *
+   * Note: startBlockInputs is only used to populate the modal form, not for building workflow input.
+   * When user types in chat input (not using form), we should NOT use old form values.
    */
   const buildCompleteWorkflowInput = useCallback(
     (
@@ -757,18 +958,19 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const completeInput: Record<string, unknown> = {}
 
       // Read values from Start Block inputFormat field values (field.value)
-      // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
       for (const field of normalizedFields) {
         const fieldName = field.name?.trim()
         if (fieldName) {
           if (overrideValues && fieldName in overrideValues) {
+            // Highest priority: overrideValues from form submission
             completeInput[fieldName] = overrideValues[fieldName] ?? ''
           } else if (field.value !== undefined && field.value !== null) {
-            // Use the value from Start Block inputFormat field (persisted value)
+            // Second priority: persisted value from Start Block inputFormat
             completeInput[fieldName] = field.value
           } else {
-            // Fallback to state or empty string
-            completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
+            // Default: empty string (when user types in chat input, don't use old form values)
+            // startBlockInputs is only for modal form state, not for workflow execution
+            completeInput[fieldName] = ''
           }
         }
       }
@@ -784,7 +986,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       return completeInput
     },
-    [chatConfig?.inputFormat, startBlockInputs]
+    [chatConfig?.inputFormat]
   )
 
   /**
@@ -796,6 +998,20 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       // Store the form values in local state
       setStartBlockInputs(values)
       setIsInputModalOpen(false)
+
+      // Add a system message summarizing received inputs
+      const formattedInputs = Object.entries(values)
+        .map(([key, value]) => `${key}: ${value ?? ''}`)
+        .join(', ')
+
+      const inputMessage: ChatMessage = {
+        id: generateId(),
+        content: `Inputs received: ${formattedInputs}`,
+        type: 'assistant',
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => [...prev, inputMessage])
 
       // Build complete workflow input with all Start Block fields
       // Pass empty string for input (user submitted form, not typed message)
@@ -819,6 +1035,48 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Handle Re-run button click
   const handleRerun = useCallback(() => {
     setIsInputModalOpen(true)
+  }, [])
+
+  // Show modal on load only if no chat history exists (after history check completes)
+  useEffect(() => {
+    // Only check after history check is complete (both loading done and hasCheckedHistory is true)
+    if (isHistoryLoading || !hasCheckedHistory) return
+
+    // Only show modal if:
+    // 1. Chat config is loaded
+    // 2. Has inputFormat with custom fields
+    // 3. No history was found (hasShownModalRef.current is false) - this means no chat history exists
+    // 4. No non-welcome messages exist (welcome message alone should not block the modal)
+    // 5. Modal hasn't been shown yet
+    if (
+      chatConfig?.inputFormat &&
+      Array.isArray(chatConfig.inputFormat) &&
+      chatConfig.inputFormat.length > 0 &&
+      !hasNonWelcomeMessages &&
+      !hasShownModalRef.current
+    ) {
+      const customFields = getCustomInputFields(chatConfig.inputFormat)
+      const hasNoHistory = !hasNonWelcomeMessages && !hasShownModalRef.current
+
+      if (customFields.length > 0 && hasNoHistory) {
+        hasShownModalRef.current = true
+        setIsInputModalOpen(true)
+      }
+    }
+  }, [isHistoryLoading, hasCheckedHistory, chatConfig, hasNonWelcomeMessages])
+
+  // Reset modal ref when messages are added (user sends a message)
+  useEffect(() => {
+    if (messages.length > 0) {
+      hasShownModalRef.current = false
+    }
+  }, [messages.length])
+
+  // Get chatId from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const chatId = params.get('chatId')
+    setCurrentChatId(chatId)
   }, [])
 
   const fetchThreads = useCallback(
@@ -854,7 +1112,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               router.push(newUrl)
             } else {
               // No threads exist yet: generate a new UUID chatId for a fresh chat
-              const newId = uuidv4()
+              const newId = generateId()
               setCurrentChatId(newId)
               params.set('chatId', newId)
               const newUrl = `/chat/${workflowId}?${params.toString()}`
@@ -863,7 +1121,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           }
         }
       } catch (err) {
-        console.error('Error fetching threads:', err)
+        logger.error('Error fetching threads:', err)
         setThreadsError(err instanceof Error ? err.message : 'Failed to fetch threads')
         setThreads([])
       } finally {
@@ -906,26 +1164,71 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const handleSelectThread = useCallback(
     (chatId: string) => {
       if (currentChatId === chatId) return
+      setShowFeedbackView(false)
+      setFeedbackError(null)
       setShowScrollButton(false)
       setCurrentChatId(chatId)
-      // Clear messages except welcome
+      // Clear messages except greeting and welcome (initial messages)
       setMessages((prev) => {
-        const welcome = prev.find((m) => (m as any).isInitialMessage)
-        return welcome ? [welcome] : []
+        const initialMessages = prev.filter((m) => (m as any).isInitialMessage)
+        return initialMessages.length > 0 ? initialMessages : []
       })
       updateUrlChatId(chatId)
+
+      deployedChatThreadSelectedEvent({
+        Department: chatDepartment,
+        'Agent Name': chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat',
+        'Agent ID': identifier,
+        'Conversation(chat) ID': chatId,
+      })
     },
-    [currentChatId]
+    [currentChatId, chatConfig?.customizations?.headerText, chatConfig?.title, chatDepartment]
   )
 
+  const handleRefreshThread = useCallback(() => {
+    if (!currentChatId) return
+    setShowFeedbackView(false)
+    setFeedbackError(null)
+    setIsHistoryLoading(true)
+    setHasCheckedHistory(false)
+    setHistoryRefreshKey((prev) => prev + 1)
+  }, [currentChatId])
+
   const handleNewChat = useCallback(() => {
+    setShowFeedbackView(false)
+    setFeedbackError(null)
     setShowScrollButton(false)
-    const id = uuidv4()
+    const id = generateId()
     setCurrentChatId(id)
-    // Clear messages except welcome
+    // Clear messages except initial messages (greeting + welcome)
     setMessages((prev) => {
-      const welcome = prev.find((m) => (m as any).isInitialMessage)
-      return welcome ? [welcome] : []
+      const initialMessages = prev.filter((m) => (m as any).isInitialMessage)
+      // If no initial messages exist but we have chatConfig, ensure they're added
+      if (initialMessages.length === 0 && chatConfig) {
+        const newInitialMessages: ChatMessage[] = []
+        // Add greeting if user name is available
+        if (userName) {
+          newInitialMessages.push({
+            id: 'greeting',
+            content: `Hi ${userName}, welcome to the chat!`,
+            type: 'assistant',
+            timestamp: new Date(),
+            isInitialMessage: true,
+          })
+        }
+        // Add welcome message if it exists
+        if (chatConfig?.customizations?.welcomeMessage) {
+          newInitialMessages.push({
+            id: 'welcome',
+            content: chatConfig.customizations.welcomeMessage,
+            type: 'assistant',
+            timestamp: new Date(),
+            isInitialMessage: true,
+          })
+        }
+        return newInitialMessages
+      }
+      return initialMessages
     })
     updateUrlChatId(id)
     // Clear form input values for new chat
@@ -935,10 +1238,95 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     if (hasCustomFields) {
       setIsInputModalOpen(true)
     }
-  }, [updateUrlChatId, chatConfig?.inputFormat])
+
+    deployedNewChatEvent({
+      Department: chatDepartment,
+      'Agent Name': chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat',
+      'Agent ID': identifier,
+      'Conversation(chat) ID': id,
+    })
+  }, [updateUrlChatId, chatConfig, userName, chatDepartment, identifier])
+
+  const fetchFeedbackPage = useCallback(
+    async (page: number) => {
+      if (!identifier) {
+        logger.error('No workflow ID available for feedback')
+        return
+      }
+
+      setIsFeedbackLoading(true)
+      setFeedbackError(null)
+
+      try {
+        const url = `/api/chat/feedback/workflow/${identifier}?pageSize=${feedbackPageSize}&page=${page}`
+
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          logger.warn('Feedback request failed', {
+            status: response.status,
+            body: errorText,
+          })
+          throw new Error(`Failed to fetch feedback: ${response.status} ${errorText}`)
+        }
+
+        const data = await response.json()
+
+        let feedbackItems: any[] = []
+
+        if (Array.isArray(data)) {
+          feedbackItems = data
+        } else if (data.feedback && Array.isArray(data.feedback)) {
+          feedbackItems = data.feedback
+        } else if (data.data && Array.isArray(data.data)) {
+          feedbackItems = data.data
+        } else if (data.items && Array.isArray(data.items)) {
+          feedbackItems = data.items
+        } else if (data.content && Array.isArray(data.content)) {
+          feedbackItems = data.content
+        } else if (typeof data === 'object' && Object.keys(data).length > 0) {
+          feedbackItems = [data]
+        }
+
+        const pagination = data?.pagination
+        const totalCount = pagination?.totalCount ?? feedbackItems.length
+        const totalPages =
+          pagination?.totalPages ?? Math.max(1, Math.ceil(totalCount / feedbackPageSize))
+
+        logger.info('Fetched feedback items:', { count: feedbackItems.length })
+        setFeedbackData(feedbackItems)
+        setFeedbackPage(page)
+        setFeedbackTotalCount(totalCount)
+        setFeedbackTotalPages(totalPages)
+      } catch (err: any) {
+        logger.error('Error fetching feedback:', err)
+        setFeedbackError('Some thing went wrong while fetching feed back')
+      } finally {
+        setIsFeedbackLoading(false)
+      }
+    },
+    [identifier, feedbackPageSize]
+  )
+
+  const handleViewFeedback = useCallback(() => {
+    setShowFeedbackView(true)
+    setFeedbackPage(1)
+    fetchFeedbackPage(1)
+  }, [fetchFeedbackPage])
 
   const handleViewGoldenQueries = useCallback(() => {
     setIsGoldenQueriesOpen(true)
+  }, [])
+
+  const handleBackFromFeedback = useCallback(() => {
+    setShowFeedbackView(false)
+    setFeedbackError(null)
   }, [])
 
   if (isAutoLoginInProgress) {
@@ -950,11 +1338,18 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }
 
   // If error, show error message using the extracted component
-  if (chatConfigError) {
-    logger.error('Error fetching chat config:', chatConfigError)
-    return <ChatErrorState error={CHAT_ERROR_MESSAGES.CHAT_UNAVAILABLE} />
+  if (error) {
+    // Show specialized component for unauthorized email errors
+    if (
+      error === 'Email is not authorized for this chat' ||
+      error === 'You do not have access to this chat'
+    ) {
+      return <UnauthorizedEmailError message={error} />
+    }
+    return <ChatErrorState error={error} />
   }
 
+  // If authentication is required, use the extracted components
   if (authRequired) {
     if (authRequired === 'password') {
       return <PasswordAuth identifier={identifier} />
@@ -962,15 +1357,17 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     if (authRequired === 'email') {
       return <EmailAuth identifier={identifier} />
     }
-    if (authRequired === 'sso') {
-      return <SSOAuth identifier={identifier} />
-    }
+    // if (authRequired === 'sso') {
+    //   return <SSOAuth identifier={identifier} />
+    // }
   }
 
+  // Loading state while fetching config using the extracted component
   if (!chatConfig) {
     return <ChatLoadingState />
   }
 
+  // Voice-first mode interface
   if (isVoiceFirstMode) {
     return (
       <VoiceInterface
@@ -982,8 +1379,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         isStreaming={isStreamingResponse}
         isPlayingAudio={isPlayingAudio}
         audioContextRef={audioContextRef}
-        chatId={chatConfig?.id}
-        messages={displayMessages.map((msg) => ({
+        messages={messages.map((msg) => ({
           content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
           type: msg.type,
         }))}
@@ -991,15 +1387,21 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     )
   }
 
+  // Standard text-based chat interface
   return (
-    <div className='fixed inset-0 z-[100] flex flex-col text-[var(--landing-text)] dark:bg-[var(--landing-bg)]'>
+    <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
       {isHistoryLoading && (
-        <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
+        <div className='absolute top-[72px] left-[330px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-350px)] items-center justify-center bg-white/60 pb-[6%]'>
           <LoadingAgentP2 size='lg' />
         </div>
       )}
+
       {/* Header component */}
-      <ChatHeader chatConfig={chatConfig} starCount={starCount} />
+      <ArenaChatHeader
+        chatConfig={chatConfig}
+        starCount={starCount}
+        showFeedbackView={showFeedbackView}
+      />
 
       <LeftNavThread
         threads={threads}
@@ -1007,45 +1409,84 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         error={threadsError || null}
         currentChatId={currentChatId || ''}
         onSelectThread={handleSelectThread}
+        onRefreshThread={handleRefreshThread}
         onNewChat={handleNewChat}
         isStreaming={isStreamingResponse || isLoading}
+        workflowId={identifier}
         showReRun={customFields.length > 0}
+        showFeedbackView={showFeedbackView}
         onReRun={handleRerun}
+        onViewFeedback={handleViewFeedback}
         onViewGoldenQueries={handleViewGoldenQueries}
       />
 
-      {/* Message Container component */}
-      <ChatMessageContainer
-        messages={displayMessages}
-        isLoading={isLoading}
-        isStreaming={isStreamingResponse}
-        showScrollButton={showScrollButton}
-        messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
-        messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-        scrollToBottom={scrollToBottom}
-        scrollToMessage={scrollToMessage}
-        chatConfig={chatConfig}
-        workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
-        onAskInChat={(text) => setAskInChatText(text)}
-        onWelcomeQueryClick={handleWelcomeQueryClick}
-      />
-
-      {/* Input area (free-standing at the bottom) */}
-      <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
-        <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-          <ChatInput
-            onSubmit={(value, isVoiceInput, files) => {
-              void handleSendMessage(value, isVoiceInput, files)
-            }}
-            isStreaming={isStreamingResponse}
-            onStopStreaming={() => stopStreaming(setMessages)}
-            onVoiceStart={handleVoiceStart}
-            insertText={askInChatText}
-            onInsertConsumed={() => setAskInChatText('')}
-            sttAvailable={sttAvailable}
+      {showFeedbackView ? (
+        <div className='absolute inset-0 top-[86px] left-[320px]'>
+          <FeedbackView
+            feedbackData={feedbackData}
+            isLoading={isFeedbackLoading}
+            error={feedbackError}
+            workflowTitle={chatConfig?.title}
+            page={feedbackPage}
+            pageSize={feedbackPageSize}
+            totalPages={feedbackTotalPages}
+            totalCount={feedbackTotalCount}
+            onPageChange={fetchFeedbackPage}
+            onBack={handleBackFromFeedback}
           />
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Message Container component */}
+          <ChatMessageContainer
+            messages={messages}
+            isLoading={isLoading}
+            isStreaming={isStreamingResponse}
+            showScrollButton={showScrollButton}
+            messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
+            messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
+            scrollToBottom={scrollToBottom}
+            scrollToMessage={scrollToMessage}
+            chatConfig={chatConfig}
+            setMessages={setMessages}
+            workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
+            onAskInChat={(text) => setAskInChatText(text)}
+            onToggleGeneratedImage={toggleGeneratedImageSelection}
+            selectedGeneratedImageIds={selectedGeneratedImageIds}
+            selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+            onWelcomeQueryClick={handleWelcomeQueryClick}
+          />
+
+          {/* Input area (free-standing at the bottom) */}
+          <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
+            <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
+              <ChatInput
+                insertText={askInChatText}
+                onInsertConsumed={() => setAskInChatText('')}
+                onSubmit={(
+                  value: string,
+                  isVoiceInput?: boolean,
+                  files?: Array<{
+                    id: string
+                    name: string
+                    size: number
+                    type: string
+                    file: File
+                    dataUrl?: string
+                  }>
+                ) => {
+                  void handleSendMessage(value, isVoiceInput, files)
+                }}
+                isStreaming={isLoading || isStreamingResponse}
+                onStopStreaming={() => stopStreaming(setMessages)}
+                onVoiceStart={handleVoiceStart}
+                selectedGeneratedImages={effectiveGeneratedImages}
+                onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Start Block Input Modal */}
       {customFields.length > 0 && (

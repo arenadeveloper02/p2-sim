@@ -2,22 +2,13 @@
 
 import * as React from 'react'
 import axios from 'axios'
-import { Check, ChevronsUpDown } from 'lucide-react'
-import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
-import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
+import { arenaSiblingSubBlockStoreKey } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
@@ -29,6 +20,10 @@ interface Task {
   projectId?: string
   taskNumber?: string
   archived?: boolean
+}
+
+function taskKey(task: Task): string {
+  return task.sysId || task.id
 }
 
 interface ArenaTaskAndSubtaskSelectorProps {
@@ -51,16 +46,19 @@ export function ArenaTaskAndSubtaskSelector({
   disabled = false,
 }: ArenaTaskAndSubtaskSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
+  const prevClientIdRef = React.useRef<string | undefined>(undefined)
+  const prevProjectIdRef = React.useRef<string | undefined>(undefined)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
 
-  // Get client and project for comments operation
-  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client'] as
+  const clientKey = arenaSiblingSubBlockStoreKey(subBlockId, 'comment-client')
+  const projectKey = arenaSiblingSubBlockStoreKey(subBlockId, 'comment-project')
+  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
     | { clientId?: string }
     | undefined
   const clientId = clientRef?.clientId
-  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-project']
+  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.[projectKey]
   const projectId =
     typeof projectValue === 'string' ? projectValue : (projectValue as { sysId?: string })?.sysId
 
@@ -68,17 +66,30 @@ export function ArenaTaskAndSubtaskSelector({
   const selectedValue = isPreview ? previewValue : storeValue
 
   const [tasks, setTasks] = React.useState<Task[]>([])
-  const [open, setOpen] = React.useState(false)
-  const [loading, setLoading] = React.useState(false)
+  const [isLoading, setIsLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    if (isPreview) return
+    const clientChanged = prevClientIdRef.current !== undefined && prevClientIdRef.current !== clientId
+    const projectChanged =
+      prevProjectIdRef.current !== undefined && prevProjectIdRef.current !== projectId
+    if (clientChanged || projectChanged) {
+      setStoreValue(null)
+    }
+    prevClientIdRef.current = clientId
+    prevProjectIdRef.current = projectId
+  }, [clientId, projectId, isPreview, setStoreValue])
 
   React.useEffect(() => {
     if (!clientId || !projectId) {
       setTasks([])
+      setIsLoading(false)
       return
     }
 
+    let cancelled = false
     const fetchTasks = async () => {
-      setLoading(true)
+      setIsLoading(true)
       setTasks([])
       try {
         const v2Token = await getArenaToken()
@@ -92,104 +103,74 @@ export function ArenaTaskAndSubtaskSelector({
           },
         })
 
-        // Handle the response structure: { statusCode: 200, response: { TaskList: [...] } }
         const taskList = response.data?.response?.TaskList || response.data?.TaskList || []
-        setTasks(taskList)
+        if (!cancelled) setTasks(taskList)
       } catch (error) {
         console.error('Error fetching tasks and subtasks:', error)
-        setTasks([])
+        if (!cancelled) setTasks([])
       } finally {
-        setLoading(false)
+        if (!cancelled) setIsLoading(false)
       }
     }
 
     fetchTasks()
 
     return () => {
-      setTasks([])
+      cancelled = true
     }
   }, [clientId, projectId])
 
-  const selectedLabel =
-    (typeof selectedValue === 'object' ? selectedValue?.customDisplayValue : null) ||
-    tasks.find(
-      (task) =>
-        task.sysId === (typeof selectedValue === 'object' ? selectedValue?.sysId : selectedValue) ||
-        task.id === (typeof selectedValue === 'object' ? selectedValue?.sysId : selectedValue)
-    )?.name ||
-    'Select task...'
+  const selectedId =
+    selectedValue && typeof selectedValue === 'object' && 'sysId' in selectedValue
+      ? (selectedValue as Task).sysId || (selectedValue as Task).id
+      : typeof selectedValue === 'string'
+        ? selectedValue
+        : ''
 
-  const handleSelect = (task: Task) => {
-    if (!isPreview && !disabled) {
-      setStoreValue({ ...task, customDisplayValue: task.name })
-      setOpen(false)
-    }
-  }
+  const fallbackLabel =
+    selectedValue && typeof selectedValue === 'object' && 'sysId' in selectedValue
+      ? (selectedValue as Task & { customDisplayValue?: string }).customDisplayValue ||
+        (selectedValue as Task).name
+      : undefined
+
+  const options: ComboboxOption[] = React.useMemo(
+    () =>
+      mergeArenaComboboxOptions(
+        tasks.map((t) => ({ label: t.name, value: taskKey(t) })),
+        selectedId || undefined,
+        fallbackLabel
+      ),
+    [tasks, selectedId, fallbackLabel]
+  )
+
+  const controlDisabled = disabled || !clientId || !projectId
 
   return (
-    <div className={cn('flex flex-col gap-2 pt-1', layout === 'half' ? 'max-w-md' : 'w-full')}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant='outline'
-            role='combobox'
-            aria-expanded={open}
-            id={`task-${subBlockId}`}
-            className={cn(
-              comboboxVariants(),
-              'relative cursor-pointer items-center justify-between',
-              layout === 'half' ? 'max-w-md' : 'w-full'
-            )}
-            disabled={disabled || !clientId || !projectId || loading}
-          >
-            <span className='block flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left'>
-              {loading ? 'Loading...' : selectedLabel}
-            </span>
-            <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
-          <Command
-            filter={(value, search) => {
-              // `value` is from CommandItem's "value" prop (sysId or id here)
-              // We want to match by task name too
-              const task = tasks.find((t) => t.sysId === value || t.id === value)
-              if (!task) return 0
-
-              // Custom matching: case-insensitive substring
-              return task.name.toLowerCase().includes(search.toLowerCase()) ? 1 : 0
-            }}
-          >
-            <CommandInput placeholder='Search tasks...' className='h-9' />
-            <CommandList>
-              <CommandEmpty>{loading ? 'Loading...' : 'No task found.'}</CommandEmpty>
-              <CommandGroup>
-                {tasks.map((task) => {
-                  const taskId = task.sysId || task.id
-                  const isSelected =
-                    typeof selectedValue === 'object'
-                      ? selectedValue?.sysId === taskId || selectedValue?.id === taskId
-                      : selectedValue === taskId
-                  return (
-                    <CommandItem
-                      key={taskId}
-                      value={taskId}
-                      onSelect={() => handleSelect(task)}
-                      className='max-w-full whitespace-normal break-words'
-                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                    >
-                      <span className='whitespace-normal break-words'>{task.name}</span>
-                      <Check
-                        className={cn('ml-auto h-4 w-4', isSelected ? 'opacity-100' : 'opacity-0')}
-                      />
-                    </CommandItem>
-                  )
-                })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+    <div className={cn('w-full pt-1', layout === 'half' && 'max-w-md')} id={`task-${subBlockId}`}>
+      <Combobox
+        key={`${clientId ?? ''}::${projectId ?? ''}`}
+        options={options}
+        value={selectedId}
+        selectedValue={selectedId}
+        onChange={(v) => {
+          if (isPreview || controlDisabled) return
+          const fromList = tasks.find((t) => taskKey(t) === v)
+          const fromOpt = options.find((o) => o.value === v)
+          if (fromList) {
+            setStoreValue({ ...fromList, customDisplayValue: fromList.name })
+          } else if (fromOpt) {
+            setStoreValue({ id: v, sysId: v, name: fromOpt.label, customDisplayValue: fromOpt.label })
+          }
+        }}
+        placeholder='Select task...'
+        disabled={controlDisabled}
+        searchable
+        searchPlaceholder='Search tasks...'
+        emptyMessage='No task found.'
+        isLoading={isLoading}
+        maxHeight={240}
+        dropdownWidth='trigger'
+      />
     </div>
   )
 }
