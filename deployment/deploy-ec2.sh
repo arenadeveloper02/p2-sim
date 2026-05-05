@@ -7,18 +7,23 @@
 
 COMPOSE="-f docker-compose.test-env.yml -f deployment/docker-compose.deploy-health.yml"
 
+docker build -f /root/git/p2-sim/deployment/Dockerfile.maintenance -t p2-sim-maintenance /root/git/p2-sim/deployment
+
 CONTAINERS=$(docker ps -a -q --filter ancestor="p2-sim-simstudio")
-docker stop $CONTAINERS
-docker rm $CONTAINERS
+if [ -n "$CONTAINERS" ]; then
+  docker stop $CONTAINERS
+  docker rm $CONTAINERS
+fi
 
 CONTAINERS=$(docker ps -a -q --filter ancestor="p2-sim-realtime")
-docker stop $CONTAINERS
-docker rm $CONTAINERS
+if [ -n "$CONTAINERS" ]; then
+  docker stop $CONTAINERS
+  docker rm $CONTAINERS
+fi
 
 docker rmi -f "p2-sim-simstudio"
 docker rmi -f "p2-sim-realtime"
 
-docker build -f /root/git/p2-sim/deployment/Dockerfile.maintenance -t p2-sim-maintenance /root/git/p2-sim/deployment
 docker rm -f p2-sim-maintenance-sim p2-sim-maintenance-realtime 2>/dev/null || true
 docker run -d --name p2-sim-maintenance-sim --restart no -p 3000:80 p2-sim-maintenance
 docker run -d --name p2-sim-maintenance-realtime --restart no -p 3002:80 p2-sim-maintenance
