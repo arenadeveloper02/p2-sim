@@ -563,10 +563,33 @@ Do not include any explanations, markdown formatting, or other text outside the 
       id: 'channelLimit',
       title: 'Channel Limit',
       type: 'short-input',
-      placeholder: '100',
+      placeholder: '200',
+      value: () => '200',
       condition: {
         field: 'operation',
         value: ['list_channels', 'get_user_channels'],
+      },
+    },
+    {
+      id: 'getUserChannelsCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous Get User Channels response',
+      description: 'Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'get_user_channels',
+      },
+    },
+    {
+      id: 'listChannelsCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous List Channels response',
+      description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'list_channels',
       },
     },
     // List Members specific fields
@@ -1394,6 +1417,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
           includeDMs,
           includeGroupDMs,
           channelLimit,
+          getUserChannelsCursor,
+          listChannelsCursor,
           memberLimit,
           includeDeleted,
           userLimit,
@@ -1669,7 +1694,13 @@ Do not include any explanations, markdown formatting, or other text outside the 
             baseParams.includeDMs = includeDMs === 'true'
             baseParams.includeGroupDMs = includeGroupDMs === 'true'
             baseParams.excludeArchived = true
-            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 100
+            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 200
+            if (operation === 'get_user_channels' && getUserChannelsCursor?.trim()) {
+              baseParams.cursor = getUserChannelsCursor.trim()
+            }
+            if (operation === 'list_channels' && listChannelsCursor?.trim()) {
+              baseParams.cursor = listChannelsCursor.trim()
+            }
             break
           }
 
@@ -1949,6 +1980,15 @@ Do not include any explanations, markdown formatting, or other text outside the 
       description: 'Include group DMs / mpims (true/false). Requires mpim:read scope.',
     },
     channelLimit: { type: 'string', description: 'Maximum number of channels to return' },
+    getUserChannelsCursor: {
+      type: 'string',
+      description: 'Pagination cursor for Get User Channels (maps to Slack users.conversations cursor)',
+    },
+    listChannelsCursor: {
+      type: 'string',
+      description:
+        'Optional pagination cursor for List Channels (maps to Slack conversations.list cursor)',
+    },
     // List Members inputs
     memberLimit: { type: 'string', description: 'Maximum number of members to return' },
     // List Users inputs
@@ -2101,6 +2141,15 @@ Do not include any explanations, markdown formatting, or other text outside the 
     count: {
       type: 'number',
       description: 'Total number of items returned (channels, members, or users)',
+    },
+    cursor: {
+      type: 'string',
+      description:
+        'Pagination cursor for the next page of List Channels or Get User Channels (Slack response_metadata.next_cursor); null or empty when there are no more results',
+      condition: {
+        field: 'operation',
+        value: ['list_channels', 'get_user_channels'],
+      },
     },
 
     // slack_list_members outputs (list_members operation)

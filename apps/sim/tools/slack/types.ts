@@ -730,6 +730,8 @@ export interface SlackListChannelsParams extends SlackBaseParams {
   includeGroupDMs?: boolean
   excludeArchived?: boolean
   limit?: number
+  /** Pagination cursor from a prior `conversations.list` response (`response_metadata.next_cursor`). */
+  cursor?: string
 }
 
 /**
@@ -744,6 +746,8 @@ export interface SlackGetUserChannelsParams extends SlackBaseParams {
   includeGroupDMs?: boolean
   excludeArchived?: boolean
   limit?: number
+  /** Pagination cursor from a prior `users.conversations` response (`response_metadata.next_cursor`). */
+  cursor?: string
 }
 
 export interface SlackListMembersParams extends SlackBaseParams {
@@ -1044,6 +1048,8 @@ export interface SlackListChannelsResponse extends ToolResponse {
     ids: string[]
     names: string[]
     count: number
+    /** Next-page cursor from Slack (`response_metadata.next_cursor`), or `null` when there are no more results. */
+    cursor: string | null
   }
 }
 
@@ -1053,6 +1059,8 @@ export interface SlackGetUserChannelsResponse extends ToolResponse {
     ids: string[]
     names: string[]
     count: number
+    /** Next-page cursor from Slack (`response_metadata.next_cursor`), or `null` when there are no more results. */
+    cursor: string | null
   }
 }
 

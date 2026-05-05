@@ -87,7 +87,14 @@ export const slackGetUserChannelsTool: ToolConfig<
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Maximum number of conversations to return (default: 100, max: 200)',
+      description: 'Maximum number of conversations to return (default: 200, max: 200)',
+    },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Pagination cursor from a previous response (`output.cursor`) to fetch the next page',
     },
   },
 
@@ -118,9 +125,16 @@ export const slackGetUserChannelsTool: ToolConfig<
       const excludeArchived = !isFalse(params.excludeArchived)
       url.searchParams.append('exclude_archived', String(excludeArchived))
 
-      // Set limit (default 100, max 200).
-      const limit = params.limit ? Math.min(Number(params.limit), 200) : 100
+      // Set limit (default 200, max 200 per Slack; use cursor for more pages).
+      const limit = params.limit ? Math.min(Number(params.limit), 200) : 200
       url.searchParams.append('limit', String(limit))
+
+      if (typeof params.cursor === 'string') {
+        const c = params.cursor.trim()
+        if (c) {
+          url.searchParams.append('cursor', c)
+        }
+      }
 
       return url.toString()
     },
@@ -174,6 +188,10 @@ export const slackGetUserChannelsTool: ToolConfig<
     const ids = channels.map((channel: { id: string }) => channel.id)
     const names = channels.map((channel: { name: string }) => channel.name)
 
+    const nextCursorRaw = data.response_metadata?.next_cursor
+    const cursor =
+      typeof nextCursorRaw === 'string' && nextCursorRaw.length > 0 ? nextCursorRaw : null
+
     return {
       success: true,
       output: {
@@ -181,6 +199,7 @@ export const slackGetUserChannelsTool: ToolConfig<
         ids,
         names,
         count: channels.length,
+        cursor,
       },
     }
   },
@@ -207,6 +226,12 @@ export const slackGetUserChannelsTool: ToolConfig<
     count: {
       type: 'number',
       description: 'Total number of channels returned',
+    },
+    cursor: {
+      type: 'string',
+      optional: true,
+      description:
+        'Cursor for the next page (`response_metadata.next_cursor`); absent or null when there are no more results',
     },
   },
 }
