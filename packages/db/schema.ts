@@ -3447,3 +3447,22 @@ export const academyCertificate = pgTable(
     statusIdx: index('academy_certificate_status_idx').on(table.status),
   })
 )
+
+export const outreachUserConnectionsV1 = pgTable('outreach_user_connections_v1', {
+  id: varchar('id').primaryKey(),
+  userIdRef: varchar('user_id_ref', { length: 64 }).notNull(),
+  platformId: text('platform_id').notNull(),
+  platformType: varchar('platform_type', { length: 64 }).notNull(),
+  isConnected: boolean('is_connected').notNull().default(true),
+  isShown: boolean('is_shown').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+  name: text('name'),
+  accountId: varchar('account_id'),
+  userEmail: varchar('user_email'),
+  userPersona: text('user_persona'),
+  fileName: varchar('file_name'),
+  defaultPersona: text('default_persona'),
+  timeZone: varchar('time_zone'),
+  synced: boolean('synced').notNull().default(false),
+})
