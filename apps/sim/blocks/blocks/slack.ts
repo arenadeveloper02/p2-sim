@@ -34,6 +34,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Get Message', id: 'get_message' },
         { label: 'Get Thread', id: 'get_thread' },
         { label: 'List Channels', id: 'list_channels' },
+        { label: 'List My Channels', id: 'list_my_channels' },
         { label: 'Get User Channels', id: 'get_user_channels' },
         { label: 'List Channel Members', id: 'list_members' },
         { label: 'List Users', id: 'list_users' },
@@ -122,6 +123,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           field: 'operation',
           value: [
             'list_channels',
+            'list_my_channels',
             'get_user_channels',
             'list_users',
             'get_user',
@@ -161,6 +163,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           field: 'operation',
           value: [
             'list_channels',
+            'list_my_channels',
             'get_user_channels',
             'list_users',
             'get_user',
@@ -514,7 +517,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       value: () => 'true',
       condition: {
         field: 'operation',
-        value: 'get_user_channels',
+        value: ['get_user_channels', 'list_my_channels'],
       },
     },
     {
@@ -528,7 +531,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       value: () => 'true',
       condition: {
         field: 'operation',
-        value: ['list_channels', 'get_user_channels'],
+        value: ['list_channels', 'get_user_channels', 'list_my_channels'],
       },
     },
     {
@@ -563,17 +566,19 @@ Do not include any explanations, markdown formatting, or other text outside the 
       id: 'channelLimit',
       title: 'Channel Limit',
       type: 'short-input',
+      canonicalParamId: 'limit',
       placeholder: '200',
       value: () => '200',
       condition: {
         field: 'operation',
-        value: ['list_channels', 'get_user_channels'],
+        value: ['list_channels', 'get_user_channels', 'list_my_channels'],
       },
     },
     {
       id: 'getUserChannelsCursor',
       title: 'Cursor',
       type: 'short-input',
+      canonicalParamId: 'cursor',
       placeholder: 'Pagination cursor from previous Get User Channels response',
       description: 'Pass output.cursor from a prior run to fetch the next page',
       condition: {
@@ -585,6 +590,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       id: 'listChannelsCursor',
       title: 'Cursor',
       type: 'short-input',
+      canonicalParamId: 'cursor',
       placeholder: 'Pagination cursor from previous List Channels response',
       description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
       condition: {
@@ -592,11 +598,39 @@ Do not include any explanations, markdown formatting, or other text outside the 
         value: 'list_channels',
       },
     },
+    {
+      id: 'listMyChannelsExcludeArchived',
+      title: 'Exclude Archived Channels',
+      type: 'dropdown',
+      canonicalParamId: 'excludeArchived',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
+      condition: {
+        field: 'operation',
+        value: 'list_my_channels',
+      },
+    },
+    {
+      id: 'listMyChannelsCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      canonicalParamId: 'cursor',
+      placeholder: 'Pagination cursor from previous List My Channels response',
+      description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'list_my_channels',
+      },
+    },
     // List Members specific fields
     {
       id: 'memberLimit',
       title: 'Member Limit',
       type: 'short-input',
+      canonicalParamId: 'limit',
       placeholder: '100',
       condition: {
         field: 'operation',
@@ -607,6 +641,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       id: 'listMembersCursor',
       title: 'Cursor',
       type: 'short-input',
+      canonicalParamId: 'cursor',
       placeholder: 'Pagination cursor from previous List Channel Members response',
       description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
       condition: {
@@ -633,6 +668,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       id: 'userLimit',
       title: 'User Limit',
       type: 'short-input',
+      canonicalParamId: 'limit',
       placeholder: '100',
       value: () => '100',
       condition: {
@@ -644,6 +680,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       id: 'listUsersCursor',
       title: 'Cursor',
       type: 'short-input',
+      canonicalParamId: 'cursor',
       placeholder: 'Pagination cursor from previous List Users response',
       description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
       condition: {
@@ -686,6 +723,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       id: 'getMessageTimestamp',
       title: 'Message Timestamp',
       type: 'short-input',
+      canonicalParamId: 'timestamp',
       placeholder: 'Message timestamp (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
@@ -712,6 +750,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'getThreadTimestamp',
       title: 'Thread Timestamp',
       type: 'short-input',
+      canonicalParamId: 'threadTs',
       placeholder: 'Thread timestamp (thread_ts, e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
@@ -737,6 +776,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'threadLimit',
       title: 'Message Limit',
       type: 'short-input',
+      canonicalParamId: 'limit',
       placeholder: '100',
       condition: {
         field: 'operation',
@@ -747,6 +787,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'getThreadCursor',
       title: 'Cursor',
       type: 'short-input',
+      canonicalParamId: 'cursor',
       placeholder: 'Pagination cursor from previous Get Thread response',
       description:
         'Optional. Pass output.cursor from a prior run to fetch the next page of replies',
@@ -809,6 +850,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'updateTimestamp',
       title: 'Message Timestamp',
       type: 'short-input',
+      canonicalParamId: 'timestamp',
       placeholder: 'Message timestamp (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
@@ -820,6 +862,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'updateText',
       title: 'New Message Text',
       type: 'long-input',
+      canonicalParamId: 'text',
       placeholder: 'Enter new message text (supports Slack mrkdwn)',
       condition: {
         field: 'operation',
@@ -837,6 +880,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'deleteTimestamp',
       title: 'Message Timestamp',
       type: 'short-input',
+      canonicalParamId: 'timestamp',
       placeholder: 'Message timestamp (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
@@ -849,6 +893,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'reactionTimestamp',
       title: 'Message Timestamp',
       type: 'short-input',
+      canonicalParamId: 'timestamp',
       placeholder: 'Message timestamp (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
@@ -860,6 +905,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'emojiName',
       title: 'Emoji Name',
       type: 'short-input',
+      canonicalParamId: 'name',
       placeholder: 'Emoji name without colons (e.g., thumbsup, heart, eyes)',
       condition: {
         field: 'operation',
@@ -940,6 +986,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'searchCount',
       title: 'Result Count',
       type: 'short-input',
+      canonicalParamId: 'count',
       placeholder: '50',
       condition: {
         field: 'operation',
@@ -950,6 +997,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'searchPage',
       title: 'Page Number',
       type: 'short-input',
+      canonicalParamId: 'page',
       placeholder: '1',
       condition: {
         field: 'operation',
@@ -1014,6 +1062,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'editCanvasId',
       title: 'Canvas ID',
       type: 'short-input',
+      canonicalParamId: 'canvasId',
       placeholder: 'Enter canvas ID (e.g., F1234ABCD)',
       condition: {
         field: 'operation',
@@ -1025,6 +1074,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'canvasOperation',
       title: 'Edit Operation',
       type: 'dropdown',
+      canonicalParamId: 'operation',
       options: [
         { label: 'Insert at Start', id: 'insert_at_start' },
         { label: 'Insert at End', id: 'insert_at_end' },
@@ -1045,6 +1095,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'canvasContent',
       title: 'Content',
       type: 'long-input',
+      canonicalParamId: 'content',
       placeholder: 'Enter content in markdown format',
       condition: {
         field: 'operation',
@@ -1075,6 +1126,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'canvasTitle',
       title: 'New Title',
       type: 'short-input',
+      canonicalParamId: 'title',
       placeholder: 'Enter new canvas title',
       condition: {
         field: 'operation',
@@ -1088,6 +1140,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'channelCanvasTitle',
       title: 'Canvas Title',
       type: 'short-input',
+      canonicalParamId: 'title',
       placeholder: 'Enter canvas title (optional)',
       condition: {
         field: 'operation',
@@ -1098,6 +1151,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'channelCanvasContent',
       title: 'Canvas Content',
       type: 'long-input',
+      canonicalParamId: 'content',
       placeholder: 'Enter canvas content (markdown supported)',
       condition: {
         field: 'operation',
@@ -1109,6 +1163,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'conversationName',
       title: 'Channel Name',
       type: 'short-input',
+      canonicalParamId: 'name',
       placeholder: 'e.g., project-updates',
       condition: {
         field: 'operation',
@@ -1146,6 +1201,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'inviteUsers',
       title: 'User IDs',
       type: 'short-input',
+      canonicalParamId: 'users',
       placeholder: 'Comma-separated user IDs (e.g., U123,U456)',
       condition: {
         field: 'operation',
@@ -1157,6 +1213,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'inviteForce',
       title: 'Skip Invalid Users',
       type: 'dropdown',
+      canonicalParamId: 'force',
       options: [
         { label: 'No', id: 'false' },
         { label: 'Yes', id: 'true' },
@@ -1173,6 +1230,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'viewTriggerId',
       title: 'Trigger ID',
       type: 'short-input',
+      canonicalParamId: 'triggerId',
       placeholder: 'Trigger ID from interaction payload',
       condition: {
         field: 'operation',
@@ -1184,6 +1242,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'viewInteractivityPointer',
       title: 'Interactivity Pointer',
       type: 'short-input',
+      canonicalParamId: 'interactivityPointer',
       placeholder: 'Alternative to trigger_id (optional)',
       condition: {
         field: 'operation',
@@ -1206,6 +1265,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'viewExternalId',
       title: 'External ID',
       type: 'short-input',
+      canonicalParamId: 'externalId',
       placeholder: 'Developer-set unique identifier (max 255 chars)',
       condition: {
         field: 'operation',
@@ -1217,6 +1277,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'viewHash',
       title: 'View Hash',
       type: 'short-input',
+      canonicalParamId: 'hash',
       placeholder: 'View state hash for race condition protection',
       condition: {
         field: 'operation',
@@ -1259,6 +1320,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       id: 'viewPayload',
       title: 'View Payload',
       type: 'code',
+      canonicalParamId: 'view',
       language: 'json',
       placeholder: 'JSON view payload with type, title, and blocks',
       condition: {
@@ -1330,6 +1392,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       'slack_get_message',
       'slack_get_thread',
       'slack_list_channels',
+      'slack_list_my_channels',
       'slack_get_user_channels',
       'slack_list_members',
       'slack_list_users',
@@ -1371,6 +1434,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
             return 'slack_list_channels'
           case 'get_user_channels':
             return 'slack_get_user_channels'
+          case 'list_my_channels':
+            return 'slack_list_my_channels'
           case 'list_members':
             return 'slack_list_members'
           case 'list_users':
@@ -1454,6 +1519,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
           channelLimit,
           getUserChannelsCursor,
           listChannelsCursor,
+          listMyChannelsCursor,
+          listMyChannelsExcludeArchived,
           memberLimit,
           listMembersCursor,
           includeDeleted,
@@ -1726,8 +1793,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
 
           case 'list_channels':
           case 'get_user_channels': {
-            // includePublic is only exposed in the UI for get_user_channels;
-            // list_channels always includes public channels (there is no
+            // includePublic is only exposed in the UI for get_user_channels and
+            // list_my_channels; list_channels always includes public channels (there is no
             // dropdown for it there, so includePublic is undefined and the
             // tool falls back to its default "include").
             baseParams.includePublic = includePublic !== 'false'
@@ -1741,6 +1808,17 @@ Do not include any explanations, markdown formatting, or other text outside the 
             }
             if (operation === 'list_channels' && listChannelsCursor?.trim()) {
               baseParams.cursor = listChannelsCursor.trim()
+            }
+            break
+          }
+
+          case 'list_my_channels': {
+            baseParams.includePublic = includePublic !== 'false'
+            baseParams.includePrivate = includePrivate !== 'false'
+            baseParams.excludeArchived = listMyChannelsExcludeArchived !== 'false'
+            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 200
+            if (listMyChannelsCursor?.trim()) {
+              baseParams.cursor = listMyChannelsCursor.trim()
             }
             break
           }
@@ -2015,9 +2093,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
     // List Channels inputs
     includePublic: {
       type: 'string',
-      description: 'Include public channels (true/false). Get User Channels only.',
+      description:
+        'Include public channels in results (true/false). Shown for Get User Channels and List My Channels.',
     },
-    includePrivate: { type: 'string', description: 'Include private channels (true/false)' },
+    includePrivate: {
+      type: 'string',
+      description:
+        'Include private channels (true/false). List Channels, Get User Channels, and List My Channels.',
+    },
     includeDMs: {
       type: 'string',
       description: 'Include 1:1 direct messages (true/false). Requires im:read scope.',
@@ -2036,6 +2119,16 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'string',
       description:
         'Optional pagination cursor for List Channels (maps to Slack conversations.list cursor)',
+    },
+    listMyChannelsCursor: {
+      type: 'string',
+      description:
+        'Optional pagination cursor for List My Channels (maps to Slack users.conversations cursor)',
+    },
+    listMyChannelsExcludeArchived: {
+      type: 'string',
+      description:
+        'Exclude archived channels for List My Channels (true/false; maps to exclude_archived)',
     },
     // List Members inputs
     memberLimit: { type: 'string', description: 'Maximum number of members to return' },
@@ -2208,7 +2301,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
         'Pagination cursor for the next page (Slack response_metadata.next_cursor) for List Channels, Get User Channels, List Members, List Users, or Get Thread; null or empty when there are no more results',
       condition: {
         field: 'operation',
-        value: ['list_channels', 'get_user_channels', 'list_members', 'list_users', 'get_thread'],
+        value: ['list_channels', 'get_user_channels', 'list_my_channels', 'list_members', 'list_users', 'get_thread'],
       },
     },
 
