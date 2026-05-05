@@ -12,10 +12,16 @@ export const unipileListUserReactionsTool: ToolConfig<
   id: 'unipile_list_user_reactions',
   name: 'Unipile List User Reactions',
   description:
-    'Lists reactions for a user (`GET /api/v1/users/{identifier}/reactions`). Optional `cursor`. Uses server `UNIPILE_API_KEY`.',
+    'Lists reactions for a user (`GET /api/v1/users/{identifier}/reactions`). Requires `account_id` and `user_identifier`. Optional `cursor`. Uses server `UNIPILE_API_KEY`.',
   version: '1.0.0',
 
   params: {
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile account id (required query parameter)',
+    },
     user_identifier: {
       type: 'string',
       required: true,
@@ -35,6 +41,8 @@ export const unipileListUserReactionsTool: ToolConfig<
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
+      account_id:
+        typeof params.account_id === 'string' ? params.account_id.trim() : params.account_id,
       user_identifier: params.user_identifier?.trim(),
       cursor: params.cursor,
     }),

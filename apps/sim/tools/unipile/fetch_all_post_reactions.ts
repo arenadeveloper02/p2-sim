@@ -1,3 +1,5 @@
+import { normalizeUnipilePostPathId } from '@/tools/unipile/normalize_post_path_id'
+
 /**
  * Unipile GET /api/v1/posts/{post_id}/reactions — pagination helpers.
  * Query: account_id, limit (1–100), optional cursor, optional comment_id.
@@ -33,7 +35,11 @@ export interface FetchAllUnipilePostReactionsOptions {
 export async function fetchAllUnipilePostReactionItems(
   options: FetchAllUnipilePostReactionsOptions
 ): Promise<{ items: unknown[]; object: string | null; paging: Record<string, unknown> | null }> {
-  const { baseUrl, apiKey, postId, accountId } = options
+  const { baseUrl, apiKey, accountId } = options
+  const postId = normalizeUnipilePostPathId(options.postId)
+  if (!postId) {
+    throw new Error('post_id is empty after normalization')
+  }
   const commentTrim =
     typeof options.commentId === 'string' && options.commentId.trim() !== ''
       ? options.commentId.trim()
@@ -59,7 +65,7 @@ export async function fetchAllUnipilePostReactionItems(
     if (commentTrim) qs.set('comment_id', commentTrim)
     if (pageCursor) qs.set('cursor', pageCursor)
 
-    const encoded = encodeURIComponent(postId.trim())
+    const encoded = encodeURIComponent(postId)
     const url = `${baseUrl}/api/v1/posts/${encoded}/reactions?${qs.toString()}`
 
     const res = await fetch(url, {

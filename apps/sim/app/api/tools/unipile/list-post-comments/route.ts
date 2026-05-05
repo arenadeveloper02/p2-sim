@@ -3,13 +3,27 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { normalizeUnipilePostPathId } from '@/tools/unipile/normalize_post_path_id'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileListPostCommentsAPI')
 
+const optionalQueryString = z.union([z.string(), z.null(), z.undefined()]).transform((v) => {
+  if (v == null) return undefined
+  const t = v.trim()
+  return t === '' ? undefined : t
+})
+
 const RequestSchema = z.object({
   post_id: z.string().min(1),
-  cursor: z.string().optional(),
+  account_id: z.string().min(1),
+  cursor: optionalQueryString,
+  limit: z.coerce.number().int().min(1).max(100).optional().nullable(),
+  sort_by: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? undefined : v),
+    z.enum(['MOST_RECENT', 'MOST_RELEVANT']).optional()
+  ),
+  comment_id: optionalQueryString,
 })
 
 /**
@@ -30,11 +44,25 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { post_id, cursor } = RequestSchema.parse(body)
-    const encoded = encodeURIComponent(post_id.trim())
+    const data = RequestSchema.parse(body)
+    const postId = normalizeUnipilePostPathId(data.post_id)
+    if (!postId) {
+      return NextResponse.json({ error: 'post_id is empty after normalization' }, { status: 400 })
+    }
+    const encoded = encodeURIComponent(postId)
     const params = new URLSearchParams()
-    if (cursor?.trim()) {
-      params.set('cursor', cursor.trim())
+    params.set('account_id', data.account_id.trim())
+    if (data.cursor) {
+      params.set('cursor', data.cursor)
+    }
+    if (data.limit != null && Number.isFinite(data.limit)) {
+      params.set('limit', String(data.limit))
+    }
+    if (data.sort_by) {
+      params.set('sort_by', data.sort_by)
+    }
+    if (data.comment_id) {
+      params.set('comment_id', data.comment_id)
     }
     const qs = params.toString()
     const url = `${baseUrl}/api/v1/posts/${encoded}/comments${qs ? `?${qs}` : ''}`

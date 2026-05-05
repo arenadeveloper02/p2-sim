@@ -87,6 +87,25 @@ function unipileMentionsFromTable(raw: unknown): UnipileCommentMentionRow[] | un
   return out.length > 0 ? out : undefined
 }
 
+/**
+ * Resolves outbound `text` from split sub-blocks (preferred) or legacy `text` for older saved
+ * workflows.
+ */
+function pickUnipileBodyText(params: Record<string, unknown>, operation: string): string {
+  const s = (key: string) => (typeof params[key] === 'string' ? (params[key] as string).trim() : '')
+  const legacy = s('text')
+  if (operation === 'comment_post') {
+    return s('comment_post_text') || legacy
+  }
+  if (operation === 'create_post') {
+    return s('create_post_text') || legacy
+  }
+  if (operation === 'start_new_chat' || operation === 'send_chat_message') {
+    return s('chat_message_text') || legacy
+  }
+  return legacy
+}
+
 /** Legacy JSON / single fields / mention table → mentions JSON string for POST comment. */
 function unipileBuildCommentMentionsJson(params: Record<string, unknown>): string | undefined {
   const raw = params.comment_mentions_json
@@ -140,7 +159,7 @@ function unipileNormalizeAttendeesIds(raw: unknown): string[] | undefined {
 
 export const UnipileBlock: BlockConfig<UnipileResponse> = {
   type: 'unipile',
-  name: 'Unipile',
+  name: 'LinkedIn (Unipile)',
   description: 'LinkedIn company data and messaging via Unipile',
   docsLink: 'https://developer.unipile.com/reference/',
   longDescription:
@@ -214,24 +233,24 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       title: 'Operation',
       type: 'dropdown',
       options: [
-        { label: 'Comment a post', id: 'comment_post' },
+        { label: 'Comment on a post', id: 'comment_post' },
         { label: 'Create Post', id: 'create_post' },
         { label: 'Retrieve a chat', id: 'get_chat' },
         { label: 'Get Message Attachment', id: 'get_message_attachment' },
-        { label: 'Retrieve LinkedIn search parameters', id: 'get_linkedin_search_parameters' },
+        { label: 'Retrieve search parameters', id: 'get_linkedin_search_parameters' },
         { label: 'Get Post', id: 'get_post' },
         { label: 'Retrieve a profile', id: 'get_user_profile' },
         { label: 'List Chat Attendees', id: 'list_chat_attendees' },
         { label: 'List Chat Messages', id: 'list_chat_messages' },
         { label: 'List all chats', id: 'list_all_chats' },
-        { label: 'Perform Linkedin search', id: 'linkedin_search' },
+        { label: 'Perform search', id: 'linkedin_search' },
         { label: 'List Post Comments', id: 'list_post_comments' },
         { label: 'List all reactions from a post', id: 'list_post_reactions' },
         { label: 'List User Comments', id: 'list_user_comments' },
         { label: 'List all posts', id: 'list_user_posts' },
         { label: 'List User Reactions', id: 'list_user_reactions' },
         { label: 'List User Relations', id: 'list_user_relations' },
-        { label: 'Retrieve LinkedIn Company Profile', id: 'retrieve_company_details' },
+        { label: 'Retrieve Company Profile', id: 'retrieve_company_details' },
         { label: 'Send Chat Message', id: 'send_chat_message' },
         { label: 'Start New Chat', id: 'start_new_chat' },
       ],
@@ -436,9 +455,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       id: 'post_id',
       title: 'Post ID',
       type: 'short-input',
-      placeholder: 'Post id (LinkedIn: social_id; Instagram: provider_id)',
+      placeholder: 'Post id',
       description:
-        'Path param for the post. LinkedIn: use social_id from GET post or list posts (URL id may not work). Instagram: use provider_id, not the post short code. See https://developer.unipile.com/docs/posts-and-comments',
+        'Path `post_id`. LinkedIn: prefer **`social_id`** from GET post / list posts (e.g. `urn:li:activity:…`). Bare activity digits from the URL are normalized to that URN for comments/reactions. **`ugcPost` / `share`** posts: use `urn:li:ugcPost:…` / `urn:li:share:…` or the post URL so the slug can be parsed. Instagram: **provider_id** for list comments/reactions (shortcode not supported). [List comments](https://developer.unipile.com/reference/postscontroller_listallcomments) · [Guide](https://developer.unipile.com/docs/posts-and-comments)',
       dependsOn: ['operation'],
       condition: {
         field: 'operation',
@@ -465,6 +484,41 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       placeholder: '1–100 per upstream page (default 100); all pages are still fetched',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_post_reactions' },
+      mode: 'advanced',
+    },
+    {
+      id: 'post_comments_thread_comment_id',
+      title: 'Comment ID (replies)',
+      type: 'short-input',
+      placeholder: 'Optional: list replies for this comment (LinkedIn: id from comments list)',
+      description: 'Unipile `comment_id` query: omit to list top-level comments on the post.',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'list_post_comments' },
+      mode: 'advanced',
+    },
+    {
+      id: 'post_comments_limit',
+      title: 'Comments page size',
+      type: 'short-input',
+      placeholder: '1–100 (optional)',
+      description: 'Unipile `limit` query for this request page.',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'list_post_comments' },
+      mode: 'advanced',
+    },
+    {
+      id: 'post_comments_sort',
+      title: 'Sort comments by',
+      type: 'dropdown',
+      options: [
+        { label: 'Default (upstream)', id: '' },
+        { label: 'Most recent', id: 'MOST_RECENT' },
+        { label: 'Most relevant', id: 'MOST_RELEVANT' },
+      ],
+      value: () => '',
+      description: 'Unipile `sort_by` query when set (default upstream is MOST_RECENT).',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'list_post_comments' },
       mode: 'advanced',
     },
     {
@@ -583,21 +637,39 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       required: { field: 'operation', value: 'start_new_chat' },
     },
     {
-      id: 'text',
-      title: 'Message / Post Text',
+      id: 'chat_message_text',
+      title: 'Message',
       type: 'long-input',
-      placeholder: 'Message or post body',
+      placeholder: 'Type the chat message…',
       description:
-        'For Comment a post: max 1250 characters; LinkedIn `{{0}}`, `{{1}}`, … match each mention below in order (same pattern as Start block inputs).',
+        'Used for **Start new chat** and **Send chat message**. Tag references supported.',
       dependsOn: ['operation'],
-      condition: {
-        field: 'operation',
-        value: ['start_new_chat', 'send_chat_message', 'create_post', 'comment_post'],
-      },
-      required: {
-        field: 'operation',
-        value: ['start_new_chat', 'send_chat_message', 'create_post', 'comment_post'],
-      },
+      condition: { field: 'operation', value: ['start_new_chat', 'send_chat_message'] },
+      required: { field: 'operation', value: ['start_new_chat', 'send_chat_message'] },
+    },
+    {
+      id: 'create_post_text',
+      title: 'Post text',
+      type: 'long-input',
+      placeholder:
+        'Post text. You can add a mention by inserting the index of the corresponding entry from the mentions array between two double braces. Example: Hey {{0}}, check this out !',
+      description:
+        'Used for **Create a post**. LinkedIn: `{{n}}` matches the nth mention row below (same idea as Unipile’s “Hey {{0}}, …”).',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'create_post' },
+      required: { field: 'operation', value: 'create_post' },
+    },
+    {
+      id: 'comment_post_text',
+      title: 'Comment text',
+      type: 'long-input',
+      placeholder:
+        'Comment (max 1250). You can add a mention by inserting the index of the corresponding entry from the mentions array between two double braces. Example: Hey {{0}}, check this out !',
+      description:
+        'Used for **Comment a post**. LinkedIn: `{{n}}` matches the nth mention row below (same idea as Unipile’s “Hey {{0}}, …”).',
+      dependsOn: ['operation'],
+      condition: { field: 'operation', value: 'comment_post' },
+      required: { field: 'operation', value: 'comment_post' },
     },
     {
       id: 'comment_mentions_input',
@@ -618,7 +690,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         ],
       },
       description:
-        'Optional LinkedIn @mentions: use **+** to add more. **Display name** is how the mention appears in the post/comment; **Profile ID** is the provider id (ACo…/ADo… for people, numeric id for companies). **Mention target**: Person or Company. Use `{{0}}`, `{{1}}`, … in the text in the same order. Tag references supported in fields. Rows with empty name or profile id are ignored.',
+        'Optional LinkedIn @mentions: use **+** to add more. **Display name** is how the mention appears in the post/comment; **Profile ID** is the provider id (ACo…/ADo… for people, numeric id for companies). **Mention target**: Person or Company. **You must** put `{{0}}`, `{{1}}`, … in the comment/post text in the same row order — Unipile substitutes those from the `mentions` array ([reference](https://developer.unipile.com/reference/postscontroller_sendcomment)). Rows with empty name or profile id are ignored.',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: ['comment_post', 'create_post'] },
     },
@@ -822,43 +894,43 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       },
       mode: 'both',
     },
-    {
-      id: 'voice_message_file',
-      title: 'Voice Message',
-      type: 'file-upload',
-      placeholder: 'Upload voice message file (.m4a/.mp3)',
-      dependsOn: ['operation'],
-      condition: { field: 'operation', value: 'start_new_chat' },
-      mode: 'basic',
-    },
-    {
-      id: 'video_message_file',
-      title: 'Video Message',
-      type: 'file-upload',
-      placeholder: 'Upload video message file',
-      dependsOn: ['operation'],
-      condition: { field: 'operation', value: 'start_new_chat' },
-      mode: 'basic',
-    },
+    // {
+    //   id: 'voice_message_file',
+    //   title: 'Voice Message',
+    //   type: 'file-upload',
+    //   placeholder: 'Upload voice message file (.m4a/.mp3)',
+    //   dependsOn: ['operation'],
+    //   condition: { field: 'operation', value: 'start_new_chat' },
+    //   mode: 'basic',
+    // },
+    // {
+    //   id: 'video_message_file',
+    //   title: 'Video Message',
+    //   type: 'file-upload',
+    //   placeholder: 'Upload video message file',
+    //   dependsOn: ['operation'],
+    //   condition: { field: 'operation', value: 'start_new_chat' },
+    //   mode: 'basic',
+    // },
 
-    {
-      id: 'voice_message',
-      title: 'Voice Message',
-      type: 'short-input',
-      placeholder: 'Voice message field (string)',
-      dependsOn: ['operation'],
-      condition: { field: 'operation', value: ['start_new_chat', 'send_chat_message'] },
-      mode: 'advanced',
-    },
-    {
-      id: 'video_message',
-      title: 'Video Message',
-      type: 'short-input',
-      placeholder: 'Video message field (string)',
-      dependsOn: ['operation'],
-      condition: { field: 'operation', value: ['start_new_chat', 'send_chat_message'] },
-      mode: 'advanced',
-    },
+    // {
+    //   id: 'voice_message',
+    //   title: 'Voice Message',
+    //   type: 'short-input',
+    //   placeholder: 'Voice message field (string)',
+    //   dependsOn: ['operation'],
+    //   condition: { field: 'operation', value: 'start_new_chat' },
+    //   mode: 'advanced',
+    // },
+    // {
+    //   id: 'video_message',
+    //   title: 'Video Message',
+    //   type: 'short-input',
+    //   placeholder: 'Video message field (string)',
+    //   dependsOn: ['operation'],
+    //   condition: { field: 'operation', value: 'start_new_chat' },
+    //   mode: 'advanced',
+    // },
     {
       id: 'chat_topic',
       title: 'Topic',
@@ -1159,9 +1231,32 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'list_post_comments') {
           const out: Record<string, unknown> = {
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
           }
           if (typeof params.list_cursor === 'string' && params.list_cursor.trim() !== '') {
             out.cursor = params.list_cursor.trim()
+          }
+          const limRaw = params.post_comments_limit
+          if (typeof limRaw === 'string' && limRaw.trim() !== '') {
+            const n = Number.parseInt(limRaw.trim(), 10)
+            if (Number.isFinite(n)) {
+              out.limit = n
+            }
+          } else if (typeof limRaw === 'number' && Number.isFinite(limRaw)) {
+            out.limit = Math.trunc(limRaw)
+          }
+          if (
+            typeof params.post_comments_sort === 'string' &&
+            (params.post_comments_sort === 'MOST_RECENT' ||
+              params.post_comments_sort === 'MOST_RELEVANT')
+          ) {
+            out.sort_by = params.post_comments_sort
+          }
+          if (
+            typeof params.post_comments_thread_comment_id === 'string' &&
+            params.post_comments_thread_comment_id.trim() !== ''
+          ) {
+            out.comment_id = params.post_comments_thread_comment_id.trim()
           }
           return out
         }
@@ -1250,7 +1345,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           const out: Record<string, unknown> = {
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
-            text: typeof params.text === 'string' ? params.text : '',
+            text: pickUnipileBodyText(params as Record<string, unknown>, op),
           }
           const copyIfString = (fromKey: string, toKey: string) => {
             const v = params[fromKey]
@@ -1258,7 +1353,14 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
               out[toKey] = v.trim()
             }
           }
-          copyIfString('attachments', 'attachments')
+          const normalizedCommentAttachments = normalizeFileInput(
+            params.attachment_files || params.attachments
+          )
+          if (normalizedCommentAttachments && normalizedCommentAttachments.length > 0) {
+            out.attachments = normalizedCommentAttachments
+          } else {
+            copyIfString('attachments', 'attachments')
+          }
           copyIfString('linkedin_post_external_link', 'external_link')
           copyIfString('linkedin_post_as_organization', 'as_organization')
           copyIfString('linkedin_comment_parent_id', 'comment_id')
@@ -1271,7 +1373,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'create_post') {
           const out: Record<string, unknown> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
-            text: typeof params.text === 'string' ? params.text : '',
+            text: pickUnipileBodyText(params as Record<string, unknown>, op),
           }
           const normalizedAttachments = normalizeFileInput(
             params.attachment_files || params.attachments
@@ -1310,7 +1412,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           const out: Record<string, unknown> = {
             chat_id: typeof params.chat_id === 'string' ? params.chat_id.trim() : '',
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
-            text: typeof params.text === 'string' ? params.text : '',
+            text: pickUnipileBodyText(params as Record<string, unknown>, op),
           }
           const normalizedAttachments = normalizeFileInput(
             params.attachment_files || params.attachments
@@ -1323,8 +1425,6 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           }
           copyIfString('thread_id')
           copyIfString('quote_id')
-          copyIfString('voice_message')
-          copyIfString('video_message')
           if (normalizedAttachments && normalizedAttachments.length > 0) {
             out.attachments = normalizedAttachments
           } else {
@@ -1336,7 +1436,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'start_new_chat') {
           const out: Record<string, unknown> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
-            text: typeof params.text === 'string' ? params.text : '',
+            text: pickUnipileBodyText(params as Record<string, unknown>, op),
           }
           const normalizedAttachments = normalizeFileInput(
             params.attachment_files || params.attachments
@@ -1424,6 +1524,12 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
           }
         }
+        if (op === 'get_post') {
+          return {
+            post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
+            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+          }
+        }
         return {}
       },
     },
@@ -1485,6 +1591,19 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       description:
         'List post reactions: optional comment_id to list reactions on that comment (LinkedIn: id from comments list)',
     },
+    post_comments_thread_comment_id: {
+      type: 'string',
+      description:
+        'List post comments: optional comment_id to list replies for that comment (LinkedIn: id from comments list)',
+    },
+    post_comments_limit: {
+      type: 'string',
+      description: 'List post comments: optional limit 1–100 for the request page',
+    },
+    post_comments_sort: {
+      type: 'string',
+      description: 'List post comments: optional sort_by MOST_RECENT | MOST_RELEVANT',
+    },
     reactions_limit: {
       type: 'string',
       description:
@@ -1510,7 +1629,13 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'string',
       description: 'Unipile connected account id (from account picker)',
     },
-    text: { type: 'string', description: 'Message or post text' },
+    chat_message_text: {
+      type: 'string',
+      description: 'Start new chat / Send chat message: message body',
+    },
+    create_post_text: { type: 'string', description: 'Create a post: post body text' },
+    comment_post_text: { type: 'string', description: 'Comment a post: comment body (max 1250)' },
+    text: { type: 'string', description: 'Legacy combined message/post field (migration)' },
     linkedin_search_param_type: {
       type: 'string',
       description:
@@ -1586,20 +1711,24 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     typing_duration: { type: 'string', description: 'Typing duration form field' },
     attachment_files: {
       type: 'json',
-      description: 'Send chat message: uploaded attachment files (UserFile array)',
+      description:
+        'Uploaded files (UserFile array) for start chat, send message, create post, or comment post — proxied as multipart `attachments` parts to Unipile',
     },
-    voice_message_file: {
-      type: 'json',
-      description: 'Start new chat: uploaded voice message file (UserFile)',
-    },
-    video_message_file: {
-      type: 'json',
-      description: 'Start new chat: uploaded video message file (UserFile)',
-    },
+    // voice_message_file: {
+    //   type: 'json',
+    //   description: 'Start new chat: uploaded voice message file (UserFile)',
+    // },
+    // video_message_file: {
+    //   type: 'json',
+    //   description: 'Start new chat: uploaded video message file (UserFile)',
+    // },
     subject: { type: 'string', description: 'Chat subject' },
-    attachments: { type: 'string', description: 'Attachments form field' },
-    voice_message: { type: 'string', description: 'Voice message form field' },
-    video_message: { type: 'string', description: 'Video message form field' },
+    attachments: {
+      type: 'json',
+      description: 'Legacy/advanced attachment reference; prefer **Attachments** file upload above',
+    },
+    // voice_message: { type: 'string', description: 'Start new chat: voice message form field' },
+    // video_message: { type: 'string', description: 'Start new chat: video message form field' },
     attendees_ids: {
       type: 'json',
       description:

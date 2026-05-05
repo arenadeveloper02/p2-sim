@@ -98,8 +98,6 @@ export interface UnipileSendChatMessageParams {
   account_id: string
   thread_id?: string
   quote_id?: string
-  voice_message?: string
-  video_message?: string
   attachments?: string | unknown[]
   typing_duration?: string
 }
@@ -201,6 +199,7 @@ export type UnipileListUserPostsToolResponse = ToolResponse & {
 }
 
 export interface UnipileListUserCommentsParams {
+  account_id: string
   user_identifier: string
   cursor?: string
 }
@@ -210,6 +209,7 @@ export type UnipileListUserCommentsToolResponse = ToolResponse & {
 }
 
 export interface UnipileListUserReactionsParams {
+  account_id: string
   user_identifier: string
   cursor?: string
 }
@@ -220,6 +220,8 @@ export type UnipileListUserReactionsToolResponse = ToolResponse & {
 
 export interface UnipileGetPostParams {
   post_id: string
+  /** Required query param on Unipile `GET /api/v1/posts/{post_id}`. */
+  account_id: string
 }
 
 export interface UnipileGetPostToolResponse extends ToolResponse {
@@ -253,7 +255,14 @@ export interface UnipileCreatePostToolResponse extends ToolResponse {
 
 export interface UnipileListPostCommentsParams {
   post_id: string
+  /** Required query param on Unipile `GET /api/v1/posts/{post_id}/comments`. */
+  account_id: string
   cursor?: string
+  limit?: number
+  /** `MOST_RECENT` (default upstream) or `MOST_RELEVANT`. */
+  sort_by?: string
+  /** When set, returns replies for this comment (LinkedIn: id from comments list). */
+  comment_id?: string
 }
 
 export type UnipileListPostCommentsToolResponse = ToolResponse & {
@@ -276,7 +285,8 @@ export interface UnipileCommentPostParams {
   as_organization?: string
   /** Reply to this comment id (LinkedIn: from comments list) */
   comment_id?: string
-  attachments?: string
+  /** UserFile array (multipart file parts) or legacy string id/path. */
+  attachments?: string | unknown[]
 }
 
 export interface UnipileCommentPostToolResponse extends ToolResponse {

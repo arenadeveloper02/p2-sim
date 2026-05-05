@@ -5,7 +5,7 @@ export const unipileGetPostTool: ToolConfig<UnipileGetPostParams, UnipileGetPost
   id: 'unipile_get_post',
   name: 'Unipile Get Post',
   description:
-    'Retrieves a single post (`GET /api/v1/posts/{post_id}`). Uses server `UNIPILE_API_KEY`.',
+    'Retrieves a single post (`GET /api/v1/posts/{post_id}`). Requires `account_id` query (Unipile). Uses server `UNIPILE_API_KEY`.',
   version: '1.0.0',
 
   params: {
@@ -13,7 +13,14 @@ export const unipileGetPostTool: ToolConfig<UnipileGetPostParams, UnipileGetPost
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Unipile post id',
+      description:
+        'Post id (path). LinkedIn: activity id, `urn:li:ugcPost:…`, or `urn:li:share:…` per URL shape; Instagram: provider_id or shortcode.',
+    },
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile connected account id (required query param)',
     },
   },
 
@@ -23,6 +30,7 @@ export const unipileGetPostTool: ToolConfig<UnipileGetPostParams, UnipileGetPost
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
       post_id: params.post_id?.trim(),
+      account_id: params.account_id?.trim(),
     }),
   },
 

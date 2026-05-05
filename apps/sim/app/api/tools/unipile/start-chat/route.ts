@@ -27,9 +27,9 @@ const RequestSchema = z.object({
         message: 'attendees_ids is required (comma-separated relation / member ids)',
       }),
   ]),
-  attachments: z.union([RawFileInputArraySchema, optionalString]),
-  voice_message: z.union([RawFileInputSchema, optionalString]),
-  video_message: z.union([RawFileInputSchema, optionalString]),
+  attachments: z.union([RawFileInputArraySchema, optionalString]).optional(),
+  voice_message: z.union([RawFileInputSchema, optionalString]).optional(),
+  video_message: z.union([RawFileInputSchema, optionalString]).optional(),
   subject: optionalString,
   api: optionalString,
   topic: optionalString,
@@ -135,9 +135,9 @@ export async function POST(request: NextRequest) {
     }
 
     const attendeesIds = normalizeAttendeesIds(data.attendees_ids)
-    for (const attendeeId of attendeesIds) {
-      form.append('attendees_ids', attendeeId)
-    }
+    attendeesIds.forEach((attendeeId, index) => {
+      form.append(`attendees_ids[${index}]`, attendeeId)
+    })
     appendIfNonEmpty(form, 'subject', data.subject)
 
     const apiMode = (data.api ?? 'classic').trim()
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
         const flag =
           data.inmail === true ||
           (typeof data.inmail === 'string' && data.inmail.toLowerCase() === 'true')
-        form.append('inmail', flag ? 'true' : 'false')
+        form.append('linkedin[inmail]', flag ? 'true' : 'false')
       }
     }
 
