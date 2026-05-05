@@ -26,6 +26,14 @@ export interface ExaSearchParams extends ExaBaseParams {
     | 'movie'
     | 'song'
     | 'personal_site'
+  /** ISO 8601: links crawled by Exa after this time (`startCrawlDate`). Unsupported for company/people categories. */
+  startCrawlDate?: string
+  /** ISO 8601: links crawled before this time (`endCrawlDate`). Unsupported for company/people categories. */
+  endCrawlDate?: string
+  /** ISO 8601: published date after this time (`startPublishedDate`). Unsupported for company/people categories. */
+  startPublishedDate?: string
+  /** ISO 8601: published date before this time (`endPublishedDate`). Unsupported for company/people categories. */
+  endPublishedDate?: string
   // Content options
   text?: boolean | { maxCharacters?: number }
   highlights?: boolean | { query?: string; numSentences?: number; highlightsPerUrl?: number }

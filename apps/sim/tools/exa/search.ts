@@ -56,6 +56,34 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
       description:
         'Filter by category: company, research paper, news, pdf, github, tweet, personal site, linkedin profile, financial report',
     },
+    startCrawlDate: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'ISO 8601 date-time: only links crawled by Exa after this time. Not supported for company/people categories (Exa API).',
+    },
+    endCrawlDate: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'ISO 8601 date-time: only links crawled before this time. Not supported for company/people categories (Exa API).',
+    },
+    startPublishedDate: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'ISO 8601 date-time: only links with published date after this time. Not supported for company/people categories (Exa API).',
+    },
+    endPublishedDate: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'ISO 8601 date-time: only links with published date before this time. Not supported for company/people categories (Exa API).',
+    },
     text: {
       type: 'boolean',
       required: false,
@@ -122,6 +150,18 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
 
       // Category filtering
       if (params.category) body.category = params.category
+
+      const startCrawl =
+        typeof params.startCrawlDate === 'string' ? params.startCrawlDate.trim() : ''
+      if (startCrawl) body.startCrawlDate = startCrawl
+      const endCrawl = typeof params.endCrawlDate === 'string' ? params.endCrawlDate.trim() : ''
+      if (endCrawl) body.endCrawlDate = endCrawl
+      const startPub =
+        typeof params.startPublishedDate === 'string' ? params.startPublishedDate.trim() : ''
+      if (startPub) body.startPublishedDate = startPub
+      const endPub =
+        typeof params.endPublishedDate === 'string' ? params.endPublishedDate.trim() : ''
+      if (endPub) body.endPublishedDate = endPub
 
       // Build contents object for content options
       const contents: Record<string, any> = {}
