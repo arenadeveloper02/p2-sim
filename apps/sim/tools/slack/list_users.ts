@@ -44,6 +44,13 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
       visibility: 'user-or-llm',
       description: 'Maximum number of users to return (default: 100, max: 200)',
     },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Pagination cursor from a previous response (`output.cursor`) to fetch the next page',
+    },
   },
 
   request: {
@@ -53,6 +60,13 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
       // Set limit (default 100, max 200)
       const limit = params.limit ? Math.min(Number(params.limit), 200) : 100
       url.searchParams.append('limit', String(limit))
+
+      if (typeof params.cursor === 'string') {
+        const c = params.cursor.trim()
+        if (c) {
+          url.searchParams.append('cursor', c)
+        }
+      }
 
       return url.toString()
     },
@@ -107,6 +121,10 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
     const ids = users.map((user: { id: string }) => user.id)
     const names = users.map((user: { name: string }) => user.name)
 
+    const nextCursorRaw = data.response_metadata?.next_cursor
+    const cursor =
+      typeof nextCursorRaw === 'string' && nextCursorRaw.length > 0 ? nextCursorRaw : null
+
     return {
       success: true,
       output: {
@@ -114,6 +132,7 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
         ids,
         names,
         count: users.length,
+        cursor,
       },
     }
   },
@@ -140,6 +159,12 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
     count: {
       type: 'number',
       description: 'Total number of users returned',
+    },
+    cursor: {
+      type: 'string',
+      optional: true,
+      description:
+        'Cursor for the next page (`response_metadata.next_cursor`); absent or null when there are no more results',
     },
   },
 }

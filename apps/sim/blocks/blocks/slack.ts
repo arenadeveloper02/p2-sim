@@ -603,6 +603,17 @@ Do not include any explanations, markdown formatting, or other text outside the 
         value: 'list_members',
       },
     },
+    {
+      id: 'listMembersCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous List Channel Members response',
+      description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'list_members',
+      },
+    },
     // List Users specific fields
     {
       id: 'includeDeleted',
@@ -623,6 +634,18 @@ Do not include any explanations, markdown formatting, or other text outside the 
       title: 'User Limit',
       type: 'short-input',
       placeholder: '100',
+      value: () => '100',
+      condition: {
+        field: 'operation',
+        value: 'list_users',
+      },
+    },
+    {
+      id: 'listUsersCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous List Users response',
+      description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
       condition: {
         field: 'operation',
         value: 'list_users',
@@ -715,6 +738,18 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       title: 'Message Limit',
       type: 'short-input',
       placeholder: '100',
+      condition: {
+        field: 'operation',
+        value: 'get_thread',
+      },
+    },
+    {
+      id: 'getThreadCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous Get Thread response',
+      description:
+        'Optional. Pass output.cursor from a prior run to fetch the next page of replies',
       condition: {
         field: 'operation',
         value: 'get_thread',
@@ -1420,8 +1455,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
           getUserChannelsCursor,
           listChannelsCursor,
           memberLimit,
+          listMembersCursor,
           includeDeleted,
           userLimit,
+          listUsersCursor,
           userId,
           clientId,
           channelId,
@@ -1434,6 +1471,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
           getMessageTimestamp,
           getThreadTimestamp,
           threadLimit,
+          getThreadCursor,
           includeNumMembers,
           presenceUserId,
           editCanvasId,
@@ -1680,6 +1718,9 @@ Do not include any explanations, markdown formatting, or other text outside the 
                 baseParams.limit = Math.min(parsedLimit, 200)
               }
             }
+            if (getThreadCursor?.trim()) {
+              baseParams.cursor = getThreadCursor.trim()
+            }
             break
           }
 
@@ -1706,12 +1747,18 @@ Do not include any explanations, markdown formatting, or other text outside the 
 
           case 'list_members': {
             baseParams.limit = memberLimit ? Number.parseInt(memberLimit, 10) : 100
+            if (listMembersCursor?.trim()) {
+              baseParams.cursor = listMembersCursor.trim()
+            }
             break
           }
 
           case 'list_users': {
             baseParams.includeDeleted = includeDeleted === 'true'
             baseParams.limit = userLimit ? Number.parseInt(userLimit, 10) : 100
+            if (listUsersCursor?.trim()) {
+              baseParams.cursor = listUsersCursor.trim()
+            }
             break
           }
 
@@ -1982,7 +2029,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
     channelLimit: { type: 'string', description: 'Maximum number of channels to return' },
     getUserChannelsCursor: {
       type: 'string',
-      description: 'Pagination cursor for Get User Channels (maps to Slack users.conversations cursor)',
+      description:
+        'Pagination cursor for Get User Channels (maps to Slack users.conversations cursor)',
     },
     listChannelsCursor: {
       type: 'string',
@@ -1991,9 +2039,17 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     // List Members inputs
     memberLimit: { type: 'string', description: 'Maximum number of members to return' },
+    listMembersCursor: {
+      type: 'string',
+      description: 'Optional pagination cursor for List Channel Members (conversations.members)',
+    },
     // List Users inputs
     includeDeleted: { type: 'string', description: 'Include deactivated users (true/false)' },
     userLimit: { type: 'string', description: 'Maximum number of users to return' },
+    listUsersCursor: {
+      type: 'string',
+      description: 'Optional pagination cursor for List Users (users.list)',
+    },
     // Ephemeral message inputs
     ephemeralUser: { type: 'string', description: 'User ID who will see the ephemeral message' },
     blocks: { type: 'json', description: 'Block Kit layout blocks as a JSON array' },
@@ -2006,6 +2062,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     threadLimit: {
       type: 'string',
       description: 'Maximum number of messages to return from thread',
+    },
+    getThreadCursor: {
+      type: 'string',
+      description: 'Optional pagination cursor for Get Thread (conversations.replies)',
     },
     // Get Channel Info inputs
     includeNumMembers: { type: 'string', description: 'Include member count (true/false)' },
@@ -2145,10 +2205,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     cursor: {
       type: 'string',
       description:
-        'Pagination cursor for the next page of List Channels or Get User Channels (Slack response_metadata.next_cursor); null or empty when there are no more results',
+        'Pagination cursor for the next page (Slack response_metadata.next_cursor) for List Channels, Get User Channels, List Members, List Users, or Get Thread; null or empty when there are no more results',
       condition: {
         field: 'operation',
-        value: ['list_channels', 'get_user_channels'],
+        value: ['list_channels', 'get_user_channels', 'list_members', 'list_users', 'get_thread'],
       },
     },
 
