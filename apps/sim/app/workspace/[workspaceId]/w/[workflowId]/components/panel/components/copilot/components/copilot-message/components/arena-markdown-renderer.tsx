@@ -7,6 +7,7 @@ import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import { Code, Tooltip } from '@/components/emcn'
+import { cn } from '@/lib/core/utils/cn'
 
 /**
  * Recursively extracts text content from React elements
@@ -126,6 +127,11 @@ function LinkWithPreview({ href, children }: { href: string; children: React.Rea
 interface ArenaCopilotMarkdownRendererProps {
   /** Markdown content to render */
   content: string
+  /**
+   * `block` (default) is for normal message blocks. `inline` maps paragraphs to spans so emphasis
+   * and links can render inside one visual line (e.g. pipe-delimited pricing rows).
+   */
+  variant?: 'block' | 'inline'
 }
 
 /**
@@ -138,6 +144,7 @@ interface ArenaCopilotMarkdownRendererProps {
  */
 export default function ArenaCopilotMarkdownRenderer({
   content,
+  variant = 'block',
 }: ArenaCopilotMarkdownRendererProps) {
   const [copiedCodeBlocks, setCopiedCodeBlocks] = useState<Record<string, boolean>>({})
 
@@ -162,11 +169,16 @@ export default function ArenaCopilotMarkdownRenderer({
   const markdownComponents = useMemo(
     () => ({
       // Paragraph
-      p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => (
-        <p className='my-2 font-geist-sans text-base text-gray-800 leading-relaxed last:mb-0 dark:text-gray-200'>
-          {children}
-        </p>
-      ),
+      p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) =>
+        variant === 'inline' ? (
+          <span className='my-0 inline font-geist-sans text-base text-gray-800 leading-relaxed dark:text-gray-200'>
+            {children}
+          </span>
+        ) : (
+          <p className='my-2 font-geist-sans text-base text-gray-800 leading-relaxed last:mb-0 dark:text-gray-200'>
+            {children}
+          </p>
+        ),
 
       // Headings
       h1: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
@@ -432,12 +444,19 @@ export default function ArenaCopilotMarkdownRenderer({
         />
       ),
     }),
-    [copiedCodeBlocks]
+    [copiedCodeBlocks, variant]
   )
+
+  const Root = variant === 'inline' ? 'span' : 'div'
 
   return (
     <Tooltip.Provider>
-      <div className='copilot-markdown-wrapper max-w-full break-words font-geist-sans text-[#0D0D0D] text-base leading-relaxed dark:text-gray-100'>
+      <Root
+        className={cn(
+          'copilot-markdown-wrapper max-w-full break-words font-geist-sans text-[#0D0D0D] text-base leading-relaxed dark:text-gray-100',
+          variant === 'inline' && 'inline'
+        )}
+      >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[
@@ -492,7 +511,7 @@ export default function ArenaCopilotMarkdownRenderer({
         >
           {content}
         </ReactMarkdown>
-      </div>
+      </Root>
     </Tooltip.Provider>
   )
 }
