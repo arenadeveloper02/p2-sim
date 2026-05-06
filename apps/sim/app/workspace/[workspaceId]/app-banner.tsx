@@ -33,17 +33,17 @@ export function AppBanner() {
       role='status'
       aria-live='polite'
       className={cn(
-        'border-[var(--terminal-status-warning-border)] border-t border-b',
-        'bg-[var(--terminal-status-warning-bg)] py-2'
+        ' border-t border-b',
+        'bg-[#F3F8FE] py-2'
       )}
     >
       <div className='mx-auto flex items-start justify-center gap-2.5 px-6 sm:items-center'>
         <AlertTriangle
-          className='mt-0.5 h-[15px] w-[15px] shrink-0 text-[var(--terminal-status-warning-color)] sm:mt-0'
+          className='mt-0.5 h-[15px] w-[15px] shrink-0 text-[#155CBA] sm:mt-0'
           aria-hidden
           strokeWidth={2}
         />
-        <p className='text-left font-medium text-[13px] text-[var(--terminal-status-warning-color)] leading-relaxed'>
+        <p className='text-left font-medium text-[13px] text-[#155CBA] leading-relaxed'>
           {message}
         </p>
       </div>
