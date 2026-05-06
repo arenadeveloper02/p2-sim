@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Maintenance: nginx serves deployment/maintenance.html on 3000/3002 during build/pull.
-# nginx-maintenance.conf preserves deep links (try_files → index.html) and returns 503 for
-# /api/health so maintenance.html can poll until the real app is healthy, then resume the same route.
+# Maintenance: a tiny Node server serves deployment/maintenance.html on 3000/3002 during build/pull.
+# It returns 503 for /api/health so maintenance.html can poll until the real app is healthy, then
+# resume the same route.
 # After containers start, --wait blocks until simstudio + realtime pass healthchecks so the LB
 # sees healthy targets as soon as possible (pair with deployment/docker-compose.deploy-health.yml).
 

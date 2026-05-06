@@ -1,6 +1,8 @@
-# Serves deployment/maintenance.html as the default document.
-# Used only during EC2 deploy so traffic sees maintenance while compose rebuilds.
-# Nginx runs inside this container — nothing is installed on the host.
-FROM nginx:alpine
-COPY maintenance.html /usr/share/nginx/html/index.html
-COPY nginx-maintenance.conf /etc/nginx/conf.d/default.conf
+FROM node:20-alpine
+
+WORKDIR /app
+COPY maintenance.html ./maintenance.html
+COPY maintenance-server.mjs ./maintenance-server.mjs
+
+EXPOSE 80
+CMD ["node", "maintenance-server.mjs"]
