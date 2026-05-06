@@ -34,7 +34,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Get Message', id: 'get_message' },
         { label: 'Get Thread', id: 'get_thread' },
         { label: 'List Channels', id: 'list_channels' },
-        { label: 'List My Channels', id: 'list_my_channels' },
+        { label: 'List My Channels & DMs', id: 'list_my_channels' },
         { label: 'Get User Channels', id: 'get_user_channels' },
         { label: 'List Channel Members', id: 'list_members' },
         { label: 'List Users', id: 'list_users' },
@@ -198,8 +198,12 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       mode: 'basic',
       dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
+        field: 'operation',
+        value: ['send', 'read'],
+        and: {
         field: 'destinationType',
         value: 'dm',
+        },
       },
       required: true,
     },
@@ -211,8 +215,12 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
       mode: 'advanced',
       condition: {
+        field: 'operation',
+        value: ['send', 'read'],
+        and: {
         field: 'destinationType',
         value: 'dm',
+        },
       },
       required: true,
     },
@@ -536,7 +544,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     {
       id: 'includeDMs',
-      title: 'Include Direct Messages',
+      title: 'Include 1:1 DMs (im)',
       type: 'dropdown',
       options: [
         { label: 'No', id: 'false' },
@@ -545,12 +553,12 @@ Do not include any explanations, markdown formatting, or other text outside the 
       value: () => 'false',
       condition: {
         field: 'operation',
-        value: ['list_channels', 'get_user_channels'],
+        value: ['list_channels', 'get_user_channels', 'list_my_channels'],
       },
     },
     {
       id: 'includeGroupDMs',
-      title: 'Include Group DMs',
+      title: 'Include Group DMs (mpim)',
       type: 'dropdown',
       options: [
         { label: 'No', id: 'false' },
@@ -559,7 +567,23 @@ Do not include any explanations, markdown formatting, or other text outside the 
       value: () => 'false',
       condition: {
         field: 'operation',
-        value: ['list_channels', 'get_user_channels'],
+        value: ['list_channels', 'get_user_channels', 'list_my_channels'],
+      },
+    },
+    {
+      id: 'listMyChannelsAutoPaginate',
+      title: 'Auto Paginate',
+      type: 'dropdown',
+      canonicalParamId: 'autoPaginate',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
+      description: 'Fetch all pages automatically until the cursor is empty',
+      condition: {
+        field: 'operation',
+        value: 'list_my_channels',
       },
     },
     {
@@ -1815,8 +1839,11 @@ Do not include any explanations, markdown formatting, or other text outside the 
           case 'list_my_channels': {
             baseParams.includePublic = includePublic !== 'false'
             baseParams.includePrivate = includePrivate !== 'false'
+            baseParams.includeDMs = includeDMs === 'true'
+            baseParams.includeGroupDMs = includeGroupDMs === 'true'
             baseParams.excludeArchived = listMyChannelsExcludeArchived !== 'false'
             baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 200
+            baseParams.autoPaginate = autoPaginate !== 'false'
             if (listMyChannelsCursor?.trim()) {
               baseParams.cursor = listMyChannelsCursor.trim()
             }
@@ -2094,20 +2121,22 @@ Do not include any explanations, markdown formatting, or other text outside the 
     includePublic: {
       type: 'string',
       description:
-        'Include public channels in results (true/false). Shown for Get User Channels and List My Channels.',
+        'Include public channels in results (true/false). Shown for Get User Channels and List My Channels & DMs.',
     },
     includePrivate: {
       type: 'string',
       description:
-        'Include private channels (true/false). List Channels, Get User Channels, and List My Channels.',
+        'Include private channels (true/false). List Channels, Get User Channels, and List My Channels & DMs.',
     },
     includeDMs: {
       type: 'string',
-      description: 'Include 1:1 direct messages (true/false). Requires im:read scope.',
+      description:
+        'Include 1:1 direct messages / Slack type `im` (true/false). Requires im:read scope.',
     },
     includeGroupDMs: {
       type: 'string',
-      description: 'Include group DMs / mpims (true/false). Requires mpim:read scope.',
+      description:
+        'Include group DMs / Slack type `mpim` (true/false). Requires mpim:read scope.',
     },
     channelLimit: { type: 'string', description: 'Maximum number of channels to return' },
     getUserChannelsCursor: {
@@ -2123,12 +2152,12 @@ Do not include any explanations, markdown formatting, or other text outside the 
     listMyChannelsCursor: {
       type: 'string',
       description:
-        'Optional pagination cursor for List My Channels (maps to Slack users.conversations cursor)',
+        'Optional pagination cursor for List My Channels & DMs (maps to Slack users.conversations cursor)',
     },
     listMyChannelsExcludeArchived: {
       type: 'string',
       description:
-        'Exclude archived channels for List My Channels (true/false; maps to exclude_archived)',
+        'Exclude archived channels for List My Channels & DMs (true/false; maps to exclude_archived)',
     },
     // List Members inputs
     memberLimit: { type: 'string', description: 'Maximum number of members to return' },

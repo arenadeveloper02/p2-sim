@@ -751,17 +751,25 @@ export interface SlackGetUserChannelsParams extends SlackBaseParams {
 }
 
 /**
- * Params for `slack_list_my_channels` (Slack `users.conversations` with public + private channels only).
+ * Params for `slack_list_my_channels` (Slack `users.conversations`).
+ *
+ * Conversation `types`: `public_channel`, `private_channel`, `im` (1:1 DMs), `mpim` (group DMs).
  */
 export interface SlackListMyChannelsParams extends SlackBaseParams {
   /** When true, request `public_channel` in the `types` query param (default: true). */
   includePublic?: boolean
   /** When true, request `private_channel` in the `types` query param (default: true). */
   includePrivate?: boolean
+  /** When true, request `im` in `types` — 1:1 direct messages (requires `im:read`; default: false). */
+  includeDMs?: boolean
+  /** When true, request `mpim` in `types` — multi-person / group DMs (requires `mpim:read`; default: false). */
+  includeGroupDMs?: boolean
   excludeArchived?: boolean
   limit?: number
   /** Pagination cursor from a prior `users.conversations` response (`response_metadata.next_cursor`). */
   cursor?: string
+  /** When true, fetch all pages and return a combined list (default: false). */
+  autoPaginate?: boolean
 }
 
 export interface SlackListMembersParams extends SlackBaseParams {
