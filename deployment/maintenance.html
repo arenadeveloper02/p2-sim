@@ -133,7 +133,7 @@
       <div class="modal-body">
         <h1 class="modal-title" id="maintenance-title">We're making updates</h1>
         <p class="modal-description" id="maintenance-desc">
-          We're sprucing things up. Check back in a few minutes.
+          We're sprucing things up. Check back in a few minutes.<br />
           Thank you for your patience.
         </p>
       </div>
@@ -141,46 +141,21 @@
   </div>
 
 </body>
-
 <script>
   (function () {
-    /** Must match SIM_DEPLOY_RESUME_PATH_KEY in apps/sim/app/_shell/resume-path-sync.tsx */
-    var STORAGE_KEY = 'sim_resume_path';
-    var POLL_MS = 4000;
-    var FALLBACK_REFRESH_MS = 2 * 60 * 1000;
+    var REFRESH_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 
-    function resumeWhenHealthy() {
-      try {
-        var stored = sessionStorage.getItem(STORAGE_KEY);
-        var here =
-          window.location.pathname + window.location.search + window.location.hash;
-        if (stored && stored !== '/' && stored !== here) {
-          window.location.replace(stored);
-          return;
-        }
-      } catch (e) {}
+    function refreshWithCacheBust() {
       window.location.reload();
     }
 
-    async function pollHealth() {
-      if (document.visibilityState !== 'visible') return;
-      try {
-        var r = await fetch('/api/health', { cache: 'no-store', method: 'GET' });
-        if (r.ok) resumeWhenHealthy();
-      } catch (e) {}
-    }
-
-    setInterval(pollHealth, POLL_MS);
-    pollHealth();
-
-    function refreshWhenVisible() {
-      if (document.visibilityState === 'visible') window.location.reload();
-    }
-
-    setInterval(refreshWhenVisible, FALLBACK_REFRESH_MS);
+    setInterval(function () {
+      // Avoid refreshing a background tab; refresh once when it becomes visible again.
+      if (document.visibilityState === 'visible') refreshWithCacheBust();
+    }, REFRESH_INTERVAL_MS);
 
     document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'visible') pollHealth();
+      if (document.visibilityState === 'visible') refreshWithCacheBust();
     });
   })();
 </script>
