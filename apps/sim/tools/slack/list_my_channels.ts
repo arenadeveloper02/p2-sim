@@ -34,7 +34,7 @@ export const slackListMyChannelsTool: ToolConfig<
   id: 'slack_list_my_channels',
   name: 'Slack List My Channels',
   description:
-    'List channels the authenticated user is a member of via Slack users.conversations. Control `types` (public / private), exclude_archived, limit, and cursor — no DMs. For every channel in the workspace the token can see, use List Channels instead.',
+    "List the authenticated user's own joined Slack conversations (via users.conversations). Use this first when you need a channel/conversation ID; it returns only what you're in (smaller than workspace-wide list).",
   version: '1.0.0',
 
   oauth: {
