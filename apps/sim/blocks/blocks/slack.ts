@@ -712,6 +712,22 @@ Do not include any explanations, markdown formatting, or other text outside the 
         value: 'list_users',
       },
     },
+    {
+      id: 'listUsersAutoPaginate',
+      title: 'Auto Paginate',
+      type: 'dropdown',
+      canonicalParamId: 'autoPaginate',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
+      description: 'Fetch all pages automatically until the cursor is empty',
+      condition: {
+        field: 'operation',
+        value: 'list_users',
+      },
+    },
     // Get User specific fields
     {
       id: 'userId',
@@ -1861,6 +1877,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
           case 'list_users': {
             baseParams.includeDeleted = includeDeleted === 'true'
             baseParams.limit = userLimit ? Number.parseInt(userLimit, 10) : 100
+            baseParams.autoPaginate = autoPaginate !== 'false'
             if (listUsersCursor?.trim()) {
               baseParams.cursor = listUsersCursor.trim()
             }
