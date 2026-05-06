@@ -711,10 +711,13 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         scopes: [
           'channels:read',
           'channels:history',
+          'channels:write',
           'groups:read',
           'groups:history',
+          'groups:write',
           'mpim:read',
           'mpim:history',
+          'mpim:write',
           'chat:write',
           'chat:write.public',
           'im:write',
