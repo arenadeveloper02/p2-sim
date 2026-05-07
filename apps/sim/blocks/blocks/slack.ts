@@ -62,9 +62,11 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'authMethod',
       title: 'Authentication Method',
       type: 'dropdown',
+      description:
+        'Sim Bot uses the workspace OAuth bot token (bot/app actions). Custom Bot uses a user token (user-level actions). If the task is “as a user” (DMs, user conversations), prefer Custom Bot; otherwise prefer Sim Bot.',
       options: [
-        { label: 'Sim Bot', id: 'oauth' },
-        { label: 'Custom Bot', id: 'bot_token' },
+        { label: 'Sim Bot (bot token)', id: 'oauth' },
+        { label: 'Custom Bot (user token)', id: 'bot_token' },
       ],
       value: () => 'bot_token',
       required: true,

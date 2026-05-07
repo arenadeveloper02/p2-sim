@@ -18,7 +18,8 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'Authentication method: oauth or bot_token',
+      description:
+        'Authentication method: oauth (Sim Bot / bot token) or bot_token (Custom Bot / user token). Prefer bot_token when listing users as the signed-in user.',
     },
     botToken: {
       type: 'string',
