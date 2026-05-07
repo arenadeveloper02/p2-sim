@@ -407,7 +407,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
     {
       id: 'fromDate',
       title: 'From Date',
-      type: 'date-input',
+      type: 'short-input',
       placeholder: 'Select from date',
       condition: {
         field: 'operation',
@@ -417,7 +417,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
     {
       id: 'toDate',
       title: 'To Date',
-      type: 'date-input',
+      type: 'short-input',
       placeholder: 'Select to date',
       condition: {
         field: 'operation',
@@ -582,6 +582,21 @@ Do not include any explanations, markdown formatting, or other text outside the 
       },
     },
     {
+      id: 'getUserChannelsAutoPaginate',
+      title: 'Auto Paginate',
+      type: 'dropdown',
+      description: 'Fetch all pages automatically. Always enabled for Get User Channels.',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
+      condition: {
+        field: 'operation',
+        value: 'get_user_channels',
+      },
+    },
+    {
       id: 'listChannelsCursor',
       title: 'Cursor',
       type: 'short-input',
@@ -646,6 +661,22 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'short-input',
       placeholder: 'Pagination cursor from previous List Users response',
       description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'list_users',
+      },
+    },
+    {
+      id: 'listUsersAutoPaginate',
+      title: 'Auto Paginate',
+      type: 'dropdown',
+      canonicalParamId: 'autoPaginate',
+      description: 'Fetch all pages automatically. Always enabled for List Users.',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
       condition: {
         field: 'operation',
         value: 'list_users',
@@ -1742,6 +1773,9 @@ Do not include any explanations, markdown formatting, or other text outside the 
             if (operation === 'list_channels' && listChannelsCursor?.trim()) {
               baseParams.cursor = listChannelsCursor.trim()
             }
+            if (operation === 'get_user_channels') {
+              baseParams.autoPaginate = true
+            }
             break
           }
 
@@ -1756,6 +1790,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
           case 'list_users': {
             baseParams.includeDeleted = includeDeleted === 'true'
             baseParams.limit = userLimit ? Number.parseInt(userLimit, 10) : 100
+            baseParams.autoPaginate = true
             if (listUsersCursor?.trim()) {
               baseParams.cursor = listUsersCursor.trim()
             }

@@ -96,6 +96,12 @@ export const slackGetUserChannelsTool: ToolConfig<
       description:
         'Pagination cursor from a previous response (`output.cursor`) to fetch the next page',
     },
+    autoPaginate: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Fetch all pages automatically (default: true)',
+    },
   },
 
   request: {
@@ -145,7 +151,7 @@ export const slackGetUserChannelsTool: ToolConfig<
     }),
   },
 
-  transformResponse: async (response: Response) => {
+  transformResponse: async (response: Response, params?: SlackGetUserChannelsParams) => {
     const data = await response.json()
 
     if (!data.ok) {
@@ -161,7 +167,58 @@ export const slackGetUserChannelsTool: ToolConfig<
       throw new Error(data.error || 'Failed to list user conversations from Slack')
     }
 
-    const channels = (data.channels || []).map((channel: any) => {
+    const isTrue = (v: unknown): boolean => v === true || v === 'true'
+    const isFalse = (v: unknown): boolean => v === false || v === 'false'
+
+    const accessToken = params?.accessToken || params?.botToken
+    const shouldAutoPaginate = params?.autoPaginate === undefined ? true : isTrue(params.autoPaginate)
+
+    const allRaw: any[] = [...(data.channels ?? [])]
+
+    if (shouldAutoPaginate) {
+      if (!accessToken) {
+        throw new Error('Missing access token for auto pagination')
+      }
+
+      let nextCursor = data.response_metadata?.next_cursor
+      while (typeof nextCursor === 'string' && nextCursor.trim().length > 0) {
+        const url = new URL('https://slack.com/api/users.conversations')
+
+        const types: string[] = []
+        if (!isFalse(params?.includePublic)) types.push('public_channel')
+        if (!isFalse(params?.includePrivate)) types.push('private_channel')
+        if (isTrue(params?.includeDMs)) types.push('im')
+        if (isTrue(params?.includeGroupDMs)) types.push('mpim')
+        if (types.length === 0) types.push('public_channel')
+        url.searchParams.append('types', types.join(','))
+
+        const excludeArchived = !isFalse(params?.excludeArchived)
+        url.searchParams.append('exclude_archived', String(excludeArchived))
+
+        const limit = params?.limit ? Math.min(Number(params.limit), 200) : 200
+        url.searchParams.append('limit', String(limit))
+
+        url.searchParams.append('cursor', nextCursor.trim())
+
+        const pageResponse = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        })
+
+        const pageData = await pageResponse.json()
+        if (!pageData.ok) {
+          throw new Error(pageData.error || 'Failed to paginate Slack conversations')
+        }
+
+        allRaw.push(...(pageData.channels ?? []))
+        nextCursor = pageData.response_metadata?.next_cursor
+      }
+    }
+
+    const channels = allRaw.map((channel: any) => {
       const isIm = Boolean(channel.is_im)
       const isMpim = Boolean(channel.is_mpim)
       return {
@@ -188,9 +245,12 @@ export const slackGetUserChannelsTool: ToolConfig<
     const ids = channels.map((channel: { id: string }) => channel.id)
     const names = channels.map((channel: { name: string }) => channel.name)
 
-    const nextCursorRaw = data.response_metadata?.next_cursor
-    const cursor =
-      typeof nextCursorRaw === 'string' && nextCursorRaw.length > 0 ? nextCursorRaw : null
+    const cursor = shouldAutoPaginate
+      ? null
+      : typeof data.response_metadata?.next_cursor === 'string' &&
+          data.response_metadata?.next_cursor.length > 0
+        ? data.response_metadata.next_cursor
+        : null
 
     return {
       success: true,

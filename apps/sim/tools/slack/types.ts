@@ -748,6 +748,8 @@ export interface SlackGetUserChannelsParams extends SlackBaseParams {
   limit?: number
   /** Pagination cursor from a prior `users.conversations` response (`response_metadata.next_cursor`). */
   cursor?: string
+  /** When true, fetch all pages and return a combined list (default: true). */
+  autoPaginate?: boolean
 }
 
 export interface SlackListMembersParams extends SlackBaseParams {
@@ -762,6 +764,8 @@ export interface SlackListUsersParams extends SlackBaseParams {
   limit?: number
   /** Pagination cursor from a prior `users.list` response (`response_metadata.next_cursor`). */
   cursor?: string
+  /** When true, fetch all pages and return a combined list (default: true). */
+  autoPaginate?: boolean
 }
 
 export interface SlackGetUserParams extends SlackBaseParams {
