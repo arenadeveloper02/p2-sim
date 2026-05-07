@@ -2,6 +2,7 @@
 
 import {
   type Dispatch,
+  Fragment,
   memo,
   type SetStateAction,
   useCallback,
@@ -88,78 +89,16 @@ function hasFencedCodeBlock(str: string): boolean {
   return /```/.test(str)
 }
 
-/** Total character length of a node's text content (recursive). */
-function getNodeTextLength(node: Node): number {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent?.length ?? 0
-  let len = 0
-  for (let i = 0; i < node.childNodes.length; i++) {
-    len += getNodeTextLength(node.childNodes[i])
-  }
-  return len
-}
-
 /**
- * Returns the character offset of (targetNode, targetOffset) within container's text content.
- * Walks container's subtree in document order. For a text node, targetOffset is a character index;
- * for an element node (e.g. container or button), Range API gives child index, so we sum preceding siblings' text lengths.
+ * Pipe column is copyable when it sits strictly between two other columns (matches `trim` of that segment non-empty).
  */
-function getCharacterOffset(container: Node, targetNode: Node, targetOffset: number): number {
-  let offset = 0
-  function walk(node: Node): boolean {
-    if (node === targetNode) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        offset += targetOffset
-      } else {
-        for (let i = 0; i < targetOffset && i < node.childNodes.length; i++) {
-          offset += getNodeTextLength(node.childNodes[i])
-        }
-      }
-      return true
-    }
-    if (node.nodeType === Node.TEXT_NODE) {
-      offset += node.textContent?.length ?? 0
-      return false
-    }
-    for (let i = 0; i < node.childNodes.length; i++) {
-      if (walk(node.childNodes[i])) return true
-    }
-    return false
-  }
-  walk(container)
-  return offset
-}
-
-/**
- * Detects a pipe-delimited segment at the given offset in the line:
- * look backward for a pipe (stop at newline/start), then forward for a pipe (stop at newline/end).
- * Returns { start, end, text } for the segment between the two pipes, or null.
- */
-function getPipeSegmentAtOffset(
-  line: string,
-  offset: number
-): { start: number; end: number; text: string } | null {
-  if (offset < 0 || offset > line.length) return null
-  let pipeBefore = -1
-  for (let i = offset - 1; i >= 0; i--) {
-    if (line[i] === '\n') break
-    if (line[i] === '|') {
-      pipeBefore = i
-      break
-    }
-  }
-  if (pipeBefore < 0) return null
-  let pipeAfter = -1
-  for (let i = offset; i < line.length; i++) {
-    if (line[i] === '\n') break
-    if (line[i] === '|') {
-      pipeAfter = i
-      break
-    }
-  }
-  if (pipeAfter < 0 || pipeAfter <= pipeBefore) return null
-  const text = line.slice(pipeBefore + 1, pipeAfter).trim()
-  if (!text) return null
-  return { start: pipeBefore + 1, end: pipeAfter, text }
+function isPipeSegmentCopyable(partsLen: number, index: number, part: string): boolean {
+  return (
+    partsLen >= 3 &&
+    index >= 1 &&
+    index <= partsLen - 2 &&
+    part.trim().length > 0
+  )
 }
 
 interface LineWithPipeHoverProps {
@@ -205,89 +144,40 @@ function parseWelcomeSegments(content: string): WelcomeSegment[] {
 }
 
 function LineWithPipeHover({ line, onCopySegment }: LineWithPipeHoverProps) {
-  const [hovered, setHovered] = useState<{ start: number; end: number; text: string } | null>(null)
-  const lineRef = useRef<HTMLSpanElement>(null)
-
-  const onMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      const container = lineRef.current
-      if (!container) return
-      const doc = container.ownerDocument
-      const range =
-        doc.caretRangeFromPoint?.(e.clientX, e.clientY) ??
-        (() => {
-          const pos = (
-            doc as Document & {
-              caretPositionFromPoint?(
-                x: number,
-                y: number
-              ): { offsetNode: Node; offset: number } | null
-            }
-          ).caretPositionFromPoint?.(e.clientX, e.clientY)
-          if (!pos) return null
-          return { startContainer: pos.offsetNode, startOffset: pos.offset }
-        })()
-      if (!range || !container.contains(range.startContainer)) {
-        setHovered(null)
-        return
-      }
-      const offset = getCharacterOffset(container, range.startContainer, range.startOffset)
-      if (offset < 0 || offset > line.length) {
-        setHovered(null)
-        return
-      }
-      const segment = getPipeSegmentAtOffset(line, offset)
-      setHovered(segment)
-    },
-    [line]
-  )
-
-  const onMouseLeave = useCallback(() => setHovered(null), [])
-
+  const parts = line.split('|')
   const handleCopy = useCallback(
     (text: string) => {
-      onCopySegment(text)
+      onCopySegment(text.trim())
     },
     [onCopySegment]
   )
 
-  if (hovered) {
-    return (
-      <span
-        ref={lineRef}
-        className='whitespace-pre-wrap'
-        onMouseMove={onMouseMove}
-        onMouseLeave={onMouseLeave}
-      >
-        {line.slice(0, hovered.start)}
-        <Tooltip.Provider>
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <button
-                type='button'
-                onClick={() => handleCopy(hovered.text)}
-                className='cursor-pointer rounded px-0.5 py-0 text-inherit no-underline transition-colors hover:underline hover:decoration-2 hover:decoration-gray-400 hover:underline-offset-2'
-              >
-                {line.slice(hovered.start, hovered.end)}
-              </button>
-            </Tooltip.Trigger>
-            <Tooltip.Content side='top'>Click to copy</Tooltip.Content>
-          </Tooltip.Root>
-        </Tooltip.Provider>
-        {line.slice(hovered.end)}
-      </span>
-    )
-  }
-
   return (
-    <span
-      ref={lineRef}
-      className='whitespace-pre-wrap'
-      onMouseMove={onMouseMove}
-      onMouseLeave={onMouseLeave}
-    >
-      {line}
-    </span>
+    <Tooltip.Provider>
+      <span className='whitespace-pre-wrap'>
+        {parts.map((part, i) => (
+          <Fragment key={i}>
+            {i > 0 ? '|' : null}
+            {isPipeSegmentCopyable(parts.length, i, part) ? (
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <button
+                    type='button'
+                    onClick={() => handleCopy(part)}
+                    className='inline cursor-pointer rounded border-0 bg-transparent px-0.5 py-0 font-inherit text-inherit no-underline transition-colors hover:underline hover:decoration-2 hover:decoration-gray-400 hover:underline-offset-2'
+                  >
+                    <ArenaCopilotMarkdownRenderer content={part} variant='inline' />
+                  </button>
+                </Tooltip.Trigger>
+                <Tooltip.Content side='top'>Click to copy</Tooltip.Content>
+              </Tooltip.Root>
+            ) : (
+              <ArenaCopilotMarkdownRenderer content={part} variant='inline' />
+            )}
+          </Fragment>
+        ))}
+      </span>
+    </Tooltip.Provider>
   )
 }
 
@@ -370,7 +260,7 @@ export const ArenaClientChatMessage = memo(
       [onWelcomeQueryClick]
     )
 
-    /** Renders string content. When onCopySegmentToInput is set and content has pipes (and is not a table/code block), renders line-by-line: on hover we look backward for a pipe and forward for a pipe (stop at newline); if both exist the text between is copyable. No extra pipes are rendered. */
+    /** Renders string content. When onCopySegmentToInput is set and content has pipes (and is not a table/code block), renders line-by-line: each pipe splits the line; columns strictly between two other columns are click-to-copy (trimmed). Markdown in every column still renders (e.g. **bold**). */
     const renderStringContent = useCallback(
       (str: string) => {
         if (message.isInitialMessage) {
@@ -385,7 +275,7 @@ export const ArenaClientChatMessage = memo(
         }
         const lines = str.split(/\r?\n/)
         return (
-          <span className='whitespace-pre-wrap'>
+          <span className='whitespace-normal'>
             {lines.map((line, i) => (
               <span key={i}>
                 {i > 0 && '\n'}

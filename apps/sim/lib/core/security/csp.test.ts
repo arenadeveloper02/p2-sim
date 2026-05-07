@@ -144,6 +144,7 @@ describe('getMainCSPPolicy', () => {
     expect(policy).toContain('https://fonts.googleapis.com')
     expect(policy).toContain('https://fonts.gstatic.com')
     expect(policy).toContain('https://*.google.com')
+    expect(policy).toContain('https://*.thearena.ai')
   })
 })
 

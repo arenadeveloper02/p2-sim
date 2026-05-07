@@ -1,0 +1,117 @@
+import type { ToolConfig } from '@/tools/types'
+import type {
+  UnipileSendChatMessageParams,
+  UnipileSendChatMessageToolResponse,
+} from '@/tools/unipile/types'
+
+export const unipileSendChatMessageTool: ToolConfig<
+  UnipileSendChatMessageParams,
+  UnipileSendChatMessageToolResponse
+> = {
+  id: 'unipile_send_chat_message',
+  name: 'Unipile Send Chat Message',
+  description:
+    'Sends a message in a chat (`POST /api/v1/chats/{chat_id}/messages` as multipart form). Uses server `UNIPILE_API_KEY`.',
+  version: '1.0.0',
+
+  params: {
+    chat_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile chat id',
+    },
+    text: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Message body text',
+    },
+    account_id: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Unipile connected account id',
+    },
+    thread_id: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional thread id',
+    },
+    quote_id: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Optional quote id',
+    },
+    attachments: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Attachments as UserFile array (preferred) or legacy string; forwarded as multipart attachments',
+    },
+    typing_duration: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Typing duration field (form string)',
+    },
+  },
+
+  request: {
+    url: '/api/tools/unipile/send-chat-message',
+    method: 'POST',
+    headers: () => ({ 'Content-Type': 'application/json' }),
+    body: (params) => {
+      const body: Record<string, unknown> = {
+        chat_id: params.chat_id?.trim() ?? '',
+        text: typeof params.text === 'string' ? params.text : '',
+        account_id: params.account_id?.trim() ?? '',
+      }
+      if (typeof params.thread_id === 'string' && params.thread_id.trim() !== '') {
+        body.thread_id = params.thread_id.trim()
+      }
+      if (typeof params.quote_id === 'string' && params.quote_id.trim() !== '') {
+        body.quote_id = params.quote_id.trim()
+      }
+      if (typeof params.typing_duration === 'string' && params.typing_duration.trim() !== '') {
+        body.typing_duration = params.typing_duration.trim()
+      }
+      const attachments = params.attachments
+      if (attachments != null) {
+        if (Array.isArray(attachments) && attachments.length > 0) {
+          body.attachments = attachments
+        } else if (typeof attachments === 'string' && attachments.trim() !== '') {
+          body.attachments = attachments.trim()
+        }
+      }
+      return body
+    },
+  },
+
+  transformResponse: async (response: Response) => {
+    const data = (await response.json()) as Record<string, unknown>
+    if (!response.ok) {
+      throw new Error(typeof data.error === 'string' ? data.error : 'Unipile request failed')
+    }
+
+    return {
+      success: true,
+      output: {
+        object: typeof data.object === 'string' ? data.object : null,
+        message_id: typeof data.message_id === 'string' ? data.message_id : null,
+      },
+    }
+  },
+
+  outputs: {
+    object: {
+      type: 'string',
+      description: 'Unipile object type (e.g. MessageSent)',
+      optional: true,
+    },
+    message_id: { type: 'string', description: 'Sent message id', optional: true },
+  },
+}
