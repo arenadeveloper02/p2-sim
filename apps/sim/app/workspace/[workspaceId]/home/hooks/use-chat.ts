@@ -1060,9 +1060,7 @@ export function useChat(
   const pathname = usePathname()
   const effectiveIsEmbedPageRef = useRef(false)
   effectiveIsEmbedPageRef.current =
-    Boolean(isEmbedPage) ||
-    Boolean(options?.isEmbedPage) ||
-    pathname.endsWith('/embed')
+    Boolean(isEmbedPage) || Boolean(options?.isEmbedPage) || pathname.endsWith('/embed')
   const router = useRouter()
   const queryClient = useQueryClient()
   const [pendingMessages, setPendingMessages] = useState<ChatMessage[]>([])
@@ -3325,16 +3323,17 @@ export function useChat(
             : undefined
 
         let effectiveWorkspaceId = workspaceId
-        let resolvedWorkflowExecution:
-          | { workflowId: string; selectedOutputs: string[] }
-          | undefined
+        let resolvedWorkflowExecution: { workflowId: string; selectedOutputs: string[] } | undefined
         if (effectiveIsEmbedPageRef.current) {
           try {
             const currentMessages = messagesRef.current
             const resolveResponse = await fetch('/api/agent/resolve-workspace', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ message: message, context: currentMessages.map((m) => m.content).join('\n') }),
+              body: JSON.stringify({
+                message: message,
+                context: currentMessages.map((m) => m.content).join('\n'),
+              }),
               signal: abortController.signal,
             })
             if (resolveResponse.ok) {

@@ -158,7 +158,7 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
       resolveWorkspaceBeforeSend,
       isEmbedPage: true,
     }),
-    true,
+    true
   )
 
   useEffect(() => {

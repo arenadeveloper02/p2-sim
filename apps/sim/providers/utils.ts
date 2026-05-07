@@ -576,11 +576,7 @@ export async function transformBlockTool(
     const p = userProvidedParams as Record<string, unknown>
     const hasAccounts = typeof p.accounts === 'string' && p.accounts.trim() !== ''
     const oauth = p.oauthCredential
-    if (
-      !hasAccounts &&
-      typeof oauth === 'string' &&
-      oauth.trim() !== ''
-    ) {
+    if (!hasAccounts && typeof oauth === 'string' && oauth.trim() !== '') {
       p.accounts = oauth.trim()
     }
   }
@@ -589,9 +585,7 @@ export async function transformBlockTool(
     const p = userProvidedParams as Record<string, unknown>
     const oid = p.operationId
     const missing =
-      oid === undefined ||
-      oid === null ||
-      (typeof oid === 'string' && oid.trim() === '')
+      oid === undefined || oid === null || (typeof oid === 'string' && oid.trim() === '')
     if (missing) {
       p.operationId = SPYFU_DEFAULT_OPERATION_ID
     }

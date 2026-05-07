@@ -1,9 +1,7 @@
 import type { ArenaGetMeetingsParams, ArenaGetMeetingsResponse } from '@/tools/arena/types'
 import type { ToolConfig } from '@/tools/types'
 
-function clientIdFromMergedField(
-  value: ArenaGetMeetingsParams['get-meetings-client']
-): string {
+function clientIdFromMergedField(value: ArenaGetMeetingsParams['get-meetings-client']): string {
   if (value == null) return ''
   if (typeof value === 'string') return value.trim()
   if (typeof value === 'object' && 'clientId' in value) {

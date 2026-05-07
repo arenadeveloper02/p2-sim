@@ -9,7 +9,6 @@ import { ProviderModelsLoader } from '@/app/workspace/[workspaceId]/providers/pr
 import { SettingsLoader } from '@/app/workspace/[workspaceId]/providers/settings-loader'
 import { WorkspacePermissionsProvider } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { WorkspaceScopeSync } from '@/app/workspace/[workspaceId]/providers/workspace-scope-sync'
-import { Sidebar } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 import { WorkspaceRouteLoading } from '@/app/workspace/workspace-route-loading'
 import { BrandingProvider } from '@/ee/whitelabeling/components/branding-provider'
 import { getOrgWhitelabelSettings } from '@/ee/whitelabeling/org-branding'

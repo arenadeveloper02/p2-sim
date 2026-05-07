@@ -13,9 +13,9 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useArenaClientsByUser } from '@/hooks/queries/arena-clients'
 import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useArenaClientsByUser } from '@/hooks/queries/arena-clients'
 
 interface Client {
   clientId: string

@@ -166,7 +166,10 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
         add('fromDate', startDate)
         add('toDate', endDate)
       }
-      if (params['search-task-max-results'] !== undefined && params['search-task-max-results'] !== '') {
+      if (
+        params['search-task-max-results'] !== undefined &&
+        params['search-task-max-results'] !== ''
+      ) {
         const pageSize = Number(params['search-task-max-results'])
         if (Number.isInteger(pageSize)) {
           add('pageSize', pageSize)

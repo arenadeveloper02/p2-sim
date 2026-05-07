@@ -158,7 +158,10 @@ function mergeConditionContextForRequired(
  * @param conditionValues - Flat field values for condition evaluation (store and/or tool context)
  * @returns `true` if the field is required based on current context
  */
-const isFieldRequired = (config: SubBlockConfig, conditionValues?: Record<string, any>): boolean => {
+const isFieldRequired = (
+  config: SubBlockConfig,
+  conditionValues?: Record<string, any>
+): boolean => {
   if (!config.required) return false
   if (typeof config.required === 'boolean') return config.required
 

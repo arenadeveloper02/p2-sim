@@ -1,5 +1,5 @@
-import axios from 'axios'
 import { useQuery } from '@tanstack/react-query'
+import axios from 'axios'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 
@@ -22,29 +22,26 @@ const STALE_TIME_MS = 5 * 60 * 1000
  * Fetches the current user's client list (Arena getclientbyuser).
  * Used by Arena and Slack block selectors; do not call ad hoc from components.
  */
-export async function fetchArenaClientsByUser(
-  signal?: AbortSignal
-): Promise<ArenaClientRow[]> {
+export async function fetchArenaClientsByUser(signal?: AbortSignal): Promise<ArenaClientRow[]> {
   const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
   if (!arenaBackendBaseUrl) {
     return []
   }
 
   const v2Token = await getArenaToken()
-  const response = await axios.get(
-    `${arenaBackendBaseUrl}/list/userservice/getclientbyuser`,
-    {
-      headers: {
-        Authorisation: v2Token || '',
-      },
-      signal,
-    }
-  )
+  const response = await axios.get(`${arenaBackendBaseUrl}/list/userservice/getclientbyuser`, {
+    headers: {
+      Authorisation: v2Token || '',
+    },
+    signal,
+  })
 
   let clientsData = response.data?.response
   if (!Array.isArray(clientsData) || !clientsData.length) {
     clientsData =
-      response.data?.data || response.data?.clients || (Array.isArray(response.data) ? response.data : null)
+      response.data?.data ||
+      response.data?.clients ||
+      (Array.isArray(response.data) ? response.data : null)
   }
   if (!Array.isArray(clientsData)) {
     return []

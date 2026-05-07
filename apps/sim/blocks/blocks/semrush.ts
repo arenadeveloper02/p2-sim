@@ -404,7 +404,10 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     displayOffset: { type: 'string', description: 'Pagination offset' },
     displayTags: { type: 'string', description: 'Tag filter for Position Tracking' },
     displayTagsCondition: { type: 'string', description: 'Tag condition filter' },
-    displayFilter: { type: 'string', description: 'Column filter (Position Tracking display_filter)' },
+    displayFilter: {
+      type: 'string',
+      description: 'Column filter (Position Tracking display_filter)',
+    },
     topFilter: { type: 'string', description: 'Position top_filter' },
     useVolume: { type: 'string', description: 'use_volume: national, regional, or local' },
     businessName: { type: 'string', description: 'Google Business Profile business name' },

@@ -79,7 +79,7 @@ type ToolEnvelope = {
   }
   trace: {
     requestId: string
-  },
+  }
   scope?: {
     lane: 'subagent'
     agentId?: string
@@ -110,13 +110,25 @@ type ToolEnvelope = {
 
 function getDynamicStatusText(input: string): string {
   const normalized = input.toLowerCase()
-  if (normalized.includes('email') || normalized.includes('gmail') || normalized.includes('inbox')) {
+  if (
+    normalized.includes('email') ||
+    normalized.includes('gmail') ||
+    normalized.includes('inbox')
+  ) {
     return 'Reading the emails and preparing the summary...'
   }
-  if (normalized.includes('drive') || normalized.includes('document') || normalized.includes('file')) {
+  if (
+    normalized.includes('drive') ||
+    normalized.includes('document') ||
+    normalized.includes('file')
+  ) {
     return 'Getting the details from Drive and related files...'
   }
-  if (normalized.includes('calendar') || normalized.includes('meeting') || normalized.includes('event')) {
+  if (
+    normalized.includes('calendar') ||
+    normalized.includes('meeting') ||
+    normalized.includes('event')
+  ) {
     return 'Checking calendar events and availability details...'
   }
   if (
@@ -224,8 +236,7 @@ async function persistWorkflowChatTurn(params: {
   await db
     .update(copilotChats)
     .set({
-      messages:
-        sql`${copilotChats.messages} || ${JSON.stringify([userMessage, assistantMessage])}::jsonb`,
+      messages: sql`${copilotChats.messages} || ${JSON.stringify([userMessage, assistantMessage])}::jsonb`,
       conversationId: null,
       updatedAt: new Date(),
     })
@@ -419,7 +430,7 @@ export async function POST(req: NextRequest) {
               stream: true,
               selectedOutputs: body.selectedOutputs,
               email: session.user.email,
-              userId:session.user.id,
+              userId: session.user.id,
             }),
           })
 

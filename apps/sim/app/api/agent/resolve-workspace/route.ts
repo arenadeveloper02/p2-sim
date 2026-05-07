@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     logger.error('SIM_API_KEY is not configured — cannot resolve workspace')
     return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
   }
-  const resolveUrl = process.env.SIM_AGENT_BASE_URL + '/api/workflows/' + process.env.SIM_AGENT_WORKSPACE_RESOLVE_ID + '/execute'
+  const resolveUrl = `${process.env.SIM_AGENT_BASE_URL}/api/workflows/${process.env.SIM_AGENT_WORKSPACE_RESOLVE_ID}/execute`
   if (!resolveUrl) {
     logger.error('SIM_AGENT_WORKSPACE_RESOLVE_URL is not configured')
     return NextResponse.json({ error: 'Agent resolve URL not configured' }, { status: 500 })
@@ -71,18 +71,21 @@ export async function POST(req: NextRequest) {
         userId,
         context: context ?? '',
         stream: false,
-        selectedOutputs:["buildpayload.result"]
+        selectedOutputs: ['buildpayload.result'],
       }),
     })
-    console.log("agentResponse",JSON.stringify({
-      message,
-      userId,
-      context: context ?? '',
-      stream: false,
-      selectedOutputs:["buildpayload.result"]
-    }))
+    console.log(
+      'agentResponse',
+      JSON.stringify({
+        message,
+        userId,
+        context: context ?? '',
+        stream: false,
+        selectedOutputs: ['buildpayload.result'],
+      })
+    )
     const durationMs = Date.now() - startTime
-    console.log("agentResponse",agentResponse)
+    console.log('agentResponse', agentResponse)
     if (!agentResponse.ok) {
       const errorText = await agentResponse.text().catch(() => '')
       logger.error('External agent API returned non-OK status', {
@@ -90,7 +93,6 @@ export async function POST(req: NextRequest) {
         status: agentResponse.status,
         durationMs,
         error: errorText,
-
       })
       return NextResponse.json(
         { error: 'Failed to resolve workspace from agent API' },
@@ -100,14 +102,16 @@ export async function POST(req: NextRequest) {
     logger.info('External agent API responded successfully', {
       userId,
       durationMs,
-      agentResponse
+      agentResponse,
     })
     const data = await agentResponse.json()
     const result = data?.output?.result
     const workspaceId = result?.workspaceId
     const workflowId = typeof result?.workflowId === 'string' ? result.workflowId : undefined
     const selectedOutputs = Array.isArray(result?.selectedOutputs)
-      ? result.selectedOutputs.filter((output: unknown): output is string => typeof output === 'string')
+      ? result.selectedOutputs.filter(
+          (output: unknown): output is string => typeof output === 'string'
+        )
       : undefined
 
     if (!workspaceId) {
@@ -116,10 +120,7 @@ export async function POST(req: NextRequest) {
         durationMs,
         response: data,
       })
-      return NextResponse.json(
-        { error: 'Agent API did not return a workspaceId' },
-        { status: 502 }
-      )
+      return NextResponse.json({ error: 'Agent API did not return a workspaceId' }, { status: 502 })
     }
 
     logger.info('Workspace resolved successfully', {

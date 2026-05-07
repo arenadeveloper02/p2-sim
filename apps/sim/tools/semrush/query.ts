@@ -127,8 +127,7 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
   request: {
     url: (params: SemrushParams) => {
       const queryParams = new URLSearchParams()
-      const reportType =
-        params.operation || params.reportType || 'domain_organic'
+      const reportType = params.operation || params.reportType || 'domain_organic'
 
       const rawFromFields = reportType.startsWith('url_') ? params.url : params.domain
       const rawTarget = (rawFromFields ?? params.target ?? '').trim()
@@ -248,11 +247,7 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
 
     // Extract report type from URL or params
     const url = new URL(response.url)
-    const reportType =
-      url.searchParams.get('type') ||
-      params?.operation ||
-      params?.reportType ||
-      ''
+    const reportType = url.searchParams.get('type') || params?.operation || params?.reportType || ''
 
     // Parse CSV using generic parser (Semrush uses semicolon delimiter)
     const parseResult = parseCsvResponse(csvText, {
