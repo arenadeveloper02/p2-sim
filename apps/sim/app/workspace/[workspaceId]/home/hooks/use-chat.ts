@@ -1058,7 +1058,6 @@ export function useChat(
   isEmbedPage?: boolean
 ): UseChatReturn {
   const pathname = usePathname()
-  console.log("pathname",isEmbedPage, pathname)
   const effectiveIsEmbedPageRef = useRef(false)
   effectiveIsEmbedPageRef.current =
     Boolean(isEmbedPage) ||
@@ -3326,7 +3325,6 @@ export function useChat(
             : undefined
 
         let effectiveWorkspaceId = workspaceId
-        console.log("effectiveIsEmbedPageRef",effectiveIsEmbedPageRef.current)
         let resolvedWorkflowExecution:
           | { workflowId: string; selectedOutputs: string[] }
           | undefined
@@ -3339,10 +3337,8 @@ export function useChat(
               body: JSON.stringify({ message: message, context: currentMessages.map((m) => m.content).join('\n') }),
               signal: abortController.signal,
             })
-            console.log("resolveResponse",resolveResponse)
             if (resolveResponse.ok) {
               const resolveData = await resolveResponse.json()
-              console.log("resolveData",resolveData)
               if (resolveData.workspaceId) {
                 effectiveWorkspaceId = resolveData.workspaceId
               }
@@ -3356,7 +3352,6 @@ export function useChat(
                   workflowId: resolveData.workflowId,
                   selectedOutputs,
                 }
-                console.log("resolvedWorkflowExecution",resolvedWorkflowExecution)
               }
             } else {
               logger.warn('Workspace resolve returned non-OK status, using current workspace', {

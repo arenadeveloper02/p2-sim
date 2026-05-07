@@ -39,25 +39,6 @@ type TextEnvelope = {
   }
 }
 
-type SessionEnvelope = {
-  v: 1
-  type: 'session'
-  seq: number
-  ts: string
-  stream: {
-    streamId: string
-    chatId: string
-    cursor: string
-  }
-  trace: {
-    requestId: string
-  }
-  payload: {
-    kind: 'chat'
-    chatId: string
-  }
-}
-
 type CompleteEnvelope = {
   v: 1
   type: 'complete'
@@ -73,62 +54,6 @@ type CompleteEnvelope = {
   }
   payload: {
     status: 'complete'
-  }
-}
-
-type ToolEnvelope = {
-  v: 1
-  type: 'tool'
-  seq: number
-  ts: string
-  stream: {
-    streamId: string
-    chatId: string
-    cursor: string
-  }
-  trace: {
-    requestId: string
-  }
-  payload: {
-    toolCallId: string
-    toolName: 'run'
-    phase: 'args_delta' | 'call' | 'result'
-    argumentsDelta?: string
-    arguments?: {
-      request: string
-    }
-    executor?: 'sim'
-    mode?: 'async'
-    status?: 'executing' | 'complete'
-  }
-}
-
-type SpanEnvelope = {
-  v: 1
-  type: 'span'
-  seq: number
-  ts: string
-  stream: {
-    streamId: string
-    chatId: string
-    cursor: string
-  }
-  trace: {
-    requestId: string
-  }
-  scope: {
-    lane: 'subagent'
-    agentId: 'run'
-    parentToolCallId: string
-  }
-  payload: {
-    kind: 'subagent'
-    event: 'start' | 'end'
-    agent: 'run'
-    data?: {
-      input: string
-      tool_call_id: string
-    }
   }
 }
 
@@ -184,9 +109,7 @@ function extractTextFromUpstreamData(raw: string): string {
   }
 }
 
-function toSseDataLine(
-  event: TextEnvelope | SessionEnvelope | CompleteEnvelope | ToolEnvelope | SpanEnvelope
-): string {
+function toSseDataLine(event: TextEnvelope | CompleteEnvelope): string {
   return `data: ${JSON.stringify(event)}\n\n`
 }
 
@@ -319,11 +242,8 @@ export async function POST(req: NextRequest) {
         let sawSsePrefix = false
         let seq = 0
         let accumulatedAssistantText = ''
-        const toolCallId = generateRequestId()
 
-        const emitEvent = (
-          event: TextEnvelope | SessionEnvelope | CompleteEnvelope | ToolEnvelope | SpanEnvelope
-        ) => {
+        const emitEvent = (event: TextEnvelope | CompleteEnvelope) => {
           controller.enqueue(encoder.encode(toSseDataLine(event)))
         }
 
@@ -331,71 +251,6 @@ export async function POST(req: NextRequest) {
           seq += 1
           return seq
         }
-
-        emitEvent({
-          v: 1,
-          type: 'session',
-          seq: nextSeq(),
-          ts: new Date().toISOString(),
-          stream: { streamId, chatId, cursor: String(seq) },
-          trace: { requestId },
-          payload: { kind: 'chat', chatId },
-        })
-        emitEvent({
-          v: 1,
-          type: 'tool',
-          seq: nextSeq(),
-          ts: new Date().toISOString(),
-          stream: { streamId, chatId, cursor: String(seq) },
-          trace: { requestId },
-          payload: {
-            toolCallId,
-            toolName: 'run',
-            phase: 'args_delta',
-            argumentsDelta: '',
-            executor: 'sim',
-            mode: 'async',
-          },
-        })
-        emitEvent({
-          v: 1,
-          type: 'tool',
-          seq: nextSeq(),
-          ts: new Date().toISOString(),
-          stream: { streamId, chatId, cursor: String(seq) },
-          trace: { requestId },
-          payload: {
-            toolCallId,
-            toolName: 'run',
-            phase: 'call',
-            arguments: { request: body.input },
-            executor: 'sim',
-            mode: 'async',
-            status: 'executing',
-          },
-        })
-        emitEvent({
-          v: 1,
-          type: 'span',
-          seq: nextSeq(),
-          ts: new Date().toISOString(),
-          stream: { streamId, chatId, cursor: String(seq) },
-          trace: { requestId },
-          scope: {
-            lane: 'subagent',
-            agentId: 'run',
-            parentToolCallId: toolCallId,
-          },
-          payload: {
-            kind: 'subagent',
-            event: 'start',
-            agent: 'run',
-            data: {
-              input: body.input,
-              tool_call_id: toolCallId,
-            },
-          },
-        })
 
         const emitTextEvent = (text: string) => {
           if (!text) return
@@ -412,11 +267,6 @@ export async function POST(req: NextRequest) {
             },
             trace: {
               requestId,
-            },
-            scope: {
-              lane: 'subagent',
-              agentId: 'run',
-              parentToolCallId: toolCallId,
             },
             payload: {
               channel: 'assistant',
@@ -463,40 +313,6 @@ export async function POST(req: NextRequest) {
 
           const trailing = buffer.trim()
           processRawFrame(trailing)
-          emitEvent({
-            v: 1,
-            type: 'span',
-            seq: nextSeq(),
-            ts: new Date().toISOString(),
-            stream: { streamId, chatId, cursor: String(seq) },
-            trace: { requestId },
-            scope: {
-              lane: 'subagent',
-              agentId: 'run',
-              parentToolCallId: toolCallId,
-            },
-            payload: {
-              kind: 'subagent',
-              event: 'end',
-              agent: 'run',
-            },
-          })
-          emitEvent({
-            v: 1,
-            type: 'tool',
-            seq: nextSeq(),
-            ts: new Date().toISOString(),
-            stream: { streamId, chatId, cursor: String(seq) },
-            trace: { requestId },
-            payload: {
-              toolCallId,
-              toolName: 'run',
-              phase: 'result',
-              executor: 'sim',
-              mode: 'async',
-              status: 'complete',
-            },
-          })
           emitEvent({
             v: 1,
             type: 'complete',
