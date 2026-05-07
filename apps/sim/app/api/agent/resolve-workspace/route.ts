@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const userId = session.user.id
 
-  const apiKey = process.env.SIM_WORKFLOW_API_KEY
+  const apiKey = 'sim_DA2rdcceubED50_JKwTuMjw2lhX60DsO'
   if (!apiKey) {
     logger.error('SIM_API_KEY is not configured — cannot resolve workspace')
     return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
@@ -72,9 +72,15 @@ export async function POST(req: NextRequest) {
         selectedOutputs:["buildpayload.result"]
       }),
     })
-
+    console.log("agentResponse",JSON.stringify({
+      message,
+      userId,
+      context: context ?? '',
+      stream: false,
+      selectedOutputs:["buildpayload.result"]
+    }))
     const durationMs = Date.now() - startTime
-
+    console.log("agentResponse",agentResponse)
     if (!agentResponse.ok) {
       const errorText = await agentResponse.text().catch(() => '')
       logger.error('External agent API returned non-OK status', {
@@ -95,7 +101,12 @@ export async function POST(req: NextRequest) {
       agentResponse
     })
     const data = await agentResponse.json()
-    const workspaceId = data?.output?.result?.workspaceId
+    const result = data?.output?.result
+    const workspaceId = result?.workspaceId
+    const workflowId = typeof result?.workflowId === 'string' ? result.workflowId : undefined
+    const selectedOutputs = Array.isArray(result?.selectedOutputs)
+      ? result.selectedOutputs.filter((output: unknown): output is string => typeof output === 'string')
+      : undefined
 
     if (!workspaceId) {
       logger.error('External agent API response missing workspaceId', {
@@ -112,12 +123,18 @@ export async function POST(req: NextRequest) {
     logger.info('Workspace resolved successfully', {
       userId,
       workspaceId,
+      workflowId,
+      selectedOutputsCount: selectedOutputs?.length ?? 0,
       durationMs,
       mode: data?.result?.mode,
       isNewMessage: data?.result?.isNewMessage,
     })
 
-    return NextResponse.json({ workspaceId })
+    return NextResponse.json({
+      workspaceId,
+      ...(workflowId ? { workflowId } : {}),
+      ...(selectedOutputs && selectedOutputs.length > 0 ? { selectedOutputs } : {}),
+    })
   } catch (error) {
     const durationMs = Date.now() - startTime
     logger.error('Unexpected error calling external agent API', {

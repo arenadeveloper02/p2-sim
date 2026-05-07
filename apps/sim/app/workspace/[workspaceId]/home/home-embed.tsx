@@ -156,6 +156,7 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
       onResourceEvent: handleResourceEvent,
       initialActiveResourceId: initialResourceId,
       resolveWorkspaceBeforeSend,
+      isEmbedPage: true,
     }),
     true,
   )
