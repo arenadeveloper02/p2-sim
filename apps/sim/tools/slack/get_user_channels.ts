@@ -22,9 +22,9 @@ export const slackGetUserChannelsTool: ToolConfig<
   SlackGetUserChannelsResponse
 > = {
   id: 'slack_get_user_channels',
-  name: 'Slack Get User Channels',
+  name: 'Slack Get My Channels & DMs',
   description:
-    "List only the channels and DMs the token owner belongs to. Uses Slack's users.conversations endpoint — ideal when you want to loop over a user's own conversations without fetching every channel in the workspace.",
+    "List only the conversations the token owner belongs to via Slack users.conversations. Default behavior is channels (public/private) only; DMs are opt-in. If the user asked for 1:1 DMs set includeDMs=true (im:read). If the user asked for group DMs set includeGroupDMs=true (mpim:read).",
   version: '1.0.0',
 
   oauth: {
@@ -68,14 +68,14 @@ export const slackGetUserChannelsTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Include 1:1 direct message conversations (requires im:read scope; default: false)',
+        'Set true to include 1:1 DMs (Slack type im). If the user asked for DMs, you must set this to true. Requires im:read scope. Default: false.',
     },
     includeGroupDMs: {
       type: 'boolean',
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Include multi-person direct messages / group DMs (requires mpim:read scope; default: false)',
+        'Set true to include group DMs (Slack type mpim). If the user asked for group DMs, you must set this to true. Requires mpim:read scope. Default: false.',
     },
     excludeArchived: {
       type: 'boolean',

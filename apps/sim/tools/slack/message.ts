@@ -6,7 +6,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
   id: 'slack_message',
   name: 'Slack Message',
   description:
-    'Send messages to Slack channels or direct messages. Supports Slack mrkdwn formatting.',
+    'Send a Slack message. If destinationType is omitted, it is inferred: channel/channelId => channel message; dmUserId/userId => DM. If both are provided, destinationType wins (otherwise channel wins).',
   version: '1.0.0',
 
   oauth: {
@@ -25,7 +25,8 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Destination type: channel or dm',
+      description:
+        'Optional. Destination type: channel or dm. If omitted, inferred from provided IDs.',
     },
     botToken: {
       type: 'string',
@@ -45,11 +46,23 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       visibility: 'user-or-llm',
       description: 'Slack channel ID (e.g., C1234567890)',
     },
+    channelId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Alias for channel (Slack channel ID, e.g., C1234567890)',
+    },
     dmUserId: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
       description: 'Slack user ID for direct messages (e.g., U1234567890)',
+    },
+    userId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Alias for dmUserId (Slack user ID, e.g., U1234567890)',
     },
     text: {
       type: 'string',
@@ -85,11 +98,67 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       'Content-Type': 'application/json',
     }),
     body: (params: SlackMessageParams) => {
-      const isDM = params.destinationType === 'dm'
+      const normalizeId = (value: unknown, keys: string[]): string | undefined => {
+        if (typeof value === 'string') {
+          const trimmed = value.trim()
+          return trimmed ? trimmed : undefined
+        }
+        if (value && typeof value === 'object') {
+          for (const key of keys) {
+            const v = (value as Record<string, unknown>)[key]
+            if (typeof v === 'string' && v.trim()) return v.trim()
+          }
+        }
+        return undefined
+      }
+
+      const channel =
+        normalizeId(params.channel, ['channel_id', 'id']) ??
+        normalizeId((params as SlackMessageParams & { channelId?: unknown }).channelId, ['channel_id', 'id'])
+      const dmUserId = normalizeId(params.dmUserId, ['user_id', 'id'])
+      const userId = normalizeId(params.userId, ['user_id', 'id'])
+
+      const hasChannel = Boolean(channel)
+      const hasDmUser = Boolean(dmUserId || userId)
+
+      const destinationType: 'channel' | 'dm' = (() => {
+        const explicit = params.destinationType === 'channel' || params.destinationType === 'dm'
+          ? params.destinationType
+          : null
+
+        if (explicit === 'channel') {
+          if (hasChannel) return 'channel'
+          if (hasDmUser) return 'dm'
+          return 'channel'
+        }
+
+        if (explicit === 'dm') {
+          if (hasDmUser) return 'dm'
+          if (hasChannel) return 'channel'
+          return 'dm'
+        }
+
+        if (hasChannel) return 'channel'
+        if (hasDmUser) return 'dm'
+        return 'channel'
+      })()
+
+      const isDM = destinationType === 'dm'
+
+      const finalChannel = isDM ? undefined : channel
+      const finalUserId = isDM ? dmUserId || userId : undefined
+
+      if (isDM && !finalUserId) {
+        throw new Error('For destinationType=dm, provide dmUserId (or userId).')
+      }
+      if (!isDM && !finalChannel) {
+        throw new Error('For destinationType=channel, provide channel (or channelId).')
+      }
+
       return {
         accessToken: params.accessToken || params.botToken,
-        channel: isDM ? undefined : params.channel,
-        userId: isDM ? params.dmUserId : params.userId,
+        channel: finalChannel,
+        userId: finalUserId,
         text: params.text,
         thread_ts: params.threadTs || undefined,
         blocks:

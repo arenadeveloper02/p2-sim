@@ -665,6 +665,7 @@ export interface SlackBaseParams {
 export interface SlackMessageParams extends SlackBaseParams {
   destinationType?: 'channel' | 'dm'
   channel?: string
+  channelId?: string
   dmUserId?: string
   userId?: string
   text: string

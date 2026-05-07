@@ -34,7 +34,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Get Message', id: 'get_message' },
         { label: 'Get Thread', id: 'get_thread' },
         { label: 'List Channels', id: 'list_channels' },
-        { label: 'Get User Channels', id: 'get_user_channels' },
+        { label: 'Get My Channels & DMs', id: 'get_user_channels' },
         { label: 'List Channel Members', id: 'list_members' },
         { label: 'List Users', id: 'list_users' },
         { label: 'Get User Info', id: 'get_user' },
@@ -533,13 +533,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     {
       id: 'includeDMs',
-      title: 'Include Direct Messages',
+      title: 'Include 1:1 DMs (im)',
       type: 'dropdown',
+      description: 'If the user asked for DMs, set this to Yes. Requires im:read.',
       options: [
         { label: 'No', id: 'false' },
         { label: 'Yes', id: 'true' },
       ],
-      value: () => 'false',
+      value: () => '',
       condition: {
         field: 'operation',
         value: ['list_channels', 'get_user_channels'],
@@ -547,13 +548,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     {
       id: 'includeGroupDMs',
-      title: 'Include Group DMs',
+      title: 'Include Group DMs (mpim)',
       type: 'dropdown',
+      description: 'If the user asked for group DMs, set this to Yes. Requires mpim:read.',
       options: [
         { label: 'No', id: 'false' },
         { label: 'Yes', id: 'true' },
       ],
-      value: () => 'false',
+      value: () => '',
       condition: {
         field: 'operation',
         value: ['list_channels', 'get_user_channels'],
@@ -1763,8 +1765,12 @@ Do not include any explanations, markdown formatting, or other text outside the 
             // tool falls back to its default "include").
             baseParams.includePublic = includePublic !== 'false'
             baseParams.includePrivate = includePrivate !== 'false'
-            baseParams.includeDMs = includeDMs === 'true'
-            baseParams.includeGroupDMs = includeGroupDMs === 'true'
+            if (includeDMs === 'true' || includeDMs === 'false') {
+              baseParams.includeDMs = includeDMs === 'true'
+            }
+            if (includeGroupDMs === 'true' || includeGroupDMs === 'false') {
+              baseParams.includeGroupDMs = includeGroupDMs === 'true'
+            }
             baseParams.excludeArchived = true
             baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 200
             if (operation === 'get_user_channels' && getUserChannelsCursor?.trim()) {
