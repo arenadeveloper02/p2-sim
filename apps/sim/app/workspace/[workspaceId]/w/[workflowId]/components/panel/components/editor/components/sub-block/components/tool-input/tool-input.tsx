@@ -72,6 +72,7 @@ import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { getProviderFromModel, supportsToolUsageControl } from '@/providers/utils'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import {
   formatParameterLabel,
@@ -92,6 +93,32 @@ import {
   resolveDependencyValue,
   type SubBlockCondition,
 } from '@/tools/params-resolver'
+
+/**
+ * Block-level OAuth routing on StoredTool.params (not operation-scoped tool schema).
+ * Preserved when switching operation so credentials are not cleared.
+ */
+const OAUTH_ROUTING_KEYS_PRESERVED_ON_OPERATION_CHANGE = new Set(['oauthCredential'])
+
+/**
+ * Shared tool `google_nano_banana` lists single-image edit fields (`inputImage` + MIME) for Image
+ * Generator Nano edit flows. Image Fusion (`image_fusion`) only exposes fusion inputs via block
+ * subblocks—those edit params stay uncovered vs the tool schema, so suppress them here.
+ */
+const IMAGE_FUSION_EXCLUDED_UNCOVERED_PARAM_IDS = new Set(['inputImage', 'inputImageMimeType'])
+
+/** Slack tools use OAuth + block authMethod; `botToken` is only for legacy/direct API paths. */
+const SLACK_EXCLUDED_UNCOVERED_PARAM_IDS = new Set(['botToken'])
+
+function shouldIncludeUncoveredToolParam(toolType: string | undefined, paramId: string): boolean {
+  if (toolType === 'image_fusion' && IMAGE_FUSION_EXCLUDED_UNCOVERED_PARAM_IDS.has(paramId)) {
+    return false
+  }
+  if (toolType === 'slack' && SLACK_EXCLUDED_UNCOVERED_PARAM_IDS.has(paramId)) {
+    return false
+  }
+  return true
+}
 
 const logger = createLogger('ToolInput')
 
@@ -114,6 +141,20 @@ function scopeCanonicalOverrides(
     }
   }
   return scoped
+}
+
+/**
+ * Merges `tool.params` with the block `operation` for subblock `dependsOn` / conditions.
+ * `operation` is only stored on the tool; any stray `operation` key in params is dropped.
+ */
+function subBlockDependencyValues(
+  params: Record<string, unknown> | undefined,
+  operation: string | undefined
+): Record<string, unknown> {
+  const withoutOp = Object.fromEntries(
+    Object.entries({ ...(params ?? {}) }).filter(([k]) => k !== 'operation')
+  )
+  return { ...withoutOp, operation }
 }
 
 /**
@@ -764,10 +805,12 @@ export const ToolInput = memo(function ToolInput({
 
       if (isToolAlreadySelected(toolId, toolBlock.type)) return
 
-      const toolParams = getToolParametersConfig(toolId, toolBlock.type)
+      const toolParams = getToolParametersConfig(toolId, toolBlock.type, {
+        operation: defaultOperation,
+      })
       if (!toolParams) return
 
-      const initialParams: Record<string, string> = {}
+      const initialParams: Record<string, any> = {}
 
       toolParams.userInputParameters.forEach((param) => {
         if (param.uiComponent?.value && !initialParams[param.id]) {
@@ -929,11 +972,25 @@ export const ToolInput = memo(function ToolInput({
   )
 
   const handleParamChange = useCallback(
-    (toolIndex: number, paramId: string, paramValue: string) => {
+    (toolIndex: number, paramId: string, paramValue: any) => {
       if (isPreview || disabled) return
 
+      const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+      const latestRaw =
+        activeWorkflowId != null
+          ? useSubBlockStore.getState().workflowValues[activeWorkflowId]?.[blockId]?.[subBlockId]
+          : undefined
+
+      const baseTools: StoredTool[] =
+        Array.isArray(latestRaw) &&
+        latestRaw.length > 0 &&
+        latestRaw[0] !== null &&
+        typeof (latestRaw[0] as StoredTool)?.type === 'string'
+          ? (latestRaw as StoredTool[])
+          : selectedTools
+
       setStoreValue(
-        selectedTools.map((tool, index) =>
+        baseTools.map((tool, index) =>
           index === toolIndex
             ? {
                 ...tool,
@@ -946,7 +1003,7 @@ export const ToolInput = memo(function ToolInput({
         )
       )
     },
-    [isPreview, disabled, selectedTools, setStoreValue]
+    [isPreview, disabled, blockId, subBlockId, selectedTools, setStoreValue]
   )
 
   const handleOperationChange = useCallback(
@@ -963,7 +1020,9 @@ export const ToolInput = memo(function ToolInput({
         return
       }
 
-      const toolParams = getToolParametersConfig(newToolId, tool.type)
+      const toolParams = getToolParametersConfig(newToolId, tool.type, {
+        operation,
+      })
 
       if (!toolParams) {
         return
@@ -971,8 +1030,18 @@ export const ToolInput = memo(function ToolInput({
 
       const newParamIds = new Set(toolParams.userInputParameters.map((p) => p.id))
 
-      const preservedParams: Record<string, string> = {}
+      const preservedParams: Record<string, any> = {}
       Object.entries(tool.params || {}).forEach(([paramId, value]) => {
+        if (OAUTH_ROUTING_KEYS_PRESERVED_ON_OPERATION_CHANGE.has(paramId)) {
+          preservedParams[paramId] = value
+          return
+        }
+        // HubSpot: `accounts` is the shared-account dropdown id; it's not on each tool schema.
+        // Other integrations also use id `accounts` with different meanings — preserve only here.
+        if (paramId === 'accounts' && tool.type === 'hubspot') {
+          preservedParams[paramId] = value
+          return
+        }
         if (newParamIds.has(paramId) && value) {
           preservedParams[paramId] = value
         }
@@ -1127,10 +1196,10 @@ export const ToolInput = memo(function ToolInput({
    */
   const renderParameterInput = (
     param: ToolParameterConfig,
-    value: string,
-    onChange: (value: string) => void,
+    value: any,
+    onChange: (value: any) => void,
     toolIndex?: number,
-    currentToolParams?: Record<string, string>,
+    currentToolParams?: Record<string, any>,
     wandControlRef?: React.MutableRefObject<WandControlHandlers | null>
   ) => {
     const uniqueSubBlockId =
@@ -1181,8 +1250,8 @@ export const ToolInput = memo(function ToolInput({
       case 'switch':
         return (
           <Switch
-            checked={value === 'true' || value === 'True'}
-            onCheckedChange={(checked) => onChange(checked ? 'true' : 'false')}
+            checked={value === true || value === 'true' || value === 'True'}
+            onCheckedChange={(checked) => onChange(checked)}
           />
         )
 
@@ -1597,8 +1666,8 @@ export const ToolInput = memo(function ToolInput({
           const toolParams =
             !isCustomTool && !isMcpTool && currentToolId
               ? getToolParametersConfig(currentToolId, tool.type, {
-                  operation: tool.operation,
                   ...tool.params,
+                  operation: tool.operation,
                 })
               : null
 
@@ -1610,8 +1679,8 @@ export const ToolInput = memo(function ToolInput({
                   currentToolId,
                   tool.type,
                   {
-                    operation: tool.operation,
                     ...tool.params,
+                    operation: tool.operation,
                   },
                   toolScopedOverrides
                 )
@@ -1943,7 +2012,7 @@ export const ToolInput = memo(function ToolInput({
                     const renderedElements: React.ReactNode[] = []
 
                     const renderSubBlock = (sb: BlockSubBlockConfig): React.ReactNode => {
-                      const effectiveParamId = sb.id
+                      const effectiveParamId = sb.canonicalParamId || sb.id
                       const canonicalId = toolCanonicalIndex?.canonicalIdBySubBlockId[sb.id]
                       const canonicalGroup = canonicalId
                         ? toolCanonicalIndex?.groupsById[canonicalId]
@@ -1985,7 +2054,7 @@ export const ToolInput = memo(function ToolInput({
                           toolIndex={toolIndex}
                           subBlock={sbWithTitle}
                           effectiveParamId={effectiveParamId}
-                          toolParams={tool.params}
+                          toolParams={subBlockDependencyValues(tool.params, tool.operation)}
                           onParamChange={handleParamChange}
                           disabled={disabled}
                           canonicalToggle={canonicalToggleProp}
@@ -2016,7 +2085,9 @@ export const ToolInput = memo(function ToolInput({
 
                       const uncoveredParams = displayParams.filter(
                         (param) =>
-                          !coveredParamIds.has(param.id) && evaluateParameterCondition(param, tool)
+                          shouldIncludeUncoveredToolParam(tool.type, param.id) &&
+                          !coveredParamIds.has(param.id) &&
+                          evaluateParameterCondition(param, tool)
                       )
 
                       uncoveredParams.forEach((param) => {

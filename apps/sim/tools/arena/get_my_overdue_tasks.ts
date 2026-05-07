@@ -13,14 +13,7 @@ export const getMyOverdueTasks: ToolConfig<
   description: 'Get the current user’s overdue tasks from Arena.',
   version: '1.0.0',
 
-  params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (get_my_overdue_tasks)',
-    },
-  },
+  params: {},
 
   request: {
     url: (params: ArenaGetMyOverdueTasksParams) => {

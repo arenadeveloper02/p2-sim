@@ -347,6 +347,9 @@ export const spyfuOperations: SpyfuOperationDefinition[] = [
   // },
 ]
 
+/** Default SpyFu endpoint for empty state (matches first catalog entry; domain-based). */
+export const SPYFU_DEFAULT_OPERATION_ID = spyfuOperations[0]!.id
+
 const operationIdsForParam = (param: SpyfuParamId) =>
   spyfuOperations
     .filter((operation) => operation.requiredParams?.includes(param))

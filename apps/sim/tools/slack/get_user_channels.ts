@@ -22,9 +22,9 @@ export const slackGetUserChannelsTool: ToolConfig<
   SlackGetUserChannelsResponse
 > = {
   id: 'slack_get_user_channels',
-  name: 'Slack Get User Channels',
+  name: 'Slack Get My Channels & DMs',
   description:
-    "List only the channels and DMs the token owner belongs to. Uses Slack's users.conversations endpoint — ideal when you want to loop over a user's own conversations without fetching every channel in the workspace.",
+    "List only the conversations the token owner belongs to via Slack users.conversations. Default behavior is channels (public/private) only; DMs are opt-in. If the user asked for 1:1 DMs set includeDMs=true (im:read). If the user asked for group DMs set includeGroupDMs=true (mpim:read).",
   version: '1.0.0',
 
   oauth: {
@@ -68,14 +68,14 @@ export const slackGetUserChannelsTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Include 1:1 direct message conversations (requires im:read scope; default: false)',
+        'Set true to include 1:1 DMs (Slack type im). If the user asked for DMs, you must set this to true. Requires im:read scope. Default: false.',
     },
     includeGroupDMs: {
       type: 'boolean',
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Include multi-person direct messages / group DMs (requires mpim:read scope; default: false)',
+        'Set true to include group DMs (Slack type mpim). If the user asked for group DMs, you must set this to true. Requires mpim:read scope. Default: false.',
     },
     excludeArchived: {
       type: 'boolean',
@@ -87,7 +87,20 @@ export const slackGetUserChannelsTool: ToolConfig<
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Maximum number of conversations to return (default: 100, max: 200)',
+      description: 'Maximum number of conversations to return (default: 200, max: 200)',
+    },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Pagination cursor from a previous response (`output.cursor`) to fetch the next page',
+    },
+    autoPaginate: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Fetch all pages automatically (default: true)',
     },
   },
 
@@ -118,9 +131,16 @@ export const slackGetUserChannelsTool: ToolConfig<
       const excludeArchived = !isFalse(params.excludeArchived)
       url.searchParams.append('exclude_archived', String(excludeArchived))
 
-      // Set limit (default 100, max 200).
-      const limit = params.limit ? Math.min(Number(params.limit), 200) : 100
+      // Set limit (default 200, max 200 per Slack; use cursor for more pages).
+      const limit = params.limit ? Math.min(Number(params.limit), 200) : 200
       url.searchParams.append('limit', String(limit))
+
+      if (typeof params.cursor === 'string') {
+        const c = params.cursor.trim()
+        if (c) {
+          url.searchParams.append('cursor', c)
+        }
+      }
 
       return url.toString()
     },
@@ -131,7 +151,7 @@ export const slackGetUserChannelsTool: ToolConfig<
     }),
   },
 
-  transformResponse: async (response: Response) => {
+  transformResponse: async (response: Response, params?: SlackGetUserChannelsParams) => {
     const data = await response.json()
 
     if (!data.ok) {
@@ -147,7 +167,58 @@ export const slackGetUserChannelsTool: ToolConfig<
       throw new Error(data.error || 'Failed to list user conversations from Slack')
     }
 
-    const channels = (data.channels || []).map((channel: any) => {
+    const isTrue = (v: unknown): boolean => v === true || v === 'true'
+    const isFalse = (v: unknown): boolean => v === false || v === 'false'
+
+    const accessToken = params?.accessToken || params?.botToken
+    const shouldAutoPaginate = params?.autoPaginate === undefined ? true : isTrue(params.autoPaginate)
+
+    const allRaw: any[] = [...(data.channels ?? [])]
+
+    if (shouldAutoPaginate) {
+      if (!accessToken) {
+        throw new Error('Missing access token for auto pagination')
+      }
+
+      let nextCursor = data.response_metadata?.next_cursor
+      while (typeof nextCursor === 'string' && nextCursor.trim().length > 0) {
+        const url = new URL('https://slack.com/api/users.conversations')
+
+        const types: string[] = []
+        if (!isFalse(params?.includePublic)) types.push('public_channel')
+        if (!isFalse(params?.includePrivate)) types.push('private_channel')
+        if (isTrue(params?.includeDMs)) types.push('im')
+        if (isTrue(params?.includeGroupDMs)) types.push('mpim')
+        if (types.length === 0) types.push('public_channel')
+        url.searchParams.append('types', types.join(','))
+
+        const excludeArchived = !isFalse(params?.excludeArchived)
+        url.searchParams.append('exclude_archived', String(excludeArchived))
+
+        const limit = params?.limit ? Math.min(Number(params.limit), 200) : 200
+        url.searchParams.append('limit', String(limit))
+
+        url.searchParams.append('cursor', nextCursor.trim())
+
+        const pageResponse = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        })
+
+        const pageData = await pageResponse.json()
+        if (!pageData.ok) {
+          throw new Error(pageData.error || 'Failed to paginate Slack conversations')
+        }
+
+        allRaw.push(...(pageData.channels ?? []))
+        nextCursor = pageData.response_metadata?.next_cursor
+      }
+    }
+
+    const channels = allRaw.map((channel: any) => {
       const isIm = Boolean(channel.is_im)
       const isMpim = Boolean(channel.is_mpim)
       return {
@@ -174,6 +245,13 @@ export const slackGetUserChannelsTool: ToolConfig<
     const ids = channels.map((channel: { id: string }) => channel.id)
     const names = channels.map((channel: { name: string }) => channel.name)
 
+    const cursor = shouldAutoPaginate
+      ? null
+      : typeof data.response_metadata?.next_cursor === 'string' &&
+          data.response_metadata?.next_cursor.length > 0
+        ? data.response_metadata.next_cursor
+        : null
+
     return {
       success: true,
       output: {
@@ -181,6 +259,7 @@ export const slackGetUserChannelsTool: ToolConfig<
         ids,
         names,
         count: channels.length,
+        cursor,
       },
     }
   },
@@ -207,6 +286,12 @@ export const slackGetUserChannelsTool: ToolConfig<
     count: {
       type: 'number',
       description: 'Total number of channels returned',
+    },
+    cursor: {
+      type: 'string',
+      optional: true,
+      description:
+        'Cursor for the next page (`response_metadata.next_cursor`); absent or null when there are no more results',
     },
   },
 }

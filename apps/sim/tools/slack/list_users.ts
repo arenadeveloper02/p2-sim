@@ -18,7 +18,8 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'Authentication method: oauth or bot_token',
+      description:
+        'Authentication method: oauth (Sim Bot / bot token) or bot_token (Custom Bot / user token). Prefer bot_token when listing users as the signed-in user.',
     },
     botToken: {
       type: 'string',
@@ -44,6 +45,19 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
       visibility: 'user-or-llm',
       description: 'Maximum number of users to return (default: 100, max: 200)',
     },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Pagination cursor from a previous response (`output.cursor`) to fetch the next page',
+    },
+    autoPaginate: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Fetch all pages automatically (default: true)',
+    },
   },
 
   request: {
@@ -53,6 +67,13 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
       // Set limit (default 100, max 200)
       const limit = params.limit ? Math.min(Number(params.limit), 200) : 100
       url.searchParams.append('limit', String(limit))
+
+      if (typeof params.cursor === 'string') {
+        const c = params.cursor.trim()
+        if (c) {
+          url.searchParams.append('cursor', c)
+        }
+      }
 
       return url.toString()
     },
@@ -78,9 +99,47 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
       throw new Error(data.error || 'Failed to list users from Slack')
     }
 
+    const isTrue = (v: unknown): boolean => v === true || v === 'true'
+
+    const accessToken = params?.accessToken || params?.botToken
+    const shouldAutoPaginate = params?.autoPaginate === undefined ? true : isTrue(params.autoPaginate)
+
     const includeDeleted = params?.includeDeleted === true
 
-    const users = (data.members || [])
+    const allMembers: any[] = [...(data.members ?? [])]
+
+    if (shouldAutoPaginate) {
+      if (!accessToken) {
+        throw new Error('Missing access token for auto pagination')
+      }
+
+      let nextCursor = data.response_metadata?.next_cursor
+      while (typeof nextCursor === 'string' && nextCursor.trim().length > 0) {
+        const url = new URL('https://slack.com/api/users.list')
+
+        const limit = params?.limit ? Math.min(Number(params.limit), 200) : 100
+        url.searchParams.append('limit', String(limit))
+        url.searchParams.append('cursor', nextCursor.trim())
+
+        const pageResponse = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        })
+
+        const pageData = await pageResponse.json()
+        if (!pageData.ok) {
+          throw new Error(pageData.error || 'Failed to paginate Slack users')
+        }
+
+        allMembers.push(...(pageData.members ?? []))
+        nextCursor = pageData.response_metadata?.next_cursor
+      }
+    }
+
+    const users = allMembers
       .filter((user: any) => {
         // Always filter out Slackbot
         if (user.id === 'USLACKBOT') return false
@@ -107,6 +166,13 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
     const ids = users.map((user: { id: string }) => user.id)
     const names = users.map((user: { name: string }) => user.name)
 
+    const cursor = shouldAutoPaginate
+      ? null
+      : typeof data.response_metadata?.next_cursor === 'string' &&
+          data.response_metadata?.next_cursor.length > 0
+        ? data.response_metadata.next_cursor
+        : null
+
     return {
       success: true,
       output: {
@@ -114,6 +180,7 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
         ids,
         names,
         count: users.length,
+        cursor,
       },
     }
   },
@@ -140,6 +207,12 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
     count: {
       type: 'number',
       description: 'Total number of users returned',
+    },
+    cursor: {
+      type: 'string',
+      optional: true,
+      description:
+        'Cursor for the next page (`response_metadata.next_cursor`); absent or null when there are no more results',
     },
   },
 }

@@ -17,22 +17,11 @@ import type { ToolConfig } from '@/tools/types'
 export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> = {
   id: 'arena_search_task',
   name: 'Arena Search Task',
-  description: 'Search Tasks In Arena',
+  description:
+    'Search Arena tasks using client, project, state, visibility, due date, assignee, and page size. For search by task name or number only, use the Search Task (name only) operation.',
   version: '1.0.0',
 
   params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (e.g., create)',
-    },
-    'search-task-name': {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Name of the task',
-    },
     'search-task-client': {
       type: 'string',
       required: false,
@@ -51,11 +40,11 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
       visibility: 'user-or-llm',
       description: 'User ID of the assignee',
     },
-    'search-task-visbility': {
+    'search-task-visibility': {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'User ID of the assignee',
+      description: 'Task visibility (Internal / Client Facing)',
     },
     'search-task-state': {
       type: 'string',
@@ -69,49 +58,44 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
       visibility: 'user-or-llm',
       description: 'Due date of the task',
     },
+    'search-task-max-results': {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Max number of search results (page size)',
+    },
   },
 
   request: {
     url: (params: SearchTaskQueryParams) => {
-      let url = `/api/tools/arena/search-tasks`
-      let hasQueryParam = false
+      const base = `/api/tools/arena/search-tasks`
+      const q: string[] = []
+      const add = (key: string, value: string | number) => {
+        q.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      }
 
-      const isSearchTask = params.operation === 'arena_search_task'
-      if (isSearchTask) {
-        const taskName = params['search-task-name']?.trim()
-        if (taskName) {
-          url += `?name=${encodeURIComponent(taskName)}`
-          hasQueryParam = true
-        }
+      const clientName = params['search-task-client']?.name?.trim()
+      if (clientName) {
+        add('account', clientName)
       }
-      if (params['search-task-client']?.name) {
-        const clientName = params['search-task-client'].name?.trim()
-        if (clientName) {
-          url += hasQueryParam
-            ? `&account=${encodeURIComponent(clientName)}`
-            : `?account=${encodeURIComponent(clientName)}`
-          hasQueryParam = true
-        }
-      }
+
       if (params['search-task-project']) {
         const projectId =
           typeof params['search-task-project'] === 'string'
             ? params['search-task-project']
             : params['search-task-project']?.sysId
         if (projectId) {
-          url += `&projectSysId=${projectId}`
+          add('projectSysId', projectId)
         }
       }
-      if (params['search-task-state']) {
-        url += `&statusList=${params['search-task-state'].join(',')}`
+      if (params['search-task-state']?.length) {
+        add('statusList', params['search-task-state'].join(','))
       }
-      if (params['search-task-visibility']) {
-        if (params['search-task-visibility'] === 'Internal') {
-          url += `&taskType=INTERNAL`
-        }
-        if (params['search-task-visibility'] === 'Client Facing') {
-          url += `&taskType=CLIENT-FACING`
-        }
+      if (params['search-task-visibility'] === 'Internal') {
+        add('taskType', 'INTERNAL')
+      }
+      if (params['search-task-visibility'] === 'Client Facing') {
+        add('taskType', 'CLIENT-FACING')
       }
       if (params['search-task-assignee']) {
         const assigneeId =
@@ -119,75 +103,77 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
             ? params['search-task-assignee']
             : params['search-task-assignee']?.value
         if (assigneeId) {
-          url += `&assigneeId=${assigneeId}`
+          add('assigneeId', assigneeId)
         }
       }
       if (params._context?.workflowId) {
-        url += `&workflowId=${params._context?.workflowId}`
+        add('workflowId', params._context.workflowId)
       }
 
-      if (params['search-task-due-date'] === 'Today') {
+      const due = params['search-task-due-date']
+      if (due === 'Today') {
         const { startDate, endDate } = getToday()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'Yesterday') {
+      if (due === 'Yesterday') {
         const { startDate, endDate } = getYesterday()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'Tomorrow') {
+      if (due === 'Tomorrow') {
         const { startDate, endDate } = getTomorrow()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'This Week') {
+      if (due === 'This Week') {
         const { startDate, endDate } = getCurrentWeek()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'Next Week') {
+      if (due === 'Next Week') {
         const { startDate, endDate } = getNextWeek()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'Last Week') {
+      if (due === 'Last Week') {
         const { startDate, endDate } = getLastWeek()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'This Month') {
+      if (due === 'This Month') {
         const { startDate, endDate } = getCurrentMonth()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'Next Month') {
+      if (due === 'Next Month') {
         const { startDate, endDate } = getNextMonth()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'Last Month') {
+      if (due === 'Last Month') {
         const { startDate, endDate } = getLastMonth()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'Past Dates') {
+      if (due === 'Past Dates') {
         const { startDate, endDate } = getPastDate()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-due-date'] === 'Future Dates') {
+      if (due === 'Future Dates') {
         const { startDate, endDate } = getFutureDate()
-        url += `&fromDate=${startDate}`
-        url += `&toDate=${endDate}`
+        add('fromDate', startDate)
+        add('toDate', endDate)
       }
-      if (params['search-task-max-results']) {
+      if (params['search-task-max-results'] !== undefined && params['search-task-max-results'] !== '') {
         const pageSize = Number(params['search-task-max-results'])
         if (Number.isInteger(pageSize)) {
-          url += `&pageSize=${pageSize}`
+          add('pageSize', pageSize)
         }
       }
-      return url
+
+      return q.length > 0 ? `${base}?${q.join('&')}` : base
     },
     method: 'GET',
     headers: (params: SearchTaskQueryParams) => {
@@ -198,10 +184,7 @@ export const searchTask: ToolConfig<SearchTaskQueryParams, SearchTaskResponse> =
     },
   },
 
-  transformResponse: async (
-    response: Response,
-    params?: SearchTaskQueryParams
-  ): Promise<SearchTaskResponse> => {
+  transformResponse: async (response: Response): Promise<SearchTaskResponse> => {
     const data = await response.json()
     return {
       success: true,

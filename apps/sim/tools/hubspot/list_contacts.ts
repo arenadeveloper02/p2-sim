@@ -11,7 +11,8 @@ export const hubspotListContactsTool: ToolConfig<
 > = {
   id: 'hubspot_list_contacts',
   name: 'List Contacts from HubSpot',
-  description: 'Retrieve all contacts from HubSpot account with pagination support',
+  description:
+    'List contacts with pagination, or fetch a single contact when Contact ID or Email is set (matches HubSpot block “Get Contacts”).',
   version: '1.0.0',
 
   oauth: {
@@ -25,6 +26,20 @@ export const hubspotListContactsTool: ToolConfig<
       required: true,
       visibility: 'hidden',
       description: 'The access token for the HubSpot API',
+    },
+    contactId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'HubSpot contact ID or email to fetch one contact; leave empty to list all contacts',
+    },
+    idProperty: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'When using email (or non-record id), set the unique property (e.g. "email" or "domain")',
     },
     limit: {
       type: 'string',
@@ -56,6 +71,23 @@ export const hubspotListContactsTool: ToolConfig<
 
   request: {
     url: (params) => {
+      const trimmedId = params.contactId?.trim()
+      if (trimmedId) {
+        const baseUrl = `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(trimmedId)}`
+        const queryParams = new URLSearchParams()
+        if (params.idProperty) {
+          queryParams.append('idProperty', params.idProperty)
+        }
+        if (params.properties) {
+          queryParams.append('properties', params.properties)
+        }
+        if (params.associations) {
+          queryParams.append('associations', params.associations)
+        }
+        const queryString = queryParams.toString()
+        return queryString ? `${baseUrl}?${queryString}` : baseUrl
+      }
+
       const baseUrl = 'https://api.hubapi.com/crm/v3/objects/contacts'
       const queryParams = new URLSearchParams()
 
@@ -94,6 +126,22 @@ export const hubspotListContactsTool: ToolConfig<
     if (!response.ok) {
       logger.error('HubSpot API request failed', { data, status: response.status })
       throw new Error(data.message || 'Failed to list contacts from HubSpot')
+    }
+
+    // Single-record GET /contacts/{id} returns the object directly (no `results` array).
+    if (!Array.isArray(data.results) && data.id != null) {
+      return {
+        success: true,
+        output: {
+          contacts: [data],
+          paging: null,
+          metadata: {
+            totalReturned: 1,
+            hasMore: false,
+          },
+          success: true,
+        },
+      }
     }
 
     return {

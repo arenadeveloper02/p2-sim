@@ -2,22 +2,16 @@
 
 import * as React from 'react'
 import axios from 'axios'
-import { Check, ChevronsUpDown } from 'lucide-react'
-import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
-import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
+import {
+  arenaEffectiveSubBlockId,
+  arenaSiblingSubBlockStoreKey,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
@@ -46,12 +40,20 @@ export function ArenaGroupSelector({
   disabled = false,
 }: ArenaGroupSelectorProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId, true)
+  const prevClientIdRef = React.useRef<string | undefined>(undefined)
+  const prevProjectIdRef = React.useRef<string | undefined>(undefined)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  // Determine the client and project keys based on the group subBlockId
-  const clientKey = subBlockId === 'comment-group' ? 'comment-client' : 'task-client'
-  const projectKey = subBlockId === 'comment-group' ? 'comment-project' : 'task-project'
+  const logicalId = arenaEffectiveSubBlockId(subBlockId)
+  const clientKey =
+    logicalId === 'comment-group'
+      ? arenaSiblingSubBlockStoreKey(subBlockId, 'comment-client')
+      : arenaSiblingSubBlockStoreKey(subBlockId, 'task-client')
+  const projectKey =
+    logicalId === 'comment-group'
+      ? arenaSiblingSubBlockStoreKey(subBlockId, 'comment-project')
+      : arenaSiblingSubBlockStoreKey(subBlockId, 'task-project')
   const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
     | { clientId?: string }
     | undefined
@@ -64,15 +66,32 @@ export function ArenaGroupSelector({
   const selectedValue = isPreview ? previewValue : storeValue
 
   const [groups, setGroups] = React.useState<Group[]>([])
-  const [open, setOpen] = React.useState(false)
+  const [isLoading, setIsLoading] = React.useState(false)
 
-  // Fetch groups when clientId & projectId are available
   React.useEffect(() => {
-    if (!clientId || !projectId) return
+    if (isPreview) return
+    const clientChanged = prevClientIdRef.current !== undefined && prevClientIdRef.current !== clientId
+    const projectChanged =
+      prevProjectIdRef.current !== undefined && prevProjectIdRef.current !== projectId
+    if (clientChanged || projectChanged) {
+      setStoreValue(null)
+    }
+    prevClientIdRef.current = clientId
+    prevProjectIdRef.current = projectId
+  }, [clientId, projectId, isPreview, setStoreValue])
 
+  React.useEffect(() => {
+    if (!clientId || !projectId) {
+      setGroups([])
+      setIsLoading(false)
+      return
+    }
+
+    let cancelled = false
     const fetchGroups = async () => {
+      setIsLoading(true)
+      setGroups([])
       try {
-        setGroups([])
         const v2Token = await getArenaToken()
         const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
         const url = `${arenaBackendBaseUrl}/sol/v1/tasks/epic?cid=${clientId}&pid=${projectId}`
@@ -84,98 +103,76 @@ export function ArenaGroupSelector({
         })
 
         const epics = response.data?.epics || []
-        const formattedGroups = epics.map((epic: any) => ({
+        const formattedGroups = epics.map((epic: { id: string; name: string }) => ({
           id: epic.id,
           name: epic.name,
         }))
-
-        setGroups(formattedGroups)
+        if (!cancelled) setGroups(formattedGroups)
       } catch (error) {
         console.error('Error fetching groups:', error)
-        setGroups([])
+        if (!cancelled) setGroups([])
+      } finally {
+        if (!cancelled) setIsLoading(false)
       }
     }
 
     fetchGroups()
     return () => {
-      setGroups([])
+      cancelled = true
     }
   }, [clientId, projectId])
 
-  const selectedLabel =
-    selectedValue?.customDisplayValue ||
-    groups.find(
-      (grp) => grp.id === (typeof selectedValue === 'object' ? selectedValue?.id : selectedValue)
-    )?.name ||
-    'Select group...'
+  const selectedId =
+    typeof selectedValue === 'object' && selectedValue !== null && 'id' in selectedValue
+      ? (selectedValue as Group).id
+      : typeof selectedValue === 'string'
+        ? selectedValue
+        : ''
 
-  const handleSelect = (group: Group) => {
-    if (!isPreview && !disabled) {
-      setStoreValue({ ...group, customDisplayValue: group.name })
-      setOpen(false)
-    }
-  }
+  const fallbackLabel =
+    selectedValue && typeof selectedValue === 'object' && 'id' in selectedValue
+      ? (selectedValue as Group & { customDisplayValue?: string }).customDisplayValue ||
+        (selectedValue as Group).name
+      : undefined
+
+  const options: ComboboxOption[] = React.useMemo(
+    () =>
+      mergeArenaComboboxOptions(
+        groups.map((g) => ({ label: g.name, value: g.id })),
+        selectedId || undefined,
+        fallbackLabel
+      ),
+    [groups, selectedId, fallbackLabel]
+  )
+
+  const controlDisabled = disabled || !clientId || !projectId
 
   return (
-    <div className={cn('flex w-full flex-col gap-2 pt-1')}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant='outline'
-            role='combobox'
-            aria-expanded={open}
-            id={`group-${subBlockId}`}
-            className={cn(
-              comboboxVariants(),
-              'relative w-full cursor-pointer items-center justify-between'
-            )}
-            disabled={disabled || !clientId || !projectId}
-          >
-            <span className='truncate'>{selectedLabel}</span>
-            <ChevronsUpDown className='ml-2 h-4 w-4 shrink-0 opacity-50' />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className='w-[var(--radix-popover-trigger-width)] rounded-[4px] p-0'>
-          <Command
-            filter={(value, search) => {
-              const group = groups.find((g) => g.id === value || g.name === value)
-              if (!group) return 0
-
-              return group.name.toLowerCase().includes(search.toLowerCase()) ||
-                group.id.toLowerCase().includes(search.toLowerCase())
-                ? 1
-                : 0
-            }}
-          >
-            <CommandInput placeholder='Search groups...' className='h-9' />
-            <CommandList>
-              <CommandEmpty>No groups found.</CommandEmpty>
-              <CommandGroup>
-                {groups.map((group) => (
-                  <CommandItem
-                    key={group.id}
-                    value={group.id}
-                    onSelect={() => handleSelect(group)}
-                    className='max-w-full whitespace-normal break-words'
-                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                  >
-                    <span className='truncate'>{group.name}</span>
-                    <Check
-                      className={cn(
-                        'ml-auto h-4 w-4',
-                        (typeof selectedValue === 'object' ? selectedValue?.id : selectedValue) ===
-                          group.id
-                          ? 'opacity-100'
-                          : 'opacity-0'
-                      )}
-                    />
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+    <div className={cn('w-full pt-1', layout === 'half' && 'max-w-md')} id={`group-${subBlockId}`}>
+      <Combobox
+        key={`${clientId ?? ''}::${projectId ?? ''}`}
+        options={options}
+        value={selectedId}
+        selectedValue={selectedId}
+        onChange={(v) => {
+          if (isPreview || controlDisabled) return
+          const fromList = groups.find((g) => g.id === v)
+          const fromOpt = options.find((o) => o.value === v)
+          if (fromList) {
+            setStoreValue({ ...fromList, customDisplayValue: fromList.name })
+          } else if (fromOpt) {
+            setStoreValue({ id: v, name: fromOpt.label, customDisplayValue: fromOpt.label })
+          }
+        }}
+        placeholder='Select group...'
+        disabled={controlDisabled}
+        searchable
+        searchPlaceholder='Search groups...'
+        emptyMessage='No groups found.'
+        isLoading={isLoading}
+        maxHeight={240}
+        dropdownWidth='trigger'
+      />
     </div>
   )
 }

@@ -10,6 +10,7 @@ import {
   type CanonicalGroup,
   getCanonicalValues,
   isCanonicalPair,
+  isNonEmptyValue,
 } from '@/lib/workflows/subblocks/visibility'
 import { isCustomTool } from '@/executor/constants'
 import {
@@ -40,7 +41,8 @@ import {
 } from '@/providers/models'
 import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useProvidersStore } from '@/stores/providers/store'
-import { mergeToolParameters } from '@/tools/params'
+import { mergeToolParameters, type SchemaProperty } from '@/tools/params'
+import { SPYFU_DEFAULT_OPERATION_ID } from '@/tools/spyfu/operations'
 
 const logger = createLogger('ProviderUtils')
 
@@ -440,6 +442,35 @@ export function extractAndParseJSON(content: string): any {
 }
 
 /**
+ * When an integration tool is nested in an Agent block, StoredTool.params often omit the OAuth
+ * account field while the standalone block still resolves auth from subBlock defaults (`value()`).
+ * Merge `accounts` (etc.) from the block definition so HubSpot/Gmail-style tools receive the same
+ * credential routing as canvas blocks — e.g. HubSpot `accounts` default → oauthCredential via block tools.config.params.
+ */
+function mergeOAuthCredentialDefaultsFromSubBlocks(
+  blockDef: { subBlocks?: Array<{ id?: string; value?: unknown }> },
+  params: Record<string, unknown>
+): void {
+  const hasCredentialPick =
+    (typeof params.accounts === 'string' && params.accounts.trim() !== '') ||
+    (typeof params.oauthCredential === 'string' && params.oauthCredential.trim() !== '') ||
+    (typeof params.credential === 'string' && params.credential.trim() !== '')
+  if (hasCredentialPick) return
+
+  const accountsSb = blockDef.subBlocks?.find((sb) => sb.id === 'accounts')
+  if (!accountsSb || typeof accountsSb.value !== 'function') return
+
+  try {
+    const defVal = (accountsSb.value as (p: Record<string, unknown>) => unknown)(params)
+    if (typeof defVal === 'string' && defVal.trim() !== '') {
+      params.accounts = defVal.trim()
+    }
+  } catch {
+    // Ignore invalid defaults
+  }
+}
+
+/**
  * Transforms a block tool into a provider tool config with operation selection
  *
  * @param block The block to transform
@@ -529,12 +560,66 @@ export async function transformBlockTool(
 
   const { createLLMToolSchema } = await import('@/tools/params')
 
-  const userProvidedParams = block.params || {}
+  // Agent tools store the selected operation on `block.operation`; merge into params so
+  // block `tools.config.params` and tool execution see the same shape as canvas blocks.
+  const userProvidedParams = {
+    ...(block.params || {}),
+    ...(block.operation != null && String(block.operation) !== ''
+      ? { operation: block.operation }
+      : {}),
+  }
 
-  const { schema: llmSchema, enrichedDescription } = await createLLMToolSchema(
-    toolConfig,
-    userProvidedParams
-  )
+  mergeOAuthCredentialDefaultsFromSubBlocks(blockDef, userProvidedParams as Record<string, unknown>)
+
+  // HubSpot `tools.config.params` maps `accounts` → oauthCredential; some persisted shapes only have `oauthCredential`.
+  if (block.type === 'hubspot') {
+    const p = userProvidedParams as Record<string, unknown>
+    const hasAccounts = typeof p.accounts === 'string' && p.accounts.trim() !== ''
+    const oauth = p.oauthCredential
+    if (
+      !hasAccounts &&
+      typeof oauth === 'string' &&
+      oauth.trim() !== ''
+    ) {
+      p.accounts = oauth.trim()
+    }
+  }
+
+  if (block.type === 'spyfu') {
+    const p = userProvidedParams as Record<string, unknown>
+    const oid = p.operationId
+    const missing =
+      oid === undefined ||
+      oid === null ||
+      (typeof oid === 'string' && oid.trim() === '')
+    if (missing) {
+      p.operationId = SPYFU_DEFAULT_OPERATION_ID
+    }
+  }
+
+  const llmResult = await createLLMToolSchema(toolConfig, userProvidedParams)
+  let llmSchema = llmResult.schema
+  const enrichedDescription = llmResult.enrichedDescription
+
+  // Image Fusion only uses fusion inputs (block); shared tool still lists single-image edit params.
+  if (
+    toolId === 'google_nano_banana' &&
+    block.type === 'image_fusion' &&
+    llmSchema?.properties &&
+    typeof llmSchema.properties === 'object'
+  ) {
+    const props = llmSchema.properties as Record<string, SchemaProperty>
+    const properties = Object.fromEntries(
+      Object.entries(props).filter(([key]) => key !== 'inputImage' && key !== 'inputImageMimeType')
+    ) as Record<string, SchemaProperty>
+    llmSchema = {
+      ...llmSchema,
+      properties,
+      required: (llmSchema.required || []).filter(
+        (r) => r !== 'inputImage' && r !== 'inputImageMimeType'
+      ),
+    }
+  }
 
   let uniqueToolId = toolConfig.id
   let toolName = toolConfig.name
@@ -574,10 +659,18 @@ export async function transformBlockTool(
         let result = { ...params }
 
         for (const group of canonicalGroups) {
+          const merged = result[group.canonicalId]
           const { basicValue, advancedValue } = getCanonicalValues(group, result)
           const scopedKey = `${block.type}:${group.canonicalId}`
           const pairMode = canonicalModes?.[scopedKey] ?? 'basic'
-          const chosen = pairMode === 'advanced' ? advancedValue : basicValue
+          let chosen = pairMode === 'advanced' ? advancedValue : basicValue
+
+          // Agent tool-input (and similar) only persist the merged canonical key on StoredTool.params,
+          // not the sibling subBlock id (e.g. get-meetings-client-id). Advanced mode would otherwise
+          // pick undefined from getCanonicalValues, delete the merged key, and drop the user value.
+          if (chosen === undefined && isNonEmptyValue(merged)) {
+            chosen = merged
+          }
 
           const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
           sourceIds.forEach((id) => delete result[id])

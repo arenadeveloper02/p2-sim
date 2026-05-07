@@ -106,8 +106,9 @@ const STATIC_IMG_SRC = [
 
 const STATIC_CONNECT_SRC = [
   "'self'",
-  /** Arena-hosted agent UI calls APIs on sibling subdomains (e.g. test-service.thearena.ai). */
+  /** Arena app + hub + internal APIs (e.g. test-service.thearena.ai) */
   'https://*.thearena.ai',
+  'wss://*.thearena.ai',
   'https://api.browser-use.com',
   'https://api.elevenlabs.io',
   'wss://api.elevenlabs.io',

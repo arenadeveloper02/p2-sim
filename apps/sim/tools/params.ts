@@ -324,7 +324,7 @@ export function getToolParametersConfig(
           )
 
           if (subBlock) {
-            if (isSubBlockHidden(subBlock)) {
+            if (subBlock.hidden || isSubBlockHidden(subBlock)) {
               toolParam.visibility = 'hidden'
             }
 
@@ -399,8 +399,15 @@ function buildParameterSchema(
 ): SchemaProperty {
   const surface = options.surface ?? 'default'
 
-  if (surface === 'copilot' && (param.type === 'file' || param.type === 'file[]')) {
-    return buildCopilotFileParameterSchema(param)
+  if (param.type === 'file' || param.type === 'file[]') {
+    const visibility = param.visibility
+    const useStructuredFileSchema =
+      surface === 'copilot' ||
+      visibility === 'user-or-llm' ||
+      visibility === 'llm-only'
+    if (useStructuredFileSchema) {
+      return buildCopilotFileParameterSchema(param)
+    }
   }
 
   let schemaType = param.type
@@ -413,12 +420,17 @@ function buildParameterSchema(
     description: param.description || '',
   }
 
-  if (param.type === 'array' && param.items) {
-    propertySchema.items = {
-      ...param.items,
-      ...(param.items.properties && {
-        properties: { ...param.items.properties },
-      }),
+  if (param.type === 'array') {
+    if (param.items) {
+      propertySchema.items = {
+        ...param.items,
+        ...(param.items.properties && {
+          properties: { ...param.items.properties },
+        }),
+      }
+    } else {
+      // Fallback to string items if missing, to prevent API validation errors
+      propertySchema.items = { type: 'string' }
     }
   } else if (param.items) {
     logger.warn(`items property ignored for non-array param "${paramId}" in tool "${toolId}"`)
@@ -434,7 +446,7 @@ function buildCopilotFileParameterSchema(param: ToolParamDefinition): SchemaProp
       ? 'A file object for tool execution.'
       : 'An array of file objects for tool execution.')
   const resolutionDescription =
-    'For copilot and mothership tool calls, prefer passing canonical workspace file IDs such as "wf_123". The runtime will resolve them into full file objects before tool execution.'
+    'For agent, copilot, and mothership tool calls, prefer passing a file object with id, name, url, size, type, and key (workspace file metadata). The runtime resolves these before execution.'
 
   const fileObjectSchema: SchemaProperty = {
     type: 'object',
@@ -665,12 +677,17 @@ export function createExecutionToolSchema(toolConfig: ToolConfig): ToolSchema {
     }
 
     // Include items property for arrays
-    if (param.type === 'array' && param.items) {
-      propertySchema.items = {
-        ...param.items,
-        ...(param.items.properties && {
-          properties: { ...param.items.properties },
-        }),
+    if (param.type === 'array') {
+      if (param.items) {
+        propertySchema.items = {
+          ...param.items,
+          ...(param.items.properties && {
+            properties: { ...param.items.properties },
+          }),
+        }
+      } else {
+        // Fallback to string items if missing, to prevent API validation errors
+        propertySchema.items = { type: 'string' }
       }
     } else if (param.items) {
       logger.warn(
@@ -952,6 +969,20 @@ const EXCLUDED_SUBBLOCK_TYPES = new Set([
   'text',
 ])
 
+/**
+ * HubSpot block duplicates OAuth as `credential` / `manualCredential` (title "HubSpot Account").
+ * Tool-input keeps the **Accounts** dropdown (`accounts` → shared workspace pickers) and hides
+ * those canonical oauthCredential rows; auth still resolves via tool OAuth + `accounts` in params.
+ */
+function shouldExcludeSubBlockFromToolInput(
+  blockType: string,
+  sb: BlockSubBlockConfig
+): boolean {
+  if (blockType !== 'hubspot') return false
+  if (sb.canonicalParamId === 'oauthCredential') return true
+  return false
+}
+
 export interface SubBlocksForToolInput {
   toolConfig: ToolConfig
   subBlocks: BlockSubBlockConfig[]
@@ -1016,6 +1047,11 @@ export function getSubBlocksForToolInput(
       // Skip trigger-mode-only subblocks
       if (sb.mode === 'trigger' || sb.mode === 'trigger-advanced') continue
 
+      if (shouldExcludeSubBlockFromToolInput(blockType, sb)) continue
+
+      // Match block editor: never surface hidden subblocks in tool-input UI
+      if (sb.hidden) continue
+
       // Hide tool API key fields when running on hosted Sim or when env var is set
       if (isSubBlockHidden(sb)) continue
 
@@ -1052,7 +1088,9 @@ export function getSubBlocksForToolInput(
         } else if (sb.canonicalParamId) {
           visibility = 'user-or-llm'
         } else {
-          continue
+          // Block-only fields (e.g. HubSpot routing inputs) still need tool-input UI when their
+          // condition matches the selected operation, even if the resolved tool id omits them.
+          visibility = 'user-only'
         }
       }
 

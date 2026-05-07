@@ -51,6 +51,13 @@ export const slackGetThreadTool: ToolConfig<SlackGetThreadParams, SlackGetThread
       visibility: 'user-or-llm',
       description: 'Maximum number of messages to return (default: 100, max: 200)',
     },
+    cursor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Pagination cursor from a previous response (`output.cursor`) to fetch the next page of replies',
+    },
   },
 
   request: {
@@ -61,6 +68,12 @@ export const slackGetThreadTool: ToolConfig<SlackGetThreadParams, SlackGetThread
       url.searchParams.append('inclusive', 'true')
       const limit = params.limit ? Math.min(Number(params.limit), 200) : 100
       url.searchParams.append('limit', String(limit))
+      if (typeof params.cursor === 'string') {
+        const c = params.cursor.trim()
+        if (c) {
+          url.searchParams.append('cursor', c)
+        }
+      }
       return url.toString()
     },
     method: 'GET',
@@ -137,6 +150,10 @@ export const slackGetThreadTool: ToolConfig<SlackGetThreadParams, SlackGetThread
     // Remaining messages are replies
     const replies = messages.slice(1)
 
+    const nextCursorRaw = data.response_metadata?.next_cursor
+    const cursor =
+      typeof nextCursorRaw === 'string' && nextCursorRaw.length > 0 ? nextCursorRaw : null
+
     return {
       success: true,
       output: {
@@ -145,6 +162,7 @@ export const slackGetThreadTool: ToolConfig<SlackGetThreadParams, SlackGetThread
         messages,
         replyCount: replies.length,
         hasMore: data.has_more ?? false,
+        cursor,
       },
     }
   },
@@ -178,6 +196,12 @@ export const slackGetThreadTool: ToolConfig<SlackGetThreadParams, SlackGetThread
     hasMore: {
       type: 'boolean',
       description: 'Whether there are more messages in the thread (pagination needed)',
+    },
+    cursor: {
+      type: 'string',
+      optional: true,
+      description:
+        'Cursor for the next page (`response_metadata.next_cursor`); absent or null when there are no more results',
     },
   },
 }
