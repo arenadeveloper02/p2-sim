@@ -120,6 +120,7 @@ const ChatMessageSchema = z.object({
   contexts: z.array(ChatContextSchema).optional(),
   commands: z.array(z.string()).optional(),
   userTimezone: z.string().optional(),
+  effectiveWorkspaceId: z.string(),
 })
 
 type UnifiedChatRequest = z.infer<typeof ChatMessageSchema>

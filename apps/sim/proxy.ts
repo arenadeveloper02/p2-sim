@@ -208,7 +208,7 @@ export async function proxy(request: NextRequest) {
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
     response.headers.set('X-Content-Type-Options', 'nosniff')
-    response.headers.set('X-Frame-Options', 'SAMEORIGIN')
+    // response.headers.set('X-Frame-Options', 'SAMEORIGIN')
     return track(request, response)
   }
 
@@ -224,7 +224,7 @@ export async function proxy(request: NextRequest) {
   if (url.pathname === '/') {
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
     response.headers.set('X-Content-Type-Options', 'nosniff')
-    response.headers.set('X-Frame-Options', 'SAMEORIGIN')
+    // response.headers.set('X-Frame-Options', 'SAMEORIGIN')
   }
 
   return track(request, response)

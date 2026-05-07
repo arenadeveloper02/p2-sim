@@ -16,21 +16,22 @@ import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
 import { useChatHistory, useMarkTaskRead } from '@/hooks/queries/tasks'
 import type { ChatContext } from '@/stores/panel'
-import { MothershipChat, MothershipView, TemplatePrompts, UserInput } from './components'
+import { EmbedHtmlContent, MothershipChat, MothershipView, UserInput } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
 import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
 
-const logger = createLogger('Home')
+const logger = createLogger('HomeEmbed')
 
-interface HomeProps {
+interface HomeEmbedProps {
   chatId?: string
 }
 
-export function Home({ chatId }: HomeProps = {}) {
+export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialResourceId = searchParams.get('resource')
+  const resolveWorkspaceBeforeSend = true
   const { data: session } = useSession()
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
@@ -38,8 +39,6 @@ export function Home({ chatId }: HomeProps = {}) {
   const [initialPrompt, setInitialPrompt] = useState('')
   const hasCheckedLandingStorageRef = useRef(false)
   const initialViewInputRef = useRef<HTMLDivElement>(null)
-  const templateRef = useRef<HTMLDivElement>(null)
-  const baseInputHeightRef = useRef<number | null>(null)
 
   const [isInputEntering, setIsInputEntering] = useState(false)
 
@@ -76,7 +75,7 @@ export function Home({ chatId }: HomeProps = {}) {
         })
 
         if (result?.workflowId) {
-          window.location.href = `/workspace/${workspaceId}/w/${result.workflowId}`
+          window.location.href = `/workspace/${workspaceId}/w/${result.workflowId}/embed`
           return
         }
 
@@ -156,8 +155,10 @@ export function Home({ chatId }: HomeProps = {}) {
     getMothershipUseChatOptions({
       onResourceEvent: handleResourceEvent,
       initialActiveResourceId: initialResourceId,
-      resolveWorkspaceBeforeSend: false,
-    })
+      resolveWorkspaceBeforeSend,
+      isEmbedPage: true,
+    }),
+    true,
   )
 
   useEffect(() => {
@@ -293,26 +294,10 @@ export function Home({ chatId }: HomeProps = {}) {
   const hasMessages = messages.length > 0
   const showChatSkeleton = Boolean(chatId) && !hasMessages && isChatHistoryPending
 
-  useEffect(() => {
-    if (hasMessages) return
-    const input = initialViewInputRef.current
-    const templates = templateRef.current
-    if (!input || !templates) return
-
-    const ro = new ResizeObserver((entries) => {
-      const height = entries[0].contentRect.height
-      if (baseInputHeightRef.current === null) baseInputHeightRef.current = height
-      const delta = Math.max(0, (height - baseInputHeightRef.current) / 2)
-      templates.style.marginTop = delta > 0 ? `calc(-30vh + ${delta}px)` : ''
-    })
-    ro.observe(input)
-    return () => ro.disconnect()
-  }, [hasMessages])
-
   if (!hasMessages && !chatId) {
     return (
       <div className='h-full overflow-y-auto bg-[var(--bg)] [scrollbar-gutter:stable_both-edges]'>
-        <div className='flex min-h-full flex-col items-center justify-center px-6 pb-[2vh]'>
+        <div className='flex flex-col items-center justify-center p-6'>
           <h1
             data-tour='home-greeting'
             className='mb-6 max-w-[42rem] text-balance font-[430] font-season text-[32px] text-[var(--text-primary)] tracking-[-0.02em]'
@@ -332,13 +317,7 @@ export function Home({ chatId }: HomeProps = {}) {
             />
           </div>
         </div>
-        <div
-          ref={templateRef}
-          data-tour='home-templates'
-          className='-mt-[30vh] mx-auto w-full max-w-[68rem] px-4 pb-8 sm:px-6 lg:px-10'
-        >
-          <TemplatePrompts onSelect={handleSubmit} />
-        </div>
+        <EmbedHtmlContent />
       </div>
     )
   }
@@ -367,7 +346,6 @@ export function Home({ chatId }: HomeProps = {}) {
         />
       </div>
 
-      {/* Resize handle — zero-width flex child whose absolute child straddles the border */}
       {!isResourceCollapsed && (
         <div className='relative z-20 w-0 flex-none'>
           <div
