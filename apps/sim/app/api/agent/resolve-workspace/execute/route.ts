@@ -33,6 +33,11 @@ type TextEnvelope = {
   trace: {
     requestId: string
   }
+  scope?: {
+    lane: 'subagent'
+    agentId?: string
+    parentToolCallId?: string
+  }
   payload: {
     channel: 'assistant'
     text: string
@@ -52,9 +57,77 @@ type CompleteEnvelope = {
   trace: {
     requestId: string
   }
+  scope?: {
+    lane: 'subagent'
+    agentId?: string
+    parentToolCallId?: string
+  }
   payload: {
     status: 'complete'
   }
+}
+
+type ToolEnvelope = {
+  v: 1
+  type: 'tool'
+  seq: number
+  ts: string
+  stream: {
+    streamId: string
+    chatId: string
+    cursor: string
+  }
+  trace: {
+    requestId: string
+  },
+  scope?: {
+    lane: 'subagent'
+    agentId?: string
+    parentToolCallId?: string
+  }
+  payload: {
+    toolCallId: string
+    toolName: 'run'
+    arguments?: {
+      request: string
+    }
+    argumentsDelta?: string
+    executor?: 'sim'
+    mode?: 'async'
+    phase: 'args_delta' | 'call' | 'result'
+    status?: 'executing' | 'success' | 'error' | 'cancelled'
+    ui?: {
+      title: string
+      phaseLabel: string
+      icon: 'play'
+      internal: true
+    }
+    success?: boolean
+    output?: unknown
+    error?: string
+  }
+}
+
+function getDynamicStatusText(input: string): string {
+  const normalized = input.toLowerCase()
+  if (normalized.includes('email') || normalized.includes('gmail') || normalized.includes('inbox')) {
+    return 'Reading the emails and preparing the summary...'
+  }
+  if (normalized.includes('drive') || normalized.includes('document') || normalized.includes('file')) {
+    return 'Getting the details from Drive and related files...'
+  }
+  if (normalized.includes('calendar') || normalized.includes('meeting') || normalized.includes('event')) {
+    return 'Checking calendar events and availability details...'
+  }
+  if (
+    normalized.includes('arena') ||
+    normalized.includes('task') ||
+    normalized.includes('project') ||
+    normalized.includes('workflow')
+  ) {
+    return 'Looking up Arena task/workflow details...'
+  }
+  return 'Running the workflow and collecting details...'
 }
 
 function extractFirstString(value: unknown): string | undefined {
@@ -109,7 +182,7 @@ function extractTextFromUpstreamData(raw: string): string {
   }
 }
 
-function toSseDataLine(event: TextEnvelope | CompleteEnvelope): string {
+function toSseDataLine(event: TextEnvelope | CompleteEnvelope | ToolEnvelope): string {
   return `data: ${JSON.stringify(event)}\n\n`
 }
 
@@ -173,10 +246,15 @@ export async function POST(req: NextRequest) {
   }
 
   const userId = session.user.id
-  const apiKey = 'sim_DA2rdcceubED50_JKwTuMjw2lhX60DsO'
+  const apiKey = process.env.SIM_WORKFLOW_API_KEY
   if (!apiKey) {
     logger.error('SIM_WORKFLOW_API_KEY is not configured — cannot execute workflow')
     return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
+  }
+  const agentBaseUrl = process.env.SIM_AGENT_BASE_URL
+  if (!agentBaseUrl) {
+    logger.error('SIM_AGENT_BASE_URL is not configured — cannot execute workflow')
+    return NextResponse.json({ error: 'Agent base URL not configured' }, { status: 500 })
   }
 
   let body: z.infer<typeof ExecuteRequestSchema>
@@ -190,60 +268,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const executeUrl = `https://dev-agent.thearena.ai/api/workflows/${body.workflowId}/execute`
+  const executeUrl = `${agentBaseUrl.replace(/\/$/, '')}/api/workflows/${body.workflowId}/execute`
 
   try {
-    const upstream = await fetch(executeUrl, {
-      method: 'POST',
-      headers: {
-        'X-API-Key': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        input: body.input,
-        ...(body.conversationId ? { conversationId: body.conversationId } : {}),
-        stream: true,
-        selectedOutputs: body.selectedOutputs,
-      }),
-    })
-
-    if (!upstream.ok) {
-      const errorText = await upstream.text().catch(() => '')
-      logger.error('Workflow execution API returned non-OK status', {
-        userId,
-        workflowId: body.workflowId,
-        status: upstream.status,
-        error: errorText,
-      })
-      return NextResponse.json(
-        { error: 'Failed to execute workflow' },
-        { status: upstream.status }
-      )
-    }
-
-    if (!upstream.body) {
-      logger.error('Workflow execution API returned empty stream body', {
-        userId,
-        workflowId: body.workflowId,
-      })
-      return NextResponse.json({ error: 'Empty workflow stream' }, { status: 502 })
-    }
-
     const streamId = generateRequestId()
     const requestId = generateRequestId()
     const chatId = body.conversationId ?? streamId
+    const toolCallId = generateRequestId()
 
     const transformed = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const reader = upstream.body!.getReader()
+        let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
         const decoder = new TextDecoder()
         const encoder = new TextEncoder()
         let buffer = ''
         let sawSsePrefix = false
         let seq = 0
         let accumulatedAssistantText = ''
+        let hasEmittedToolResult = false
 
-        const emitEvent = (event: TextEnvelope | CompleteEnvelope) => {
+        const emitEvent = (event: TextEnvelope | CompleteEnvelope | ToolEnvelope) => {
           controller.enqueue(encoder.encode(toSseDataLine(event)))
         }
 
@@ -275,6 +319,70 @@ export async function POST(req: NextRequest) {
           }
           emitEvent(event)
         }
+        const emitToolResultEvent = (params: {
+          status: 'success' | 'error'
+          success: boolean
+          output?: unknown
+          error?: string
+          scope?: {
+            lane: 'subagent'
+            agentId?: string
+            parentToolCallId?: string
+          }
+        }) => {
+          if (hasEmittedToolResult) return
+          hasEmittedToolResult = true
+          emitEvent({
+            v: 1,
+            type: 'tool',
+            seq: nextSeq(),
+            ts: new Date().toISOString(),
+            stream: { streamId, chatId, cursor: String(seq) },
+            trace: { requestId },
+            ...(params.scope ? { scope: params.scope } : {}),
+            payload: {
+              toolCallId,
+              toolName: 'run',
+              executor: 'sim',
+              mode: 'async',
+              phase: 'result',
+              status: params.status,
+              success: params.success,
+              ...(params.output !== undefined ? { output: params.output } : {}),
+              ...(params.error ? { error: params.error } : {}),
+            },
+          })
+        }
+
+        const dynamicStatusText = getDynamicStatusText(body.input)
+        const runScope = {
+          lane: 'subagent' as const,
+          agentId: 'run',
+        }
+        emitEvent({
+          v: 1,
+          type: 'tool',
+          seq: nextSeq(),
+          ts: new Date().toISOString(),
+          stream: { streamId, chatId, cursor: String(seq) },
+          trace: { requestId },
+          scope: runScope,
+          payload: {
+            toolCallId,
+            toolName: 'run',
+            arguments: { request: body.input },
+            executor: 'sim',
+            mode: 'async',
+            phase: 'call',
+            status: 'executing',
+            ui: {
+              title: dynamicStatusText,
+              phaseLabel: 'Run Agent',
+              icon: 'play',
+              internal: true,
+            },
+          },
+        })
 
         const processRawFrame = (rawFrame: string) => {
           const frame = rawFrame.trim()
@@ -299,6 +407,74 @@ export async function POST(req: NextRequest) {
         }
 
         try {
+          const upstream = await fetch(executeUrl, {
+            method: 'POST',
+            headers: {
+              'X-API-Key': apiKey,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              input: body.input,
+              ...(body.conversationId ? { conversationId: body.conversationId } : {}),
+              stream: true,
+              selectedOutputs: body.selectedOutputs,
+              email: session.user.email,
+              userId:session.user.id,
+            }),
+          })
+
+          if (!upstream.ok) {
+            const errorText = await upstream.text().catch(() => '')
+            logger.error('Workflow execution API returned non-OK status', {
+              userId,
+              workflowId: body.workflowId,
+              status: upstream.status,
+              error: errorText,
+            })
+            emitTextEvent('Failed to execute workflow request. Please try again.')
+            emitToolResultEvent({
+              status: 'error',
+              success: false,
+              error: `Workflow request failed with status ${upstream.status}`,
+              scope: runScope,
+            })
+            emitEvent({
+              v: 1,
+              type: 'complete',
+              seq: nextSeq(),
+              ts: new Date().toISOString(),
+              stream: { streamId, chatId, cursor: String(seq) },
+              trace: { requestId },
+              payload: { status: 'complete' },
+            })
+            return
+          }
+
+          if (!upstream.body) {
+            logger.error('Workflow execution API returned empty stream body', {
+              userId,
+              workflowId: body.workflowId,
+            })
+            emitTextEvent('Workflow response stream was empty.')
+            emitToolResultEvent({
+              status: 'error',
+              success: false,
+              error: 'Workflow response stream was empty.',
+              scope: runScope,
+            })
+            emitEvent({
+              v: 1,
+              type: 'complete',
+              seq: nextSeq(),
+              ts: new Date().toISOString(),
+              stream: { streamId, chatId, cursor: String(seq) },
+              trace: { requestId },
+              payload: { status: 'complete' },
+            })
+            return
+          }
+
+          reader = upstream.body.getReader()
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
@@ -313,6 +489,14 @@ export async function POST(req: NextRequest) {
 
           const trailing = buffer.trim()
           processRawFrame(trailing)
+          emitToolResultEvent({
+            status: 'success',
+            success: true,
+            output: {
+              message: 'Workflow execution completed.',
+            },
+            scope: runScope,
+          })
           emitEvent({
             v: 1,
             type: 'complete',
@@ -323,6 +507,21 @@ export async function POST(req: NextRequest) {
             payload: { status: 'complete' },
           })
         } catch (error) {
+          emitToolResultEvent({
+            status: 'error',
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+            scope: runScope,
+          })
+          emitEvent({
+            v: 1,
+            type: 'complete',
+            seq: nextSeq(),
+            ts: new Date().toISOString(),
+            stream: { streamId, chatId, cursor: String(seq) },
+            trace: { requestId },
+            payload: { status: 'complete' },
+          })
           logger.error('Failed to transform upstream workflow stream', {
             userId,
             workflowId: body.workflowId,
@@ -347,9 +546,11 @@ export async function POST(req: NextRequest) {
               })
             }
           }
-          try {
-            await reader.cancel()
-          } catch {}
+          if (reader) {
+            try {
+              await reader.cancel()
+            } catch {}
+          }
           controller.close()
         }
       },

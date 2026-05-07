@@ -5,9 +5,6 @@ import { getSession } from '@/lib/auth'
 
 const logger = createLogger('AgentResolveWorkspace')
 
-const AGENT_WORKSPACE_RESOLVE_URL =
-  'https://dev-agent.thearena.ai/api/workflows/9b814ba1-1ef8-4803-8b4a-bde5aa1e7968/execute'
-
 const RequestSchema = z.object({
   message: z.string().min(1),
   context: z.string().optional(),
@@ -29,10 +26,15 @@ export async function POST(req: NextRequest) {
 
   const userId = session.user.id
 
-  const apiKey = 'sim_DA2rdcceubED50_JKwTuMjw2lhX60DsO'
+  const apiKey = process.env.SIM_WORKFLOW_API_KEY
   if (!apiKey) {
     logger.error('SIM_API_KEY is not configured — cannot resolve workspace')
     return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
+  }
+  const resolveUrl = process.env.SIM_AGENT_BASE_URL + '/api/workflows/' + process.env.SIM_AGENT_WORKSPACE_RESOLVE_ID + '/execute'
+  if (!resolveUrl) {
+    logger.error('SIM_AGENT_WORKSPACE_RESOLVE_URL is not configured')
+    return NextResponse.json({ error: 'Agent resolve URL not configured' }, { status: 500 })
   }
 
   let message: string
@@ -51,14 +53,14 @@ export async function POST(req: NextRequest) {
 
   logger.info('Resolving workspace via external agent API', {
     userId,
-    url: AGENT_WORKSPACE_RESOLVE_URL,
+    url: resolveUrl,
     messageLength: message.length,
   })
 
   const startTime = Date.now()
 
   try {
-    const agentResponse = await fetch(AGENT_WORKSPACE_RESOLVE_URL, {
+    const agentResponse = await fetch(resolveUrl, {
       method: 'POST',
       headers: {
         'X-API-Key': apiKey,
