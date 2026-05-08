@@ -4,7 +4,10 @@
  */
 
 import { db } from '@sim/db'
+import { createLogger } from '@sim/logger'
 import { sql } from 'drizzle-orm'
+
+const logger = createLogger('ChannelAccounts')
 
 export interface ChannelAccount {
   id: string
@@ -49,7 +52,7 @@ export async function getChannelAccounts(
 
     return accounts
   } catch (error) {
-    console.error(`Error fetching ${type} accounts from database:`, error)
+    logger.error(`Error fetching ${type} accounts from database`, { error })
     return {}
   }
 }
@@ -62,8 +65,35 @@ export async function getGoogleAdsAccounts(): Promise<Record<string, ChannelAcco
 }
 
 /**
- * Fetches Facebook Ads accounts from database
+ * Fetches Facebook / Meta Ads accounts from the meta_accounts table
  */
 export async function getFacebookAdsAccounts(): Promise<Record<string, ChannelAccount>> {
-  return getChannelAccounts('facebook')
+  try {
+    const result = await db.execute(sql`
+      SELECT account_id, account_name
+      FROM meta_accounts
+      ORDER BY account_name
+    `)
+
+    const accounts: Record<string, ChannelAccount> = {}
+
+    for (const row of result as any[]) {
+      const key = String(row.account_name)
+        .toLowerCase()
+        .replace(/[^a-zA-Z0-9\s]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '')
+
+      accounts[key] = {
+        id: String(row.account_id),
+        name: String(row.account_name),
+      }
+    }
+
+    return accounts
+  } catch (error) {
+    logger.error('Error fetching Meta accounts from database', { error })
+    return {}
+  }
 }

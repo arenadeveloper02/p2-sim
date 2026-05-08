@@ -3401,6 +3401,18 @@ export const channelAccounts = pgTable(
   })
 )
 
+export const metaAccounts = pgTable(
+  'meta_accounts',
+  {
+    accountId: varchar('account_id', { length: 100 }).notNull(),
+    accountType: varchar('account_type', { length: 50 }).notNull(),
+    accountName: varchar('account_name', { length: 255 }).notNull(),
+  },
+  (table) => ({
+    pk: uniqueIndex('meta_accounts_pkey').on(table.accountId),
+  })
+)
+
 export const mothershipInboxWebhook = pgTable('mothership_inbox_webhook', {
   id: text('id').primaryKey(),
   workspaceId: text('workspace_id')
