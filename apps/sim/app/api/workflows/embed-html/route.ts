@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
         'X-API-Key': apiKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ persona }),
+      body: JSON.stringify({ persona, userId:session.user.id, email:session.user.email }),
       cache: 'no-store',
     })
 
