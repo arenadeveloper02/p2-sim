@@ -4,6 +4,8 @@ import { createLogger } from '@sim/logger'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
+import { taskPubSub } from '@/lib/copilot/tasks'
 import { getSession } from '@/lib/auth'
 import { normalizeMessage, type PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -207,6 +209,46 @@ async function persistWorkflowChatTurn(params: {
 }) {
   const { chatId, userId, userInput, assistantOutput, requestId } = params
   if (!assistantOutput.trim()) return
+
+  try {
+    const [chat] = await db
+      .select({
+        id: copilotChats.id,
+        title: copilotChats.title,
+        workspaceId: copilotChats.workspaceId,
+      })
+      .from(copilotChats)
+      .where(
+        and(
+          eq(copilotChats.id, chatId),
+          eq(copilotChats.userId, userId),
+          eq(copilotChats.type, 'mothership')
+        )
+      )
+      .limit(1)
+
+    if (chat && !chat.title) {
+      const generatedTitle = await requestChatTitle({
+        message: userInput,
+        model: 'claude-opus-4-6',
+      })
+      if (generatedTitle) {
+        await db.update(copilotChats).set({ title: generatedTitle }).where(eq(copilotChats.id, chatId))
+        if (chat.workspaceId) {
+          taskPubSub?.publishStatusChanged({
+            workspaceId: chat.workspaceId,
+            chatId,
+            type: 'renamed',
+          })
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn('Failed to generate title before persisting workflow chat turn', {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 
   const userMessage: PersistedMessage = normalizeMessage({
     id: generateRequestId(),

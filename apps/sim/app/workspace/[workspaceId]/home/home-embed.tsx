@@ -137,6 +137,7 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
     sendMessage,
     stopGeneration,
     resolvedChatId,
+    activeStreamId,
     resources,
     activeResourceId,
     setActiveResourceId,
@@ -293,8 +294,24 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
 
   const hasMessages = messages.length > 0
   const showChatSkeleton = Boolean(chatId) && !hasMessages && isChatHistoryPending
+  const conversationId = resolvedChatId ?? chatId
+  // Gate the executive-dashboard initial view behind every signal that an
+  // active conversation is in flight. Previously this branch only checked
+  // `hasMessages` and the `chatId` prop, which let the dashboard re-flash
+  // mid-request in embed mode: when the workflow path created a new chat row
+  // and `resolvedChatId` was set internally, `useChatHistory` momentarily
+  // returned `{ messages: [] }` and the prop `chatId` was still undefined, so
+  // both predicates were `false` and the dashboard re-mounted (which also
+  // restarted the rotating placeholder via `<UserInput isInitialView>`).
+  const shouldShowDashboard =
+    !hasMessages &&
+    !isSending &&
+    !isReconnecting &&
+    !activeStreamId &&
+    !conversationId &&
+    !showChatSkeleton
 
-  if (!hasMessages && !chatId) {
+  if (shouldShowDashboard) {
     return (
       <div className='h-full overflow-y-auto bg-[var(--bg)] [scrollbar-gutter:stable_both-edges]'>
         <div className='flex flex-col items-center justify-center p-6'>
