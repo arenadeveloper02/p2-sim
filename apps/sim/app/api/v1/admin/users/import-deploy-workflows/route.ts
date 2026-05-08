@@ -1,10 +1,18 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { apiKey, permissions, user, workflow, workspace } from '@sim/db/schema'
+import {
+  apiKey,
+  credential,
+  credentialMember,
+  permissions,
+  user,
+  workflow,
+  workspace,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId, generateShortId } from '@sim/utils/id'
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { createApiKey } from '@/lib/api-key/auth'
 import { hashApiKey } from '@/lib/api-key/crypto'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -25,6 +33,20 @@ const logger = createLogger('AdminImportDeployWorkflowsAPI')
 
 const DEFAULT_API_KEY_NAME = 'Personal API key'
 const DEFAULT_WORKFLOW_COLOR = '#3972F6'
+const PROVIDER_BY_TOOL_TYPE: Record<string, string> = {
+  gmail: 'google-email',
+  gmail_v2: 'google-email',
+  google_calendar: 'google-calendar',
+  google_drive: 'google-drive',
+  slack: 'slack',
+} as const
+
+const PROVIDER_BY_TOOL_ID_PREFIX: Array<{ prefix: string; providerId: string }> = [
+  { prefix: 'gmail_', providerId: 'google-email' },
+  { prefix: 'google_calendar_', providerId: 'google-calendar' },
+  { prefix: 'google_drive_', providerId: 'google-drive' },
+  { prefix: 'slack_', providerId: 'slack' },
+] as const
 
 interface WorkflowInput {
   content: string
@@ -37,10 +59,16 @@ interface ImportedWorkflowResult {
   name: string
   imported: boolean
   deployed: boolean
+  credentialPopulation?: CredentialPopulationSummary
   version?: number
   deployedAt?: string
   warnings?: string[]
   error?: string
+}
+
+interface CredentialPopulationSummary {
+  populatedProviders: string[]
+  missingProviders: string[]
 }
 
 interface ImportDeployResponse {
@@ -143,6 +171,128 @@ function getWorkflowMetadata(content: string, filename: string, nameOverride?: s
       name,
       description: 'Imported via Admin API',
       color: DEFAULT_WORKFLOW_COLOR,
+    }
+  }
+}
+
+function resolveProviderIdForTool(tool: Record<string, unknown>): string | null {
+  const toolType = typeof tool.type === 'string' ? tool.type : ''
+  const toolId = typeof tool.toolId === 'string' ? tool.toolId : ''
+
+  if (toolType && PROVIDER_BY_TOOL_TYPE[toolType]) {
+    return PROVIDER_BY_TOOL_TYPE[toolType]
+  }
+
+  return (
+    PROVIDER_BY_TOOL_ID_PREFIX.find(({ prefix }) => toolId.startsWith(prefix))?.providerId ?? null
+  )
+}
+
+async function getOldestActiveCredentialsByProvider(params: {
+  workspaceId: string
+  userId: string
+}): Promise<Map<string, string>> {
+  const rows = await db
+    .select({
+      id: credential.id,
+      providerId: credential.providerId,
+    })
+    .from(credential)
+    .innerJoin(
+      credentialMember,
+      and(
+        eq(credentialMember.credentialId, credential.id),
+        eq(credentialMember.userId, params.userId),
+        eq(credentialMember.status, 'active')
+      )
+    )
+    .where(and(eq(credential.workspaceId, params.workspaceId), eq(credential.type, 'oauth')))
+    .orderBy(asc(credential.createdAt))
+
+  const oldestByProvider = new Map<string, string>()
+
+  for (const row of rows) {
+    if (!row.providerId || oldestByProvider.has(row.providerId)) {
+      continue
+    }
+    oldestByProvider.set(row.providerId, row.id)
+  }
+
+  return oldestByProvider
+}
+
+function populateWorkflowCredentials(
+  workflowData: { blocks: Record<string, unknown> },
+  credentialsByProvider: Map<string, string>
+): CredentialPopulationSummary {
+  const populatedProviders = new Set<string>()
+  const missingProviders = new Set<string>()
+
+  for (const block of Object.values(workflowData.blocks)) {
+    if (!isRecord(block)) {
+      continue
+    }
+
+    const blockProviderId =
+      typeof block.type === 'string' ? PROVIDER_BY_TOOL_TYPE[block.type] : null
+    if (blockProviderId && isRecord(block.subBlocks)) {
+      const credentialId = credentialsByProvider.get(blockProviderId)
+      if (credentialId) {
+        populateCredentialSubBlocks(block.subBlocks, credentialId)
+        populatedProviders.add(blockProviderId)
+        missingProviders.delete(blockProviderId)
+      } else {
+        missingProviders.add(blockProviderId)
+      }
+    }
+
+    if (!isRecord(block.subBlocks)) {
+      continue
+    }
+
+    for (const subBlock of Object.values(block.subBlocks)) {
+      if (!isRecord(subBlock) || !Array.isArray(subBlock.value)) {
+        continue
+      }
+
+      for (const tool of subBlock.value) {
+        if (!isRecord(tool)) {
+          continue
+        }
+
+        const providerId = resolveProviderIdForTool(tool)
+        if (!providerId) {
+          continue
+        }
+
+        const credentialId = credentialsByProvider.get(providerId)
+        if (!credentialId) {
+          missingProviders.add(providerId)
+          continue
+        }
+
+        const toolParams = isRecord(tool.params) ? tool.params : {}
+        tool.params = toolParams
+
+        toolParams.credentialId = credentialId
+        toolParams.oauthCredential = credentialId
+        populatedProviders.add(providerId)
+        missingProviders.delete(providerId)
+      }
+    }
+  }
+
+  return {
+    populatedProviders: Array.from(populatedProviders).sort(),
+    missingProviders: Array.from(missingProviders).sort(),
+  }
+}
+
+function populateCredentialSubBlocks(subBlocks: Record<string, unknown>, credentialId: string) {
+  for (const key of ['credential', 'manualCredential', 'triggerCredentials']) {
+    const subBlock = subBlocks[key]
+    if (isRecord(subBlock)) {
+      subBlock.value = credentialId
     }
   }
 }
@@ -276,7 +426,12 @@ async function importWorkflow(params: {
   input: WorkflowInput
   workspaceId: string
   userId: string
-}): Promise<{ workflowId: string; name: string }> {
+  credentialsByProvider: Map<string, string>
+}): Promise<{
+  workflowId: string
+  name: string
+  credentialPopulation: CredentialPopulationSummary
+}> {
   const { data: workflowData, errors } = parseWorkflowJson(params.input.content)
 
   if (!workflowData || errors.length > 0) {
@@ -291,6 +446,10 @@ async function importWorkflow(params: {
   const workflowId = generateId()
   const now = new Date()
   const dedupedName = await deduplicateWorkflowName(metadata.name, params.workspaceId, null)
+  const credentialPopulation = populateWorkflowCredentials(
+    workflowData,
+    params.credentialsByProvider
+  )
 
   await db.insert(workflow).values({
     id: workflowId,
@@ -314,7 +473,7 @@ async function importWorkflow(params: {
     throw new Error(`Failed to save workflow state: ${saveResult.error}`)
   }
 
-  return { workflowId, name: dedupedName }
+  return { workflowId, name: dedupedName, credentialPopulation }
 }
 
 export const POST = withAdminAuth(async (request) => {
@@ -364,6 +523,10 @@ export const POST = withAdminAuth(async (request) => {
       keyName: apiKeyName,
       request,
     })
+    const credentialsByProvider = await getOldestActiveCredentialsByProvider({
+      workspaceId: personalWorkspace.workspaceId,
+      userId: targetUser.id,
+    })
 
     const results: ImportedWorkflowResult[] = []
 
@@ -373,6 +536,7 @@ export const POST = withAdminAuth(async (request) => {
           input,
           workspaceId: personalWorkspace.workspaceId,
           userId: targetUser.id,
+          credentialsByProvider,
         })
 
         const deployResult = await performFullDeploy({
@@ -390,6 +554,7 @@ export const POST = withAdminAuth(async (request) => {
             name: importedWorkflow.name,
             imported: true,
             deployed: false,
+            credentialPopulation: importedWorkflow.credentialPopulation,
             error: deployResult.error || 'Failed to deploy workflow',
           })
           continue
@@ -400,6 +565,7 @@ export const POST = withAdminAuth(async (request) => {
           name: importedWorkflow.name,
           imported: true,
           deployed: true,
+          credentialPopulation: importedWorkflow.credentialPopulation,
           version: deployResult.version,
           deployedAt: deployResult.deployedAt?.toISOString(),
           warnings: deployResult.warnings,
