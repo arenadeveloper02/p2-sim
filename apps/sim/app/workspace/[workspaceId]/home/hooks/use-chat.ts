@@ -142,6 +142,7 @@ export interface UseChatReturn {
   isReconnecting: boolean
   error: string | null
   resolvedChatId: string | undefined
+  activeStreamId: string | null
   sendMessage: (
     message: string,
     fileAttachments?: FileAttachmentForApi[],
@@ -1400,10 +1401,24 @@ export function useChat(
   }, [clearActiveTurn, clearQueueDispatchState, resetEphemeralPreviewState, setTransportIdle])
 
   const { data: chatHistory } = useChatHistory(resolvedChatId)
-  const messages = useMemo(
-    () => chatHistory?.messages.map(toDisplayMessage) ?? pendingMessages,
-    [chatHistory, pendingMessages]
-  )
+  const messages = useMemo(() => {
+    const historyMessages = chatHistory?.messages.map(toDisplayMessage)
+    if (!historyMessages) return pendingMessages
+    if (pendingMessages.length === 0) return historyMessages
+    // Merge: include any pending messages whose ids are not yet present in
+    // `chatHistory`. Without this, the embed-mode workflow path would briefly
+    // render an empty conversation (and re-flash the dashboard) between the
+    // moment a freshly-created chat's `resolvedChatId` is set and the moment
+    // the SSE stream upserts its first assistant snapshot, because the server
+    // returns `{ messages: [] }` for the just-created chat row and `[].map()`
+    // is not nullish — it would silently win over `pendingMessages`.
+    const historyIds = new Set(historyMessages.map((m) => m.id))
+    const orphanedPending = pendingMessages.filter((m) => !historyIds.has(m.id))
+    if (orphanedPending.length === 0) return historyMessages
+    const userOrphans = orphanedPending.filter((m) => m.role === 'user')
+    const otherOrphans = orphanedPending.filter((m) => m.role !== 'user')
+    return [...userOrphans, ...historyMessages, ...otherOrphans]
+  }, [chatHistory, pendingMessages])
   const addResource = useCallback((resource: MothershipResource): boolean => {
     if (resourcesRef.current.some((r) => r.type === resource.type && r.id === resource.id)) {
       return false
@@ -3382,6 +3397,7 @@ export function useChat(
                   requestChatId = createChatData.id
                   chatIdRef.current = createChatData.id
                   setResolvedChatId(createChatData.id)
+                  applyOptimisticSend()
                   queryClient.invalidateQueries({
                     queryKey: taskKeys.list(workspaceId),
                   })
@@ -4028,6 +4044,7 @@ export function useChat(
     isReconnecting,
     error,
     resolvedChatId,
+    activeStreamId: chatHistory?.activeStreamId ?? null,
     sendMessage,
     stopGeneration,
     resources,
