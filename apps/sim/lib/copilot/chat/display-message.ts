@@ -15,6 +15,7 @@ import {
   type ToolCallInfo,
   ToolCallStatus,
 } from '@/app/workspace/[workspaceId]/home/types'
+import { getMothershipAttachmentPreviewUrl } from './attachment-preview'
 import type { PersistedContentBlock, PersistedMessage } from './persisted-message'
 import { withBlockTiming } from './persisted-message'
 
@@ -46,7 +47,11 @@ function toToolCallInfo(block: PersistedContentBlock): ToolCallInfo | undefined 
 
 function toDisplayBlock(block: PersistedContentBlock): ContentBlock | undefined {
   const displayed = toDisplayBlockBody(block)
-  return displayed ? withBlockTiming(displayed, block) : undefined
+  if (!displayed) return undefined
+  if (block.parentToolCallId && displayed.parentToolCallId === undefined) {
+    displayed.parentToolCallId = block.parentToolCallId
+  }
+  return withBlockTiming(displayed, block)
 }
 
 function toDisplayBlockBody(block: PersistedContentBlock): ContentBlock | undefined {
@@ -87,9 +92,7 @@ function toDisplayAttachment(f: PersistedMessage['fileAttachments']): ChatMessag
     filename: a.filename,
     media_type: a.media_type,
     size: a.size,
-    previewUrl: a.media_type.startsWith('image/')
-      ? `/api/files/serve/${encodeURIComponent(a.key)}?context=mothership`
-      : undefined,
+    previewUrl: getMothershipAttachmentPreviewUrl(a),
   }))
 }
 

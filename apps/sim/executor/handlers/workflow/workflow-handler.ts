@@ -156,11 +156,12 @@ export class WorkflowBlockHandler implements BlockHandler {
           ? (nodeMetadata.originalBlockId ?? nodeMetadata.nodeId)
           : block.id
         const iterationContext = nodeMetadata ? getIterationContext(ctx, nodeMetadata) : undefined
-        ctx.onChildWorkflowInstanceReady?.(
+        await ctx.onChildWorkflowInstanceReady?.(
           effectiveBlockId,
           instanceId,
           iterationContext,
-          nodeMetadata?.executionOrder
+          nodeMetadata?.executionOrder,
+          ctx.childWorkflowContext
         )
       }
 
@@ -579,7 +580,7 @@ export class WorkflowBlockHandler implements BlockHandler {
       })
     }
 
-    return {
+    const output: BlockOutput = {
       success: true,
       childWorkflowName,
       childWorkflowId,
@@ -587,6 +588,7 @@ export class WorkflowBlockHandler implements BlockHandler {
       result,
       childTraceSpans: childTraceSpans || [],
       _childWorkflowInstanceId: instanceId,
-    } as unknown as BlockOutput
+    }
+    return output
   }
 }

@@ -1,25 +1,23 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { permissions, workspace } from '@sim/db/schema'
+import { permissionGroupMember, permissions, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { removeWorkspaceMemberContract } from '@/lib/api/contracts/invitations'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { revokeWorkspaceCredentialMemberships } from '@/lib/credentials/access'
+import { revokeWorkspaceCredentialMembershipsTx } from '@/lib/credentials/access'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceMemberAPI')
-const deleteMemberSchema = z.object({
-  workspaceId: z.string().uuid(),
-})
 
 // DELETE /api/workspaces/members/[id] - Remove a member from a workspace
 export const DELETE = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { id: userId } = await params
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
@@ -27,12 +25,16 @@ export const DELETE = withRouteHandler(
     }
 
     try {
-      // Get the workspace ID from the request body or URL
-      const body = deleteMemberSchema.parse(await req.json())
-      const { workspaceId } = body
+      const parsed = await parseRequest(removeWorkspaceMemberContract, req, context)
+      if (!parsed.success) return parsed.response
+      const { id: userId } = parsed.data.params
+      const { workspaceId } = parsed.data.body
 
       const workspaceRow = await db
-        .select({ billedAccountUserId: workspace.billedAccountUserId })
+        .select({
+          ownerId: workspace.ownerId,
+          billedAccountUserId: workspace.billedAccountUserId,
+        })
         .from(workspace)
         .where(eq(workspace.id, workspaceId))
         .limit(1)
@@ -61,7 +63,10 @@ export const DELETE = withRouteHandler(
         )
         .then((rows) => rows[0])
 
-      if (!userPermission) {
+      const isRemovingWorkspaceOwner = workspaceRow[0].ownerId === userId
+      const isOwnerOnlyRemoval = isRemovingWorkspaceOwner && !userPermission
+
+      if (!userPermission && !isOwnerOnlyRemoval) {
         return NextResponse.json({ error: 'User not found in workspace' }, { status: 404 })
       }
 
@@ -73,8 +78,19 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
       }
 
+      if (
+        isRemovingWorkspaceOwner &&
+        !isSelf &&
+        session.user.id !== workspaceRow[0].billedAccountUserId
+      ) {
+        return NextResponse.json(
+          { error: 'Only the workspace owner or billing account can remove the workspace owner' },
+          { status: 403 }
+        )
+      }
+
       // Prevent removing yourself if you're the last admin
-      if (isSelf && userPermission.permissionType === 'admin') {
+      if (isSelf && userPermission?.permissionType === 'admin' && !isRemovingWorkspaceOwner) {
         const otherAdmins = await db
           .select()
           .from(permissions)
@@ -95,18 +111,78 @@ export const DELETE = withRouteHandler(
         }
       }
 
-      // Delete the user's permissions for this workspace
-      await db
-        .delete(permissions)
-        .where(
-          and(
-            eq(permissions.userId, userId),
-            eq(permissions.entityType, 'workspace'),
-            eq(permissions.entityId, workspaceId)
-          )
-        )
+      const ownershipTransferred = await db.transaction(async (tx) => {
+        let didTransferOwnership = false
 
-      await revokeWorkspaceCredentialMemberships(workspaceId, userId)
+        if (isRemovingWorkspaceOwner) {
+          /**
+           * Invariant: the billed account is the org owner for org workspaces,
+           * the owner for personal workspaces, and a workspace admin for
+           * grandfathered shared workspaces.
+           */
+          const newOwnerId = workspaceRow[0].billedAccountUserId
+
+          await tx
+            .update(workspace)
+            .set({ ownerId: newOwnerId, updatedAt: new Date() })
+            .where(eq(workspace.id, workspaceId))
+
+          const [existingNewOwnerPermission] = await tx
+            .select({ id: permissions.id })
+            .from(permissions)
+            .where(
+              and(
+                eq(permissions.userId, newOwnerId),
+                eq(permissions.entityType, 'workspace'),
+                eq(permissions.entityId, workspaceId)
+              )
+            )
+            .limit(1)
+
+          if (existingNewOwnerPermission) {
+            await tx
+              .update(permissions)
+              .set({ permissionType: 'admin', updatedAt: new Date() })
+              .where(eq(permissions.id, existingNewOwnerPermission.id))
+          } else {
+            const now = new Date()
+            await tx.insert(permissions).values({
+              id: generateId(),
+              userId: newOwnerId,
+              entityType: 'workspace',
+              entityId: workspaceId,
+              permissionType: 'admin',
+              createdAt: now,
+              updatedAt: now,
+            })
+          }
+
+          didTransferOwnership = true
+        }
+
+        await tx
+          .delete(permissions)
+          .where(
+            and(
+              eq(permissions.userId, userId),
+              eq(permissions.entityType, 'workspace'),
+              eq(permissions.entityId, workspaceId)
+            )
+          )
+
+        await revokeWorkspaceCredentialMembershipsTx(tx, workspaceId, userId)
+
+        await tx
+          .delete(permissionGroupMember)
+          .where(
+            and(
+              eq(permissionGroupMember.userId, userId),
+              eq(permissionGroupMember.workspaceId, workspaceId)
+            )
+          )
+
+        return didTransferOwnership
+      })
 
       captureServerEvent(
         session.user.id,
@@ -126,8 +202,9 @@ export const DELETE = withRouteHandler(
         description: isSelf ? 'Left the workspace' : `Removed member ${userId} from the workspace`,
         metadata: {
           removedUserId: userId,
-          removedUserRole: userPermission.permissionType,
+          removedUserRole: userPermission?.permissionType ?? 'owner',
           selfRemoval: isSelf,
+          ownershipTransferred,
         },
         request: req,
       })

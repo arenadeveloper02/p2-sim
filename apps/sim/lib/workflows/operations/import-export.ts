@@ -1,13 +1,44 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { ApiClientError } from '@/lib/api/client/errors'
+import { requestJson } from '@/lib/api/client/request'
+import {
+  getWorkflowStateContract,
+  getWorkflowVariablesContract,
+  putWorkflowNormalizedStateContract,
+  type WorkflowStateContractInput,
+  workflowVariablesContract,
+} from '@/lib/api/contracts/workflows'
+import { migrateSubblockIds } from '@/lib/workflows/migrations/subblock-migrations'
 import {
   type ExportWorkflowState,
   sanitizeForExport,
 } from '@/lib/workflows/sanitization/json-sanitizer'
+import { sanitizeMalformedSubBlocks } from '@/lib/workflows/sanitization/subblocks'
 import { regenerateWorkflowIds } from '@/stores/workflows/utils'
 import type { Variable, WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowImportExport')
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function unwrapWorkflowExportEnvelope(data: unknown): unknown {
+  if (!isRecord(data)) {
+    return data
+  }
+
+  const envelopeData = data.data
+  if (
+    isRecord(envelopeData) &&
+    (envelopeData.state || envelopeData.version || envelopeData.workflow)
+  ) {
+    return envelopeData
+  }
+
+  return data
+}
 
 async function getJSZip() {
   const { default: JSZip } = await import('jszip')
@@ -83,23 +114,37 @@ export async function fetchWorkflowForExport(
   workflowMeta: { name: string; description?: string; color?: string; folderId?: string | null }
 ): Promise<WorkflowExportData | null> {
   try {
-    const workflowResponse = await fetch(`/api/workflows/${workflowId}`)
-    if (!workflowResponse.ok) {
+    let workflowData: { state?: WorkflowState }
+    try {
+      const response = await requestJson(getWorkflowStateContract, {
+        params: { id: workflowId },
+      })
+      workflowData = { state: response.data.state as WorkflowState }
+    } catch {
       logger.error(`Failed to fetch workflow ${workflowId}`)
       return null
     }
 
-    const { data: workflowData } = await workflowResponse.json()
     if (!workflowData?.state) {
       logger.warn(`Workflow ${workflowId} has no state`)
       return null
     }
 
-    const variablesResponse = await fetch(`/api/workflows/${workflowId}/variables`)
     let workflowVariables: Record<string, Variable> | undefined
-    if (variablesResponse.ok) {
-      const variablesData = await variablesResponse.json()
-      workflowVariables = variablesData?.data
+    try {
+      const { data } = await requestJson(getWorkflowVariablesContract, {
+        params: { id: workflowId },
+      })
+      workflowVariables = data as Record<string, Variable>
+    } catch (error) {
+      if (error instanceof ApiClientError) {
+        logger.warn(`Failed to fetch workflow ${workflowId} variables for export`, {
+          status: error.status,
+          message: error.message,
+        })
+      } else {
+        logger.warn(`Failed to fetch workflow ${workflowId} variables for export:`, error)
+      }
     }
 
     return {
@@ -315,7 +360,7 @@ export interface WorkspaceImportMetadata {
 
 function extractSortOrder(content: string): number | undefined {
   try {
-    const parsed = JSON.parse(content)
+    const parsed = unwrapWorkflowExportEnvelope(JSON.parse(content)) as Record<string, any>
     return parsed.state?.metadata?.sortOrder ?? parsed.metadata?.sortOrder
   } catch {
     return undefined
@@ -395,10 +440,14 @@ export async function extractWorkflowsFromFiles(files: File[]): Promise<Imported
 
 export function extractWorkflowName(content: string, filename: string): string {
   try {
-    const parsed = JSON.parse(content)
+    const parsed = unwrapWorkflowExportEnvelope(JSON.parse(content)) as Record<string, any>
 
     if (parsed.state?.metadata?.name && typeof parsed.state.metadata.name === 'string') {
       return parsed.state.metadata.name.trim()
+    }
+
+    if (parsed.workflow?.name && typeof parsed.workflow.name === 'string') {
+      return parsed.workflow.name.trim()
     }
   } catch {
     // JSON parse failed, fall through to filename
@@ -418,63 +467,29 @@ export function extractWorkflowName(content: string, filename: string): string {
 }
 
 /**
- * Normalize subblock values by converting empty strings to null and filtering out invalid subblocks.
+ * Normalize subblock values by converting empty strings to null and repairing invalid subblocks.
  * This provides backwards compatibility for workflows exported before the null sanitization fix,
  * preventing Zod validation errors like "Expected array, received string".
  *
- * Also filters out malformed subBlocks that may have been created by bugs in previous exports:
- * - SubBlocks with key "undefined" (caused by assigning to undefined key)
- * - SubBlocks missing required fields like `id`
- * - SubBlocks with `type: "unknown"` (indicates malformed data)
+ * Also filters out subBlocks with the literal key "undefined", which cannot be associated
+ * with a stable block field.
  */
 function normalizeSubblockValues(blocks: Record<string, any>): Record<string, any> {
+  const { blocks: migratedBlocks } = migrateSubblockIds(blocks)
   const normalizedBlocks: Record<string, any> = {}
 
-  Object.entries(blocks).forEach(([blockId, block]) => {
+  Object.entries(migratedBlocks).forEach(([blockId, block]) => {
     const normalizedBlock = { ...block }
 
     if (block.subBlocks) {
-      const normalizedSubBlocks: Record<string, any> = {}
-
-      Object.entries(block.subBlocks).forEach(([subBlockId, subBlock]: [string, any]) => {
-        // Skip subBlocks with invalid keys (literal "undefined" string)
-        if (subBlockId === 'undefined') {
-          logger.warn(`Skipping malformed subBlock with key "undefined" in block ${blockId}`)
-          return
-        }
-
-        // Skip subBlocks that are null or not objects
-        if (!subBlock || typeof subBlock !== 'object') {
-          logger.warn(`Skipping invalid subBlock ${subBlockId} in block ${blockId}: not an object`)
-          return
-        }
-
-        // Skip subBlocks with type "unknown" (malformed data)
-        if (subBlock.type === 'unknown') {
-          logger.warn(
-            `Skipping malformed subBlock ${subBlockId} in block ${blockId}: type is "unknown"`
-          )
-          return
-        }
-
-        // Skip subBlocks missing required id field
-        if (!subBlock.id) {
-          logger.warn(
-            `Skipping malformed subBlock ${subBlockId} in block ${blockId}: missing id field`
-          )
-          return
-        }
-
-        const normalizedSubBlock = { ...subBlock }
-
-        // Convert empty strings to null for consistency
-        if (normalizedSubBlock.value === '') {
-          normalizedSubBlock.value = null
-        }
-
-        normalizedSubBlocks[subBlockId] = normalizedSubBlock
-      })
-
+      const { subBlocks: normalizedSubBlocks } = sanitizeMalformedSubBlocks(
+        {
+          id: typeof block.id === 'string' ? block.id : blockId,
+          type: typeof block.type === 'string' ? block.type : '',
+          subBlocks: block.subBlocks,
+        },
+        { convertEmptyStringToNull: true }
+      )
       normalizedBlock.subBlocks = normalizedSubBlocks
     }
 
@@ -515,10 +530,12 @@ export function parseWorkflowJson(
       return { data: null, errors }
     }
 
+    data = unwrapWorkflowExportEnvelope(data)
+
     // Handle new export format (version/exportedAt/state) or old format (blocks/edges at root)
     let workflowData: any
-    if (data.version && data.state) {
-      // New format with versioning
+    if (isRecord(data.state)) {
+      // Export/API envelope format with workflow state nested under `state`
       logger.info('Parsing workflow JSON with version', {
         version: data.version,
         exportedAt: data.exportedAt,
@@ -688,13 +705,38 @@ export async function persistImportedWorkflow({
 
   const newWorkflowId = createdWorkflow.id
 
-  const stateResponse = await fetch(`/api/workflows/${newWorkflowId}/state`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(workflowData),
+  type ContractEdgeInput = WorkflowStateContractInput['edges'][number]
+
+  // Imported workflow JSON may carry nullable sourceHandle / targetHandle
+  // values from older exports. The contract input schema rejects nulls
+  // (it expects `string | undefined`), so drop nullish handles before
+  // sending. Pre-validation by `parseWorkflowJson` already ensures the
+  // shape is otherwise contract-compatible.
+  const sanitizedEdges: ContractEdgeInput[] = (workflowData.edges || []).map((edge) => {
+    const { sourceHandle, targetHandle, ...rest } = edge
+    const sanitized: ContractEdgeInput = { ...rest } as ContractEdgeInput
+    if (typeof sourceHandle === 'string' && sourceHandle.length > 0) {
+      sanitized.sourceHandle = sourceHandle
+    }
+    if (typeof targetHandle === 'string' && targetHandle.length > 0) {
+      sanitized.targetHandle = targetHandle
+    }
+    return sanitized
   })
 
-  if (!stateResponse.ok) {
+  const stateBody: WorkflowStateContractInput = {
+    ...workflowData,
+    loops: workflowData.loops || {},
+    parallels: workflowData.parallels || {},
+    edges: sanitizedEdges,
+  }
+
+  try {
+    await requestJson(putWorkflowNormalizedStateContract, {
+      params: { id: newWorkflowId },
+      body: stateBody,
+    })
+  } catch {
     throw new Error(`Failed to save workflow state for ${newWorkflowId}`)
   }
 
@@ -704,10 +746,10 @@ export async function persistImportedWorkflow({
       : Object.values(workflowData.variables)
 
     if (variablesArray.length > 0) {
-      const variablesRecord: Record<
-        string,
-        { id: string; workflowId: string; name: string; type: string; value: unknown }
-      > = {}
+      type WorkflowVariablesBodyInput = NonNullable<
+        Parameters<typeof requestJson<typeof workflowVariablesContract>>[1]['body']
+      >
+      const variablesRecord: WorkflowVariablesBodyInput['variables'] = {}
 
       for (const variable of variablesArray) {
         const id =
@@ -715,20 +757,18 @@ export async function persistImportedWorkflow({
 
         variablesRecord[id] = {
           id,
-          workflowId: newWorkflowId,
           name: variable.name,
           type: variable.type,
           value: variable.value,
         }
       }
 
-      const variablesResponse = await fetch(`/api/workflows/${newWorkflowId}/variables`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variables: variablesRecord }),
-      })
-
-      if (!variablesResponse.ok) {
+      try {
+        await requestJson(workflowVariablesContract, {
+          params: { id: newWorkflowId },
+          body: { variables: variablesRecord },
+        })
+      } catch {
         throw new Error(`Failed to save variables for ${newWorkflowId}`)
       }
     }

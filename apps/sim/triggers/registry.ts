@@ -78,6 +78,25 @@ import {
   confluenceUserCreatedTrigger,
   confluenceWebhookTrigger,
 } from '@/triggers/confluence'
+import {
+  emailBisonEmailAccountAddedTrigger,
+  emailBisonEmailAccountDisconnectedTrigger,
+  emailBisonEmailAccountReconnectedTrigger,
+  emailBisonEmailAccountRemovedTrigger,
+  emailBisonEmailBouncedTrigger,
+  emailBisonEmailOpenedTrigger,
+  emailBisonEmailSentTrigger,
+  emailBisonLeadFirstContactedTrigger,
+  emailBisonLeadInterestedTrigger,
+  emailBisonLeadRepliedTrigger,
+  emailBisonLeadUnsubscribedTrigger,
+  emailBisonManualEmailSentTrigger,
+  emailBisonTagAttachedTrigger,
+  emailBisonTagRemovedTrigger,
+  emailBisonUntrackedReplyReceivedTrigger,
+  emailBisonWarmupDisabledCausingBouncesTrigger,
+  emailBisonWarmupDisabledReceivingBouncesTrigger,
+} from '@/triggers/emailbison'
 import { fathomNewMeetingTrigger, fathomWebhookTrigger } from '@/triggers/fathom'
 import { firefliesTranscriptionCompleteTrigger } from '@/triggers/fireflies'
 import { genericWebhookTrigger } from '@/triggers/generic'
@@ -281,6 +300,7 @@ import {
 } from '@/triggers/servicenow'
 import { slackWebhookTrigger } from '@/triggers/slack'
 import { stripeWebhookTrigger } from '@/triggers/stripe'
+import { tableNewRowTrigger } from '@/triggers/table'
 import { telegramWebhookTrigger } from '@/triggers/telegram'
 import { twilioVoiceWebhookTrigger } from '@/triggers/twilio_voice'
 import { typeformWebhookTrigger } from '@/triggers/typeform'
@@ -378,6 +398,23 @@ export const TRIGGER_REGISTRY: TriggerRegistry = {
   confluence_space_removed: confluenceSpaceRemovedTrigger,
   confluence_page_permissions_updated: confluencePagePermissionsUpdatedTrigger,
   confluence_user_created: confluenceUserCreatedTrigger,
+  emailbison_email_sent: emailBisonEmailSentTrigger,
+  emailbison_lead_first_contacted: emailBisonLeadFirstContactedTrigger,
+  emailbison_lead_replied: emailBisonLeadRepliedTrigger,
+  emailbison_lead_interested: emailBisonLeadInterestedTrigger,
+  emailbison_lead_unsubscribed: emailBisonLeadUnsubscribedTrigger,
+  emailbison_untracked_reply_received: emailBisonUntrackedReplyReceivedTrigger,
+  emailbison_email_opened: emailBisonEmailOpenedTrigger,
+  emailbison_email_bounced: emailBisonEmailBouncedTrigger,
+  emailbison_email_account_added: emailBisonEmailAccountAddedTrigger,
+  emailbison_email_account_removed: emailBisonEmailAccountRemovedTrigger,
+  emailbison_email_account_disconnected: emailBisonEmailAccountDisconnectedTrigger,
+  emailbison_email_account_reconnected: emailBisonEmailAccountReconnectedTrigger,
+  emailbison_manual_email_sent: emailBisonManualEmailSentTrigger,
+  emailbison_tag_attached: emailBisonTagAttachedTrigger,
+  emailbison_tag_removed: emailBisonTagRemovedTrigger,
+  emailbison_warmup_disabled_receiving_bounces: emailBisonWarmupDisabledReceivingBouncesTrigger,
+  emailbison_warmup_disabled_causing_bounces: emailBisonWarmupDisabledCausingBouncesTrigger,
   generic_webhook: genericWebhookTrigger,
   greenhouse_candidate_hired: greenhouseCandidateHiredTrigger,
   greenhouse_new_application: greenhouseNewApplicationTrigger,
@@ -520,6 +557,7 @@ export const TRIGGER_REGISTRY: TriggerRegistry = {
   servicenow_change_request_updated: servicenowChangeRequestUpdatedTrigger,
   servicenow_webhook: servicenowWebhookTrigger,
   stripe_webhook: stripeWebhookTrigger,
+  table_new_row: tableNewRowTrigger,
   telegram_webhook: telegramWebhookTrigger,
   typeform_webhook: typeformWebhookTrigger,
   whatsapp_webhook: whatsappWebhookTrigger,

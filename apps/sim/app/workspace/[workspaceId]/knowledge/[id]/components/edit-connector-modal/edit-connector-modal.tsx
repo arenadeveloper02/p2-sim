@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { ArrowLeftRight, ExternalLink, Loader2, RotateCcw } from 'lucide-react'
+import { ArrowLeftRight, ExternalLink, RotateCcw } from 'lucide-react'
 import {
   Button,
   ButtonGroup,
@@ -10,6 +10,7 @@ import {
   Combobox,
   Input,
   Label,
+  Loader,
   Modal,
   ModalBody,
   ModalContent,
@@ -42,8 +43,33 @@ import type { SelectorKey } from '@/hooks/selectors/types'
 
 const logger = createLogger('EditConnectorModal')
 
-/** Keys injected by the sync engine — not user-editable */
-const INTERNAL_CONFIG_KEYS = new Set(['tagSlotMapping', 'disabledTagIds'])
+/** Keys injected by the sync engine or modal state — not user-editable */
+const INTERNAL_CONFIG_KEYS = new Set(['tagSlotMapping', 'disabledTagIds', '_canonicalModes'])
+
+const CANONICAL_MODES_KEY = '_canonicalModes'
+
+function readPersistedCanonicalModes(
+  sourceConfig: Record<string, unknown>
+): Record<string, 'basic' | 'advanced'> {
+  const raw = sourceConfig[CANONICAL_MODES_KEY]
+  if (!raw || typeof raw !== 'object') return {}
+  const result: Record<string, 'basic' | 'advanced'> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (value === 'basic' || value === 'advanced') result[key] = value
+  }
+  return result
+}
+
+function didCanonicalModesChange(
+  current: Record<string, 'basic' | 'advanced'>,
+  persisted: Record<string, 'basic' | 'advanced'>
+): boolean {
+  const keys = new Set([...Object.keys(persisted), ...Object.keys(current)])
+  for (const key of keys) {
+    if ((current[key] ?? 'basic') !== (persisted[key] ?? 'basic')) return true
+  }
+  return false
+}
 
 interface EditConnectorModalProps {
   open: boolean
@@ -86,6 +112,10 @@ export function EditConnectorModal({
     return config
   })
 
+  const [initialCanonicalModes] = useState<Record<string, 'basic' | 'advanced'>>(() =>
+    readPersistedCanonicalModes(connector.sourceConfig)
+  )
+
   const {
     sourceConfig,
     canonicalModes,
@@ -94,7 +124,11 @@ export function EditConnectorModal({
     handleFieldChange,
     toggleCanonicalMode,
     resolveSourceConfig,
-  } = useConnectorConfigFields({ connectorConfig, initialSourceConfig })
+  } = useConnectorConfigFields({
+    connectorConfig,
+    initialSourceConfig,
+    initialCanonicalModes,
+  })
 
   const { mutate: updateConnector, isPending: isSaving } = useUpdateConnector()
 
@@ -102,14 +136,27 @@ export function EditConnectorModal({
   const subscriptionAccess = getSubscriptionAccessState(subscriptionResponse?.data)
   const hasMaxAccess = !isBillingEnabled || subscriptionAccess.hasUsableMaxAccess
 
+  const persistedCanonicalModes = useMemo(
+    () => readPersistedCanonicalModes(connector.sourceConfig),
+    [connector.sourceConfig]
+  )
+
   const hasChanges = useMemo(() => {
     if (syncInterval !== connector.syncIntervalMinutes) return true
+    if (didCanonicalModesChange(canonicalModes, persistedCanonicalModes)) return true
     const resolved = resolveSourceConfig()
     for (const [key, value] of Object.entries(resolved)) {
       if (String(connector.sourceConfig[key] ?? '') !== value) return true
     }
     return false
-  }, [resolveSourceConfig, syncInterval, connector.syncIntervalMinutes, connector.sourceConfig])
+  }, [
+    resolveSourceConfig,
+    syncInterval,
+    connector.syncIntervalMinutes,
+    connector.sourceConfig,
+    canonicalModes,
+    persistedCanonicalModes,
+  ])
 
   const handleSave = () => {
     setError(null)
@@ -125,8 +172,17 @@ export function EditConnectorModal({
     for (const [key, value] of Object.entries(resolved)) {
       if (String(connector.sourceConfig[key] ?? '') !== value) changedEntries[key] = value
     }
-    if (Object.keys(changedEntries).length > 0) {
-      updates.sourceConfig = { ...connector.sourceConfig, ...changedEntries }
+
+    const modesChanged = didCanonicalModesChange(canonicalModes, persistedCanonicalModes)
+
+    if (Object.keys(changedEntries).length > 0 || modesChanged) {
+      const next: Record<string, unknown> = { ...connector.sourceConfig, ...changedEntries }
+      if (Object.keys(canonicalModes).length > 0) {
+        next[CANONICAL_MODES_KEY] = canonicalModes
+      } else {
+        delete next[CANONICAL_MODES_KEY]
+      }
+      updates.sourceConfig = next
     }
 
     if (Object.keys(updates).length === 0) {
@@ -200,7 +256,7 @@ export function EditConnectorModal({
             <Button variant='primary' onClick={handleSave} disabled={!hasChanges || isSaving}>
               {isSaving ? (
                 <>
-                  <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
+                  <Loader className='mr-1.5 h-3.5 w-3.5' animate />
                   Saving...
                 </>
               ) : (

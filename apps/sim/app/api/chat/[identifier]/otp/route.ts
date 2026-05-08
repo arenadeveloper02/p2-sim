@@ -5,18 +5,35 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, gt, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { z } from 'zod'
 import { renderOTPEmail } from '@/components/emails'
+import { requestChatEmailOtpContract, verifyChatEmailOtpContract } from '@/lib/api/contracts/chats'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getRedisClient } from '@/lib/core/config/redis'
+import type { TokenBucketConfig } from '@/lib/core/rate-limiter'
+import { RateLimiter } from '@/lib/core/rate-limiter'
 import { addCorsHeaders, isEmailAllowed } from '@/lib/core/security/deployment'
 import { getStorageMethod } from '@/lib/core/storage'
-import { generateRequestId } from '@/lib/core/utils/request'
+import { generateRequestId, getClientIp } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { setChatAuthCookie } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatOtpAPI')
+
+const rateLimiter = new RateLimiter()
+
+const OTP_IP_RATE_LIMIT: TokenBucketConfig = {
+  maxTokens: 10,
+  refillRate: 10,
+  refillIntervalMs: 15 * 60_000,
+}
+
+const OTP_EMAIL_RATE_LIMIT: TokenBucketConfig = {
+  maxTokens: 3,
+  refillRate: 3,
+  refillIntervalMs: 15 * 60_000,
+}
 
 function generateOTP(): string {
   return randomInt(100000, 1000000).toString()
@@ -199,23 +216,38 @@ async function deleteOTP(email: string, chatId: string): Promise<void> {
   }
 }
 
-const otpRequestSchema = z.object({
-  email: z.string().email('Invalid email address'),
-})
-
-const otpVerifySchema = z.object({
-  email: z.string().email('Invalid email address'),
-  otp: z.string().length(6, 'OTP must be 6 digits'),
-})
-
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ identifier: string }> }) => {
-    const { identifier } = await params
+  async (request: NextRequest, context: { params: Promise<{ identifier: string }> }) => {
+    const { identifier } = await context.params
     const requestId = generateRequestId()
 
     try {
-      const body = await request.json()
-      const { email } = otpRequestSchema.parse(body)
+      const ip = getClientIp(request)
+      if (ip !== 'unknown') {
+        const ipRateLimit = await rateLimiter.checkRateLimitDirect(
+          `chat-otp:ip:${identifier}:${ip}`,
+          OTP_IP_RATE_LIMIT
+        )
+        if (!ipRateLimit.allowed) {
+          logger.warn(`[${requestId}] OTP IP rate limit exceeded for ${identifier} from ${ip}`)
+          const retryAfter = Math.ceil(
+            (ipRateLimit.retryAfterMs ?? OTP_IP_RATE_LIMIT.refillIntervalMs) / 1000
+          )
+          const response = createErrorResponse('Too many requests. Please try again later.', 429)
+          response.headers.set('Retry-After', String(retryAfter))
+          return addCorsHeaders(response, request)
+        }
+      }
+
+      const parsed = await parseRequest(requestChatEmailOtpContract, request, context, {
+        validationErrorResponse: (error) =>
+          addCorsHeaders(
+            createErrorResponse(getValidationErrorMessage(error, 'Invalid request'), 400),
+            request
+          ),
+      })
+      if (!parsed.success) return parsed.response
+      const { email } = parsed.data.body
 
       const deploymentResult = await db
         .select({
@@ -255,6 +287,25 @@ export const POST = withRouteHandler(
         )
       }
 
+      const emailRateLimit = await rateLimiter.checkRateLimitDirect(
+        `chat-otp:email:${deployment.id}:${email.toLowerCase()}`,
+        OTP_EMAIL_RATE_LIMIT
+      )
+      if (!emailRateLimit.allowed) {
+        logger.warn(
+          `[${requestId}] OTP email rate limit exceeded for ${email} on chat ${deployment.id}`
+        )
+        const retryAfter = Math.ceil(
+          (emailRateLimit.retryAfterMs ?? OTP_EMAIL_RATE_LIMIT.refillIntervalMs) / 1000
+        )
+        const response = createErrorResponse(
+          'Too many verification code requests. Please try again later.',
+          429
+        )
+        response.headers.set('Retry-After', String(retryAfter))
+        return addCorsHeaders(response, request)
+      }
+
       const otp = generateOTP()
       await storeOTP(email, deployment.id, otp)
 
@@ -282,12 +333,6 @@ export const POST = withRouteHandler(
       logger.info(`[${requestId}] OTP sent to ${email} for chat ${deployment.id}`)
       return addCorsHeaders(createSuccessResponse({ message: 'Verification code sent' }), request)
     } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        return addCorsHeaders(
-          createErrorResponse(error.errors[0]?.message || 'Invalid request', 400),
-          request
-        )
-      }
       logger.error(`[${requestId}] Error processing OTP request:`, error)
       return addCorsHeaders(
         createErrorResponse(error.message || 'Failed to process request', 500),
@@ -298,13 +343,20 @@ export const POST = withRouteHandler(
 )
 
 export const PUT = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ identifier: string }> }) => {
-    const { identifier } = await params
+  async (request: NextRequest, context: { params: Promise<{ identifier: string }> }) => {
+    const { identifier } = await context.params
     const requestId = generateRequestId()
 
     try {
-      const body = await request.json()
-      const { email, otp } = otpVerifySchema.parse(body)
+      const parsed = await parseRequest(verifyChatEmailOtpContract, request, context, {
+        validationErrorResponse: (error) =>
+          addCorsHeaders(
+            createErrorResponse(getValidationErrorMessage(error, 'Invalid request'), 400),
+            request
+          ),
+      })
+      if (!parsed.success) return parsed.response
+      const { email, otp } = parsed.data.body
 
       const deploymentResult = await db
         .select({
@@ -377,12 +429,6 @@ export const PUT = withRouteHandler(
 
       return response
     } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        return addCorsHeaders(
-          createErrorResponse(error.errors[0]?.message || 'Invalid request', 400),
-          request
-        )
-      }
       logger.error(`[${requestId}] Error verifying OTP:`, error)
       return addCorsHeaders(
         createErrorResponse(error.message || 'Failed to process request', 500),

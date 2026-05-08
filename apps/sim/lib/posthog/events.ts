@@ -88,6 +88,7 @@ export interface PostHogEventMap {
   workspace_member_invited: {
     workspace_id: string
     invitee_role: string
+    membership_intent?: string
   }
 
   workspace_member_removed: {
@@ -405,6 +406,11 @@ export interface PostHogEventMap {
     workspace_id: string
   }
 
+  task_forked: {
+    workspace_id: string
+    source_chat_id: string
+  }
+
   task_marked_unread: {
     workspace_id: string
   }
@@ -412,6 +418,7 @@ export interface PostHogEventMap {
   task_generation_aborted: {
     workspace_id: string
     view: 'mothership' | 'copilot'
+    request_id?: string
   }
 
   task_message_sent: {
@@ -419,6 +426,14 @@ export interface PostHogEventMap {
     has_attachments: boolean
     has_contexts: boolean
     is_new_task: boolean
+  }
+
+  /** Pairs with `task_message_sent` via `request_id` for correlation with server-side logs. */
+  task_request_started: {
+    workspace_id: string
+    view: 'mothership' | 'copilot'
+    request_id: string
+    user_message_id: string
   }
 
   tour_started: {

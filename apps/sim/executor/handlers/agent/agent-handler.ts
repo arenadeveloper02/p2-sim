@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { normalizeStringRecord, normalizeWorkflowVariables } from '@/lib/core/utils/records'
 import { createMcpToolId } from '@/lib/mcp/utils'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
 import { getAllBlocks } from '@/blocks'
@@ -37,7 +38,7 @@ import { resolveVertexCredential } from '@/executor/utils/vertex-credential'
 import { executeProviderRequest } from '@/providers'
 import { getProviderFromModel, transformBlockTool } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
-import { filterSchemaForLLM } from '@/tools/params'
+import { filterSchemaForLLM, type ToolSchema } from '@/tools/params'
 import { getTool } from '@/tools/utils'
 import { getToolAsync } from '@/tools/utils.server'
 
@@ -514,15 +515,11 @@ export class AgentBlockHandler implements BlockHandler {
     serverId: string
     toolName: string
     description: string
-    schema: Record<string, unknown>
+    schema: ToolSchema
     userProvidedParams: Record<string, unknown>
     usageControl?: 'auto' | 'force' | 'none'
   }) {
-    const { filterSchemaForLLM } = await import('@/tools/params')
-    const filteredSchema = filterSchemaForLLM(
-      config.schema as unknown as Parameters<typeof filterSchemaForLLM>[0],
-      config.userProvidedParams as Record<string, unknown>
-    )
+    const filteredSchema = filterSchemaForLLM(config.schema, config.userProvidedParams)
     const toolId = createMcpToolId(config.serverId, config.toolName)
 
     return {
@@ -819,8 +816,8 @@ export class AgentBlockHandler implements BlockHandler {
       userId: ctx.userId,
       stream: streaming,
       messages: messages?.map(({ executionId, ...msg }) => msg),
-      environmentVariables: ctx.environmentVariables || {},
-      workflowVariables: ctx.workflowVariables || {},
+      environmentVariables: normalizeStringRecord(ctx.environmentVariables),
+      workflowVariables: normalizeWorkflowVariables(ctx.workflowVariables),
       blockData,
       blockNameMapping,
       reasoningEffort: inputs.reasoningEffort,
@@ -889,8 +886,8 @@ export class AgentBlockHandler implements BlockHandler {
         userId: ctx.userId,
         stream: providerRequest.stream,
         messages: 'messages' in providerRequest ? providerRequest.messages : undefined,
-        environmentVariables: ctx.environmentVariables || {},
-        workflowVariables: ctx.workflowVariables || {},
+        environmentVariables: normalizeStringRecord(ctx.environmentVariables),
+        workflowVariables: normalizeWorkflowVariables(ctx.workflowVariables),
         blockData,
         blockNameMapping,
         isDeployedContext: ctx.isDeployedContext,
@@ -958,8 +955,16 @@ export class AgentBlockHandler implements BlockHandler {
     streamingExec: StreamingExecution
   ): StreamingExecution {
     return {
-      stream: memoryService.wrapStreamForPersistence(streamingExec.stream, ctx, inputs),
+      stream: streamingExec.stream,
       execution: streamingExec.execution,
+      onFullContent: async (content: string) => {
+        if (!content.trim()) return
+        try {
+          await memoryService.appendToMemory(ctx, inputs, { role: 'assistant', content })
+        } catch (error) {
+          logger.error('Failed to persist streaming response:', error)
+        }
+      },
     }
   }
 

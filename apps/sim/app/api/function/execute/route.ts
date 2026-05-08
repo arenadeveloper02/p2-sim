@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { functionExecuteContract } from '@/lib/api/contracts'
+import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import {
   FORMAT_TO_CONTENT_TYPE,
@@ -25,14 +27,65 @@ import {
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export const MAX_DURATION = 210
-
 const logger = createLogger('FunctionExecuteAPI')
 
 const TAG_PATTERN = createReferencePattern()
 
 const E2B_JS_WRAPPER_LINES = 3
 const E2B_PYTHON_WRAPPER_LINES = 1
+
+/** Matches valid JS identifier names (letters, digits, underscore; no leading digit). */
+const SAFE_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+/** ES2023 reserved words — using these as `const` variable names produces a SyntaxError. */
+const JS_RESERVED_WORDS = new Set([
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'instanceof',
+  'let',
+  'new',
+  'null',
+  'return',
+  'static',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+  'enum',
+  'await',
+  'implements',
+  'interface',
+  'package',
+  'private',
+  'protected',
+  'public',
+])
 
 type TypeScriptModule = typeof import('typescript')
 
@@ -357,6 +410,30 @@ function createUserFriendlyErrorMessage(
   return errorMessage
 }
 
+function getErrorDisplayCode(sourceCode: string | undefined, resolvedCode: string): string {
+  return sourceCode && sourceCode.length > 0 ? sourceCode : resolvedCode
+}
+
+function getLineContent(code: string, line: number | undefined): string | undefined {
+  if (line === undefined || line < 1) {
+    return undefined
+  }
+
+  return code.split('\n')[line - 1]?.trim()
+}
+
+function getErrorDisplayMessage(
+  message: string,
+  sourceCode: string | undefined,
+  resolvedCode: string
+): string {
+  if (!sourceCode || sourceCode === resolvedCode || !resolvedCode.includes('__blockRef_')) {
+    return message
+  }
+
+  return message.replace(/\s+["']globalThis["']/g, '')
+}
+
 function resolveWorkflowVariables(
   code: string,
   workflowVariables: Record<string, any>,
@@ -587,6 +664,26 @@ function cleanStdout(stdout: string): string {
   return stdout
 }
 
+/**
+ * Serializes a value for use as a shell environment variable. Strings pass through
+ * unchanged; primitives are coerced via `String`; objects, arrays, and other complex
+ * values are JSON-stringified so that referencing them via `$VAR` yields a useful
+ * representation instead of `[object Object]`. `null`/`undefined` become an empty
+ * string to match POSIX env semantics.
+ */
+function serializeForShellEnv(value: unknown, nullValue = ''): string {
+  if (value === null || value === undefined) return nullValue
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value) ?? ''
+  } catch {
+    return String(value)
+  }
+}
+
 async function maybeExportSandboxFileToWorkspace(args: {
   authUserId: string
   workflowId?: string
@@ -694,6 +791,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
   let stdout = ''
   let userCodeStartLine = 3 // Default value for error reporting
   let resolvedCode = '' // Store resolved code for error reporting
+  let sourceCodeForErrors: string | undefined
 
   try {
     const auth = await checkInternalAuth(req)
@@ -702,12 +800,15 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await req.json()
+    const parsed = await parseRequest(functionExecuteContract, req, {})
+    if (!parsed.success) return parsed.response
+    const { body } = parsed.data
 
     const { DEFAULT_EXECUTION_TIMEOUT_MS } = await import('@/lib/execution/constants')
 
     const {
       code,
+      sourceCode,
       params = {},
       timeout = DEFAULT_EXECUTION_TIMEOUT_MS,
       language = DEFAULT_CODE_LANGUAGE,
@@ -720,11 +821,13 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       blockNameMapping = {},
       blockOutputSchemas = {},
       workflowVariables = {},
+      contextVariables: preResolvedContextVariables = {},
       workflowId,
       workspaceId,
       isCustomTool = false,
       _sandboxFiles,
     } = body
+    sourceCodeForErrors = sourceCode
 
     const executionParams = { ...params }
     executionParams._context = undefined
@@ -744,6 +847,10 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       // For shell, env vars are injected as OS env vars via shellEnvs.
       // Replace {{VAR}} placeholders with $VAR so the shell can access them natively.
       resolvedCode = code.replace(/\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g, '$$$1')
+      // Carry pre-resolved block output variables (e.g. __blockRef_N) so they can be
+      // injected as shell env vars below. The executor replaces block references in the
+      // code with these names, so the values must be present at runtime.
+      contextVariables = { ...preResolvedContextVariables }
     } else {
       const codeResolution = resolveCodeVariables(
         code,
@@ -756,7 +863,10 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         lang
       )
       resolvedCode = codeResolution.resolvedCode
-      contextVariables = codeResolution.contextVariables
+      // Merge pre-resolved block output variables from the executor. These take precedence
+      // because they were produced by the resolver using full execution-state context
+      // (including loop/parallel scope) and should not be overwritten.
+      contextVariables = { ...codeResolution.contextVariables, ...preResolvedContextVariables }
     }
 
     let jsImports = ''
@@ -781,10 +891,10 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
       const shellEnvs: Record<string, string> = {}
       for (const [k, v] of Object.entries(envVars)) {
-        shellEnvs[k] = String(v)
+        shellEnvs[k] = serializeForShellEnv(v)
       }
       for (const [k, v] of Object.entries(contextVariables)) {
-        shellEnvs[k] = String(v)
+        shellEnvs[k] = serializeForShellEnv(v, 'null')
       }
 
       logger.info(`[${requestId}] E2B shell execution`, {
@@ -891,7 +1001,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         prologue += `const environmentVariables = JSON.parse(${JSON.stringify(JSON.stringify(envVars))});\n`
         prologueLineCount++
         for (const [k, v] of Object.entries(contextVariables)) {
-          prologue += `const ${k} = ${formatLiteralForCode(v, 'javascript')};\n`
+          prologue += `globalThis[${JSON.stringify(k)}] = ${formatLiteralForCode(v, 'javascript')};\n`
+          prologue += `const ${k} = globalThis[${JSON.stringify(k)}];\n`
+          prologueLineCount++
           prologueLineCount++
         }
 
@@ -934,11 +1046,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         })
 
         if (e2bError) {
+          const errorDisplayCode = getErrorDisplayCode(sourceCodeForErrors, resolvedCode)
           const { formattedError, cleanedOutput } = formatE2BError(
-            e2bError,
+            getErrorDisplayMessage(e2bError, sourceCodeForErrors, resolvedCode),
             e2bStdout,
             lang,
-            resolvedCode,
+            errorDisplayCode,
             prologueLineCount + importLineCount
           )
           return NextResponse.json(
@@ -1016,11 +1129,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       })
 
       if (e2bError) {
+        const errorDisplayCode = getErrorDisplayCode(sourceCodeForErrors, resolvedCode)
         const { formattedError, cleanedOutput } = formatE2BError(
-          e2bError,
+          getErrorDisplayMessage(e2bError, sourceCodeForErrors, resolvedCode),
           e2bStdout,
           lang,
-          resolvedCode,
+          errorDisplayCode,
           prologueLineCount
         )
         return NextResponse.json(
@@ -1057,10 +1171,16 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     const executionMethod = 'isolated-vm'
 
+    const isSafeParamKey = (key: string) => SAFE_IDENTIFIER.test(key) && !JS_RESERVED_WORDS.has(key)
+
     const wrapperLines = ['(async () => {', '  try {']
     if (isCustomTool) {
       Object.keys(executionParams).forEach((key) => {
-        wrapperLines.push(`    const ${key} = params.${key};`)
+        if (isSafeParamKey(key)) {
+          wrapperLines.push(`    const ${key} = params.${key};`)
+        } else {
+          logger.warn('Skipping param key — not a safe JS identifier', { key, requestId })
+        }
       })
     }
     userCodeStartLine = wrapperLines.length + 1
@@ -1068,7 +1188,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     let codeToExecute = resolvedCode
     let prependedLineCount = 0
     if (isCustomTool) {
-      const paramKeys = Object.keys(executionParams)
+      const paramKeys = Object.keys(executionParams).filter(isSafeParamKey)
       const paramDestructuring = paramKeys.map((key) => `const ${key} = params.${key};`).join('\n')
       codeToExecute = `${paramDestructuring}\n${resolvedCode}`
       prependedLineCount = paramKeys.length
@@ -1088,9 +1208,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const executionTime = Date.now() - startTime
 
     if (isolatedResult.error) {
-      logger.error(`[${requestId}] Function execution failed in isolated-vm`, {
+      const isSystemError = isolatedResult.error.isSystemError === true
+      const logFn = isSystemError ? logger.error.bind(logger) : logger.warn.bind(logger)
+      logFn(`[${requestId}] Function execution failed in isolated-vm`, {
         error: isolatedResult.error,
         executionTime,
+        isSystemError,
       })
 
       const ivmError = isolatedResult.error
@@ -1098,13 +1221,16 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       let adjustedLineContent = ivmError.lineContent
       if (prependedLineCount > 0 && ivmError.line !== undefined) {
         adjustedLine = Math.max(1, ivmError.line - prependedLineCount)
-        const codeLines = resolvedCode.split('\n')
-        if (adjustedLine <= codeLines.length) {
-          adjustedLineContent = codeLines[adjustedLine - 1]?.trim()
-        }
       }
+      const errorDisplayCode = getErrorDisplayCode(sourceCodeForErrors, resolvedCode)
+      const displayMessage = getErrorDisplayMessage(
+        ivmError.message,
+        sourceCodeForErrors,
+        resolvedCode
+      )
+      adjustedLineContent = getLineContent(errorDisplayCode, adjustedLine) ?? adjustedLineContent
       const enhancedError: EnhancedError = {
-        message: ivmError.message,
+        message: displayMessage,
         name: ivmError.name,
         stack: ivmError.stack,
         originalError: ivmError,
@@ -1116,10 +1242,11 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       const userFriendlyErrorMessage = createUserFriendlyErrorMessage(
         enhancedError,
         requestId,
-        resolvedCode
+        errorDisplayCode
       )
 
-      logger.error(`[${requestId}] Enhanced error details`, {
+      const detailLogFn = isSystemError ? logger.error.bind(logger) : logger.warn.bind(logger)
+      detailLogFn(`[${requestId}] Enhanced error details`, {
         originalMessage: ivmError.message,
         enhancedMessage: userFriendlyErrorMessage,
         line: enhancedError.line,
@@ -1145,7 +1272,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
             stack: enhancedError.stack,
           },
         },
-        { status: 500 }
+        { status: isSystemError ? 500 : 422 }
       )
     }
 
@@ -1166,11 +1293,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       executionTime,
     })
 
-    const enhancedError = extractEnhancedError(error, userCodeStartLine, resolvedCode)
+    const errorDisplayCode = getErrorDisplayCode(sourceCodeForErrors, resolvedCode)
+    const enhancedError = extractEnhancedError(error, userCodeStartLine, errorDisplayCode)
     const userFriendlyErrorMessage = createUserFriendlyErrorMessage(
       enhancedError,
       requestId,
-      resolvedCode
+      errorDisplayCode
     )
 
     logger.error(`[${requestId}] Enhanced error details`, {

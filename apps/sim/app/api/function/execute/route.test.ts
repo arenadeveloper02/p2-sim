@@ -191,7 +191,7 @@ describe('Function Execute API Route', () => {
       const response = await POST(req)
       const data = await response.json()
 
-      if (response.status === 500) {
+      if (response.status === 422 || response.status === 500) {
         expect(data.success).toBe(false)
       } else {
         const result = data.output?.result
@@ -301,8 +301,7 @@ describe('Function Execute API Route', () => {
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(500)
-      expect(data.success).toBe(false)
+      expect(response.status).toBe(400)
       expect(data).toHaveProperty('error')
     })
 
@@ -466,7 +465,7 @@ describe('Function Execute API Route', () => {
 
       const response = await POST(req)
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(400)
     })
 
     it.concurrent('should handle timeout parameter', async () => {
@@ -504,7 +503,7 @@ describe('Function Execute API Route', () => {
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(422)
       expect(data.success).toBe(false)
       expect(data.error).toBeTruthy()
     })
@@ -518,7 +517,7 @@ describe('Function Execute API Route', () => {
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(422)
       expect(data.success).toBe(false)
       expect(data.error).toContain('Type Error')
       expect(data.error).toContain('Cannot read properties of null')
@@ -533,10 +532,40 @@ describe('Function Execute API Route', () => {
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(422)
       expect(data.success).toBe(false)
       expect(data.error).toContain('Reference Error')
       expect(data.error).toContain('undefinedVariable is not defined')
+    })
+
+    it('should show original source code when resolved block references cause syntax errors', async () => {
+      mockExecuteInIsolatedVM.mockResolvedValueOnce({
+        result: null,
+        stdout: '',
+        error: {
+          message: 'Unexpected identifier "globalThis"',
+          name: 'SyntaxError',
+          line: 1,
+          column: 7,
+          lineContent: 'retur globalThis["__blockRef_0"]',
+        },
+      })
+
+      const req = createMockRequest('POST', {
+        code: 'retur globalThis["__blockRef_0"]',
+        sourceCode: 'retur <start.reqerror>',
+        contextVariables: { __blockRef_0: 'value' },
+        timeout: 5000,
+      })
+
+      const response = await POST(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(422)
+      expect(data.success).toBe(false)
+      expect(data.error).toContain('Line 1: `retur <start.reqerror>`')
+      expect(data.error).not.toContain('globalThis')
+      expect(data.debug.lineContent).toBe('retur <start.reqerror>')
     })
 
     it('should handle thrown errors gracefully', async () => {
@@ -548,7 +577,7 @@ describe('Function Execute API Route', () => {
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(422)
       expect(data.success).toBe(false)
       expect(data.error).toContain('Custom error message')
     })
@@ -562,7 +591,7 @@ describe('Function Execute API Route', () => {
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(422)
       expect(data.success).toBe(false)
       expect(data.error).toBeTruthy()
     })

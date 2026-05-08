@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { agiloftRetrieveContract } from '@/lib/api/contracts/tools/agiloft'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -10,17 +12,6 @@ import { agiloftLogin, agiloftLogout, buildRetrieveAttachmentUrl } from '@/tools
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('AgiloftRetrieveAPI')
-
-const AgiloftRetrieveSchema = z.object({
-  instanceUrl: z.string().min(1, 'Instance URL is required'),
-  knowledgeBase: z.string().min(1, 'Knowledge base is required'),
-  login: z.string().min(1, 'Login is required'),
-  password: z.string().min(1, 'Password is required'),
-  table: z.string().min(1, 'Table is required'),
-  recordId: z.string().min(1, 'Record ID is required'),
-  fieldName: z.string().min(1, 'Field name is required'),
-  position: z.string().min(1, 'Position is required'),
-})
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
@@ -36,8 +27,26 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    const body = await request.json()
-    const data = AgiloftRetrieveSchema.parse(body)
+    const parsed = await parseRequest(
+      agiloftRetrieveContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid request data`, { errors: error.issues })
+          return NextResponse.json(
+            {
+              success: false,
+              error: getValidationErrorMessage(error, 'Invalid request data'),
+              details: error.issues,
+            },
+            { status: 400 }
+          )
+        },
+      }
+    )
+    if (!parsed.success) return parsed.response
+    const data = parsed.data.body
 
     const urlValidation = await validateUrlWithDNS(data.instanceUrl, 'instanceUrl')
     if (!urlValidation.isValid) {
@@ -117,19 +126,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       await agiloftLogout(data.instanceUrl, data.knowledgeBase, token)
     }
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid request data`, { errors: error.errors })
-      return NextResponse.json(
-        { success: false, error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      )
-    }
-
     logger.error(`[${requestId}] Error retrieving Agiloft attachment:`, error)
 
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: toError(error).message }, { status: 500 })
   }
 })
