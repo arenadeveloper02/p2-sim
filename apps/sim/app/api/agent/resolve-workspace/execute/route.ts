@@ -246,7 +246,7 @@ export async function POST(req: NextRequest) {
   }
 
   const userId = session.user.id
-  const apiKey = process.env.SIM_WORKFLOW_API_KEY
+  const apiKey = process.env.SIM_WORKFLOW_API_KEY_UNIFIED
   if (!apiKey) {
     logger.error('SIM_WORKFLOW_API_KEY is not configured — cannot execute workflow')
     return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
@@ -423,6 +423,7 @@ export async function POST(req: NextRequest) {
             }),
           })
 
+          console.log(upstream,"upstream")
           if (!upstream.ok) {
             const errorText = await upstream.text().catch(() => '')
             logger.error('Workflow execution API returned non-OK status', {
