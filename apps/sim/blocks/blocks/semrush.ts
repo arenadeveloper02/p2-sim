@@ -302,7 +302,7 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       type: 'short-input',
       placeholder: '10',
       defaultValue: '10',
-      description: 'Number of API rows to return (default 10)',
+      description: 'Number of API rows to return',
       condition: {
         field: 'operation',
         value: [
@@ -327,6 +327,18 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       placeholder: 'Ph,Nq,Cp',
       defaultValue: 'Ph,Nq,Cp',
       description: 'Comma-separated column codes (e.g., Ph=Phrase, Nq=Search Volume, Cp=CPC)',
+      condition: {
+        field: 'operation',
+        value: ['url_organic', 'domain_organic', 'domain_organic_organic'],
+      },
+    },
+    {
+      id: 'additionalParams',
+      title: 'Additional Params',
+      type: 'short-input',
+      placeholder: 'e.g. display_sort=nq_desc',
+      required: false,
+      description: 'Optional extra Semrush API parameters as a URL query string',
       condition: {
         field: 'operation',
         value: ['url_organic', 'domain_organic', 'domain_organic_organic'],
@@ -376,10 +388,18 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
           return out
         }
 
-        // Exa-style: subBlock ids match tool param ids; only coerce when needed
         const out: Record<string, unknown> = {}
-        if (params.displayLimit != null && params.displayLimit !== '') {
-          out.displayLimit = String(params.displayLimit)
+        const displayLimitRaw = params.displayLimit
+        out.displayLimit =
+          displayLimitRaw != null && String(displayLimitRaw).trim() !== ''
+            ? String(displayLimitRaw)
+            : '10'
+        const exportRaw = params.exportColumns
+        out.exportColumns =
+          typeof exportRaw === 'string' && exportRaw.trim() !== '' ? exportRaw : 'Ph,Nq,Cp'
+        const extra = params.additionalParams
+        if (typeof extra === 'string' && extra.trim() !== '') {
+          out.additionalParams = extra
         }
         return out
       },
@@ -396,6 +416,10 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     database: { type: 'string', description: 'Geographic database code' },
     displayLimit: { type: 'string', description: 'Number of results to return (default 10)' },
     exportColumns: { type: 'string', description: 'Comma-separated column codes' },
+    additionalParams: {
+      type: 'string',
+      description: 'Optional Semrush API parameters as URL query string',
+    },
     campaignId: { type: 'string', description: 'Position Tracking campaign ID' },
     dateBegin: { type: 'string', description: 'Start date YYYYMMDD' },
     dateEnd: { type: 'string', description: 'End date YYYYMMDD' },
@@ -404,7 +428,10 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     displayOffset: { type: 'string', description: 'Pagination offset' },
     displayTags: { type: 'string', description: 'Tag filter for Position Tracking' },
     displayTagsCondition: { type: 'string', description: 'Tag condition filter' },
-    displayFilter: { type: 'string', description: 'Column filter (Position Tracking display_filter)' },
+    displayFilter: {
+      type: 'string',
+      description: 'Column filter (Position Tracking display_filter)',
+    },
     topFilter: { type: 'string', description: 'Position top_filter' },
     useVolume: { type: 'string', description: 'use_volume: national, regional, or local' },
     businessName: { type: 'string', description: 'Google Business Profile business name' },
