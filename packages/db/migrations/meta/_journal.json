@@ -1366,6 +1366,13 @@
       "when": 1776883116756,
       "tag": "0195_normal_white_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1778485396853,
+      "tag": "0196_add_prompts_table",
+      "breakpoints": true
     }
   ]
 }

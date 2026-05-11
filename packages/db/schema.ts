@@ -3466,3 +3466,11 @@ export const outreachUserConnectionsV1 = pgTable('outreach_user_connections_v1',
   timeZone: varchar('time_zone'),
   synced: boolean('synced').notNull().default(false),
 })
+
+export const prompts = pgTable('prompts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull().unique(),
+  content: text('content').notNull(),
+  version: integer('version').notNull().default(1),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
