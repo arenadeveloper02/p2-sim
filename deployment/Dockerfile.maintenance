@@ -1,8 +1,0 @@
-FROM node:20-alpine
-
-WORKDIR /app
-COPY maintenance.html ./maintenance.html
-COPY maintenance-server.mjs ./maintenance-server.mjs
-
-EXPOSE 80
-CMD ["node", "maintenance-server.mjs"]
