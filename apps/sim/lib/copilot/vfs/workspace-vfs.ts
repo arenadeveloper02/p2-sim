@@ -19,6 +19,10 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, desc, eq, isNotNull, isNull, ne } from 'drizzle-orm'
 import { listApiKeys } from '@/lib/api-key/service'
+import {
+  getHubSpotSharedAccountOptionIds,
+  mergeOAuthIntegrationPresence,
+} from '@/lib/copilot/chat/env-integration-presence'
 import { buildWorkspaceMd, type WorkspaceMdData } from '@/lib/copilot/chat/workspace-context'
 import { type FileReadResult, readFileRecord } from '@/lib/copilot/vfs/file-reader'
 import { normalizeVfsSegment } from '@/lib/copilot/vfs/normalize-segment'
@@ -384,6 +388,7 @@ export class WorkspaceVFS {
         files: fileSummary,
         oauthIntegrations: envSummary.oauthIntegrations,
         envVariables: envSummary.envVariables,
+        hubspotSharedAccounts: envSummary.hubspotSharedAccounts,
         tasks: taskSummary,
         customTools: toolsSummary,
         mcpServers: mcpServersSummary,
@@ -1347,6 +1352,7 @@ export class WorkspaceVFS {
   ): Promise<{
     oauthIntegrations: WorkspaceMdData['oauthIntegrations']
     envVariables: WorkspaceMdData['envVariables']
+    hubspotSharedAccounts?: string[]
   }> {
     try {
       const [envCredentials, oauthCredentials, apiKeyRows, envData] = await Promise.all([
@@ -1384,18 +1390,37 @@ export class WorkspaceVFS {
         serializeEnvironmentVariables(personalVarNames, workspaceVarNames)
       )
 
-      const oauthProviders = [...new Set(oauthCredentials.map((c) => c.providerId))]
-      const envKeys = [...new Set(envCredentials.map((c) => c.envKey))]
+      const envKeys = [...new Set(envCredentials.map((c) => c.envKey).filter(Boolean))] as string[]
+      const hubspotSharedAccounts = getHubSpotSharedAccountOptionIds()
+      const oauthIntegrations = mergeOAuthIntegrationPresence(
+        oauthCredentials.map((c) => ({ providerId: c.providerId })),
+        envKeys,
+        hubspotSharedAccounts
+      )
+      if (hubspotSharedAccounts.length > 0) {
+        this.files.set(
+          'environment/hubspot-shared-accounts.json',
+          JSON.stringify(
+            {
+              note: 'HubSpot block `accounts` subblock ids; execution maps accounts → oauthCredential (see hubspot block tools.config.params).',
+              accountIds: hubspotSharedAccounts,
+            },
+            null,
+            2
+          )
+        )
+      }
       return {
-        oauthIntegrations: oauthProviders.map((key) => ({ providerId: key })),
+        oauthIntegrations,
         envVariables: envKeys,
+        hubspotSharedAccounts: hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
       }
     } catch (err) {
       logger.warn('Failed to materialize environment data', {
         workspaceId,
         error: toError(err).message,
       })
-      return { oauthIntegrations: [], envVariables: [] }
+      return { oauthIntegrations: [], envVariables: [], hubspotSharedAccounts: undefined }
     }
   }
 }

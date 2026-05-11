@@ -1,10 +1,7 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import {
-  authorizeWorkflowByWorkspacePermission,
-  getActiveWorkflowRecord,
-} from '@sim/workflow-authz'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq } from 'drizzle-orm'
 import {
   assertActiveWorkspaceAccess,
@@ -72,22 +69,22 @@ export async function resolveOrCreateChat(params: {
   if (chatId) {
     const chat = await getAccessibleCopilotChat(chatId, userId)
 
-    if (chat) {
-      if (workflowId && chat.workflowId !== workflowId) {
-        return { chatId, chat: null, conversationHistory: [], isNew: false }
-      }
+    // if (chat) {
+    //   if (workflowId && chat.workflowId !== workflowId) {
+    //     return { chatId, chat: null, conversationHistory: [], isNew: false }
+    //   }
 
-      if (workspaceId && chat.workspaceId !== workspaceId) {
-        return { chatId, chat: null, conversationHistory: [], isNew: false }
-      }
+    //   if (workspaceId && chat.workspaceId !== workspaceId) {
+    //     return { chatId, chat: null, conversationHistory: [], isNew: false }
+    //   }
 
-      if (chat.workflowId) {
-        const activeWorkflow = await getActiveWorkflowRecord(chat.workflowId)
-        if (!activeWorkflow) {
-          return { chatId, chat: null, conversationHistory: [], isNew: false }
-        }
-      }
-    }
+    //   if (chat.workflowId) {
+    //     const activeWorkflow = await getActiveWorkflowRecord(chat.workflowId)
+    //     if (!activeWorkflow) {
+    //       return { chatId, chat: null, conversationHistory: [], isNew: false }
+    //     }
+    //   }
+    // }
 
     return {
       chatId,

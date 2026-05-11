@@ -142,6 +142,7 @@ export interface UseChatReturn {
   isReconnecting: boolean
   error: string | null
   resolvedChatId: string | undefined
+  activeStreamId: string | null
   sendMessage: (
     message: string,
     fileAttachments?: FileAttachmentForApi[],
@@ -1015,10 +1016,21 @@ export interface UseChatOptions {
   onTitleUpdate?: () => void
   onStreamEnd?: (chatId: string, messages: ChatMessage[]) => void
   initialActiveResourceId?: string | null
+  /** When true, resolves the target workspaceId via the external agent API before each send. */
+  resolveWorkspaceBeforeSend?: boolean
+  /** Embed UI: keep task URLs on `/task/:id/embed` when updating history. */
+  isEmbedPage?: boolean
 }
 
 export function getMothershipUseChatOptions(
-  options: Pick<UseChatOptions, 'onResourceEvent' | 'onStreamEnd' | 'initialActiveResourceId'> = {}
+  options: Pick<
+    UseChatOptions,
+    | 'onResourceEvent'
+    | 'onStreamEnd'
+    | 'initialActiveResourceId'
+    | 'resolveWorkspaceBeforeSend'
+    | 'isEmbedPage'
+  > = {}
 ): UseChatOptions {
   return {
     apiPath: MOTHERSHIP_CHAT_API_PATH,
@@ -1043,9 +1055,13 @@ export function getWorkflowCopilotUseChatOptions(
 export function useChat(
   workspaceId: string,
   initialChatId?: string,
-  options?: UseChatOptions
+  options?: UseChatOptions,
+  isEmbedPage?: boolean
 ): UseChatReturn {
   const pathname = usePathname()
+  const effectiveIsEmbedPageRef = useRef(false)
+  effectiveIsEmbedPageRef.current =
+    Boolean(isEmbedPage) || Boolean(options?.isEmbedPage) || pathname.endsWith('/embed')
   const router = useRouter()
   const queryClient = useQueryClient()
   const [pendingMessages, setPendingMessages] = useState<ChatMessage[]>([])
@@ -1067,12 +1083,15 @@ export function useChat(
   const pendingStopPromiseRef = useRef<Promise<void> | null>(null)
   const workflowIdRef = useRef(options?.workflowId)
   workflowIdRef.current = options?.workflowId
+  const resolveWorkspaceBeforeSendRef = useRef(options?.resolveWorkspaceBeforeSend)
+  resolveWorkspaceBeforeSendRef.current = options?.resolveWorkspaceBeforeSend
   const onToolResultRef = useRef(options?.onToolResult)
   onToolResultRef.current = options?.onToolResult
   const onTitleUpdateRef = useRef(options?.onTitleUpdate)
   onTitleUpdateRef.current = options?.onTitleUpdate
   const onStreamEndRef = useRef(options?.onStreamEnd)
   onStreamEndRef.current = options?.onStreamEnd
+  const skipServerInvalidationForTurnRef = useRef(false)
 
   const clearQueueDispatchState = useCallback(() => {
     queueDispatchEpochRef.current++
@@ -1380,10 +1399,24 @@ export function useChat(
   }, [clearActiveTurn, clearQueueDispatchState, resetEphemeralPreviewState, setTransportIdle])
 
   const { data: chatHistory } = useChatHistory(resolvedChatId)
-  const messages = useMemo(
-    () => chatHistory?.messages.map(toDisplayMessage) ?? pendingMessages,
-    [chatHistory, pendingMessages]
-  )
+  const messages = useMemo(() => {
+    const historyMessages = chatHistory?.messages.map(toDisplayMessage)
+    if (!historyMessages) return pendingMessages
+    if (pendingMessages.length === 0) return historyMessages
+    // Merge: include any pending messages whose ids are not yet present in
+    // `chatHistory`. Without this, the embed-mode workflow path would briefly
+    // render an empty conversation (and re-flash the dashboard) between the
+    // moment a freshly-created chat's `resolvedChatId` is set and the moment
+    // the SSE stream upserts its first assistant snapshot, because the server
+    // returns `{ messages: [] }` for the just-created chat row and `[].map()`
+    // is not nullish — it would silently win over `pendingMessages`.
+    const historyIds = new Set(historyMessages.map((m) => m.id))
+    const orphanedPending = pendingMessages.filter((m) => !historyIds.has(m.id))
+    if (orphanedPending.length === 0) return historyMessages
+    const userOrphans = orphanedPending.filter((m) => m.role === 'user')
+    const otherOrphans = orphanedPending.filter((m) => m.role !== 'user')
+    return [...userOrphans, ...historyMessages, ...otherOrphans]
+  }, [chatHistory, pendingMessages])
   const addResource = useCallback((resource: MothershipResource): boolean => {
     if (resourcesRef.current.some((r) => r.type === resource.type && r.id === resource.id)) {
       return false
@@ -1990,7 +2023,7 @@ export function useChat(
                     window.history.replaceState(
                       null,
                       '',
-                      `/workspace/${workspaceId}/task/${payloadChatId}`
+                      `/workspace/${workspaceId}/task/${payloadChatId}${effectiveIsEmbedPageRef.current ? '/embed' : ''}`
                     )
                   }
                 }
@@ -3095,7 +3128,10 @@ export function useChat(
       clearActiveTurn()
       setTransportIdle()
       abortControllerRef.current = null
-      invalidateChatQueries({ includeDetail: !hasQueuedFollowUp })
+      if (!skipServerInvalidationForTurnRef.current) {
+        invalidateChatQueries({ includeDetail: !hasQueuedFollowUp })
+      }
+      skipServerInvalidationForTurnRef.current = false
       notifyTurnEnded({ error: isError })
     },
     [
@@ -3126,6 +3162,7 @@ export function useChat(
       setError(null)
       setTransportStreaming()
       locallyTerminalStreamIdRef.current = undefined
+      skipServerInvalidationForTurnRef.current = false
 
       const userMessageId = queuedSendHandoff?.userMessageId ?? generateId()
       const assistantId = getLiveAssistantMessageId(userMessageId)
@@ -3145,7 +3182,7 @@ export function useChat(
             }))
           : undefined
 
-      const requestChatId = selectedChatIdRef.current ?? chatIdRef.current
+      let requestChatId = selectedChatIdRef.current ?? chatIdRef.current
       if (queuedSendHandoff) {
         writeQueuedSendHandoffState({
           id: queuedSendHandoff.id,
@@ -3300,23 +3337,113 @@ export function useChat(
                 }))
             : undefined
 
-        const response = await fetch(apiPathRef.current, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message,
-            workspaceId,
-            userMessageId,
-            createNewChat: !requestChatId,
-            ...(requestChatId ? { chatId: requestChatId } : {}),
-            ...(fileAttachments && fileAttachments.length > 0 ? { fileAttachments } : {}),
-            ...(resourceAttachments ? { resourceAttachments } : {}),
-            ...(contexts && contexts.length > 0 ? { contexts } : {}),
-            ...(workflowIdRef.current ? { workflowId: workflowIdRef.current } : {}),
-            userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          }),
-          signal: abortController.signal,
-        })
+        let effectiveWorkspaceId = workspaceId
+        let resolvedWorkflowExecution:
+          | { workflowId: string; selectedOutputs: string[]; userApiKey: string } | undefined
+          | undefined
+        if (effectiveIsEmbedPageRef.current) {
+          try {
+            const currentMessages = messagesRef.current
+            const resolveResponse = await fetch('/api/agent/resolve-workspace', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message: message,
+                context: currentMessages.map((m) => m.content).join('\n'),
+              }),
+              signal: abortController.signal,
+            })
+            if (resolveResponse.ok) {
+              const resolveData = await resolveResponse.json()
+              if (resolveData.workspaceId) {
+                effectiveWorkspaceId = resolveData.workspaceId
+              }
+              if (typeof resolveData.workflowId === 'string') {
+                const selectedOutputs = Array.isArray(resolveData.selectedOutputs)
+                  ? resolveData.selectedOutputs.filter(
+                      (output: unknown): output is string => typeof output === 'string'
+                    )
+                  : []
+                resolvedWorkflowExecution = {
+                  workflowId: resolveData.workflowId,
+                  selectedOutputs,
+                  userApiKey: resolveData.userApiKey,
+                }
+              }
+            } else {
+              logger.warn('Workspace resolve returned non-OK status, using current workspace', {
+                status: resolveResponse.status,
+              })
+            }
+          } catch (err) {
+            logger.warn('Failed to resolve workspace, using current workspace', {
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+        }
+
+        const isResolvedWorkflowExecution = Boolean(resolvedWorkflowExecution)
+        if (isResolvedWorkflowExecution) {
+          skipServerInvalidationForTurnRef.current = true
+          if (!requestChatId) {
+            try {
+              const createChatResponse = await fetch('/api/mothership/chats', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ workspaceId }),
+                signal: abortController.signal,
+              })
+              if (createChatResponse.ok) {
+                const createChatData = await createChatResponse.json()
+                if (typeof createChatData.id === 'string' && createChatData.id.length > 0) {
+                  requestChatId = createChatData.id
+                  chatIdRef.current = createChatData.id
+                  setResolvedChatId(createChatData.id)
+                  applyOptimisticSend()
+                  queryClient.invalidateQueries({
+                    queryKey: taskKeys.list(workspaceId),
+                  })
+                }
+              }
+            } catch (error) {
+              logger.warn('Failed to create mothership chat for workflow execution stream', {
+                error: error instanceof Error ? error.message : String(error),
+              })
+            }
+          }
+        }
+        const executionConfig = resolvedWorkflowExecution
+        const response = isResolvedWorkflowExecution
+          ? await fetch('/api/agent/resolve-workspace/execute', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                workflowId: executionConfig?.workflowId,
+                input: message,
+                conversationId: requestChatId ?? chatIdRef.current,
+                selectedOutputs: executionConfig?.selectedOutputs ?? [],
+                userApiKey: executionConfig?.userApiKey,
+              }),
+              signal: abortController.signal,
+            })
+          : await fetch(apiPathRef.current, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message,
+                workspaceId,
+                userMessageId,
+                createNewChat: !requestChatId,
+                ...(requestChatId ? { chatId: requestChatId } : {}),
+                ...(fileAttachments && fileAttachments.length > 0 ? { fileAttachments } : {}),
+                ...(resourceAttachments ? { resourceAttachments } : {}),
+                ...(contexts && contexts.length > 0 ? { contexts } : {}),
+                ...(workflowIdRef.current ? { workflowId: workflowIdRef.current } : {}),
+                userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                effectiveWorkspaceId,
+              }),
+              signal: abortController.signal,
+            })
 
         // Capture for propagation on side-channel calls + non-React
         // tool-completion callbacks (via trace-context singleton).
@@ -3328,7 +3455,7 @@ export function useChat(
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
-          if (response.status === 409) {
+          if (response.status === 409 && !isResolvedWorkflowExecution) {
             const conflictStreamId =
               typeof errorData.activeStreamId === 'string'
                 ? errorData.activeStreamId
@@ -3368,15 +3495,19 @@ export function useChat(
             return consumedByTranscript
           }
 
-          await resumeOrFinalize({
-            streamId: streamIdRef.current || userMessageId,
-            assistantId,
-            gen,
-            afterCursor: lastCursorRef.current || '0',
-            signal: abortController.signal,
-          })
-          if (streamGenRef.current === gen && sendingRef.current) {
+          if (isResolvedWorkflowExecution) {
             finalize()
+          } else {
+            await resumeOrFinalize({
+              streamId: streamIdRef.current || userMessageId,
+              assistantId,
+              gen,
+              afterCursor: lastCursorRef.current || '0',
+              signal: abortController.signal,
+            })
+            if (streamGenRef.current === gen && sendingRef.current) {
+              finalize()
+            }
           }
         }
       } catch (err) {
@@ -3916,6 +4047,7 @@ export function useChat(
     isReconnecting,
     error,
     resolvedChatId,
+    activeStreamId: chatHistory?.activeStreamId ?? null,
     sendMessage,
     stopGeneration,
     resources,

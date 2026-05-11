@@ -7,14 +7,7 @@ export const getMyTasks: ToolConfig<ArenaGetMyTasksParams, ArenaGetMyTasksRespon
   description: 'Get the current user’s tasks from Arena.',
   version: '1.0.0',
 
-  params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (get_my_tasks)',
-    },
-  },
+  params: {},
 
   request: {
     url: (params: ArenaGetMyTasksParams) => {

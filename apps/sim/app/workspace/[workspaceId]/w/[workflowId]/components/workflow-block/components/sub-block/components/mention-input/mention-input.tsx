@@ -9,12 +9,27 @@ import { useDependsOnGate } from '../../../../../panel/components/editor/compone
 import { useForeignCredential } from '../../../../../panel/components/editor/components/sub-block/hooks/use-foreign-credential'
 import { useSubBlockValue } from '../../../../../panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 
+/**
+ * Normalizes credential selector output or a raw id string for Slack API calls.
+ */
+function coerceOAuthCredentialId(raw: unknown): string {
+  if (raw == null || raw === '') return ''
+  if (typeof raw === 'string') return raw.trim()
+  if (typeof raw === 'object' && raw !== null && 'clientId' in raw) {
+    const id = (raw as { clientId?: unknown }).clientId
+    return typeof id === 'string' ? id : ''
+  }
+  return ''
+}
+
 interface MentionInputProps {
   blockId: string
   subBlock: SubBlockConfig
   disabled?: boolean
   isPreview?: boolean
   previewValue?: any | null
+  /** Flat sibling values (e.g. agent tool params); required for Slack credential in tool-input */
+  dependencyContext?: Record<string, unknown>
 }
 
 export function MentionInput({
@@ -23,6 +38,7 @@ export function MentionInput({
   disabled = false,
   isPreview = false,
   previewValue,
+  dependencyContext,
 }: MentionInputProps) {
   const params = useParams()
   const workflowIdFromUrl = (params?.workflowId as string) || ''
@@ -30,8 +46,7 @@ export function MentionInput({
   // Use the proper hook to get the current value and setter
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlock.id)
 
-  // Reactive upstream fields
-  const [authMethod] = useSubBlockValue(blockId, 'authMethod')
+  // Reactive upstream fields (block editor: credential lives on store; tool-input uses dependencyContext)
   const [connectedCredential] = useSubBlockValue(blockId, 'credential')
   const [currentValue, setCurrentValue] = useState<string>('')
 
@@ -39,21 +54,26 @@ export function MentionInput({
   const serviceId = subBlock.serviceId || 'slack'
   const isSlack = serviceId === 'slack'
 
-  // Central dependsOn gating
+  // Central dependsOn gating (tool-input passes dependencyContext like other subblocks)
   const { finalDisabled, dependsOn, dependencyValues } = useDependsOnGate(blockId, subBlock, {
     disabled,
     isPreview,
+    previewContextValues: dependencyContext,
   })
 
   // Slack always uses the OAuth credential ID; token type is chosen server-side.
-  // We still read authMethod so the component re-renders when auth method changes.
-  const credential: string = (connectedCredential as string) || ''
+  const credentialFromContext = dependencyContext
+    ? coerceOAuthCredentialId(
+        dependencyContext.oauthCredential ??
+          dependencyContext.credential ??
+          dependencyContext.manualCredential
+      )
+    : ''
+  const credentialFromStore = coerceOAuthCredentialId(connectedCredential)
+  const credential: string = credentialFromContext || credentialFromStore
 
   // Determine if connected OAuth credential is foreign
-  const { isForeignCredential } = useForeignCredential(
-    'slack',
-    (connectedCredential as string) || ''
-  )
+  const { isForeignCredential } = useForeignCredential('slack', credential)
 
   // Get the current value from the store or prop value if in preview mode
   useEffect(() => {
