@@ -3338,7 +3338,9 @@ export function useChat(
             : undefined
 
         let effectiveWorkspaceId = workspaceId
-        let resolvedWorkflowExecution: { workflowId: string; selectedOutputs: string[] } | undefined
+        let resolvedWorkflowExecution:
+          | { workflowId: string; selectedOutputs: string[]; userApiKey: string } | undefined
+          | undefined
         if (effectiveIsEmbedPageRef.current) {
           try {
             const currentMessages = messagesRef.current
@@ -3365,6 +3367,7 @@ export function useChat(
                 resolvedWorkflowExecution = {
                   workflowId: resolveData.workflowId,
                   selectedOutputs,
+                  userApiKey: resolveData.userApiKey,
                 }
               }
             } else {
@@ -3419,6 +3422,7 @@ export function useChat(
                 input: message,
                 conversationId: requestChatId ?? chatIdRef.current,
                 selectedOutputs: executionConfig?.selectedOutputs ?? [],
+                userApiKey: executionConfig?.userApiKey,
               }),
               signal: abortController.signal,
             })

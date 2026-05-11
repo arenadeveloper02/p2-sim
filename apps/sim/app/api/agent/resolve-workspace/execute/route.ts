@@ -13,7 +13,8 @@ import { generateRequestId } from '@/lib/core/utils/request'
 const logger = createLogger('AgentResolveWorkspaceExecute')
 
 const ExecuteRequestSchema = z.object({
-  workflowId: z.string().uuid(),
+  userApiKey: z.string().optional(),
+  workflowId: z.string().uuid().optional(),
   input: z.string().min(1),
   conversationId: z.string().optional(),
   selectedOutputs: z.array(z.string()).default([]),
@@ -299,16 +300,6 @@ export async function POST(req: NextRequest) {
   }
 
   const userId = session.user.id
-  const apiKey = process.env.SIM_WORKFLOW_API_KEY_UNIFIED
-  if (!apiKey) {
-    logger.error('SIM_WORKFLOW_API_KEY is not configured — cannot execute workflow')
-    return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
-  }
-  const agentBaseUrl = process.env.SIM_AGENT_BASE_URL
-  if (!agentBaseUrl) {
-    logger.error('SIM_AGENT_BASE_URL is not configured — cannot execute workflow')
-    return NextResponse.json({ error: 'Agent base URL not configured' }, { status: 500 })
-  }
 
   let body: z.infer<typeof ExecuteRequestSchema>
   try {
@@ -321,6 +312,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
+  const apiKey = body.userApiKey ?? process.env.SIM_WORKFLOW_API_KEY_UNIFIED
+  if (!apiKey) {
+    logger.error('SIM_WORKFLOW_API_KEY_UNIFIED is not configured — cannot execute workflow')
+    return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
+  }
+  const agentBaseUrl = process.env.SIM_AGENT_BASE_URL
+  if (!agentBaseUrl) {
+    logger.error('SIM_AGENT_BASE_URL is not configured — cannot execute workflow')
+    return NextResponse.json({ error: 'Agent base URL not configured' }, { status: 500 })
+  }
   const executeUrl = `${agentBaseUrl.replace(/\/$/, '')}/api/workflows/${body.workflowId}/execute`
 
   try {
@@ -476,7 +477,6 @@ export async function POST(req: NextRequest) {
             }),
           })
 
-          console.log(upstream,"upstream")
           if (!upstream.ok) {
             const errorText = await upstream.text().catch(() => '')
             logger.error('Workflow execution API returned non-OK status', {

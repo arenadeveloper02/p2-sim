@@ -74,6 +74,9 @@ export async function POST(req: NextRequest) {
         selectedOutputs: ['buildpayload.result'],
       }),
     })
+<<<<<<< HEAD
+    const durationMs = Date.now() - startTime
+=======
     console.log(
       'agentResponse',
       JSON.stringify({
@@ -86,6 +89,7 @@ export async function POST(req: NextRequest) {
     )
     const durationMs = Date.now() - startTime
     console.log('agentResponse', agentResponse)
+>>>>>>> 33b0595e32c84cf3048e29ea866366e202f3733b
     if (!agentResponse.ok) {
       const errorText = await agentResponse.text().catch(() => '')
       logger.error('External agent API returned non-OK status', {
@@ -114,6 +118,8 @@ export async function POST(req: NextRequest) {
         )
       : undefined
 
+    const userApiKey =  result?.apiKey
+
     if (!workspaceId) {
       logger.error('External agent API response missing workspaceId', {
         userId,
@@ -137,6 +143,8 @@ export async function POST(req: NextRequest) {
       workspaceId,
       ...(workflowId ? { workflowId } : {}),
       ...(selectedOutputs && selectedOutputs.length > 0 ? { selectedOutputs } : {}),
+      ...(userApiKey ? { userApiKey } : {}),
+
     })
   } catch (error) {
     const durationMs = Date.now() - startTime
