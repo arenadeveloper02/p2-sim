@@ -10,20 +10,23 @@ import {
   workspace,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { safeCompare } from '@sim/security/compare'
 import { toError } from '@sim/utils/errors'
 import { generateId, generateShortId } from '@sim/utils/id'
 import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { createApiKey } from '@/lib/api-key/auth'
 import { hashApiKey } from '@/lib/api-key/crypto'
+import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { extractWorkflowName, parseWorkflowJson } from '@/lib/workflows/operations/import-export'
 import { performFullDeploy } from '@/lib/workflows/orchestration'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
-import { withAdminAuth } from '@/app/api/v1/admin/middleware'
 import {
   badRequestResponse,
+  errorResponse,
   internalErrorResponse,
   notFoundResponse,
   singleResponse,
@@ -297,6 +300,27 @@ function populateCredentialSubBlocks(subBlocks: Record<string, unknown>, credent
   }
 }
 
+function authenticateCronSecretRequest(request: Request) {
+  if (!env.CRON_SECRET) {
+    logger.warn('CRON_SECRET environment variable is not set for import-deploy-workflows endpoint')
+    return errorResponse('NOT_CONFIGURED', 'Import deploy workflow API is not configured.', 503)
+  }
+
+  const providedKey = request.headers.get('x-admin-key')
+  if (!providedKey) {
+    return errorResponse('UNAUTHORIZED', 'API key required. Provide x-admin-key header.', 401)
+  }
+
+  if (!safeCompare(providedKey, env.CRON_SECRET)) {
+    logger.warn('Invalid import-deploy-workflows API key attempted', {
+      keyPrefix: providedKey.slice(0, 8),
+    })
+    return errorResponse('UNAUTHORIZED', 'Invalid API key', 401)
+  }
+
+  return null
+}
+
 async function getOrCreatePersonalWorkspace(params: {
   userId: string
   userName: string
@@ -476,10 +500,15 @@ async function importWorkflow(params: {
   return { workflowId, name: dedupedName, credentialPopulation }
 }
 
-export const POST = withAdminAuth(async (request) => {
+export const POST = withRouteHandler(async (request) => {
   const requestId = generateRequestId()
 
   try {
+    const authResponse = authenticateCronSecretRequest(request)
+    if (authResponse) {
+      return authResponse
+    }
+
     const body: unknown = await request.json()
     if (!isRecord(body)) {
       return badRequestResponse('Request body must be a JSON object.')
