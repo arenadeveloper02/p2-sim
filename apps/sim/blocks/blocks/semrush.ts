@@ -8,6 +8,8 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
   description: 'Get SEO data from Semrush',
   longDescription:
     'Access Semrush SEO data including organic keywords, backlinks, domain rank, and competitor analysis.',
+  bestPractices:
+    "Runs use Sim's Semrush API proxy; authentication is the server environment variable SEMRUSH_API_KEY (operators configure it on the deployment). Do not tell users to add Semrush API keys to the workflow, use {{SEMRUSH_API_KEY}}, or treat a missing block API key as user error—agents and docs should not ask for an end-user Semrush key for this native block.",
   docsLink: '',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -344,16 +346,6 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
         value: ['url_organic', 'domain_organic', 'domain_organic_organic'],
       },
     },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your Semrush API key',
-      password: true,
-      required: false,
-      hidden: true,
-      description: 'Enter your Semrush API key',
-    },
   ],
   tools: {
     access: ['semrush_query', 'semrush_organic_positions'],
@@ -380,7 +372,6 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
             useVolume: params.useVolume || undefined,
             businessName: params.businessName || undefined,
             serpFeatureFilter: params.serpFeatureFilter || undefined,
-            apiKey: params.apiKey || undefined,
           }
           if (out.displayLimit != null && out.displayLimit !== '') {
             out.displayLimit = String(out.displayLimit)
@@ -436,10 +427,6 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     useVolume: { type: 'string', description: 'use_volume: national, regional, or local' },
     businessName: { type: 'string', description: 'Google Business Profile business name' },
     serpFeatureFilter: { type: 'string', description: 'SERP feature filter' },
-    apiKey: {
-      type: 'string',
-      description: 'Semrush API key',
-    },
   },
   outputs: {
     reportType: {
