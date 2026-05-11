@@ -34,7 +34,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Get Message', id: 'get_message' },
         { label: 'Get Thread', id: 'get_thread' },
         { label: 'List Channels', id: 'list_channels' },
-        { label: 'Get User Channels', id: 'get_user_channels' },
+        { label: 'Get My Channels & DMs', id: 'get_user_channels' },
         { label: 'List Channel Members', id: 'list_members' },
         { label: 'List Users', id: 'list_users' },
         { label: 'Get User Info', id: 'get_user' },
@@ -62,9 +62,11 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'authMethod',
       title: 'Authentication Method',
       type: 'dropdown',
+      description:
+        'Sim Bot uses the workspace OAuth bot token (bot/app actions). Custom Bot uses a user token (user-level actions). If the task is “as a user” (DMs, user conversations), prefer Custom Bot; otherwise prefer Sim Bot.',
       options: [
-        { label: 'Sim Bot', id: 'oauth' },
-        { label: 'Custom Bot', id: 'bot_token' },
+        { label: 'Sim Bot (bot token)', id: 'oauth' },
+        { label: 'Custom Bot (user token)', id: 'bot_token' },
       ],
       value: () => 'bot_token',
       required: true,
@@ -407,7 +409,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
     {
       id: 'fromDate',
       title: 'From Date',
-      type: 'date-input',
+      type: 'short-input',
       placeholder: 'Select from date',
       condition: {
         field: 'operation',
@@ -417,7 +419,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
     {
       id: 'toDate',
       title: 'To Date',
-      type: 'date-input',
+      type: 'short-input',
       placeholder: 'Select to date',
       condition: {
         field: 'operation',
@@ -533,13 +535,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     {
       id: 'includeDMs',
-      title: 'Include Direct Messages',
+      title: 'Include 1:1 DMs (im)',
       type: 'dropdown',
+      description: 'If the user asked for DMs, set this to Yes. Requires im:read.',
       options: [
         { label: 'No', id: 'false' },
         { label: 'Yes', id: 'true' },
       ],
-      value: () => 'false',
+      value: () => '',
       condition: {
         field: 'operation',
         value: ['list_channels', 'get_user_channels'],
@@ -547,13 +550,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     {
       id: 'includeGroupDMs',
-      title: 'Include Group DMs',
+      title: 'Include Group DMs (mpim)',
       type: 'dropdown',
+      description: 'If the user asked for group DMs, set this to Yes. Requires mpim:read.',
       options: [
         { label: 'No', id: 'false' },
         { label: 'Yes', id: 'true' },
       ],
-      value: () => 'false',
+      value: () => '',
       condition: {
         field: 'operation',
         value: ['list_channels', 'get_user_channels'],
@@ -576,6 +580,21 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'short-input',
       placeholder: 'Pagination cursor from previous Get User Channels response',
       description: 'Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'get_user_channels',
+      },
+    },
+    {
+      id: 'getUserChannelsAutoPaginate',
+      title: 'Auto Paginate',
+      type: 'dropdown',
+      description: 'Fetch all pages automatically. Always enabled for Get User Channels.',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
       condition: {
         field: 'operation',
         value: 'get_user_channels',
@@ -646,6 +665,22 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'short-input',
       placeholder: 'Pagination cursor from previous List Users response',
       description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'list_users',
+      },
+    },
+    {
+      id: 'listUsersAutoPaginate',
+      title: 'Auto Paginate',
+      type: 'dropdown',
+      canonicalParamId: 'autoPaginate',
+      description: 'Fetch all pages automatically. Always enabled for List Users.',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
       condition: {
         field: 'operation',
         value: 'list_users',
@@ -1732,8 +1767,12 @@ Do not include any explanations, markdown formatting, or other text outside the 
             // tool falls back to its default "include").
             baseParams.includePublic = includePublic !== 'false'
             baseParams.includePrivate = includePrivate !== 'false'
-            baseParams.includeDMs = includeDMs === 'true'
-            baseParams.includeGroupDMs = includeGroupDMs === 'true'
+            if (includeDMs === 'true' || includeDMs === 'false') {
+              baseParams.includeDMs = includeDMs === 'true'
+            }
+            if (includeGroupDMs === 'true' || includeGroupDMs === 'false') {
+              baseParams.includeGroupDMs = includeGroupDMs === 'true'
+            }
             baseParams.excludeArchived = true
             baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 200
             if (operation === 'get_user_channels' && getUserChannelsCursor?.trim()) {
@@ -1741,6 +1780,9 @@ Do not include any explanations, markdown formatting, or other text outside the 
             }
             if (operation === 'list_channels' && listChannelsCursor?.trim()) {
               baseParams.cursor = listChannelsCursor.trim()
+            }
+            if (operation === 'get_user_channels') {
+              baseParams.autoPaginate = true
             }
             break
           }
@@ -1756,6 +1798,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
           case 'list_users': {
             baseParams.includeDeleted = includeDeleted === 'true'
             baseParams.limit = userLimit ? Number.parseInt(userLimit, 10) : 100
+            baseParams.autoPaginate = true
             if (listUsersCursor?.trim()) {
               baseParams.cursor = listUsersCursor.trim()
             }
