@@ -307,6 +307,25 @@ export interface SubBlockConfig {
   // Slider-specific properties
   step?: number
   integer?: boolean
+  /** When `type` is `input-format`, selects row UI (default matches Start block structured inputs). */
+  inputFormatVariant?:
+    | 'default'
+    | 'linkedin_comment_mentions'
+    | 'linkedin_profile_sections'
+    | 'linkedin_search_filters'
+  /** Optional per-block overrides for `input-format` labels/placeholders/options. */
+  inputFormatConfig?: {
+    title?: string
+    fieldNameLabel?: string
+    fieldNamePlaceholder?: string
+    fieldValueLabel?: string
+    fieldValuePlaceholder?: string
+    mentionTargetLabel?: string
+    mentionTargetPlaceholder?: string
+    mentionTargetOptions?: Array<{ label: string; value: string }>
+    profileSectionPlaceholder?: string
+    searchFilterPlaceholder?: string
+  }
   // Long input specific properties
   rows?: number
   // Multi-select functionality

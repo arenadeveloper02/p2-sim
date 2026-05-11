@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { isEqual } from 'es-toolkit'
 import { useParams } from 'next/navigation'
@@ -555,6 +555,40 @@ const SubBlockRow = memo(function SubBlockRow({
     return typeof option === 'string' ? option : option.label
   }, [subBlock, rawValue])
 
+  const [fetchOptionByIdLabel, setFetchOptionByIdLabel] = useState<string | null>(null)
+
+  /**
+   * Hydrates dropdown/combobox row labels when options are loaded asynchronously (`fetchOptionById`),
+   * matching the editor dropdown behavior for blocks like Unipile account picker.
+   */
+  useEffect(() => {
+    setFetchOptionByIdLabel(null)
+
+    const fetchFn = subBlock?.fetchOptionById
+    if (!fetchFn || !blockId) return
+    if (subBlock.type !== 'dropdown' && subBlock.type !== 'combobox') return
+    if (!rawValue || typeof rawValue !== 'string') return
+    if (rawValue.startsWith('<') || rawValue.includes('{{')) return
+    if (dropdownLabel) return
+
+    let cancelled = false
+    void fetchFn(blockId, rawValue)
+      .then((opt) => {
+        if (!cancelled && opt?.label) {
+          setFetchOptionByIdLabel(opt.label)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFetchOptionByIdLabel(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [blockId, dropdownLabel, rawValue, subBlock?.fetchOptionById, subBlock?.type])
+
   const resolveContextValue = useCallback(
     (key: string): string | undefined => {
       const resolved = resolveDependencyValue(
@@ -819,6 +853,7 @@ const SubBlockRow = memo(function SubBlockRow({
   const hydratedName =
     credentialName ||
     dropdownLabel ||
+    fetchOptionByIdLabel ||
     variablesDisplayValue ||
     filterDisplayValue ||
     toolsDisplayValue ||

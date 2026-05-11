@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
-import { env } from '@/lib/core/config/env'
 import { generateId } from '@sim/utils/id'
+import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('MemoryAPI')
 

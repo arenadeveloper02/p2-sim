@@ -155,6 +155,25 @@ if (validStripeKey) {
   })
 }
 
+const arenaV3OAuthCallbackTrustedOrigins = env.ARENA_V3_OAUTH_CALLBACK_ORIGINS
+  ? env.ARENA_V3_OAUTH_CALLBACK_ORIGINS.split(',')
+      .map((o) => o.trim())
+      .filter(Boolean)
+  : []
+
+/**
+ * Local dev: parent apps (Arena, Vite) often run on another port than Sim; Better Auth rejects
+ * cross-origin `callbackURL` unless the origin is trusted.
+ */
+const devArenaEmbedCallbackOrigins: string[] =
+  env.NODE_ENV === 'development'
+    ? [
+        'http://localhost:3001',
+        'http://127.0.0.1:3001',
+        'http://localhost:5173',
+        'http://localhost:4173',
+      ]
+    : []
 /**
  * Parent domain for Set-Cookie Domain= (no leading dot). Only applied when the app host is under that
  * domain. If you set BETTER_AUTH_COOKIE_DOMAIN while using localhost, browsers reject the cookie
@@ -193,6 +212,8 @@ export const auth = betterAuth({
           .map((o) => o.trim())
           .filter(Boolean)
       : []),
+    ...arenaV3OAuthCallbackTrustedOrigins,
+    ...devArenaEmbedCallbackOrigins,
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
     'https://claude.ai',
     'https://claude.com',
@@ -2501,12 +2522,16 @@ export const auth = betterAuth({
               'search:read',
               'channels:read',
               'channels:history',
+              'channels:write',
               'groups:read',
               'groups:history',
+              'groups:write',
               'im:read',
               'im:history',
+              'im:write',
               'mpim:read',
               'mpim:history',
+              'mpim:write',
               'users:read',
               'chat:write',
             ].join(','),

@@ -34,7 +34,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Get Message', id: 'get_message' },
         { label: 'Get Thread', id: 'get_thread' },
         { label: 'List Channels', id: 'list_channels' },
-        { label: 'Get User Channels', id: 'get_user_channels' },
+        { label: 'Get My Channels & DMs', id: 'get_user_channels' },
         { label: 'List Channel Members', id: 'list_members' },
         { label: 'List Users', id: 'list_users' },
         { label: 'Get User Info', id: 'get_user' },
@@ -62,11 +62,13 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'authMethod',
       title: 'Authentication Method',
       type: 'dropdown',
+      description:
+        'Sim Bot uses the workspace OAuth bot token (bot/app actions). Custom Bot uses a user token (user-level actions). If the task is “as a user” (DMs, user conversations), prefer Custom Bot; otherwise prefer Sim Bot.',
       options: [
-        { label: 'Sim Bot', id: 'oauth' },
-        { label: 'Custom Bot', id: 'bot_token' },
+        { label: 'Sim Bot (bot token)', id: 'oauth' },
+        { label: 'Custom Bot (user token)', id: 'bot_token' },
       ],
-      value: () => 'oauth',
+      value: () => 'bot_token',
       required: true,
     },
     {
@@ -92,11 +94,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       serviceId: 'slack',
       requiredScopes: getScopesForService('slack'),
       placeholder: 'Select Slack workspace',
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'oauth',
-      },
       required: true,
     },
     {
@@ -106,24 +103,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
       placeholder: 'Enter credential ID',
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'oauth',
-      },
-      required: true,
-    },
-    {
-      id: 'botToken',
-      title: 'Bot Token',
-      type: 'short-input',
-      placeholder: 'Enter your Slack bot token (xoxb-...)',
-      password: true,
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'bot_token',
-      },
       required: true,
     },
     {
@@ -135,7 +114,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.channels',
       placeholder: 'Select Slack channel',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: (values?: Record<string, unknown>) => {
         const op = values?.operation as string
         if (op === 'ephemeral') {
@@ -216,7 +195,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'destinationType',
         value: 'dm',
@@ -245,7 +224,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'ephemeral',
@@ -430,7 +409,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
     {
       id: 'fromDate',
       title: 'From Date',
-      type: 'date-input',
+      type: 'short-input',
       placeholder: 'Select from date',
       condition: {
         field: 'operation',
@@ -440,7 +419,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
     {
       id: 'toDate',
       title: 'To Date',
-      type: 'date-input',
+      type: 'short-input',
       placeholder: 'Select to date',
       condition: {
         field: 'operation',
@@ -556,13 +535,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     {
       id: 'includeDMs',
-      title: 'Include Direct Messages',
+      title: 'Include 1:1 DMs (im)',
       type: 'dropdown',
+      description: 'If the user asked for DMs, set this to Yes. Requires im:read.',
       options: [
         { label: 'No', id: 'false' },
         { label: 'Yes', id: 'true' },
       ],
-      value: () => 'false',
+      value: () => '',
       condition: {
         field: 'operation',
         value: ['list_channels', 'get_user_channels'],
@@ -570,13 +550,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
     },
     {
       id: 'includeGroupDMs',
-      title: 'Include Group DMs',
+      title: 'Include Group DMs (mpim)',
       type: 'dropdown',
+      description: 'If the user asked for group DMs, set this to Yes. Requires mpim:read.',
       options: [
         { label: 'No', id: 'false' },
         { label: 'Yes', id: 'true' },
       ],
-      value: () => 'false',
+      value: () => '',
       condition: {
         field: 'operation',
         value: ['list_channels', 'get_user_channels'],
@@ -586,10 +567,48 @@ Do not include any explanations, markdown formatting, or other text outside the 
       id: 'channelLimit',
       title: 'Channel Limit',
       type: 'short-input',
-      placeholder: '100',
+      placeholder: '200',
+      value: () => '200',
       condition: {
         field: 'operation',
         value: ['list_channels', 'get_user_channels'],
+      },
+    },
+    {
+      id: 'getUserChannelsCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous Get User Channels response',
+      description: 'Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'get_user_channels',
+      },
+    },
+    {
+      id: 'getUserChannelsAutoPaginate',
+      title: 'Auto Paginate',
+      type: 'dropdown',
+      description: 'Fetch all pages automatically. Always enabled for Get User Channels.',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
+      condition: {
+        field: 'operation',
+        value: 'get_user_channels',
+      },
+    },
+    {
+      id: 'listChannelsCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous List Channels response',
+      description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'list_channels',
       },
     },
     // List Members specific fields
@@ -598,6 +617,17 @@ Do not include any explanations, markdown formatting, or other text outside the 
       title: 'Member Limit',
       type: 'short-input',
       placeholder: '100',
+      condition: {
+        field: 'operation',
+        value: 'list_members',
+      },
+    },
+    {
+      id: 'listMembersCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous List Channel Members response',
+      description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
       condition: {
         field: 'operation',
         value: 'list_members',
@@ -623,6 +653,34 @@ Do not include any explanations, markdown formatting, or other text outside the 
       title: 'User Limit',
       type: 'short-input',
       placeholder: '100',
+      value: () => '100',
+      condition: {
+        field: 'operation',
+        value: 'list_users',
+      },
+    },
+    {
+      id: 'listUsersCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous List Users response',
+      description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
+      condition: {
+        field: 'operation',
+        value: 'list_users',
+      },
+    },
+    {
+      id: 'listUsersAutoPaginate',
+      title: 'Auto Paginate',
+      type: 'dropdown',
+      canonicalParamId: 'autoPaginate',
+      description: 'Fetch all pages automatically. Always enabled for List Users.',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
       condition: {
         field: 'operation',
         value: 'list_users',
@@ -638,7 +696,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'get_user',
@@ -715,6 +773,18 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       title: 'Message Limit',
       type: 'short-input',
       placeholder: '100',
+      condition: {
+        field: 'operation',
+        value: 'get_thread',
+      },
+    },
+    {
+      id: 'getThreadCursor',
+      title: 'Cursor',
+      type: 'short-input',
+      placeholder: 'Pagination cursor from previous Get Thread response',
+      description:
+        'Optional. Pass output.cursor from a prior run to fetch the next page of replies',
       condition: {
         field: 'operation',
         value: 'get_thread',
@@ -894,7 +964,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'get_user_presence',
@@ -1199,7 +1269,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       selectorKey: 'slack.users',
       placeholder: 'Select user to publish Home tab to',
       mode: 'basic',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod', 'credential'] },
       condition: {
         field: 'operation',
         value: 'publish_view',
@@ -1384,7 +1454,6 @@ Do not include any explanations, markdown formatting, or other text outside the 
         const {
           oauthCredential,
           authMethod,
-          botToken,
           operation,
           destinationType,
           channel,
@@ -1418,9 +1487,13 @@ Do not include any explanations, markdown formatting, or other text outside the 
           includeDMs,
           includeGroupDMs,
           channelLimit,
+          getUserChannelsCursor,
+          listChannelsCursor,
           memberLimit,
+          listMembersCursor,
           includeDeleted,
           userLimit,
+          listUsersCursor,
           userId,
           clientId,
           channelId,
@@ -1433,6 +1506,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
           getMessageTimestamp,
           getThreadTimestamp,
           threadLimit,
+          getThreadCursor,
           includeNumMembers,
           presenceUserId,
           editCanvasId,
@@ -1495,12 +1569,11 @@ Do not include any explanations, markdown formatting, or other text outside the 
         }
 
         // Handle authentication based on method
-        if (authMethod === 'bot_token') {
-          baseParams.accessToken = botToken
-        } else {
-          // Default to OAuth
-          baseParams.credential = oauthCredential
-        }
+        // Always use the selected Slack OAuth credential; choose token type later.
+        // - Sim Bot (oauth): uses bot token (accessToken) from the credential
+        // - Custom Bot (bot_token): uses user token (idToken) from the credential
+        baseParams.credential = oauthCredential
+        baseParams.useUserToken = authMethod === 'bot_token'
 
         switch (operation) {
           case 'send': {
@@ -1680,6 +1753,9 @@ Do not include any explanations, markdown formatting, or other text outside the 
                 baseParams.limit = Math.min(parsedLimit, 200)
               }
             }
+            if (getThreadCursor?.trim()) {
+              baseParams.cursor = getThreadCursor.trim()
+            }
             break
           }
 
@@ -1691,21 +1767,41 @@ Do not include any explanations, markdown formatting, or other text outside the 
             // tool falls back to its default "include").
             baseParams.includePublic = includePublic !== 'false'
             baseParams.includePrivate = includePrivate !== 'false'
-            baseParams.includeDMs = includeDMs === 'true'
-            baseParams.includeGroupDMs = includeGroupDMs === 'true'
+            if (includeDMs === 'true' || includeDMs === 'false') {
+              baseParams.includeDMs = includeDMs === 'true'
+            }
+            if (includeGroupDMs === 'true' || includeGroupDMs === 'false') {
+              baseParams.includeGroupDMs = includeGroupDMs === 'true'
+            }
             baseParams.excludeArchived = true
-            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 100
+            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 200
+            if (operation === 'get_user_channels' && getUserChannelsCursor?.trim()) {
+              baseParams.cursor = getUserChannelsCursor.trim()
+            }
+            if (operation === 'list_channels' && listChannelsCursor?.trim()) {
+              baseParams.cursor = listChannelsCursor.trim()
+            }
+            if (operation === 'get_user_channels') {
+              baseParams.autoPaginate = true
+            }
             break
           }
 
           case 'list_members': {
             baseParams.limit = memberLimit ? Number.parseInt(memberLimit, 10) : 100
+            if (listMembersCursor?.trim()) {
+              baseParams.cursor = listMembersCursor.trim()
+            }
             break
           }
 
           case 'list_users': {
             baseParams.includeDeleted = includeDeleted === 'true'
             baseParams.limit = userLimit ? Number.parseInt(userLimit, 10) : 100
+            baseParams.autoPaginate = true
+            if (listUsersCursor?.trim()) {
+              baseParams.cursor = listUsersCursor.trim()
+            }
             break
           }
 
@@ -1807,16 +1903,12 @@ Do not include any explanations, markdown formatting, or other text outside the 
             baseParams.sort = sortBy || 'timestamp'
             baseParams.sort_dir = sortDir || 'desc'
             baseParams.highlight = highlight !== 'false' // default to true
-            // For search_all, use user token instead of bot token
-            if (authMethod === 'bot_token') {
-              throw new Error('Search All operation requires OAuth authentication with user token')
-            }
-            // Use credential for OAuth, but we'll need to get user token from idToken
+            // For search_all, use user token instead of bot token (handled by useUserToken flag).
             if (!oauthCredential) {
               throw new Error('Slack account credential is required for Search All operation')
             }
             baseParams.credential = oauthCredential
-            baseParams.useUserToken = true // Flag to indicate user token should be used
+            baseParams.useUserToken = true // Ensure user token is used for Search All
             break
           }
           case 'get_channel_info':
@@ -1913,7 +2005,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     authMethod: { type: 'string', description: 'Authentication method' },
     destinationType: { type: 'string', description: 'Destination type (channel or dm)' },
     oauthCredential: { type: 'string', description: 'Slack access token' },
-    botToken: { type: 'string', description: 'Bot token' },
+    useUserToken: {
+      type: 'boolean',
+      description: 'Use user token (id_token) instead of bot token',
+    },
     channel: { type: 'string', description: 'Channel identifier (canonical param)' },
     dmUserId: { type: 'string', description: 'User ID for DM recipient (canonical param)' },
     text: { type: 'string', description: 'Message text' },
@@ -1975,11 +2070,29 @@ Do not include any explanations, markdown formatting, or other text outside the 
       description: 'Include group DMs / mpims (true/false). Requires mpim:read scope.',
     },
     channelLimit: { type: 'string', description: 'Maximum number of channels to return' },
+    getUserChannelsCursor: {
+      type: 'string',
+      description:
+        'Pagination cursor for Get User Channels (maps to Slack users.conversations cursor)',
+    },
+    listChannelsCursor: {
+      type: 'string',
+      description:
+        'Optional pagination cursor for List Channels (maps to Slack conversations.list cursor)',
+    },
     // List Members inputs
     memberLimit: { type: 'string', description: 'Maximum number of members to return' },
+    listMembersCursor: {
+      type: 'string',
+      description: 'Optional pagination cursor for List Channel Members (conversations.members)',
+    },
     // List Users inputs
     includeDeleted: { type: 'string', description: 'Include deactivated users (true/false)' },
     userLimit: { type: 'string', description: 'Maximum number of users to return' },
+    listUsersCursor: {
+      type: 'string',
+      description: 'Optional pagination cursor for List Users (users.list)',
+    },
     // Ephemeral message inputs
     ephemeralUser: { type: 'string', description: 'User ID who will see the ephemeral message' },
     blocks: { type: 'json', description: 'Block Kit layout blocks as a JSON array' },
@@ -1992,6 +2105,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     threadLimit: {
       type: 'string',
       description: 'Maximum number of messages to return from thread',
+    },
+    getThreadCursor: {
+      type: 'string',
+      description: 'Optional pagination cursor for Get Thread (conversations.replies)',
     },
     // Get Channel Info inputs
     includeNumMembers: { type: 'string', description: 'Include member count (true/false)' },
@@ -2127,6 +2244,15 @@ Do not include any explanations, markdown formatting, or other text outside the 
     count: {
       type: 'number',
       description: 'Total number of items returned (channels, members, or users)',
+    },
+    cursor: {
+      type: 'string',
+      description:
+        'Pagination cursor for the next page (Slack response_metadata.next_cursor) for List Channels, Get User Channels, List Members, List Users, or Get Thread; null or empty when there are no more results',
+      condition: {
+        field: 'operation',
+        value: ['list_channels', 'get_user_channels', 'list_members', 'list_users', 'get_thread'],
+      },
     },
 
     // slack_list_members outputs (list_members operation)

@@ -1,6 +1,7 @@
 import { SpyfuIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import {
+  SPYFU_DEFAULT_OPERATION_ID,
   spyfuDateOperationIds,
   spyfuDomainOperationIds,
   spyfuIncludeDomainsCsvOperationIds,
@@ -31,6 +32,7 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
       options: spyfuOperationOptions,
       description:
         'Pick any supported SpyFu endpoint. Required text inputs below (Domain, Keyword, Date) automatically appear when the selected endpoint needs them.',
+      value: () => SPYFU_DEFAULT_OPERATION_ID,
     },
     {
       id: 'domain',

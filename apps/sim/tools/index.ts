@@ -1001,8 +1001,9 @@ export async function executeTool(
 
         const data = await response.json()
 
-        // Check if tool requires user token instead of bot token
-        const useUserToken = tool.oauth?.useUserToken
+        // Check if tool requires user token instead of bot token.
+        // Some blocks (e.g., Slack "Custom Bot") request user token via params.useUserToken.
+        const useUserToken = Boolean(tool.oauth?.useUserToken || contextParams.useUserToken)
         const hasIdToken = data.idToken && data.idToken.trim() !== ''
 
         logger.info(`[${requestId}] Token selection debug for ${toolId}:`, {
@@ -1034,6 +1035,9 @@ export async function executeTool(
         if (data.instanceUrl) {
           contextParams.instanceUrl = data.instanceUrl
         }
+
+        // Avoid passing token-selection hints downstream.
+        contextParams.useUserToken = undefined
 
         // Preserve credential for downstream transforms while removing it from request payload
         // so we don't leak it to external services.
