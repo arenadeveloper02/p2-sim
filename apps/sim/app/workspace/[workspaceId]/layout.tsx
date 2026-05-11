@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { ToastProvider } from '@/components/emcn'
 import { getSession } from '@/lib/auth'
+import { AppBanner } from '@/app/workspace/[workspaceId]/app-banner'
 import { NavTour } from '@/app/workspace/[workspaceId]/components/product-tour'
 import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/impersonation-banner'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
@@ -34,6 +35,7 @@ async function WorkspaceLayoutInner({ children }: { children: React.ReactNode })
         <ProviderModelsLoader />
         <GlobalCommandsProvider>
           <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
+            <AppBanner />
             <ImpersonationBanner />
             <WorkspacePermissionsProvider>
               <WorkspaceScopeSync />
