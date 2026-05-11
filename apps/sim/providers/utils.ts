@@ -601,6 +601,36 @@ export async function transformBlockTool(
   let llmSchema = llmResult.schema
   const enrichedDescription = llmResult.enrichedDescription
 
+  /**
+   * Semrush URL reports (`url_*`) need a page URL. Models often populate `domain` instead because
+   * the raw tool schema marks both as optional; execution then falls back to `domain`, so the
+   * call succeeds but `url` is never generated. When the block operation is URL-based and `url`
+   * is still delegated to the model, require `url` in the function schema and spell out the contract.
+   */
+  if (toolId === 'semrush_query') {
+    const op = String((userProvidedParams as Record<string, unknown>).operation ?? '').trim()
+    if (op.startsWith('url_')) {
+      const schema = llmSchema as {
+        properties?: Record<string, { type?: string; description?: string }>
+        required?: string[]
+      }
+      const urlProp = schema.properties?.url
+      if (urlProp) {
+        const hint = `Required for "${op}": set to the full page URL (https://… including path when relevant). Prefer this field over \`domain\` for URL reports.`
+        schema.properties!.url = {
+          ...urlProp,
+          description: urlProp.description ? `${urlProp.description} ${hint}` : hint,
+        }
+        if (!Array.isArray(schema.required)) {
+          schema.required = []
+        }
+        if (!schema.required.includes('url')) {
+          schema.required.push('url')
+        }
+      }
+    }
+  }
+
   // Image Fusion only uses fusion inputs (block); shared tool still lists single-image edit params.
   if (
     toolId === 'google_nano_banana' &&

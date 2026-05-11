@@ -83,14 +83,14 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       required: false,
       visibility: 'user-or-llm',
       description:
-        'For URL-based report types (operation starting with url_, e.g. url_organic): full page URL to analyze',
+        'For URL-based report types (operation starting with url_, e.g. url_organic): full page URL to analyze. If empty, a root domain from `domain` (e.g. facebook.com) is normalized to https://… for the same report.',
     },
     domain: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
       description:
-        'For domain-based report types (e.g. domain_organic, domain_rank): root domain to analyze (e.g. example.com)',
+        'For domain-based report types (e.g. domain_organic, domain_rank): root domain (e.g. example.com). For URL-based reports, may be used as a fallback when `url` is empty (hostname only).',
     },
     database: {
       type: 'string',
@@ -130,8 +130,13 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       const reportType =
         params.operation || params.reportType || 'domain_organic'
 
-      const rawFromFields = reportType.startsWith('url_') ? params.url : params.domain
-      const rawTarget = (rawFromFields ?? params.target ?? '').trim()
+      const urlLike = (params.url ?? '').trim()
+      const domainLike = (params.domain ?? '').trim()
+      const legacyTarget = (params.target ?? '').trim()
+
+      const rawTarget = reportType.startsWith('url_')
+        ? urlLike || domainLike || legacyTarget
+        : domainLike || urlLike || legacyTarget
       const target = normalizeSemrushTarget(rawTarget, reportType)
 
       if (!target) {
