@@ -19,9 +19,13 @@ import { hashApiKey } from '@/lib/api-key/crypto'
 import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { extractWorkflowName, parseWorkflowJson } from '@/lib/workflows/operations/import-export'
+import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
 import { performFullDeploy } from '@/lib/workflows/orchestration'
-import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
+import {
+  loadWorkflowFromNormalizedTables,
+  saveWorkflowToNormalizedTables,
+} from '@/lib/workflows/persistence/utils'
+import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
 import {
@@ -51,9 +55,8 @@ const PROVIDER_BY_TOOL_ID_PREFIX: Array<{ prefix: string; providerId: string }> 
   { prefix: 'slack_', providerId: 'slack' },
 ] as const
 
-interface WorkflowInput {
-  content: string
-  filename: string
+interface SourceWorkflowInput {
+  sourceWorkflowId: string
   nameOverride?: string
 }
 
@@ -95,24 +98,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function getWorkflowInputs(body: Record<string, unknown>): {
-  inputs?: WorkflowInput[]
+function getSourceWorkflowInputs(body: Record<string, unknown>): {
+  inputs?: SourceWorkflowInput[]
   error?: string
 } {
-  const rawWorkflows = Array.isArray(body.workflows)
-    ? body.workflows
-    : body.workflow || body.workflowJson
-      ? [body.workflow ?? body.workflowJson]
-      : []
+  const rawWorkflows = Array.isArray(body.sourceWorkflowIds)
+    ? body.sourceWorkflowIds
+    : Array.isArray(body.workflows)
+      ? body.workflows
+      : body.sourceWorkflowId
+        ? [body.sourceWorkflowId]
+        : []
 
   if (rawWorkflows.length === 0) {
-    return { error: 'Provide workflow or workflows in the request body.' }
+    return { error: 'Provide sourceWorkflowId or sourceWorkflowIds in the request body.' }
   }
 
-  const inputs: WorkflowInput[] = []
+  const inputs: SourceWorkflowInput[] = []
 
   for (const [index, rawWorkflow] of rawWorkflows.entries()) {
-    const normalized = normalizeWorkflowInput(rawWorkflow, index)
+    const normalized = normalizeSourceWorkflowInput(rawWorkflow, index)
     if ('error' in normalized) {
       return normalized
     }
@@ -122,60 +127,27 @@ function getWorkflowInputs(body: Record<string, unknown>): {
   return { inputs }
 }
 
-function normalizeWorkflowInput(
+function normalizeSourceWorkflowInput(
   rawWorkflow: unknown,
   index: number
-): WorkflowInput | { error: string } {
-  const payload =
-    isRecord(rawWorkflow) && ('content' in rawWorkflow || 'workflow' in rawWorkflow)
-      ? (rawWorkflow.content ?? rawWorkflow.workflow)
-      : rawWorkflow
-
+): SourceWorkflowInput | { error: string } {
   const nameOverride =
     isRecord(rawWorkflow) && typeof rawWorkflow.name === 'string' && rawWorkflow.name.trim()
       ? rawWorkflow.name.trim()
       : undefined
 
-  if (typeof payload === 'string') {
-    return {
-      content: payload,
-      filename: nameOverride ? `${nameOverride}.json` : `workflow-${index + 1}.json`,
-      nameOverride,
-    }
+  const sourceWorkflowId =
+    isRecord(rawWorkflow) && typeof rawWorkflow.sourceWorkflowId === 'string'
+      ? rawWorkflow.sourceWorkflowId.trim()
+      : typeof rawWorkflow === 'string'
+        ? rawWorkflow.trim()
+        : ''
+
+  if (!sourceWorkflowId) {
+    return { error: `Source workflow at index ${index} must be a workflow ID string.` }
   }
 
-  if (isRecord(payload)) {
-    return {
-      content: JSON.stringify(payload),
-      filename: nameOverride ? `${nameOverride}.json` : `workflow-${index + 1}.json`,
-      nameOverride,
-    }
-  }
-
-  return { error: `Workflow at index ${index} must be a JSON object or string.` }
-}
-
-function getWorkflowMetadata(content: string, filename: string, nameOverride?: string) {
-  const name = nameOverride || extractWorkflowName(content, filename)
-
-  try {
-    const parsed = JSON.parse(content)
-    const state = isRecord(parsed.state) ? parsed.state : parsed
-    const metadata = isRecord(state.metadata) ? state.metadata : {}
-
-    return {
-      name,
-      description:
-        typeof metadata.description === 'string' ? metadata.description : 'Imported via Admin API',
-      color: typeof metadata.color === 'string' ? metadata.color : DEFAULT_WORKFLOW_COLOR,
-    }
-  } catch {
-    return {
-      name,
-      description: 'Imported via Admin API',
-      color: DEFAULT_WORKFLOW_COLOR,
-    }
-  }
+  return { sourceWorkflowId, nameOverride }
 }
 
 function resolveProviderIdForTool(tool: Record<string, unknown>): string | null {
@@ -447,7 +419,7 @@ async function ensurePersonalApiKey(params: {
 }
 
 async function importWorkflow(params: {
-  input: WorkflowInput
+  input: SourceWorkflowInput
   workspaceId: string
   userId: string
   credentialsByProvider: Map<string, string>
@@ -456,20 +428,48 @@ async function importWorkflow(params: {
   name: string
   credentialPopulation: CredentialPopulationSummary
 }> {
-  const { data: workflowData, errors } = parseWorkflowJson(params.input.content)
+  const [sourceWorkflow] = await db
+    .select()
+    .from(workflow)
+    .where(and(eq(workflow.id, params.input.sourceWorkflowId), isNull(workflow.archivedAt)))
+    .limit(1)
 
-  if (!workflowData || errors.length > 0) {
-    throw new Error(`Parse error: ${errors.join(', ')}`)
+  if (!sourceWorkflow) {
+    throw new Error(`Source workflow not found: ${params.input.sourceWorkflowId}`)
   }
 
-  const metadata = getWorkflowMetadata(
-    params.input.content,
-    params.input.filename,
-    params.input.nameOverride
-  )
+  const normalizedData = await loadWorkflowFromNormalizedTables(params.input.sourceWorkflowId)
+  if (!normalizedData) {
+    throw new Error(`Source workflow has no normalized data: ${params.input.sourceWorkflowId}`)
+  }
+
+  const sourceState = {
+    blocks: normalizedData.blocks,
+    edges: normalizedData.edges,
+    loops: normalizedData.loops,
+    parallels: normalizedData.parallels,
+    metadata: {
+      name: params.input.nameOverride || sourceWorkflow.name,
+      description: sourceWorkflow.description ?? undefined,
+      color: sourceWorkflow.color,
+    },
+    variables:
+      sourceWorkflow.variables && isRecord(sourceWorkflow.variables)
+        ? sourceWorkflow.variables
+        : undefined,
+  }
+
+  const exportData = sanitizeForExport(sourceState)
+  const { data: workflowData, errors } = parseWorkflowJson(JSON.stringify(exportData))
+
+  if (!workflowData || errors.length > 0) {
+    throw new Error(`Failed to parse source workflow: ${errors.join(', ')}`)
+  }
+
+  const workflowName = params.input.nameOverride || sourceWorkflow.name
   const workflowId = generateId()
   const now = new Date()
-  const dedupedName = await deduplicateWorkflowName(metadata.name, params.workspaceId, null)
+  const dedupedName = await deduplicateWorkflowName(workflowName, params.workspaceId, null)
   const credentialPopulation = populateWorkflowCredentials(
     workflowData,
     params.credentialsByProvider
@@ -481,14 +481,14 @@ async function importWorkflow(params: {
     workspaceId: params.workspaceId,
     folderId: null,
     name: dedupedName,
-    description: metadata.description,
-    color: metadata.color,
+    description: sourceWorkflow.description || 'Imported via Admin API',
+    color: sourceWorkflow.color || DEFAULT_WORKFLOW_COLOR,
     lastSynced: now,
     createdAt: now,
     updatedAt: now,
     isDeployed: false,
     runCount: 0,
-    variables: workflowData.variables ?? {},
+    variables: workflowData.variables ?? sourceWorkflow.variables ?? {},
   })
 
   const saveResult = await saveWorkflowToNormalizedTables(workflowId, workflowData)
@@ -519,7 +519,7 @@ export const POST = withRouteHandler(async (request) => {
       return badRequestResponse('emailId is required.')
     }
 
-    const { inputs, error } = getWorkflowInputs(body)
+    const { inputs, error } = getSourceWorkflowInputs(body)
     if (error || !inputs) {
       return badRequestResponse(error || 'Invalid workflow input.')
     }
@@ -602,7 +602,7 @@ export const POST = withRouteHandler(async (request) => {
       } catch (error) {
         results.push({
           workflowId: '',
-          name: input.nameOverride || input.filename,
+          name: input.nameOverride || input.sourceWorkflowId,
           imported: false,
           deployed: false,
           error: toError(error).message,
