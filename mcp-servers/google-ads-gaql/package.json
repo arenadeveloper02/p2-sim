@@ -1,0 +1,22 @@
+{
+  "name": "google-ads-gaql-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server exposing Google Ads GAQL schema (resources, metrics, segments, rules) over Streamable HTTP",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch & node --watch dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
