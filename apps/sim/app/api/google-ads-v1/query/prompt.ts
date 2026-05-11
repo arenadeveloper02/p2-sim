@@ -7,9 +7,9 @@
  * exist for query generation to work.
  */
 
-import { createLogger } from '@sim/logger'
 import { db } from '@sim/db'
 import { prompts } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { CURRENT_DATE } from './constants'
 
