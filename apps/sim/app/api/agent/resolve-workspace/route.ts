@@ -74,22 +74,7 @@ export async function POST(req: NextRequest) {
         selectedOutputs: ['buildpayload.result'],
       }),
     })
-<<<<<<< HEAD
     const durationMs = Date.now() - startTime
-=======
-    console.log(
-      'agentResponse',
-      JSON.stringify({
-        message,
-        userId,
-        context: context ?? '',
-        stream: false,
-        selectedOutputs: ['buildpayload.result'],
-      })
-    )
-    const durationMs = Date.now() - startTime
-    console.log('agentResponse', agentResponse)
->>>>>>> 33b0595e32c84cf3048e29ea866366e202f3733b
     if (!agentResponse.ok) {
       const errorText = await agentResponse.text().catch(() => '')
       logger.error('External agent API returned non-OK status', {
