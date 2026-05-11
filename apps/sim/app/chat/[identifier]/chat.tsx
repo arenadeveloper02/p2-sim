@@ -1390,103 +1390,106 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Standard text-based chat interface
   return (
     <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-      {isHistoryLoading && (
-        <div className='absolute top-[72px] left-[330px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-350px)] items-center justify-center bg-white/60 pb-[6%]'>
-          <LoadingAgentP2 size='lg' />
-        </div>
-      )}
+      <div className='relative z-[60] shrink-0'>
+        <ArenaChatHeader
+          chatConfig={chatConfig}
+          starCount={starCount}
+          showFeedbackView={showFeedbackView}
+        />
+      </div>
 
-      {/* Header component */}
-      <ArenaChatHeader
-        chatConfig={chatConfig}
-        starCount={starCount}
-        showFeedbackView={showFeedbackView}
-      />
+      <div className='relative flex min-h-0 flex-1 flex-col'>
+        {isHistoryLoading && (
+          <div className='absolute inset-y-0 right-0 left-[320px] z-[105] flex items-center justify-center bg-white/60 pb-[6%]'>
+            <LoadingAgentP2 size='lg' />
+          </div>
+        )}
 
-      <LeftNavThread
-        threads={threads}
-        isLoading={isThreadsLoading}
-        error={threadsError || null}
-        currentChatId={currentChatId || ''}
-        onSelectThread={handleSelectThread}
-        onRefreshThread={handleRefreshThread}
-        onNewChat={handleNewChat}
-        isStreaming={isStreamingResponse || isLoading}
-        workflowId={identifier}
-        showReRun={customFields.length > 0}
-        showFeedbackView={showFeedbackView}
-        onReRun={handleRerun}
-        onViewFeedback={handleViewFeedback}
-        onViewGoldenQueries={handleViewGoldenQueries}
-      />
+        <LeftNavThread
+          threads={threads}
+          isLoading={isThreadsLoading}
+          error={threadsError || null}
+          currentChatId={currentChatId || ''}
+          onSelectThread={handleSelectThread}
+          onRefreshThread={handleRefreshThread}
+          onNewChat={handleNewChat}
+          isStreaming={isStreamingResponse || isLoading}
+          workflowId={identifier}
+          showReRun={customFields.length > 0}
+          showFeedbackView={showFeedbackView}
+          onReRun={handleRerun}
+          onViewFeedback={handleViewFeedback}
+          onViewGoldenQueries={handleViewGoldenQueries}
+        />
 
-      {showFeedbackView ? (
-        <div className='absolute inset-0 top-[86px] left-[320px]'>
-          <FeedbackView
-            feedbackData={feedbackData}
-            isLoading={isFeedbackLoading}
-            error={feedbackError}
-            workflowTitle={chatConfig?.title}
-            page={feedbackPage}
-            pageSize={feedbackPageSize}
-            totalPages={feedbackTotalPages}
-            totalCount={feedbackTotalCount}
-            onPageChange={fetchFeedbackPage}
-            onBack={handleBackFromFeedback}
-          />
-        </div>
-      ) : (
-        <>
-          {/* Message Container component */}
-          <ChatMessageContainer
-            messages={messages}
-            isLoading={isLoading}
-            isStreaming={isStreamingResponse}
-            showScrollButton={showScrollButton}
-            messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
-            messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-            scrollToBottom={scrollToBottom}
-            scrollToMessage={scrollToMessage}
-            chatConfig={chatConfig}
-            setMessages={setMessages}
-            workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
-            onAskInChat={(text) => setAskInChatText(text)}
-            onToggleGeneratedImage={toggleGeneratedImageSelection}
-            selectedGeneratedImageIds={selectedGeneratedImageIds}
-            selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
-            onWelcomeQueryClick={handleWelcomeQueryClick}
-          />
+        {showFeedbackView ? (
+          <div className='absolute inset-0 left-[320px]'>
+            <FeedbackView
+              feedbackData={feedbackData}
+              isLoading={isFeedbackLoading}
+              error={feedbackError}
+              workflowTitle={chatConfig?.title}
+              page={feedbackPage}
+              pageSize={feedbackPageSize}
+              totalPages={feedbackTotalPages}
+              totalCount={feedbackTotalCount}
+              onPageChange={fetchFeedbackPage}
+              onBack={handleBackFromFeedback}
+            />
+          </div>
+        ) : (
+          <div className='flex min-h-0 flex-1 flex-col'>
+            {/* Message Container component */}
+            <ChatMessageContainer
+              messages={messages}
+              isLoading={isLoading}
+              isStreaming={isStreamingResponse}
+              showScrollButton={showScrollButton}
+              messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
+              messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
+              scrollToBottom={scrollToBottom}
+              scrollToMessage={scrollToMessage}
+              chatConfig={chatConfig}
+              setMessages={setMessages}
+              workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
+              onAskInChat={(text) => setAskInChatText(text)}
+              onToggleGeneratedImage={toggleGeneratedImageSelection}
+              selectedGeneratedImageIds={selectedGeneratedImageIds}
+              selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+              onWelcomeQueryClick={handleWelcomeQueryClick}
+            />
 
-          {/* Input area (free-standing at the bottom) */}
-          <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
-            <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-              <ChatInput
-                insertText={askInChatText}
-                onInsertConsumed={() => setAskInChatText('')}
-                onSubmit={(
-                  value: string,
-                  isVoiceInput?: boolean,
-                  files?: Array<{
-                    id: string
-                    name: string
-                    size: number
-                    type: string
-                    file: File
-                    dataUrl?: string
-                  }>
-                ) => {
-                  void handleSendMessage(value, isVoiceInput, files)
-                }}
-                isStreaming={isLoading || isStreamingResponse}
-                onStopStreaming={() => stopStreaming(setMessages)}
-                onVoiceStart={handleVoiceStart}
-                selectedGeneratedImages={effectiveGeneratedImages}
-                onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
-              />
+            {/* Input area (free-standing at the bottom) */}
+            <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
+              <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
+                <ChatInput
+                  insertText={askInChatText}
+                  onInsertConsumed={() => setAskInChatText('')}
+                  onSubmit={(
+                    value: string,
+                    isVoiceInput?: boolean,
+                    files?: Array<{
+                      id: string
+                      name: string
+                      size: number
+                      type: string
+                      file: File
+                      dataUrl?: string
+                    }>
+                  ) => {
+                    void handleSendMessage(value, isVoiceInput, files)
+                  }}
+                  isStreaming={isLoading || isStreamingResponse}
+                  onStopStreaming={() => stopStreaming(setMessages)}
+                  onVoiceStart={handleVoiceStart}
+                  selectedGeneratedImages={effectiveGeneratedImages}
+                  onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
+                />
+              </div>
             </div>
           </div>
-        </>
-      )}
+        )}
+      </div>
 
       {/* Start Block Input Modal */}
       {customFields.length > 0 && (
