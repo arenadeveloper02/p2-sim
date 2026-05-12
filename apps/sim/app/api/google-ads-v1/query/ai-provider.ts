@@ -27,12 +27,12 @@ export function resolveAIProvider(logger: Logger): AIProviderConfig {
     }
   }
 
-  // Fallback to GPT-4o
+  // Fallback to GPT-5.5
   if (process.env.OPENAI_API_KEY) {
-    logger.info('Using GPT-4o for GAQL generation (Grok not available)')
+    logger.info('Using GPT-5.5 for GAQL generation (Grok not available)')
     return {
       provider: 'openai' as const,
-      model: 'gpt-4o',
+      model: 'gpt-5.5',
       apiKey: process.env.OPENAI_API_KEY,
     }
   }
