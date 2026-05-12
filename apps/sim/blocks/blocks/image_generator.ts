@@ -1,4 +1,11 @@
 import { ImageIcon } from '@/components/icons'
+import {
+  extractUrlsFromText,
+  isS3Uri,
+  mergeUrlsAndDeduplicate,
+  parseImageUrls,
+  s3UriToPathObject,
+} from '@/lib/utils/parse-image-urls'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import type { DalleResponse } from '@/tools/openai/types'
 
@@ -208,17 +215,32 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
 
         // Handle Google Nano Banana models
         if (params.model?.startsWith('gemini-')) {
-          const base = {
+          const nanoBase: Record<string, unknown> = {
             model: params.model,
             prompt: params.prompt,
             aspectRatio: params.aspectRatio || '1:1',
+          }
+          if (params.model === 'gemini-3-pro-image-preview') {
+            nanoBase.imageSize = params.imageSize || '1K'
+          }
+          const fromMulti = Array.isArray(params.inputImages) ? params.inputImages : []
+          const fromSingle =
+            params.inputImage != null && params.inputImage !== '' ? [params.inputImage] : []
+          const files = [...fromMulti, ...fromSingle]
+          const urlsFromField = parseImageUrls(params.inputImageUrls)
+          const urlsFromPrompt = extractUrlsFromText(params.prompt)
+          const urls = mergeUrlsAndDeduplicate(urlsFromField, urlsFromPrompt)
+          const httpUrls = urls.filter((u) => !isS3Uri(u))
+          const s3Refs = urls.filter(isS3Uri).map(s3UriToPathObject)
+          const merged = [...files, ...httpUrls, ...s3Refs]
+          if (merged.length > 0) {
+            return { ...nanoBase, inputImages: merged }
+          }
+          return {
+            ...nanoBase,
             inputImage: params.inputImage,
             inputImageMimeType: params.inputImageMimeType,
           }
-          if (params.model === 'gemini-3-pro-image-preview') {
-            return { ...base, imageSize: params.imageSize || '1K' }
-          }
-          return base
         }
 
         // Handle OpenAI models
