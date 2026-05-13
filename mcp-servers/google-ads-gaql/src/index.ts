@@ -3,6 +3,7 @@
  * Exposes GAQL schema discovery and validation tools over Streamable HTTP transport.
  */
 
+import 'dotenv/config'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -18,7 +19,10 @@ import {
   handleGetRules,
   handleValidateQuery,
   handleGetSchemaForPrompt,
+  handleRefreshCache,
+  handleGetCacheStatus,
 } from './tools/handlers.js'
+import { prewarmSchema } from './services/schema-cache.js'
 
 const SERVER_NAME = 'google-ads-gaql'
 const SERVER_VERSION = '1.0.0'
@@ -33,8 +37,13 @@ const TOOL_DEFS = [
   {
     name: 'get_schema_for_prompt',
     description:
-      'Get a compact human-readable schema reference formatted for injection into an LLM system prompt. Use this to dynamically build the GAQL system prompt.',
-    inputSchema: { type: 'object' as const, properties: {}, additionalProperties: false },
+      'Get a compact human-readable schema reference formatted for injection into an LLM system prompt. Pass the "resource" parameter to filter metrics by compatibility.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        resource: { type: 'string', description: 'Optional: Filter metrics compatible with this FROM resource (e.g., campaign, ad_group, keyword_view). This prevents PROHIBITED_METRIC errors.' },
+      },
+    },
   },
   {
     name: 'get_resources',
@@ -58,24 +67,28 @@ const TOOL_DEFS = [
   },
   {
     name: 'get_metrics',
-    description: 'List Google Ads GAQL metrics. Optional filter by category or search.',
+    description: 'List Google Ads GAQL metrics compatible with a specific resource. REQUIRED: Pass the "resource" parameter matching your FROM clause.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        category: { type: 'string', description: 'Filter by category (e.g., core, rate, video, quality, impression_share)' },
-        search: { type: 'string', description: 'Search metric names and descriptions' },
+        resource: { type: 'string', description: 'REQUIRED: Filter metrics compatible with this FROM resource (e.g., campaign, ad_group, keyword_view). This prevents PROHIBITED_METRIC errors.' },
+        category: { type: 'string', description: 'Optional: Filter by category (e.g., core, rate, video, quality, impression_share)' },
+        search: { type: 'string', description: 'Optional: Search metric names and descriptions' },
       },
+      required: ['resource'],
     },
   },
   {
     name: 'get_segments',
-    description: 'List Google Ads GAQL segments. Optional filter by category or search.',
+    description: 'List Google Ads GAQL segments compatible with a specific resource. REQUIRED: Pass the "resource" parameter matching your FROM clause.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        category: { type: 'string', description: 'Filter by category (e.g., date, device, network, geographic, product, search, conversion)' },
-        search: { type: 'string', description: 'Search segment names and descriptions' },
+        resource: { type: 'string', description: 'REQUIRED: Filter segments compatible with this FROM resource (e.g., campaign, ad_group, keyword_view). This prevents PROHIBITED_SEGMENT errors.' },
+        category: { type: 'string', description: 'Optional: Filter by category (e.g., date, device, network, geographic, product, search, conversion)' },
+        search: { type: 'string', description: 'Optional: Search segment names and descriptions' },
       },
+      required: ['resource'],
     },
   },
   {
@@ -91,6 +104,17 @@ const TOOL_DEFS = [
       properties: { query: { type: 'string', description: 'GAQL query to validate' } },
       required: ['query'],
     },
+  },
+  {
+    name: 'refresh_cache',
+    description:
+      'Force refresh the live GAQL schema cache from GoogleAdsFieldService. Use after Google Ads ships new fields/resources.',
+    inputSchema: { type: 'object' as const, properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'cache_status',
+    description: 'Return the current schema cache metadata (source, API version, expiry, counts).',
+    inputSchema: { type: 'object' as const, properties: {}, additionalProperties: false },
   },
 ]
 
@@ -108,28 +132,34 @@ function createMcpServer(): Server {
     let result: unknown
     switch (name) {
       case 'get_schema':
-        result = handleGetSchema()
+        result = await handleGetSchema()
         break
       case 'get_schema_for_prompt':
-        result = handleGetSchemaForPrompt()
+        result = await handleGetSchemaForPrompt(args as { resource?: string })
         break
       case 'get_resources':
-        result = handleGetResources(args as { category?: string; search?: string })
+        result = await handleGetResources(args as { category?: string; search?: string })
         break
       case 'get_resource':
-        result = handleGetResource(args as { name: string })
+        result = await handleGetResource(args as { name: string })
         break
       case 'get_metrics':
-        result = handleGetMetrics(args as { category?: string; search?: string })
+        result = await handleGetMetrics(args as { category?: string; search?: string; resource?: string })
         break
       case 'get_segments':
-        result = handleGetSegments(args as { category?: string; search?: string })
+        result = await handleGetSegments(args as { category?: string; search?: string; resource?: string })
         break
       case 'get_rules':
         result = handleGetRules()
         break
       case 'validate_query':
-        result = handleValidateQuery(args as { query: string })
+        result = await handleValidateQuery(args as { query: string })
+        break
+      case 'refresh_cache':
+        result = await handleRefreshCache()
+        break
+      case 'cache_status':
+        result = handleGetCacheStatus()
         break
       default:
         throw new Error(`Unknown tool: ${name}`)
@@ -196,6 +226,9 @@ async function startServer(): Promise<void> {
     console.log(`[${SERVER_NAME}] Health: http://${HOST}:${PORT}/health`)
     console.log(`[${SERVER_NAME}] Tools: ${TOOL_DEFS.map((t) => t.name).join(', ')}`)
   })
+
+  // Prewarm schema cache in background so first tool call is fast.
+  void prewarmSchema()
 }
 
 startServer().catch((err) => {

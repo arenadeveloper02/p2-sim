@@ -19,6 +19,7 @@ export interface GaqlMetric {
   description: string
   unit?: string
   notes?: string
+  compatibleResources?: string[]
 }
 
 export interface GaqlSegment {
@@ -27,4 +28,5 @@ export interface GaqlSegment {
   description: string
   values?: string[]
   notes?: string
+  compatibleResources?: string[]
 }
