@@ -27,6 +27,16 @@ export const GAQL_RULES: GaqlRule[] = [
     description: 'NEVER use comparison operators (>, <, >=, <=) on segments.date. Use BETWEEN only.',
   },
   {
+    id: 'no-like-regex',
+    severity: 'error',
+    description: 'NEVER use LIKE, REGEXP, or regex patterns in WHERE clauses. GAQL only supports exact string matching with = or !=. For text filtering/exclusion, filter results post-query.',
+  },
+  {
+    id: 'use-only-schema-metrics',
+    severity: 'error',
+    description: 'Only use metrics that exist in the MCP schema. Call get_metrics to see available metrics. Do not invent metric names or use SQL-style calculated metrics.',
+  },
+  {
     id: 'last-n-days-excludes-today',
     severity: 'error',
     description: '"last N days" excludes today. End date must be YESTERDAY (CURRENT_DATE - 1 day), not today.',

@@ -155,7 +155,7 @@ export const GAQL_RESOURCES: GaqlResource[] = [
     name: 'asset_group_asset',
     category: 'asset',
     description: 'Per-asset performance in Performance Max asset groups',
-    fields: ['asset_group_asset.asset', 'asset_group_asset.field_type', 'asset_group_asset.performance_label', 'asset_group_asset.status', 'asset_group.id', 'asset_group.name'],
+    fields: ['asset_group_asset.asset', 'asset_group_asset.field_type', 'asset_group_asset.status', 'asset_group.id', 'asset_group.name'],
     requiredFields: ['asset_group.id'],
     supportsSegmentsDate: false,
     supportsMetrics: true,
