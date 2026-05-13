@@ -1,7 +1,6 @@
 'use client'
 
 import * as React from 'react'
-import axios from 'axios'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
 import { Button } from '@/components/ui/button'
@@ -14,8 +13,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
-import { env } from '@/lib/core/config/env'
+import { useArenaClientsByUser } from '@/hooks/queries/arena-clients'
 import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 
@@ -49,61 +47,20 @@ export function SlackClientSelector({
 
   const selectedValue = isPreview ? previewValue : storeValue
 
-  const [clients, setClients] = React.useState<Client[]>([])
+  const { data: clientsFromApi = [], isLoading: loading, isError } = useArenaClientsByUser()
   const [open, setOpen] = React.useState(false)
-  const [loading, setLoading] = React.useState(false)
 
-  React.useEffect(() => {
-    const fetchClients = async () => {
-      try {
-        setLoading(true)
-        setClients([])
-
-        // Call the clients API - same as Arena pattern
-        const v2Token = await getArenaToken()
-        const backendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
-
-        if (!backendBaseUrl) {
-          setClients([])
-          return
-        }
-
-        const response = await axios.get(`${backendBaseUrl}/list/userservice/getclientbyuser`, {
-          headers: {
-            Authorisation: v2Token || '',
-          },
-        })
-
-        let clientsData = response.data.response || []
-
-        // Try alternative response formats
-        if (!clientsData.length) {
-          clientsData = response.data.data || response.data.clients || response.data || []
-        }
-
-        // If no clients from API, show a fallback for debugging
-        if (!clientsData.length) {
-          clientsData = [
-            { clientId: 'debug_client_1', name: 'Debug Client 1' },
-            { clientId: 'debug_client_2', name: 'Debug Client 2' },
-          ]
-        }
-
-        setClients(clientsData)
-      } catch (error) {
-        console.error('Error fetching clients:', error)
-        setClients([])
-      } finally {
-        setLoading(false)
-      }
+  const clients = React.useMemo((): Client[] => {
+    if (isError) return []
+    if (clientsFromApi.length > 0) {
+      return clientsFromApi
     }
-
-    fetchClients()
-
-    return () => {
-      setClients([])
-    }
-  }, [])
+    // If no clients from API, show a fallback for debugging
+    return [
+      { clientId: 'debug_client_1', name: 'Debug Client 1' },
+      { clientId: 'debug_client_2', name: 'Debug Client 2' },
+    ]
+  }, [clientsFromApi, isError])
 
   const selectedLabel =
     clients?.find((client) => client.clientId === selectedValue?.clientId)?.name ||

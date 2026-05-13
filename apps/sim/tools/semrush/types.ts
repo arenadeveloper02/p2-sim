@@ -1,16 +1,22 @@
 import type { ToolResponse } from '@/tools/types'
 
 export interface SemrushParams {
-  reportType: string
-  /** Set by block config; callers may send url or domain instead. */
-  target?: string
+  /**
+   * Block operation id (e.g. url_organic, domain_organic). Mirrors Exa-style tools
+   * where the block + tool share the same field names; execution merges this from
+   * `tool.operation` in agent flows.
+   */
+  operation?: string
   url?: string
   domain?: string
   database?: string
   displayLimit?: number | string
   exportColumns?: string
-  additionalParams?: string // Raw query string for extra params
-  apiKey?: string
+  additionalParams?: string
+  /** @deprecated Legacy tool/agent saves that used the raw API shape */
+  reportType?: string
+  /** @deprecated Legacy tool/agent saves */
+  target?: string
 }
 
 export interface SemrushResponse extends ToolResponse {
@@ -40,7 +46,6 @@ export interface SemrushOrganicPositionsParams {
   useVolume?: 'national' | 'regional' | 'local'
   businessName?: string
   serpFeatureFilter?: string
-  apiKey?: string
 }
 
 /** Raw API response for Organic Positions Report (data key is object of index -> row). */

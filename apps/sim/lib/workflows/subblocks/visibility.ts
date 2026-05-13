@@ -264,6 +264,11 @@ export function isSubBlockVisibleForMode(
 
 /**
  * Resolve the dependency value for a dependsOn key, honoring canonical swaps.
+ *
+ * When a parent workflow block renders integration tool params flattened by canonical ids
+ * (e.g. `oauthCredential`) but `dependsOn` still names the integration subblock id (`credential`),
+ * the parent block's canonical index may not map `credential` — treat `oauthCredential` as an
+ * alias so gating resolves.
  */
 export function resolveDependencyValue(
   dependencyKey: string,
@@ -271,6 +276,14 @@ export function resolveDependencyValue(
   canonicalIndex: CanonicalIndex,
   overrides?: CanonicalModeOverrides
 ): unknown {
+  if (
+    dependencyKey === 'credential' &&
+    !isNonEmptyValue(values[dependencyKey]) &&
+    isNonEmptyValue(values.oauthCredential)
+  ) {
+    return values.oauthCredential
+  }
+
   const canonicalId =
     canonicalIndex.groupsById[dependencyKey]?.canonicalId ||
     canonicalIndex.canonicalIdBySubBlockId[dependencyKey]
@@ -287,7 +300,13 @@ export function resolveDependencyValue(
   const canonicalResult =
     mode === 'advanced' ? (advancedValue ?? basicValue) : (basicValue ?? advancedValue)
 
-  if (canonicalResult != null) return canonicalResult
+  if (isNonEmptyValue(canonicalResult)) return canonicalResult
+
+  // Tool-input and serialized params often store the value under the canonical id (e.g.
+  // `oauthCredential`) instead of basic/advanced subblock ids (`credential`, `manualCredential`).
+  if (isNonEmptyValue(values[canonicalId])) {
+    return values[canonicalId]
+  }
 
   for (const [memberId, memberCanonicalId] of Object.entries(
     canonicalIndex.canonicalIdBySubBlockId
