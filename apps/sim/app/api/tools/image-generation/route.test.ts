@@ -38,6 +38,7 @@ describe('Image Generation Wrapper API Route', () => {
       imageCount: 1,
       promptImageUrl: undefined,
       singleImagePrompt: undefined,
+      singleImagePrompts: undefined,
     })
     mockExecuteTool.mockResolvedValue({
       success: true,
@@ -110,11 +111,16 @@ describe('Image Generation Wrapper API Route', () => {
     )
   })
 
-  it('should use the rewritten single-image prompt for repeated Nano Banana generations', async () => {
+  it('should use per-image prompts for repeated Nano Banana generations', async () => {
     mockResolveImageGenerationCount.mockResolvedValue({
       imageCount: 3,
       promptImageUrl: undefined,
       singleImagePrompt: 'Give me a variation of this image',
+      singleImagePrompts: [
+        'Give me variation 1 with a blue jersey',
+        'Give me variation 2 with a red jersey',
+        'Give me variation 3 with a green jersey',
+      ],
     })
 
     const request = createMockRequest('POST', {
@@ -135,7 +141,7 @@ describe('Image Generation Wrapper API Route', () => {
       1,
       'google_nano_banana',
       expect.objectContaining({
-        prompt: 'Give me a variation of this image',
+        prompt: 'Give me variation 1 with a blue jersey',
         inputImage: 'https://example.com/source.png',
       })
     )
@@ -143,7 +149,7 @@ describe('Image Generation Wrapper API Route', () => {
       2,
       'google_nano_banana',
       expect.objectContaining({
-        prompt: 'Give me a variation of this image',
+        prompt: 'Give me variation 2 with a red jersey',
         inputImage: 'https://example.com/source.png',
       })
     )
@@ -151,7 +157,7 @@ describe('Image Generation Wrapper API Route', () => {
       3,
       'google_nano_banana',
       expect.objectContaining({
-        prompt: 'Give me a variation of this image',
+        prompt: 'Give me variation 3 with a green jersey',
         inputImage: 'https://example.com/source.png',
       })
     )

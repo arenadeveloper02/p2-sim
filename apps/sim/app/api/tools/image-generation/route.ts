@@ -96,21 +96,28 @@ function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
 
 async function resolveRequestedImageCount(
   params: Record<string, unknown>
-): Promise<{ imageCount: number; promptImageUrl?: string; singleImagePrompt?: string }> {
+): Promise<{
+  imageCount: number
+  promptImageUrl?: string
+  singleImagePrompt?: string
+  singleImagePrompts?: string[]
+}> {
   const prompt = String(params.prompt ?? '').trim()
 
   if (!prompt) {
     return { imageCount: 1 }
   }
 
-  const { imageCount, promptImageUrl, singleImagePrompt } = await resolveImageGenerationCount({
-    prompt,
-  })
+  const { imageCount, promptImageUrl, singleImagePrompt, singleImagePrompts } =
+    await resolveImageGenerationCount({
+      prompt,
+    })
 
   return {
     imageCount: clampImageCount(imageCount),
     promptImageUrl,
     singleImagePrompt,
+    singleImagePrompts,
   }
 }
 
@@ -130,9 +137,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const validated = ImageGenerationWrapperSchema.parse(body)
-    const { imageCount, promptImageUrl, singleImagePrompt } = await resolveRequestedImageCount(
-      validated.params
-    )
+    const { imageCount, promptImageUrl, singleImagePrompt, singleImagePrompts } =
+      await resolveRequestedImageCount(validated.params)
     const { imageCount: _imageCount, inputImageUrl, ...baseParams } = validated.params
     const inputImageWarning = normalizeOptionalString(validated.params.inputImageWarning)
     const promptToExecute = normalizeOptionalString(singleImagePrompt) ?? String(baseParams.prompt ?? '')
@@ -160,6 +166,7 @@ export async function POST(request: NextRequest) {
       baseToolId: validated.baseToolId,
       imageCount,
       hasPromptImageUrl: Boolean(promptImageUrl),
+      singleImagePromptsCount: singleImagePrompts?.length ?? 0,
       workflowId: resolvedContext?.workflowId,
       concurrency: Math.min(MAX_CONCURRENT_GENERATIONS, imageCount),
     })
@@ -171,9 +178,13 @@ export async function POST(request: NextRequest) {
     const settled = await runWithConcurrency<PromiseSettledResult<ToolResult>>(
       imageCount,
       MAX_CONCURRENT_GENERATIONS,
-      async () => {
+      async (index) => {
         try {
-          const result = await executeTool(validated.baseToolId, { ...resolvedBaseParams })
+          const promptForImage = normalizeOptionalString(singleImagePrompts?.[index]) ?? promptToExecute
+          const result = await executeTool(validated.baseToolId, {
+            ...resolvedBaseParams,
+            ...(promptForImage ? { prompt: promptForImage } : {}),
+          })
           return { status: 'fulfilled' as const, value: result }
         } catch (err) {
           return {
