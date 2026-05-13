@@ -12,6 +12,7 @@ export interface DalleResponse extends ToolResponse {
   output: {
     content: string // This will now be the image URL
     image: string // This will be the base64 image data
+    images?: string[]
     metadata: {
       model: string // Only contains model name now
     }

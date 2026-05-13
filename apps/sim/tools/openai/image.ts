@@ -251,6 +251,7 @@ export const imageTool: ToolConfig = {
         output: {
           content: finalContent,
           image: finalImage,
+          images: finalImage ? [finalImage] : [],
           metadata: {
             model: modelName,
             stored: !!finalImageUrl,
@@ -270,6 +271,11 @@ export const imageTool: ToolConfig = {
     image: {
       type: 'file',
       description: 'Generated image (URL in S3/local storage or base64)',
+    },
+    images: {
+      type: 'array',
+      description: 'Generated images (URLs in S3/local storage or base64)',
+      items: { type: 'file', description: 'Generated image' },
     },
     metadata: {
       type: 'json',

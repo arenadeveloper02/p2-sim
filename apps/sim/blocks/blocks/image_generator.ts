@@ -1,5 +1,4 @@
 import { ImageIcon } from '@/components/icons'
-import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
 import {
   NANO_BANANA_MODELS,
   NANO_BANANA_PRO_MODEL,
@@ -25,7 +24,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
   description: 'Generate, edit, or fuse images',
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Integrate Image Generator into the workflow. Generate new images, edit a single reference image, or fuse multiple images in one Nano Banana Pro request. The block can return up to five images per run using the Images slider together with the SLM estimate of how many distinct outputs the prompt needs.',
+    'Integrate Image Generator into the workflow. Generate new images, edit a single reference image, or fuse multiple images in one Nano Banana Pro request. The block can return up to five images per run based on the finalized prompt.',
   docsLink: 'https://docs.sim.ai/tools/image_generator',
   category: 'tools',
   integrationType: IntegrationType.AI,
@@ -44,20 +43,6 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'Nano Banana Pro', id: NANO_BANANA_PRO_MODEL },
       ],
       value: () => 'dall-e-3',
-    },
-    {
-      id: 'imageCount',
-      title: 'Images / Variations',
-      type: 'slider',
-      min: 1,
-      max: MAX_IMAGES_TO_GENERATE,
-      integer: true,
-      step: 1,
-      defaultValue: 1,
-      description:
-        'Maximum number of distinct images to generate. Each image is a separate provider call, so cost scales linearly.',
-      tooltip:
-        'DALL-E 3 only supports one image per API call, so requesting N here issues N separate calls and bills N times.',
     },
     {
       id: 'prompt',
@@ -263,11 +248,6 @@ export const ImageGeneratorBlockV2: BlockConfig = {
           throw new Error('Prompt is required')
         }
 
-        const imageCount = Math.min(
-          MAX_IMAGES_TO_GENERATE,
-          Math.max(1, Number(params.imageCount) || 1)
-        )
-
         if (params.model?.startsWith('imagen-')) {
           return {
             model: params.model,
@@ -275,7 +255,6 @@ export const ImageGeneratorBlockV2: BlockConfig = {
             imageSize: params.imageSize || '1K',
             aspectRatio: params.aspectRatio || '1:1',
             personGeneration: params.personGeneration || 'allow_adult',
-            imageCount,
           }
         }
 
@@ -300,7 +279,6 @@ export const ImageGeneratorBlockV2: BlockConfig = {
               ? { inputImage: nanoBananaReferences.inputImage }
               : {}),
             inputImageMimeType: params.inputImageMimeType,
-            imageCount,
             ...(nanoBananaReferences.inputImageWarning
               ? { inputImageWarning: nanoBananaReferences.inputImageWarning }
               : {}),
@@ -315,7 +293,6 @@ export const ImageGeneratorBlockV2: BlockConfig = {
           prompt: params.prompt,
           model: params.model || 'dall-e-3',
           size: params.size || '1024x1024',
-          imageCount,
         }
 
         if (params.model === 'dall-e-3') {
@@ -371,10 +348,6 @@ export const ImageGeneratorBlockV2: BlockConfig = {
       type: 'string',
       description:
         'Warning emitted when multiple input images were provided and the latest one was used',
-    },
-    imageCount: {
-      type: 'number',
-      description: 'Requested images (1-5); execution may combine with SLM estimate (capped at 5)',
     },
   },
   outputs: {

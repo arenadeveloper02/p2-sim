@@ -7,24 +7,12 @@ import { extractTextContent } from '@/providers/google/utils'
 
 const logger = createLogger('ImageGenerationCount')
 
-const SLM_MODEL = 'gemini-2.5-flash-lite'
+const SLM_MODEL = 'gemini-3.1-flash-lite'
 
 /** Hard timeout for the SLM call so a hung Gemini request never blocks generation. */
 const SLM_TIMEOUT_MS = 8000
 
 const PROMPT_IMAGE_URL_REGEX = /https?:\/\/[^\s"'<>`]+/i
-
-/**
- * Quick pre-check that decides whether the SLM is even worth calling.
- * Looks for plural/numeric/multi-image keywords. If none are present, the prompt almost
- * certainly maps to a single image and we can skip the extra Gemini round-trip entirely.
- */
-const MULTI_IMAGE_KEYWORD_REGEX =
-  /\b(\d+|two|three|four|five|six|seven|eight|nine|ten|several|multiple|variations?|versions?|options?|angles?|alternatives?|separate|grid|sheet|collage|side[\s-]by[\s-]side|set of|series|each|every|repeat|times)\b/i
-
-function promptCouldImplyMultipleImages(prompt: string): boolean {
-  return MULTI_IMAGE_KEYWORD_REGEX.test(prompt)
-}
 
 const SlmResponseSchema = z.object({
   imageCount: z.number().int().min(1).max(MAX_IMAGES_TO_GENERATE),
@@ -109,13 +97,12 @@ function parseSuggestedFieldsFromSlmText(text: string): ParsedSlmFields {
 
 export interface ResolveImageGenerationCountInput {
   prompt: string
-  askedCount: number
 }
 
 export interface ResolveImageGenerationCountResult {
-  /** Final count after `max(asked, slmSuggested)` and cap. */
+  /** Final count suggested by the SLM and capped at the maximum allowed images. */
   imageCount: number
-  /** Raw SLM suggestion before combining with the user count. */
+  /** Raw SLM suggestion before clamping. */
   slmSuggested: number
   /** Image URL extracted from the prompt, if any. */
   promptImageUrl?: string
@@ -125,40 +112,15 @@ export interface ResolveImageGenerationCountResult {
 
 /**
  * Uses a small Gemini model to estimate how many distinct images the prompt implies,
- * then returns `min(MAX_IMAGES_TO_GENERATE, max(askedCount, slmSuggested))`.
- *
- * Skips the SLM call entirely when:
- *   - the prompt is empty
- *   - the slider already asks for the maximum (no upside in asking for more)
- *   - the prompt contains no plural/numeric/multi-image keywords (single-image case)
- * This avoids burning a Google API key slot and adding latency on the common case.
+ * then returns the finalized prompt and capped image count inferred from the user's text.
  */
 export async function resolveImageGenerationCount(
   input: ResolveImageGenerationCountInput
 ): Promise<ResolveImageGenerationCountResult> {
-  const asked = clampCount(Number(input.askedCount) || 1)
   const prompt = input.prompt.trim()
   const promptImageUrl = extractPromptImageUrl(prompt)
   if (!prompt) {
-    return { imageCount: asked, slmSuggested: asked, singleImagePrompt: '' }
-  }
-
-  if (asked >= MAX_IMAGES_TO_GENERATE) {
-    return {
-      imageCount: asked,
-      slmSuggested: asked,
-      promptImageUrl,
-      singleImagePrompt: prompt,
-    }
-  }
-
-  if (!promptCouldImplyMultipleImages(prompt)) {
-    return {
-      imageCount: asked,
-      slmSuggested: asked,
-      promptImageUrl,
-      singleImagePrompt: prompt,
-    }
+    return { imageCount: 1, slmSuggested: 1, singleImagePrompt: '' }
   }
 
   const systemInstruction = `You estimate how many distinct image files the user wants generated and rewrite the prompt for one output image file.
@@ -178,11 +140,10 @@ Examples:
 - "Give me three variations side by side in a single image three times" => {"imageCount":3,"singleImagePrompt":"Give me three variations side by side in a single image"}
 - "Generate 4 separate images of this product" => {"imageCount":4,"singleImagePrompt":"Generate an image of this product"}`
 
-  const userText = `User requested image count (slider): ${asked}\n\nPrompt:\n${prompt.slice(0, 8000)}`
+  const userText = `Prompt:\n${prompt.slice(0, 8000)}`
 
   logger.info('SLM image-count input', {
     model: SLM_MODEL,
-    asked,
     promptLength: prompt.length,
     hasPromptImageUrl: Boolean(promptImageUrl),
   })
@@ -221,7 +182,7 @@ Examples:
         status: response.status,
         message: (errBody as { error?: { message?: string } }).error?.message,
       })
-      return { imageCount: asked, slmSuggested: asked, promptImageUrl, singleImagePrompt: prompt }
+      return { imageCount: 1, slmSuggested: 1, promptImageUrl, singleImagePrompt: prompt }
     }
 
     const data = (await response.json()) as {
@@ -232,10 +193,10 @@ Examples:
 
     if (!text) {
       logger.info('SLM image-count output', {
-        parsedSlmSuggested: asked,
+        parsedSlmSuggested: 1,
         hasPromptImageUrl: Boolean(promptImageUrl),
       })
-      return { imageCount: asked, slmSuggested: asked, promptImageUrl, singleImagePrompt: prompt }
+      return { imageCount: 1, slmSuggested: 1, promptImageUrl, singleImagePrompt: prompt }
     }
 
     const parsed = parseSuggestedFieldsFromSlmText(text)
@@ -254,14 +215,13 @@ Examples:
       timedOut: isAbort,
       message: error instanceof Error ? error.message : String(error),
     })
-    return { imageCount: asked, slmSuggested: asked, promptImageUrl, singleImagePrompt: prompt }
+    return { imageCount: 1, slmSuggested: 1, promptImageUrl, singleImagePrompt: prompt }
   } finally {
     clearTimeout(timeoutHandle)
   }
 
-  const imageCount = clampCount(Math.max(asked, slmSuggested))
+  const imageCount = clampCount(slmSuggested)
   logger.info('SLM image-count resolved', {
-    asked,
     imageCount,
     hasPromptImageUrl: Boolean(resolvedPromptImageUrl),
   })

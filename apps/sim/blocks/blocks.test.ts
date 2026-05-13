@@ -95,21 +95,23 @@ describe.concurrent('Blocks Module', () => {
   })
 
   describe('Image Blocks', () => {
-    it('should hide the legacy image fusion block from the toolbar', () => {
+    it('should show the image fusion block in the toolbar', () => {
       const block = getBlock('image_fusion')
 
       expect(block).toBeDefined()
-      expect(block?.hideFromToolbar).toBe(true)
+      expect(block?.hideFromToolbar).not.toBe(true)
     })
 
     it('should expose a single dynamic Nano Banana reference input', () => {
       const block = getBlock('image_generator')
+      const imageCountSubBlock = block?.subBlocks.find((subBlock) => subBlock.id === 'imageCount')
       const referenceImagesSubBlock = block?.subBlocks.find((subBlock) => subBlock.id === 'inputImage')
       const referenceImageUrlsSubBlock = block?.subBlocks.find(
         (subBlock) => subBlock.id === 'inputImageUrl'
       )
       const legacyFusionImagesSubBlock = block?.subBlocks.find((subBlock) => subBlock.id === 'inputImages')
 
+      expect(imageCountSubBlock).toBeUndefined()
       expect(referenceImagesSubBlock).toMatchObject({
         title: 'Reference Images',
         type: 'file-upload',
@@ -130,13 +132,11 @@ describe.concurrent('Blocks Module', () => {
         model: 'gemini-3-pro-image-preview',
         prompt: 'Edit this image into a watercolor painting',
         inputImage: [{ path: 's3://bucket/source-a.png' }],
-        imageCount: 1,
       })
 
       expect(params).toMatchObject({
         model: 'gemini-3-pro-image-preview',
         prompt: 'Edit this image into a watercolor painting',
-        imageCount: 1,
         inputImage: { path: 's3://bucket/source-a.png' },
       })
       expect((params as Record<string, unknown>)?.inputImages).toBeUndefined()
@@ -156,14 +156,12 @@ describe.concurrent('Blocks Module', () => {
         prompt: 'Fuse these images into one composition',
         inputImage: [{ path: 's3://bucket/source-a.png' }],
         inputImageUrl: 'https://example.com/source-b.png, s3://bucket/source-c.png',
-        imageCount: 2,
       })
 
       expect(toolId).toBe('google_nano_banana_v2')
       expect(params).toMatchObject({
         model: 'gemini-3-pro-image-preview',
         prompt: 'Fuse these images into one composition',
-        imageCount: 2,
       })
       expect(Array.isArray((params as Record<string, unknown>)?.inputImages)).toBe(true)
       expect((params as Record<string, unknown>)?.inputImage).toBeUndefined()

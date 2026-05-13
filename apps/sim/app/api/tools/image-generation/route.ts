@@ -97,16 +97,14 @@ function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
 async function resolveRequestedImageCount(
   params: Record<string, unknown>
 ): Promise<{ imageCount: number; promptImageUrl?: string; singleImagePrompt?: string }> {
-  const askedCount = clampImageCount(params.imageCount)
   const prompt = String(params.prompt ?? '').trim()
 
   if (!prompt) {
-    return { imageCount: askedCount }
+    return { imageCount: 1 }
   }
 
   const { imageCount, promptImageUrl, singleImagePrompt } = await resolveImageGenerationCount({
     prompt,
-    askedCount,
   })
 
   return {

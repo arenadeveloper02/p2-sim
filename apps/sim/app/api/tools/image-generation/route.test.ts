@@ -65,6 +65,9 @@ describe('Image Generation Wrapper API Route', () => {
     const data = await response.json()
 
     expect(response.status).toBe(200)
+    expect(mockResolveImageGenerationCount).toHaveBeenCalledWith({
+      prompt: 'Fuse these images together',
+    })
     expect(mockExecuteTool).toHaveBeenCalledWith(
       'google_nano_banana',
       expect.objectContaining({

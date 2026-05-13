@@ -251,6 +251,7 @@ const nanoBananaTool: ToolConfig = {
         success: true,
         content: finalImageUrl || 'nano-banana-generated-image',
         image: imageUrlToReturn,
+        images: imageUrlToReturn ? [imageUrlToReturn] : [],
         metadata: {
           model: params?.model || 'gemini-2.5-flash-image',
           mimeType,
@@ -266,6 +267,7 @@ const nanoBananaTool: ToolConfig = {
         output: {
           content: finalImageUrl || 'nano-banana-generated-image',
           image: imageUrlToReturn,
+          images: imageUrlToReturn ? [imageUrlToReturn] : [],
           metadata: {
             model: params?.model || 'gemini-2.5-flash-image',
             mimeType,
@@ -291,6 +293,11 @@ const nanoBananaTool: ToolConfig = {
     success: { type: 'boolean', description: 'Operation success status' },
     content: { type: 'string', description: 'Image identifier' },
     image: { type: 'string', description: 'Base64 encoded image data' },
+    images: {
+      type: 'array',
+      description: 'Generated images (URLs in S3/local storage or base64)',
+      items: { type: 'file', description: 'Generated image' },
+    },
     metadata: {
       type: 'object',
       description: 'Image generation metadata',
@@ -326,6 +333,11 @@ const nanoBananaTool: ToolConfig = {
       properties: {
         content: { type: 'string', description: 'Image identifier' },
         image: { type: 'string', description: 'Base64 encoded image data' },
+        images: {
+          type: 'array',
+          description: 'Generated images (URLs in S3/local storage or base64)',
+          items: { type: 'file', description: 'Generated image' },
+        },
         metadata: {
           type: 'object',
           description: 'Image generation metadata',
