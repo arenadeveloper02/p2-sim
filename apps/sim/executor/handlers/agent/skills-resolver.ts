@@ -1,7 +1,8 @@
 import { db } from '@sim/db'
 import { skill } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
+import { resolveSelectedSkillNodes } from '@/lib/workflows/skills/operations'
 import type { SkillInput } from '@/executor/handlers/agent/types'
 
 const logger = createLogger('SkillsResolver')
@@ -14,9 +15,19 @@ function escapeXml(str: string): string {
     .replace(/"/g, '&quot;')
 }
 
-interface SkillMetadata {
+export interface SkillNodeMetadata {
+  id: string
+  path: string
+  type: 'folder' | 'skill' | 'file'
+  name: string
+  description: string | null
+}
+
+export interface SkillMetadata {
+  id: string
   name: string
   description: string
+  nodes: SkillNodeMetadata[]
 }
 
 /**
@@ -29,17 +40,26 @@ export async function resolveSkillMetadata(
 ): Promise<SkillMetadata[]> {
   if (!skillInputs.length || !workspaceId) return []
 
-  const skillIds = skillInputs.map((s) => s.skillId)
-
   try {
-    const rows = await db
-      .select({ name: skill.name, description: skill.description })
-      .from(skill)
-      .where(and(eq(skill.workspaceId, workspaceId), inArray(skill.id, skillIds)))
-
-    return rows
+    const packs = await resolveSelectedSkillNodes({ selections: skillInputs, workspaceId })
+    return packs.map((pack) => ({
+      id: pack.id,
+      name: pack.name,
+      description: pack.description,
+      nodes: pack.nodes.map((node) => ({
+        id: node.id,
+        path: node.path,
+        type: node.type,
+        name: node.name,
+        description: node.description,
+      })),
+    }))
   } catch (error) {
-    logger.error('Failed to resolve skill metadata', { error, skillIds, workspaceId })
+    logger.error('Failed to resolve skill metadata', {
+      error,
+      skillIds: skillInputs.map((s) => s.skillId),
+      workspaceId,
+    })
     return []
   }
 }
@@ -81,20 +101,40 @@ export function buildSkillsSystemPromptSection(skills: SkillMetadata[]): string 
   if (!skills.length) return ''
 
   const skillEntries = skills
-    .map(
-      (s) =>
-        `  <skill name="${escapeXml(s.name)}">\n    <description>${escapeXml(s.description)}</description>\n  </skill>`
-    )
+    .map((s) => {
+      const nodeEntries = s.nodes
+        .filter((node) => node.type !== 'file')
+        .slice(0, 40)
+        .map(
+          (node) =>
+            `    <node path="${escapeXml(node.path)}" type="${escapeXml(node.type)}" name="${escapeXml(
+              node.name
+            )}">\n      <description>${escapeXml(node.description ?? '')}</description>\n    </node>`
+        )
+        .join('\n')
+
+      return `  <skill_pack id="${escapeXml(s.id)}" name="${escapeXml(
+        s.name
+      )}">\n    <description>${escapeXml(s.description)}</description>${nodeEntries ? `\n${nodeEntries}` : ''}\n  </skill_pack>`
+    })
     .join('\n')
 
   return [
     '',
-    'You have access to the following skills. Use the load_skill tool to activate a skill when relevant.',
+    'You have access to the following skill packs. Use list_skill_children, search_skill_tree, load_skill_node, and load_skill_file to progressively load only the relevant content. The legacy load_skill tool is also available for older single-file skills.',
     '',
     '<available_skills>',
     skillEntries,
     '</available_skills>',
   ].join('\n')
+}
+
+function buildStringSchema(description: string, enumValues?: string[]) {
+  return {
+    type: 'string',
+    description,
+    ...(enumValues && enumValues.length > 0 ? { enum: enumValues } : {}),
+  }
 }
 
 /**
@@ -119,4 +159,67 @@ export function buildLoadSkillTool(skillNames: string[]) {
       required: ['skill_name'],
     },
   }
+}
+
+export function buildHierarchicalSkillTools(skills: SkillMetadata[]) {
+  const skillIds = skills.map((skill) => skill.id)
+
+  return [
+    {
+      id: 'list_skill_children',
+      name: 'list_skill_children',
+      description: 'List immediate child nodes for a selected skill pack path.',
+      params: { _selected_skill_ids: skillIds },
+      parameters: {
+        type: 'object',
+        properties: {
+          skill_id: buildStringSchema('Selected skill pack ID', skillIds),
+          path: buildStringSchema('Optional folder or node path to list children under.'),
+        },
+        required: ['skill_id'],
+      },
+    },
+    {
+      id: 'search_skill_tree',
+      name: 'search_skill_tree',
+      description: 'Search selected skill pack metadata and file text for relevant paths.',
+      params: { _selected_skill_ids: skillIds },
+      parameters: {
+        type: 'object',
+        properties: {
+          skill_id: buildStringSchema('Selected skill pack ID', skillIds),
+          query: buildStringSchema('Search query for skill names, paths, or reference content.'),
+        },
+        required: ['skill_id', 'query'],
+      },
+    },
+    {
+      id: 'load_skill_node',
+      name: 'load_skill_node',
+      description: 'Load one SKILL.md node body and a list of nearby reference files.',
+      params: { _selected_skill_ids: skillIds },
+      parameters: {
+        type: 'object',
+        properties: {
+          skill_id: buildStringSchema('Selected skill pack ID', skillIds),
+          path: buildStringSchema('Exact path of the SKILL.md node to load.'),
+        },
+        required: ['skill_id', 'path'],
+      },
+    },
+    {
+      id: 'load_skill_file',
+      name: 'load_skill_file',
+      description: 'Load one sidecar reference file from a selected skill pack.',
+      params: { _selected_skill_ids: skillIds },
+      parameters: {
+        type: 'object',
+        properties: {
+          skill_id: buildStringSchema('Selected skill pack ID', skillIds),
+          path: buildStringSchema('Exact path of the reference file to load.'),
+        },
+        required: ['skill_id', 'path'],
+      },
+    },
+  ]
 }

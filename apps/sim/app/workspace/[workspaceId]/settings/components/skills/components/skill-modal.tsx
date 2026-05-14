@@ -18,8 +18,8 @@ import {
   ModalTabsTrigger,
   Textarea,
 } from '@/components/emcn'
-import type { SkillDefinition } from '@/hooks/queries/skills'
-import { useCreateSkill, useUpdateSkill } from '@/hooks/queries/skills'
+import type { SkillDefinition, SkillImportPreview } from '@/hooks/queries/skills'
+import { useCreateSkill, useImportSkillPack, useUpdateSkill } from '@/hooks/queries/skills'
 import { SkillImport } from './skill-import'
 
 interface SkillModalProps {
@@ -53,6 +53,7 @@ export function SkillModal({
 
   const createSkill = useCreateSkill()
   const updateSkill = useUpdateSkill()
+  const { mutateAsync: importSkillPack } = useImportSkillPack()
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -142,6 +143,14 @@ export function SkillModal({
       setActiveTab('create')
     },
     []
+  )
+
+  const handleImportPack = useCallback(
+    async (preview: SkillImportPreview) => {
+      await importSkillPack({ workspaceId, url: preview.sourceUrl })
+      onSave()
+    },
+    [importSkillPack, onSave, workspaceId]
   )
 
   const isEditing = !!initialValues
@@ -257,7 +266,7 @@ export function SkillModal({
               <ModalBody>
                 <ModalTabsContent value='create'>{createForm}</ModalTabsContent>
                 <ModalTabsContent value='import'>
-                  <SkillImport onImport={handleImport} />
+                  <SkillImport onImport={handleImport} onImportPack={handleImportPack} />
                 </ModalTabsContent>
               </ModalBody>
             </ModalTabs>

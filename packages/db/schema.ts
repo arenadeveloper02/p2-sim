@@ -1,5 +1,6 @@
 import { type SQL, sql } from 'drizzle-orm'
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -855,6 +856,8 @@ export const customTools = pgTable(
   })
 )
 
+export const skillNodeTypeEnum = pgEnum('skill_node_type', ['folder', 'skill', 'file'])
+
 export const skill = pgTable(
   'skill',
   {
@@ -864,6 +867,9 @@ export const skill = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull(),
     content: text('content').notNull(),
+    sourceUrl: text('source_url'),
+    sourceType: text('source_type'),
+    rootPath: text('root_path'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -872,6 +878,38 @@ export const skill = pgTable(
       table.workspaceId,
       table.name
     ),
+  })
+)
+
+export const skillNode = pgTable(
+  'skill_node',
+  {
+    id: text('id').primaryKey(),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+    parentId: text('parent_id').references((): AnyPgColumn => skillNode.id, {
+      onDelete: 'cascade',
+    }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    type: skillNodeTypeEnum('type').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    content: text('content'),
+    allowedTools: jsonb('allowed_tools').$type<string[] | null>(),
+    searchText: text('search_text').notNull().default(''),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    skillIdIdx: index('skill_node_skill_id_idx').on(table.skillId),
+    workspaceIdIdx: index('skill_node_workspace_id_idx').on(table.workspaceId),
+    parentIdIdx: index('skill_node_parent_id_idx').on(table.parentId),
+    skillPathUnique: uniqueIndex('skill_node_skill_path_unique').on(table.skillId, table.path),
   })
 )
 

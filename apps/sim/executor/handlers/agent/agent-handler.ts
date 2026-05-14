@@ -5,7 +5,6 @@ import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { createMcpToolId } from '@/lib/mcp/utils'
-import { getAccurateTokenCount } from '@/lib/tokenization/accurate'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
@@ -19,9 +18,11 @@ import {
 import { AGENT, BlockType, DEFAULTS, stripCustomToolPrefix } from '@/executor/constants'
 import { memoryService } from '@/executor/handlers/agent/memory'
 import {
+  buildHierarchicalSkillTools,
   buildLoadSkillTool,
   buildSkillsSystemPromptSection,
   resolveSkillMetadata,
+  type SkillMetadata,
 } from '@/executor/handlers/agent/skills-resolver'
 import type {
   AgentInputs,
@@ -139,13 +140,14 @@ export class AgentBlockHandler implements BlockHandler {
     )
 
     const skillInputs = filteredInputs.skills ?? []
-    let skillMetadata: Array<{ name: string; description: string }> = []
+    let skillMetadata: SkillMetadata[] = []
     if (skillInputs.length > 0 && ctx.workspaceId) {
       await validateSkillsAllowed(ctx.userId, ctx.workspaceId, ctx)
       skillMetadata = await resolveSkillMetadata(skillInputs, ctx.workspaceId)
       if (skillMetadata.length > 0) {
         const skillNames = skillMetadata.map((s) => s.name)
         formattedTools.push(buildLoadSkillTool(skillNames))
+        formattedTools.push(...buildHierarchicalSkillTools(skillMetadata))
       }
     }
 
@@ -743,7 +745,7 @@ export class AgentBlockHandler implements BlockHandler {
     ctx: ExecutionContext,
     inputs: AgentInputs,
     blockId: string,
-    skillMetadata: Array<{ name: string; description: string }> = []
+    skillMetadata: SkillMetadata[] = []
   ): Promise<Message[] | undefined> {
     const messages: Message[] = []
     const memoryEnabled = Boolean(inputs.memoryType && inputs.memoryType !== 'none')

@@ -1,5 +1,8 @@
 export interface SkillInput {
   skillId: string
+  nodeId?: string
+  path?: string
+  selectionType?: 'pack' | 'folder' | 'skill' | 'file'
   name?: string
   description?: string
 }

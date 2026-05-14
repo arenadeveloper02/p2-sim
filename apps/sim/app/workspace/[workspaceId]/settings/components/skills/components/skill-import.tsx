@@ -2,10 +2,12 @@
 
 import type { ChangeEvent } from 'react'
 import { useCallback, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { FileText, Loader2 } from 'lucide-react'
 import { Button, Input, Label, Textarea } from '@/components/emcn'
 import { Upload } from '@/components/emcn/icons'
 import { cn } from '@/lib/core/utils/cn'
+import type { SkillImportPreview } from '@/hooks/queries/skills'
+import { usePreviewSkillImport } from '@/hooks/queries/skills'
 import { extractSkillFromZip, parseSkillMarkdown } from './utils'
 
 interface ImportedSkill {
@@ -16,6 +18,7 @@ interface ImportedSkill {
 
 interface SkillImportProps {
   onImport: (data: ImportedSkill) => void
+  onImportPack: (preview: SkillImportPreview) => Promise<void>
 }
 
 type ImportState = 'idle' | 'loading' | 'error'
@@ -27,8 +30,9 @@ function isAcceptedFile(file: File): boolean {
   return ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext))
 }
 
-export function SkillImport({ onImport }: SkillImportProps) {
+export function SkillImport({ onImport, onImportPack }: SkillImportProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { mutateAsync: previewSkillImport } = usePreviewSkillImport()
 
   const [dragCounter, setDragCounter] = useState(0)
   const isDragging = dragCounter > 0
@@ -38,6 +42,8 @@ export function SkillImport({ onImport }: SkillImportProps) {
   const [githubUrl, setGithubUrl] = useState('')
   const [githubState, setGithubState] = useState<ImportState>('idle')
   const [githubError, setGithubError] = useState('')
+  const [githubPreview, setGithubPreview] = useState<SkillImportPreview | null>(null)
+  const [isSavingPreview, setIsSavingPreview] = useState(false)
 
   const [pasteContent, setPasteContent] = useState('')
   const [pasteError, setPasteError] = useState('')
@@ -128,29 +134,45 @@ export function SkillImport({ onImport }: SkillImportProps) {
 
     setGithubState('loading')
     setGithubError('')
+    setGithubPreview(null)
 
     try {
-      const res = await fetch('/api/skills/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmed }),
-      })
+      const preview = await previewSkillImport({ url: trimmed })
+      setGithubState('idle')
 
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || `Import failed (HTTP ${res.status})`)
+      if (preview.skillCount === 1 && preview.fileCount === 1) {
+        onImport({
+          name: preview.name,
+          description: preview.description,
+          content: preview.content,
+        })
+        return
       }
 
-      const parsed = parseSkillMarkdown(data.content)
-      setGithubState('idle')
-      onImport(parsed)
+      setGithubPreview(preview)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to import from GitHub'
       setGithubError(message)
       setGithubState('error')
     }
-  }, [githubUrl, onImport])
+  }, [githubUrl, onImport, previewSkillImport])
+
+  const handleSavePreview = useCallback(async () => {
+    if (!githubPreview) return
+
+    setIsSavingPreview(true)
+    setGithubError('')
+
+    try {
+      await onImportPack(githubPreview)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save skill pack'
+      setGithubError(message)
+      setGithubState('error')
+    } finally {
+      setIsSavingPreview(false)
+    }
+  }, [githubPreview, onImportPack])
 
   const handlePasteImport = useCallback(() => {
     const trimmed = pasteContent.trim()
@@ -218,10 +240,11 @@ export function SkillImport({ onImport }: SkillImportProps) {
         <div className='flex gap-2'>
           <Input
             id='skill-github-url'
-            placeholder='https://github.com/owner/repo/blob/main/SKILL.md'
+            placeholder='https://github.com/owner/repo or .../tree/main/skills'
             value={githubUrl}
             onChange={(e) => {
               setGithubUrl(e.target.value)
+              setGithubPreview(null)
               if (githubError) setGithubError('')
             }}
             className='flex-1'
@@ -240,6 +263,30 @@ export function SkillImport({ onImport }: SkillImportProps) {
           </Button>
         </div>
         {githubError && <p className='text-[13px] text-[var(--text-error)]'>{githubError}</p>}
+        {githubPreview && (
+          <div className='mt-2 rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-1)] p-3'>
+            <div className='flex items-start gap-2'>
+              <FileText className='mt-0.5 h-[14px] w-[14px] text-[var(--text-tertiary)]' />
+              <div className='min-w-0 flex-1'>
+                <div className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+                  {githubPreview.name}
+                </div>
+                <p className='mt-0.5 line-clamp-2 text-[12px] text-[var(--text-muted)]'>
+                  {githubPreview.description}
+                </p>
+                <p className='mt-1 text-[11px] text-[var(--text-tertiary)]'>
+                  {githubPreview.skillCount} skills, {githubPreview.fileCount} files from{' '}
+                  {githubPreview.rootPath || 'repository root'}
+                </p>
+              </div>
+            </div>
+            <div className='mt-3 flex justify-end'>
+              <Button variant='primary' onClick={handleSavePreview} disabled={isSavingPreview}>
+                {isSavingPreview ? 'Importing...' : 'Import Pack'}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <Divider />

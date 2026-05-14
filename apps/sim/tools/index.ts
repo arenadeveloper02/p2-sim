@@ -17,6 +17,12 @@ import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { resolveWorkspaceFileReference } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import {
+  listSkillChildren,
+  loadSkillFile,
+  loadSkillNode,
+  searchSkillTree,
+} from '@/lib/workflows/skills/operations'
 import { assertPermissionsAllowed } from '@/ee/access-control/utils/permission-check'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
@@ -40,6 +46,33 @@ import {
 import * as toolsUtilsServer from '@/tools/utils.server'
 
 const logger = createLogger('Tools')
+
+const SKILL_TOOL_IDS = new Set([
+  'load_skill',
+  'list_skill_children',
+  'search_skill_tree',
+  'load_skill_node',
+  'load_skill_file',
+])
+
+function validateSelectedSkillId(
+  params: Record<string, unknown>,
+  skillId: string
+): ToolResponse | null {
+  const selectedSkillIds = params._selected_skill_ids
+  if (!Array.isArray(selectedSkillIds)) return null
+
+  const isSelected = selectedSkillIds.every((id) => typeof id === 'string')
+    ? selectedSkillIds.includes(skillId)
+    : false
+  if (isSelected) return null
+
+  return {
+    success: false,
+    output: { error: `Skill "${skillId}" is not selected for this agent block` },
+    error: `Skill "${skillId}" is not selected for this agent block`,
+  }
+}
 
 interface ToolExecutionScope {
   workspaceId?: string
@@ -826,14 +859,13 @@ export async function executeTool(
 
     const scope = resolveToolScope(params, executionContext)
 
-    const toolKind: 'skill' | 'custom' | 'mcp' | undefined =
-      normalizedToolId === 'load_skill'
-        ? 'skill'
-        : isCustomTool(normalizedToolId)
-          ? 'custom'
-          : isMcpTool(normalizedToolId)
-            ? 'mcp'
-            : undefined
+    const toolKind: 'skill' | 'custom' | 'mcp' | undefined = SKILL_TOOL_IDS.has(normalizedToolId)
+      ? 'skill'
+      : isCustomTool(normalizedToolId)
+        ? 'custom'
+        : isMcpTool(normalizedToolId)
+          ? 'mcp'
+          : undefined
 
     if (toolKind && scope.userId && scope.workspaceId) {
       await assertPermissionsAllowed({
@@ -865,6 +897,99 @@ export async function executeTool(
         success: true,
         output: { content },
       }
+    }
+
+    if (normalizedToolId === 'list_skill_children') {
+      const skillId = params.skill_id
+      if (typeof skillId !== 'string' || !scope.workspaceId) {
+        return {
+          success: false,
+          output: { error: 'Missing skill_id or workspace context' },
+          error: 'Missing skill_id or workspace context',
+        }
+      }
+      const selectionError = validateSelectedSkillId(params, skillId)
+      if (selectionError) return selectionError
+
+      const children = await listSkillChildren({
+        skillId,
+        workspaceId: scope.workspaceId,
+        path: typeof params.path === 'string' ? params.path : undefined,
+      })
+
+      return { success: true, output: { children } }
+    }
+
+    if (normalizedToolId === 'search_skill_tree') {
+      const skillId = params.skill_id
+      const query = params.query
+      if (typeof skillId !== 'string' || typeof query !== 'string' || !scope.workspaceId) {
+        return {
+          success: false,
+          output: { error: 'Missing skill_id, query, or workspace context' },
+          error: 'Missing skill_id, query, or workspace context',
+        }
+      }
+      const selectionError = validateSelectedSkillId(params, skillId)
+      if (selectionError) return selectionError
+
+      const results = await searchSkillTree({
+        skillId,
+        workspaceId: scope.workspaceId,
+        query,
+      })
+
+      return { success: true, output: { results } }
+    }
+
+    if (normalizedToolId === 'load_skill_node') {
+      const skillId = params.skill_id
+      const path = params.path
+      if (typeof skillId !== 'string' || typeof path !== 'string' || !scope.workspaceId) {
+        return {
+          success: false,
+          output: { error: 'Missing skill_id, path, or workspace context' },
+          error: 'Missing skill_id, path, or workspace context',
+        }
+      }
+      const selectionError = validateSelectedSkillId(params, skillId)
+      if (selectionError) return selectionError
+
+      const result = await loadSkillNode({ skillId, workspaceId: scope.workspaceId, path })
+      if (!result) {
+        return {
+          success: false,
+          output: { error: `Skill node "${path}" not found` },
+          error: `Skill node "${path}" not found`,
+        }
+      }
+
+      return { success: true, output: result }
+    }
+
+    if (normalizedToolId === 'load_skill_file') {
+      const skillId = params.skill_id
+      const path = params.path
+      if (typeof skillId !== 'string' || typeof path !== 'string' || !scope.workspaceId) {
+        return {
+          success: false,
+          output: { error: 'Missing skill_id, path, or workspace context' },
+          error: 'Missing skill_id, path, or workspace context',
+        }
+      }
+      const selectionError = validateSelectedSkillId(params, skillId)
+      if (selectionError) return selectionError
+
+      const result = await loadSkillFile({ skillId, workspaceId: scope.workspaceId, path })
+      if (!result) {
+        return {
+          success: false,
+          output: { error: `Skill file "${path}" not found` },
+          error: `Skill file "${path}" not found`,
+        }
+      }
+
+      return { success: true, output: result }
     }
 
     if (isCustomTool(normalizedToolId)) {

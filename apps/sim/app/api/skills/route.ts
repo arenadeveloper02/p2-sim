@@ -22,6 +22,9 @@ const SkillSchema = z.object({
         .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Name must be kebab-case (e.g. my-skill)'),
       description: z.string().min(1, 'Description is required').max(1024),
       content: z.string().min(1, 'Content is required').max(50000, 'Content is too large'),
+      sourceUrl: z.string().nullable().optional(),
+      sourceType: z.string().nullable().optional(),
+      rootPath: z.string().nullable().optional(),
     })
   ),
   workspaceId: z.string().optional(),

@@ -11,8 +11,46 @@ export interface SkillDefinition {
   name: string
   description: string
   content: string
+  sourceUrl?: string | null
+  sourceType?: string | null
+  rootPath?: string | null
   createdAt: string
   updatedAt?: string
+  nodes?: SkillNodeDefinition[]
+  nodeCount?: number
+}
+
+export interface SkillNodeDefinition {
+  id: string
+  skillId: string
+  parentId: string | null
+  path: string
+  type: 'folder' | 'skill' | 'file'
+  name: string
+  description: string | null
+  allowedTools?: string[] | null
+  sortOrder: number
+}
+
+export interface SkillImportPreview {
+  name: string
+  description: string
+  content: string
+  sourceUrl: string
+  sourceType: 'github'
+  rootPath: string
+  nodes: Array<{
+    path: string
+    type: 'folder' | 'skill' | 'file'
+    name: string
+    description?: string | null
+    content?: string | null
+    allowedTools?: string[] | null
+    sortOrder?: number
+  }>
+  fileCount: number
+  skillCount: number
+  totalBytes: number
 }
 
 /**
@@ -48,8 +86,25 @@ async function fetchSkills(workspaceId: string, signal?: AbortSignal): Promise<S
     name: s.name as string,
     description: s.description as string,
     content: s.content as string,
+    sourceUrl: (s.sourceUrl as string | null | undefined) ?? null,
+    sourceType: (s.sourceType as string | null | undefined) ?? null,
+    rootPath: (s.rootPath as string | null | undefined) ?? null,
     createdAt: (s.createdAt as string) ?? new Date().toISOString(),
     updatedAt: s.updatedAt as string | undefined,
+    nodes: Array.isArray(s.nodes)
+      ? s.nodes.map((node: Record<string, unknown>) => ({
+          id: node.id as string,
+          skillId: node.skillId as string,
+          parentId: (node.parentId as string | null | undefined) ?? null,
+          path: node.path as string,
+          type: node.type as 'folder' | 'skill' | 'file',
+          name: node.name as string,
+          description: (node.description as string | null | undefined) ?? null,
+          allowedTools: (node.allowedTools as string[] | null | undefined) ?? null,
+          sortOrder: (node.sortOrder as number | undefined) ?? 0,
+        }))
+      : [],
+    nodeCount: (s.nodeCount as number | undefined) ?? 0,
   }))
 }
 
@@ -255,6 +310,51 @@ export function useDeleteSkill() {
       if (context?.previousSkills) {
         queryClient.setQueryData(skillsKeys.list(variables.workspaceId), context.previousSkills)
       }
+    },
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: skillsKeys.list(variables.workspaceId) })
+    },
+  })
+}
+
+export function usePreviewSkillImport() {
+  return useMutation({
+    mutationFn: async ({ url }: { url: string }) => {
+      const response = await fetch(`${API_ENDPOINT}/import/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to preview skill import')
+      }
+
+      return data.preview as SkillImportPreview
+    },
+  })
+}
+
+export function useImportSkillPack() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ workspaceId, url }: { workspaceId: string; url: string }) => {
+      const response = await fetch(`${API_ENDPOINT}/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, url }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to import skill pack')
+      }
+
+      return data.data as SkillDefinition
     },
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: skillsKeys.list(variables.workspaceId) })

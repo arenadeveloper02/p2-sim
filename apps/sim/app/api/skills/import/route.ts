@@ -1,48 +1,25 @@
+import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { captureServerEvent } from '@/lib/posthog/server'
+import { importGitHubSkillPack } from '@/lib/workflows/skills/importers/github'
+import { createSkillPack } from '@/lib/workflows/skills/operations'
+import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('SkillsImportAPI')
 
-const FETCH_TIMEOUT_MS = 15_000
-
 const ImportSchema = z.object({
   url: z.string().url('A valid URL is required'),
+  workspaceId: z.string().optional(),
 })
 
 /**
- * Converts a standard GitHub file URL to its raw.githubusercontent.com equivalent.
- *
- * Supported formats:
- *   github.com/{owner}/{repo}/blob/{branch}/{path}
- *   raw.githubusercontent.com/{owner}/{repo}/{branch}/{path} (passthrough)
+ * POST - Preview or persist a GitHub skill import.
  */
-function toRawGitHubUrl(url: string): string {
-  const parsed = new URL(url)
-
-  if (parsed.hostname === 'raw.githubusercontent.com') {
-    return url
-  }
-
-  if (parsed.hostname !== 'github.com') {
-    throw new Error('Only GitHub URLs are supported')
-  }
-
-  const segments = parsed.pathname.split('/').filter(Boolean)
-  if (segments.length < 5 || segments[2] !== 'blob') {
-    throw new Error(
-      'Invalid GitHub URL format. Expected: https://github.com/{owner}/{repo}/blob/{branch}/{path}'
-    )
-  }
-
-  const [owner, repo, , branch, ...pathParts] = segments
-  return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${pathParts.join('/')}`
-}
-
-/** POST - Fetch a SKILL.md from a GitHub URL and return its raw content */
 export const POST = withRouteHandler(async (req: NextRequest) => {
   const requestId = generateRequestId()
 
@@ -54,47 +31,68 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
 
     const body = await req.json()
-    const { url } = ImportSchema.parse(body)
+    const { url, workspaceId } = ImportSchema.parse(body)
 
-    let rawUrl: string
-    try {
-      rawUrl = toRawGitHubUrl(url)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Invalid URL'
-      return NextResponse.json({ error: message }, { status: 400 })
+    const preview = await importGitHubSkillPack(url)
+
+    if (!workspaceId) {
+      return NextResponse.json({ content: preview.content, preview })
     }
 
-    const response = await fetch(rawUrl, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: { Accept: 'text/plain' },
+    const userPermission = await getUserEntityPermissions(
+      authResult.userId,
+      'workspace',
+      workspaceId
+    )
+    if (!userPermission || (userPermission !== 'admin' && userPermission !== 'write')) {
+      logger.warn(
+        `[${requestId}] User ${authResult.userId} does not have write permission for workspace ${workspaceId}`
+      )
+      return NextResponse.json({ error: 'Write permission required' }, { status: 403 })
+    }
+
+    const created = await createSkillPack({
+      pack: preview,
+      workspaceId,
+      userId: authResult.userId,
+      requestId,
     })
 
-    if (!response.ok) {
-      logger.warn(`[${requestId}] GitHub fetch failed`, {
-        status: response.status,
-        url: rawUrl,
-      })
-      return NextResponse.json(
-        { error: `Failed to fetch file (HTTP ${response.status}). Is the repository public?` },
-        { status: 502 }
-      )
-    }
+    recordAudit({
+      workspaceId,
+      actorId: authResult.userId,
+      actorName: authResult.userName ?? undefined,
+      actorEmail: authResult.userEmail ?? undefined,
+      action: AuditAction.SKILL_CREATED,
+      resourceType: AuditResourceType.SKILL,
+      resourceId: created.id,
+      resourceName: created.name,
+      description: `Imported skill pack "${created.name}"`,
+      metadata: { source: 'github', sourceUrl: url, rootPath: preview.rootPath },
+    })
 
-    const contentLength = response.headers.get('content-length')
-    if (contentLength && Number.parseInt(contentLength, 10) > 100_000) {
-      return NextResponse.json({ error: 'File is too large (max 100KB)' }, { status: 400 })
-    }
+    captureServerEvent(
+      authResult.userId,
+      'skill_created',
+      {
+        skill_id: created.id,
+        skill_name: created.name,
+        workspace_id: workspaceId,
+        source: 'github',
+        skill_count: preview.skillCount,
+        file_count: preview.fileCount,
+      },
+      { groups: { workspace: workspaceId } }
+    )
 
-    const content = await response.text()
-
-    if (content.length > 100_000) {
-      return NextResponse.json({ error: 'File is too large (max 100KB)' }, { status: 400 })
-    }
-
-    return NextResponse.json({ content })
+    return NextResponse.json({ success: true, data: created, preview })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid request', details: error.errors }, { status: 400 })
+    }
+
+    if (error instanceof Error && error.message.includes('already exists')) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
     }
 
     if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {

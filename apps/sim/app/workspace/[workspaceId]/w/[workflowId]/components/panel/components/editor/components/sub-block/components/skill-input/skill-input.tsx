@@ -13,6 +13,9 @@ import { usePermissionConfig } from '@/hooks/use-permission-config'
 
 interface StoredSkill {
   skillId: string
+  nodeId?: string
+  path?: string
+  selectionType?: 'pack' | 'folder' | 'skill' | 'file'
   name?: string
 }
 
@@ -48,7 +51,14 @@ export function SkillInput({
     return Array.isArray(value) ? value : []
   }, [isPreview, previewValue, value])
 
-  const selectedIds = useMemo(() => new Set(selectedSkills.map((s) => s.skillId)), [selectedSkills])
+  const getSelectionKey = useCallback((stored: StoredSkill) => {
+    return `${stored.skillId}:${stored.path ?? stored.nodeId ?? 'pack'}:${stored.selectionType ?? 'pack'}`
+  }, [])
+
+  const selectedKeys = useMemo(
+    () => new Set(selectedSkills.map((stored) => getSelectionKey(stored))),
+    [getSelectionKey, selectedSkills]
+  )
 
   const skillsDisabled = permissionConfig.disableSkills
 
@@ -72,17 +82,20 @@ export function SkillInput({
       })
     }
 
-    const availableSkills = workspaceSkills.filter((s) => !selectedIds.has(s.id))
+    const availableSkills = workspaceSkills.filter((s) => !selectedKeys.has(`${s.id}:pack:pack`))
     if (!skillsDisabled && availableSkills.length > 0) {
       groups.push({
-        section: 'Skills',
+        section: 'Skill Packs',
         items: availableSkills.map((s) => {
           return {
             label: s.name,
             value: `skill-${s.id}`,
             icon: AgentSkillsIcon,
             onSelect: () => {
-              const newSkills: StoredSkill[] = [...selectedSkills, { skillId: s.id, name: s.name }]
+              const newSkills: StoredSkill[] = [
+                ...selectedSkills,
+                { skillId: s.id, name: s.name, selectionType: 'pack' },
+              ]
               setValue(newSkills)
               setOpen(false)
             },
@@ -91,15 +104,50 @@ export function SkillInput({
       })
     }
 
+    const nodeOptions = workspaceSkills.flatMap((s) =>
+      (s.nodes ?? [])
+        .filter((node) => !selectedKeys.has(`${s.id}:${node.path}:${node.type}`))
+        .map((node) => ({
+          skill: s,
+          node,
+        }))
+    )
+
+    if (!skillsDisabled && nodeOptions.length > 0) {
+      groups.push({
+        section: 'Skill Nodes',
+        items: nodeOptions.map(({ skill: s, node }) => ({
+          label: `${s.name} / ${node.path}`,
+          value: `skill-node-${node.id}`,
+          icon: AgentSkillsIcon,
+          onSelect: () => {
+            const newSkills: StoredSkill[] = [
+              ...selectedSkills,
+              {
+                skillId: s.id,
+                nodeId: node.id,
+                path: node.path,
+                selectionType: node.type,
+                name: node.name,
+              },
+            ]
+            setValue(newSkills)
+            setOpen(false)
+          },
+        })),
+      })
+    }
+
     return groups
-  }, [workspaceSkills, selectedIds, selectedSkills, setValue, isPreview, skillsDisabled])
+  }, [workspaceSkills, selectedKeys, selectedSkills, setValue, isPreview, skillsDisabled])
 
   const handleRemove = useCallback(
-    (skillId: string) => {
-      const newSkills = selectedSkills.filter((s) => s.skillId !== skillId)
+    (stored: StoredSkill) => {
+      const targetKey = getSelectionKey(stored)
+      const newSkills = selectedSkills.filter((s) => getSelectionKey(s) !== targetKey)
       setValue(newSkills)
     },
-    [selectedSkills, setValue]
+    [getSelectionKey, selectedSkills, setValue]
   )
 
   const handleSkillSaved = useCallback(() => {
@@ -110,7 +158,8 @@ export function SkillInput({
   const resolveSkillName = useCallback(
     (stored: StoredSkill): string => {
       const found = workspaceSkills.find((s) => s.id === stored.skillId)
-      return found?.name ?? stored.name ?? stored.skillId
+      const packName = found?.name ?? stored.name ?? stored.skillId
+      return stored.path ? `${packName} / ${stored.path}` : packName
     },
     [workspaceSkills]
   )
@@ -135,22 +184,19 @@ export function SkillInput({
             const fullSkill = workspaceSkills.find((s) => s.id === stored.skillId)
             return (
               <div
-                key={stored.skillId}
+                key={getSelectionKey(stored)}
                 className='group relative flex flex-col overflow-hidden rounded-sm border border-[var(--border-1)] transition-all duration-200 ease-in-out'
               >
                 <div
                   className='flex cursor-pointer items-center justify-between gap-2 rounded-t-[4px] bg-[var(--surface-4)] px-2 py-[6.5px]'
                   onClick={() => {
-                    if (fullSkill && !disabled && !isPreview) {
+                    if (fullSkill && (fullSkill.nodeCount ?? 0) <= 1 && !disabled && !isPreview) {
                       setEditingSkill(fullSkill)
                     }
                   }}
                 >
                   <div className='flex min-w-0 flex-1 items-center gap-2'>
-                    <div
-                      className='flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center rounded-sm'
-                      style={{ backgroundColor: '#e0e0e0' }}
-                    >
+                    <div className='flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center rounded-sm bg-[#e0e0e0]'>
                       <AgentSkillsIcon className='h-[10px] w-[10px] text-[var(--border)]' />
                     </div>
                     <span className='truncate font-medium text-[var(--text-primary)] text-small'>
@@ -163,7 +209,7 @@ export function SkillInput({
                         type='button'
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleRemove(stored.skillId)
+                          handleRemove(stored)
                         }}
                         className='flex items-center justify-center text-[var(--text-tertiary)] transition-colors hover-hover:text-[var(--text-primary)]'
                         aria-label='Remove skill'
