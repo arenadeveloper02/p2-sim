@@ -37,6 +37,34 @@ function getGeneratedImageId(value: string): string {
   return `generated-image:${value.length}:${Math.abs(hash)}`
 }
 
+function isGeneratedImageField(key: string): boolean {
+  return ['image', 'images', 'generatedImage', 'generatedImages'].includes(key)
+}
+
+function isGeneratedImageUrlField(key: string): boolean {
+  return isGeneratedImageField(key) || key === 'url'
+}
+
+function addGeneratedImageUrl(
+  value: string,
+  name: string,
+  images: AssistantGeneratedImage[],
+  seenUrls: Set<string>
+): void {
+  if (!isAssistantImageUrl(value) || seenUrls.has(value)) {
+    return
+  }
+
+  seenUrls.add(value)
+  const type = isDataImageUrl(value) ? getDataImageMimeType(value) : 'image/*'
+  images.push({
+    id: getGeneratedImageId(value),
+    name,
+    url: value,
+    type,
+  })
+}
+
 /**
  * Returns whether the value is a renderable image URL we can show in chat.
  */
@@ -139,6 +167,15 @@ export function extractGeneratedImagesFromData(
   images: AssistantGeneratedImage[] = [],
   seenUrls = new Set<string>()
 ): AssistantGeneratedImage[] {
+  return collectGeneratedImagesFromData(data, images, seenUrls, true)
+}
+
+function collectGeneratedImagesFromData(
+  data: unknown,
+  images: AssistantGeneratedImage[],
+  seenUrls: Set<string>,
+  allowBareStringImage: boolean
+): AssistantGeneratedImage[] {
   if (!data) {
     return images
   }
@@ -163,45 +200,32 @@ export function extractGeneratedImagesFromData(
   }
 
   if (typeof data === 'string') {
-    if (isAssistantImageUrl(data) && !seenUrls.has(data)) {
-      seenUrls.add(data)
-      const type = isDataImageUrl(data) ? getDataImageMimeType(data) : 'image/*'
-      images.push({
-        id: getGeneratedImageId(data),
-        name: 'Generated image',
-        url: data,
-        type,
-      })
+    if (allowBareStringImage) {
+      addGeneratedImageUrl(data, 'Generated image', images, seenUrls)
     }
     return images
   }
 
   if (Array.isArray(data)) {
     for (const item of data) {
-      extractGeneratedImagesFromData(item, images, seenUrls)
+      collectGeneratedImagesFromData(item, images, seenUrls, allowBareStringImage)
     }
     return images
   }
 
   if (typeof data === 'object') {
     for (const [key, value] of Object.entries(data)) {
-      if (
-        (key === 'image' || key === 'url') &&
-        isAssistantImageUrl(value) &&
-        !seenUrls.has(value)
-      ) {
-        seenUrls.add(value)
-        const type = isDataImageUrl(value) ? getDataImageMimeType(value) : 'image/*'
-        images.push({
-          id: getGeneratedImageId(value),
-          name: key === 'image' ? 'Generated image' : 'Image file',
-          url: value,
-          type,
-        })
+      if (isGeneratedImageUrlField(key) && typeof value === 'string') {
+        addGeneratedImageUrl(
+          value,
+          isGeneratedImageField(key) ? 'Generated image' : 'Image file',
+          images,
+          seenUrls
+        )
         continue
       }
 
-      extractGeneratedImagesFromData(value, images, seenUrls)
+      collectGeneratedImagesFromData(value, images, seenUrls, isGeneratedImageField(key))
     }
   }
 

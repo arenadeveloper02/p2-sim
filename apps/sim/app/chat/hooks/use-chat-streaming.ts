@@ -366,6 +366,12 @@ export function useChatStreaming() {
                       continue
                     }
 
+                    const directImages = extractGeneratedImagesFromData(value)
+                    if (directImages.length > 0) {
+                      generatedImages = extractGeneratedImagesFromData(value, generatedImages)
+                      continue
+                    }
+
                     const directFiles = extractAssistantFilesFromData(value)
                     if (directFiles.length > 0) {
                       extractedFiles.push(...directFiles)
