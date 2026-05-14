@@ -39,7 +39,6 @@ import {
   extractPathFromOutputId,
   parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
-import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
@@ -55,7 +54,10 @@ import {
   StartBlockInputModal,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { useChatFileUpload } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
-import { usePreventZoom, useScrollManagement } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
+import {
+  usePreventZoom,
+  useScrollManagement,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import {
   useFloatBoundarySync,
   useFloatDrag,
@@ -63,6 +65,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/float'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useChatStore } from '@/stores/chat/store'
 import { getChatPosition } from '@/stores/chat/utils'
 import { useCurrentWorkflowExecution } from '@/stores/execution'
@@ -181,6 +184,51 @@ const formatOutputContent = (output: unknown): string => {
     return `\`\`\`json\n${JSON.stringify(output, null, 2)}\n\`\`\``
   }
   return ''
+}
+
+const getImageUrlsFromOutput = (output: unknown): string[] => {
+  const extractedUrls = extractGeneratedImagesFromData(output).map((image) => image.url)
+  if (extractedUrls.length > 0) {
+    return extractedUrls
+  }
+
+  if (!output || typeof output !== 'object') {
+    return []
+  }
+
+  const outputRecord = output as Record<string, unknown>
+  const nestedOutput = outputRecord.output as Record<string, unknown> | undefined
+  const fallbackUrl =
+    nestedOutput?.image ??
+    outputRecord.image ??
+    (isAssistantImageUrl(outputRecord.content) ? outputRecord.content : null)
+
+  return typeof fallbackUrl === 'string' && isAssistantImageUrl(fallbackUrl) ? [fallbackUrl] : []
+}
+
+const getAssistantAssetSourcesFromResult = (
+  result: ExecutionResult & { output?: Record<string, Record<string, unknown>> },
+  selectedOutputs: string[],
+  streamedBlockIds?: Set<string>
+): unknown[] => {
+  if (selectedOutputs.length > 0 && Array.isArray(result.logs)) {
+    return selectedOutputs
+      .map((outputId) => extractOutputFromLogs(result.logs as BlockLog[], outputId))
+      .filter((output) => output !== undefined)
+  }
+
+  if (streamedBlockIds && streamedBlockIds.size > 0 && Array.isArray(result.logs)) {
+    return result.logs
+      .filter((log) => streamedBlockIds.has(log.blockId))
+      .map((log) => log.output)
+      .filter((output) => output !== undefined)
+  }
+
+  if (result.output && typeof result.output === 'object') {
+    return Object.values(result.output)
+  }
+
+  return []
 }
 
 interface StartInputFormatField {
@@ -456,9 +504,13 @@ export function Chat() {
     }))
   }, [workflowMessages])
 
-  const { scrollAreaRef, scrollToBottom } = useScrollManagement(messagesForScrollHook, isStreaming, {
-    behavior: 'auto',
-  })
+  const { scrollAreaRef, scrollToBottom } = useScrollManagement(
+    messagesForScrollHook,
+    isStreaming,
+    {
+      behavior: 'auto',
+    }
+  )
 
   const userMessages = useMemo(() => {
     return workflowMessages
@@ -539,6 +591,7 @@ export function Chat() {
       let receivedFinalEvent = false
       let finalEventData: ExecutionResult | null = null
       let chunkCount = 0
+      const streamedBlockIds = new Set<string>()
 
       const BATCH_MAX_MS = 50
       let pendingChunks = ''
@@ -588,11 +641,14 @@ export function Chat() {
                   if (trimmed && trimmed !== '[DONE]') {
                     try {
                       const json = JSON.parse(trimmed)
-                      const { event, data: eventData, chunk: contentChunk } = json
+                      const { event, data: eventData, chunk: contentChunk, blockId } = json
                       if (event === 'final' && eventData) {
                         receivedFinalEvent = true
                         finalEventData = eventData as ExecutionResult
                       } else if (contentChunk && typeof contentChunk === 'string') {
+                        if (typeof blockId === 'string') {
+                          streamedBlockIds.add(blockId)
+                        }
                         accumulatedContent += contentChunk
                         appendMessageContent(responseMessageId, contentChunk)
                         chunkCount++
@@ -607,12 +663,15 @@ export function Chat() {
 
                 try {
                   const json = JSON.parse(data)
-                  const { event, data: eventData, chunk: contentChunk } = json
+                  const { event, data: eventData, chunk: contentChunk, blockId } = json
 
                   if (event === 'final' && eventData) {
                     receivedFinalEvent = true
                     finalEventData = eventData as ExecutionResult
                   } else if (contentChunk && typeof contentChunk === 'string') {
+                    if (typeof blockId === 'string') {
+                      streamedBlockIds.add(blockId)
+                    }
                     accumulatedContent += contentChunk
                     appendMessageContent(responseMessageId, contentChunk)
                     chunkCount++
@@ -633,29 +692,17 @@ export function Chat() {
                   `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
                 )
               } else if (result.output) {
-                const imageUrlsFromOutput = (obj: unknown): string[] => {
-                  if (!obj || typeof obj !== 'object') return []
-                  const o = obj as Record<string, unknown>
-                  const extractedUrls = extractGeneratedImagesFromData(o).map((image) => image.url)
-                  if (extractedUrls.length > 0) {
-                    return extractedUrls
-                  }
-                  const fallbackUrl =
-                    (o.output as Record<string, unknown> | undefined)?.image ??
-                    o.image ??
-                    (isAssistantImageUrl(o.content) ? o.content : null)
-                  if (typeof fallbackUrl === 'string' && isAssistantImageUrl(fallbackUrl)) {
-                    return [fallbackUrl]
-                  }
-                  return []
-                }
-
-                for (const block of Object.values(result.output)) {
-                  const imageUrls = imageUrlsFromOutput(block)
+                const assetSources = getAssistantAssetSourcesFromResult(
+                  result,
+                  selectedOutputs,
+                  streamedBlockIds
+                )
+                for (const source of assetSources) {
+                  const imageUrls = getImageUrlsFromOutput(source)
                   if (imageUrls.length > 0) {
-                    const blockObj = block as Record<string, unknown>
-                    const output = blockObj.output as Record<string, unknown> | undefined
-                    const s3UploadFailed = output?.s3UploadFailed ?? blockObj.s3UploadFailed
+                    const sourceObj = source as Record<string, unknown>
+                    const output = sourceObj.output as Record<string, unknown> | undefined
+                    const s3UploadFailed = output?.s3UploadFailed ?? sourceObj.s3UploadFailed
                     contentToSet = {
                       content: accumulatedContent || '',
                       image: imageUrls[0] ?? '',
@@ -675,15 +722,21 @@ export function Chat() {
             })
 
             flushChunks()
+            const assetSources =
+              receivedFinalEvent && finalEventData
+                ? getAssistantAssetSourcesFromResult(
+                    finalEventData as ExecutionResult & {
+                      output?: Record<string, Record<string, unknown>>
+                    },
+                    selectedOutputs,
+                    streamedBlockIds
+                  )
+                : []
             finalizeMessageStream(responseMessageId, contentToSet, {
               files:
-                receivedFinalEvent && finalEventData && finalEventData.output
-                  ? extractAssistantFilesFromData(finalEventData.output)
-                  : undefined,
+                assetSources.length > 0 ? extractAssistantFilesFromData(assetSources) : undefined,
               generatedImages:
-                receivedFinalEvent && finalEventData && finalEventData.output
-                  ? extractGeneratedImagesFromData(finalEventData.output)
-                  : undefined,
+                assetSources.length > 0 ? extractGeneratedImagesFromData(assetSources) : undefined,
             })
             break
           }
@@ -712,7 +765,7 @@ export function Chat() {
 
             try {
               const json = JSON.parse(data)
-              const { event, data: eventData, chunk: contentChunk } = json
+              const { event, data: eventData, chunk: contentChunk, blockId } = json
 
               if (event === 'final' && eventData) {
                 receivedFinalEvent = true
@@ -739,6 +792,9 @@ export function Chat() {
                 flushChunks()
                 finalizeMessageStream(responseMessageId)
               } else if (contentChunk) {
+                if (typeof blockId === 'string') {
+                  streamedBlockIds.add(blockId)
+                }
                 accumulatedContent += contentChunk
                 pendingChunks += contentChunk
                 scheduleFlush()
@@ -796,8 +852,12 @@ export function Chat() {
             const files = extractAssistantFilesFromData(output)
             const generatedImages = extractGeneratedImagesFromData(output)
             if (content || files.length > 0 || generatedImages.length > 0) {
+              const imageUrls = generatedImages.map((image) => image.url)
               addMessage({
-                content: content || '',
+                content:
+                  imageUrls.length > 0
+                    ? { content, image: imageUrls[0] ?? '', images: imageUrls }
+                    : content || '',
                 workflowId: activeWorkflowId,
                 type: 'workflow',
                 ...(files.length > 0 ? { files } : {}),
@@ -1458,7 +1518,9 @@ export function Chat() {
                     }
                     className={cn(
                       'h-[22px] w-[22px] rounded-full border-0 p-0 transition-colors',
-                      chatMessage.trim() || chatFiles.length > 0 || effectiveGeneratedImages.length > 0
+                      chatMessage.trim() ||
+                        chatFiles.length > 0 ||
+                        effectiveGeneratedImages.length > 0
                         ? 'bg-[var(--text-primary)] hover-hover:bg-[var(--text-secondary)] dark:bg-[var(--border-1)] dark:hover-hover:bg-[var(--text-body)]'
                         : 'bg-[var(--text-subtle)] dark:bg-[var(--text-subtle)]'
                     )}

@@ -331,10 +331,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                     attachments: Array.isArray(log.attachments) ? log.attachments : undefined,
                   })
                 }
-                if (
-                  log.modelOutput ||
-                  (Array.isArray(log.generatedImages) && log.generatedImages.length > 0)
-                ) {
+                if (log.modelOutput) {
                   messages.push({
                     id: `${log.id}-assistant`,
                     content: log.modelOutput || '',

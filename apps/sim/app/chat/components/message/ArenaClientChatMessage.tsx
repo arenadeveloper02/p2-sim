@@ -20,7 +20,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
-import type { KnowledgeRef, KnowledgeResultChunk } from '@/app/chat/components/message/message'
+import type {
+  ChatAttachment,
+  KnowledgeRef,
+  KnowledgeResultChunk,
+} from '@/app/chat/components/message/message'
 import {
   downloadImage,
   extractAllBase64Images,
@@ -50,6 +54,7 @@ export interface ChatMessage {
   isStreaming?: boolean
   executionId?: string
   liked?: boolean | null
+  attachments?: ChatAttachment[]
   generatedImages?: AssistantGeneratedImage[]
   knowledgeResults?: KnowledgeResultChunk[]
   knowledgeRefs?: KnowledgeRef[]
@@ -96,12 +101,7 @@ function hasFencedCodeBlock(str: string): boolean {
  * Pipe column is copyable when it sits strictly between two other columns (matches `trim` of that segment non-empty).
  */
 function isPipeSegmentCopyable(partsLen: number, index: number, part: string): boolean {
-  return (
-    partsLen >= 3 &&
-    index >= 1 &&
-    index <= partsLen - 2 &&
-    part.trim().length > 0
-  )
+  return partsLen >= 3 && index >= 1 && index <= partsLen - 2 && part.trim().length > 0
 }
 
 interface LineWithPipeHoverProps {
@@ -483,31 +483,8 @@ export const ArenaClientChatMessage = memo(
 
     const containsBase64Images = hasBase64Images(cleanTextContent)
     const hasImageUrl = !!getImageUrlFromContent(cleanTextContent)
-    const supplementalGeneratedImages = useMemo(() => {
-      if (!message.generatedImages || message.generatedImages.length === 0) {
-        return []
-      }
-
-      const renderedUrls = new Set<string>()
-
-      if (typeof cleanTextContent === 'object' && cleanTextContent !== null) {
-        const contentRecord = cleanTextContent as Record<string, unknown>
-        const imgRaw = typeof contentRecord.image === 'string' ? contentRecord.image : ''
-        const txtRaw = typeof contentRecord.content === 'string' ? contentRecord.content : ''
-        const { uniqueUrls } = mergeToolOutputImageUrls(imgRaw, txtRaw, contentRecord.images)
-        uniqueUrls.forEach((url) => renderedUrls.add(normalizeImageUrlForCompare(url)))
-      } else if (typeof cleanTextContent === 'string') {
-        const { urls } = resolveMessageImagesAndProse(cleanTextContent)
-        urls.forEach((url) => renderedUrls.add(normalizeImageUrlForCompare(url)))
-      }
-
-      return message.generatedImages.filter(
-        (image) => !renderedUrls.has(normalizeImageUrlForCompare(image.url))
-      )
-    }, [cleanTextContent, message.generatedImages])
-
     const generatedImagesByUrl = useMemo(() => {
-      const entries = (message.generatedImages ?? []).map((image) => [
+      const entries = (message.generatedImages ?? []).map((image): [string, AssistantGeneratedImage] => [
         normalizeImageUrlForCompare(image.url),
         image,
       ])
@@ -918,16 +895,6 @@ export const ArenaClientChatMessage = memo(
             <div>
               <div className='break-words text-base'>
                 {renderContent(cleanTextContent)}
-                {supplementalGeneratedImages.map((image) => (
-                  <div key={normalizeImageUrlForCompare(image.url)} className='w-full'>
-                    {renderBs64Img({
-                      isBase64: false,
-                      imageData: '',
-                      imageUrl: image.url,
-                      ...getGeneratedImageSelectionProps(image.url),
-                    })}
-                  </div>
-                ))}
                 {/* {isJsonObject ? (
                   <pre className='text-gray-800 dark:text-gray-100'>
                     {JSON.stringify(cleanTextContent, null, 2)}

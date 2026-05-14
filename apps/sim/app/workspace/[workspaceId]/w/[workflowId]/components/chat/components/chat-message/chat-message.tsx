@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
+import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
-import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components'
 import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
-import { useThrottledValue } from '@/hooks/use-throttled-value'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
+import { useThrottledValue } from '@/hooks/use-throttled-value'
 import {
   downloadImage,
   extractAllBase64Images,
@@ -46,10 +46,7 @@ interface ChatMessageProps {
     messageId: string,
     image: { id: string; name: string; url: string; type: string }
   ) => void
-  onToggleUserAttachmentImage?: (
-    messageId: string,
-    attachment: ChatMessageAttachment
-  ) => void
+  onToggleUserAttachmentImage?: (messageId: string, attachment: ChatMessageAttachment) => void
   selectedGeneratedImageIds?: Set<string>
 }
 
@@ -192,31 +189,8 @@ export function ChatMessage({
 
   const throttled = useThrottledValue(rawContent)
   const formattedContent = message.type === 'user' ? rawContent : throttled
-  const supplementalGeneratedImages = useMemo(() => {
-    if (!message.generatedImages || message.generatedImages.length === 0) {
-      return []
-    }
-
-    const renderedUrls = new Set<string>()
-
-    if (typeof message.content === 'object' && message.content !== null) {
-      const contentRecord = message.content as Record<string, unknown>
-      const imgRaw = typeof contentRecord.image === 'string' ? contentRecord.image : ''
-      const txtRaw = typeof contentRecord.content === 'string' ? contentRecord.content : ''
-      const { uniqueUrls } = mergeToolOutputImageUrls(imgRaw, txtRaw, contentRecord.images)
-      uniqueUrls.forEach((url) => renderedUrls.add(normalizeImageUrlForCompare(url)))
-    } else if (typeof message.content === 'string') {
-      const { urls } = resolveMessageImagesAndProse(message.content)
-      urls.forEach((url) => renderedUrls.add(normalizeImageUrlForCompare(url)))
-    }
-
-    return message.generatedImages.filter(
-      (image) => !renderedUrls.has(normalizeImageUrlForCompare(image.url))
-    )
-  }, [message.content, message.generatedImages])
-
   const generatedImagesByUrl = useMemo(() => {
-    const entries = (message.generatedImages ?? []).map((image) => [
+    const entries = (message.generatedImages ?? []).map((image): [string, AssistantGeneratedImage] => [
       normalizeImageUrlForCompare(image.url),
       image,
     ])
@@ -413,16 +387,6 @@ export function ChatMessage({
       <div className='whitespace-normal break-words font-[470] font-season text-[#E8E8E8] text-sm leading-[1.25rem]'>
         {/* <WordWrap text={formattedContent} /> */}
         {renderContent(message?.content)}
-        {supplementalGeneratedImages.map((image) => (
-          <div key={normalizeImageUrlForCompare(image.url)} className='w-full'>
-            {renderBs64Img({
-              isBase64: false,
-              imageData: '',
-              imageUrl: image.url,
-              ...getGeneratedImageSelectionProps(image.url),
-            })}
-          </div>
-        ))}
         {message?.isStreaming && <StreamingIndicator className='mt-1 text-[#E8E8E8]' />}
       </div>
       {message.files && message.files.length > 0 && (

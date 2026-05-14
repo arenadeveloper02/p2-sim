@@ -12,18 +12,17 @@ import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
 import {
   toPersistedChatAttachment,
   updateExecutionHistoryData,
 } from '@/lib/chat/history-persistence'
-import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
 import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { ChatFiles } from '@/lib/uploads'
-import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getWorkspaceIdsForUser } from '@/lib/workspaces/permissions/utils'
@@ -343,32 +342,32 @@ export const POST = withRouteHandler(
         )
       }
 
-    if (parsedBody.chatId) {
-      try {
-        const chatId = parsedBody.chatId
-        logger.debug(`[${requestId}] Processing chatId: ${chatId}`)
-
-        let executingUserId: string | undefined
+      if (parsedBody.chatId) {
         try {
-          const session = await getSession()
-          executingUserId = session?.user?.id
-          logger.debug(`[${requestId}] Executing user ID from session:`, executingUserId)
-        } catch (error) {
-          logger.debug(
-            `[${requestId}] Could not get session (user may not be authenticated):`,
-            error
-          )
-        }
+          const chatId = parsedBody.chatId
+          logger.debug(`[${requestId}] Processing chatId: ${chatId}`)
 
-        const existingChat = await db
-          .select({ id: deployedChat.id })
-          .from(deployedChat)
-          .where(eq(deployedChat.chatId, chatId))
-          .limit(1)
+          let executingUserId: string | undefined
+          try {
+            const session = await getSession()
+            executingUserId = session?.user?.id
+            logger.debug(`[${requestId}] Executing user ID from session:`, executingUserId)
+          } catch (error) {
+            logger.debug(
+              `[${requestId}] Could not get session (user may not be authenticated):`,
+              error
+            )
+          }
 
-        if (existingChat.length > 0) {
-          const existingChatId = existingChat[0].id
-          logger.debug(`[${requestId}] ChatId already exists, updating timestamp: ${chatId}`)
+          const existingChat = await db
+            .select({ id: deployedChat.id })
+            .from(deployedChat)
+            .where(eq(deployedChat.chatId, chatId))
+            .limit(1)
+
+          if (existingChat.length > 0) {
+            const existingChatId = existingChat[0].id
+            logger.debug(`[${requestId}] ChatId already exists, updating timestamp: ${chatId}`)
 
             await db
               .update(deployedChat)
@@ -378,19 +377,19 @@ export const POST = withRouteHandler(
               })
               .where(eq(deployedChat.id, existingChatId))
 
-          logger.debug(`[${requestId}] Successfully updated existing chat: ${chatId}`)
-        } else {
-          const startBlockValues =
-            parsedBody.startBlockInputs && typeof parsedBody.startBlockInputs === 'object'
-              ? Object.values(parsedBody.startBlockInputs)
-                  .filter((value) => value !== undefined && value !== null)
-                  .map((value) => {
-                    const stringValue =
-                      typeof value === 'string' ? value.trim() : `${value}`.trim()
-                    return stringValue
-                  })
-                  .filter((value) => value.length > 0)
-              : []
+            logger.debug(`[${requestId}] Successfully updated existing chat: ${chatId}`)
+          } else {
+            const startBlockValues =
+              parsedBody.startBlockInputs && typeof parsedBody.startBlockInputs === 'object'
+                ? Object.values(parsedBody.startBlockInputs)
+                    .filter((value) => value !== undefined && value !== null)
+                    .map((value) => {
+                      const stringValue =
+                        typeof value === 'string' ? value.trim() : `${value}`.trim()
+                      return stringValue
+                    })
+                    .filter((value) => value.length > 0)
+                : []
 
             const words = parsedBody.input?.trim().split(/\s+/).filter(Boolean) || []
             const title =
@@ -420,21 +419,21 @@ export const POST = withRouteHandler(
                 updatedAt: now,
               })
 
-            logger.info(`[${requestId}] Successfully created new chat record: ${chatId}`)
-          } catch (insertError: any) {
-            if (
-              insertError?.code === '23505' ||
-              (insertError instanceof Error && insertError.message.includes('unique'))
-            ) {
-              logger.debug(
-                `[${requestId}] Race condition detected - chatId was created by another request: ${chatId}`
-              )
+              logger.info(`[${requestId}] Successfully created new chat record: ${chatId}`)
+            } catch (insertError: any) {
+              if (
+                insertError?.code === '23505' ||
+                (insertError instanceof Error && insertError.message.includes('unique'))
+              ) {
+                logger.debug(
+                  `[${requestId}] Race condition detected - chatId was created by another request: ${chatId}`
+                )
 
-              const raceConditionCheck = await db
-                .select({ id: deployedChat.id })
-                .from(deployedChat)
-                .where(eq(deployedChat.chatId, chatId))
-                .limit(1)
+                const raceConditionCheck = await db
+                  .select({ id: deployedChat.id })
+                  .from(deployedChat)
+                  .where(eq(deployedChat.chatId, chatId))
+                  .limit(1)
 
                 if (raceConditionCheck.length > 0) {
                   await db
@@ -445,23 +444,23 @@ export const POST = withRouteHandler(
                     })
                     .where(eq(deployedChat.id, raceConditionCheck[0].id))
 
-                logger.debug(`[${requestId}] Updated chat record after race condition: ${chatId}`)
+                  logger.debug(`[${requestId}] Updated chat record after race condition: ${chatId}`)
+                }
+              } else {
+                throw insertError
               }
-            } else {
-              throw insertError
             }
           }
+        } catch (error: any) {
+          logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, {
+            message: error.message,
+            code: error.code,
+            chatId: parsedBody.chatId,
+          })
         }
-      } catch (error: any) {
-        logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, {
-          message: error.message,
-          code: error.code,
-          chatId: parsedBody.chatId,
-        })
+      } else {
+        logger.debug(`[${requestId}] No chatId (payload) provided in request body`)
       }
-    } else {
-      logger.debug(`[${requestId}] No chatId (payload) provided in request body`)
-    }
 
       const {
         input,
@@ -473,8 +472,8 @@ export const POST = withRouteHandler(
         startBlockInputs,
       } = parsedBody
 
-    const session = await getSession()
-    const userId = session?.user?.id || null
+      const session = await getSession()
+      const userId = session?.user?.id || null
 
       if ((password || email) && !input) {
         const response = addCorsHeaders(createSuccessResponse({ authenticated: true }), request)
@@ -484,15 +483,15 @@ export const POST = withRouteHandler(
         return response
       }
 
-    const hasStartBlockInputs =
-      startBlockInputs &&
-      typeof startBlockInputs === 'object' &&
-      Object.keys(startBlockInputs).length > 0
-    const hasStartBlockInputValues =
-      hasStartBlockInputs &&
-      Object.values(startBlockInputs).some(
-        (value) => value !== null && value !== undefined && value !== ''
-      )
+      const hasStartBlockInputs =
+        startBlockInputs &&
+        typeof startBlockInputs === 'object' &&
+        Object.keys(startBlockInputs).length > 0
+      const hasStartBlockInputValues =
+        hasStartBlockInputs &&
+        Object.values(startBlockInputs).some(
+          (value) => value !== null && value !== undefined && value !== ''
+        )
 
       if (!input && (!files || files.length === 0) && !hasStartBlockInputValues) {
         return addCorsHeaders(createErrorResponse('No input provided', 400), request)
@@ -540,35 +539,35 @@ export const POST = withRouteHandler(
         )
       }
 
-    let formattedInitialInput = input || ''
-    if (startBlockInputs && typeof startBlockInputs === 'object') {
-      const startBlockInputLines: string[] = []
-      for (const [key, value] of Object.entries(startBlockInputs)) {
-        if (key === 'input' || key === 'conversationId' || key === 'files') {
-          continue
+      let formattedInitialInput = input || ''
+      if (startBlockInputs && typeof startBlockInputs === 'object') {
+        const startBlockInputLines: string[] = []
+        for (const [key, value] of Object.entries(startBlockInputs)) {
+          if (key === 'input' || key === 'conversationId' || key === 'files') {
+            continue
+          }
+          if (value !== null && value !== undefined && value !== '') {
+            const formattedValue = typeof value === 'string' ? value : String(value)
+            startBlockInputLines.push(`${key}: ${formattedValue}`)
+          }
         }
-        if (value !== null && value !== undefined && value !== '') {
-          const formattedValue = typeof value === 'string' ? value : String(value)
-          startBlockInputLines.push(`${key}: ${formattedValue}`)
+        if (startBlockInputLines.length > 0) {
+          const startBlockInputsFormatted = startBlockInputLines.join('\n')
+          formattedInitialInput = formattedInitialInput
+            ? `${formattedInitialInput}\n${startBlockInputsFormatted}`
+            : startBlockInputsFormatted
         }
       }
-      if (startBlockInputLines.length > 0) {
-        const startBlockInputsFormatted = startBlockInputLines.join('\n')
-        formattedInitialInput = formattedInitialInput
-          ? `${formattedInitialInput}\n${startBlockInputsFormatted}`
-          : startBlockInputsFormatted
-      }
-    }
 
-    await loggingSession.safeStart({
-      userId: userId || workspaceOwnerId,
-      workspaceId,
-      variables: {},
-      isExternalChat: true,
-      chatId: payload || conversationId || undefined,
-      conversationId: conversationId || undefined,
-      initialInput: formattedInitialInput || undefined,
-    })
+      await loggingSession.safeStart({
+        userId: userId || workspaceOwnerId,
+        workspaceId,
+        variables: {},
+        isExternalChat: true,
+        chatId: payload || conversationId || undefined,
+        conversationId: conversationId || undefined,
+        initialInput: formattedInitialInput || undefined,
+      })
 
       try {
         const selectedOutputs: string[] = []
@@ -615,15 +614,15 @@ export const POST = withRouteHandler(
               deployment.userId
             )
 
-          if (uploadedFiles.length > 0) {
-            workflowInput.files = uploadedFiles
-            await updateExecutionHistoryData(executionId, {
-              userAttachments: uploadedFiles.map(toPersistedChatAttachment),
-            })
-            logger.info(`[${requestId}] Successfully processed ${uploadedFiles.length} files`)
-          }
-        } catch (fileError: any) {
-          logger.error(`[${requestId}] Failed to process chat files:`, fileError)
+            if (uploadedFiles.length > 0) {
+              workflowInput.files = uploadedFiles
+              await updateExecutionHistoryData(executionId, {
+                userAttachments: uploadedFiles.map(toPersistedChatAttachment),
+              })
+              logger.info(`[${requestId}] Successfully processed ${uploadedFiles.length} files`)
+            }
+          } catch (fileError: any) {
+            logger.error(`[${requestId}] Failed to process chat files:`, fileError)
 
             await loggingSession.safeStart({
               userId: workspaceOwnerId,
@@ -683,24 +682,24 @@ export const POST = withRouteHandler(
             ),
         })
 
-      const wrappedStream = new ReadableStream({
-        async start(controller) {
-          const reader = originalStream.getReader()
-          const decoder = new TextDecoder()
-          const encoder = new TextEncoder()
-          let buffer = ''
-          let accumulatedContent = ''
+        const wrappedStream = new ReadableStream({
+          async start(controller) {
+            const reader = originalStream.getReader()
+            const decoder = new TextDecoder()
+            const encoder = new TextEncoder()
+            let buffer = ''
+            let accumulatedContent = ''
 
             try {
               while (true) {
                 const { done, value } = await reader.read()
                 if (done) break
 
-              const chunk = decoder.decode(value, { stream: true })
-              buffer += chunk
+                const chunk = decoder.decode(value, { stream: true })
+                buffer += chunk
 
-              const lines = buffer.split('\n\n')
-              buffer = lines.pop() || ''
+                const lines = buffer.split('\n\n')
+                buffer = lines.pop() || ''
 
                 for (const line of lines) {
                   if (!line.trim() || !line.startsWith('data: ')) {
@@ -718,16 +717,16 @@ export const POST = withRouteHandler(
                     const json = JSON.parse(data)
                     const { event, data: eventData, chunk: contentChunk } = json
 
-                  if (contentChunk) {
-                    accumulatedContent += contentChunk
-                  }
-
-                  if (event === 'final' && eventData) {
-                    const finalData = eventData as {
-                      success: boolean
-                      error?: string | { message?: string }
-                      output?: Record<string, Record<string, any>>
+                    if (contentChunk) {
+                      accumulatedContent += contentChunk
                     }
+
+                    if (event === 'final' && eventData) {
+                      const finalData = eventData as {
+                        success: boolean
+                        error?: string | { message?: string }
+                        output?: Record<string, Record<string, any>>
+                      }
 
                       const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
                         if (!path || path === 'content') {
@@ -749,20 +748,20 @@ export const POST = withRouteHandler(
                         return undefined
                       }
 
-                    const isKnowledgeResultsArray = (
-                      value: unknown
-                    ): value is Array<Record<string, unknown>> =>
-                      Array.isArray(value) &&
-                      value.length > 0 &&
-                      value.every(
-                        (item) =>
-                          item &&
-                          typeof item === 'object' &&
-                          'documentId' in item &&
-                          'documentName' in item &&
-                          'content' in item &&
-                          'chunkIndex' in item
-                      )
+                      const isKnowledgeResultsArray = (
+                        value: unknown
+                      ): value is Array<Record<string, unknown>> =>
+                        Array.isArray(value) &&
+                        value.length > 0 &&
+                        value.every(
+                          (item) =>
+                            item &&
+                            typeof item === 'object' &&
+                            'documentId' in item &&
+                            'documentName' in item &&
+                            'content' in item &&
+                            'chunkIndex' in item
+                        )
 
                       const mapToKnowledgePayload = (value: Array<Record<string, unknown>>) =>
                         value.map((item) => ({
@@ -850,69 +849,79 @@ export const POST = withRouteHandler(
                         controller.enqueue(encoder.encode(`data: ${knowledgeResultsEvent}\n\n`))
                       }
 
-                    const generatedImages = finalData.output
-                      ? extractGeneratedImagesFromData(finalData.output)
-                      : []
-
-                    const knowledgeRefs =
-                      knowledgeResultsPayload.length > 0
-                        ? (() => {
-                            const refs: Array<{
-                              documentId: string
-                              documentName: string
-                              chunkId: string
-                              chunkIndex: number
-                              knowledgeBaseId: string
-                              workspaceId: string | null
-                            }> = []
-                            for (const item of knowledgeResultsPayload) {
-                              if (
-                                item.chunkId != null &&
-                                item.knowledgeBaseId != null &&
-                                item.workspaceId !== undefined &&
-                                typeof item.chunkIndex === 'number'
-                              ) {
-                                refs.push({
-                                  documentId: item.documentId,
-                                  documentName: item.documentName || item.documentId,
-                                  chunkId: String(item.chunkId),
-                                  chunkIndex: item.chunkIndex,
-                                  knowledgeBaseId: String(item.knowledgeBaseId),
-                                  workspaceId:
-                                    item.workspaceId === null ? null : String(item.workspaceId),
-                                })
-                              }
-                            }
-                            return refs
-                          })()
-                        : []
-
-                    let finalChatOutput = accumulatedContent.trim()
-
-                    if (
-                      deployment.outputConfigs &&
-                      Array.isArray(deployment.outputConfigs) &&
-                      finalData.output
-                    ) {
-                      const formatValue = (value: any): string | null => {
-                        if (value === null || value === undefined) {
-                          return null
+                      let generatedImages: ReturnType<typeof extractGeneratedImagesFromData> = []
+                      if (
+                        deployment.outputConfigs &&
+                        Array.isArray(deployment.outputConfigs) &&
+                        finalData.output
+                      ) {
+                        for (const config of deployment.outputConfigs) {
+                          const blockOutputs = finalData.output[config.blockId]
+                          if (!blockOutputs) continue
+                          const value = getOutputValue(blockOutputs, config.path)
+                          generatedImages = extractGeneratedImagesFromData(value, generatedImages)
                         }
-                        if (extractGeneratedImagesFromData(value).length > 0) {
-                          return null
-                        }
-                        if (typeof value === 'string') {
-                          return value
-                        }
-                        if (typeof value === 'object') {
-                          try {
-                            return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
-                          } catch {
-                            return String(value)
-                          }
-                        }
-                        return String(value)
                       }
+
+                      const knowledgeRefs =
+                        knowledgeResultsPayload.length > 0
+                          ? (() => {
+                              const refs: Array<{
+                                documentId: string
+                                documentName: string
+                                chunkId: string
+                                chunkIndex: number
+                                knowledgeBaseId: string
+                                workspaceId: string | null
+                              }> = []
+                              for (const item of knowledgeResultsPayload) {
+                                if (
+                                  item.chunkId != null &&
+                                  item.knowledgeBaseId != null &&
+                                  item.workspaceId !== undefined &&
+                                  typeof item.chunkIndex === 'number'
+                                ) {
+                                  refs.push({
+                                    documentId: item.documentId,
+                                    documentName: item.documentName || item.documentId,
+                                    chunkId: String(item.chunkId),
+                                    chunkIndex: item.chunkIndex,
+                                    knowledgeBaseId: String(item.knowledgeBaseId),
+                                    workspaceId:
+                                      item.workspaceId === null ? null : String(item.workspaceId),
+                                  })
+                                }
+                              }
+                              return refs
+                            })()
+                          : []
+
+                      let finalChatOutput = accumulatedContent.trim()
+
+                      if (
+                        deployment.outputConfigs &&
+                        Array.isArray(deployment.outputConfigs) &&
+                        finalData.output
+                      ) {
+                        const formatValue = (value: any): string | null => {
+                          if (value === null || value === undefined) {
+                            return null
+                          }
+                          if (extractGeneratedImagesFromData(value).length > 0) {
+                            return null
+                          }
+                          if (typeof value === 'string') {
+                            return value
+                          }
+                          if (typeof value === 'object') {
+                            try {
+                              return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
+                            } catch {
+                              return String(value)
+                            }
+                          }
+                          return String(value)
+                        }
 
                         const formattedOutputs: string[] = []
                         for (const config of deployment.outputConfigs) {
@@ -952,51 +961,61 @@ export const POST = withRouteHandler(
                         }
                       }
 
-                    if (generatedImages.length > 0) {
-                      finalChatOutput = stripImageOnlyStructuredText(finalChatOutput)
-                    }
+                      if (generatedImages.length > 0) {
+                        finalChatOutput = stripImageOnlyStructuredText(finalChatOutput)
+                        const imageUrls = generatedImages.map((image) => image.url).filter(Boolean)
+                        if (imageUrls.length > 0) {
+                          finalChatOutput = finalChatOutput
+                            ? `${finalChatOutput}\n\n${imageUrls.join('\n')}`
+                            : imageUrls.join('\n')
+                        }
+                      }
 
-                    if (finalChatOutput || knowledgeRefs.length > 0 || generatedImages.length > 0) {
-                      try {
-                        if (finalChatOutput) {
-                          await db
-                            .update(workflowExecutionLogs)
-                            .set({ finalChatOutput })
-                            .where(eq(workflowExecutionLogs.executionId, executionId))
+                      if (
+                        finalChatOutput ||
+                        knowledgeRefs.length > 0 ||
+                        generatedImages.length > 0
+                      ) {
+                        try {
+                          if (finalChatOutput) {
+                            await db
+                              .update(workflowExecutionLogs)
+                              .set({ finalChatOutput })
+                              .where(eq(workflowExecutionLogs.executionId, executionId))
+                          }
+                          if (knowledgeRefs.length > 0 || generatedImages.length > 0) {
+                            await updateExecutionHistoryData(executionId, {
+                              knowledgeRefs,
+                              generatedImages,
+                            })
+                          }
+                          logger.debug(
+                            `[${requestId}] Updated finalChatOutput for execution ${executionId}`
+                          )
+                        } catch (updateError) {
+                          logger.error(
+                            `[${requestId}] Failed to update finalChatOutput:`,
+                            updateError
+                          )
                         }
-                        if (knowledgeRefs.length > 0 || generatedImages.length > 0) {
-                          await updateExecutionHistoryData(executionId, {
-                            knowledgeRefs,
-                            generatedImages,
-                          })
-                        }
-                        logger.debug(
-                          `[${requestId}] Updated finalChatOutput for execution ${executionId}`
-                        )
-                      } catch (updateError) {
-                        logger.error(
-                          `[${requestId}] Failed to update finalChatOutput:`,
-                          updateError
-                        )
                       }
                     }
-                  }
 
-                  controller.enqueue(encoder.encode(`${line}\n\n`))
-                } catch {
-                  controller.enqueue(encoder.encode(`${line}\n\n`))
+                    controller.enqueue(encoder.encode(`${line}\n\n`))
+                  } catch {
+                    controller.enqueue(encoder.encode(`${line}\n\n`))
+                  }
                 }
               }
+            } catch (error) {
+              logger.error(`[${requestId}] Error in stream wrapper:`, error)
+              controller.error(error)
+            } finally {
+              reader.releaseLock()
+              controller.close()
             }
-          } catch (error) {
-            logger.error(`[${requestId}] Error in stream wrapper:`, error)
-            controller.error(error)
-          } finally {
-            reader.releaseLock()
-            controller.close()
-          }
-        },
-      })
+          },
+        })
 
         const streamResponse = new NextResponse(wrappedStream, {
           status: 200,

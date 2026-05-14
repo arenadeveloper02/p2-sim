@@ -4,9 +4,9 @@ import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import {
+  type AssistantChatFile as ChatFile,
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
-  type AssistantChatFile as ChatFile,
 } from '@/lib/chat/assistant-assets'
 import type { ChatMessage } from '@/app/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
@@ -283,7 +283,7 @@ export function useChatStreaming() {
                 const outputConfigs = streamingOptions?.outputConfigs
                 const formattedOutputs: string[] = []
                 let extractedFiles: ChatFile[] = []
-                let generatedImages = extractGeneratedImagesFromData(finalData.output)
+                let generatedImages = [] as ReturnType<typeof extractGeneratedImagesFromData>
 
                 const formatValue = (value: any): string | null => {
                   if (value === null || value === undefined) {
@@ -420,44 +420,14 @@ export function useChatStreaming() {
                 let contentToSet: string | Record<string, unknown> | undefined =
                   finalContent ?? undefined
 
-                const isImageUrlString = (s: unknown): boolean =>
-                  typeof s === 'string' &&
-                  s.length > 0 &&
-                  (s.startsWith('http') || s.startsWith('/api/files/serve/')) &&
-                  (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(s.trim()) ||
-                    s.includes('agent-generated-images'))
-
-                const imageUrlsFromOutput = (obj: any): string[] => {
-                  if (!obj || typeof obj !== 'object') return []
-                  const candidateUrls = extractGeneratedImagesFromData(obj).map((image) => image.url)
-                  if (candidateUrls.length > 0) {
-                    return candidateUrls
-                  }
-                  const fallbackUrl =
-                    obj.output?.image ??
-                    obj.image ??
-                    (isImageUrlString(obj.content) ? obj.content : null)
-                  if (
-                    typeof fallbackUrl === 'string' &&
-                    (fallbackUrl.startsWith('http') || fallbackUrl.startsWith('/api/files/serve/'))
-                  ) {
-                    return [fallbackUrl]
-                  }
-                  return []
-                }
-                if (finalData.output) {
-                  for (const block of Object.values(finalData.output)) {
-                    const imageUrls = imageUrlsFromOutput(block)
-                    if (imageUrls.length > 0) {
-                      const currentContent = typeof contentToSet === 'string' ? contentToSet : ''
-                      const { prose } = resolveMessageImagesAndProse(currentContent)
-                      contentToSet = {
-                        content: prose,
-                        image: imageUrls[0] ?? '',
-                        images: imageUrls,
-                      }
-                      break
-                    }
+                if (generatedImages.length > 0) {
+                  const currentContent = typeof contentToSet === 'string' ? contentToSet : ''
+                  const { prose } = resolveMessageImagesAndProse(currentContent)
+                  const imageUrls = generatedImages.map((image) => image.url)
+                  contentToSet = {
+                    content: prose,
+                    image: imageUrls[0] ?? '',
+                    images: imageUrls,
                   }
                 }
 
