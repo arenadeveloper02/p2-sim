@@ -39,5 +39,5 @@ export async function getGaqlSystemPrompt(): Promise<string> {
     )
   }
 
-  return row.content.replaceAll('${CURRENT_DATE}', CURRENT_DATE)
+  return row.content.replace(/\$\{CURRENT_DATE\}/g, CURRENT_DATE)
 }
