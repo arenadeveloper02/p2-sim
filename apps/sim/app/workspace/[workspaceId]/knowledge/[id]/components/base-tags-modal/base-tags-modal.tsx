@@ -15,6 +15,8 @@ import {
   ModalHeader,
   Trash,
 } from '@/components/emcn'
+import { requestJson } from '@/lib/api/client/request'
+import { getTagUsageContract, type TagUsageData } from '@/lib/api/contracts/knowledge'
 import { cn } from '@/lib/core/utils/cn'
 import { SUPPORTED_FIELD_TYPES, TAG_SLOT_CONFIG } from '@/lib/knowledge/constants'
 import { addTagsforKBEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -32,13 +34,6 @@ const FIELD_TYPE_LABELS: Record<string, string> = {
   number: 'Number',
   date: 'Date',
   boolean: 'Boolean',
-}
-
-interface TagUsageData {
-  tagName: string
-  tagSlot: string
-  documentCount: number
-  documents: Array<{ id: string; name: string; tagValue: string }>
 }
 
 interface DocumentListProps {
@@ -114,11 +109,9 @@ export function BaseTagsModal({
     if (!knowledgeBaseId) return
 
     try {
-      const response = await fetch(`/api/knowledge/${knowledgeBaseId}/tag-usage`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch tag usage')
-      }
-      const result = await response.json()
+      const result = await requestJson(getTagUsageContract, {
+        params: { id: knowledgeBaseId },
+      })
       if (result.success) {
         setTagUsageData(result.data)
       }

@@ -125,10 +125,10 @@ export function getStorageProvider(): 'S3' | 'Local' {
 }
 
 /**
- * Check if we're using cloud storage (S3)
+ * Check if we're using cloud storage (S3 or Azure Blob)
  */
 export function isUsingCloudStorage(): boolean {
-  return USE_S3_STORAGE
+  return USE_S3_STORAGE || USE_BLOB_STORAGE
 }
 
 /**
@@ -137,6 +137,9 @@ export function isUsingCloudStorage(): boolean {
 export function getStorageConfig(context: StorageContext): StorageConfig {
   if (USE_S3_STORAGE) {
     return getS3Config(context)
+  }
+  if (USE_BLOB_STORAGE) {
+    return getBlobConfig(context)
   }
 
   return {}
@@ -283,6 +286,13 @@ export function isStorageContextConfigured(context: StorageContext): boolean {
 
   if (USE_S3_STORAGE) {
     return !!(config.bucket && config.region)
+  }
+
+  if (USE_BLOB_STORAGE) {
+    return !!(
+      config.containerName &&
+      (config.connectionString || (config.accountName && config.accountKey))
+    )
   }
 
   if (context === 'agent-generated-images') {

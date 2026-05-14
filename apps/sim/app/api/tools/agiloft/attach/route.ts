@@ -1,11 +1,13 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { agiloftAttachContract } from '@/lib/api/contracts/tools/agiloft'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { FileInputSchema, type RawFileInput } from '@/lib/uploads/utils/file-schemas'
+import type { RawFileInput } from '@/lib/uploads/utils/file-schemas'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { agiloftLogin, agiloftLogout, buildAttachFileUrl } from '@/tools/agiloft/utils'
@@ -13,18 +15,6 @@ import { agiloftLogin, agiloftLogout, buildAttachFileUrl } from '@/tools/agiloft
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('AgiloftAttachAPI')
-
-const AgiloftAttachSchema = z.object({
-  instanceUrl: z.string().min(1, 'Instance URL is required'),
-  knowledgeBase: z.string().min(1, 'Knowledge base is required'),
-  login: z.string().min(1, 'Login is required'),
-  password: z.string().min(1, 'Password is required'),
-  table: z.string().min(1, 'Table is required'),
-  recordId: z.string().min(1, 'Record ID is required'),
-  fieldName: z.string().min(1, 'Field name is required'),
-  file: FileInputSchema.optional().nullable(),
-  fileName: z.string().optional().nullable(),
-})
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
@@ -40,8 +30,26 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    const body = await request.json()
-    const data = AgiloftAttachSchema.parse(body)
+    const parsed = await parseRequest(
+      agiloftAttachContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid request data`, { errors: error.issues })
+          return NextResponse.json(
+            {
+              success: false,
+              error: getValidationErrorMessage(error, 'Invalid request data'),
+              details: error.issues,
+            },
+            { status: 400 }
+          )
+        },
+      }
+    )
+    if (!parsed.success) return parsed.response
+    const data = parsed.data.body
 
     if (!data.file) {
       return NextResponse.json({ success: false, error: 'File is required' }, { status: 400 })
@@ -83,7 +91,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       const agiloftResponse = await fetch(url, {
         method: 'PUT',
         headers: {
-          'Content-Type': userFile.type || 'application/octet-stream',
+          'Content-Type': 'application/octet-stream',
           Authorization: `Bearer ${token}`,
         },
         body: new Uint8Array(fileBuffer),
@@ -127,19 +135,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       await agiloftLogout(data.instanceUrl, data.knowledgeBase, token)
     }
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid request data`, { errors: error.errors })
-      return NextResponse.json(
-        { success: false, error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      )
-    }
-
     logger.error(`[${requestId}] Error attaching file to Agiloft:`, error)
 
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: toError(error).message }, { status: 500 })
   }
 })

@@ -151,7 +151,7 @@ export async function buildIntegrationToolSchemas(
               fallbackName: strippedName,
               appendEmailTagline: shouldAppendEmailTagline,
             }),
-            input_schema: userSchema as unknown as Record<string, unknown>,
+            input_schema: { ...userSchema },
             defer_loading: true,
             executeLocally:
               catalogEntry?.clientExecutable === true || catalogEntry?.route === 'client',
@@ -238,7 +238,7 @@ export async function buildCopilotRequestPayload(
       const filename = (f.filename ?? f.name ?? 'file') as string
       const mediaType = (f.media_type ?? f.mimeType ?? 'application/octet-stream') as string
       try {
-        await trackChatUpload(
+        const { displayName } = await trackChatUpload(
           params.workspaceId,
           userId,
           chatId,
@@ -248,13 +248,13 @@ export async function buildCopilotRequestPayload(
           f.size
         )
         const lines = [
-          `File "${filename}" (${mediaType}, ${f.size} bytes) uploaded.`,
-          `Read with: read("uploads/${filename}")`,
-          `To save permanently: materialize_file(fileName: "${filename}")`,
+          `File "${displayName}" (${mediaType}, ${f.size} bytes) uploaded.`,
+          `Read with: read("uploads/${displayName}")`,
+          `To save permanently: materialize_file(fileName: "${displayName}")`,
         ]
-        if (filename.endsWith('.json')) {
+        if (displayName.endsWith('.json')) {
           lines.push(
-            `To import as a workflow: materialize_file(fileName: "${filename}", operation: "import")`
+            `To import as a workflow: materialize_file(fileName: "${displayName}", operation: "import")`
           )
         }
         uploadContexts.push({
@@ -294,7 +294,7 @@ export async function buildCopilotRequestPayload(
           integrationTools.push({
             name: createMcpToolId(mcpTool.serverId, mcpTool.name),
             description: mcpTool.description || `MCP tool: ${mcpTool.name} (${mcpTool.serverName})`,
-            input_schema: mcpTool.inputSchema as unknown as Record<string, unknown>,
+            input_schema: { ...mcpTool.inputSchema },
             executeLocally: false,
           })
         }

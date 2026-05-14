@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { type NextRequest, NextResponse } from 'next/server'
+import { shopifyAuthorizeQuerySchema } from '@/lib/api/contracts/oauth-connections'
 import { getSession } from '@/lib/auth'
 import { env } from '@/lib/core/config/env'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -28,11 +29,16 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'Shopify client ID not configured' }, { status: 500 })
     }
 
-    const shopDomain = request.nextUrl.searchParams.get('shop')
-    const returnUrl = request.nextUrl.searchParams.get('returnUrl')
+    const query = shopifyAuthorizeQuerySchema.parse({
+      shop: request.nextUrl.searchParams.get('shop') || undefined,
+      returnUrl: request.nextUrl.searchParams.get('returnUrl') || undefined,
+    })
+    const { shop: shopDomain, returnUrl } = query
 
     if (!shopDomain) {
-      const returnUrlParam = returnUrl ? encodeURIComponent(returnUrl) : ''
+      const safeReturnUrl =
+        returnUrl && isSameOrigin(returnUrl) ? encodeURIComponent(returnUrl) : ''
+      const returnUrlJsLiteral = JSON.stringify(safeReturnUrl)
       return new NextResponse(
         `<!DOCTYPE html>
 <html>
@@ -120,7 +126,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     </div>
 
     <script>
-      const returnUrl = '${returnUrlParam}';
+      const returnUrl = ${returnUrlJsLiteral};
       function handleSubmit(e) {
         e.preventDefault();
         let shop = document.getElementById('shop').value.trim().toLowerCase();

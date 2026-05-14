@@ -116,8 +116,8 @@ export async function processContextsServer(
           currentWorkspaceId
         )
       }
-      if (ctx.kind === 'table' && ctx.tableId) {
-        const result = await resolveTableResource(ctx.tableId)
+      if (ctx.kind === 'table' && ctx.tableId && currentWorkspaceId) {
+        const result = await resolveTableResource(ctx.tableId, currentWorkspaceId)
         if (!result) return null
         return { type: 'table', tag: ctx.label ? `@${ctx.label}` : '@', content: result.content }
       }
@@ -345,6 +345,9 @@ async function processWorkflowFromDb(
 
 async function processPastChat(chatId: string, tagOverride?: string): Promise<AgentContext | null> {
   try {
+    // boundary-raw-fetch: GET /api/mothership/chat?chatId=... has no defineRouteContract;
+    // the route forwards to the copilot chat handler and emits a free-form chat envelope
+    // that isn't covered by mothershipChatGetQuerySchema or copilotChatGetContract.
     const resp = await fetch(`/api/mothership/chat?chatId=${encodeURIComponent(chatId)}`)
     if (!resp.ok) {
       logger.error('Failed to fetch past chat', { chatId, status: resp.status })
@@ -699,7 +702,7 @@ export async function resolveActiveResourceContext(
   resourceType: string,
   resourceId: string,
   workspaceId: string,
-  _userId: string,
+  userId: string,
   chatId?: string
 ): Promise<AgentContext | null> {
   try {
@@ -707,10 +710,10 @@ export async function resolveActiveResourceContext(
       case 'workflow': {
         const ctx = await processWorkflowFromDb(
           resourceId,
-          undefined,
+          userId,
           '@active_resource',
           'current_workflow',
-          undefined,
+          workspaceId,
           chatId
         )
         if (!ctx) return null
@@ -719,7 +722,7 @@ export async function resolveActiveResourceContext(
       case 'knowledgebase': {
         const ctx = await processKnowledgeFromDb(
           resourceId,
-          undefined,
+          userId,
           '@active_resource',
           workspaceId
         )
@@ -727,7 +730,7 @@ export async function resolveActiveResourceContext(
         return { type: 'active_resource', tag: '@active_resource', content: ctx.content }
       }
       case 'table': {
-        return await resolveTableResource(resourceId)
+        return await resolveTableResource(resourceId, workspaceId)
       }
       case 'file': {
         return await resolveFileResource(resourceId, workspaceId)
@@ -743,9 +746,13 @@ export async function resolveActiveResourceContext(
     return null
   }
 }
-async function resolveTableResource(tableId: string): Promise<AgentContext | null> {
+async function resolveTableResource(
+  tableId: string,
+  workspaceId: string
+): Promise<AgentContext | null> {
   const table = await getTableById(tableId)
   if (!table) return null
+  if (table.workspaceId !== workspaceId) return null
   return {
     type: 'active_resource',
     tag: '@active_resource',

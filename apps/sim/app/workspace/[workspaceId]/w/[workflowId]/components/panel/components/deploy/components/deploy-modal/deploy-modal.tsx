@@ -300,7 +300,7 @@ export function DeployModal({
 
     try {
       // Deploy mutation handles query invalidation in its onSuccess callback
-      const result = await deployMutation.mutateAsync({ workflowId, deployChatEnabled: false })
+      const result = await deployMutation.mutateAsync({ workflowId })
       if (result.warnings && result.warnings.length > 0) {
         setDeployWarnings(result.warnings)
       }
@@ -368,7 +368,7 @@ export function DeployModal({
     }
 
     try {
-      const result = await deployMutation.mutateAsync({ workflowId, deployChatEnabled: false })
+      const result = await deployMutation.mutateAsync({ workflowId })
       if (result.warnings && result.warnings.length > 0) {
         setDeployWarnings(result.warnings)
       }

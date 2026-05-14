@@ -1,4 +1,4 @@
-import { USE_S3_STORAGE } from '@/lib/uploads/config'
+import { USE_BLOB_STORAGE, USE_S3_STORAGE } from '@/lib/uploads/config'
 import type { StorageConfig } from '@/lib/uploads/shared/types'
 
 export type { StorageConfig } from '@/lib/uploads/shared/types'
@@ -6,8 +6,9 @@ export type { StorageConfig } from '@/lib/uploads/shared/types'
 /**
  * Get the current storage provider name
  */
-export function getStorageProvider(): 's3' | 'local' {
+export function getStorageProvider(): 's3' | 'blob' | 'local' {
   if (USE_S3_STORAGE) return 's3'
+  if (USE_BLOB_STORAGE) return 'blob'
   return 'local'
 }
 

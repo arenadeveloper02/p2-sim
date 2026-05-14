@@ -1,10 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { gmailSendContract } from '@/lib/api/contracts/tools/google'
+import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { RawFileInputArraySchema } from '@/lib/uploads/utils/file-schemas'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { renderAgentResponseToString } from '@/tools/gmail/markUpRenderUtil'
@@ -41,20 +41,6 @@ function isValidHtml(str: string): boolean {
   return htmlTagPattern.test(trimmed)
 }
 
-const GmailSendSchema = z.object({
-  accessToken: z.string().min(1, 'Access token is required'),
-  to: z.string().min(1, 'Recipient email is required'),
-  subject: z.string().optional().nullable(),
-  body: z.string().min(1, 'Email body is required'),
-  contentType: z.enum(['text', 'html']).optional().nullable(),
-  threadId: z.string().optional().nullable(),
-  replyToMessageId: z.string().optional().nullable(),
-  cc: z.string().optional().nullable(),
-  bcc: z.string().optional().nullable(),
-  attachments: RawFileInputArraySchema.optional().nullable(),
-  isHtml: z.boolean().optional().nullable(),
-})
-
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
@@ -76,22 +62,25 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       userId: authResult.userId,
     })
 
-    const body = await request.json()
-    const validatedData = GmailSendSchema.parse(body)
+    const parsed = await parseRequest(gmailSendContract, request, {})
+    if (!parsed.success) return parsed.response
+    const validatedData = parsed.data.body
+
+    const isHtmlBody = validatedData.contentType === 'html'
 
     logger.info(`[${requestId}] Sending Gmail email`, {
       to: validatedData.to,
       subject: validatedData.subject || '',
       hasAttachments: !!(validatedData.attachments && validatedData.attachments.length > 0),
       attachmentCount: validatedData.attachments?.length || 0,
-      isHtml: validatedData.isHtml || false,
+      isHtml: isHtmlBody,
     })
 
-    // Process body based on isHtml flag
+    // Process body when sending as HTML
     let processedBody = validatedData.body
     let contentType = validatedData.contentType || 'text'
 
-    if (validatedData.isHtml) {
+    if (isHtmlBody) {
       contentType = 'html'
       if (isValidHtml(validatedData.body)) {
         // Body is already valid HTML, use as-is
@@ -233,18 +222,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       },
     })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid request data`, { errors: error.errors })
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid request data',
-          details: error.errors,
-        },
-        { status: 400 }
-      )
-    }
-
     logger.error(`[${requestId}] Error sending Gmail email:`, error)
 
     return NextResponse.json(

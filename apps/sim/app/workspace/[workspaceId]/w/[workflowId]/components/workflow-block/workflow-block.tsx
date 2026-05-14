@@ -962,6 +962,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
   const { mutate: deployChildWorkflow, isPending: isDeploying } = useDeployWorkflow()
 
   const userPermissions = useUserPermissionsContext()
+  const canEditWorkflow = userPermissions.canEdit && !data.isWorkflowLocked
 
   const currentStoreBlock = currentWorkflow.getBlockById(id)
 
@@ -1018,7 +1019,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
       {}
     )
 
-    const effectiveAdvanced = userPermissions.canEdit
+    const effectiveAdvanced = canEditWorkflow
       ? displayAdvancedMode
       : displayAdvancedMode || hasAdvancedValues(config.subBlocks, rawValues, canonicalIndex)
     const effectiveTrigger = displayTriggerMode
@@ -1093,7 +1094,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     currentWorkflow.isDiffMode,
     currentBlock,
     canonicalModeOverrides,
-    userPermissions.canEdit,
+    canEditWorkflow,
     canonicalIndex,
     hiddenByReactiveCondition,
     blockSubBlockValues,
@@ -1113,16 +1114,10 @@ export const WorkflowBlock = memo(function WorkflowBlock({
       },
       {}
     )
-    return userPermissions.canEdit
+    return canEditWorkflow
       ? displayAdvancedMode
       : displayAdvancedMode || hasAdvancedValues(config.subBlocks, rawValues, canonicalIndex)
-  }, [
-    subBlockState,
-    displayAdvancedMode,
-    config.subBlocks,
-    canonicalIndex,
-    userPermissions.canEdit,
-  ])
+  }, [subBlockState, displayAdvancedMode, config.subBlocks, canonicalIndex, canEditWorkflow])
 
   /**
    * Determine if block has content below the header (subblocks or error row).
@@ -1235,7 +1230,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
         )}
 
         {!data.isPreview && !data.isEmbedded && (
-          <ActionBar blockId={id} blockType={type} disabled={!userPermissions.canEdit} />
+          <ActionBar blockId={id} blockType={type} disabled={!canEditWorkflow} />
         )}
 
         {shouldShowDefaultHandles && (

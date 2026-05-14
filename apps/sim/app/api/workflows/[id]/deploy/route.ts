@@ -1,8 +1,11 @@
 // import { chat, db, workflow, workflowDeploymentVersion } from '@sim/db'
 import { db, workflow } from '@sim/db'
 import { createLogger } from '@sim/logger'
+import { assertWorkflowMutable, WorkflowLockedError } from '@sim/workflow-authz'
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { updatePublicApiContract } from '@/lib/api/contracts/deployments'
+import { parseRequest } from '@/lib/api/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
@@ -91,6 +94,7 @@ export const POST = withRouteHandler(
         logger.warn(`[${requestId}] Unable to resolve actor user for workflow deployment: ${id}`)
         return createErrorResponse('Unable to determine deploying user', 400)
       }
+      await assertWorkflowMutable(id)
 
       const result = await performFullDeploy({
         workflowId: id,
@@ -129,6 +133,9 @@ export const POST = withRouteHandler(
         warnings: result.warnings,
       })
     } catch (error: unknown) {
+      if (error instanceof WorkflowLockedError) {
+        return createErrorResponse(error.message, error.status)
+      }
       const message = error instanceof Error ? error.message : 'Failed to deploy workflow'
       logger.error(`[${requestId}] Error deploying workflow: ${id}`, { error })
       return createErrorResponse(message, 500)
@@ -137,11 +144,19 @@ export const POST = withRouteHandler(
 )
 
 export const PATCH = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = await params
 
     try {
+      const parsed = await parseRequest(updatePublicApiContract, request, context, {
+        validationErrorResponse: () =>
+          createErrorResponse('Invalid request body: isPublicApi must be a boolean', 400),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
+      const { isPublicApi } = parsed.data.body
+
       const {
         error,
         session,
@@ -150,13 +165,7 @@ export const PATCH = withRouteHandler(
       if (error) {
         return createErrorResponse(error.message, error.status)
       }
-
-      const body = await request.json()
-      const { isPublicApi } = body
-
-      if (typeof isPublicApi !== 'boolean') {
-        return createErrorResponse('Invalid request body: isPublicApi must be a boolean', 400)
-      }
+      await assertWorkflowMutable(id)
 
       if (isPublicApi) {
         try {
@@ -183,9 +192,12 @@ export const PATCH = withRouteHandler(
 
       return createSuccessResponse({ isPublicApi })
     } catch (error: unknown) {
+      if (error instanceof WorkflowLockedError) {
+        return createErrorResponse(error.message, error.status)
+      }
       const message =
         error instanceof Error ? error.message : 'Failed to update deployment settings'
-      logger.error(`[${requestId}] Error updating deployment settings: ${id}`, { error })
+      logger.error(`[${requestId}] Error updating deployment settings`, { error })
       return createErrorResponse(message, 500)
     }
   }
@@ -205,6 +217,7 @@ export const DELETE = withRouteHandler(
       if (error) {
         return createErrorResponse(error.message, error.status)
       }
+      await assertWorkflowMutable(id)
 
       const result = await performFullUndeploy({
         workflowId: id,
@@ -230,6 +243,9 @@ export const DELETE = withRouteHandler(
         apiKey: null,
       })
     } catch (error: unknown) {
+      if (error instanceof WorkflowLockedError) {
+        return createErrorResponse(error.message, error.status)
+      }
       const message = error instanceof Error ? error.message : 'Failed to undeploy workflow'
       logger.error(`[${requestId}] Error undeploying workflow: ${id}`, { error })
       return createErrorResponse(message, 500)

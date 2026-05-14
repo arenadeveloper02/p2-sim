@@ -1,7 +1,9 @@
-import { context as otelContext, trace } from '@opentelemetry/api'
+import { type Context, context as otelContext, type Span, trace } from '@opentelemetry/api'
 import { createLogger } from '@sim/logger'
 import { sleep } from '@sim/utils/helpers'
 import { type NextRequest, NextResponse } from 'next/server'
+import { copilotChatStreamContract } from '@/lib/api/contracts/copilot'
+import { parseRequest } from '@/lib/api/server'
 import { getLatestRunForStream } from '@/lib/copilot/async-runs/repository'
 import {
   MothershipStreamV1CompletionStatus,
@@ -19,6 +21,7 @@ import { getCopilotTracer, markSpanForError } from '@/lib/copilot/request/otel'
 import {
   checkForReplayGap,
   createEvent,
+  encodeSSEComment,
   encodeSSEEnvelope,
   readEvents,
   readFilePreviewSessions,
@@ -31,6 +34,7 @@ export const maxDuration = 3600
 
 const logger = createLogger('CopilotChatStreamAPI')
 const POLL_INTERVAL_MS = 250
+const REPLAY_KEEPALIVE_INTERVAL_MS = 15_000
 const MAX_STREAM_MS = 60 * 60 * 1000
 
 function extractCanonicalRequestId(value: unknown): string {
@@ -117,10 +121,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const url = new URL(request.url)
-  const streamId = url.searchParams.get('streamId') || ''
-  const afterCursor = url.searchParams.get('after') || ''
-  const batchMode = url.searchParams.get('batch') === 'true'
+  const parsed = await parseRequest(copilotChatStreamContract, request, {})
+  if (!parsed.success) return parsed.response
+  const { streamId, after: afterCursor, batch: batchMode } = parsed.data.query
 
   if (!streamId) {
     return NextResponse.json({ error: 'streamId is required' }, { status: 400 })
@@ -190,8 +193,8 @@ async function handleResumeRequestBody({
   afterCursor: string
   batchMode: boolean
   authenticatedUserId: string
-  rootSpan: import('@opentelemetry/api').Span
-  rootContext: import('@opentelemetry/api').Context
+  rootSpan: Span
+  rootContext: Context
 }) {
   const run = await getLatestRunForStream(streamId, authenticatedUserId).catch((err) => {
     logger.warn('Failed to fetch latest run for stream', {
@@ -245,6 +248,7 @@ async function handleResumeRequestBody({
       events: batchEvents,
       previewSessions,
       status: run.status,
+      ...(run.chatId ? { chatId: run.chatId } : {}),
     })
   }
 
@@ -266,6 +270,7 @@ async function handleResumeRequestBody({
     let controllerClosed = false
     let sawTerminalEvent = false
     let currentRequestId = extractRunRequestId(run)
+    let lastWriteTime = Date.now()
     // Stamp the logical request id + chat id on the resume root as soon
     // as we resolve them from the run row, so TraceQL joins work on
     // resume legs the same way they do on the original POST.
@@ -291,6 +296,19 @@ async function handleResumeRequestBody({
       if (controllerClosed) return false
       try {
         controller.enqueue(encodeSSEEnvelope(payload))
+        lastWriteTime = Date.now()
+        return true
+      } catch {
+        controllerClosed = true
+        return false
+      }
+    }
+
+    const enqueueComment = (comment: string) => {
+      if (controllerClosed) return false
+      try {
+        controller.enqueue(encodeSSEComment(comment))
+        lastWriteTime = Date.now()
         return true
       } catch {
         controllerClosed = true
@@ -306,7 +324,6 @@ async function handleResumeRequestBody({
     const flushEvents = async () => {
       const events = await readEvents(streamId, cursor)
       if (events.length > 0) {
-        totalEventsFlushed += events.length
         logger.debug('[Resume] Flushing events', {
           streamId,
           afterCursor: cursor,
@@ -314,13 +331,14 @@ async function handleResumeRequestBody({
         })
       }
       for (const envelope of events) {
+        if (!enqueueEvent(envelope)) {
+          break
+        }
+        totalEventsFlushed += 1
         cursor = envelope.stream.cursor ?? String(envelope.seq)
         currentRequestId = extractEnvelopeRequestId(envelope) || currentRequestId
         if (envelope.type === MothershipStreamV1EventType.complete) {
           sawTerminalEvent = true
-        }
-        if (!enqueueEvent(envelope)) {
-          break
         }
       }
     }
@@ -341,21 +359,30 @@ async function handleResumeRequestBody({
         reason: options?.reason,
         requestId: currentRequestId,
       })) {
+        if (!enqueueEvent(envelope)) {
+          break
+        }
         cursor = envelope.stream.cursor ?? String(envelope.seq)
         if (envelope.type === MothershipStreamV1EventType.complete) {
           sawTerminalEvent = true
-        }
-        if (!enqueueEvent(envelope)) {
-          break
         }
       }
     }
 
     try {
+      enqueueComment('accepted')
+
       const gap = await checkForReplayGap(streamId, afterCursor, currentRequestId)
       if (gap) {
         for (const envelope of gap.envelopes) {
-          enqueueEvent(envelope)
+          if (!enqueueEvent(envelope)) {
+            break
+          }
+          cursor = envelope.stream.cursor ?? String(envelope.seq)
+          currentRequestId = extractEnvelopeRequestId(envelope) || currentRequestId
+          if (envelope.type === MothershipStreamV1EventType.complete) {
+            sawTerminalEvent = true
+          }
         }
         return
       }
@@ -406,6 +433,10 @@ async function handleResumeRequestBody({
         if (request.signal.aborted) {
           controllerClosed = true
           break
+        }
+
+        if (Date.now() - lastWriteTime >= REPLAY_KEEPALIVE_INTERVAL_MS) {
+          enqueueComment('keepalive')
         }
 
         await sleep(POLL_INTERVAL_MS)

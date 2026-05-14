@@ -53,7 +53,15 @@ export async function authorizeCredentialUse(
     .where(eq(account.id, credentialId))
     .limit(1)
 
-  const actingUserId = auth.authType === AuthType.INTERNAL_JWT ? callerUserId : auth.userId
+  if (
+    auth.authType === AuthType.INTERNAL_JWT &&
+    callerUserId !== undefined &&
+    callerUserId !== auth.userId
+  ) {
+    return { ok: false, error: 'Caller user does not match internal token subject' }
+  }
+
+  const actingUserId = auth.userId
 
   const [workflowContext] = workflowId
     ? await db

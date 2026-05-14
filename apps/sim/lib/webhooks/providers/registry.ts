@@ -7,6 +7,7 @@ import { calcomHandler } from '@/lib/webhooks/providers/calcom'
 import { calendlyHandler } from '@/lib/webhooks/providers/calendly'
 import { circlebackHandler } from '@/lib/webhooks/providers/circleback'
 import { confluenceHandler } from '@/lib/webhooks/providers/confluence'
+import { emailBisonHandler } from '@/lib/webhooks/providers/emailbison'
 import { fathomHandler } from '@/lib/webhooks/providers/fathom'
 import { firefliesHandler } from '@/lib/webhooks/providers/fireflies'
 import { genericHandler } from '@/lib/webhooks/providers/generic'
@@ -33,6 +34,7 @@ import { salesforceHandler } from '@/lib/webhooks/providers/salesforce'
 import { servicenowHandler } from '@/lib/webhooks/providers/servicenow'
 import { slackHandler } from '@/lib/webhooks/providers/slack'
 import { stripeHandler } from '@/lib/webhooks/providers/stripe'
+import { tableProviderHandler } from '@/lib/webhooks/providers/table'
 import { telegramHandler } from '@/lib/webhooks/providers/telegram'
 import { twilioHandler } from '@/lib/webhooks/providers/twilio'
 import { twilioVoiceHandler } from '@/lib/webhooks/providers/twilio-voice'
@@ -54,6 +56,7 @@ const PROVIDER_HANDLERS: Record<string, WebhookProviderHandler> = {
   calcom: calcomHandler,
   circleback: circlebackHandler,
   confluence: confluenceHandler,
+  emailbison: emailBisonHandler,
   fireflies: firefliesHandler,
   generic: genericHandler,
   gmail: gmailHandler,
@@ -80,6 +83,7 @@ const PROVIDER_HANDLERS: Record<string, WebhookProviderHandler> = {
   servicenow: servicenowHandler,
   slack: slackHandler,
   stripe: stripeHandler,
+  table: tableProviderHandler,
   telegram: telegramHandler,
   twilio: twilioHandler,
   twilio_voice: twilioVoiceHandler,

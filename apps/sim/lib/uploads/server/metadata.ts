@@ -50,6 +50,7 @@ export async function insertFileMetadata(
         workspaceId: workspaceId || null,
         context,
         originalName,
+        displayName: originalName,
         contentType,
         size,
         deletedAt: null,
@@ -85,6 +86,7 @@ export async function insertFileMetadata(
         workspaceId: workspaceId || null,
         context,
         originalName,
+        displayName: originalName,
         contentType,
         size,
         deletedAt: null,
@@ -137,6 +139,24 @@ export async function getFileMetadataByKey(
     .where(conditions.length > 1 ? and(...conditions) : conditions[0])
     .limit(1)
 
+  return record ?? null
+}
+
+/**
+ * Get file metadata by ID
+ */
+export async function getFileMetadataById(
+  id: string,
+  options?: { includeDeleted?: boolean }
+): Promise<FileMetadataRecord | null> {
+  const { includeDeleted = false } = options ?? {}
+  const conditions = [eq(workspaceFiles.id, id)]
+  if (!includeDeleted) conditions.push(isNull(workspaceFiles.deletedAt))
+  const [record] = await db
+    .select()
+    .from(workspaceFiles)
+    .where(conditions.length > 1 ? and(...conditions) : conditions[0])
+    .limit(1)
   return record ?? null
 }
 

@@ -1,6 +1,7 @@
 import { A2ABlock } from '@/blocks/blocks/a2a'
 import { AgentBlock } from '@/blocks/blocks/agent'
 import { AgentMailBlock } from '@/blocks/blocks/agentmail'
+import { AgentPhoneBlock } from '@/blocks/blocks/agentphone'
 import { AgiloftBlock } from '@/blocks/blocks/agiloft'
 import { AhrefsBlock } from '@/blocks/blocks/ahrefs'
 import { AirtableBlock } from '@/blocks/blocks/airtable'
@@ -48,6 +49,7 @@ import { DuckDuckGoBlock } from '@/blocks/blocks/duckduckgo'
 import { DynamoDBBlock } from '@/blocks/blocks/dynamodb'
 import { ElasticsearchBlock } from '@/blocks/blocks/elasticsearch'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
+import { EmailBisonBlock } from '@/blocks/blocks/emailbison'
 import { EnrichBlock } from '@/blocks/blocks/enrich'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { EvernoteBlock } from '@/blocks/blocks/evernote'
@@ -117,6 +119,7 @@ import { LemlistBlock } from '@/blocks/blocks/lemlist'
 import { LinearBlock, LinearV2Block } from '@/blocks/blocks/linear'
 import { LinkedInBlock } from '@/blocks/blocks/linkedin'
 import { LinkupBlock } from '@/blocks/blocks/linkup'
+import { LogsBlock } from '@/blocks/blocks/logs'
 import { LoopsBlock } from '@/blocks/blocks/loops'
 import { LumaBlock } from '@/blocks/blocks/luma'
 import { MailchimpBlock } from '@/blocks/blocks/mailchimp'
@@ -174,6 +177,8 @@ import { RouterBlock, RouterV2Block } from '@/blocks/blocks/router'
 import { RssBlock } from '@/blocks/blocks/rss'
 import { S3Block } from '@/blocks/blocks/s3'
 import { SalesforceBlock } from '@/blocks/blocks/salesforce'
+import { SapConcurBlock } from '@/blocks/blocks/sap_concur'
+import { SapS4HanaBlock } from '@/blocks/blocks/sap_s4hana'
 import { ScheduleBlock } from '@/blocks/blocks/schedule'
 import { SearchBlock } from '@/blocks/blocks/search'
 import { SecretsManagerBlock } from '@/blocks/blocks/secrets_manager'
@@ -184,7 +189,7 @@ import { SerperBlock } from '@/blocks/blocks/serper'
 import { ServiceNowBlock } from '@/blocks/blocks/servicenow'
 import { SESBlock } from '@/blocks/blocks/ses'
 import { SftpBlock } from '@/blocks/blocks/sftp'
-import { SharepointBlock } from '@/blocks/blocks/sharepoint'
+import { SharepointBlock, SharepointV2Block } from '@/blocks/blocks/sharepoint'
 import { ShopifyBlock } from '@/blocks/blocks/shopify'
 import { SimilarwebBlock } from '@/blocks/blocks/similarweb'
 import { SixtyfourBlock } from '@/blocks/blocks/sixtyfour'
@@ -243,6 +248,7 @@ export const registry: Record<string, BlockConfig> = {
   agent: AgentBlock,
   arena: ArenaBlock,
   agentmail: AgentMailBlock,
+  agentphone: AgentPhoneBlock,
   agiloft: AgiloftBlock,
   ahrefs: AhrefsBlock,
   airtable: AirtableBlock,
@@ -289,6 +295,7 @@ export const registry: Record<string, BlockConfig> = {
   dub: DubBlock,
   duckduckgo: DuckDuckGoBlock,
   dynamodb: DynamoDBBlock,
+  emailbison: EmailBisonBlock,
   elasticsearch: ElasticsearchBlock,
   elevenlabs: ElevenLabsBlock,
   fathom: FathomBlock,
@@ -374,6 +381,7 @@ export const registry: Record<string, BlockConfig> = {
   linkedin: LinkedInBlock,
   linkup: LinkupBlock,
   presentation: PresentationBlock,
+  logs: LogsBlock,
   loops: LoopsBlock,
   luma: LumaBlock,
   mailchimp: MailchimpBlock,
@@ -434,6 +442,8 @@ export const registry: Record<string, BlockConfig> = {
   s3: S3Block,
   salesforce: SalesforceBlock,
   semrush: SemrushBlock,
+  sap_concur: SapConcurBlock,
+  sap_s4hana: SapS4HanaBlock,
   schedule: ScheduleBlock,
   search: SearchBlock,
   sendgrid: SendGridBlock,
@@ -442,6 +452,7 @@ export const registry: Record<string, BlockConfig> = {
   servicenow: ServiceNowBlock,
   sftp: SftpBlock,
   sharepoint: SharepointBlock,
+  sharepoint_v2: SharepointV2Block,
   shopify: ShopifyBlock,
   similarweb: SimilarwebBlock,
   sixtyfour: SixtyfourBlock,

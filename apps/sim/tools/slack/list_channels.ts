@@ -66,6 +66,12 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
         visibility: 'user-or-llm',
         description: 'Maximum number of channels to return (default: 100, max: 200)',
       },
+      cursor: {
+        type: 'string',
+        required: false,
+        visibility: 'user-or-llm',
+        description: 'Pagination cursor from a previous response.next_cursor',
+      },
     },
 
     request: {
@@ -94,6 +100,11 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
         // Set limit (default 100, max 200).
         const limit = params.limit ? Math.min(Number(params.limit), 200) : 100
         url.searchParams.append('limit', String(limit))
+
+        const cursor = params.cursor?.trim()
+        if (cursor) {
+          url.searchParams.append('cursor', cursor)
+        }
 
         return url.toString()
       },
@@ -152,6 +163,7 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
           ids,
           names,
           count: channels.length,
+          nextCursor: data.response_metadata?.next_cursor || null,
         },
       }
     },
@@ -178,6 +190,11 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
       count: {
         type: 'number',
         description: 'Total number of channels returned',
+      },
+      nextCursor: {
+        type: 'string',
+        description: 'Cursor for the next page; null if no more pages',
+        optional: true,
       },
     },
   }

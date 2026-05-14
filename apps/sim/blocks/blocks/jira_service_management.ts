@@ -132,6 +132,7 @@ export const JiraServiceManagementBlock: BlockConfig<JsmResponse> = {
       type: 'short-input',
       canonicalParamId: 'serviceDeskId',
       placeholder: 'Enter service desk ID',
+      dependsOn: ['credential', 'domain'],
       mode: 'advanced',
       required: {
         field: 'operation',
@@ -181,6 +182,7 @@ export const JiraServiceManagementBlock: BlockConfig<JsmResponse> = {
       canonicalParamId: 'requestTypeId',
       required: true,
       placeholder: 'Enter request type ID',
+      dependsOn: ['credential', 'domain', 'serviceDeskId'],
       mode: 'advanced',
       condition: { field: 'operation', value: ['create_request', 'get_request_type_fields'] },
     },
@@ -798,14 +800,13 @@ Return ONLY the comment text - no explanations.`,
             if (!params.serviceDeskId) {
               throw new Error('Service Desk ID is required')
             }
-            if (!params.accountIds && !params.emails) {
-              throw new Error('Account IDs or emails are required')
+            if (!params.accountIds) {
+              throw new Error('Account IDs are required')
             }
             return {
               ...baseParams,
               serviceDeskId: params.serviceDeskId,
               accountIds: params.accountIds,
-              emails: params.emails,
             }
           }
           case 'get_organizations':
@@ -1238,7 +1239,8 @@ Return ONLY the comment text - no explanations.`,
     status: { type: 'string', description: 'Form status (open, submitted, locked)' },
     answers: {
       type: 'json',
-      description: 'Form answers as key-value pairs (question ID to answer)',
+      description:
+        'Array of simplified form answers, each with label, answer, fieldKey, and choice',
     },
     deleted: { type: 'boolean', description: 'Whether the form was successfully deleted' },
     visibility: {

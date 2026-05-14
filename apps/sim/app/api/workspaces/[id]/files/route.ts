@@ -1,6 +1,11 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import {
+  listWorkspaceFilesQuerySchema,
+  workspaceFilesParamsSchema,
+} from '@/lib/api/contracts/workspace-files'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -9,8 +14,8 @@ import {
   FileConflictError,
   listWorkspaceFiles,
   uploadWorkspaceFile,
-  type WorkspaceFileScope,
 } from '@/lib/uploads/contexts/workspace'
+import { MAX_WORKSPACE_FORMDATA_FILE_SIZE } from '@/lib/uploads/shared/types'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
 
@@ -25,7 +30,14 @@ const logger = createLogger('WorkspaceFilesAPI')
 export const GET = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id: workspaceId } = await params
+    const paramsResult = workspaceFilesParamsSchema.safeParse(await params)
+    if (!paramsResult.success) {
+      return NextResponse.json(
+        { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
+        { status: 400 }
+      )
+    }
+    const { id: workspaceId } = paramsResult.data
 
     try {
       const session = await getSession()
@@ -42,11 +54,16 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 })
       }
 
-      const scope = (new URL(request.url).searchParams.get('scope') ??
-        'active') as WorkspaceFileScope
-      if (!['active', 'archived', 'all'].includes(scope)) {
-        return NextResponse.json({ error: 'Invalid scope' }, { status: 400 })
+      const queryResult = listWorkspaceFilesQuerySchema.safeParse(
+        Object.fromEntries(request.nextUrl.searchParams.entries())
+      )
+      if (!queryResult.success) {
+        return NextResponse.json(
+          { error: getValidationErrorMessage(queryResult.error, 'Invalid scope') },
+          { status: 400 }
+        )
       }
+      const { scope } = queryResult.data
 
       const files = await listWorkspaceFiles(workspaceId, { scope })
 
@@ -76,7 +93,14 @@ export const GET = withRouteHandler(
 export const POST = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id: workspaceId } = await params
+    const paramsResult = workspaceFilesParamsSchema.safeParse(await params)
+    if (!paramsResult.success) {
+      return NextResponse.json(
+        { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
+        { status: 400 }
+      )
+    }
+    const { id: workspaceId } = paramsResult.data
 
     try {
       const session = await getSession()
@@ -106,13 +130,12 @@ export const POST = withRouteHandler(
 
       const fileName = rawFile.name || 'untitled.md'
 
-      const maxSize = 100 * 1024 * 1024
-      if (rawFile.size > maxSize) {
+      if (rawFile.size > MAX_WORKSPACE_FORMDATA_FILE_SIZE) {
         return NextResponse.json(
           {
-            error: `File size exceeds 100MB limit (${(rawFile.size / (1024 * 1024)).toFixed(2)}MB)`,
+            error: `File size exceeds maximum of ${MAX_WORKSPACE_FORMDATA_FILE_SIZE} bytes (${(rawFile.size / (1024 * 1024)).toFixed(2)}MB)`,
           },
-          { status: 400 }
+          { status: 413 }
         )
       }
 

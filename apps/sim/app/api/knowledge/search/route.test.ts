@@ -129,6 +129,7 @@ describe('Knowledge Search API Route', () => {
       chunkIndex: 0,
       metadata: { title: 'Test Document' },
       distance: 0.2,
+      knowledgeBaseId: 'kb-123',
     },
     {
       id: 'chunk-2',
@@ -137,6 +138,7 @@ describe('Knowledge Search API Route', () => {
       chunkIndex: 1,
       metadata: { title: 'Another Document' },
       distance: 0.3,
+      knowledgeBaseId: 'kb-123',
     },
   ]
 
@@ -211,6 +213,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          embeddingModel: 'text-embedding-3-small',
         },
       })
 
@@ -303,6 +306,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          embeddingModel: 'text-embedding-3-small',
         },
       })
 
@@ -413,7 +417,7 @@ describe('Knowledge Search API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data.error).toBe('Invalid request data')
+      expect(data.error).toBe('Validation error')
       expect(data.details).toBeDefined()
     })
 
@@ -432,6 +436,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          embeddingModel: 'text-embedding-3-small',
         },
       })
 
@@ -524,6 +529,7 @@ describe('Knowledge Search API Route', () => {
             userId: 'user-123',
             name: 'Test KB',
             deletedAt: null,
+            embeddingModel: 'text-embedding-3-small',
           },
         })
 
@@ -571,6 +577,7 @@ describe('Knowledge Search API Route', () => {
             userId: 'user-123',
             name: 'Test KB',
             deletedAt: null,
+            embeddingModel: 'text-embedding-3-small',
           },
         })
 
@@ -625,6 +632,7 @@ describe('Knowledge Search API Route', () => {
             userId: 'user-123',
             name: 'Test KB',
             deletedAt: null,
+            embeddingModel: 'text-embedding-3-small',
           },
         })
 
@@ -694,6 +702,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          embeddingModel: 'text-embedding-3-small',
         },
       })
 
@@ -739,6 +748,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          embeddingModel: 'text-embedding-3-small',
         },
       })
 
@@ -788,7 +798,7 @@ describe('Knowledge Search API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data.error).toBe('Invalid request data')
+      expect(data.error).toBe('Validation error')
       expect(data.details).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -812,7 +822,7 @@ describe('Knowledge Search API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data.error).toBe('Invalid request data')
+      expect(data.error).toBe('Validation error')
     })
 
     it('should handle empty tag values gracefully', async () => {
@@ -827,7 +837,7 @@ describe('Knowledge Search API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data.error).toBe('Invalid request data')
+      expect(data.error).toBe('Validation error')
       expect(data.details).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -851,7 +861,7 @@ describe('Knowledge Search API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data.error).toBe('Invalid request data')
+      expect(data.error).toBe('Validation error')
       expect(data.details).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -877,6 +887,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          embeddingModel: 'text-embedding-3-small',
         },
       })
 
@@ -921,11 +932,17 @@ describe('Knowledge Search API Route', () => {
             userId: 'user-123',
             name: 'Test KB',
             deletedAt: null,
+            embeddingModel: 'text-embedding-3-small',
           },
         })
         .mockResolvedValueOnce({
           hasAccess: true,
-          knowledgeBase: { id: 'kb-456', userId: 'user-123', name: 'Test KB 2' },
+          knowledgeBase: {
+            id: 'kb-456',
+            userId: 'user-123',
+            name: 'Test KB 2',
+            embeddingModel: 'text-embedding-3-small',
+          },
         })
 
       mockGetDocumentTagDefinitions.mockResolvedValue(mockTagDefinitions)
@@ -956,6 +973,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          embeddingModel: 'text-embedding-3-small',
         },
       })
 
@@ -989,13 +1007,6 @@ describe('Knowledge Search API Route', () => {
         'doc-active': 'Active Document.pdf',
       })
 
-      const mockTagDefs = {
-        select: vi.fn().mockReturnThis(),
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn().mockResolvedValue([]),
-      }
-      mockDbChain.select.mockReturnValueOnce(mockTagDefs)
-
       const req = createMockRequest('POST', {
         knowledgeBaseIds: ['kb-123'],
         query: 'test query',
@@ -1022,6 +1033,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          embeddingModel: 'text-embedding-3-small',
         },
       })
 
@@ -1058,15 +1070,6 @@ describe('Knowledge Search API Route', () => {
         'doc-active-tagged': 'Active Tagged Document.pdf',
       })
 
-      const mockTagDefs = {
-        select: vi.fn().mockReturnThis(),
-        from: vi.fn().mockReturnThis(),
-        where: vi
-          .fn()
-          .mockResolvedValue([{ tagSlot: 'tag1', displayName: 'tag1', fieldType: 'text' }]),
-      }
-      mockDbChain.select.mockReturnValueOnce(mockTagDefs)
-
       const req = createMockRequest('POST', {
         knowledgeBaseIds: ['kb-123'],
         tagFilters: [{ tagName: 'tag1', value: 'api', fieldType: 'text', operator: 'eq' }],
@@ -1094,6 +1097,7 @@ describe('Knowledge Search API Route', () => {
           userId: 'user-123',
           name: 'Test KB',
           deletedAt: null,
+          embeddingModel: 'text-embedding-3-small',
         },
       })
 
@@ -1130,15 +1134,6 @@ describe('Knowledge Search API Route', () => {
       mockGetDocumentNamesByIds.mockResolvedValue({
         'doc-active-combined': 'Active Combined Search.pdf',
       })
-
-      const mockTagDefs = {
-        select: vi.fn().mockReturnThis(),
-        from: vi.fn().mockReturnThis(),
-        where: vi
-          .fn()
-          .mockResolvedValue([{ tagSlot: 'tag1', displayName: 'tag1', fieldType: 'text' }]),
-      }
-      mockDbChain.select.mockReturnValueOnce(mockTagDefs)
 
       const req = createMockRequest('POST', {
         knowledgeBaseIds: ['kb-123'],

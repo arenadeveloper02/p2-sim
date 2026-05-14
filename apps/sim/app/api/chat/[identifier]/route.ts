@@ -12,6 +12,8 @@ import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { deployedChatPostContract } from '@/lib/api/contracts/chats'
+import { parseRequest } from '@/lib/api/server'
 import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -65,24 +67,7 @@ function toChatConfigResponse(deployment: ChatConfigSource) {
   }
 }
 
-const chatFileSchema = z.object({
-  name: z.string().min(1, 'File name is required'),
-  type: z.string().min(1, 'File type is required'),
-  size: z.number().positive('File size must be positive'),
-  data: z.string().min(1, 'File data is required'),
-  lastModified: z.number().optional(),
-})
 
-const chatPostBodySchema = z.object({
-  input: z.string().optional(),
-  password: z.string().optional(),
-  email: z.string().email('Invalid email format').optional().or(z.literal('')),
-  conversationId: z.string().optional(),
-  chatId: z.string().optional(), // chatId for tracking conversation context
-  files: z.array(chatFileSchema).optional().default([]),
-  // Additional Start Block inputs (custom fields from inputFormat)
-  startBlockInputs: z.record(z.unknown()).optional(),
-})
 
 const goldenQueriesSchema = z.object({
   goldenQueries: z.array(
@@ -170,31 +155,24 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ identifier: string }> }) => {
-    const { identifier } = await params
+  async (request: NextRequest, context: { params: Promise<{ identifier: string }> }) => {
+    const { identifier } = await context.params
     const requestId = generateRequestId()
 
     try {
-      let parsedBody
-      try {
-        const rawBody = await request.json()
-        const validation = chatPostBodySchema.safeParse(rawBody)
-
-        if (!validation.success) {
-          const errorMessage = validation.error.errors
-            .map((err) => `${err.path.join('.')}: ${err.message}`)
-            .join(', ')
-          logger.warn(`[${requestId}] Validation error: ${errorMessage}`)
+      const parsed = await parseRequest(deployedChatPostContract, request, context, {
+        validationErrorResponse: (err) => {
+          const message = err.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
           return addCorsHeaders(
-            createErrorResponse(`Invalid request body: ${errorMessage}`, 400),
+            createErrorResponse(`Invalid request body: ${message}`, 400, 'VALIDATION_ERROR'),
             request
           )
-        }
-
-        parsedBody = validation.data
-      } catch (_error) {
-        return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
-      }
+        },
+        invalidJsonResponse: () =>
+          addCorsHeaders(createErrorResponse('Invalid request body', 400), request),
+      })
+      if (!parsed.success) return parsed.response
+      const parsedBody = parsed.data.body
 
       const deploymentResult = await db
         .select({
@@ -426,7 +404,9 @@ export const POST = withRouteHandler(
       if ((password || email) && !input) {
         const response = addCorsHeaders(createSuccessResponse({ authenticated: true }), request)
 
-        setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
+        if (deployment.authType !== 'sso') {
+          setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
+        }
 
         return response
       }
@@ -1180,6 +1160,7 @@ export const GET = withRouteHandler(
 
       if (
         deployment.authType !== 'public' &&
+        deployment.authType !== 'sso' &&
         authCookie &&
         validateAuthToken(authCookie.value, deployment.id, deployment.password)
       ) {

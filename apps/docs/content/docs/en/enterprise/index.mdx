@@ -13,6 +13,8 @@ Sim Enterprise provides advanced features for organizations with enhanced securi
 
 Define permission groups on a workspace to control what features and integrations its members can use. Permission groups are scoped to a single workspace — a user can belong to different groups (or no group) in different workspaces.
 
+External workspace members can be assigned to permission groups just like internal organization members, but they remain outside the organization roster and do not consume seats.
+
 ### Features
 
 - **Allowed Model Providers** - Restrict which AI providers users can access (OpenAI, Anthropic, Google, etc.)
@@ -57,6 +59,12 @@ Configure how long execution logs, soft-deleted resources, and Mothership data a
 
 ---
 
+## Data Drains
+
+Continuously export workflow logs, audit logs, and Mothership data to a customer-owned S3 bucket or HTTPS webhook on a schedule. See the [data drains guide](/docs/enterprise/data-drains).
+
+---
+
 <FAQ items={[
   { question: "Who can manage Enterprise features?", answer: "Workspace admins on an Enterprise-entitled workspace. Access Control, SSO, whitelabeling, audit logs, and data retention are all configured per workspace under Settings → Enterprise." },
   { question: "Which SSO providers are supported?", answer: "Sim supports SAML 2.0 and OIDC, which works with virtually any enterprise identity provider including Okta, Azure AD (Entra ID), Google Workspace, ADFS, and OneLogin." },
@@ -77,8 +85,9 @@ Self-hosted deployments enable enterprise features via environment variables ins
 | `WHITELABELING_ENABLED`, `NEXT_PUBLIC_WHITELABELING_ENABLED` | Custom branding |
 | `AUDIT_LOGS_ENABLED`, `NEXT_PUBLIC_AUDIT_LOGS_ENABLED` | Audit logging |
 | `NEXT_PUBLIC_DATA_RETENTION_ENABLED` | Data retention configuration |
+| `DATA_DRAINS_ENABLED`, `NEXT_PUBLIC_DATA_DRAINS_ENABLED` | Data drains |
 | `CREDENTIAL_SETS_ENABLED`, `NEXT_PUBLIC_CREDENTIAL_SETS_ENABLED` | Polling groups for email triggers |
 | `INBOX_ENABLED`, `NEXT_PUBLIC_INBOX_ENABLED` | Sim Mailer inbox |
 | `DISABLE_INVITATIONS`, `NEXT_PUBLIC_DISABLE_INVITATIONS` | Disable invitations; manage membership via Admin API |
 
-Once enabled, each feature is configured through the same Settings UI as Sim Cloud. When invitations are disabled, use the Admin API (`x-admin-key` header) to manage organization and workspace membership.
+Once enabled, each feature is configured through the same Settings UI as Sim Cloud. When invitations are disabled, use the Admin API (`x-admin-key` header) to manage organization membership and workspace access. Internal members join the organization; external workspace members only receive access to a specific workspace.

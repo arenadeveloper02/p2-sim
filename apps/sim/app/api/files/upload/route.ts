@@ -3,16 +3,22 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { sanitizeFileName } from '@/executor/constants'
 import '@/lib/uploads/core/setup.server'
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
+import {
+  uploadFilesFormFieldsSchema,
+  uploadFilesFormFilesSchema,
+} from '@/lib/api/contracts/storage-transfer'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import type { StorageContext } from '@/lib/uploads/config'
 import { generateWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
-import { isImageFileType } from '@/lib/uploads/utils/file-utils'
+import { isImageFileType, resolveFileType } from '@/lib/uploads/utils/file-utils'
 import {
   SUPPORTED_AUDIO_EXTENSIONS,
   SUPPORTED_CODE_EXTENSIONS,
   SUPPORTED_DOCUMENT_EXTENSIONS,
+  SUPPORTED_IMAGE_EXTENSIONS,
   SUPPORTED_VIDEO_EXTENSIONS,
   validateFileType,
 } from '@/lib/uploads/utils/validation'
@@ -27,12 +33,10 @@ import {
   validateImageFusionFileExtension,
 } from '@/app/api/files/validators/image-fusion'
 
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] as const
-
 const ALLOWED_EXTENSIONS = new Set<string>([
   ...SUPPORTED_DOCUMENT_EXTENSIONS,
   ...SUPPORTED_CODE_EXTENSIONS,
-  ...IMAGE_EXTENSIONS,
+  ...SUPPORTED_IMAGE_EXTENSIONS,
   ...SUPPORTED_AUDIO_EXTENSIONS,
   ...SUPPORTED_VIDEO_EXTENSIONS,
 ])
@@ -78,17 +82,26 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     const formData = await request.formData()
 
     const rawFiles = formData.getAll('file')
-    const files = rawFiles.filter((f): f is File => f instanceof File)
-
-    if (files.length === 0) {
+    const filesResult = uploadFilesFormFilesSchema.safeParse(rawFiles)
+    if (!filesResult.success) {
       throw new InvalidRequestError('No files provided')
     }
+    const files = filesResult.data
 
-    const workflowId = formData.get('workflowId') as string | null
-    const executionId = formData.get('executionId') as string | null
-    const workspaceId = formData.get('workspaceId') as string | null
-    const contextParam = formData.get('context') as string | null
-    const uploadContext = formData.get('uploadContext') as string | null
+    const formFieldsResult = uploadFilesFormFieldsSchema.safeParse({
+      workflowId: formData.get('workflowId'),
+      executionId: formData.get('executionId'),
+      workspaceId: formData.get('workspaceId'),
+      context: formData.get('context'),
+      uploadContext: formData.get('uploadContext'),
+    })
+    if (!formFieldsResult.success) {
+      throw new InvalidRequestError(
+        getValidationErrorMessage(formFieldsResult.error, 'Invalid upload form data')
+      )
+    }
+    const formFields = formFieldsResult.data
+    const { workflowId, executionId, workspaceId, context: contextParam, uploadContext } = formFields
 
     // Context must be explicitly provided
     if (!contextParam) {
@@ -327,10 +340,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         context === 'profile-pictures' ||
         context === 'workspace-logos'
       ) {
-        if (context !== 'copilot' && !isImageFileType(file.type)) {
-          throw new InvalidRequestError(
-            `Only image files (JPEG, PNG, GIF, WebP, SVG) are allowed for ${context} uploads`
+        if (context !== 'copilot') {
+          const mimeType = file.type
+          const isGenericMime = !mimeType || mimeType === 'application/octet-stream'
+          const extension = originalName.split('.').pop()?.toLowerCase() ?? ''
+          const extensionIsImage = (SUPPORTED_IMAGE_EXTENSIONS as readonly string[]).includes(
+            extension
           )
+          const isImage = isGenericMime ? extensionIsImage : isImageFileType(mimeType)
+          if (!isImage) {
+            throw new InvalidRequestError(`Only image files are allowed for ${context} uploads`)
+          }
         }
 
         if (context === 'workspace-logos') {
@@ -366,6 +386,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         logger.info(`Uploading ${context} file: ${originalName}`)
 
+        const resolvedContentType = resolveFileType({ type: file.type, name: originalName })
+
         const timestamp = Date.now()
         const safeFileName = sanitizeFileName(originalName)
         const storageKey = `${context}/${timestamp}-${safeFileName}`
@@ -384,7 +406,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const fileInfo = await storageService.uploadFile({
           file: buffer,
           fileName: storageKey,
-          contentType: file.type,
+          contentType: resolvedContentType,
           context,
           preserveKey: true,
           customKey: storageKey,
@@ -401,7 +423,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             key: fileInfo.key,
             name: originalName,
             size: buffer.length,
-            type: file.type,
+            type: resolvedContentType,
           },
           directUploadSupported: false,
         }
@@ -422,7 +444,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
               fileName: originalName,
               fileKey: fileInfo.key,
               fileSize: buffer.length,
-              fileType: file.type,
+              fileType: resolvedContentType,
             },
             request,
           })

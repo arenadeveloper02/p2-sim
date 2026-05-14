@@ -1,6 +1,7 @@
 import { createLogger, type Logger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { redactApiKeys } from '@/lib/core/security/redaction'
+import { normalizeStringArray } from '@/lib/core/utils/arrays'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import {
   containsUserFileWithMetadata,
@@ -35,6 +36,7 @@ import {
   type ExecutionContext,
   getNextExecutionOrder,
   type NormalizedBlockOutput,
+  type StreamingExecution,
 } from '@/executor/types'
 import { streamingResponseFormatProcessor } from '@/executor/utils'
 import { buildBlockExecutionError, normalizeError } from '@/executor/utils/errors'
@@ -44,7 +46,10 @@ import {
 } from '@/executor/utils/iteration-context'
 import { isJSONString } from '@/executor/utils/json'
 import { filterOutputForLog } from '@/executor/utils/output-filter'
-import type { VariableResolver } from '@/executor/variables/resolver'
+import {
+  FUNCTION_BLOCK_CONTEXT_VARS_KEY,
+  type VariableResolver,
+} from '@/executor/variables/resolver'
 import type { SerializedBlock } from '@/serializer/types'
 import { SYSTEM_SUBBLOCK_IDS } from '@/triggers/constants'
 
@@ -116,14 +121,19 @@ export class BlockExecutor {
     const blockType = block.metadata?.id ?? ''
     const isSentinel = isSentinelBlockType(blockType)
 
+    // Capture startedAt and startTime at the same synchronous instant so
+    // blockLog.startedAt and performance.now()-derived durationMs share a
+    // single reference point. Any executor work below counts toward this block.
+    const startedAt = new Date().toISOString()
+    const startTime = performance.now()
+
     let blockLog: BlockLog | undefined
     if (!isSentinel) {
-      blockLog = this.createBlockLog(ctx, node.id, block, node)
+      blockLog = this.createBlockLog(ctx, node.id, block, node, startedAt)
       ctx.blockLogs.push(blockLog)
-      await this.callOnBlockStart(ctx, node, block, blockLog.executionOrder)
+      this.fireBlockStartCallback(ctx, node, block, blockLog.executionOrder)
     }
 
-    const startTime = performance.now()
     let resolvedInputs: Record<string, any> = {}
 
     const nodeMetadata = {
@@ -141,19 +151,13 @@ export class BlockExecutor {
         await validateBlockType(ctx.userId, ctx.workspaceId, blockType, ctx)
       }
 
-      logger.info('BlockExecutor: resolving inputs', {
-        blockId: block.id,
-        blockName: block.metadata?.name ?? block.metadata?.id,
-        blockType: block.metadata?.id,
-        workflowId: ctx.workflowId,
-      })
-      resolvedInputs = this.resolver.resolveInputs(ctx, node.id, block.config.params, block)
-      logger.info('BlockExecutor: inputs resolved', {
-        blockId: block.id,
-        blockName: block.metadata?.name ?? block.metadata?.id,
-        paramCount: Object.keys(resolvedInputs).length,
-        workflowId: ctx.workflowId,
-      })
+      if (block.metadata?.id === BlockType.FUNCTION) {
+        const { resolvedInputs: fnInputs, contextVariables } =
+          this.resolver.resolveInputsForFunctionBlock(ctx, node.id, block.config.params, block)
+        resolvedInputs = { ...fnInputs, [FUNCTION_BLOCK_CONTEXT_VARS_KEY]: contextVariables }
+      } else {
+        resolvedInputs = this.resolver.resolveInputs(ctx, node.id, block.config.params, block)
+      }
 
       if (blockLog) {
         blockLog.input = this.sanitizeInputsForLog(resolvedInputs)
@@ -195,7 +199,7 @@ export class BlockExecutor {
 
       let normalizedOutput: NormalizedBlockOutput
       if (isStreamingExecution) {
-        const streamingExec = output as { stream: ReadableStream; execution: any }
+        const streamingExec = output as StreamingExecution
 
         if (ctx.onStream) {
           await this.handleStreamingExecution(
@@ -204,7 +208,7 @@ export class BlockExecutor {
             block,
             streamingExec,
             resolvedInputs,
-            ctx.selectedOutputs ?? []
+            normalizeStringArray(ctx.selectedOutputs)
           )
         }
 
@@ -223,10 +227,11 @@ export class BlockExecutor {
         })) as NormalizedBlockOutput
       }
 
+      const endedAt = new Date().toISOString()
       const duration = performance.now() - startTime
 
       if (blockLog) {
-        blockLog.endedAt = new Date().toISOString()
+        blockLog.endedAt = endedAt
         blockLog.durationMs = duration
         blockLog.success = true
         blockLog.output = filterOutputForLog(block.metadata?.id || '', normalizedOutput, { block })
@@ -290,7 +295,8 @@ export class BlockExecutor {
         }
       }
 
-      this.state.setBlockOutput(node.id, normalizedOutput, duration)
+      const { childTraceSpans: _traces, ...outputForState } = normalizedOutput
+      this.state.setBlockOutput(node.id, outputForState as NormalizedBlockOutput, duration)
 
       if (!isSentinel && blockLog) {
         const childWorkflowInstanceId =
@@ -300,7 +306,7 @@ export class BlockExecutor {
         const displayOutput = filterOutputForLog(block.metadata?.id || '', normalizedOutput, {
           block,
         })
-        await this.callOnBlockComplete(
+        this.fireBlockCompleteCallback(
           ctx,
           node,
           block,
@@ -314,7 +320,7 @@ export class BlockExecutor {
         )
       }
 
-      return normalizedOutput
+      return outputForState as NormalizedBlockOutput
     } catch (error) {
       return await this.handleBlockError(
         error,
@@ -358,6 +364,7 @@ export class BlockExecutor {
     isSentinel: boolean,
     phase: 'input_resolution' | 'execution'
   ): Promise<NormalizedBlockOutput> {
+    const endedAt = new Date().toISOString()
     const duration = performance.now() - startTime
     const errorMessage = normalizeError(error)
     const hasResolvedInputs =
@@ -372,7 +379,6 @@ export class BlockExecutor {
     }
 
     if (ChildWorkflowError.isChildWorkflowError(error)) {
-      errorOutput.childTraceSpans = error.childTraceSpans
       errorOutput.childWorkflowName = error.childWorkflowName
       if (error.childWorkflowSnapshotId) {
         errorOutput.childWorkflowSnapshotId = error.childWorkflowSnapshotId
@@ -382,15 +388,15 @@ export class BlockExecutor {
     this.state.setBlockOutput(node.id, errorOutput, duration)
 
     if (blockLog) {
-      blockLog.endedAt = new Date().toISOString()
+      blockLog.endedAt = endedAt
       blockLog.durationMs = duration
       blockLog.success = false
       blockLog.error = errorMessage
       blockLog.input = this.sanitizeInputsForLog(input)
       blockLog.output = filterOutputForLog(block.metadata?.id || '', errorOutput, { block })
 
-      if (errorOutput.childTraceSpans && Array.isArray(errorOutput.childTraceSpans)) {
-        blockLog.childTraceSpans = errorOutput.childTraceSpans
+      if (ChildWorkflowError.isChildWorkflowError(error) && error.childTraceSpans.length > 0) {
+        blockLog.childTraceSpans = error.childTraceSpans
       }
     }
 
@@ -408,7 +414,7 @@ export class BlockExecutor {
         ? error.childWorkflowInstanceId
         : undefined
       const displayOutput = filterOutputForLog(block.metadata?.id || '', errorOutput, { block })
-      await this.callOnBlockComplete(
+      this.fireBlockCompleteCallback(
         ctx,
         node,
         block,
@@ -460,7 +466,8 @@ export class BlockExecutor {
     ctx: ExecutionContext,
     blockId: string,
     block: SerializedBlock,
-    node: DAGNode
+    node: DAGNode,
+    startedAt: string
   ): BlockLog {
     let blockName = block.metadata?.name ?? blockId
     let loopId: string | undefined
@@ -493,7 +500,7 @@ export class BlockExecutor {
       blockId,
       blockName,
       blockType: block.metadata?.id ?? DEFAULTS.BLOCK_TYPE,
-      startedAt: new Date().toISOString(),
+      startedAt,
       executionOrder: getNextExecutionOrder(ctx),
       endedAt: '',
       durationMs: 0,
@@ -529,7 +536,11 @@ export class BlockExecutor {
     const result: Record<string, any> = {}
 
     for (const [key, value] of Object.entries(inputs)) {
-      if (SYSTEM_SUBBLOCK_IDS.includes(key) || key === 'triggerMode') {
+      if (
+        SYSTEM_SUBBLOCK_IDS.includes(key) ||
+        key === 'triggerMode' ||
+        key === FUNCTION_BLOCK_CONTEXT_VARS_KEY
+      ) {
         continue
       }
 
@@ -560,39 +571,47 @@ export class BlockExecutor {
     return redactApiKeys(result)
   }
 
-  private async callOnBlockStart(
+  /**
+   * Fires the `onBlockStart` progress callback without blocking block execution.
+   * Any error is logged and swallowed so callback I/O never stalls the critical path.
+   */
+  private fireBlockStartCallback(
     ctx: ExecutionContext,
     node: DAGNode,
     block: SerializedBlock,
     executionOrder: number
-  ): Promise<void> {
+  ): void {
+    if (!this.contextExtensions.onBlockStart) return
+
     const blockId = node.metadata?.originalBlockId ?? node.id
     const blockName = block.metadata?.name ?? blockId
     const blockType = block.metadata?.id ?? DEFAULTS.BLOCK_TYPE
-
     const iterationContext = getIterationContext(ctx, node?.metadata)
 
-    if (this.contextExtensions.onBlockStart) {
-      try {
-        await this.contextExtensions.onBlockStart(
-          blockId,
-          blockName,
-          blockType,
-          executionOrder,
-          iterationContext,
-          ctx.childWorkflowContext
-        )
-      } catch (error) {
+    void this.contextExtensions
+      .onBlockStart(
+        blockId,
+        blockName,
+        blockType,
+        executionOrder,
+        iterationContext,
+        ctx.childWorkflowContext
+      )
+      .catch((error) => {
         this.execLogger.warn('Block start callback failed', {
           blockId,
           blockType,
           error: toError(error).message,
         })
-      }
-    }
+      })
   }
 
-  private async callOnBlockComplete(
+  /**
+   * Fires the `onBlockComplete` progress callback without blocking subsequent blocks.
+   * The callback typically performs DB writes for progress markers — awaiting it would
+   * add latency between blocks and skew wall-clock timing in the trace view.
+   */
+  private fireBlockCompleteCallback(
     ctx: ExecutionContext,
     node: DAGNode,
     block: SerializedBlock,
@@ -603,39 +622,38 @@ export class BlockExecutor {
     executionOrder: number,
     endedAt: string,
     childWorkflowInstanceId?: string
-  ): Promise<void> {
+  ): void {
+    if (!this.contextExtensions.onBlockComplete) return
+
     const blockId = node.metadata?.originalBlockId ?? node.id
     const blockName = block.metadata?.name ?? blockId
     const blockType = block.metadata?.id ?? DEFAULTS.BLOCK_TYPE
-
     const iterationContext = getIterationContext(ctx, node?.metadata)
 
-    if (this.contextExtensions.onBlockComplete) {
-      try {
-        await this.contextExtensions.onBlockComplete(
-          blockId,
-          blockName,
-          blockType,
-          {
-            input,
-            output,
-            executionTime: duration,
-            startedAt,
-            executionOrder,
-            endedAt,
-            childWorkflowInstanceId,
-          },
-          iterationContext,
-          ctx.childWorkflowContext
-        )
-      } catch (error) {
+    void this.contextExtensions
+      .onBlockComplete(
+        blockId,
+        blockName,
+        blockType,
+        {
+          input,
+          output,
+          executionTime: duration,
+          startedAt,
+          executionOrder,
+          endedAt,
+          childWorkflowInstanceId,
+        },
+        iterationContext,
+        ctx.childWorkflowContext
+      )
+      .catch((error) => {
         this.execLogger.warn('Block completion callback failed', {
           blockId,
           blockType,
           error: toError(error).message,
         })
-      }
-    }
+      })
   }
 
   private preparePauseResumeSelfReference(
@@ -712,7 +730,7 @@ export class BlockExecutor {
     ctx: ExecutionContext,
     node: DAGNode,
     block: SerializedBlock,
-    streamingExec: { stream: ReadableStream; execution: any },
+    streamingExec: StreamingExecution,
     resolvedInputs: Record<string, any>,
     selectedOutputs: string[]
   ): Promise<void> {
@@ -723,59 +741,39 @@ export class BlockExecutor {
       (block.config?.params as Record<string, any> | undefined)?.responseFormat ??
       (block.config as Record<string, any> | undefined)?.responseFormat
 
-    const stream = streamingExec.stream
-    if (typeof stream.tee !== 'function') {
-      await this.forwardStream(ctx, blockId, streamingExec, stream, responseFormat, selectedOutputs)
-      return
-    }
+    const sourceReader = streamingExec.stream.getReader()
+    const decoder = new TextDecoder()
+    const accumulated: string[] = []
+    let drainError: unknown
+    let sourceFullyDrained = false
 
-    const [clientStream, executorStream] = stream.tee()
+    const clientSource = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const { done, value } = await sourceReader.read()
+          if (done) {
+            const tail = decoder.decode()
+            if (tail) accumulated.push(tail)
+            sourceFullyDrained = true
+            controller.close()
+            return
+          }
+          accumulated.push(decoder.decode(value, { stream: true }))
+          controller.enqueue(value)
+        } catch (error) {
+          drainError = error
+          controller.error(error)
+        }
+      },
+      async cancel(reason) {
+        try {
+          await sourceReader.cancel(reason)
+        } catch {}
+      },
+    })
 
     const processedClientStream = streamingResponseFormatProcessor.processStream(
-      clientStream,
-      blockId,
-      selectedOutputs,
-      responseFormat
-    )
-
-    const clientStreamingExec = {
-      ...streamingExec,
-      stream: processedClientStream,
-    }
-
-    const executorConsumption = this.consumeExecutorStream(
-      executorStream,
-      streamingExec,
-      blockId,
-      responseFormat,
-      ctx,
-      block,
-      resolvedInputs
-    )
-
-    const clientConsumption = (async () => {
-      try {
-        await ctx.onStream?.(clientStreamingExec)
-      } catch (error) {
-        this.execLogger.error('Error in onStream callback', { blockId, error })
-        // Cancel the client stream to release the tee'd buffer
-        await processedClientStream.cancel().catch(() => {})
-      }
-    })()
-
-    await Promise.all([clientConsumption, executorConsumption])
-  }
-
-  private async forwardStream(
-    ctx: ExecutionContext,
-    blockId: string,
-    streamingExec: { stream: ReadableStream; execution: any },
-    stream: ReadableStream,
-    responseFormat: any,
-    selectedOutputs: string[]
-  ): Promise<void> {
-    const processedStream = streamingResponseFormatProcessor.processStream(
-      stream,
+      clientSource,
       blockId,
       selectedOutputs,
       responseFormat
@@ -783,59 +781,58 @@ export class BlockExecutor {
 
     try {
       await ctx.onStream?.({
-        ...streamingExec,
-        stream: processedStream,
+        stream: processedClientStream,
+        execution: streamingExec.execution,
       })
     } catch (error) {
       this.execLogger.error('Error in onStream callback', { blockId, error })
-      await processedStream.cancel().catch(() => {})
-    }
-  }
-
-  private async consumeExecutorStream(
-    stream: ReadableStream,
-    streamingExec: { execution: any },
-    blockId: string,
-    responseFormat: any,
-    ctx?: ExecutionContext,
-    block?: SerializedBlock,
-    resolvedInputs?: Record<string, any>
-  ): Promise<void> {
-    const reader = stream.getReader()
-    const decoder = new TextDecoder()
-    const chunks: string[] = []
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        chunks.push(decoder.decode(value, { stream: true }))
-      }
-      const tail = decoder.decode()
-      if (tail) chunks.push(tail)
-    } catch (error) {
-      this.execLogger.error('Error reading executor stream for block', { blockId, error })
+      await processedClientStream.cancel().catch(() => {})
     } finally {
       try {
-        await reader.cancel().catch(() => {})
+        sourceReader.releaseLock()
       } catch {}
     }
 
-    let fullContent = chunks.join('')
+    if (drainError) {
+      this.execLogger.error('Error reading stream for block', { blockId, error: drainError })
+      return
+    }
+
+    // If the onStream consumer exited before the source drained (e.g. it caught
+    // an internal error and returned normally), `accumulated` holds a truncated
+    // response. Persisting that to memory or setting it as the block output
+    // would corrupt downstream state — skip and log instead.
+    if (!sourceFullyDrained) {
+      this.execLogger.warn(
+        'Stream consumer exited before source drained; skipping content persistence',
+        {
+          blockId,
+        }
+      )
+      return
+    }
+
+    const fullContent = accumulated.join('')
     if (!fullContent) {
       return
     }
 
-    const executionOutput = streamingExec.execution?.output
-    if (!executionOutput || typeof executionOutput !== 'object') {
+    const execution = streamingExec.execution
+    if (!execution) {
       return
     }
 
+    if (!execution.output || typeof execution.output !== 'object') {
+      execution.output = {}
+    }
+
+    const executionOutput = execution.output
+
+    let parsedForFormat = false
     if (responseFormat) {
       try {
         const parsed = JSON.parse(fullContent.trim())
-
-        streamingExec.execution.output = {
+        execution.output = {
           ...parsed,
           tokens: executionOutput.tokens,
           toolCalls: executionOutput.toolCalls,
@@ -843,15 +840,15 @@ export class BlockExecutor {
           cost: executionOutput.cost,
           model: executionOutput.model,
         }
-        // For response format, content might be in the parsed object
-        fullContent = parsed.content || fullContent
+        parsedForFormat = true
       } catch (error) {
         this.execLogger.warn('Failed to parse streamed content for response format', {
           blockId,
           error,
         })
       }
-    } else {
+    }
+    if (!parsedForFormat) {
       executionOutput.content = fullContent
     }
 
@@ -887,7 +884,17 @@ export class BlockExecutor {
           blockId,
           error,
         })
-        // Don't throw - memory persistence failure shouldn't break workflow execution
+        /**
+         * Memory persistence failure must not break workflow execution.
+         */
+      }
+    }
+
+    if (streamingExec.onFullContent) {
+      try {
+        await streamingExec.onFullContent(fullContent)
+      } catch (error) {
+        this.execLogger.error('onFullContent callback failed', { blockId, error })
       }
     }
   }

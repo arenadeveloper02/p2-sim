@@ -308,3 +308,21 @@ describe('buildTimeCSPDirectives', () => {
     expect(buildTimeCSPDirectives['img-src']).toContain('blob:')
   })
 })
+
+describe('getChatEmbedCSPPolicy', () => {
+  it('allows iframe embedding from any origin', () => {
+    expect(getChatEmbedCSPPolicy()).toContain('frame-ancestors *')
+  })
+
+  it('allows Office.js to load from Microsoft for Excel/Word add-in embedding', () => {
+    const policy = getChatEmbedCSPPolicy()
+    expect(policy).toMatch(/script-src[^;]*https:\/\/appsforoffice\.microsoft\.com/)
+    expect(policy).toMatch(/connect-src[^;]*https:\/\/appsforoffice\.microsoft\.com/)
+  })
+
+  it('does not regress object-src or base-uri restrictions', () => {
+    const policy = getChatEmbedCSPPolicy()
+    expect(policy).toContain("object-src 'none'")
+    expect(policy).toContain("base-uri 'self'")
+  })
+})

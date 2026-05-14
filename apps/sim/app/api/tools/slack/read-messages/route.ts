@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { slackReadMessagesContract } from '@/lib/api/contracts/tools/communication/slack'
+import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -244,58 +245,6 @@ async function fetchThreadReplies(
   }
 }
 
-const SlackReadMessagesSchema = z
-  .object({
-    accessToken: z.string().min(1, 'Access token is required'),
-    channel: z.string().optional().nullable(),
-    userId: z.string().optional().nullable(),
-    limit: z.coerce
-      .number()
-      .min(1, 'Limit must be at least 1')
-      .max(200, 'Limit cannot exceed 200')
-      .optional()
-      .nullable(),
-    oldest: z.string().optional().nullable(),
-    latest: z.string().optional().nullable(),
-    fromDate: z.preprocess((val) => {
-      if (val === '' || val === null || val === undefined) {
-        return undefined
-      }
-      return val
-    }, z.string().optional().nullable()),
-    toDate: z.preprocess((val) => {
-      if (val === '' || val === null || val === undefined) {
-        return undefined
-      }
-      return val
-    }, z.string().optional().nullable()),
-    cursor: z.string().optional().nullable(),
-    autoPaginate: z.boolean().optional().default(true),
-    includeThreads: z.boolean().optional().default(true),
-    maxThreads: z.preprocess(
-      (val) => {
-        if (val === '' || val === null || val === undefined) return 10
-        const num = Number(val)
-        return Number.isNaN(num) || num < 1 ? 10 : Math.min(num, 50)
-      },
-      z.number().min(1, 'maxThreads must be at least 1').max(50, 'maxThreads cannot exceed 50')
-    ),
-    maxRepliesPerThread: z.preprocess(
-      (val) => {
-        if (val === '' || val === null || val === undefined) return 100
-        const num = Number(val)
-        return Number.isNaN(num) || num < 1 ? 100 : Math.min(num, 200)
-      },
-      z
-        .number()
-        .min(1, 'maxRepliesPerThread must be at least 1')
-        .max(200, 'maxRepliesPerThread cannot exceed 200')
-    ),
-  })
-  .refine((data) => data.channel || data.userId, {
-    message: 'Either channel or userId is required',
-  })
-
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
@@ -320,15 +269,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       }
     )
 
-    const body = await request.json()
-    logger.info(`[${requestId}] Raw request body: ${JSON.stringify(body)}`)
-    logger.info(
-      `[${requestId}] Raw cursor value: "${body.cursor}", type: ${typeof body.cursor}, isEmpty: ${body.cursor === ''}, isNull: ${body.cursor === null}, isUndefined: ${body.cursor === undefined}`
-    )
-    const validatedData = SlackReadMessagesSchema.parse(body)
-    logger.info(
-      `[${requestId}] Validated data: ${JSON.stringify({ ...validatedData, accessToken: '[REDACTED]' })}`
-    )
+    const parsed = await parseRequest(slackReadMessagesContract, request, {})
+    if (!parsed.success) return parsed.response
+    const validatedData = parsed.data.body
 
     let channel = validatedData.channel
     if (!channel && validatedData.userId) {
@@ -966,18 +909,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       },
     })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid request data`, { errors: error.errors })
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid request data',
-          details: error.errors,
-        },
-        { status: 400 }
-      )
-    }
-
     logger.error(`[${requestId}] Error reading Slack messages:`, error)
     return NextResponse.json(
       {

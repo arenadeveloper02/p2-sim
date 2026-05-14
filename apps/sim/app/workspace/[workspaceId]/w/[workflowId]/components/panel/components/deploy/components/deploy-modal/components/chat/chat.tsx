@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { AlertTriangle, Check, Clipboard, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Check, Clipboard, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import {
   Button,
   Input,
   Label,
+  Loader,
   Modal,
   ModalBody,
   ModalContent,
@@ -34,6 +35,7 @@ import {
   useUpdateChat,
 } from '@/hooks/queries/chats'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import type { ChatDetail } from '@/hooks/queries/deployments'
 import { useIdentifierValidation } from './hooks'
 import {
   getPasswordHelperText,
@@ -66,23 +68,7 @@ interface ChatDeployProps {
   chatAlreadyExists?: boolean | any
 }
 
-export interface ExistingChat {
-  id: string
-  identifier: string
-  title: string
-  description: string
-  department?: string
-  authType: 'public' | 'password' | 'email' | 'sso'
-  allowedEmails: string[]
-  outputConfigs: Array<{ blockId: string; path: string }>
-  customizations?: {
-    welcomeMessage?: string
-    imageUrl?: string
-    goldenQueries?: string[]
-  }
-  hasPassword: boolean
-  isActive: boolean
-}
+export type ExistingChat = ChatDetail
 
 interface FormErrors {
   identifier?: string
@@ -385,7 +371,6 @@ export function ChatDeploy({
         const result = await createChatMutation.mutateAsync({
           workflowId,
           formData,
-          apiKey: deploymentInfo?.apiKey,
           imageUrl,
         })
         chatUrl = result.chatUrl
@@ -768,7 +753,7 @@ function IdentifierInput({
           />
           {isChecking ? (
             <div className='-translate-y-1/2 absolute top-1/2 right-2'>
-              <Loader2 className='h-4 w-4 animate-spin text-[var(--text-tertiary)]' />
+              <Loader className='h-4 w-4 text-[var(--text-tertiary)]' animate />
             </div>
           ) : (
             isValid &&

@@ -351,6 +351,11 @@ export class ExecutionEngine {
       return
     }
 
+    if (this.context.metadata.resumeFromSnapshot === true) {
+      this.execLogger.info('Resume snapshot has no downstream work to queue')
+      return
+    }
+
     if (triggerBlockId) {
       this.addToQueue(triggerBlockId)
       return
@@ -710,6 +715,8 @@ export class ExecutionEngine {
       parallelScope: pause.parallelScope,
       loopScope: pause.loopScope,
       resumeLinks: pause.resumeLinks,
+      pauseKind: pause.pauseKind,
+      resumeAt: pause.resumeAt,
     }))
 
     return {

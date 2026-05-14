@@ -1,10 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { Button, Tooltip } from '@/components/emcn'
 import { workflowDeployCTAEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { Button, Loader, Tooltip } from '@/components/emcn'
 import { DeployModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal'
 import {
   useChangeDetection,
@@ -20,9 +19,15 @@ interface DeployProps {
   activeWorkflowId: string | null
   userPermissions: WorkspaceUserPermissions
   className?: string
+  disabled?: boolean
 }
 
-export function Deploy({ activeWorkflowId, userPermissions, className }: DeployProps) {
+export function Deploy({
+  activeWorkflowId,
+  userPermissions,
+  className,
+  disabled = false,
+}: DeployProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -59,15 +64,16 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
 
   const isEmpty = !hasBlocks()
   const canDeploy = userPermissions.canAdmin
-  const isDisabled = isDeploying || !canDeploy || isEmpty
+  const isDisabled = disabled || isDeploying || !canDeploy || isEmpty
 
   const onDeployClick = async () => {
-    if (!canDeploy || !activeWorkflowId) return
+    if (disabled || !canDeploy || !activeWorkflowId) return
     workflowDeployCTAEvent({
       'Workspace Name': workspaceName,
       'Workspace ID': workspaceId,
       CTA: changeDetected ? 'Update' : isDeployed ? 'Active' : 'Deploy',
     })
+
     const result = await handleDeployClick()
     if (result.shouldOpenModal) {
       setIsModalOpen(true)
@@ -80,6 +86,9 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
     }
     if (!canDeploy) {
       return 'Admin permissions required'
+    }
+    if (disabled) {
+      return 'Workflow is locked'
     }
     if (isDeploying) {
       return 'Deploying...'
@@ -106,7 +115,7 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
               onClick={onDeployClick}
               disabled={isRegistryLoading || isDisabled}
             >
-              {isDeploying && <Loader2 className='h-[13px] w-[13px] animate-spin' />}
+              {isDeploying && <Loader className='h-[13px] w-[13px]' animate />}
               {changeDetected ? 'Update' : isDeployed ? 'Live' : 'Deploy'}
             </Button>
           </span>

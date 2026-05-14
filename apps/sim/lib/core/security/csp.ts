@@ -63,24 +63,7 @@ const STATIC_SCRIPT_SRC = [
     : []),
 ] as const
 
-const STATIC_IMG_SRC = [
-  "'self'",
-  'data:',
-  'blob:',
-  'https://*.googleusercontent.com',
-  'https://*.google.com',
-  'https://*.atlassian.com',
-  'https://cdn.discordapp.com',
-  'https://*.githubusercontent.com',
-  'https://*.s3.amazonaws.com',
-  'https://s3.amazonaws.com',
-  'https://*.amazonaws.com',
-  'https://*.blob.core.windows.net',
-  'https://github.com/*',
-  'https://cursor.com',
-  'https://collector.onedollarstats.com',
-  ...(isHosted ? ['https://www.googletagmanager.com', 'https://www.google-analytics.com'] : []),
-] as const
+const STATIC_IMG_SRC = ["'self'", 'data:', 'blob:', 'https:'] as const
 
 const STATIC_CONNECT_SRC = [
   "'self'",
@@ -113,6 +96,7 @@ const STATIC_CONNECT_SRC = [
         'https://analytics.google.com',
         'https://www.google.com',
         'https://analytics.ahrefs.com',
+        'https://*.g.doubleclick.net',
       ]
     : []),
 ] as const
@@ -154,21 +138,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
   'script-src': [...STATIC_SCRIPT_SRC],
   'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
 
-  'img-src': [
-    ...STATIC_IMG_SRC,
-    ...(isDev ? ['*'] : []),
-    ...(env.S3_BUCKET_NAME && env.AWS_REGION
-      ? [`https://${env.S3_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com`]
-      : []),
-    ...(env.S3_KB_BUCKET_NAME && env.AWS_REGION
-      ? [`https://${env.S3_KB_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com`]
-      : []),
-    ...(env.S3_CHAT_BUCKET_NAME && env.AWS_REGION
-      ? [`https://${env.S3_CHAT_BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com`]
-      : []),
-    ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_LOGO_URL),
-    ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_FAVICON_URL),
-  ],
+  'img-src': [...STATIC_IMG_SRC, ...(isDev ? ['*'] : []),],
 
   'media-src': ["'self'", 'blob:'],
   'worker-src': ["'self'", 'blob:'],
@@ -286,10 +256,21 @@ function getEmbedCSPPolicy(options?: { allowPublicImageUrls?: boolean }): string
 }
 
 /**
- * CSP for embeddable chat pages
+ * CSP for embeddable chat pages.
+ * Extends the shared embed policy with Microsoft Office.js sources so the
+ * chat page can serve as an Office (Excel/Word/Outlook) add-in surface
+ * when loaded with `?embed=office`.
  */
 export function getChatEmbedCSPPolicy(): string {
-  return getEmbedCSPPolicy({ allowPublicImageUrls: true })
+  return buildCSPString({
+    ...buildTimeCSPDirectives,
+    'script-src': [...STATIC_SCRIPT_SRC, 'https://appsforoffice.microsoft.com'],
+    'connect-src': [
+      ...(buildTimeCSPDirectives['connect-src'] ?? []),
+      'https://appsforoffice.microsoft.com',
+    ],
+    'frame-ancestors': ['*'],
+  })
 }
 
 /**

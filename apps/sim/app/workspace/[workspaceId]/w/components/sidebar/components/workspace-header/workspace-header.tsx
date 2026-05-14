@@ -68,14 +68,6 @@ interface WorkspaceHeaderProps {
   onDeleteWorkspace: (workspaceId: string) => Promise<void>
   /** Whether workspace deletion is in progress */
   isDeletingWorkspace: boolean
-  /** Callback to duplicate the workspace */
-  onDuplicateWorkspace: (workspaceId: string, workspaceName: string) => Promise<void>
-  /** Callback to export the workspace */
-  onExportWorkspace: (workspaceId: string, workspaceName: string) => Promise<void>
-  /** Callback to import workspace */
-  onImportWorkspace: () => void
-  /** Whether workspace import is in progress */
-  isImportingWorkspace: boolean
   /** Callback to change the workspace color */
   onColorChange?: (workspaceId: string, color: string) => Promise<void>
   /** Callback to upload a workspace logo */
@@ -109,10 +101,6 @@ function WorkspaceHeaderImpl({
   onRenameWorkspace,
   onDeleteWorkspace,
   isDeletingWorkspace,
-  onDuplicateWorkspace,
-  onExportWorkspace,
-  onImportWorkspace,
-  isImportingWorkspace,
   onColorChange,
   onUploadLogo,
   onRemoveLogo,
@@ -318,25 +306,6 @@ function WorkspaceHeaderImpl({
     setEditingWorkspaceId(capturedWorkspaceRef.current.id)
     setEditingName(capturedWorkspaceRef.current.name)
     setIsWorkspaceMenuOpen(true)
-  }
-
-  /**
-   * Handles duplicate action from context menu
-   */
-  const handleDuplicateAction = async () => {
-    if (!capturedWorkspaceRef.current) return
-
-    await onDuplicateWorkspace(capturedWorkspaceRef.current.id, capturedWorkspaceRef.current.name)
-    setIsWorkspaceMenuOpen(false)
-  }
-
-  /**
-   * Handles export action from context menu
-   */
-  const handleExportAction = async () => {
-    if (!capturedWorkspaceRef.current) return
-
-    await onExportWorkspace(capturedWorkspaceRef.current.id, capturedWorkspaceRef.current.name)
   }
 
   /**
@@ -796,7 +765,6 @@ function WorkspaceHeaderImpl({
       {/* Context Menu */}
       {(() => {
         const capturedPermissions = capturedWorkspaceRef.current?.permissions
-        const contextCanEdit = capturedPermissions === 'admin' || capturedPermissions === 'write'
         const contextCanAdmin = capturedPermissions === 'admin'
         const capturedWorkspace = workspaces.find((w) => w.id === capturedWorkspaceRef.current?.id)
         const isOwner = capturedWorkspace && sessionUserId === capturedWorkspace.ownerId
@@ -808,8 +776,6 @@ function WorkspaceHeaderImpl({
             menuRef={contextMenuRef}
             onClose={closeContextMenu}
             onRename={handleRenameAction}
-            onDuplicate={handleDuplicateAction}
-            onExport={handleExportAction}
             onDelete={handleDeleteAction}
             onLeave={handleLeaveAction}
             onColorChange={onColorChange ? handleColorChangeAction : undefined}
@@ -817,15 +783,11 @@ function WorkspaceHeaderImpl({
             onRemoveLogo={onRemoveLogo ? handleRemoveLogoAction : undefined}
             currentColor={capturedWorkspace?.color}
             showRename={true}
-            showDuplicate={true}
-            showExport={true}
             showColorChange={!!onColorChange}
             showUploadLogo={!!onUploadLogo}
             showRemoveLogo={!!onRemoveLogo && !!capturedWorkspace?.logoUrl}
             showLeave={!isOwner && !!onLeaveWorkspace}
             disableRename={!contextCanAdmin}
-            disableDuplicate={!contextCanEdit}
-            disableExport={!contextCanAdmin}
             disableDelete={!contextCanAdmin || workspaces.length <= 1}
             disableColorChange={!contextCanAdmin}
             disableUploadLogo={!contextCanAdmin}

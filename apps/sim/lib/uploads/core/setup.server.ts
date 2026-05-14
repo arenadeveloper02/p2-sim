@@ -3,7 +3,7 @@ import { mkdir } from 'fs/promises'
 import path, { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { env } from '@/lib/core/config/env'
-import { getStorageProvider, USE_S3_STORAGE } from '@/lib/uploads/config'
+import { getStorageProvider, USE_BLOB_STORAGE, USE_S3_STORAGE } from '@/lib/uploads/config'
 import { ensureAgentGeneratedImagesDirectory } from '@/lib/uploads/utils/image-storage.server'
 
 const logger = createLogger('UploadsSetup')
@@ -15,8 +15,8 @@ export const UPLOAD_DIR_SERVER = join(PROJECT_ROOT, 'uploads')
  * Server-only function to ensure uploads directory exists
  */
 export async function ensureUploadsDirectory() {
-  if (USE_S3_STORAGE) {
-    logger.info('Using S3 storage, skipping local uploads directory creation')
+  if (USE_S3_STORAGE || USE_BLOB_STORAGE) {
+    logger.info('Using cloud storage, skipping local uploads directory creation')
     return true
   }
 
@@ -51,6 +51,8 @@ if (typeof process !== 'undefined') {
     } else {
       logger.info('AWS S3 credentials found in environment variables')
     }
+  } else if (USE_BLOB_STORAGE) {
+    logger.info('Using Azure Blob storage')
   } else {
     // Local storage mode
     logger.info('Using local file storage')
