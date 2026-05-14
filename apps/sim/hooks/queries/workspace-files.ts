@@ -44,7 +44,7 @@ export const workspaceFilesKeys = {
 /**
  * Storage info type
  */
-export interface StorageInfo {
+interface StorageInfo {
   usedBytes: number
   limitBytes: number
   percentUsed: number
@@ -203,9 +203,11 @@ export function useStorageInfo(enabled = true) {
 interface UploadFileParams {
   workspaceId: string
   file: File
+  uploadContext?: any
   onProgress?: (event: UploadProgressEvent) => void
   signal?: AbortSignal
   skipToast?: boolean
+  skipInvalidation?: boolean
 }
 
 interface UploadFileResponse {
@@ -249,6 +251,7 @@ async function parseUploadResponse(
 async function uploadWorkspaceFile(
   workspaceId: string,
   file: File,
+  uploadContext?: any,
   onProgress?: (event: UploadProgressEvent) => void,
   signal?: AbortSignal
 ): Promise<UploadFileResponse> {
@@ -318,9 +321,10 @@ export function useUploadWorkspaceFile() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ workspaceId, file, onProgress, signal }: UploadFileParams) =>
-      uploadWorkspaceFile(workspaceId, file, onProgress, signal),
-    onSettled: () => {
+    mutationFn: ({ workspaceId, file, uploadContext, onProgress, signal }: UploadFileParams) =>
+      uploadWorkspaceFile(workspaceId, file, uploadContext, onProgress, signal),
+    onSettled: (_data, _error, variables) => {
+      if (variables.skipInvalidation) return
       queryClient.invalidateQueries({ queryKey: workspaceFilesKeys.lists() })
       queryClient.invalidateQueries({ queryKey: workspaceFilesKeys.storageInfo() })
     },
@@ -331,9 +335,11 @@ export function useUploadWorkspaceFile() {
     },
     onError: (error, variables) => {
       logger.error('Failed to upload file:', error)
-      toast.error(`Failed to upload "${variables.file.name}": ${error.message}`, {
-        duration: 5000,
-      })
+      if (!variables.skipToast) {
+        toast.error(`Failed to upload "${variables.file.name}": ${error.message}`, {
+          duration: 5000,
+        })
+      }
     },
   })
 }

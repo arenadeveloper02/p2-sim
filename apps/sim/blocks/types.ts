@@ -160,7 +160,7 @@ export type ToolOutputToValueType<T> = T extends Record<string, any>
 
 export type BlockOutput = PrimitiveValueType | { [key: string]: any }
 
-export interface ParamConfig {
+interface ParamConfig {
   type: ParamType
   description?: string
   schema?: {
@@ -401,6 +401,6 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
   }
 }
 
-export interface OutputConfig {
+interface OutputConfig {
   type: BlockOutput
 }

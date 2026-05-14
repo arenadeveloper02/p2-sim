@@ -88,9 +88,6 @@ const nextConfig: NextConfig = {
     'cpu-features',
     'chromium-bidi',
     'playwright-core',
-    'pino',
-    'pino-pretty',
-    'thread-stream',
     'ssh2',
     '@browserbasehq/stagehand',
     'ws',
@@ -143,7 +140,6 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizeCss: true,
     preloadEntriesOnStart: false,
-    turbopackFileSystemCacheForBuild: true,
     optimizePackageImports: [
       'lodash',
       'framer-motion',

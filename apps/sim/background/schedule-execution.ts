@@ -1,13 +1,23 @@
-import { db, jobExecutionLogs, workflow, workflowSchedule } from '@sim/db'
+import {
+  db,
+  jobExecutionLogs,
+  workflow,
+  workflowDeploymentVersion,
+  workflowSchedule,
+} from '@sim/db'
 import { createLogger, runWithRequestContext } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { task } from '@trigger.dev/sdk'
 import { Cron } from 'croner'
 import { and, eq, isNull } from 'drizzle-orm'
+import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
-import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
-import { decryptSecret } from '@/lib/core/security/encryption'
+import {
+  createTimeoutAbortController,
+  getExecutionTimeout,
+  getTimeoutErrorMessage,
+} from '@/lib/core/execution-limits'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
@@ -16,10 +26,7 @@ import {
   wasExecutionFinalizedByCore,
 } from '@/lib/workflows/executor/execution-core'
 import { handlePostExecutionPauseState } from '@/lib/workflows/executor/pause-persistence'
-import {
-  blockExistsInDeployment,
-  loadDeployedWorkflowState,
-} from '@/lib/workflows/persistence/utils'
+import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import {
   type BlockState,
   calculateNextRunTime as calculateNextTime,
@@ -28,12 +35,10 @@ import {
   validateCronExpression,
 } from '@/lib/workflows/schedules/utils'
 import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
-import { REFERENCE } from '@/executor/constants'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata } from '@/executor/execution/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
 import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
-import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
 
 const logger = createLogger('TriggerScheduleExecution')
@@ -43,7 +48,11 @@ type WorkflowScheduleUpdate = Partial<typeof workflowSchedule.$inferInsert>
 type ExecutionCoreResult = Awaited<ReturnType<typeof executeWorkflowCore>>
 
 type RunWorkflowResult =
-  | { status: 'skip'; blocks: Record<string, BlockState> }
+  | {
+      status: 'skip'
+      reason: 'stale_deployment' | 'invalid_schedule'
+      blocks: Record<string, BlockState>
+    }
   | { status: 'success'; blocks: Record<string, BlockState>; executionResult: ExecutionCoreResult }
   | { status: 'failure'; blocks: Record<string, BlockState>; executionResult: ExecutionCoreResult }
 
@@ -140,156 +149,23 @@ async function determineNextRunAfterError(
   return new Date(now.getTime() + 24 * 60 * 60 * 1000)
 }
 
-/**
- * Known server environment variables that might be available from server config
- * even if not in user's personal/workspace env vars. These will be checked
- * during execution via getApiKey fallback mechanism.
- */
-const SERVER_ENV_VARS = new Set([
-  'OPENAI_API_KEY',
-  'OPENAI_API_KEY_1',
-  'OPENAI_API_KEY_2',
-  'OPENAI_API_KEY_3',
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_API_KEY_1',
-  'ANTHROPIC_API_KEY_2',
-  'ANTHROPIC_API_KEY_3',
-  'GEMINI_API_KEY',
-  'SAMBANOVA_API_KEY',
-  'SAMBANOVA_API_KEY_1',
-  'SAMBANOVA_API_KEY_2',
-  'SAMBANOVA_API_KEY_3',
-  'XAI_API_KEY',
-  'XAI_API_KEY_1',
-  'XAI_API_KEY_2',
-  'XAI_API_KEY_3',
-  'AZURE_OPENAI_API_KEY',
-  'SEMRUSH_API_KEY',
-  'BROWSERBASE_API_KEY',
-  'PRESENTATION_API_BASE_URL',
-  'EXA_API_KEY',
-  'COPILOT_API_KEY',
-  'S3_PROFILE_PICTURES_BUCKET_NAME',
-  'S3_COPILOT_BUCKET_NAME',
-  'S3_CHAT_BUCKET_NAME',
-  'S3_EXECUTION_FILES_BUCKET_NAME',
-  'S3_KB_BUCKET_NAME',
-  'S3_LOGS_BUCKET_NAME',
-  'NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS',
-  'CRON_SECRET',
-  'FB_CLIENT_SECRET',
-  'FB_CLIENT_ID',
-  'FB_ACCESS_TOKEN',
-  'FROM_EMAIL_ADDRESS',
-  'NEXT_PUBLIC_FIRECRAWL_API_KEY',
-  'FIRECRAWL_API_KEY',
-  'BROWSER_USE_API_KEY',
-  'SPYFU_API_PASSWORD',
-  'SPYFU_API_USERNAME',
-  'CHROMEDRIVER_PATH',
-  'FIGMA_API_KEY',
-  'GOOGLE_ADS_REFRESH_TOKEN',
-  'GOOGLE_ADS_CLIENT_SECRET',
-  'GOOGLE_ADS_CLIENT_ID',
-  'GOOGLE_ADS_DEVELOPER_TOKEN',
-  'INTERNAL_API_SECRET',
-  'AWS_SECRET_ACCESS_KEY',
-  'AWS_ACCESS_KEY_ID',
-  'AWS_REGION',
-  'S3_BUCKET_NAME',
-  'SLACK_CLIENT_ID',
-  'SLACK_CLIENT_SECRET',
-  'GOOGLE_CLIENT_SECRET',
-  'GOOGLE_CLIENT_ID',
-])
-
-async function ensureBlockVariablesResolvable(
-  blocks: Record<string, BlockState>,
-  variables: Record<string, string>,
-  requestId: string
-) {
-  await Promise.all(
-    Object.values(blocks).map(async (block) => {
-      const subBlocks = block.subBlocks ?? {}
-      await Promise.all(
-        Object.values(subBlocks).map(async (subBlock) => {
-          const value = subBlock.value
-          if (
-            typeof value !== 'string' ||
-            !value.includes(REFERENCE.ENV_VAR_START) ||
-            !value.includes(REFERENCE.ENV_VAR_END)
-          ) {
-            return
-          }
-
-          const envVarPattern = createEnvVarPattern()
-          const matches = value.match(envVarPattern)
-          if (!matches) {
-            return
-          }
-
-          for (const match of matches) {
-            const varName = match.slice(
-              REFERENCE.ENV_VAR_START.length,
-              -REFERENCE.ENV_VAR_END.length
-            )
-            const encryptedValue = variables[varName]
-
-            // Skip validation for known server environment variables that might be
-            // available from server config. These will be checked during execution.
-            if (!encryptedValue && SERVER_ENV_VARS.has(varName)) {
-              logger.debug(
-                `[${requestId}] Skipping validation for server environment variable "${varName}" - will be checked during execution`
-              )
-              continue
-            }
-
-            if (!encryptedValue) {
-              throw new Error(`Environment variable "${varName}" was not found`)
-            }
-
-            // Skip decryption for server environment variables (they're already plain text)
-            if (SERVER_ENV_VARS.has(varName)) {
-              // Server env vars are plain text, no need to decrypt
-              logger.debug(
-                `[${requestId}] Skipping decryption for server environment variable "${varName}" - already plain text`
-              )
-              continue
-            }
-
-            try {
-              await decryptSecret(encryptedValue)
-            } catch (error) {
-              logger.error(`[${requestId}] Error decrypting value for variable "${varName}"`, error)
-
-              const message = error instanceof Error ? error.message : 'Unknown error'
-              throw new Error(`Failed to decrypt environment variable "${varName}": ${message}`)
-            }
-          }
-        })
+async function isScheduleDeploymentVersionActive(
+  workflowId: string,
+  deploymentVersionId: string
+): Promise<boolean> {
+  const [activeDeployment] = await db
+    .select({ id: workflowDeploymentVersion.id })
+    .from(workflowDeploymentVersion)
+    .where(
+      and(
+        eq(workflowDeploymentVersion.workflowId, workflowId),
+        eq(workflowDeploymentVersion.id, deploymentVersionId),
+        eq(workflowDeploymentVersion.isActive, true)
       )
-    })
-  )
-}
+    )
+    .limit(1)
 
-async function ensureEnvVarsDecryptable(variables: Record<string, string>, requestId: string) {
-  for (const [key, encryptedValue] of Object.entries(variables)) {
-    // Skip decryption for server environment variables (they're already plain text)
-    if (SERVER_ENV_VARS.has(key)) {
-      logger.debug(
-        `[${requestId}] Skipping decryption for server environment variable "${key}" - already plain text`
-      )
-      continue
-    }
-
-    try {
-      await decryptSecret(encryptedValue)
-    } catch (error) {
-      logger.error(`[${requestId}] Failed to decrypt environment variable "${key}"`, error)
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      throw new Error(`Failed to decrypt environment variable "${key}": ${message}`)
-    }
-  }
+  return Boolean(activeDeployment)
 }
 
 async function runWorkflowExecution({
@@ -319,16 +195,32 @@ async function runWorkflowExecution({
 
     const blocks = deployedData.blocks
     const { deploymentVersionId } = deployedData
+    if (payload.deploymentVersionId && deploymentVersionId !== payload.deploymentVersionId) {
+      logger.info(`[${requestId}] Loaded deployment no longer matches queued schedule, skipping`, {
+        scheduleId: payload.scheduleId,
+        workflowId: payload.workflowId,
+        queuedDeploymentVersionId: payload.deploymentVersionId,
+        loadedDeploymentVersionId: deploymentVersionId,
+      })
+      return {
+        status: 'skip',
+        reason: 'stale_deployment',
+        blocks: {} as Record<string, BlockState>,
+      }
+    }
     logger.info(`[${requestId}] Loaded deployed workflow ${payload.workflowId}`)
 
     if (payload.blockId) {
-      const blockExists = await blockExistsInDeployment(payload.workflowId, payload.blockId)
-      if (!blockExists) {
+      if (!blocks[payload.blockId]) {
         logger.warn(
           `[${requestId}] Schedule trigger block ${payload.blockId} not found in deployed workflow ${payload.workflowId}. Skipping execution.`
         )
 
-        return { status: 'skip', blocks: {} as Record<string, BlockState> }
+        return {
+          status: 'skip',
+          reason: 'invalid_schedule',
+          blocks: {} as Record<string, BlockState>,
+        }
       }
     }
 
@@ -356,6 +248,13 @@ async function runWorkflowExecution({
       triggerType: 'schedule',
       triggerBlockId: payload.blockId || undefined,
       useDraftState: false,
+      workflowStateOverride: {
+        blocks: deployedData.blocks,
+        edges: deployedData.edges,
+        loops: deployedData.loops,
+        parallels: deployedData.parallels,
+        deploymentVersionId,
+      },
       startTime: new Date().toISOString(),
       isClientSession: false,
       correlation,
@@ -373,6 +272,22 @@ async function runWorkflowExecution({
 
     let executionResult
     try {
+      if (
+        payload.deploymentVersionId &&
+        !(await isScheduleDeploymentVersionActive(payload.workflowId, payload.deploymentVersionId))
+      ) {
+        logger.info(`[${requestId}] Schedule deployment changed before execution, skipping`, {
+          scheduleId: payload.scheduleId,
+          workflowId: payload.workflowId,
+          deploymentVersionId: payload.deploymentVersionId,
+        })
+        return {
+          status: 'skip',
+          reason: 'stale_deployment',
+          blocks: {} as Record<string, BlockState>,
+        }
+      }
+
       executionResult = await executeWorkflowCore({
         snapshot,
         callbacks: {},
@@ -446,6 +361,7 @@ export type ScheduleExecutionPayload = {
   requestId?: string
   correlation?: AsyncExecutionCorrelation
   blockId?: string
+  deploymentVersionId?: string
   cronExpression?: string
   lastRanAt?: string
   failedCount?: number
@@ -497,6 +413,7 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
         .select({
           id: workflowSchedule.id,
           workflowId: workflowSchedule.workflowId,
+          deploymentVersionId: workflowSchedule.deploymentVersionId,
           status: workflowSchedule.status,
           archivedAt: workflowSchedule.archivedAt,
         })
@@ -522,6 +439,37 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
           `Failed to release schedule ${payload.scheduleId} after archive/disabled check`
         )
         return
+      }
+
+      const expectedDeploymentVersionId =
+        payload.deploymentVersionId ?? scheduleRecord.deploymentVersionId ?? undefined
+      if (expectedDeploymentVersionId) {
+        const [activeDeployment] = await db
+          .select({ id: workflowDeploymentVersion.id })
+          .from(workflowDeploymentVersion)
+          .where(
+            and(
+              eq(workflowDeploymentVersion.workflowId, payload.workflowId),
+              eq(workflowDeploymentVersion.id, expectedDeploymentVersionId),
+              eq(workflowDeploymentVersion.isActive, true)
+            )
+          )
+          .limit(1)
+
+        if (!activeDeployment) {
+          logger.info(`[${requestId}] Schedule deployment version is no longer active, skipping`, {
+            scheduleId: payload.scheduleId,
+            workflowId: payload.workflowId,
+            deploymentVersionId: expectedDeploymentVersionId,
+          })
+          await releaseScheduleLock(
+            payload.scheduleId,
+            requestId,
+            now,
+            `Failed to release stale deployment schedule ${payload.scheduleId}`
+          )
+          return
+        }
       }
 
       const loggingSession = new LoggingSession(
@@ -695,6 +643,16 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
         })
 
         if (executionResult.status === 'skip') {
+          if (executionResult.reason === 'stale_deployment') {
+            await releaseScheduleLock(
+              payload.scheduleId,
+              requestId,
+              now,
+              `Failed to release stale schedule ${payload.scheduleId} after deployment version changed`
+            )
+            return
+          }
+
           await applyScheduleUpdate(
             payload.scheduleId,
             {
@@ -1056,6 +1014,8 @@ export async function executeJobInline(payload: JobExecutionPayload) {
   const promptText = buildJobPrompt(jobRecord)
 
   try {
+    const userSubscription = await getHighestPrioritySubscription(jobRecord.sourceUserId)
+    const mothershipJobTimeoutMs = getExecutionTimeout(userSubscription?.plan, 'sync')
     const url = buildAPIUrl('/api/mothership/execute')
     const headers = await buildAuthHeaders(jobRecord.sourceUserId)
 
@@ -1067,16 +1027,52 @@ export async function executeJobInline(payload: JobExecutionPayload) {
     }
 
     const startTime = new Date()
-    const response = await fetch(url.toString(), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    })
-    const endTime = new Date()
-    const durationMs = endTime.getTime() - startTime.getTime()
+    const timeoutController = createTimeoutAbortController(mothershipJobTimeoutMs)
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: timeoutController.signal,
+      })
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error')
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => {
+          if (timeoutController.isTimedOut()) {
+            throw new Error(getTimeoutErrorMessage(null, timeoutController.timeoutMs))
+          }
+          return 'Unknown error'
+        })
+        const endTime = new Date()
+        const durationMs = endTime.getTime() - startTime.getTime()
+
+        await createJobLogEntry({
+          scheduleId: payload.scheduleId,
+          workspaceId: jobRecord.sourceWorkspaceId,
+          jobTitle: jobRecord.jobTitle,
+          startTime,
+          endTime,
+          durationMs,
+          success: false,
+          errorMessage: errorText,
+        })
+
+        throw new Error(`Mothership execution failed (${response.status}): ${errorText}`)
+      }
+
+      let responseBody: Record<string, any> = {}
+      let wasCompletedByTool = false
+      try {
+        responseBody = await response.json()
+        const toolCalls = responseBody?.toolCalls as Array<{ name?: string }> | undefined
+        wasCompletedByTool = toolCalls?.some((tc) => tc.name === 'complete_job') ?? false
+      } catch {
+        if (timeoutController.isTimedOut()) {
+          throw new Error(getTimeoutErrorMessage(null, timeoutController.timeoutMs))
+        }
+      }
+      const endTime = new Date()
+      const durationMs = endTime.getTime() - startTime.getTime()
 
       await createJobLogEntry({
         scheduleId: payload.scheduleId,
@@ -1085,92 +1081,71 @@ export async function executeJobInline(payload: JobExecutionPayload) {
         startTime,
         endTime,
         durationMs,
-        success: false,
-        errorMessage: errorText,
+        success: true,
+        responseBody,
       })
 
-      throw new Error(`Mothership execution failed (${response.status}): ${errorText}`)
-    }
+      const newRunCount = (jobRecord.runCount || 0) + 1
 
-    let responseBody: Record<string, any> = {}
-    let wasCompletedByTool = false
-    try {
-      responseBody = await response.json()
-      const toolCalls = responseBody?.toolCalls as Array<{ name?: string }> | undefined
-      wasCompletedByTool = toolCalls?.some((tc) => tc.name === 'complete_job') ?? false
-    } catch {
-      // Response may not be JSON; proceed with normal flow
-    }
+      logger.info(`[${requestId}] Job executed successfully`, {
+        scheduleId: payload.scheduleId,
+        runCount: newRunCount,
+        wasCompletedByTool,
+      })
 
-    await createJobLogEntry({
-      scheduleId: payload.scheduleId,
-      workspaceId: jobRecord.sourceWorkspaceId,
-      jobTitle: jobRecord.jobTitle,
-      startTime,
-      endTime,
-      durationMs,
-      success: true,
-      responseBody,
-    })
+      if (wasCompletedByTool) {
+        await applyScheduleUpdate(
+          payload.scheduleId,
+          {
+            lastRanAt: now,
+            updatedAt: now,
+            runCount: newRunCount,
+            failedCount: 0,
+            lastQueuedAt: null,
+          },
+          requestId,
+          `Error updating job ${payload.scheduleId} after completion`
+        )
+        return
+      }
 
-    const newRunCount = (jobRecord.runCount || 0) + 1
+      const isOneTime = !jobRecord.cronExpression
+      let nextRunAt: Date | null = null
 
-    logger.info(`[${requestId}] Job executed successfully`, {
-      scheduleId: payload.scheduleId,
-      runCount: newRunCount,
-      wasCompletedByTool,
-    })
+      if (!isOneTime && jobRecord.cronExpression) {
+        const validation = validateCronExpression(
+          jobRecord.cronExpression,
+          jobRecord.timezone || 'UTC'
+        )
+        nextRunAt = validation.nextRun || null
+      }
 
-    if (wasCompletedByTool) {
+      const maxRunsReached = jobRecord.maxRuns && newRunCount >= jobRecord.maxRuns
+      if (maxRunsReached) {
+        logger.info(`[${requestId}] Job hit maxRuns limit`, {
+          scheduleId: payload.scheduleId,
+          maxRuns: jobRecord.maxRuns,
+          runCount: newRunCount,
+        })
+      }
+
       await applyScheduleUpdate(
         payload.scheduleId,
         {
           lastRanAt: now,
           updatedAt: now,
-          runCount: newRunCount,
+          nextRunAt: isOneTime || maxRunsReached ? null : nextRunAt,
           failedCount: 0,
           lastQueuedAt: null,
+          runCount: newRunCount,
+          status: isOneTime || maxRunsReached ? 'completed' : 'active',
         },
         requestId,
-        `Error updating job ${payload.scheduleId} after completion`
+        `Error updating job ${payload.scheduleId} after success`
       )
-      return
+    } finally {
+      timeoutController.cleanup()
     }
-
-    const isOneTime = !jobRecord.cronExpression
-    let nextRunAt: Date | null = null
-
-    if (!isOneTime && jobRecord.cronExpression) {
-      const validation = validateCronExpression(
-        jobRecord.cronExpression,
-        jobRecord.timezone || 'UTC'
-      )
-      nextRunAt = validation.nextRun || null
-    }
-
-    const maxRunsReached = jobRecord.maxRuns && newRunCount >= jobRecord.maxRuns
-    if (maxRunsReached) {
-      logger.info(`[${requestId}] Job hit maxRuns limit`, {
-        scheduleId: payload.scheduleId,
-        maxRuns: jobRecord.maxRuns,
-        runCount: newRunCount,
-      })
-    }
-
-    await applyScheduleUpdate(
-      payload.scheduleId,
-      {
-        lastRanAt: now,
-        updatedAt: now,
-        nextRunAt: isOneTime || maxRunsReached ? null : nextRunAt,
-        failedCount: 0,
-        lastQueuedAt: null,
-        runCount: newRunCount,
-        status: isOneTime || maxRunsReached ? 'completed' : 'active',
-      },
-      requestId,
-      `Error updating job ${payload.scheduleId} after success`
-    )
   } catch (error) {
     const errorMessage = toError(error).message
     logger.error(`[${requestId}] Job execution failed`, {

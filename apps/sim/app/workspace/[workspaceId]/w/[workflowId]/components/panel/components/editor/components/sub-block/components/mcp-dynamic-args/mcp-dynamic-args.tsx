@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
-import { Combobox, Label, Slider, Switch } from '@/components/emcn/components'
+import { Combobox, FieldDivider, Label, Slider, Switch } from '@/components/emcn/components'
 import { LongInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/long-input/long-input'
 import { ShortInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/short-input/short-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -137,7 +137,7 @@ export function McpDynamicArgs({
     switch (inputType) {
       case 'switch':
         return (
-          <div key={`${paramName}-switch`} className='flex items-center space-x-3'>
+          <div key={`${paramName}-switch`} className='flex items-center gap-x-3'>
             <Switch
               id={`${paramName}-switch`}
               checked={!!value}
@@ -295,7 +295,7 @@ export function McpDynamicArgs({
   ) {
     return (
       <div className='rounded-lg border p-8 text-center'>
-        <p className='text-muted-foreground text-sm'>Loading tool schema...</p>
+        <p className='text-muted-foreground text-sm'>Loading tool schema…</p>
       </div>
     )
   }
@@ -357,17 +357,7 @@ export function McpDynamicArgs({
                   )}
                   {renderParameterInput(paramName, paramSchema as any)}
                 </div>
-                {showDivider && (
-                  <div className='subblock-divider px-0.5 pt-4 pb-[13px]'>
-                    <div
-                      className='h-[1.25px]'
-                      style={{
-                        backgroundImage:
-                          'repeating-linear-gradient(to right, var(--border) 0px, var(--border) 6px, transparent 6px, transparent 12px)',
-                      }}
-                    />
-                  </div>
-                )}
+                {showDivider && <FieldDivider subblockMarker />}
               </div>
             )
           })}

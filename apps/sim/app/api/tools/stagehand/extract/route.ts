@@ -11,7 +11,6 @@ import { ensureZodObject, normalizeUrl } from '@/app/api/tools/stagehand/utils'
 
 const logger = createLogger('StagehandExtractAPI')
 
-
 const BROWSERBASE_API_KEY = env.BROWSERBASE_API_KEY
 const BROWSERBASE_PROJECT_ID = env.BROWSERBASE_PROJECT_ID
 

@@ -15,11 +15,8 @@ import type { StorageContext } from '@/lib/uploads/config'
 import { generateWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { isImageFileType, resolveFileType } from '@/lib/uploads/utils/file-utils'
 import {
-  SUPPORTED_AUDIO_EXTENSIONS,
-  SUPPORTED_CODE_EXTENSIONS,
-  SUPPORTED_DOCUMENT_EXTENSIONS,
+  SUPPORTED_ATTACHMENT_EXTENSIONS,
   SUPPORTED_IMAGE_EXTENSIONS,
-  SUPPORTED_VIDEO_EXTENSIONS,
   validateFileType,
 } from '@/lib/uploads/utils/validation'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
@@ -33,13 +30,7 @@ import {
   validateImageFusionFileExtension,
 } from '@/app/api/files/validators/image-fusion'
 
-const ALLOWED_EXTENSIONS = new Set<string>([
-  ...SUPPORTED_DOCUMENT_EXTENSIONS,
-  ...SUPPORTED_CODE_EXTENSIONS,
-  ...SUPPORTED_IMAGE_EXTENSIONS,
-  ...SUPPORTED_AUDIO_EXTENSIONS,
-  ...SUPPORTED_VIDEO_EXTENSIONS,
-])
+const ALLOWED_EXTENSIONS = new Set<string>(SUPPORTED_ATTACHMENT_EXTENSIONS)
 
 function validateFileExtension(filename: string): boolean {
   const extension = filename.split('.').pop()?.toLowerCase()
@@ -101,7 +92,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
     const formFields = formFieldsResult.data
-    const { workflowId, executionId, workspaceId, context: contextParam, uploadContext } = formFields
+    const {
+      workflowId,
+      executionId,
+      workspaceId,
+      context: contextParam,
+      uploadContext,
+    } = formFields
 
     // Context must be explicitly provided
     if (!contextParam) {

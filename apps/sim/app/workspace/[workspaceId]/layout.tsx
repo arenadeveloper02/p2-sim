@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 import { ToastProvider } from '@/components/emcn'
 import { getSession } from '@/lib/auth'
 import { NavTour } from '@/app/workspace/[workspaceId]/components/product-tour'
@@ -23,8 +24,11 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
 
 async function WorkspaceLayoutInner({ children }: { children: React.ReactNode }) {
   const session = await getSession()
+  if (!session?.user) {
+    redirect('/login')
+  }
   // The organization plugin is conditionally spread so TS can't infer activeOrganizationId on the base session type.
-  const orgId = (session?.session as { activeOrganizationId?: string } | null)?.activeOrganizationId
+  const orgId = (session.session as { activeOrganizationId?: string } | null)?.activeOrganizationId
   const initialOrgSettings = orgId ? await getOrgWhitelabelSettings(orgId) : null
 
   return (

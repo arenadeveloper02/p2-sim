@@ -11,7 +11,7 @@ import {
 import { cn } from '@/lib/core/utils/cn'
 import { InlineRenameInput } from '@/app/workspace/[workspaceId]/components/inline-rename-input'
 
-const HEADER_PLUS_ICON = <Plus className='mr-1.5 h-[14px] w-[14px] text-[var(--text-icon)]' />
+const HEADER_PLUS_ICON = <Plus className='mr-1.5 size-[14px] text-[var(--text-icon)]' />
 
 export interface DropdownOption {
   label: string
@@ -55,6 +55,8 @@ interface ResourceHeaderProps {
   breadcrumbs?: BreadcrumbItem[]
   create?: CreateAction
   actions?: HeaderAction[]
+  /** Arbitrary content rendered in the right-aligned actions row, before `actions`. */
+  leadingActions?: React.ReactNode
   /** Arbitrary content rendered in the right-aligned actions row, before the Create button. */
   trailingActions?: React.ReactNode
   /**
@@ -71,6 +73,7 @@ export const ResourceHeader = memo(function ResourceHeader({
   breadcrumbs,
   create,
   actions,
+  leadingActions,
   trailingActions,
   createTrigger,
 }: ResourceHeaderProps) {
@@ -87,7 +90,7 @@ export const ResourceHeader = memo(function ResourceHeader({
         <div className='flex items-center gap-3'>
           {hasBreadcrumbs ? (
             breadcrumbs.map((crumb, i) => (
-              <Fragment key={i}>
+              <Fragment key={crumb.label}>
                 {i > 0 && <span className='select-none text-[var(--text-icon)] text-sm'>/</span>}
                 <BreadcrumbSegment
                   icon={i === 0 ? Icon : undefined}
@@ -100,12 +103,13 @@ export const ResourceHeader = memo(function ResourceHeader({
             ))
           ) : (
             <>
-              {Icon && <Icon className='h-[14px] w-[14px] text-[var(--text-icon)]' />}
+              {Icon && <Icon className='size-[14px] text-[var(--text-icon)]' />}
               {title && <h1 className='font-medium text-[var(--text-body)] text-sm'>{title}</h1>}
             </>
           )}
         </div>
         <div className='flex items-center gap-1.5'>
+          {leadingActions}
           {actions?.map((action) => {
             const ActionIcon = action.icon
             return (
@@ -171,7 +175,7 @@ const BreadcrumbSegment = memo(function BreadcrumbSegment({
   if (editing?.isEditing) {
     return (
       <span className='inline-flex items-center px-2 py-1'>
-        {Icon && <Icon className='mr-3 h-[14px] w-[14px] text-[var(--text-icon)]' />}
+        {Icon && <Icon className='mr-3 size-[14px] text-[var(--text-icon)]' />}
         <InlineRenameInput
           value={editing.value}
           onChange={editing.onChange}
@@ -184,7 +188,7 @@ const BreadcrumbSegment = memo(function BreadcrumbSegment({
 
   const content = (
     <>
-      {Icon && <Icon className='mr-3 h-[14px] w-[14px] text-[var(--text-icon)]' />}
+      {Icon && <Icon className='mr-3 size-[14px] text-[var(--text-icon)]' />}
       {label}
     </>
   )
@@ -203,7 +207,7 @@ const BreadcrumbSegment = memo(function BreadcrumbSegment({
             const ItemIcon = item.icon
             return (
               <DropdownMenuItem key={item.label} onClick={item.onClick} disabled={item.disabled}>
-                {ItemIcon && <ItemIcon className='h-[14px] w-[14px]' />}
+                {ItemIcon && <ItemIcon className='size-[14px]' />}
                 {item.label}
               </DropdownMenuItem>
             )

@@ -11,9 +11,9 @@ import { generateId } from '@sim/utils/id'
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getSession } from '@/lib/auth'
 import { deployedChatPostContract } from '@/lib/api/contracts/chats'
 import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -66,8 +66,6 @@ function toChatConfigResponse(deployment: ChatConfigSource) {
     outputConfigs: deployment.outputConfigs,
   }
 }
-
-
 
 const goldenQueriesSchema = z.object({
   goldenQueries: z.array(
@@ -590,6 +588,9 @@ export const POST = withRouteHandler(
             sessionUserId: userId ?? undefined,
           },
           executionId,
+          workspaceId,
+          workflowId: deployment.workflowId,
+          userId: workspaceOwnerId,
           executeFn: async ({ onStream, onBlockComplete, abortSignal, sessionUserId }) =>
             executeWorkflow(
               workflowForExecution,

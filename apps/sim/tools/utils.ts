@@ -1,12 +1,12 @@
 import { createLogger } from '@sim/logger'
 import * as Papa from 'papaparse'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
-import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import {
   normalizeRecord,
   normalizeStringRecord,
   normalizeWorkflowVariables,
 } from '@/lib/core/utils/records'
+import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import type { EnvironmentVariable } from '@/lib/environment/api'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import type { CustomToolDefinition } from '@/hooks/queries/custom-tools'

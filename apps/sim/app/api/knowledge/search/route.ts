@@ -19,7 +19,7 @@ import type { StructuredFilter } from '@/lib/knowledge/types'
 import { estimateTokenCount } from '@/lib/tokenization/estimators'
 import {
   generateSearchEmbedding,
-  getDocumentNamesByIds,
+  getDocumentMetadataByIds,
   getQueryStrategy,
   handleTagAndVectorSearch,
   handleTagOnlySearch,
@@ -457,7 +457,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     })
 
     const documentIds = results.map((result) => result.documentId)
-    const documentNameMap = await getDocumentNamesByIds(documentIds)
+    const documentMetadataMap = await getDocumentMetadataByIds(documentIds)
 
     const kbIds = [...new Set(results.map((r) => r.knowledgeBaseId).filter(Boolean))]
     const kbToWorkspace: Record<string, string | null> = {}
@@ -506,9 +506,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           })
 
           const rerankerScore = rerankedScores.get(result.id)
+          const docMeta = documentMetadataMap[result.documentId]
           return {
             documentId: result.documentId,
-            documentName: documentNameMap[result.documentId] || undefined,
+            documentName: docMeta?.filename || undefined,
+            sourceUrl: docMeta?.sourceUrl ?? null,
             content: result.content,
             chunkIndex: result.chunkIndex,
             chunkId: result.id,

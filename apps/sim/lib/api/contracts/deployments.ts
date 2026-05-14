@@ -29,7 +29,7 @@ export const updatePublicApiBodySchema = z.object({
 
 export type UpdatePublicApiBody = z.input<typeof updatePublicApiBodySchema>
 
-const deploymentVersionMetadataFieldsSchema = z.object({
+export const deploymentVersionMetadataFieldsSchema = z.object({
   name: z
     .string()
     .trim()
@@ -122,6 +122,7 @@ export const chatDetailSchema = z.object({
   identifier: z.string(),
   title: z.string(),
   description: z.preprocess((value) => value ?? '', z.string()),
+  department: z.string().nullable().optional(),
   authType: z.enum(['public', 'password', 'email', 'sso']),
   allowedEmails: z.preprocess((value) => value ?? [], z.array(z.string())),
   outputConfigs: z.preprocess(

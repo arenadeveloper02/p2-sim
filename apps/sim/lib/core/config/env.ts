@@ -38,6 +38,10 @@ export const env = createEnv({
     // Copilot
     COPILOT_API_KEY:                       z.string().min(1).optional(),           // Secret for internal sim agent API authentication
     SIM_AGENT_API_URL:                     z.string().url().optional(),            // URL for internal sim agent API
+    COPILOT_SOURCE_ENV:                    z.enum(['dev', 'staging', 'prod']).optional(), // Source Sim environment sent to mothership for callbacks
+    COPILOT_DEV_URL:                       z.string().url().optional(),            // Sim agent API URL for the dev mothership environment
+    COPILOT_STAGING_URL:                   z.string().url().optional(),            // Sim agent API URL for the staging mothership environment
+    COPILOT_PROD_URL:                      z.string().url().optional(),            // Sim agent API URL for the production mothership environment
     AGENT_INDEXER_URL:                     z.string().url().optional(),            // URL for agent training data indexer
     AGENT_INDEXER_API_KEY:                 z.string().min(1).optional(),           // API key for agent indexer authentication
     MEMORY_API_BASE_URL:                   z.string().url().optional(),            // Base URL for memory API service
@@ -177,6 +181,9 @@ export const env = createEnv({
     LOG_LEVEL:                             z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR']).optional(), // Minimum log level to display (defaults to ERROR in production, DEBUG in development)
     PROFOUND_API_KEY:                      z.string().min(1).optional(),           // Profound analytics API key
     PROFOUND_ENDPOINT:                     z.string().url().optional(),            // Profound analytics endpoint
+    GRAFANA_OTLP_ENDPOINT:                 z.string().url().optional(),            // Grafana Cloud OTLP HTTP gateway base URL (e.g., https://otlp-gateway-prod-us-east-0.grafana.net/otlp). Trigger.dev exporters append /v1/traces, /v1/logs, /v1/metrics.
+    GRAFANA_OTLP_HEADERS:                  z.string().min(1).optional(),           // Comma-separated key=value headers for OTLP requests (e.g., "Authorization=Basic <base64(instanceId:token)>"). Same format as the OTEL_EXPORTER_OTLP_HEADERS spec.
+    GRAFANA_DEPLOYMENT_ENVIRONMENT:        z.string().min(1).optional(),           // Deployment tier label (e.g., "production", "staging", "development"). Emitted as the stable `deployment.environment.name` resource attribute on Trigger.dev telemetry to match the rest of the Sim OTEL stack.
 
     // External Services
     BROWSERBASE_API_KEY:                   z.string().min(1).optional(),           // Browserbase API key for browser automation
@@ -276,7 +283,7 @@ export const env = createEnv({
     IVM_DISTRIBUTED_MAX_INFLIGHT_PER_OWNER:z.string().optional().default('2200'),   // Max owner in-flight leases across replicas
     IVM_DISTRIBUTED_LEASE_MIN_TTL_MS:      z.string().optional().default('120000'), // Min TTL for distributed in-flight leases (ms)
     IVM_QUEUE_TIMEOUT_MS:                  z.string().optional().default('300000'), // Max queue wait before rejection (ms)
-    IVM_MAX_EXECUTIONS_PER_WORKER:         z.string().optional().default('500'),    // Max lifetime executions before worker is recycled
+    IVM_MAX_EXECUTIONS_PER_WORKER:         z.string().optional().default('200'),    // Max lifetime executions before worker is recycled
     IVM_MAX_BROKER_ARGS_JSON_CHARS:        z.string().optional().default('262144'),  // Max JSON payload size for sandbox task broker args (isolate→host)
     IVM_MAX_BROKER_RESULT_JSON_CHARS:      z.string().optional().default('16777216'),// Max JSON payload size for sandbox task broker results (host→isolate)
     IVM_MAX_BROKERS_PER_EXECUTION:         z.string().optional().default('1000'),    // Max broker calls per sandbox task execution
@@ -494,6 +501,7 @@ export const env = createEnv({
     NEXT_PUBLIC_AUDIT_LOGS_ENABLED:        z.boolean().optional(),                   // Enable audit logs on self-hosted (bypasses hosted requirements)
     NEXT_PUBLIC_DATA_RETENTION_ENABLED:   z.boolean().optional(),                   // Enable data retention settings on self-hosted (bypasses hosted requirements)
     NEXT_PUBLIC_DATA_DRAINS_ENABLED:      z.boolean().optional(),                   // Enable data drains on self-hosted (bypasses hosted requirements)
+    NEXT_PUBLIC_WORKFLOW_COLUMNS_ENABLED: z.boolean().optional(),                   // Show the "Workflow" column type in user tables (defaults to false)
     NEXT_PUBLIC_ORGANIZATIONS_ENABLED:     z.boolean().optional(),                   // Enable organizations on self-hosted (bypasses plan requirements)
     NEXT_PUBLIC_DISABLE_INVITATIONS:       z.boolean().optional(),                   // Disable workspace invitations globally (for self-hosted deployments)
     NEXT_PUBLIC_DISABLE_PUBLIC_API:        z.boolean().optional(),                   // Disable public API access UI toggle globally
@@ -543,6 +551,7 @@ export const env = createEnv({
     NEXT_PUBLIC_AUDIT_LOGS_ENABLED: process.env.NEXT_PUBLIC_AUDIT_LOGS_ENABLED,
     NEXT_PUBLIC_DATA_RETENTION_ENABLED: process.env.NEXT_PUBLIC_DATA_RETENTION_ENABLED,
     NEXT_PUBLIC_DATA_DRAINS_ENABLED: process.env.NEXT_PUBLIC_DATA_DRAINS_ENABLED,
+    NEXT_PUBLIC_WORKFLOW_COLUMNS_ENABLED: process.env.NEXT_PUBLIC_WORKFLOW_COLUMNS_ENABLED,
     NEXT_PUBLIC_ORGANIZATIONS_ENABLED: process.env.NEXT_PUBLIC_ORGANIZATIONS_ENABLED,
     NEXT_PUBLIC_DISABLE_INVITATIONS: process.env.NEXT_PUBLIC_DISABLE_INVITATIONS,
     NEXT_PUBLIC_DISABLE_PUBLIC_API: process.env.NEXT_PUBLIC_DISABLE_PUBLIC_API,

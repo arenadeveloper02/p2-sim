@@ -529,6 +529,7 @@ export const settings = pgTable('settings', {
   // UI preferences
   showTrainingControls: boolean('show_training_controls').notNull().default(false),
   superUserModeEnabled: boolean('super_user_mode_enabled').notNull().default(true),
+  mothershipEnvironment: text('mothership_environment').notNull().default('default'),
 
   // Notification preferences
   errorNotificationsEnabled: boolean('error_notifications_enabled').notNull().default(true),
@@ -889,6 +890,23 @@ export const skill = pgTable(
       table.workspaceId,
       table.name
     ),
+  })
+)
+
+export const mothershipSettings = pgTable(
+  'mothership_settings',
+  {
+    workspaceId: text('workspace_id')
+      .primaryKey()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    mcpToolRefs: jsonb('mcp_tool_refs').notNull().default(sql`'[]'::jsonb`),
+    customToolRefs: jsonb('custom_tool_refs').notNull().default(sql`'[]'::jsonb`),
+    skillRefs: jsonb('skill_refs').notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdIdx: index('mothership_settings_workspace_id_idx').on(table.workspaceId),
   })
 )
 
@@ -1805,6 +1823,7 @@ export const copilotChats = pgTable(
     config: jsonb('config'),
     resources: jsonb('resources').notNull().default('[]'),
     lastSeenAt: timestamp('last_seen_at'),
+    pinned: boolean('pinned').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -3550,7 +3569,15 @@ export const dataDrainSourceEnum = pgEnum('data_drain_source', [
 
 export type DataDrainSource = (typeof dataDrainSourceEnum.enumValues)[number]
 
-export const dataDrainDestinationEnum = pgEnum('data_drain_destination', ['s3', 'webhook'])
+export const dataDrainDestinationEnum = pgEnum('data_drain_destination', [
+  's3',
+  'gcs',
+  'azure_blob',
+  'datadog',
+  'bigquery',
+  'snowflake',
+  'webhook',
+])
 
 export type DataDrainDestination = (typeof dataDrainDestinationEnum.enumValues)[number]
 

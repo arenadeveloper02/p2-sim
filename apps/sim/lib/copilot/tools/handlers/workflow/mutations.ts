@@ -464,6 +464,7 @@ export async function executeSetGlobalWorkflowVariables(
 
     assertWorkflowMutationNotAborted(context)
     await setWorkflowVariables(workflowId, nextVarsRecord)
+    notifyWorkflowUpdated(workflowId)
 
     recordAudit({
       actorId: context.userId,
@@ -740,7 +741,7 @@ export async function executeRunFromBlock(
   }
 }
 
-export async function executeUpdateWorkflow(
+async function executeUpdateWorkflow(
   params: UpdateWorkflowParams,
   context: ExecutionContext
 ): Promise<ToolCallResult> {
@@ -1003,7 +1004,7 @@ export async function executeDeleteFolder(
   }
 }
 
-export async function executeRenameFolder(
+async function executeRenameFolder(
   params: RenameFolderParams,
   context: ExecutionContext
 ): Promise<ToolCallResult> {

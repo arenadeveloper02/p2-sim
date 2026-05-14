@@ -138,7 +138,7 @@ export const buildTimeCSPDirectives: CSPDirectives = {
   'script-src': [...STATIC_SCRIPT_SRC],
   'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
 
-  'img-src': [...STATIC_IMG_SRC, ...(isDev ? ['*'] : []),],
+  'img-src': [...STATIC_IMG_SRC, ...(isDev ? ['*'] : [])],
 
   'media-src': ["'self'", 'blob:'],
   'worker-src': ["'self'", 'blob:'],

@@ -487,7 +487,7 @@ export const KnowledgeBlock: BlockConfig = {
     limit: { type: 'number', description: 'Max items to return' },
     offset: { type: 'number', description: 'Pagination offset' },
     tagFilters: { type: 'string', description: 'Tag filter criteria' },
-    
+
     //this is our code to rerank the results
     rerankEnabled: { type: 'boolean', description: 'Enable or disable reranking' },
     rerankModel: { type: 'string', description: 'Optional rerank model name' },

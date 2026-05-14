@@ -1002,8 +1002,6 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
             return 'google_drive_upload'
           case 'download':
             return 'google_drive_download'
-          case 'search':
-            return 'google_drive_search'
           case 'copy':
             return 'google_drive_copy'
           case 'move':

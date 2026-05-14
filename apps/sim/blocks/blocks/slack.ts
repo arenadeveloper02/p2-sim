@@ -2312,14 +2312,6 @@ Do not include any explanations, markdown formatting, or other text outside the 
         value: 'read',
       },
     },
-    nextCursor: {
-      type: 'string',
-      description: 'Pagination cursor for next page of results',
-      condition: {
-        field: 'operation',
-        value: 'read',
-      },
-    },
     totalPages: {
       type: 'number',
       description: 'Total number of pages fetched (when auto-pagination is enabled)',

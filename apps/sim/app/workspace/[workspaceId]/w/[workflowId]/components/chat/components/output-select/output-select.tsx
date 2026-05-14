@@ -26,7 +26,7 @@ const TagIcon: React.FC<{
   color: string
 }> = ({ icon, color }) => (
   <div
-    className='flex h-[14px] w-[14px] flex-shrink-0 items-center justify-center rounded'
+    className='flex size-[14px] flex-shrink-0 items-center justify-center rounded'
     style={{ background: color }}
   >
     {typeof icon === 'string' ? (
@@ -39,6 +39,8 @@ const TagIcon: React.FC<{
     )}
   </div>
 )
+
+const EMPTY_OUTPUTS: string[] = []
 
 /**
  * Props for the OutputSelect component
@@ -80,7 +82,7 @@ export function OutputSelect({
   workspaceName: _workspaceName,
   workspaceId: _workspaceId,
   workflowId,
-  selectedOutputs = [],
+  selectedOutputs = EMPTY_OUTPUTS,
   onOutputSelect,
   disabled = false,
   placeholder = 'Select outputs',

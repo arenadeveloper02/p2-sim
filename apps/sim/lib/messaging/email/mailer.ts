@@ -9,7 +9,7 @@ const logger = createLogger('Mailer')
 
 export type EmailType = 'transactional' | 'marketing' | 'updates' | 'notifications'
 
-export interface EmailAttachment {
+interface EmailAttachment {
   filename: string
   content: string | Buffer
   contentType: string

@@ -136,7 +136,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const config = getStorageConfig(storageContext)
 
         let customKey: string | undefined
-        if (context === 'workspace') {
+        if (context === 'workspace' || context === 'mothership') {
           const { MAX_WORKSPACE_FILE_SIZE } = await import('@/lib/uploads/shared/types')
           if (typeof fileSize === 'number' && fileSize > MAX_WORKSPACE_FILE_SIZE) {
             return NextResponse.json(
@@ -158,6 +158,25 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
               { status: 413 }
             )
           }
+        } else if (context === 'execution') {
+          const workflowId = (data as { workflowId?: unknown }).workflowId
+          const executionId = (data as { executionId?: unknown }).executionId
+          if (typeof workflowId !== 'string' || !workflowId.trim()) {
+            return NextResponse.json(
+              { error: 'workflowId is required for execution uploads' },
+              { status: 400 }
+            )
+          }
+          if (typeof executionId !== 'string' || !executionId.trim()) {
+            return NextResponse.json(
+              { error: 'executionId is required for execution uploads' },
+              { status: 400 }
+            )
+          }
+          const { generateExecutionFileKey } = await import(
+            '@/lib/uploads/contexts/execution/utils'
+          )
+          customKey = generateExecutionFileKey({ workspaceId, workflowId, executionId }, fileName)
         }
 
         let uploadId: string

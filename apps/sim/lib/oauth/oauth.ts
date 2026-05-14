@@ -1291,6 +1291,7 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientId,
         clientSecret,
         useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
       }
     }
     case 'linear': {

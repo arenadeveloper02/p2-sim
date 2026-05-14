@@ -2,7 +2,6 @@
 
 import { lazy, memo, Suspense, useEffect, useMemo, useRef } from 'react'
 import { createLogger } from '@sim/logger'
-import { Square } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Button, PlayOutline, Skeleton, Tooltip } from '@/components/emcn'
 import {
@@ -10,6 +9,7 @@ import {
   FileX,
   Folder as FolderIcon,
   Library,
+  Square,
   SquareArrowUpRight,
   WorkflowX,
 } from '@/components/emcn/icons'
@@ -43,7 +43,7 @@ import {
   useUserPermissionsContext,
   useWorkspacePermissionsContext,
 } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { Table } from '@/app/workspace/[workspaceId]/tables/[tableId]/components'
+import { Table } from '@/app/workspace/[workspaceId]/tables/[tableId]/table'
 import { useUsageLimits } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/hooks'
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import { useFolders } from '@/hooks/queries/folders'
@@ -145,7 +145,7 @@ export const ResourceContent = memo(function ResourceContent({
           />
         ) : (
           <div className='flex h-full items-center justify-center'>
-            <p className='text-[13px] text-[var(--text-muted)]'>Processing file...</p>
+            <p className='text-[13px] text-[var(--text-muted)]'>Processing file…</p>
           </div>
         )}
       </div>
@@ -500,7 +500,7 @@ function EmbeddedWorkflow({ workspaceId, workflowId }: EmbeddedWorkflowProps) {
   if (!workflowExists || hasLoadError) {
     return (
       <div className='flex h-full flex-col items-center justify-center gap-3'>
-        <WorkflowX className='h-[32px] w-[32px] text-[var(--text-icon)]' />
+        <WorkflowX className='size-[32px] text-[var(--text-icon)]' />
         <div className='flex flex-col items-center gap-1'>
           <h2 className='font-medium text-[20px] text-[var(--text-primary)]'>Workflow not found</h2>
           <p className='text-[var(--text-body)] text-small'>
@@ -546,7 +546,7 @@ function EmbeddedFile({
   if (!file) {
     return (
       <div className='flex h-full flex-col items-center justify-center gap-3'>
-        <FileX className='h-[32px] w-[32px] text-[var(--text-icon)]' />
+        <FileX className='size-[32px] text-[var(--text-icon)]' />
         <div className='flex flex-col items-center gap-1'>
           <h2 className='font-medium text-[20px] text-[var(--text-primary)]'>File not found</h2>
           <p className='text-[var(--text-body)] text-small'>
@@ -591,7 +591,7 @@ function EmbeddedFolder({ workspaceId, folderId }: EmbeddedFolderProps) {
   if (!folder) {
     return (
       <div className='flex h-full flex-col items-center justify-center gap-3'>
-        <FolderIcon className='h-[32px] w-[32px] text-[var(--text-icon)]' />
+        <FolderIcon className='size-[32px] text-[var(--text-icon)]' />
         <div className='flex flex-col items-center gap-1'>
           <h2 className='font-medium text-[20px] text-[var(--text-primary)]'>Folder not found</h2>
           <p className='text-[var(--text-body)] text-small'>
@@ -617,7 +617,7 @@ function EmbeddedFolder({ workspaceId, folderId }: EmbeddedFolderProps) {
               className='flex items-center gap-2 rounded-[6px] px-3 py-2 text-left transition-colors hover:bg-[var(--surface-4)]'
             >
               <div
-                className='h-[12px] w-[12px] flex-shrink-0 rounded-[3px] border-[2px]'
+                className='size-[12px] flex-shrink-0 rounded-[3px] border-[2px]'
                 style={{
                   backgroundColor: w.color,
                   borderColor: workflowBorderColor(w.color),
@@ -656,7 +656,7 @@ function EmbeddedLog({ workspaceId, logId, onNotFound }: EmbeddedLogProps) {
   if (!log) {
     return (
       <div className='flex h-full flex-col items-center justify-center gap-3'>
-        <Library className='h-[32px] w-[32px] text-[var(--text-icon)]' />
+        <Library className='size-[32px] text-[var(--text-icon)]' />
         <div className='flex flex-col items-center gap-1'>
           <h2 className='font-medium text-[20px] text-[var(--text-primary)]'>Log not found</h2>
           <p className='text-[var(--text-body)] text-small'>

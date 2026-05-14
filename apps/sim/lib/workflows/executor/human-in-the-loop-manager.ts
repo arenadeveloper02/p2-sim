@@ -13,6 +13,7 @@ import {
   resetExecutionStreamBuffer,
   type TerminalExecutionStreamStatus,
 } from '@/lib/execution/event-buffer'
+import { compactBlockLogs, compactExecutionPayload } from '@/lib/execution/payloads/serializer'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
@@ -25,6 +26,7 @@ import type {
   SerializableExecutionState,
 } from '@/executor/execution/types'
 import type {
+  BlockLog,
   ExecutionResult,
   PauseKind,
   PausePoint,
@@ -105,6 +107,7 @@ interface PersistPauseResultArgs {
 
 interface EnqueueResumeArgs {
   executionId: string
+  workflowId: string
   contextId: string
   resumeInput: unknown
   userId: string
@@ -262,17 +265,22 @@ export class PauseResumeManager {
         .where(eq(pausedExecutions.id, existing.id))
     })
 
-    await PauseResumeManager.processQueuedResumes(executionId)
+    await PauseResumeManager.processQueuedResumes(executionId, workflowId)
   }
 
   static async enqueueOrStartResume(args: EnqueueResumeArgs): Promise<EnqueueResumeResult> {
-    const { executionId, contextId, resumeInput, userId, allowedPauseKinds } = args
+    const { executionId, workflowId, contextId, resumeInput, userId, allowedPauseKinds } = args
 
     return await db.transaction(async (tx) => {
       const pausedExecution = await tx
         .select()
         .from(pausedExecutions)
-        .where(eq(pausedExecutions.executionId, executionId))
+        .where(
+          and(
+            eq(pausedExecutions.executionId, executionId),
+            eq(pausedExecutions.workflowId, workflowId)
+          )
+        )
         .for('update')
         .limit(1)
         .then((rows) => rows[0])
@@ -468,10 +476,14 @@ export class PauseResumeManager {
             failureReason: 'Resume execution cancelled',
           })
           const pausedCancellationStatus = await PauseResumeManager.getPausedCancellationStatus(
-            pausedExecution.executionId
+            pausedExecution.executionId,
+            pausedExecution.workflowId
           )
           if (pausedCancellationStatus === 'cancelling') {
-            await PauseResumeManager.completePausedCancellation(pausedExecution.executionId)
+            await PauseResumeManager.completePausedCancellation(
+              pausedExecution.executionId,
+              pausedExecution.workflowId
+            )
           }
         } else {
           await PauseResumeManager.updateSnapshotAfterResume({
@@ -495,7 +507,10 @@ export class PauseResumeManager {
         })
       }
 
-      await PauseResumeManager.processQueuedResumes(pausedExecution.executionId)
+      await PauseResumeManager.processQueuedResumes(
+        pausedExecution.executionId,
+        pausedExecution.workflowId
+      )
 
       return result
     } catch (error) {
@@ -523,7 +538,10 @@ export class PauseResumeManager {
         contextId,
         error,
       })
-      await PauseResumeManager.processQueuedResumes(pausedExecution.executionId)
+      await PauseResumeManager.processQueuedResumes(
+        pausedExecution.executionId,
+        pausedExecution.workflowId
+      )
       throw error
     }
   }
@@ -964,7 +982,12 @@ export class PauseResumeManager {
       throw new Error(RUN_BUFFER_UNAVAILABLE_ERROR)
     }
 
-    const eventWriter = createExecutionEventWriter(resumeExecutionId)
+    const eventWriter = createExecutionEventWriter(resumeExecutionId, {
+      workspaceId: metadata.workspaceId,
+      workflowId,
+      userId: metadata.userId,
+      preserveUserFileBase64: true,
+    })
     const metaInitialized = await initializeExecutionStreamMeta(resumeExecutionId, {
       userId: metadata.userId,
       workflowId,
@@ -1181,6 +1204,23 @@ export class PauseResumeManager {
         }
       }
 
+      const compactResultLogs = await compactBlockLogs(result.logs, {
+        workspaceId: baseSnapshot.metadata.workspaceId,
+        workflowId,
+        executionId: resumeExecutionId,
+        userId: metadata.userId,
+        requireDurable: true,
+      })
+      const compactResultOutput = await compactExecutionPayload(result.output, {
+        workspaceId: baseSnapshot.metadata.workspaceId,
+        workflowId,
+        executionId: resumeExecutionId,
+        userId: metadata.userId,
+        preserveUserFileBase64: true,
+        preserveRoot: true,
+        requireDurable: true,
+      })
+
       if (
         result.status === 'cancelled' &&
         timeoutController?.isTimedOut() &&
@@ -1203,7 +1243,7 @@ export class PauseResumeManager {
             data: {
               error: timeoutErrorMessage,
               duration: result.metadata?.duration || 0,
-              finalBlockLogs: result.logs,
+              finalBlockLogs: compactResultLogs,
             },
           },
           'error'
@@ -1218,7 +1258,7 @@ export class PauseResumeManager {
             workflowId,
             data: {
               duration: result.metadata?.duration || 0,
-              finalBlockLogs: result.logs,
+              finalBlockLogs: compactResultLogs,
             },
           },
           'cancelled'
@@ -1232,11 +1272,11 @@ export class PauseResumeManager {
             executionId: resumeExecutionId,
             workflowId,
             data: {
-              output: result.output,
+              output: compactResultOutput,
               duration: result.metadata?.duration || 0,
               startTime: result.metadata?.startTime || new Date().toISOString(),
               endTime: result.metadata?.endTime || new Date().toISOString(),
-              finalBlockLogs: result.logs,
+              finalBlockLogs: compactResultLogs,
             },
           },
           'complete'
@@ -1251,11 +1291,11 @@ export class PauseResumeManager {
             workflowId,
             data: {
               success: result.success,
-              output: result.output,
+              output: compactResultOutput,
               duration: result.metadata?.duration || 0,
               startTime: result.metadata?.startTime || new Date().toISOString(),
               endTime: result.metadata?.endTime || new Date().toISOString(),
-              finalBlockLogs: result.logs,
+              finalBlockLogs: compactResultLogs,
             },
           },
           'complete'
@@ -1264,6 +1304,23 @@ export class PauseResumeManager {
     } catch (execError) {
       executionError = execError
       const execErrorResult = hasExecutionResult(execError) ? execError.executionResult : undefined
+      let compactErrorLogs: BlockLog[] | undefined
+      try {
+        compactErrorLogs = execErrorResult?.logs
+          ? await compactBlockLogs(execErrorResult.logs, {
+              workspaceId: baseSnapshot.metadata.workspaceId,
+              workflowId,
+              executionId: resumeExecutionId,
+              userId: metadata.userId,
+              requireDurable: true,
+            })
+          : undefined
+      } catch (compactionError) {
+        logger.warn('Failed to compact resume error logs, omitting oversized error details', {
+          resumeExecutionId,
+          error: toError(compactionError).message,
+        })
+      }
       finalMetaStatus = 'error'
       await writeBufferedEvent(
         {
@@ -1274,7 +1331,7 @@ export class PauseResumeManager {
           data: {
             error: toError(execError).message,
             duration: 0,
-            finalBlockLogs: execErrorResult?.logs,
+            finalBlockLogs: compactErrorLogs,
           },
         },
         'error'
@@ -1467,10 +1524,7 @@ export class PauseResumeManager {
       snapshotData.state = executionState
     }
 
-    // Update the DAG incoming edges in the snapshot
-    // Remove the edge from the resumed pause block
     if (snapshotData.state) {
-      // Track completed pause contexts so future resumes remove their edges
       const completedPauseContexts = new Set<string>(
         (snapshotData.state.completedPauseContexts ?? []).map((id: string) =>
           PauseResumeManager.normalizePauseBlockId(id)
@@ -1482,7 +1536,6 @@ export class PauseResumeManager {
       const dagIncomingEdges = snapshotData.state.dagIncomingEdges
 
       if (dagIncomingEdges) {
-        // Find all edges from the resumed pause block and remove them from targets
         const workflowData = snapshotData.workflow
         const connections = workflowData.connections || []
 
@@ -1490,7 +1543,6 @@ export class PauseResumeManager {
           if (conn.source === pauseBlockId) {
             const targetId = conn.target
             if (dagIncomingEdges[targetId]) {
-              // Remove this source from the target's incoming edges
               dagIncomingEdges[targetId] = dagIncomingEdges[targetId].filter(
                 (sourceId: string) => sourceId !== pauseBlockId
               )
@@ -1506,7 +1558,6 @@ export class PauseResumeManager {
       }
     }
 
-    // Update the snapshot in the database
     const updatedSnapshot: SerializedSnapshot = {
       snapshot: JSON.stringify(snapshotData),
       triggerIds: currentSnapshot.triggerIds,
@@ -1526,7 +1577,7 @@ export class PauseResumeManager {
     })
   }
 
-  static async beginPausedCancellation(executionId: string): Promise<boolean> {
+  static async beginPausedCancellation(executionId: string, workflowId: string): Promise<boolean> {
     const now = new Date()
 
     return await db.transaction(async (tx) => {
@@ -1536,6 +1587,7 @@ export class PauseResumeManager {
         .where(
           and(
             eq(pausedExecutions.executionId, executionId),
+            eq(pausedExecutions.workflowId, workflowId),
             inArray(pausedExecutions.status, [...CANCELLABLE_PAUSED_STATUSES, 'cancelling'])
           )
         )
@@ -1573,14 +1625,22 @@ export class PauseResumeManager {
     })
   }
 
-  static async completePausedCancellation(executionId: string): Promise<boolean> {
+  static async completePausedCancellation(
+    executionId: string,
+    workflowId: string
+  ): Promise<boolean> {
     const now = new Date()
 
     return await db.transaction(async (tx) => {
       const pausedExecution = await tx
         .select({ id: pausedExecutions.id, status: pausedExecutions.status })
         .from(pausedExecutions)
-        .where(eq(pausedExecutions.executionId, executionId))
+        .where(
+          and(
+            eq(pausedExecutions.executionId, executionId),
+            eq(pausedExecutions.workflowId, workflowId)
+          )
+        )
         .for('update')
         .limit(1)
         .then((rows) => rows[0])
@@ -1606,7 +1666,10 @@ export class PauseResumeManager {
     })
   }
 
-  static async blockQueuedResumesForCancellation(executionId: string): Promise<boolean> {
+  static async blockQueuedResumesForCancellation(
+    executionId: string,
+    workflowId: string
+  ): Promise<boolean> {
     const now = new Date()
 
     return await db.transaction(async (tx) => {
@@ -1616,6 +1679,7 @@ export class PauseResumeManager {
         .where(
           and(
             eq(pausedExecutions.executionId, executionId),
+            eq(pausedExecutions.workflowId, workflowId),
             inArray(pausedExecutions.status, [...CANCELLABLE_PAUSED_STATUSES, 'cancelling'])
           )
         )
@@ -1647,7 +1711,10 @@ export class PauseResumeManager {
     })
   }
 
-  static async clearPausedCancellationIntent(executionId: string): Promise<void> {
+  static async clearPausedCancellationIntent(
+    executionId: string,
+    workflowId: string
+  ): Promise<void> {
     const now = new Date()
     await db
       .update(pausedExecutions)
@@ -1658,14 +1725,16 @@ export class PauseResumeManager {
       .where(
         and(
           eq(pausedExecutions.executionId, executionId),
+          eq(pausedExecutions.workflowId, workflowId),
           eq(pausedExecutions.status, 'cancelling')
         )
       )
-    await PauseResumeManager.processQueuedResumes(executionId)
+    await PauseResumeManager.processQueuedResumes(executionId, workflowId)
   }
 
   static async getPausedCancellationStatus(
-    executionId: string
+    executionId: string,
+    workflowId: string
   ): Promise<'cancelling' | 'cancelled' | null> {
     const activeResume = await db
       .select({ id: resumeQueue.id })
@@ -1681,7 +1750,12 @@ export class PauseResumeManager {
     const pausedExecution = await db
       .select({ status: pausedExecutions.status })
       .from(pausedExecutions)
-      .where(eq(pausedExecutions.executionId, executionId))
+      .where(
+        and(
+          eq(pausedExecutions.executionId, executionId),
+          eq(pausedExecutions.workflowId, workflowId)
+        )
+      )
       .limit(1)
       .then((rows) => rows[0])
 
@@ -1838,7 +1912,7 @@ export class PauseResumeManager {
     }
   }
 
-  static async processQueuedResumes(parentExecutionId: string): Promise<void> {
+  static async processQueuedResumes(parentExecutionId: string, workflowId: string): Promise<void> {
     let pendingEntry: {
       entry: typeof resumeQueue.$inferSelect
       pausedExecution: typeof pausedExecutions.$inferSelect
@@ -1849,7 +1923,12 @@ export class PauseResumeManager {
         const pausedExecution = await tx
           .select()
           .from(pausedExecutions)
-          .where(eq(pausedExecutions.executionId, parentExecutionId))
+          .where(
+            and(
+              eq(pausedExecutions.executionId, parentExecutionId),
+              eq(pausedExecutions.workflowId, workflowId)
+            )
+          )
           .for('update')
           .limit(1)
           .then((rows) => rows[0])

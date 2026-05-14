@@ -251,6 +251,6 @@ export const config = {
     '/invite/:path*', // Match invitation routes
     '/session-required',
     // Catch-all for other pages, excluding static assets and public directories
-    '/((?!_next/static|_next/image|ingest|favicon.ico|logo/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
+    '/((?!api/|api$|_next/static|_next/image|ingest|favicon.ico|logo/|static/|footer/|social/|enterprise/|favicon/|twitter/|robots.txt|sitemap.xml).*)',
   ],
 }

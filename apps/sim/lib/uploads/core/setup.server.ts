@@ -14,9 +14,14 @@ export const UPLOAD_DIR_SERVER = join(PROJECT_ROOT, 'uploads')
 /**
  * Server-only function to ensure uploads directory exists
  */
-export async function ensureUploadsDirectory() {
-  if (USE_S3_STORAGE || USE_BLOB_STORAGE) {
-    logger.info('Using cloud storage, skipping local uploads directory creation')
+async function ensureUploadsDirectory() {
+  if (USE_S3_STORAGE) {
+    logger.info('Using S3 storage, skipping local uploads directory creation')
+    return true
+  }
+
+  if (USE_BLOB_STORAGE) {
+    logger.info('Using Azure Blob storage, skipping local uploads directory creation')
     return true
   }
 
