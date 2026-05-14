@@ -26,9 +26,7 @@ function generateRuntimeConstants(schema: Record<string, unknown>): string {
       .map((v) => `  ${JSON.stringify(v)}: ${JSON.stringify(v)}`)
       .join(',\n')
 
-    lines.push(
-      `export const ${name} = {\n${entries},\n} as const;\n`
-    )
+    lines.push(`export const ${name} = {\n${entries},\n} as const;\n`)
   }
 
   return lines.join('\n')
@@ -37,15 +35,16 @@ function generateRuntimeConstants(schema: Record<string, unknown>): string {
 async function main() {
   const checkOnly = process.argv.includes('--check')
   const inputPathArg = process.argv.find((arg) => arg.startsWith('--input='))
-  const inputPath = inputPathArg ? resolve(ROOT, inputPathArg.slice('--input='.length)) : DEFAULT_CONTRACT_PATH
+  const inputPath = inputPathArg
+    ? resolve(ROOT, inputPathArg.slice('--input='.length))
+    : DEFAULT_CONTRACT_PATH
 
   const raw = await readFile(inputPath, 'utf8')
   const schema = JSON.parse(raw)
   const types = await compile(schema, 'RequestTraceV1SimReport', {
-    bannerComment:
-      '// AUTO-GENERATED FILE. DO NOT EDIT.\n//',
+    bannerComment: '// AUTO-GENERATED FILE. DO NOT EDIT.\n//',
     unreachableDefinitions: true,
-    additionalProperties: false
+    additionalProperties: false,
   })
 
   const constants = generateRuntimeConstants(schema)

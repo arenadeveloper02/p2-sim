@@ -27,12 +27,9 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(SCRIPT_DIR, '..')
 const DEFAULT_CONTRACT_PATH = resolve(
   ROOT,
-  '../copilot/copilot/contracts/trace-attribute-values-v1.schema.json',
+  '../copilot/copilot/contracts/trace-attribute-values-v1.schema.json'
 )
-const OUTPUT_PATH = resolve(
-  ROOT,
-  'apps/sim/lib/copilot/generated/trace-attribute-values-v1.ts',
-)
+const OUTPUT_PATH = resolve(ROOT, 'apps/sim/lib/copilot/generated/trace-attribute-values-v1.ts')
 
 interface ExtractedEnum {
   /** The Go type name — becomes the TS const + type name. */
@@ -66,13 +63,9 @@ function toValueIdent(value: string): string {
   if (parts.length === 0) {
     throw new Error(`Cannot derive identifier for enum value: ${value}`)
   }
-  const ident = parts
-    .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
-    .join('')
+  const ident = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join('')
   if (/^[0-9]/.test(ident)) {
-    throw new Error(
-      `Derived identifier "${ident}" for value "${value}" starts with a digit`,
-    )
+    throw new Error(`Derived identifier "${ident}" for value "${value}" starts with a digit`)
   }
   return ident
 }
@@ -84,7 +77,7 @@ function renderEnum(e: ExtractedEnum): string {
     const prev = seen.get(ident)
     if (prev && prev !== v) {
       throw new Error(
-        `Enum ${e.name}: identifier collision — "${prev}" and "${v}" both map to "${ident}"`,
+        `Enum ${e.name}: identifier collision — "${prev}" and "${v}" both map to "${ident}"`
       )
     }
     seen.set(ident, v)
@@ -128,7 +121,7 @@ async function main() {
   const enums = extractEnums(schema)
   if (enums.length === 0) {
     throw new Error(
-      'No enum $defs found in trace-attribute-values-v1.schema.json — did you add the Go type to TraceAttributeValuesV1AllDefs?',
+      'No enum $defs found in trace-attribute-values-v1.schema.json — did you add the Go type to TraceAttributeValuesV1AllDefs?'
     )
   }
   const rendered = render(enums)
@@ -137,7 +130,7 @@ async function main() {
     const existing = await readFile(OUTPUT_PATH, 'utf8').catch(() => null)
     if (existing !== rendered) {
       throw new Error(
-        'Generated trace attribute values contract is stale. Run: bun run trace-attribute-values-contract:generate',
+        'Generated trace attribute values contract is stale. Run: bun run trace-attribute-values-contract:generate'
       )
     }
     console.log('Trace attribute values contract is up to date.')
