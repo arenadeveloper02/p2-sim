@@ -921,6 +921,7 @@ import {
   googleAdsQueryTool,
   googleAdsSearchTool,
 } from '@/tools/google_ads'
+import { googleAdsAnalyzerTool } from '@/tools/google_ads_analyzer'
 import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
 import {
   googleBigQueryGetTableTool,
@@ -4319,6 +4320,7 @@ export const tools: Record<string, ToolConfig> = {
   google_sheets_append: googleSheetsAppendTool,
   google_ads_query: googleAdsQueryTool,
   google_ads_v1_query: googleAdsV1QueryTool,
+  google_ads_analyzer: googleAdsAnalyzerTool,
   facebook_ads_query: facebookAdsQueryTool,
   google_sheets_read_v2: googleSheetsReadV2Tool,
   google_sheets_write_v2: googleSheetsWriteV2Tool,
