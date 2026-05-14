@@ -538,7 +538,7 @@ export interface AdminWorkspaceMember {
 // User Billing Types
 // =============================================================================
 
-export interface AdminUserBilling {
+interface AdminUserBilling {
   userId: string
   // User info
   userName: string
@@ -645,6 +645,7 @@ export interface AdminDeployResult {
 
 export interface AdminUndeployResult {
   isDeployed: boolean
+  warnings?: string[]
 }
 
 // =============================================================================

@@ -20,6 +20,7 @@ const workflowBlockDataSchema = z.object({
   whileCondition: z.string().optional(),
   doWhileCondition: z.string().optional(),
   parallelType: z.enum(['collection', 'count']).optional(),
+  batchSize: z.number().optional(),
   type: z.string().optional(),
   canonicalModes: z.record(z.string(), z.enum(['basic', 'advanced'])).optional(),
 })
@@ -90,6 +91,7 @@ const workflowParallelSchema = z.object({
     .optional(),
   count: z.number().optional(),
   parallelType: z.enum(['count', 'collection']).optional(),
+  batchSize: z.number().optional(),
   enabled: z.boolean().optional(),
   locked: z.boolean().optional(),
 })
@@ -133,13 +135,6 @@ export const workflowVariableReadSchema = workflowVariableWriteSchema.extend({
   workflowId: z.string(),
 })
 
-/**
- * Backwards-compatible alias for callers that do not need to distinguish
- * read vs write. Prefer `workflowVariableWriteSchema` for request bodies
- * and `workflowVariableReadSchema` for response payloads.
- */
-export const workflowVariableSchema = workflowVariableWriteSchema
-
 export const workflowStateSchema = z.object({
   blocks: z.record(z.string(), workflowBlockStateSchema),
   edges: z.array(workflowEdgeSchema),
@@ -148,7 +143,7 @@ export const workflowStateSchema = z.object({
   lastSaved: z.number().optional(),
   isDeployed: z.boolean().optional(),
   deployedAt: z.coerce.date().nullable().optional(),
-  variables: z.record(z.string(), workflowVariableSchema).optional(),
+  variables: z.record(z.string(), workflowVariableWriteSchema).optional(),
   /**
    * Display metadata stamped onto the workflow state by the GET
    * `/api/workflows/[id]` route, so callers consuming the wire payload
@@ -349,7 +344,7 @@ export const executeWorkflowBodySchema = z.object({
 export type ExecuteWorkflowBody = z.input<typeof executeWorkflowBodySchema>
 
 export const workflowVariablesBodySchema = z.object({
-  variables: z.record(z.string(), workflowVariableSchema),
+  variables: z.record(z.string(), workflowVariableWriteSchema),
 })
 export type WorkflowVariablesBody = z.input<typeof workflowVariablesBodySchema>
 

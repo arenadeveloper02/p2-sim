@@ -3,6 +3,7 @@ import { toError } from '@sim/utils/errors'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { normalizeStringArray } from '@/lib/core/utils/arrays'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { compactExecutionPayload } from '@/lib/execution/payloads/serializer'
 import {
   containsUserFileWithMetadata,
   hydrateUserFilesWithBase64,
@@ -47,6 +48,7 @@ import { isJSONString } from '@/executor/utils/json'
 import { filterOutputForLog } from '@/executor/utils/output-filter'
 import {
   FUNCTION_BLOCK_CONTEXT_VARS_KEY,
+  FUNCTION_BLOCK_DISPLAY_CODE_KEY,
   type VariableResolver,
 } from '@/executor/variables/resolver'
 import type { SerializedBlock } from '@/serializer/types'
@@ -103,6 +105,7 @@ export class BlockExecutor {
     }
 
     let resolvedInputs: Record<string, any> = {}
+    let inputsForLog: Record<string, any> = {}
 
     const nodeMetadata = {
       ...this.buildNodeMetadata(node),
@@ -120,15 +123,31 @@ export class BlockExecutor {
       }
 
       if (block.metadata?.id === BlockType.FUNCTION) {
-        const { resolvedInputs: fnInputs, contextVariables } =
-          this.resolver.resolveInputsForFunctionBlock(ctx, node.id, block.config.params, block)
-        resolvedInputs = { ...fnInputs, [FUNCTION_BLOCK_CONTEXT_VARS_KEY]: contextVariables }
+        const {
+          resolvedInputs: fnInputs,
+          displayInputs,
+          contextVariables,
+        } = await this.resolver.resolveInputsForFunctionBlock(
+          ctx,
+          node.id,
+          block.config.params,
+          block
+        )
+        resolvedInputs = {
+          ...fnInputs,
+          [FUNCTION_BLOCK_CONTEXT_VARS_KEY]: contextVariables,
+          ...(displayInputs.code !== undefined
+            ? { [FUNCTION_BLOCK_DISPLAY_CODE_KEY]: displayInputs.code }
+            : {}),
+        }
+        inputsForLog = displayInputs
       } else {
-        resolvedInputs = this.resolver.resolveInputs(ctx, node.id, block.config.params, block)
+        resolvedInputs = await this.resolver.resolveInputs(ctx, node.id, block.config.params, block)
+        inputsForLog = resolvedInputs
       }
 
       if (blockLog) {
-        blockLog.input = this.sanitizeInputsForLog(resolvedInputs)
+        blockLog.input = this.sanitizeInputsForLog(inputsForLog)
       }
     } catch (error) {
       cleanupSelfReference?.()
@@ -139,7 +158,7 @@ export class BlockExecutor {
         block,
         startTime,
         blockLog,
-        resolvedInputs,
+        inputsForLog,
         isSentinel,
         'input_resolution'
       )
@@ -176,13 +195,27 @@ export class BlockExecutor {
         normalizedOutput = this.normalizeOutput(output)
       }
 
-      if (containsUserFileWithMetadata(normalizedOutput)) {
+      if (ctx.includeFileBase64 === true && containsUserFileWithMetadata(normalizedOutput)) {
         normalizedOutput = (await hydrateUserFilesWithBase64(normalizedOutput, {
           requestId: ctx.metadata.requestId,
+          workspaceId: ctx.workspaceId,
+          workflowId: ctx.workflowId,
           executionId: ctx.executionId,
+          largeValueExecutionIds: ctx.largeValueExecutionIds,
+          allowLargeValueWorkflowScope: ctx.allowLargeValueWorkflowScope,
+          userId: ctx.userId,
           maxBytes: ctx.base64MaxBytes,
         })) as NormalizedBlockOutput
       }
+
+      normalizedOutput = (await compactExecutionPayload(normalizedOutput, {
+        workspaceId: ctx.workspaceId,
+        workflowId: ctx.workflowId,
+        executionId: ctx.executionId,
+        userId: ctx.userId,
+        preserveUserFileBase64: ctx.includeFileBase64 === true,
+        requireDurable: true,
+      })) as NormalizedBlockOutput
 
       const endedAt = new Date().toISOString()
       const duration = performance.now() - startTime
@@ -212,7 +245,7 @@ export class BlockExecutor {
           ctx,
           node,
           block,
-          this.sanitizeInputsForLog(resolvedInputs),
+          this.sanitizeInputsForLog(inputsForLog),
           displayOutput,
           duration,
           blockLog.startedAt,
@@ -231,7 +264,7 @@ export class BlockExecutor {
         block,
         startTime,
         blockLog,
-        resolvedInputs,
+        inputsForLog,
         isSentinel,
         'execution'
       )
@@ -262,19 +295,18 @@ export class BlockExecutor {
     block: SerializedBlock,
     startTime: number,
     blockLog: BlockLog | undefined,
-    resolvedInputs: Record<string, any>,
+    inputsForLog: Record<string, any>,
     isSentinel: boolean,
     phase: 'input_resolution' | 'execution'
   ): Promise<NormalizedBlockOutput> {
     const endedAt = new Date().toISOString()
     const duration = performance.now() - startTime
     const errorMessage = normalizeError(error)
-    const hasResolvedInputs =
-      resolvedInputs && typeof resolvedInputs === 'object' && Object.keys(resolvedInputs).length > 0
-    const input =
-      hasResolvedInputs && resolvedInputs
-        ? resolvedInputs
-        : ((block.config?.params as Record<string, any> | undefined) ?? {})
+    const hasLogInputs =
+      inputsForLog && typeof inputsForLog === 'object' && Object.keys(inputsForLog).length > 0
+    const input = hasLogInputs
+      ? inputsForLog
+      : ((block.config?.params as Record<string, any> | undefined) ?? {})
 
     const errorOutput: NormalizedBlockOutput = {
       error: errorMessage,
@@ -441,7 +473,8 @@ export class BlockExecutor {
       if (
         SYSTEM_SUBBLOCK_IDS.includes(key) ||
         key === 'triggerMode' ||
-        key === FUNCTION_BLOCK_CONTEXT_VARS_KEY
+        key === FUNCTION_BLOCK_CONTEXT_VARS_KEY ||
+        key === FUNCTION_BLOCK_DISPLAY_CODE_KEY
       ) {
         continue
       }
