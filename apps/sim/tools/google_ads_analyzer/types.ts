@@ -69,5 +69,6 @@ export interface GoogleAdsAnalyzerResponse {
   row_count: number
   query_type?: string
   execution_time_ms: number
-  raw_llm_response?: string
+  raw_llm_response: string
+  question?: string
 }

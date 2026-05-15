@@ -157,5 +157,7 @@ export const GoogleAdsAnalyzerBlock: BlockConfig<GoogleAdsAnalyzerOutput> = {
     row_count: { type: 'number', description: 'Number of rows analyzed.' },
     query_type: { type: 'string', description: 'Echoed query_type.' },
     execution_time_ms: { type: 'number', description: 'Total analysis time.' },
+    raw_llm_response: { type: 'string', description: 'Full LLM response content with all observations.' },
+    question: { type: 'string', description: 'User question that was analyzed.' },
   },
 }

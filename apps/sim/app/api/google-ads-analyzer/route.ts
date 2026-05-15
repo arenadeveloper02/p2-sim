@@ -159,6 +159,8 @@ export async function POST(request: NextRequest) {
       row_count: rows.length,
       query_type: query_type ?? null,
       execution_time_ms: executionTime,
+      raw_llm_response: rawText,
+      question: question ?? null,
     })
   } catch (error) {
     const executionTime = Date.now() - startTime

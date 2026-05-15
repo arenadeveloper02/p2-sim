@@ -161,20 +161,25 @@ export async function generateGAQLQuery(userPrompt: string): Promise<GAQLRespons
       userPrompt,
     })
 
-    const aiResponse = await executeProviderRequest(provider, {
-      model,
-      systemPrompt: GAQL_SYSTEM_PROMPT,
-      context: `Generate GAQL query for: "${userPrompt}"`,
-      messages: [
-        {
-          role: 'user',
-          content: `Generate a GAQL query for: "${userPrompt}"`,
-        },
-      ],
-      apiKey,
-      temperature: 0.0,
-      maxTokens: 2048,
-    })
+    const aiResponse = await Promise.race([
+      executeProviderRequest(provider, {
+        model,
+        systemPrompt: GAQL_SYSTEM_PROMPT,
+        context: `Generate GAQL query for: "${userPrompt}"`,
+        messages: [
+          {
+            role: 'user',
+            content: `Generate a GAQL query for: "${userPrompt}"`,
+          },
+        ],
+        apiKey,
+        temperature: 0.0,
+        maxTokens: 2048,
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('LLM request timeout after 60 seconds')), 60000)
+      ),
+    ])
 
     logger.info('AI response received')
 
