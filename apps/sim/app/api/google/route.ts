@@ -1,7 +1,13 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { buildGenerateContentUrl, buildNanoBananaRequestBody } from '@/app/api/google/api-service'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import {
+  buildGenerateContentUrl,
+  buildNanoBananaRequestBody,
+  buildNanoBananaToolResponse,
+} from '@/app/api/google/api-service'
 
 export const runtime = 'nodejs'
 
@@ -27,7 +33,7 @@ const GOOGLE_API_TIMEOUT_MS = 5 * 60 * 1000
  * - inputImageMimeType: string (optional) - MIME type for the input image
  * - inputImages: array (optional) - multiple images for fusion (Nano Banana Pro)
  */
-export async function POST(request: NextRequest) {
+export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
     const body = await request.json()
     const model = body.model as string
@@ -117,28 +123,40 @@ export async function POST(request: NextRequest) {
     const data = await response.json()
     logger.info('Nano Banana API success', data)
 
-    return NextResponse.json({
-      success: true,
-      data,
+    const workflowId = request.nextUrl.searchParams.get('workflowId') ?? undefined
+    const userId = request.nextUrl.searchParams.get('userId') ?? undefined
+    const toolResponse = await buildNanoBananaToolResponse(data, {
+      model,
+      aspectRatio,
+      imageSize,
+      inputImage,
+      inputImageMimeType,
+      inputImages,
+      _context: {
+        workflowId,
+        userId,
+      },
     })
+
+    return NextResponse.json(toolResponse)
   } catch (error) {
     logger.error('Unhandled Nano Banana API error', error)
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        error: toError(error).message,
       },
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * GET /api/google
  *
  * API documentation for Nano Banana image generation.
  */
-export async function GET() {
+export const GET = withRouteHandler(async () => {
   return NextResponse.json({
     endpoint: '/api/google',
     method: 'POST',
@@ -158,8 +176,8 @@ export async function GET() {
     },
     response: {
       success: 'boolean',
-      data: 'object - Raw response from Google Generative Language API',
+      output: 'object - Generated image output with image URL, images array, and metadata',
       error: 'string - Error message when unsuccessful',
     },
   })
-}
+})

@@ -12,6 +12,8 @@ export const NANO_BANANA_PRO_MODEL = 'gemini-3-pro-image-preview'
 
 export const NANO_BANANA_MODELS = ['gemini-2.5-flash-image', NANO_BANANA_PRO_MODEL]
 
+const INLINE_IMAGE_PAYLOAD_KEYS = ['base64', 'data', 'dataUrl', 'bytes'] as const
+
 interface ResolveNanoBananaReferencesInput {
   model?: unknown
   uploadedReferences?: unknown[]
@@ -36,6 +38,31 @@ export function normalizeOptionalString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function removeInlinePayloadFromFileReference(reference: unknown): unknown {
+  if (!isRecord(reference)) {
+    return reference
+  }
+
+  const hasStoredFileReference =
+    typeof reference.key === 'string' ||
+    typeof reference.path === 'string' ||
+    typeof reference.url === 'string'
+
+  if (!hasStoredFileReference) {
+    return reference
+  }
+
+  const sanitized = { ...reference }
+  for (const key of INLINE_IMAGE_PAYLOAD_KEYS) {
+    delete sanitized[key]
+  }
+  return sanitized
+}
+
 export function resolveNanoBananaReferences({
   model,
   uploadedReferences = [],
@@ -49,7 +76,11 @@ export function resolveNanoBananaReferences({
   const urls = mergeUrlsAndDeduplicate(parseImageUrls(inputImageUrl), parseImageUrls(inputImageUrls))
   const httpUrls = urls.filter((url) => !isS3Uri(url))
   const s3Refs = urls.filter(isS3Uri).map(s3UriToPathObject)
-  const references = [...uploadedReferences, ...httpUrls, ...s3Refs]
+  const references = [
+    ...uploadedReferences.map(removeInlinePayloadFromFileReference),
+    ...httpUrls,
+    ...s3Refs,
+  ]
 
   if (references.length === 0) {
     return {}

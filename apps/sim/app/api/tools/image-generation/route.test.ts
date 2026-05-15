@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { createMockRequest } from '@sim/testing'
+import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockCheckInternalAuth, mockResolveImageGenerationCount, mockExecuteTool } = vi.hoisted(
@@ -161,5 +162,25 @@ describe('Image Generation Wrapper API Route', () => {
         inputImage: 'https://example.com/source.png',
       })
     )
+  })
+
+  it('should return a helpful error for truncated inline image JSON payloads', async () => {
+    const request = new NextRequest('http://localhost:3000/api/tools/image-generation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:
+        '{"baseToolId":"google_nano_banana","params":{"model":"gemini-3-pro-image-preview","prompt":"Edit this","inputImage":"',
+    })
+
+    const response = await POST(request)
+    const data = await response.json()
+
+    expect(response.status).toBe(413)
+    expect(data).toMatchObject({
+      success: false,
+      error: expect.stringContaining('upload the reference image as a file or use an image URL'),
+    })
+    expect(mockResolveImageGenerationCount).not.toHaveBeenCalled()
+    expect(mockExecuteTool).not.toHaveBeenCalled()
   })
 })

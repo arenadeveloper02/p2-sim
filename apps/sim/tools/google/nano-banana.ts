@@ -1,72 +1,32 @@
 import { createLogger } from '@sim/logger'
-import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
-import type { NanoBananaRequestBody } from '@/app/api/google/api-service'
-import type { ToolConfig } from '@/tools/types'
+import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')
 
-function getObjectKeys(value: unknown): string[] {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return []
-  }
-
-  return Object.keys(value)
-}
-
-interface NanoBananaResponse {
-  candidates: Array<{
-    content: {
-      parts: Array<{
-        text?: string
-        inlineData?: {
-          mimeType: string
-          data: string
-        }
-      }>
-    }
-  }>
-}
-
-interface CandidatePart {
-  text?: string
-  inlineData?: {
-    mimeType?: string
-    data?: string
-  }
-  inline_data?: {
-    mime_type?: string
-    data?: string
-  }
-  image?: {
-    data?: string
-    mimeType?: string
-    mime_type?: string
+interface NanoBananaParams {
+  model?: string
+  prompt?: string
+  aspectRatio?: string
+  imageSize?: string
+  inputImage?: unknown
+  inputImageMimeType?: string
+  inputImages?: unknown[]
+  _context?: {
+    workflowId?: string
+    sessionUserId?: string
+    userId?: string
   }
 }
 
-const extractCandidateParts = (candidate: Record<string, unknown>): CandidatePart[] => {
-  const directParts = candidate.parts
-  if (Array.isArray(directParts)) {
-    return directParts as CandidatePart[]
-  }
-
-  const content = candidate.content as
-    | { parts?: CandidatePart[]; role?: string }
-    | CandidatePart[]
-    | undefined
-
-  if (Array.isArray(content)) {
-    return content
-  }
-
-  if (content?.parts && Array.isArray(content.parts)) {
-    return content.parts
-  }
-
-  return []
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-const nanoBananaTool: ToolConfig = {
+function isToolResponse(value: unknown): value is ToolResponse {
+  return isRecord(value) && typeof value.success === 'boolean' && isRecord(value.output)
+}
+
+const nanoBananaTool: ToolConfig<NanoBananaParams> = {
   id: 'google_nano_banana',
   name: 'Google Nano Banana',
   description: "Generate images using Google's Gemini Native Image (Nano Banana) model",
@@ -96,7 +56,8 @@ const nanoBananaTool: ToolConfig = {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Base64 encoded input image for editing (optional)',
+      description:
+        'Reference image URL or file reference for editing. Do not pass inline base64 image data; use an uploaded file reference or URL instead.',
     },
     inputImageMimeType: {
       type: 'string',
@@ -110,7 +71,7 @@ const nanoBananaTool: ToolConfig = {
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Multiple images for fusion (Nano Banana Pro). Array of base64 strings or { path, type? } objects. When provided, used instead of inputImage.',
+        'Multiple reference images for fusion (Nano Banana Pro). Use image URLs or uploaded file reference objects; do not pass inline base64 image data. When provided, used instead of inputImage.',
     },
     inputImageUrls: {
       type: 'string',
@@ -122,7 +83,7 @@ const nanoBananaTool: ToolConfig = {
   },
 
   request: {
-    url: (params) => {
+    url: () => {
       logger.info('Routing Nano Banana tool request through internal API')
       return '/api/google'
     },
@@ -132,7 +93,7 @@ const nanoBananaTool: ToolConfig = {
         'Content-Type': 'application/json',
       }
     },
-    body: async (params) => {
+    body: (params) => {
       const body: Record<string, unknown> = {
         model: params.model,
         prompt: params.prompt,
@@ -149,9 +110,8 @@ const nanoBananaTool: ToolConfig = {
     },
   },
 
-  transformResponse: async (response, params) => {
+  transformResponse: async (response) => {
     try {
-      // Check if response is ok first
       if (!response.ok) {
         const errorText = await response.text()
         logger.error('Nano Banana API error response:', {
@@ -164,125 +124,15 @@ const nanoBananaTool: ToolConfig = {
         )
       }
 
-      const dt: any = await response.json()
-
-      if (!dt.data?.candidates || dt.data?.candidates.length === 0) {
-        logger.error('No candidates found in Nano Banana response', {
-          topLevelKeys: getObjectKeys(dt),
-          dataKeys: getObjectKeys(dt.data),
+      const data = await response.json()
+      if (!isToolResponse(data)) {
+        logger.error('Unexpected Nano Banana API response shape', {
+          responseKeys: isRecord(data) ? Object.keys(data) : [],
         })
-        throw new Error('No candidates found in response')
+        throw new Error('Unexpected Nano Banana API response shape')
       }
 
-      const candidate = dt.data?.candidates[0] as Record<string, unknown>
-      const finishReason =
-        typeof candidate.finishReason === 'string' ? candidate.finishReason : 'UNKNOWN'
-      if (finishReason === 'NO_IMAGE') {
-        logger.error('Nano Banana did not return an image', {
-          finishReason,
-          candidateKeys: getObjectKeys(candidate),
-          hasPromptFeedback: Boolean(dt.data?.promptFeedback),
-          modelVersion: dt.data?.modelVersion,
-        })
-        throw new Error(
-          'Google Nano Banana returned NO_IMAGE. The model did not generate an image for this prompt; try a shorter/simpler prompt or a different aspect ratio.'
-        )
-      }
-
-      const candidateParts = extractCandidateParts(candidate)
-      if (candidateParts.length === 0) {
-        logger.error('No content parts found in Nano Banana candidate', {
-          candidateKeys: getObjectKeys(candidate),
-        })
-        throw new Error(
-          `No content parts found in candidate (keys: ${Object.keys(candidate).join(', ') || 'none'})`
-        )
-      }
-
-      // Find the image part
-      let base64Image = null
-      let mimeType = 'image/png'
-
-      for (const part of candidateParts) {
-        const inlineData = part.inlineData ?? part.inline_data
-        const imageData = inlineData?.data ?? part.image?.data
-        if (imageData) {
-          base64Image = imageData
-          mimeType =
-            part.inlineData?.mimeType ??
-            part.inline_data?.mime_type ??
-            part.image?.mimeType ??
-            part.image?.mime_type ??
-            'image/png'
-          logger.info('Found image data in part, MIME type:', mimeType)
-          break
-        }
-      }
-
-      if (!base64Image) {
-        logger.error('No image data found in Nano Banana response parts', {
-          candidatePartCount: candidateParts.length,
-        })
-        throw new Error('No image data found in response parts')
-      }
-
-      logger.info('Successfully received Nano Banana image, length:', base64Image.length)
-
-      // Use session user for path when present so path reflects who triggered the run
-      const workflowId = params?._context?.workflowId || 'unknown'
-      const userId = params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
-
-      let finalImageUrl: string | null = null
-      let s3UploadFailed: boolean | undefined
-      try {
-        const saveResult = await saveGeneratedImage(base64Image, workflowId, userId, mimeType)
-        finalImageUrl = saveResult.url
-        s3UploadFailed = saveResult.s3UploadFailed
-        logger.info(`Successfully saved Nano Banana image to storage: ${finalImageUrl}`)
-      } catch (error) {
-        logger.error('Error saving Nano Banana image to storage:', error)
-        logger.warn('Falling back to base64 image data URL due to storage error')
-      }
-
-      const imageUrlToReturn =
-        finalImageUrl || (base64Image ? `data:${mimeType};base64,${base64Image}` : '')
-
-      return {
-        success: true,
-        content: finalImageUrl || 'nano-banana-generated-image',
-        image: imageUrlToReturn,
-        images: imageUrlToReturn ? [imageUrlToReturn] : [],
-        metadata: {
-          model: params?.model || 'gemini-2.5-flash-image',
-          mimeType,
-          aspectRatio: params?.aspectRatio || '1:1',
-          imageSize: params?.imageSize ?? null,
-          hasInputImage: !!(params?.inputImage && params?.inputImageMimeType),
-          hasInputImages: Array.isArray(params?.inputImages) && params.inputImages.length > 0,
-          inputImageCount: Array.isArray(params?.inputImages) ? params.inputImages.length : null,
-          inputImageMimeType: params?.inputImageMimeType || null,
-          stored: !!finalImageUrl,
-          s3UploadFailed,
-        },
-        output: {
-          content: finalImageUrl || 'nano-banana-generated-image',
-          image: imageUrlToReturn,
-          images: imageUrlToReturn ? [imageUrlToReturn] : [],
-          metadata: {
-            model: params?.model || 'gemini-2.5-flash-image',
-            mimeType,
-            aspectRatio: params?.aspectRatio || '1:1',
-            imageSize: params?.imageSize ?? null,
-            hasInputImage: !!(params?.inputImage && params?.inputImageMimeType),
-            hasInputImages: Array.isArray(params?.inputImages) && params.inputImages.length > 0,
-            inputImageCount: Array.isArray(params?.inputImages) ? params.inputImages.length : null,
-            inputImageMimeType: params?.inputImageMimeType || null,
-            stored: !!finalImageUrl,
-            s3UploadFailed,
-          },
-          s3UploadFailed,
-        },
-      }
+      return data
     } catch (error) {
       logger.error('Error in Nano Banana response handling:', error)
       throw error
@@ -373,4 +223,3 @@ const nanoBananaTool: ToolConfig = {
 }
 
 export { nanoBananaTool }
-export type { NanoBananaRequestBody, NanoBananaResponse }

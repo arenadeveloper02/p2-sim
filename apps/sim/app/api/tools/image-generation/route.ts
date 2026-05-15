@@ -16,6 +16,9 @@ export const maxDuration = 300
 
 const logger = createLogger('ImageGenerationWrapperApi')
 
+const INLINE_IMAGE_PAYLOAD_ERROR =
+  'Image Generator request payload is too large or malformed. For 4K image generation with reference images, upload the reference image as a file or use an image URL instead of passing inline base64 image data.'
+
 /**
  * Maximum number of concurrent base-tool executions per wrapper request.
  * Keep this low so that requesting N images does not amplify provider rate-limit pressure.
@@ -94,6 +97,18 @@ function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
   return warnings.filter((warning): warning is string => typeof warning === 'string' && warning.length > 0)
 }
 
+function isLikelyTruncatedJsonPayload(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('unterminated string in json') ||
+    message.includes('unexpected end of json input')
+  )
+}
+
 async function resolveRequestedImageCount(
   params: Record<string, unknown>
 ): Promise<{
@@ -135,7 +150,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch (error) {
+      logger.error('Failed to parse image generation wrapper request body', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return NextResponse.json(
+        {
+          success: false,
+          error: isLikelyTruncatedJsonPayload(error)
+            ? INLINE_IMAGE_PAYLOAD_ERROR
+            : 'Invalid JSON request body',
+        },
+        { status: isLikelyTruncatedJsonPayload(error) ? 413 : 400 }
+      )
+    }
     const validated = ImageGenerationWrapperSchema.parse(body)
     const { imageCount, promptImageUrl, singleImagePrompt, singleImagePrompts } =
       await resolveRequestedImageCount(validated.params)
