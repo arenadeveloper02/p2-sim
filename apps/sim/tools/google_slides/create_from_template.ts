@@ -18,7 +18,8 @@ function generateObjectId(): string {
 interface CreateFromTemplateParams {
   accessToken: string
   presentationName: string
-  schemaJson: string
+  /** JSON string or pre-parsed schema object (e.g. from agent blocks or UI). */
+  schemaJson: string | PresentationSchema | Record<string, unknown>
 }
 
 interface CreateFromTemplateResponse {
@@ -69,15 +70,30 @@ async function fetchWithRetry(
   return fetch(url, options)
 }
 
-function parseSchema(schemaJson: string): PresentationSchema {
+/**
+ * Normalizes schema input from block UI (string), agent output (object), or tool params.
+ */
+function parseSchema(
+  schemaJson: string | PresentationSchema | Record<string, unknown> | unknown
+): PresentationSchema {
   let parsed: unknown
-  try {
-    parsed = JSON.parse(schemaJson)
-  } catch (err) {
-    logger.error('Schema JSON parse failed', {
-      error: err instanceof Error ? err.message : String(err),
-    })
-    throw new Error('Invalid JSON: schema must be valid JSON')
+  if (typeof schemaJson === 'string') {
+    const trimmed = schemaJson.trim()
+    if (!trimmed) {
+      throw new Error('Schema JSON is required')
+    }
+    try {
+      parsed = JSON.parse(trimmed)
+    } catch (err) {
+      logger.error('Schema JSON parse failed', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw new Error('Invalid JSON: schema must be valid JSON')
+    }
+  } else if (schemaJson && typeof schemaJson === 'object' && !Array.isArray(schemaJson)) {
+    parsed = schemaJson
+  } else {
+    throw new Error('Schema must be a JSON string or object with id and slides')
   }
   if (!parsed || typeof parsed !== 'object' || !('id' in parsed) || !('slides' in parsed)) {
     throw new Error('Schema must have id and slides')
@@ -212,11 +228,11 @@ export const createFromTemplateTool: ToolConfig<
       description: 'Title for the new presentation',
     },
     schemaJson: {
-      type: 'string',
+      type: 'json',
       required: true,
       visibility: 'user-or-llm',
       description:
-        'Valid JSON schema (id, templateVersion, slides with templateSlideObjectId and blocks with shapeId and content)',
+        'Valid JSON schema (id, templateVersion, slides with templateSlideObjectId and blocks with shapeId and content). Accepts a JSON string or object.',
     },
   },
 
@@ -240,7 +256,10 @@ export const createFromTemplateTool: ToolConfig<
 
     logger.info('Create from template started', {
       presentationName,
-      schemaJsonLength: params.schemaJson?.length ?? 0,
+      schemaJsonLength:
+        typeof params.schemaJson === 'string'
+          ? params.schemaJson.length
+          : JSON.stringify(params.schemaJson).length,
     })
 
     const schema = parseSchema(params.schemaJson)
