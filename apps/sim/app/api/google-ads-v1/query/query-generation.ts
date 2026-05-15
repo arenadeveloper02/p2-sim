@@ -6,7 +6,7 @@ import { createLogger } from '@sim/logger'
 import { executeProviderRequest } from '@/providers'
 import { resolveAIProvider } from './ai-provider'
 import { DEFAULT_DATE_RANGE_DAYS } from './constants'
-import { GAQL_SYSTEM_PROMPT } from './prompt'
+import { getGaqlSystemPrompt } from './prompt'
 import type { GAQLResponse } from './types'
 
 const logger = createLogger('GoogleAdsV1QueryGen')
@@ -161,9 +161,11 @@ export async function generateGAQLQuery(userPrompt: string): Promise<GAQLRespons
       userPrompt,
     })
 
+    const systemPrompt = await getGaqlSystemPrompt()
+
     const aiResponse = await executeProviderRequest(provider, {
       model,
-      systemPrompt: GAQL_SYSTEM_PROMPT,
+      systemPrompt,
       context: `Generate GAQL query for: "${userPrompt}"`,
       messages: [
         {
