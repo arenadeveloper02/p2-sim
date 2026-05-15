@@ -8,6 +8,8 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
   description: 'Get SEO data from Semrush',
   longDescription:
     'Access Semrush SEO data including organic keywords, backlinks, domain rank, and competitor analysis.',
+  bestPractices:
+    "Runs use Sim's Semrush API proxy; authentication is the server environment variable SEMRUSH_API_KEY (operators configure it on the deployment). Do not tell users to add Semrush API keys to the workflow, use {{SEMRUSH_API_KEY}}, or treat a missing block API key as user error—agents and docs should not ask for an end-user Semrush key for this native block.",
   docsLink: '',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -302,7 +304,7 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       type: 'short-input',
       placeholder: '10',
       defaultValue: '10',
-      description: 'Number of API rows to return (default 10)',
+      description: 'Number of API rows to return',
       condition: {
         field: 'operation',
         value: [
@@ -333,14 +335,16 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       },
     },
     {
-      id: 'apiKey',
-      title: 'API Key',
+      id: 'additionalParams',
+      title: 'Additional Params',
       type: 'short-input',
-      placeholder: 'Enter your Semrush API key',
-      password: true,
+      placeholder: 'e.g. display_sort=nq_desc',
       required: false,
-      hidden: true,
-      description: 'Enter your Semrush API key',
+      description: 'Optional extra Semrush API parameters as a URL query string',
+      condition: {
+        field: 'operation',
+        value: ['url_organic', 'domain_organic', 'domain_organic_organic'],
+      },
     },
   ],
   tools: {
@@ -368,7 +372,6 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
             useVolume: params.useVolume || undefined,
             businessName: params.businessName || undefined,
             serpFeatureFilter: params.serpFeatureFilter || undefined,
-            apiKey: params.apiKey || undefined,
           }
           if (out.displayLimit != null && out.displayLimit !== '') {
             out.displayLimit = String(out.displayLimit)
@@ -376,10 +379,18 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
           return out
         }
 
-        // Exa-style: subBlock ids match tool param ids; only coerce when needed
         const out: Record<string, unknown> = {}
-        if (params.displayLimit != null && params.displayLimit !== '') {
-          out.displayLimit = String(params.displayLimit)
+        const displayLimitRaw = params.displayLimit
+        out.displayLimit =
+          displayLimitRaw != null && String(displayLimitRaw).trim() !== ''
+            ? String(displayLimitRaw)
+            : '10'
+        const exportRaw = params.exportColumns
+        out.exportColumns =
+          typeof exportRaw === 'string' && exportRaw.trim() !== '' ? exportRaw : 'Ph,Nq,Cp'
+        const extra = params.additionalParams
+        if (typeof extra === 'string' && extra.trim() !== '') {
+          out.additionalParams = extra
         }
         return out
       },
@@ -396,6 +407,10 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     database: { type: 'string', description: 'Geographic database code' },
     displayLimit: { type: 'string', description: 'Number of results to return (default 10)' },
     exportColumns: { type: 'string', description: 'Comma-separated column codes' },
+    additionalParams: {
+      type: 'string',
+      description: 'Optional Semrush API parameters as URL query string',
+    },
     campaignId: { type: 'string', description: 'Position Tracking campaign ID' },
     dateBegin: { type: 'string', description: 'Start date YYYYMMDD' },
     dateEnd: { type: 'string', description: 'End date YYYYMMDD' },
@@ -412,10 +427,6 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     useVolume: { type: 'string', description: 'use_volume: national, regional, or local' },
     businessName: { type: 'string', description: 'Google Business Profile business name' },
     serpFeatureFilter: { type: 'string', description: 'SERP feature filter' },
-    apiKey: {
-      type: 'string',
-      description: 'Semrush API key',
-    },
   },
   outputs: {
     reportType: {

@@ -71,10 +71,63 @@ function normalizeSemrushTarget(target: string, reportType: string): string {
   }
 }
 
+/** Mistaken values models pass as Semrush Analytics `type` (vs real report ids like domain_organic). */
+const INVALID_SEMRUSH_TYPE_VALUES = new Set([
+  '',
+  'semrush_query',
+  'semrush_organic_positions',
+  'semrush',
+])
+
+/**
+ * Strips junk models sometimes append to `domain` (e.g. `sim.ai','operation':'domain_organic'…`).
+ */
+function sanitizeDomainInput(raw: string): string {
+  const t = raw.trim()
+  if (!t) return t
+  const hostMatch = t.match(/^([a-zA-Z0-9](?:[a-zA-Z0-9-]*\.)+[a-zA-Z]{2,})/)
+  if (hostMatch && hostMatch[1].length < t.length) {
+    logger.warn('Semrush: Stripped junk from domain param', { raw: t, domain: hostMatch[1] })
+    return hostMatch[1]
+  }
+  return t
+}
+
+function isValidSemrushApiType(value: string): boolean {
+  const v = value.trim().toLowerCase()
+  if (!v || v.length > 80) return false
+  if (INVALID_SEMRUSH_TYPE_VALUES.has(v)) return false
+  return /^[a-z][a-z0-9_]*$/.test(v)
+}
+
+/**
+ * Resolves Semrush `type` for the request. `reportType` and `operation` are both accepted;
+ * coerces when the model sends this tool's id (`semrush_query`) instead of a report type.
+ */
+function resolveSemrushApiType(params: SemrushParams): string {
+  const raw = String(params.reportType ?? params.operation ?? '').trim()
+  if (isValidSemrushApiType(raw)) {
+    return raw.trim().toLowerCase()
+  }
+
+  if (raw) {
+    logger.warn('Semrush: Invalid report type; inferring from domain/url', { operation: raw })
+  }
+
+  const domain = sanitizeDomainInput(String(params.domain ?? '').trim())
+  const url = String(params.url ?? '').trim()
+
+  if (domain && !url) return 'domain_organic'
+  if (url && !domain) return 'url_organic'
+  if (domain && url) return 'domain_organic'
+  return 'domain_organic'
+}
+
 export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
   id: 'semrush_query',
   name: 'Semrush Query',
-  description: 'Query Semrush SEO data API for keywords, backlinks, domain rank, and more',
+  description:
+    "Query Semrush SEO data API for keywords, backlinks, domain rank, and more. Calls Sim's internal Semrush proxy; the deployment supplies the API key via SEMRUSH_API_KEY—do not ask users for an API key or workflow variables for Semrush auth.",
   version: '1.0.0',
 
   params: {
@@ -83,14 +136,14 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       required: false,
       visibility: 'user-or-llm',
       description:
-        'For URL-based report types (operation starting with url_, e.g. url_organic): full page URL to analyze',
+        'For URL-based report types (operation starting with url_, e.g. url_organic): full page URL to analyze. If empty, a root domain from `domain` (e.g. facebook.com) is normalized to https://… for the same report.',
     },
     domain: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
       description:
-        'For domain-based report types (e.g. domain_organic, domain_rank): root domain to analyze (e.g. example.com)',
+        'For domain-based report types (e.g. domain_organic, domain_rank): root domain (e.g. example.com). For URL-based reports, may be used as a fallback when `url` is empty (hostname only).',
     },
     database: {
       type: 'string',
@@ -116,18 +169,20 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       visibility: 'user-only',
       description: 'Additional Semrush API parameters as URL query string',
     },
-    apiKey: {
+    operation: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Semrush API key',
+      visibility: 'user-or-llm',
+      description:
+        'Semrush Analytics report `type` (e.g. domain_organic, url_organic, domain_rank). Must NOT be "semrush_query" — that is this tool\'s id, not a Semrush API type.',
     },
   },
 
   request: {
     url: (params: SemrushParams) => {
       const queryParams = new URLSearchParams()
-      const reportType = params.operation || params.reportType || 'domain_organic'
+      const reportType =
+        params.operation || params.reportType || 'domain_organic'
 
       const rawFromFields = reportType.startsWith('url_') ? params.url : params.domain
       const rawTarget = (rawFromFields ?? params.target ?? '').trim()
@@ -196,13 +251,7 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       throw new Error(`Semrush API error: ${response.status} ${response.statusText} - ${errorText}`)
     }
 
-    // Check content-type to determine how to read the response
-    const contentType = response.headers.get('content-type') || ''
-    const isTextResponse =
-      contentType.includes('text/') || !contentType.includes('application/json')
-
-    // Semrush returns CSV (text/plain), so we need to read as text
-    // If the response body was already consumed (parsed as JSON), try to get it from the mock response
+    /** Semrush returns CSV (text/plain); `text()` may fail if the body was already consumed. */
     let csvText: string
     try {
       csvText = await response.text()
@@ -220,7 +269,7 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
         }
       } catch (jsonError) {
         logger.error('Failed to read Semrush response as text or JSON', {
-          contentType,
+          contentType: response.headers.get('content-type') || '',
           error: error instanceof Error ? error.message : String(error),
           jsonError: jsonError instanceof Error ? jsonError.message : String(jsonError),
         })
@@ -247,7 +296,11 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
 
     // Extract report type from URL or params
     const url = new URL(response.url)
-    const reportType = url.searchParams.get('type') || params?.operation || params?.reportType || ''
+    const reportType =
+      url.searchParams.get('type') ||
+      params?.operation ||
+      params?.reportType ||
+      ''
 
     // Parse CSV using generic parser (Semrush uses semicolon delimiter)
     const parseResult = parseCsvResponse(csvText, {

@@ -13,7 +13,6 @@ export interface SemrushParams {
   displayLimit?: number | string
   exportColumns?: string
   additionalParams?: string
-  apiKey?: string
   /** @deprecated Legacy tool/agent saves that used the raw API shape */
   reportType?: string
   /** @deprecated Legacy tool/agent saves */
@@ -47,7 +46,6 @@ export interface SemrushOrganicPositionsParams {
   useVolume?: 'national' | 'regional' | 'local'
   businessName?: string
   serpFeatureFilter?: string
-  apiKey?: string
 }
 
 /** Raw API response for Organic Positions Report (data key is object of index -> row). */
