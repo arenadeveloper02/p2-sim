@@ -32,6 +32,7 @@ export {
 export { CopyCodeButton } from './code/copy-code-button'
 export {
   Combobox,
+  comboboxVariants,
   type ComboboxOption,
   type ComboboxOptionGroup,
 } from './combobox/combobox'
