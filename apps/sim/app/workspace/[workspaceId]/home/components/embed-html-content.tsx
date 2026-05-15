@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export function EmbedHtmlContent() {
+interface EmbedHtmlContentProps {
+  persona?: string
+  userId?: string
+  email?: string | null
+}
+
+export function EmbedHtmlContent({ persona, userId, email }: EmbedHtmlContentProps = {}) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [iframeHeight, setIframeHeight] = useState(900)
   const [reloadToken, setReloadToken] = useState(0)
@@ -49,7 +55,9 @@ export function EmbedHtmlContent() {
         const response = await fetch('/api/workflows/embed-html', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
+          body: JSON.stringify({
+            ...(persona ? { persona } : {}),
+          }),
           signal: controller.signal,
         })
 
@@ -75,7 +83,7 @@ export function EmbedHtmlContent() {
 
     void loadEmbedHtml()
     return () => controller.abort()
-  }, [reloadToken])
+  }, [reloadToken, persona, userId, email])
 
   return (
     <div className='mx-auto w-full px-4 pb-8 sm:px-6 lg:px-10'>
