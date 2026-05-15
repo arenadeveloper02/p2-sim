@@ -349,6 +349,7 @@ export interface GoogleDriveSearchParams {
   folderId?: string
   pageSize?: number
   pageToken?: string
+  query?: string
 }
 
 export type GoogleDriveResponse =

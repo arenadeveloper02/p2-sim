@@ -93,6 +93,7 @@ import {
   DELETED_WORKFLOW_LABEL,
   extractRetryInput,
   formatDate,
+  formatDateShort,
   getDisplayStatus,
   type LogStatus,
   parseDuration,
@@ -205,25 +206,6 @@ function getTriggerIcon(
 
 function SpinningRefreshCw(props: React.SVGProps<SVGSVGElement>) {
   return <RefreshCw {...props} animate />
-}
-
-function formatDateShort(dateStr: string): string {
-  const date = new Date(dateStr)
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ]
-  return `${months[date.getMonth()]} ${date.getDate()}`
 }
 
 /**
@@ -911,7 +893,7 @@ export default function Logs() {
       tags.push({
         label:
           timeRange === 'Custom range' && startDate && endDate
-            ? `${startDate} – ${endDate}`
+            ? `${formatDateShort(startDate)} – ${formatDateShort(endDate)}`
             : timeRange,
         onRemove: () => {
           clearDateRange()
@@ -1564,10 +1546,12 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
             }
             size='sm'
             className='h-[32px] w-full rounded-md'
+            maxHeight={320}
           />
           <DatePicker
             mode='range'
             showTrigger={false}
+            showTime
             open={datePickerOpen}
             onOpenChange={(isOpen) => {
               if (!isOpen) {
