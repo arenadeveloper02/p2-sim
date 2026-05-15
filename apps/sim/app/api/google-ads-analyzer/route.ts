@@ -10,7 +10,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { executeProviderRequest } from '@/providers'
-import { resolveAIProvider } from '../google-ads-v1/query/ai-provider'
+import { resolveAnalyzerAIProvider } from './ai-provider'
 import { computeAggregateMetrics, normalizeInput } from './analyze-utils'
 import { ANALYZER_SYSTEM_PROMPT } from './prompt'
 import type { AnalyzerRequestBody, AnalyzerStructuredOutput } from './types'
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     const truncated = rows.length > MAX_ROWS_FOR_LLM
     const rowsForLlm = truncated ? rows.slice(0, MAX_ROWS_FOR_LLM) : rows
 
-    const { provider, model, apiKey } = resolveAIProvider(logger)
+    const { provider, model, apiKey } = resolveAnalyzerAIProvider(logger)
     logger.info(`[${requestId}] Using AI provider`, { provider, model })
 
     const userPayload = {
