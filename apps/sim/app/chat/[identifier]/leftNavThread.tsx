@@ -82,7 +82,7 @@ const LeftNavThread = ({
   }
 
   return (
-    <div className='absolute top-[86px] left-8 z-50 flex h-[calc(100%-95px)] w-[280px] flex-col rounded-[8px] bg-[#F3F8FE] px-2 py-4'>
+    <div className='absolute top-3 bottom-3 left-8 z-50 flex w-[280px] flex-col rounded-[8px] bg-[#F3F8FE] px-2 py-4'>
       <div className='flex flex-col gap-2 '>
         {/* Re-Run CTA - shown above New Chat when custom fields exist */}
         {showReRun && onReRun && (

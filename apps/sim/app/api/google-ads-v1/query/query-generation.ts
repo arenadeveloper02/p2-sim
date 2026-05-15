@@ -174,7 +174,7 @@ export async function generateGAQLQuery(userPrompt: string): Promise<GAQLRespons
         },
       ],
       apiKey,
-      temperature: 0.0,
+      temperature: 1,
       maxTokens: 2048,
     })
 

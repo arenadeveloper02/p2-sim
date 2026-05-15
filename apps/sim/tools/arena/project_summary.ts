@@ -8,12 +8,6 @@ export const projectSummary: ToolConfig<ArenaProjectSummaryParams, ArenaProjectS
   version: '1.0.0',
 
   params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (e.g., project_summary)',
-    },
     'project-summary-cid': {
       type: 'string',
       required: true,

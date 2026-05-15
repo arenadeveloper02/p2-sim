@@ -85,6 +85,8 @@ export const VisionBlock: BlockConfig<VisionResponse> = {
       placeholder: 'Enter your API key',
       password: true,
       required: true,
+      hideWhenHosted: true,
+      hideWhenEnvSet: 'NEXT_PUBLIC_VISION_SERVER_KEYS_CONFIGURED',
     },
   ],
   tools: {
@@ -139,7 +141,7 @@ export const VisionV2Block: BlockConfig<VisionResponse> = {
       placeholder: 'Upload an image file',
       mode: 'basic',
       multiple: false,
-      required: true,
+      required: false,
       acceptedTypes: '.jpg,.jpeg,.png,.gif,.webp',
     },
     {
@@ -149,7 +151,14 @@ export const VisionV2Block: BlockConfig<VisionResponse> = {
       canonicalParamId: 'imageFile',
       placeholder: 'Reference an image from previous blocks',
       mode: 'advanced',
-      required: true,
+      required: false,
+    },
+    {
+      id: 'imageUrl',
+      title: 'Image URL (alternative)',
+      type: 'short-input',
+      placeholder: 'Publicly accessible image URL (use if not uploading a file)',
+      required: false,
     },
     {
       id: 'model',
@@ -172,11 +181,14 @@ export const VisionV2Block: BlockConfig<VisionResponse> = {
       placeholder: 'Enter your API key',
       password: true,
       required: true,
+      hideWhenHosted: true,
+      hideWhenEnvSet: 'NEXT_PUBLIC_VISION_SERVER_KEYS_CONFIGURED',
     },
   ],
   inputs: {
     apiKey: { type: 'string', description: 'Provider API key' },
     imageFile: { type: 'json', description: 'Image file (UserFile)' },
+    imageUrl: { type: 'string', description: 'Publicly accessible image URL' },
     model: { type: 'string', description: 'Vision model' },
     prompt: { type: 'string', description: 'Analysis prompt' },
   },

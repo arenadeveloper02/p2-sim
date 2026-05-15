@@ -1,6 +1,32 @@
 import type { ToolConfig } from '@/tools/types'
 import type { VisionParams, VisionResponse, VisionV2Params } from '@/tools/vision/types'
 
+/** Drop imageFile when it only duplicates imageUrl (models sometimes echo the URL into both). */
+function buildVisionAnalyzePayload(params: VisionParams | VisionV2Params) {
+  const rawUrl = params.imageUrl
+  const imageUrl =
+    typeof rawUrl === 'string' && rawUrl.trim().length > 0 ? rawUrl.trim() : null
+  let imageFile = params.imageFile ?? null
+  if (
+    imageUrl &&
+    imageFile &&
+    typeof imageFile === 'object' &&
+    imageFile !== null &&
+    'url' in imageFile &&
+    typeof (imageFile as { url?: unknown }).url === 'string' &&
+    (imageFile as { url: string }).url.trim() === imageUrl
+  ) {
+    imageFile = null
+  }
+  return {
+    apiKey: params.apiKey ?? null,
+    imageUrl,
+    imageFile,
+    model: params.model || 'gpt-5.2',
+    prompt: params.prompt ?? null,
+  }
+}
+
 export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
   id: 'vision_tool',
   name: 'Vision Tool',
@@ -11,21 +37,24 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
   params: {
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'API key for the selected model provider',
+      description:
+        'API key for the selected model provider (optional if OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY is set on the server for that model)',
     },
     imageUrl: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Publicly accessible image URL',
+      visibility: 'user-or-llm',
+      description:
+        'HTTPS URL of a publicly accessible image to analyze. When using a URL, pass only this field (omit imageFile).',
     },
     imageFile: {
       type: 'file',
       required: false,
       visibility: 'user-only',
-      description: 'Image file to analyze',
+      description:
+        'Workspace upload from the tool/block UI only. The model must not invent this object. For public images, use imageUrl only.',
     },
     model: {
       type: 'string',
@@ -47,15 +76,7 @@ export const visionTool: ToolConfig<VisionParams, VisionResponse> = {
     headers: () => ({
       'Content-Type': 'application/json',
     }),
-    body: (params) => {
-      return {
-        apiKey: params.apiKey,
-        imageUrl: params.imageUrl || null,
-        imageFile: params.imageFile || null,
-        model: params.model || 'gpt-5.2',
-        prompt: params.prompt || null,
-      }
-    },
+    body: (params) => buildVisionAnalyzePayload(params),
   },
 
   transformResponse: async (response: Response) => {
@@ -103,22 +124,13 @@ export const visionToolV2: ToolConfig<VisionV2Params, VisionResponse> = {
   name: 'Vision Tool',
   params: {
     apiKey: visionTool.params.apiKey,
-    imageFile: {
-      type: 'file',
-      required: true,
-      visibility: 'user-only',
-      description: 'Image file to analyze',
-    },
+    imageFile: visionTool.params.imageFile,
+    imageUrl: visionTool.params.imageUrl,
     model: visionTool.params.model,
     prompt: visionTool.params.prompt,
   },
   request: {
     ...visionTool.request,
-    body: (params: VisionV2Params) => ({
-      apiKey: params.apiKey,
-      imageFile: params.imageFile,
-      model: params.model || 'gpt-5.2',
-      prompt: params.prompt || null,
-    }),
+    body: (params: VisionV2Params) => buildVisionAnalyzePayload(params),
   },
 }
