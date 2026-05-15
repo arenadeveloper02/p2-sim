@@ -266,7 +266,17 @@ export async function sendSlackMessage(
   }
   error?: string
 }> {
-  const { accessToken, text, threadTs, blocks, files, link_names, unfurl_links, unfurl_media, ownerUserId } = params
+  const {
+    accessToken,
+    text,
+    threadTs,
+    blocks,
+    files,
+    link_names,
+    unfurl_links,
+    unfurl_media,
+    ownerUserId,
+  } = params
   let { channel } = params
 
   if (!channel && params.userId) {

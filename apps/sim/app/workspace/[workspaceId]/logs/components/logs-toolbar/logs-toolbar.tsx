@@ -26,8 +26,8 @@ import {
   logsPageTabSwitchEvent,
   logsRefreshEvent,
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
-import {  
-formatDateShort,
+import {
+  formatDateShort,
   type LogStatus,
   STATUS_CONFIG,
 } from '@/app/workspace/[workspaceId]/logs/utils'

@@ -32,9 +32,9 @@ export {
 export { CopyCodeButton } from './code/copy-code-button'
 export {
   Combobox,
-  comboboxVariants,
   type ComboboxOption,
   type ComboboxOptionGroup,
+  comboboxVariants,
 } from './combobox/combobox'
 export { DatePicker, datePickerVariants } from './date-picker/date-picker'
 export {

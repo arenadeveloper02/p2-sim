@@ -7,8 +7,8 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
-import { renderAgentResponseToString } from '@/tools/gmail/markUpRenderUtil'
 import { assertToolFileAccess } from '@/app/api/files/authorization'
+import { renderAgentResponseToString } from '@/tools/gmail/markUpRenderUtil'
 import {
   base64UrlEncode,
   buildMimeMessage,
