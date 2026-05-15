@@ -7,6 +7,8 @@ const logger = createLogger('WorkflowEmbedHtmlApi')
 
 const RequestSchema = z.object({
   persona: z.string().trim().min(1).optional(),
+  userId: z.string().trim().min(1).optional(),
+  email: z.string().email().optional(),
 })
 
 export const runtime = 'nodejs'
@@ -21,7 +23,7 @@ export async function POST(req: NextRequest) {
   const workflowId = process.env.SIM_AGENT_EMBED_WORKFLOW_ID
   const apiKey = process.env.SIM_AGENT_EMBED_KEY
   const agentBaseUrl = process.env.SIM_AGENT_BASE_URL_HTML?.replace(/\/$/, '')
-  const defaultPersona = process.env.SIM_AGENT_EMBED_PERSONA?.trim() || 'CEO'
+  const defaultPersona = RequestSchema.parse(await req.json()).persona?.trim() || 'CEO'
 
   if (!workflowId || !apiKey || !agentBaseUrl) {
     logger.error('Embed HTML env configuration missing', {

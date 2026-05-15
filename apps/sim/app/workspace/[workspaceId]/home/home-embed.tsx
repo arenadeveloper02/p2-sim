@@ -31,6 +31,8 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialResourceId = searchParams.get('resource')
+  const roleParam = searchParams.get('role')
+  const embedPersona = roleParam ? decodeURIComponent(roleParam) : undefined
   const resolveWorkspaceBeforeSend = true
   const { data: session } = useSession()
   const posthog = usePostHog()
@@ -334,7 +336,11 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
             />
           </div>
         </div>
-        <EmbedHtmlContent />
+        <EmbedHtmlContent
+          persona={embedPersona}
+          userId={session?.user?.id}
+          email={session?.user?.email}
+        />
       </div>
     )
   }
