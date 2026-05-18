@@ -111,38 +111,53 @@ type ToolEnvelope = {
   }
 }
 
-function getDynamicStatusText(input: string): string {
+const STATUS_ROTATION_MS = 2_500
+
+type StatusCategory = 'email' | 'drive' | 'calendar' | 'arena'
+
+const STATUS_CATEGORY_PATTERNS: Record<StatusCategory, readonly string[]> = {
+  email: ['email', 'gmail', 'inbox'],
+  drive: ['drive', 'document', 'file'],
+  calendar: ['calendar', 'meeting', 'event'],
+  arena: ['arena', 'task', 'project', 'workflow'],
+}
+
+const STATUS_CATEGORY_MESSAGES: Record<StatusCategory, string> = {
+  email: 'Reading emails and preparing the summary...',
+  drive: 'Getting details from Drive and related files...',
+  calendar: 'Checking calendar events and availability...',
+  arena: 'Looking up Arena task and workflow details...',
+}
+
+function detectStatusCategories(input: string): StatusCategory[] {
   const normalized = input.toLowerCase()
-  if (
-    normalized.includes('email') ||
-    normalized.includes('gmail') ||
-    normalized.includes('inbox')
-  ) {
-    return 'Reading the emails and preparing the summary...'
+  return (Object.keys(STATUS_CATEGORY_PATTERNS) as StatusCategory[]).filter((category) =>
+    STATUS_CATEGORY_PATTERNS[category].some((pattern) => normalized.includes(pattern))
+  )
+}
+
+function getDynamicStatusMessages(input: string): string[] {
+  const categories = detectStatusCategories(input)
+  const messages = [
+    'Reading credentials...',
+    'Verifying connected service access...',
+  ]
+
+  if (categories.length > 1) {
+    messages.push('Gathering data from multiple sources...')
   }
-  if (
-    normalized.includes('drive') ||
-    normalized.includes('document') ||
-    normalized.includes('file')
-  ) {
-    return 'Getting the details from Drive and related files...'
+
+  for (const category of categories) {
+    messages.push(STATUS_CATEGORY_MESSAGES[category])
   }
-  if (
-    normalized.includes('calendar') ||
-    normalized.includes('meeting') ||
-    normalized.includes('event')
-  ) {
-    return 'Checking calendar events and availability details...'
+
+  if (categories.length === 0) {
+    messages.push('Running the workflow and collecting details...')
+  } else {
+    messages.push('Preparing your response...')
   }
-  if (
-    normalized.includes('arena') ||
-    normalized.includes('task') ||
-    normalized.includes('project') ||
-    normalized.includes('workflow')
-  ) {
-    return 'Looking up Arena task/workflow details...'
-  }
-  return 'Running the workflow and collecting details...'
+
+  return messages
 }
 
 function extractFirstString(value: unknown): string | undefined {
@@ -340,9 +355,18 @@ export async function POST(req: NextRequest) {
         let seq = 0
         let accumulatedAssistantText = ''
         let hasEmittedToolResult = false
+        const displayedStatusLines: string[] = []
+        let statusRotationTimer: ReturnType<typeof setInterval> | null = null
 
         const emitEvent = (event: TextEnvelope | CompleteEnvelope | ToolEnvelope) => {
           controller.enqueue(encoder.encode(toSseDataLine(event)))
+        }
+
+        const stopStatusRotation = () => {
+          if (statusRotationTimer) {
+            clearInterval(statusRotationTimer)
+            statusRotationTimer = null
+          }
         }
 
         const nextSeq = () => {
@@ -352,6 +376,7 @@ export async function POST(req: NextRequest) {
 
         const emitTextEvent = (text: string) => {
           if (!text) return
+          stopStatusRotation()
           accumulatedAssistantText += text
           const event: TextEnvelope = {
             v: 1,
@@ -408,35 +433,61 @@ export async function POST(req: NextRequest) {
           })
         }
 
-        const dynamicStatusText = getDynamicStatusText(body.input)
+        const statusMessages = getDynamicStatusMessages(body.input)
         const runScope = {
           lane: 'subagent' as const,
           agentId: 'run',
         }
-        emitEvent({
-          v: 1,
-          type: 'tool',
-          seq: nextSeq(),
-          ts: new Date().toISOString(),
-          stream: { streamId, chatId, cursor: String(seq) },
-          trace: { requestId },
-          scope: runScope,
-          payload: {
-            toolCallId,
-            toolName: 'run',
-            arguments: { request: body.input },
-            executor: 'sim',
-            mode: 'async',
-            phase: 'call',
-            status: 'executing',
-            ui: {
-              title: dynamicStatusText,
-              phaseLabel: 'Run Agent',
-              icon: 'play',
-              internal: true,
+
+        const emitToolExecutingStatus = (title: string) => {
+          if (hasEmittedToolResult) return
+          emitEvent({
+            v: 1,
+            type: 'tool',
+            seq: nextSeq(),
+            ts: new Date().toISOString(),
+            stream: { streamId, chatId, cursor: String(seq) },
+            trace: { requestId },
+            scope: runScope,
+            payload: {
+              toolCallId,
+              toolName: 'run',
+              arguments: { request: body.input },
+              executor: 'sim',
+              mode: 'async',
+              phase: 'call',
+              status: 'executing',
+              ui: {
+                title,
+                phaseLabel: 'Run Agent',
+                icon: 'play',
+                internal: true,
+              },
             },
-          },
-        })
+          })
+        }
+
+        const appendStatusMessage = (message: string) => {
+          displayedStatusLines.push(message)
+          emitToolExecutingStatus(displayedStatusLines.join('\n'))
+        }
+
+        const advanceStatusMessage = () => {
+          const nextIndex = displayedStatusLines.length
+          if (nextIndex >= statusMessages.length) {
+            stopStatusRotation()
+            return
+          }
+          appendStatusMessage(statusMessages[nextIndex]!)
+        }
+
+        appendStatusMessage(
+          statusMessages[0] ?? 'Running the workflow and collecting details...'
+        )
+
+        if (statusMessages.length > 1) {
+          statusRotationTimer = setInterval(advanceStatusMessage, STATUS_ROTATION_MS)
+        }
 
         const processRawFrame = (rawFrame: string) => {
           const frame = rawFrame.trim()
@@ -582,6 +633,7 @@ export async function POST(req: NextRequest) {
             error: error instanceof Error ? error.message : String(error),
           })
         } finally {
+          stopStatusRotation()
           if (body.conversationId) {
             try {
               await persistWorkflowChatTurn({
