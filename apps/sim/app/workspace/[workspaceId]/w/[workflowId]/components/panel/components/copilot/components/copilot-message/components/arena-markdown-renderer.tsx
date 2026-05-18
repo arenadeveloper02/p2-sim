@@ -52,7 +52,7 @@ if (typeof document !== 'undefined') {
 
       .copilot-markdown-wrapper a {
         overflow-wrap: anywhere !important;
-        word-break: break-all !important;
+        word-break: break-word !important;
       }
 
       .copilot-markdown-wrapper code:not(pre code) {
@@ -107,7 +107,7 @@ function LinkWithPreview({ href, children }: { href: string; children: React.Rea
       <Tooltip.Trigger asChild>
         <a
           href={href}
-          className='inline break-all text-blue-600 hover:underline dark:text-blue-400'
+          className='inline break-words text-blue-600 hover:underline dark:text-blue-400'
           target='_blank'
           rel='noopener noreferrer'
         >

@@ -14,12 +14,6 @@ export const conversationSummary: ToolConfig<
   version: '1.0.0',
 
   params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (e.g., conversation_summary)',
-    },
     'conversation-summary-task-id': {
       type: 'string',
       required: true,

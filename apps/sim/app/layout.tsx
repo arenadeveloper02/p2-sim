@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import { PublicEnvScript } from 'next-runtime-env'
@@ -13,6 +14,7 @@ import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
 import { TooltipProvider } from '@/app/_shell/providers/tooltip-provider'
+import { ResumePathSync } from '@/app/_shell/resume-path-sync'
 import { season } from '@/app/_styles/fonts/season/season'
 
 export const viewport: Viewport = {
@@ -288,6 +290,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           </noscript>
         )}
         <HydrationErrorHandler />
+        <Suspense fallback={null}>
+          <ResumePathSync />
+        </Suspense>
         <PostHogProvider>
           <ThemeProvider>
             <QueryProvider>

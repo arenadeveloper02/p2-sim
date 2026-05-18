@@ -175,6 +175,7 @@ export const env = createEnv({
     // Infrastructure & Deployment
     NEXT_RUNTIME:                          z.string().optional(),                  // Next.js runtime environment
     DOCKER_BUILD:                          z.boolean().optional(),                 // Flag indicating Docker build environment
+    APP_BANNER_MESSAGE:                    z.string().optional(),                  // Plain-text global banner (GET /api/app/banner); omit or empty hides it
 
     // Background Jobs & Scheduling
     TRIGGER_PROJECT_ID:                    z.string().optional(),                  // Trigger.dev project ID
@@ -281,6 +282,8 @@ export const env = createEnv({
     PORT:                                  z.number().optional(),                  // Main application port
     INTERNAL_API_BASE_URL:                 z.string().optional(),                  // Optional internal base URL for server-side self-calls; must include protocol if set (e.g., http://sim-app.namespace.svc.cluster.local:3000)
     ALLOWED_ORIGINS:                       z.string().optional(),                  // CORS allowed origins
+    /** Comma-separated origins (e.g. http://localhost:3001) allowed as Better Auth OAuth `callbackURL` when Arena embeds Sim (`from=arena_v3` + `callbackURL` query). */
+    ARENA_V3_OAUTH_CALLBACK_ORIGINS:       z.string().optional(),
 
     // OAuth Integration Credentials - All optional, enables third-party integrations
     GOOGLE_CLIENT_ID:                      z.string().optional(),                  // Google OAuth client ID for Google services
@@ -451,6 +454,8 @@ export const env = createEnv({
     NEXT_PUBLIC_E2B_ENABLED:               z.string().optional(),
     NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS: z.string().optional(),              // Hide Bedrock credential fields when deployment uses AWS default credential chain (IAM roles, instance profiles, ECS task roles, IRSA)
     NEXT_PUBLIC_AZURE_CONFIGURED:          z.string().optional(),              // Hide Azure credential fields when endpoint/key/version are pre-configured server-side
+    NEXT_PUBLIC_BROWSER_USE_CONFIGURED:    z.string().optional(),              // Hide Browser Use API key field when BROWSER_USE_API_KEY is set server-side (client cannot read the secret)
+    NEXT_PUBLIC_VISION_SERVER_KEYS_CONFIGURED: z.string().optional(),          // Hide Vision block API key when provider keys are set server-side (OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY)
     NEXT_PUBLIC_COPILOT_TRAINING_ENABLED:  z.string().optional(),
     NEXT_PUBLIC_ENABLE_PLAYGROUND:         z.string().optional(),                  // Enable component playground at /playground
     NEXT_PUBLIC_DOCUMENTATION_URL:         z.string().url().optional(),            // Custom documentation URL
@@ -528,6 +533,8 @@ export const env = createEnv({
     NEXT_PUBLIC_E2B_ENABLED: process.env.NEXT_PUBLIC_E2B_ENABLED,
     NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS: process.env.NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS,
     NEXT_PUBLIC_AZURE_CONFIGURED: process.env.NEXT_PUBLIC_AZURE_CONFIGURED,
+    NEXT_PUBLIC_BROWSER_USE_CONFIGURED: process.env.NEXT_PUBLIC_BROWSER_USE_CONFIGURED,
+    NEXT_PUBLIC_VISION_SERVER_KEYS_CONFIGURED: process.env.NEXT_PUBLIC_VISION_SERVER_KEYS_CONFIGURED,
     NEXT_PUBLIC_COPILOT_TRAINING_ENABLED: process.env.NEXT_PUBLIC_COPILOT_TRAINING_ENABLED,
     NEXT_PUBLIC_ENABLE_PLAYGROUND: process.env.NEXT_PUBLIC_ENABLE_PLAYGROUND,
     NEXT_PUBLIC_POSTHOG_ENABLED: process.env.NEXT_PUBLIC_POSTHOG_ENABLED,

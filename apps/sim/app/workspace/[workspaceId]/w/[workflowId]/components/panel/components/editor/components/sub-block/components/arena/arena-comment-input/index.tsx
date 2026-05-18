@@ -18,6 +18,7 @@ import {
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
+import { arenaSiblingSubBlockStoreKey } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
@@ -392,11 +393,13 @@ export function ArenaCommentInput({
   // Get project and client from store
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const values = useSubBlockStore((state) => state.workflowValues)
-  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-client'] as
+  const clientKey = arenaSiblingSubBlockStoreKey(subBlockId, 'comment-client')
+  const projectKey = arenaSiblingSubBlockStoreKey(subBlockId, 'comment-project')
+  const clientRef = values?.[activeWorkflowId ?? '']?.[blockId]?.[clientKey] as
     | { clientId?: string }
     | undefined
   const clientId = clientRef?.clientId
-  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.['comment-project']
+  const projectValue = values?.[activeWorkflowId ?? '']?.[blockId]?.[projectKey]
   const projectId =
     typeof projectValue === 'string' ? projectValue : (projectValue as { sysId?: string })?.sysId
 

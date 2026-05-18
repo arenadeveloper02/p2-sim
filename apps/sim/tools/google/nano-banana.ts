@@ -98,10 +98,18 @@ const nanoBananaTool: ToolConfig = {
     },
     inputImages: {
       type: 'array',
+      items: { type: 'string' },
       required: false,
       visibility: 'user-or-llm',
       description:
         'Multiple images for fusion (Nano Banana Pro). Array of base64 strings or { path, type? } objects. When provided, used instead of inputImage.',
+    },
+    inputImageUrls: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Image URLs (one per line or comma-separated). Merged with inputImages and any URLs in the prompt for fusion / reference images.',
     },
   },
 

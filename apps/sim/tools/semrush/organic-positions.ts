@@ -15,7 +15,7 @@ export const semrushOrganicPositionsTool: ToolConfig<
   id: 'semrush_organic_positions',
   name: 'Semrush Organic Positions Report',
   description:
-    'Get Position Tracking organic positions report for a campaign: keywords, rankings per URL, position changes over time.',
+    "Get Position Tracking organic positions report for a campaign: keywords, rankings per URL, position changes over time. Uses Sim's internal Semrush proxy; the deployment supplies the API key via SEMRUSH_API_KEY—do not ask users for an API key or workflow variables for Semrush auth.",
   version: '1.0.0',
 
   params: {
@@ -111,12 +111,6 @@ export const semrushOrganicPositionsTool: ToolConfig<
       required: false,
       visibility: 'user-only',
       description: 'SERP feature filter, e.g. fsn,0 for Featured Snippet for first domain.',
-    },
-    apiKey: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Semrush API key.',
     },
   },
 
