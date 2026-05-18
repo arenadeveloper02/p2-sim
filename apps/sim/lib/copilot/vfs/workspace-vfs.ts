@@ -19,8 +19,11 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, desc, eq, isNotNull, isNull, ne } from 'drizzle-orm'
 import { listApiKeys } from '@/lib/api-key/service'
+import {
+  getHubSpotSharedAccountOptionIds,
+  mergeOAuthIntegrationPresence,
+} from '@/lib/copilot/chat/env-integration-presence'
 import { buildWorkspaceMd, type WorkspaceMdData } from '@/lib/copilot/chat/workspace-context'
-import { mergeOAuthIntegrationPresence, getHubSpotSharedAccountOptionIds } from '@/lib/copilot/chat/env-integration-presence'
 import { type FileReadResult, readFileRecord } from '@/lib/copilot/vfs/file-reader'
 import { normalizeVfsSegment } from '@/lib/copilot/vfs/normalize-segment'
 import type { DirEntry, GrepMatch, GrepOptions, ReadResult } from '@/lib/copilot/vfs/operations'
@@ -1399,8 +1402,7 @@ export class WorkspaceVFS {
           'environment/hubspot-shared-accounts.json',
           JSON.stringify(
             {
-              note:
-                'HubSpot block `accounts` subblock ids; execution maps accounts → oauthCredential (see hubspot block tools.config.params).',
+              note: 'HubSpot block `accounts` subblock ids; execution maps accounts → oauthCredential (see hubspot block tools.config.params).',
               accountIds: hubspotSharedAccounts,
             },
             null,
@@ -1411,8 +1413,7 @@ export class WorkspaceVFS {
       return {
         oauthIntegrations,
         envVariables: envKeys,
-        hubspotSharedAccounts:
-          hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
+        hubspotSharedAccounts: hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
       }
     } catch (err) {
       logger.warn('Failed to materialize environment data', {

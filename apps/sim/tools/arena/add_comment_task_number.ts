@@ -75,9 +75,7 @@ export const addCommentTaskNumber: ToolConfig<
     },
   },
 
-  transformResponse: async (
-    response: Response
-  ): Promise<ArenaCommentsByTaskNumberResponse> => {
+  transformResponse: async (response: Response): Promise<ArenaCommentsByTaskNumberResponse> => {
     const data = await response.json()
     return {
       success: true,

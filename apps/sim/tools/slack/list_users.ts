@@ -102,7 +102,8 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
     const isTrue = (v: unknown): boolean => v === true || v === 'true'
 
     const accessToken = params?.accessToken || params?.botToken
-    const shouldAutoPaginate = params?.autoPaginate === undefined ? true : isTrue(params.autoPaginate)
+    const shouldAutoPaginate =
+      params?.autoPaginate === undefined ? true : isTrue(params.autoPaginate)
 
     const includeDeleted = params?.includeDeleted === true
 

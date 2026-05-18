@@ -415,7 +415,6 @@ export function General() {
         </div>
         <Switch
           id='error-notifications'
-          disabled={true}
           checked={settings?.errorNotificationsEnabled ?? true}
           onCheckedChange={handleErrorNotificationsChange}
         />

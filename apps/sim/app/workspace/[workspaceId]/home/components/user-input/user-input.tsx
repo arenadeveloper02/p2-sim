@@ -750,7 +750,11 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
       onDragOver={handleContainerDragOver}
       onDrop={handleContainerDrop}
     >
-      <AnimatedPlaceholderEffect textareaRef={textareaRef} isInitialView={isInitialView} />
+      <AnimatedPlaceholderEffect
+        textareaRef={textareaRef}
+        isInitialView={isInitialView}
+        isSending={isSending}
+      />
 
       <AttachedFilesList
         attachedFiles={files.attachedFiles}

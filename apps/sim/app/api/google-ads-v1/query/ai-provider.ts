@@ -48,5 +48,7 @@ export function resolveAIProvider(logger: Logger): AIProviderConfig {
     }
   }
 
-  throw new Error('No AI provider available. Please set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY')
+  throw new Error(
+    'No AI provider available. Please set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY'
+  )
 }

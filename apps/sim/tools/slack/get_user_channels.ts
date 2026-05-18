@@ -24,7 +24,7 @@ export const slackGetUserChannelsTool: ToolConfig<
   id: 'slack_get_user_channels',
   name: 'Slack Get My Channels & DMs',
   description:
-    "List only the conversations the token owner belongs to via Slack users.conversations. Default behavior is channels (public/private) only; DMs are opt-in. If the user asked for 1:1 DMs set includeDMs=true (im:read). If the user asked for group DMs set includeGroupDMs=true (mpim:read).",
+    'List only the conversations the token owner belongs to via Slack users.conversations. Default behavior is channels (public/private) only; DMs are opt-in. If the user asked for 1:1 DMs set includeDMs=true (im:read). If the user asked for group DMs set includeGroupDMs=true (mpim:read).',
   version: '1.0.0',
 
   oauth: {
@@ -171,7 +171,8 @@ export const slackGetUserChannelsTool: ToolConfig<
     const isFalse = (v: unknown): boolean => v === false || v === 'false'
 
     const accessToken = params?.accessToken || params?.botToken
-    const shouldAutoPaginate = params?.autoPaginate === undefined ? true : isTrue(params.autoPaginate)
+    const shouldAutoPaginate =
+      params?.autoPaginate === undefined ? true : isTrue(params.autoPaginate)
 
     const allRaw: any[] = [...(data.channels ?? [])]
 

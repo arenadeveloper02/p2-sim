@@ -93,13 +93,18 @@ export function ToolCallItem({ toolName, displayTitle, status, streamingArgs }: 
     return `${verb} ${unescaped}`
   }, [toolName, streamingArgs])
 
+  const resolvedTitle = liveWorkspaceFileTitle || displayTitle
+  const hasMultipleLines = resolvedTitle.includes('\n')
+
   return (
-    <div className='flex items-center gap-[8px] pl-[24px]'>
+    <div
+      className={`flex gap-[8px] pl-[24px] ${hasMultipleLines ? 'items-start' : 'items-center'}`}
+    >
       <div className='flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center'>
         <StatusIcon status={status} toolName={toolName} />
       </div>
-      <span className='font-base text-[13px] text-[var(--text-secondary)]'>
-        {liveWorkspaceFileTitle || displayTitle}
+      <span className='whitespace-pre-line font-base text-[13px] text-[var(--text-secondary)]'>
+        {resolvedTitle}
       </span>
     </div>
   )
