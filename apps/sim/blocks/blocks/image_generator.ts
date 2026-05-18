@@ -37,12 +37,10 @@ export const ImageGeneratorBlockV2: BlockConfig = {
       title: 'Model',
       type: 'dropdown',
       options: [
-        { label: 'DALL-E 3', id: 'dall-e-3' },
-        { label: 'Imagen 4.0', id: 'imagen-4.0-generate-001' },
         { label: 'Nano Banana', id: 'gemini-2.5-flash-image' },
         { label: 'Nano Banana Pro', id: NANO_BANANA_PRO_MODEL },
       ],
-      value: () => 'dall-e-3',
+      value: () => 'gemini-2.5-flash-image',
     },
     {
       id: 'prompt',
