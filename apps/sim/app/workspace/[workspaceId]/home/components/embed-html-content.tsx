@@ -91,7 +91,9 @@ export function EmbedHtmlContent({ persona, userId, email }: EmbedHtmlContentPro
         <div className='flex w-full flex-col items-center space-y-4 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-5 text-center'>
           <div className='flex items-center justify-center gap-3'>
             <div className='h-4 w-4 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--text-secondary)]' />
-            <p className='text-sm text-[var(--text-secondary)]'>Building your live executive dashboard...</p>
+            <p className='text-[var(--text-secondary)] text-sm'>
+              Building your live executive dashboard...
+            </p>
           </div>
           <div className='w-full space-y-3'>
             <div className='mx-auto h-5 w-2/5 animate-pulse rounded bg-[var(--surface-tertiary)]' />
@@ -107,12 +109,12 @@ export function EmbedHtmlContent({ persona, userId, email }: EmbedHtmlContentPro
 
       {!isLoadingHtml && htmlError && (
         <div className='rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-5'>
-          <p className='text-sm text-[var(--text-primary)]'>Could not load the live dashboard.</p>
-          <p className='mt-1 text-xs text-[var(--text-secondary)]'>{htmlError}</p>
+          <p className='text-[var(--text-primary)] text-sm'>Could not load the live dashboard.</p>
+          <p className='mt-1 text-[var(--text-secondary)] text-xs'>{htmlError}</p>
           <button
             type='button'
             onClick={() => setReloadToken((current) => current + 1)}
-            className='mt-3 rounded-[8px] border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-primary)] hover:bg-[var(--surface-hover)]'
+            className='mt-3 rounded-[8px] border border-[var(--border)] px-3 py-1.5 text-[var(--text-primary)] text-sm hover:bg-[var(--surface-hover)]'
           >
             Retry
           </button>

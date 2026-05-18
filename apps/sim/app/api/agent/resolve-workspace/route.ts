@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
         )
       : undefined
 
-    const userApiKey =  result?.apiKey
+    const userApiKey = result?.apiKey
 
     if (!workspaceId) {
       logger.error('External agent API response missing workspaceId', {
@@ -129,7 +129,6 @@ export async function POST(req: NextRequest) {
       ...(workflowId ? { workflowId } : {}),
       ...(selectedOutputs && selectedOutputs.length > 0 ? { selectedOutputs } : {}),
       ...(userApiKey ? { userApiKey } : {}),
-
     })
   } catch (error) {
     const durationMs = Date.now() - startTime

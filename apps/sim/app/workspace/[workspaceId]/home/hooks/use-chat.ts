@@ -3339,7 +3339,8 @@ export function useChat(
 
         let effectiveWorkspaceId = workspaceId
         let resolvedWorkflowExecution:
-          | { workflowId: string; selectedOutputs: string[]; userApiKey: string } | undefined
+          | { workflowId: string; selectedOutputs: string[]; userApiKey: string }
+          | undefined
           | undefined
         if (effectiveIsEmbedPageRef.current) {
           try {

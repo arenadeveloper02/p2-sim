@@ -56,7 +56,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
         status: upstream.status,
         error: upstreamError,
       })
-      return NextResponse.json({ error: 'Failed to fetch workflow HTML' }, { status: upstream.status })
+      return NextResponse.json(
+        { error: 'Failed to fetch workflow HTML' },
+        { status: upstream.status }
+      )
     }
 
     const payload = (await upstream.json()) as {
@@ -64,7 +67,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
     }
     const html = payload?.result?.html
     if (typeof html !== 'string' || html.trim().length === 0) {
-      return NextResponse.json({ error: 'Workflow response did not include result.html' }, { status: 502 })
+      return NextResponse.json(
+        { error: 'Workflow response did not include result.html' },
+        { status: 502 }
+      )
     }
 
     return NextResponse.json({ html })

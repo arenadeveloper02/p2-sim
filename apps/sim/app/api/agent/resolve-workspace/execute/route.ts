@@ -4,10 +4,10 @@ import { createLogger } from '@sim/logger'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
-import { taskPubSub } from '@/lib/copilot/tasks'
 import { getSession } from '@/lib/auth'
 import { normalizeMessage, type PersistedMessage } from '@/lib/copilot/chat/persisted-message'
+import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
+import { taskPubSub } from '@/lib/copilot/tasks'
 import { generateRequestId } from '@/lib/core/utils/request'
 
 const logger = createLogger('AgentResolveWorkspaceExecute')
@@ -138,10 +138,7 @@ function detectStatusCategories(input: string): StatusCategory[] {
 
 function getDynamicStatusMessages(input: string): string[] {
   const categories = detectStatusCategories(input)
-  const messages = [
-    'Reading credentials...',
-    'Verifying connected service access...',
-  ]
+  const messages = ['Reading credentials...', 'Verifying connected service access...']
 
   if (categories.length > 1) {
     messages.push('Gathering data from multiple sources...')
@@ -249,7 +246,10 @@ async function persistWorkflowChatTurn(params: {
         model: 'claude-opus-4-6',
       })
       if (generatedTitle) {
-        await db.update(copilotChats).set({ title: generatedTitle }).where(eq(copilotChats.id, chatId))
+        await db
+          .update(copilotChats)
+          .set({ title: generatedTitle })
+          .where(eq(copilotChats.id, chatId))
         if (chat.workspaceId) {
           taskPubSub?.publishStatusChanged({
             workspaceId: chat.workspaceId,
@@ -481,9 +481,7 @@ export async function POST(req: NextRequest) {
           appendStatusMessage(statusMessages[nextIndex]!)
         }
 
-        appendStatusMessage(
-          statusMessages[0] ?? 'Running the workflow and collecting details...'
-        )
+        appendStatusMessage(statusMessages[0] ?? 'Running the workflow and collecting details...')
 
         if (statusMessages.length > 1) {
           statusRotationTimer = setInterval(advanceStatusMessage, STATUS_ROTATION_MS)

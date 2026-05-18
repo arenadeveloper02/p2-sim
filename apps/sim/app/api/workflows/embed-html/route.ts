@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         'X-API-Key': apiKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ persona, userId:session.user.id, email:session.user.email }),
+      body: JSON.stringify({ persona, userId: session.user.id, email: session.user.email }),
       cache: 'no-store',
     })
 
@@ -61,15 +61,21 @@ export async function POST(req: NextRequest) {
         status: upstream.status,
         error: upstreamError,
       })
-      return NextResponse.json({ error: 'Failed to fetch workflow HTML' }, { status: upstream.status })
+      return NextResponse.json(
+        { error: 'Failed to fetch workflow HTML' },
+        { status: upstream.status }
+      )
     }
 
     const payload = (await upstream.json()) as {
-      output?:{ result?: { html?: string }}
+      output?: { result?: { html?: string } }
     }
     const html = payload?.output?.result?.html
     if (typeof html !== 'string' || html.trim().length === 0) {
-      return NextResponse.json({ error: 'Workflow response did not include result.html' }, { status: 502 })
+      return NextResponse.json(
+        { error: 'Workflow response did not include result.html' },
+        { status: 502 }
+      )
     }
 
     return NextResponse.json({ html })
