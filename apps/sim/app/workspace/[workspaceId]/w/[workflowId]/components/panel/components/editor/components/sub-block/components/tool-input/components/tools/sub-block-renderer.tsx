@@ -43,12 +43,7 @@ function normalizeToolParamForPersistence(
     effectiveParamId === 'channel' ||
     subBlock.canonicalParamId === 'channel' ||
     subBlock.type === 'channel-selector'
-  if (
-    isChannelField &&
-    typeof raw === 'object' &&
-    !Array.isArray(raw) &&
-    raw !== null
-  ) {
+  if (isChannelField && typeof raw === 'object' && !Array.isArray(raw) && raw !== null) {
     const o = raw as Record<string, unknown>
     const id = o.channel_id ?? o.channelId ?? o.id
     if (typeof id === 'string' && id.trim()) return id.trim()
@@ -103,7 +98,17 @@ export function ToolSubBlockRenderer({
       onParamChangeRef.current(toolIndex, effectiveParamId, processedVal)
     })
     return unsub
-  }, [blockId, syntheticId, toolIndex, effectiveParamId, isObjectType, subBlock.mode, subBlock.id, subBlock.type, subBlock.canonicalParamId])
+  }, [
+    blockId,
+    syntheticId,
+    toolIndex,
+    effectiveParamId,
+    isObjectType,
+    subBlock.mode,
+    subBlock.id,
+    subBlock.type,
+    subBlock.canonicalParamId,
+  ])
 
   useEffect(() => {
     if (isObjectType && toolParamValue) {
@@ -147,8 +152,7 @@ export function ToolSubBlockRenderer({
         typeof (existing as { clientId?: unknown }).clientId === 'string'
       ) {
         const id = (existing as { clientId: string }).clientId
-        const toolMatchesClientId =
-          typeof toolParamValue === 'string' && id === toolParamValue
+        const toolMatchesClientId = typeof toolParamValue === 'string' && id === toolParamValue
         if (toolEmpty || toolMatchesClientId) {
           if (existing === syncedRef.current) return
           syncedRef.current = existing

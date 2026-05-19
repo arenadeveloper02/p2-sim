@@ -2,6 +2,28 @@ import { env, getEnv } from '../config/env'
 import { isDev, isHosted, isReactGrabEnabled } from '../config/feature-flags'
 
 /**
+ * Arena hub (dev/test/sandbox/prod) and Sim agent hosts on thearena.ai for `frame-ancestors`, `connect-src`, and `frame-src`.
+ */
+export const ARENA_APP_CSP_ORIGINS = [
+  'http://dev.thearena.ai',
+  'http://test.thearena.ai',
+  'https://sandbox.thearena.ai',
+  'https://app.thearena.ai',
+  'https://dev-agent.thearena.ai',
+  'https://test-agent.thearena.ai',
+  'https://sandbox-agent.thearena.ai',
+  'https://agent.thearena.ai',
+] as const
+
+/**
+ * Local development origins allowed to embed Sim via iframe.
+ *
+ * `frame-ancestors` is evaluated by the browser against the parent page's origin.
+ * In local dev, the Arena app typically runs on `http://localhost:3001`.
+ */
+const LOCAL_DEV_FRAME_ANCESTORS = ['http://localhost:3001'] as const
+
+/**
  * Content Security Policy (CSP) configuration builder
  *
  * NOTE: This file is loaded by next.config.ts at build time, before @/ path
@@ -184,13 +206,24 @@ export const buildTimeCSPDirectives: CSPDirectives = {
       : isDev
         ? [DEFAULT_SOCKET_URL, toWebSocketUrl(DEFAULT_SOCKET_URL)]
         : []),
+    ...(isDev ? ['http://localhost:3001', 'ws://localhost:3001'] : []),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_BRAND_LOGO_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_PRIVACY_URL),
     ...getHostnameFromUrl(env.NEXT_PUBLIC_TERMS_URL),
+    ...ARENA_APP_CSP_ORIGINS,
   ],
 
-  'frame-src': [...STATIC_FRAME_SRC],
-  'frame-ancestors': ["'self'"],
+  'frame-src': [
+    "'self'",
+    ...(isDev ? ['http://localhost:3001'] : []),
+    ...ARENA_APP_CSP_ORIGINS,
+    ...STATIC_FRAME_SRC.filter((s) => s !== "'self'"),
+  ],
+  'frame-ancestors': [
+    "'self'",
+    ...(isDev ? [...LOCAL_DEV_FRAME_ANCESTORS] : []),
+    ...ARENA_APP_CSP_ORIGINS,
+  ],
   'form-action': ["'self'"],
   'base-uri': ["'self'"],
   'object-src': ["'none'"],
@@ -239,16 +272,21 @@ export function generateRuntimeCSP(): string {
       ...brandFaviconDomains,
     ],
 
-    'connect-src': [
-      ...STATIC_CONNECT_SRC,
-      appUrl,
-      ollamaUrl,
-      socketUrl,
-      socketWsUrl,
-      ...brandLogoDomains,
-      ...privacyDomains,
-      ...termsDomains,
-    ],
+    'connect-src': Array.from(
+      new Set(
+        [
+          ...(buildTimeCSPDirectives['connect-src'] ?? []),
+          appUrl,
+          ollamaUrl,
+          socketUrl,
+          socketWsUrl,
+          ...(isDev ? ['http://localhost:3001', 'ws://localhost:3001'] : []),
+          ...brandLogoDomains,
+          ...privacyDomains,
+          ...termsDomains,
+        ].filter(Boolean)
+      )
+    ),
   }
 
   return buildCSPString(runtimeDirectives)

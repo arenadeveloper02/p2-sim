@@ -93,12 +93,7 @@ function hasFencedCodeBlock(str: string): boolean {
  * Pipe column is copyable when it sits strictly between two other columns (matches `trim` of that segment non-empty).
  */
 function isPipeSegmentCopyable(partsLen: number, index: number, part: string): boolean {
-  return (
-    partsLen >= 3 &&
-    index >= 1 &&
-    index <= partsLen - 2 &&
-    part.trim().length > 0
-  )
+  return partsLen >= 3 && index >= 1 && index <= partsLen - 2 && part.trim().length > 0
 }
 
 interface LineWithPipeHoverProps {

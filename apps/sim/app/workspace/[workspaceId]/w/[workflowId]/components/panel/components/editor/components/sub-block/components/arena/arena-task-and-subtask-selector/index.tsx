@@ -6,9 +6,9 @@ import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
-import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
 import { arenaSiblingSubBlockStoreKey } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
+import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
@@ -70,7 +70,8 @@ export function ArenaTaskAndSubtaskSelector({
 
   React.useEffect(() => {
     if (isPreview) return
-    const clientChanged = prevClientIdRef.current !== undefined && prevClientIdRef.current !== clientId
+    const clientChanged =
+      prevClientIdRef.current !== undefined && prevClientIdRef.current !== clientId
     const projectChanged =
       prevProjectIdRef.current !== undefined && prevProjectIdRef.current !== projectId
     if (clientChanged || projectChanged) {
@@ -159,7 +160,12 @@ export function ArenaTaskAndSubtaskSelector({
           if (fromList) {
             setStoreValue({ ...fromList, customDisplayValue: fromList.name })
           } else if (fromOpt) {
-            setStoreValue({ id: v, sysId: v, name: fromOpt.label, customDisplayValue: fromOpt.label })
+            setStoreValue({
+              id: v,
+              sysId: v,
+              name: fromOpt.label,
+              customDisplayValue: fromOpt.label,
+            })
           }
         }}
         placeholder='Select task...'

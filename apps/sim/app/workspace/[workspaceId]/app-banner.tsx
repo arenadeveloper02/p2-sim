@@ -32,10 +32,7 @@ export function AppBanner() {
     <Banner
       role='status'
       aria-live='polite'
-      className={cn(
-        ' border-t border-b',
-        'bg-[#F3F8FE] py-2'
-      )}
+      className={cn(' border-t border-b', 'bg-[#F3F8FE] py-2')}
     >
       <div className='mx-auto flex items-start justify-center gap-2.5 px-6 sm:items-center'>
         <AlertTriangle
@@ -43,7 +40,7 @@ export function AppBanner() {
           aria-hidden
           strokeWidth={2}
         />
-        <p className='text-left font-medium text-[13px] text-[#155CBA] leading-relaxed'>
+        <p className='text-left font-medium text-[#155CBA] text-[13px] leading-relaxed'>
           {message}
         </p>
       </div>

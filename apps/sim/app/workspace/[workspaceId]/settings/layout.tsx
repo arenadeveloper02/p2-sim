@@ -1,9 +1,12 @@
-export default function SettingsLayout({ children }: { children: React.ReactNode }) {
+import type { ReactNode } from 'react'
+import { Suspense } from 'react'
+import { SettingsLayoutShell } from '@/app/workspace/[workspaceId]/settings/settings-layout-shell'
+import { SettingsLayoutShellFallback } from '@/app/workspace/[workspaceId]/settings/settings-layout-shell-fallback'
+
+export default function SettingsLayout({ children }: { children: ReactNode }) {
   return (
-    <div className='h-full overflow-y-auto [scrollbar-gutter:stable]'>
-      <div className='mx-auto flex min-h-full max-w-[940px] flex-col px-[26px] pt-9 pb-[52px]'>
-        {children}
-      </div>
-    </div>
+    <Suspense fallback={<SettingsLayoutShellFallback>{children}</SettingsLayoutShellFallback>}>
+      <SettingsLayoutShell>{children}</SettingsLayoutShell>
+    </Suspense>
   )
 }

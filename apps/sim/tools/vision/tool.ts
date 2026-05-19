@@ -4,8 +4,7 @@ import type { VisionParams, VisionResponse, VisionV2Params } from '@/tools/visio
 /** Drop imageFile when it only duplicates imageUrl (models sometimes echo the URL into both). */
 function buildVisionAnalyzePayload(params: VisionParams | VisionV2Params) {
   const rawUrl = params.imageUrl
-  const imageUrl =
-    typeof rawUrl === 'string' && rawUrl.trim().length > 0 ? rawUrl.trim() : null
+  const imageUrl = typeof rawUrl === 'string' && rawUrl.trim().length > 0 ? rawUrl.trim() : null
   let imageFile = params.imageFile ?? null
   if (
     imageUrl &&

@@ -123,10 +123,14 @@ function buildSelectorBody(
 }
 
 /** Main task: client, project, group, and assignee selectors (`/api/tools/arena/tasks`). */
-export const arenaCreateTaskMainTool: ToolConfig<ArenaCreateTaskToolParams, ArenaCreateTaskResponse> = {
+export const arenaCreateTaskMainTool: ToolConfig<
+  ArenaCreateTaskToolParams,
+  ArenaCreateTaskResponse
+> = {
   id: 'arena_create_task',
   name: 'Arena Create Task',
-  description: 'Create a milestone task in Arena using workspace selectors (client, project, group, assignee).',
+  description:
+    'Create a milestone task in Arena using workspace selectors (client, project, group, assignee).',
   version: '1.0.0',
 
   params: {
@@ -183,10 +187,14 @@ export const arenaCreateTaskMainTool: ToolConfig<ArenaCreateTaskToolParams, Aren
 }
 
 /** Main task — names & emails (tasks-updated API). */
-export const arenaCreateTaskFieldsTool: ToolConfig<ArenaCreateTaskToolParams, ArenaCreateTaskResponse> = {
+export const arenaCreateTaskFieldsTool: ToolConfig<
+  ArenaCreateTaskToolParams,
+  ArenaCreateTaskResponse
+> = {
   id: 'arena_create_task_fields',
   name: 'Arena Create Task (names & emails)',
-  description: 'Create a milestone task in Arena using client/project/group names and assignee email.',
+  description:
+    'Create a milestone task in Arena using client/project/group names and assignee email.',
   version: '1.0.0',
 
   params: {
@@ -246,7 +254,10 @@ export const arenaCreateTaskFieldsTool: ToolConfig<ArenaCreateTaskToolParams, Ar
 }
 
 /** Subtask — selectors. */
-export const arenaCreateSubTaskTool: ToolConfig<ArenaCreateTaskToolParams, ArenaCreateTaskResponse> = {
+export const arenaCreateSubTaskTool: ToolConfig<
+  ArenaCreateTaskToolParams,
+  ArenaCreateTaskResponse
+> = {
   id: 'arena_create_sub_task',
   name: 'Arena Create Sub Task',
   description: 'Create a subtask in Arena using workspace selectors.',
@@ -306,7 +317,10 @@ export const arenaCreateSubTaskTool: ToolConfig<ArenaCreateTaskToolParams, Arena
 }
 
 /** Subtask — names, emails, and parent task number. */
-export const arenaCreateSubTaskFieldsTool: ToolConfig<ArenaCreateTaskToolParams, ArenaCreateTaskResponse> = {
+export const arenaCreateSubTaskFieldsTool: ToolConfig<
+  ArenaCreateTaskToolParams,
+  ArenaCreateTaskResponse
+> = {
   id: 'arena_create_sub_task_fields',
   name: 'Arena Create Sub Task (names & emails)',
   description: 'Create a subtask in Arena using names, emails, and parent task number.',

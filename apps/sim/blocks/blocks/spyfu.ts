@@ -1,6 +1,7 @@
 import { SpyfuIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import {
+  SPYFU_DEFAULT_OPERATION_ID,
   spyfuDateOperationIds,
   spyfuDomainOperationIds,
   spyfuIncludeDomainsCsvOperationIds,
@@ -8,7 +9,6 @@ import {
   spyfuKeywordOperationIds,
   spyfuOperationOptions,
   spyfuQueryOperationIds,
-  SPYFU_DEFAULT_OPERATION_ID,
   spyfuTermOperationIds,
 } from '@/tools/spyfu/operations'
 import type { SpyfuResponse } from '@/tools/spyfu/types'

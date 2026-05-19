@@ -402,9 +402,7 @@ function buildParameterSchema(
   if (param.type === 'file' || param.type === 'file[]') {
     const visibility = param.visibility
     const useStructuredFileSchema =
-      surface === 'copilot' ||
-      visibility === 'user-or-llm' ||
-      visibility === 'llm-only'
+      surface === 'copilot' || visibility === 'user-or-llm' || visibility === 'llm-only'
     if (useStructuredFileSchema) {
       return buildCopilotFileParameterSchema(param)
     }
@@ -974,10 +972,7 @@ const EXCLUDED_SUBBLOCK_TYPES = new Set([
  * Tool-input keeps the **Accounts** dropdown (`accounts` → shared workspace pickers) and hides
  * those canonical oauthCredential rows; auth still resolves via tool OAuth + `accounts` in params.
  */
-function shouldExcludeSubBlockFromToolInput(
-  blockType: string,
-  sb: BlockSubBlockConfig
-): boolean {
+function shouldExcludeSubBlockFromToolInput(blockType: string, sb: BlockSubBlockConfig): boolean {
   if (blockType !== 'hubspot') return false
   if (sb.canonicalParamId === 'oauthCredential') return true
   return false

@@ -183,13 +183,8 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       const queryParams = new URLSearchParams()
       const reportType = resolveSemrushApiType(params)
 
-      const urlLike = (params.url ?? '').trim()
-      const domainLike = sanitizeDomainInput((params.domain ?? '').trim())
-      const legacyTarget = (params.target ?? '').trim()
-
-      const rawTarget = reportType.startsWith('url_')
-        ? urlLike || domainLike || legacyTarget
-        : domainLike || urlLike || legacyTarget
+      const rawFromFields = reportType.startsWith('url_') ? params.url : params.domain
+      const rawTarget = (rawFromFields ?? params.target ?? '').trim()
       const target = normalizeSemrushTarget(rawTarget, reportType)
 
       if (!target) {
