@@ -188,7 +188,7 @@ function extractFirstString(value: unknown): string | undefined {
     }
   }
 
-  const nestedKeys = ['payload', 'data', 'result', 'event'] as const
+  const nestedKeys = ['payload', 'data', 'result'] as const
   for (const key of nestedKeys) {
     const nested = extractFirstString(record[key])
     if (nested) return nested
@@ -197,12 +197,130 @@ function extractFirstString(value: unknown): string | undefined {
   return undefined
 }
 
-function extractTextFromUpstreamData(raw: string): string {
+function extractTextFromFinalOutput(
+  output: unknown,
+  selectedOutputs: readonly string[]
+): string {
+  if (!output || typeof output !== 'object') return ''
+
+  const outputRecord = output as Record<string, unknown>
+  const parts: string[] = []
+
+  const appendBlockValue = (blockOutputs: unknown) => {
+    if (!blockOutputs || typeof blockOutputs !== 'object') return
+    const block = blockOutputs as Record<string, unknown>
+    for (const key of ['content', 'result', 'text', 'message', 'response', 'answer'] as const) {
+      const value = block[key]
+      if (typeof value === 'string' && value.trim().length > 0) {
+        parts.push(value)
+        return
+      }
+    }
+  }
+
+  if (selectedOutputs.length > 0) {
+    for (const outputId of selectedOutputs) {
+      const [blockId, ...pathParts] = outputId.split('.')
+      if (!blockId) continue
+      const blockOutputs = outputRecord[blockId]
+      if (!blockOutputs || typeof blockOutputs !== 'object') continue
+      if (pathParts.length === 0) {
+        appendBlockValue(blockOutputs)
+        continue
+      }
+      let current: unknown = blockOutputs
+      for (const segment of pathParts) {
+        if (!current || typeof current !== 'object' || !(segment in current)) {
+          current = undefined
+          break
+        }
+        current = (current as Record<string, unknown>)[segment]
+      }
+      if (typeof current === 'string' && current.trim().length > 0) {
+        parts.push(current)
+      }
+    }
+  }
+
+  if (parts.length === 0) {
+    for (const blockOutputs of Object.values(outputRecord)) {
+      appendBlockValue(blockOutputs)
+    }
+  }
+
+  return parts.join('\n\n')
+}
+
+function extractTextFromWorkflowSsePayload(
+  record: Record<string, unknown>,
+  selectedOutputs: readonly string[]
+): string | undefined {
+  const eventType = record.event
+  if (typeof eventType !== 'string') {
+    return undefined
+  }
+
+  switch (eventType) {
+    case 'final': {
+      const data = record.data
+      if (!data || typeof data !== 'object') {
+        return ''
+      }
+      const dataRecord = data as Record<string, unknown>
+      if (typeof dataRecord.error === 'string' && dataRecord.error.trim().length > 0) {
+        return dataRecord.error
+      }
+      if (
+        dataRecord.error &&
+        typeof dataRecord.error === 'object' &&
+        typeof (dataRecord.error as { message?: unknown }).message === 'string'
+      ) {
+        return (dataRecord.error as { message: string }).message
+      }
+      return extractTextFromFinalOutput(dataRecord.output, selectedOutputs)
+    }
+    case 'error': {
+      if (typeof record.error === 'string' && record.error.trim().length > 0) {
+        return record.error
+      }
+      const data = record.data
+      if (data && typeof data === 'object') {
+        const dataRecord = data as Record<string, unknown>
+        if (typeof dataRecord.error === 'string' && dataRecord.error.trim().length > 0) {
+          return dataRecord.error
+        }
+        if (
+          dataRecord.error &&
+          typeof dataRecord.error === 'object' &&
+          typeof (dataRecord.error as { message?: unknown }).message === 'string'
+        ) {
+          return (dataRecord.error as { message: string }).message
+        }
+      }
+      return ''
+    }
+    case 'cancelled':
+      return ''
+    default:
+      return undefined
+  }
+}
+
+function extractTextFromUpstreamData(raw: string, selectedOutputs: readonly string[]): string {
   const trimmed = raw.trim()
   if (!trimmed || trimmed === '[DONE]') return ''
 
   try {
     const parsed = JSON.parse(trimmed) as unknown
+    if (parsed && typeof parsed === 'object') {
+      const controlEventText = extractTextFromWorkflowSsePayload(
+        parsed as Record<string, unknown>,
+        selectedOutputs
+      )
+      if (controlEventText !== undefined) {
+        return controlEventText
+      }
+    }
     return extractFirstString(parsed) ?? ''
   } catch {
     return trimmed
@@ -498,13 +616,13 @@ export async function POST(req: NextRequest) {
               .filter((line) => line.startsWith('data:'))
               .map((line) => line.slice(5).trim())
             const mergedData = dataLines.join('\n').trim()
-            const text = extractTextFromUpstreamData(mergedData)
+            const text = extractTextFromUpstreamData(mergedData, body.selectedOutputs)
             emitTextEvent(text)
             return
           }
 
           if (!sawSsePrefix) {
-            const text = extractTextFromUpstreamData(frame)
+            const text = extractTextFromUpstreamData(frame, body.selectedOutputs)
             emitTextEvent(text)
           }
         }
