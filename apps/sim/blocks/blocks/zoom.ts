@@ -37,11 +37,13 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       options: [
         { label: 'Create Meeting', id: 'zoom_create_meeting' },
         { label: 'List Meetings', id: 'zoom_list_meetings' },
+        { label: 'List My Meetings', id: 'zoom_list_my_meetings' },
         { label: 'Get Meeting', id: 'zoom_get_meeting' },
         { label: 'Update Meeting', id: 'zoom_update_meeting' },
         { label: 'Delete Meeting', id: 'zoom_delete_meeting' },
         { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
         { label: 'List Recordings', id: 'zoom_list_recordings' },
+        { label: 'List My Recordings', id: 'zoom_list_my_recordings' },
         { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
         {
           label: 'Get Account Recordings with Transcript',
@@ -329,7 +331,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       mode: 'advanced',
       condition: {
         field: 'operation',
-        value: ['zoom_list_meetings'],
+        value: ['zoom_list_meetings', 'zoom_list_my_meetings'],
       },
     },
     // Pagination
@@ -343,7 +345,9 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         field: 'operation',
         value: [
           'zoom_list_meetings',
+          'zoom_list_my_meetings',
           'zoom_list_recordings',
+          'zoom_list_my_recordings',
           'zoom_list_account_recordings',
           'zoom_list_past_participants',
         ],
@@ -359,7 +363,9 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         field: 'operation',
         value: [
           'zoom_list_meetings',
+          'zoom_list_my_meetings',
           'zoom_list_recordings',
+          'zoom_list_my_recordings',
           'zoom_list_account_recordings',
           'zoom_list_past_participants',
         ],
@@ -376,6 +382,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         field: 'operation',
         value: [
           'zoom_list_recordings',
+          'zoom_list_my_recordings',
           'zoom_list_account_recordings',
           'zoom_get_account_recordings_with_transcript',
         ],
@@ -406,6 +413,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
         field: 'operation',
         value: [
           'zoom_list_recordings',
+          'zoom_list_my_recordings',
           'zoom_list_account_recordings',
           'zoom_get_account_recordings_with_transcript',
         ],
@@ -510,11 +518,13 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     access: [
       'zoom_create_meeting',
       'zoom_list_meetings',
+      'zoom_list_my_meetings',
       'zoom_get_meeting',
       'zoom_update_meeting',
       'zoom_delete_meeting',
       'zoom_get_meeting_invitation',
       'zoom_list_recordings',
+      'zoom_list_my_recordings',
       'zoom_list_account_recordings',
       'zoom_get_account_recordings_with_transcript',
       'zoom_download_transcript',
@@ -567,6 +577,16 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
               type: params.listType,
               pageSize: params.pageSize ? Number(params.pageSize) : undefined,
               nextPageToken: params.nextPageToken,
+            }
+
+          case 'zoom_list_my_meetings':
+            return {
+              ...baseParams,
+              type: params.listType,
+              pageSize: params.pageSize ? Number(params.pageSize) : undefined,
+              ...(params.nextPageToken?.trim()
+                ? { nextPageToken: params.nextPageToken.trim() }
+                : {}),
             }
 
           case 'zoom_get_meeting':
@@ -632,6 +652,17 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
               to: params.toDate,
               pageSize: params.pageSize ? Number(params.pageSize) : undefined,
               nextPageToken: params.nextPageToken,
+            }
+
+          case 'zoom_list_my_recordings':
+            return {
+              ...baseParams,
+              ...(params.fromDate?.trim() ? { from: params.fromDate.trim() } : {}),
+              ...(params.toDate?.trim() ? { to: params.toDate.trim() } : {}),
+              pageSize: params.pageSize ? Number(params.pageSize) : undefined,
+              ...(params.nextPageToken?.trim()
+                ? { nextPageToken: params.nextPageToken.trim() }
+                : {}),
             }
 
           case 'zoom_list_account_recordings':
@@ -735,12 +766,19 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     success: { type: 'boolean', description: 'Operation success status' },
     // Meeting outputs
     meeting: { type: 'json', description: 'Meeting data (create_meeting, get_meeting)' },
-    meetings: { type: 'json', description: 'List of meetings (list_meetings)' },
+    meetings: { type: 'json', description: 'List of meetings (list_meetings, list_my_meetings)' },
+    userEmail: {
+      type: 'string',
+      description: 'Logged-in user email used as Zoom user ID (list_my_meetings)',
+    },
     // Invitation
     invitation: { type: 'string', description: 'Meeting invitation text (get_meeting_invitation)' },
     // Recording outputs
     recording: { type: 'json', description: 'Recording data (get_meeting_recordings)' },
-    recordings: { type: 'json', description: 'List of recordings (list_recordings)' },
+    recordings: {
+      type: 'json',
+      description: 'List of recordings (list_recordings, list_my_recordings)',
+    },
     // Participant outputs
     participants: { type: 'json', description: 'List of participants (list_past_participants)' },
     // Pagination

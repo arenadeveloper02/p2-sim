@@ -9,6 +9,8 @@ export { zoomGetMeetingInvitationTool } from './get_meeting_invitation'
 export { zoomGetMeetingRecordingsTool } from './get_meeting_recordings'
 export { zoomListAccountRecordingsTool } from './list_account_recordings'
 export { zoomListMeetingsTool } from './list_meetings'
+export { zoomListMyMeetingsTool } from './list_my_meetings'
+export { zoomListMyRecordingsTool } from './list_my_recordings'
 export { zoomListPastParticipantsTool } from './list_past_participants'
 export { zoomListRecordingsTool } from './list_recordings'
 // Type exports
@@ -33,6 +35,10 @@ export type {
   ZoomListAccountRecordingsResponse,
   ZoomListMeetingsParams,
   ZoomListMeetingsResponse,
+  ZoomListMyMeetingsParams,
+  ZoomListMyMeetingsResponse,
+  ZoomListMyRecordingsParams,
+  ZoomListMyRecordingsResponse,
   ZoomListPastParticipantsParams,
   ZoomListPastParticipantsResponse,
   ZoomListRecordingsParams,

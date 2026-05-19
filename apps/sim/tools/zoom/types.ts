@@ -435,6 +435,48 @@ export interface ZoomListMeetingsResponse extends ToolResponse {
   }
 }
 
+export interface ZoomListMyMeetingsParams extends ZoomBaseParams {
+  type?: 'scheduled' | 'live' | 'upcoming' | 'upcoming_meetings' | 'previous_meetings'
+  pageSize?: number
+  nextPageToken?: string
+}
+
+export interface ZoomListMyMeetingsResponse extends ToolResponse {
+  output: {
+    userEmail: string
+    meetings: ZoomMeeting[]
+    pageInfo: {
+      pageCount: number
+      pageNumber: number
+      pageSize: number
+      totalRecords: number
+      nextPageToken?: string
+    }
+  }
+}
+
+export interface ZoomListMyRecordingsParams extends ZoomBaseParams {
+  from?: string
+  to?: string
+  pageSize?: number
+  nextPageToken?: string
+  trash?: boolean
+}
+
+export interface ZoomListMyRecordingsResponse extends ToolResponse {
+  output: {
+    userEmail: string
+    recordings: ZoomRecording[]
+    pageInfo: {
+      from: string
+      to: string
+      pageSize: number
+      totalRecords: number
+      nextPageToken?: string
+    }
+  }
+}
+
 // Get Meeting tool types
 export interface ZoomGetMeetingParams extends ZoomBaseParams {
   meetingId: string
