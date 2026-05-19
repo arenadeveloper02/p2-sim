@@ -197,6 +197,43 @@ function extractFirstString(value: unknown): string | undefined {
   return undefined
 }
 
+function extractTopLevelContent(value: unknown): string {
+  if (!value || typeof value !== 'object') return ''
+  const content = (value as Record<string, unknown>).content
+  return typeof content === 'string' && content.trim().length > 0 ? content : ''
+}
+
+function appendBlockTextParts(blockOutputs: unknown, parts: string[]) {
+  if (!blockOutputs || typeof blockOutputs !== 'object') return
+  const block = blockOutputs as Record<string, unknown>
+  for (const key of ['content', 'result', 'text', 'message', 'response', 'answer'] as const) {
+    const value = block[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      parts.push(value)
+      return
+    }
+  }
+}
+
+/** Fallback when selectedOutputs are absent or do not match anything in the payload. */
+function extractContentFromFinalData(dataRecord: Record<string, unknown>): string {
+  const directContent = extractTopLevelContent(dataRecord)
+  if (directContent) return directContent
+
+  const outputContent = extractTopLevelContent(dataRecord.output)
+  if (outputContent) return outputContent
+
+  if (!dataRecord.output || typeof dataRecord.output !== 'object') {
+    return ''
+  }
+
+  const parts: string[] = []
+  for (const blockOutputs of Object.values(dataRecord.output as Record<string, unknown>)) {
+    appendBlockTextParts(blockOutputs, parts)
+  }
+  return parts.join('\n\n')
+}
+
 function extractTextFromFinalOutput(
   output: unknown,
   selectedOutputs: readonly string[]
@@ -206,18 +243,6 @@ function extractTextFromFinalOutput(
   const outputRecord = output as Record<string, unknown>
   const parts: string[] = []
 
-  const appendBlockValue = (blockOutputs: unknown) => {
-    if (!blockOutputs || typeof blockOutputs !== 'object') return
-    const block = blockOutputs as Record<string, unknown>
-    for (const key of ['content', 'result', 'text', 'message', 'response', 'answer'] as const) {
-      const value = block[key]
-      if (typeof value === 'string' && value.trim().length > 0) {
-        parts.push(value)
-        return
-      }
-    }
-  }
-
   if (selectedOutputs.length > 0) {
     for (const outputId of selectedOutputs) {
       const [blockId, ...pathParts] = outputId.split('.')
@@ -225,7 +250,7 @@ function extractTextFromFinalOutput(
       const blockOutputs = outputRecord[blockId]
       if (!blockOutputs || typeof blockOutputs !== 'object') continue
       if (pathParts.length === 0) {
-        appendBlockValue(blockOutputs)
+        appendBlockTextParts(blockOutputs, parts)
         continue
       }
       let current: unknown = blockOutputs
@@ -240,15 +265,12 @@ function extractTextFromFinalOutput(
         parts.push(current)
       }
     }
-  }
-
-  if (parts.length === 0) {
-    for (const blockOutputs of Object.values(outputRecord)) {
-      appendBlockValue(blockOutputs)
+    if (parts.length > 0) {
+      return parts.join('\n\n')
     }
   }
 
-  return parts.join('\n\n')
+  return extractContentFromFinalData({ output: outputRecord })
 }
 
 function extractTextFromWorkflowSsePayload(
@@ -277,7 +299,11 @@ function extractTextFromWorkflowSsePayload(
       ) {
         return (dataRecord.error as { message: string }).message
       }
-      return extractTextFromFinalOutput(dataRecord.output, selectedOutputs)
+      const fromSelectedOutputs = extractTextFromFinalOutput(dataRecord.output, selectedOutputs)
+      if (fromSelectedOutputs) {
+        return fromSelectedOutputs
+      }
+      return extractContentFromFinalData(dataRecord)
     }
     case 'error': {
       if (typeof record.error === 'string' && record.error.trim().length > 0) {
