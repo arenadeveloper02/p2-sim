@@ -958,9 +958,21 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
         }
 
         if (params.operation === 'create_from_template') {
-          result.presentationName =
-            (createFromTemplatePresentationName as string)?.trim() || undefined
-          result.schemaJson = (createFromTemplateSchemaJson as string)?.trim() || undefined
+          if (typeof createFromTemplatePresentationName === 'string') {
+            const name = createFromTemplatePresentationName.trim()
+            result.presentationName = name || undefined
+          }
+          if (createFromTemplateSchemaJson != null && createFromTemplateSchemaJson !== '') {
+            if (typeof createFromTemplateSchemaJson === 'string') {
+              const json = createFromTemplateSchemaJson.trim()
+              if (json) result.schemaJson = json
+            } else if (
+              typeof createFromTemplateSchemaJson === 'object' &&
+              !Array.isArray(createFromTemplateSchemaJson)
+            ) {
+              result.schemaJson = createFromTemplateSchemaJson
+            }
+          }
         }
 
         if (params.operation === 'duplicate_presentation') {
@@ -1130,8 +1142,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       description: 'Title for the new presentation',
     },
     createFromTemplateSchemaJson: {
-      type: 'string',
-      description: 'Valid JSON schema with slides and block content',
+      type: 'json',
+      description: 'Valid JSON schema with slides and block content (string or object)',
     },
     // Duplicate presentation operation
     sourcePresentationSelector: { type: 'string', description: 'Selected source presentation' },
