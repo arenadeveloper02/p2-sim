@@ -3,7 +3,7 @@ import { toError } from '@sim/utils/errors'
 import { sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { recordUsage } from '@/lib/billing/core/usage-log'
+import { recordUsage, scaleUsageLogCost } from '@/lib/billing/core/record-usage-wrapper'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { BillingRouteOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
@@ -155,17 +155,18 @@ async function updateCostInner(
     })
 
     const totalTokens = inputTokens + outputTokens
+    const billedCost = scaleUsageLogCost(cost)
 
     const additionalStats: Record<string, ReturnType<typeof sql>> = {
-      totalCopilotCost: sql`total_copilot_cost + ${cost}`,
-      currentPeriodCopilotCost: sql`current_period_copilot_cost + ${cost}`,
+      totalCopilotCost: sql`total_copilot_cost + ${billedCost}`,
+      currentPeriodCopilotCost: sql`current_period_copilot_cost + ${billedCost}`,
       totalCopilotCalls: sql`total_copilot_calls + 1`,
       totalCopilotTokens: sql`total_copilot_tokens + ${totalTokens}`,
     }
 
     if (isMcp) {
-      additionalStats.totalMcpCopilotCost = sql`total_mcp_copilot_cost + ${cost}`
-      additionalStats.currentPeriodMcpCopilotCost = sql`current_period_mcp_copilot_cost + ${cost}`
+      additionalStats.totalMcpCopilotCost = sql`total_mcp_copilot_cost + ${billedCost}`
+      additionalStats.currentPeriodMcpCopilotCost = sql`current_period_mcp_copilot_cost + ${billedCost}`
       additionalStats.totalMcpCopilotCalls = sql`total_mcp_copilot_calls + 1`
     }
 

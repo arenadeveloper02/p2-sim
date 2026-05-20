@@ -16,7 +16,8 @@ import {
   getOrgUsageLimit,
   maybeSendUsageThresholdEmail,
 } from '@/lib/billing/core/usage'
-import { type ModelUsageMetadata, recordUsage } from '@/lib/billing/core/usage-log'
+import type { ModelUsageMetadata } from '@/lib/billing/core/usage-log'
+import { recordUsage } from '@/lib/billing/core/record-usage-wrapper'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { redactApiKeys } from '@/lib/core/security/redaction'
