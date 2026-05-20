@@ -196,6 +196,7 @@ export const workflow = pgTable(
     lastRunAt: timestamp('last_run_at'),
     variables: json('variables').default('{}'),
     archivedAt: timestamp('archived_at'),
+    defaultAgent: boolean('default_agent').notNull().default(false),
   },
   (table) => ({
     userIdIdx: index('workflow_user_id_idx').on(table.userId),
@@ -209,6 +210,38 @@ export const workflow = pgTable(
     workspaceArchivedAtPartialIdx: index('workflow_workspace_archived_partial_idx')
       .on(table.workspaceId, table.archivedAt)
       .where(sql`${table.archivedAt} IS NOT NULL`),
+    defaultAgentIdx: index('workflow_default_agent_idx').on(table.defaultAgent),
+  })
+)
+
+export const defaultUserWorkflows = pgTable(
+  'default_user_workflows',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    sourceWorkflowId: text('source_workflow_id').notNull(),
+    userWorkflowId: text('user_workflow_id').notNull(),
+    userWorkspaceId: text('user_workspace_id').notNull(),
+    lastSyncedAt: timestamp('last_synced_at'),
+    lastDeployedVersion: integer('last_deployed_version'),
+    archivedAt: timestamp('archived_at'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (table) => ({
+    userSourceUnique: uniqueIndex('default_user_workflows_user_source_unique').on(
+      table.userId,
+      table.sourceWorkflowId
+    ),
+    sourceWorkflowIdIdx: index('default_user_workflows_source_workflow_id_idx').on(
+      table.sourceWorkflowId
+    ),
+    userWorkflowIdIdx: index('default_user_workflows_user_workflow_id_idx').on(
+      table.userWorkflowId
+    ),
+    archivedAtIdx: index('default_user_workflows_archived_at_idx').on(table.archivedAt),
   })
 )
 

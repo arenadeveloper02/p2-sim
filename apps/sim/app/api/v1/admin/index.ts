@@ -36,6 +36,7 @@
  *   GET    /api/v1/admin/workflows/:id/export               - Export workflow (JSON)
  *   POST   /api/v1/admin/workflows/export                   - Export multiple workflows (ZIP/JSON)
  *   POST   /api/v1/admin/workflows/import                   - Import single workflow
+ *   POST   /api/v1/admin/default-workflows/sync             - Sync all user copies from source template
  *   POST   /api/v1/admin/workflows/:id/deploy               - Deploy workflow
  *   DELETE /api/v1/admin/workflows/:id/deploy               - Undeploy workflow
  *   GET    /api/v1/admin/workflows/:id/versions             - List deployment versions
