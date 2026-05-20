@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import { env } from '@/lib/core/config/env'
 import { isRetryableError, retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
-import { batchByTokenLimit } from '@/lib/tokenization'
+import { batchByTokenLimit } from '@/lib/tokenization/accurate'
 
 const logger = createLogger('EmbeddingUtils')
 

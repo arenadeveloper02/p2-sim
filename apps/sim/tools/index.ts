@@ -649,16 +649,18 @@ function normalizeToolId(toolId: string): string {
 }
 
 /**
- * Maximum request body size in bytes before we warn/error about size limits.
- * Next.js 16 has a default middleware/proxy body limit of 10MB.
+ * Maximum request body sizes before we fail with a clear error.
+ * Internal Next.js routes can reject/truncate JSON bodies around 10MB, which otherwise
+ * surfaces as "Unterminated string in JSON" when large inline images are posted.
  */
-const MAX_REQUEST_BODY_SIZE_BYTES = 2000 * 1024 * 1024 // 10MB
+const INTERNAL_ROUTE_MAX_REQUEST_BODY_SIZE_BYTES = 9.5 * 1024 * 1024
+const MAX_REQUEST_BODY_SIZE_BYTES = 100 * 1024 * 1024
 
 /**
  * User-friendly error message for body size limit exceeded
  */
 const BODY_SIZE_LIMIT_ERROR_MESSAGE =
-  'Request body size limit exceeded (100MB). The workflow data is too large to process. Try reducing the size of variables, inputs, or data being passed between blocks.'
+  'Request body size limit exceeded. The workflow data is too large to process. Try reducing the size of variables, inputs, or data being passed between blocks. For image generation, upload reference images as files or use image URLs instead of inline base64 data.'
 
 /**
  * Validates request body size and throws a user-friendly error if exceeded
@@ -670,18 +672,19 @@ const BODY_SIZE_LIMIT_ERROR_MESSAGE =
 function validateRequestBodySize(
   body: string | undefined,
   requestId: string,
-  context: string
+  context: string,
+  maxSizeBytes = MAX_REQUEST_BODY_SIZE_BYTES
 ): void {
   if (!body) return
 
   const bodySize = Buffer.byteLength(body, 'utf8')
-  if (bodySize > MAX_REQUEST_BODY_SIZE_BYTES) {
+  if (bodySize > maxSizeBytes) {
     const bodySizeMB = (bodySize / (1024 * 1024)).toFixed(2)
-    const maxSizeMB = (MAX_REQUEST_BODY_SIZE_BYTES / (1024 * 1024)).toFixed(0)
+    const maxSizeMB = (maxSizeBytes / (1024 * 1024)).toFixed(1)
     logger.error(`[${requestId}] Request body size exceeds limit for ${context}:`, {
       bodySize,
       bodySizeMB: `${bodySizeMB}MB`,
-      maxSize: MAX_REQUEST_BODY_SIZE_BYTES,
+      maxSize: maxSizeBytes,
       maxSizeMB: `${maxSizeMB}MB`,
     })
     throw new Error(BODY_SIZE_LIMIT_ERROR_MESSAGE)
@@ -1500,7 +1503,12 @@ async function executeToolRequest(
     }
 
     // Check request body size before sending to detect potential size limit issues
-    validateRequestBodySize(requestParams.body, requestId, toolId)
+    validateRequestBodySize(
+      requestParams.body,
+      requestId,
+      toolId,
+      isInternalRoute ? INTERNAL_ROUTE_MAX_REQUEST_BODY_SIZE_BYTES : MAX_REQUEST_BODY_SIZE_BYTES
+    )
 
     // Convert Headers to plain object for secureFetchWithPinnedIP
     const headersRecord: Record<string, string> = {}

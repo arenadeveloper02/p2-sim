@@ -3,50 +3,16 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
-import type { ChatFile, ChatMessage } from '@/app/chat/components/message/message'
+import {
+  type AssistantChatFile as ChatFile,
+  extractAssistantFilesFromData,
+  extractGeneratedImagesFromData,
+} from '@/lib/chat/assistant-assets'
+import type { ChatMessage } from '@/app/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
+import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 
 const logger = createLogger('UseChatStreaming')
-
-function extractFilesFromData(
-  data: any,
-  files: ChatFile[] = [],
-  seenIds = new Set<string>()
-): ChatFile[] {
-  if (!data || typeof data !== 'object') {
-    return files
-  }
-
-  if (isUserFileWithMetadata(data)) {
-    if (!seenIds.has(data.id)) {
-      seenIds.add(data.id)
-      files.push({
-        id: data.id,
-        name: data.name,
-        url: data.url,
-        key: data.key,
-        size: data.size,
-        type: data.type,
-        context: data.context,
-      })
-    }
-    return files
-  }
-
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      extractFilesFromData(item, files, seenIds)
-    }
-    return files
-  }
-
-  for (const value of Object.values(data)) {
-    extractFilesFromData(value, files, seenIds)
-  }
-
-  return files
-}
 
 export interface VoiceSettings {
   isVoiceEnabled: boolean
@@ -317,13 +283,18 @@ export function useChatStreaming() {
                 const outputConfigs = streamingOptions?.outputConfigs
                 const formattedOutputs: string[] = []
                 let extractedFiles: ChatFile[] = []
+                let generatedImages = [] as ReturnType<typeof extractGeneratedImagesFromData>
 
                 const formatValue = (value: any): string | null => {
                   if (value === null || value === undefined) {
                     return null
                   }
 
-                  if (isUserFileWithMetadata(value)) {
+                  if (extractAssistantFilesFromData(value).length > 0) {
+                    return null
+                  }
+
+                  if (extractGeneratedImagesFromData(value).length > 0) {
                     return null
                   }
 
@@ -395,22 +366,23 @@ export function useChatStreaming() {
                       continue
                     }
 
-                    if (isUserFileWithMetadata(value)) {
-                      extractedFiles.push({
-                        id: value.id,
-                        name: value.name,
-                        url: value.url,
-                        key: value.key,
-                        size: value.size,
-                        type: value.type,
-                        context: value.context,
-                      })
+                    const directImages = extractGeneratedImagesFromData(value)
+                    if (directImages.length > 0) {
+                      generatedImages = extractGeneratedImagesFromData(value, generatedImages)
                       continue
                     }
 
-                    const nestedFiles = extractFilesFromData(value)
+                    const directFiles = extractAssistantFilesFromData(value)
+                    if (directFiles.length > 0) {
+                      extractedFiles.push(...directFiles)
+                      generatedImages = extractGeneratedImagesFromData(value, generatedImages)
+                      continue
+                    }
+
+                    const nestedFiles = extractAssistantFilesFromData(value)
                     if (nestedFiles.length > 0) {
                       extractedFiles = [...extractedFiles, ...nestedFiles]
+                      generatedImages = extractGeneratedImagesFromData(value, generatedImages)
                       continue
                     }
 
@@ -454,37 +426,14 @@ export function useChatStreaming() {
                 let contentToSet: string | Record<string, unknown> | undefined =
                   finalContent ?? undefined
 
-                const isImageUrlString = (s: unknown): boolean =>
-                  typeof s === 'string' &&
-                  s.length > 0 &&
-                  (s.startsWith('http') || s.startsWith('/api/files/serve/')) &&
-                  (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(s.trim()) ||
-                    s.includes('agent-generated-images'))
-
-                const imageUrlFromOutput = (obj: any): string | null => {
-                  if (!obj || typeof obj !== 'object') return null
-                  const url =
-                    obj.output?.image ??
-                    obj.image ??
-                    (isImageUrlString(obj.content) ? obj.content : null)
-                  if (
-                    typeof url === 'string' &&
-                    (url.startsWith('http') || url.startsWith('/api/files/serve/'))
-                  ) {
-                    return url
-                  }
-                  return null
-                }
-                if (finalData.output) {
-                  for (const block of Object.values(finalData.output)) {
-                    const imageUrl = imageUrlFromOutput(block)
-                    if (imageUrl) {
-                      contentToSet = {
-                        content: typeof contentToSet === 'string' ? contentToSet : '',
-                        image: imageUrl,
-                      }
-                      break
-                    }
+                if (generatedImages.length > 0) {
+                  const currentContent = typeof contentToSet === 'string' ? contentToSet : ''
+                  const { prose } = resolveMessageImagesAndProse(currentContent)
+                  const imageUrls = generatedImages.map((image) => image.url)
+                  contentToSet = {
+                    content: prose,
+                    image: imageUrls[0] ?? '',
+                    images: imageUrls,
                   }
                 }
 
@@ -498,6 +447,7 @@ export function useChatStreaming() {
                           executionId: finalData?.executionId || msg.executionId,
                           liked: null,
                           files: extractedFiles.length > 0 ? extractedFiles : undefined,
+                          generatedImages: generatedImages.length > 0 ? generatedImages : undefined,
                           knowledgeResults: pendingKnowledgeResults,
                         }
                       : msg

@@ -5,6 +5,79 @@ import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ImagenTool')
 
+function getObjectKeys(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return []
+  }
+
+  return Object.keys(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
+function collectImagenImages(data: unknown): Record<string, unknown>[] {
+  if (!isRecord(data)) {
+    return []
+  }
+
+  const images: Record<string, unknown>[] = []
+  const appendImages = (items: Record<string, unknown>[]) => {
+    for (const item of items) {
+      const nestedGeneratedImages = asRecordArray(item.generatedImages)
+      if (nestedGeneratedImages.length > 0) {
+        images.push(...nestedGeneratedImages)
+      } else {
+        images.push(item)
+      }
+    }
+  }
+
+  appendImages(asRecordArray(data.predictions))
+  appendImages(asRecordArray(data.generatedImages))
+  appendImages(asRecordArray(data.generated_images))
+  appendImages(asRecordArray(data.images))
+  appendImages(asRecordArray(data.data))
+
+  return images
+}
+
+function getStringField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key]
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function extractBase64Image(generatedImage: Record<string, unknown>): string | undefined {
+  const directImage =
+    getStringField(generatedImage, 'bytesBase64Encoded') ??
+    getStringField(generatedImage, 'imageBytes') ??
+    getStringField(generatedImage, 'image') ??
+    getStringField(generatedImage, 'b64_json') ??
+    getStringField(generatedImage, 'bytes') ??
+    getStringField(generatedImage, 'data')
+
+  if (directImage) {
+    return directImage
+  }
+
+  const nestedImage = generatedImage.image
+  if (!isRecord(nestedImage)) {
+    return undefined
+  }
+
+  return (
+    getStringField(nestedImage, 'bytesBase64Encoded') ??
+    getStringField(nestedImage, 'imageBytes') ??
+    getStringField(nestedImage, 'bytes') ??
+    getStringField(nestedImage, 'data')
+  )
+}
+
 export interface ImagenRequestBody {
   instances: Array<{
     prompt: string
@@ -105,7 +178,14 @@ export const imagenTool: ToolConfig = {
         body.parameters.personGeneration = params.personGeneration
       }
 
-      logger.info('Imagen API request body:', JSON.stringify(body, null, 2))
+      logger.info('Imagen API request', {
+        model: params.model,
+        promptLength: typeof params.prompt === 'string' ? params.prompt.length : 0,
+        sampleCount: body.parameters.sampleCount ?? 1,
+        imageSize: body.parameters.imageSize ?? null,
+        aspectRatio: body.parameters.aspectRatio ?? null,
+        personGeneration: body.parameters.personGeneration ?? null,
+      })
       return body
     },
   },
@@ -127,65 +207,36 @@ export const imagenTool: ToolConfig = {
 
       const data = await response.json()
 
-      logger.info('Raw Imagen API response:', JSON.stringify(data, null, 2))
+      logger.info('Imagen API response received', {
+        topLevelKeys: getObjectKeys(data),
+        predictionsCount: Array.isArray(data?.predictions) ? data.predictions.length : 0,
+      })
 
-      // Handle different possible response structures
-      let generatedImages = []
-
-      if (data.predictions && data.predictions.length > 0) {
-        // REST API format - predictions array contains the images directly
-        generatedImages = data.predictions
-        logger.info('Found predictions array with', generatedImages.length, 'images')
-      } else if (data.generatedImages) {
-        // Direct SDK format
-        generatedImages = data.generatedImages
-      } else if (data.generated_images) {
-        // Alternative format
-        generatedImages = data.generated_images
-      } else if (data.images) {
-        // Another possible format
-        generatedImages = data.images
-      } else if (data.data) {
-        // Direct data format
-        generatedImages = data.data
-      }
-
-      logger.info('Extracted generatedImages:', generatedImages)
+      const generatedImages = collectImagenImages(data)
 
       if (generatedImages.length === 0) {
-        logger.error('No generated images found in response. Full response structure:', {
-          keys: Object.keys(data),
-          predictions: data.predictions,
-          generatedImages: data.generatedImages,
-          images: data.images,
-          data: data.data,
+        logger.error('No generated images found in Imagen response', {
+          topLevelKeys: getObjectKeys(data),
+          predictionsCount: Array.isArray(data.predictions) ? data.predictions.length : 0,
+          generatedImagesCount: Array.isArray(data.generatedImages) ? data.generatedImages.length : 0,
+          imagesCount: Array.isArray(data.images) ? data.images.length : 0,
+          dataCount: Array.isArray(data.data) ? data.data.length : 0,
         })
         throw new Error('No generated images found in response')
       }
 
       // Get the first generated image
       const generatedImage = generatedImages[0]
-      logger.info('First generated image structure:', JSON.stringify(generatedImage, null, 2))
+      logger.info('Imagen first generated image received', {
+        generatedImageKeys: getObjectKeys(generatedImage),
+      })
 
-      let base64Image = null
-
-      // Handle different image data formats
-      if (generatedImage.bytesBase64Encoded) {
-        base64Image = generatedImage.bytesBase64Encoded
-      } else if (generatedImage.imageBytes) {
-        base64Image = generatedImage.imageBytes
-      } else if (generatedImage.image) {
-        base64Image = generatedImage.image
-      } else if (generatedImage.b64_json) {
-        base64Image = generatedImage.b64_json
-      } else if (generatedImage.bytes) {
-        base64Image = generatedImage.bytes
-      } else if (generatedImage.data) {
-        base64Image = generatedImage.data
-      }
+      const base64Image = extractBase64Image(generatedImage)
 
       if (!base64Image) {
-        logger.error('No image bytes found in generated image:', generatedImage)
+        logger.error('No image bytes found in generated Imagen image', {
+          generatedImageKeys: getObjectKeys(generatedImage),
+        })
         throw new Error('No image bytes found in generated image')
       }
 
@@ -216,6 +267,7 @@ export const imagenTool: ToolConfig = {
         output: {
           content: finalImageUrl || 'imagen-generated-image',
           image: imageUrlToReturn,
+          images: imageUrlToReturn ? [imageUrlToReturn] : [],
           metadata: {
             model: params?.model || 'imagen-4.0-generate-001',
             numberOfImages: generatedImages.length,
@@ -236,6 +288,11 @@ export const imagenTool: ToolConfig = {
     image: {
       type: 'file',
       description: 'Generated image (URL in S3/local storage or base64)',
+    },
+    images: {
+      type: 'array',
+      description: 'Generated images (URLs in S3/local storage or base64)',
+      items: { type: 'file', description: 'Generated image' },
     },
     metadata: {
       type: 'json',

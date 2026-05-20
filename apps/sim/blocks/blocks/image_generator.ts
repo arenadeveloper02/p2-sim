@@ -1,21 +1,30 @@
 import { ImageIcon } from '@/components/icons'
 import {
-  extractUrlsFromText,
-  isS3Uri,
-  mergeUrlsAndDeduplicate,
-  parseImageUrls,
-  s3UriToPathObject,
-} from '@/lib/utils/parse-image-urls'
+  NANO_BANANA_MODELS,
+  NANO_BANANA_PRO_MODEL,
+  resolveNanoBananaReferences,
+} from '@/lib/image-generation/nano-banana-inputs'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
-import type { DalleResponse } from '@/tools/openai/types'
+import { createVersionedToolSelector, normalizeFileInput } from '@/blocks/utils'
 
-export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
+function normalizeReferenceFiles(input: unknown): unknown[] {
+  const normalizedFiles = normalizeFileInput(input)
+  if (Array.isArray(normalizedFiles)) {
+    return normalizedFiles
+  }
+  if (normalizedFiles) {
+    return [normalizedFiles]
+  }
+  return []
+}
+
+export const ImageGeneratorBlockV2: BlockConfig = {
   type: 'image_generator',
   name: 'Image Generator',
-  description: 'Generate images',
+  description: 'Generate, edit, or fuse images',
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Integrate Image Generator into the workflow. Can generate images using DALL-E 3, GPT Image, Google Imagen, or Google Nano Banana.',
+    'Integrate Image Generator into the workflow. Generate new images, edit a single reference image, or fuse multiple images in one Nano Banana Pro request. The block can return up to five images per run based on the finalized prompt.',
   docsLink: 'https://docs.sim.ai/tools/image_generator',
   category: 'tools',
   integrationType: IntegrationType.AI,
@@ -28,20 +37,17 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
       title: 'Model',
       type: 'dropdown',
       options: [
-        { label: 'DALL-E 3', id: 'dall-e-3' },
-        // { label: 'GPT Image', id: 'gpt-image-1' },
-        { label: 'Imagen 4.0', id: 'imagen-4.0-generate-001' },
         { label: 'Nano Banana', id: 'gemini-2.5-flash-image' },
-        { label: 'Nano Banana Pro', id: 'gemini-3-pro-image-preview' },
+        { label: 'Nano Banana Pro', id: NANO_BANANA_PRO_MODEL },
       ],
-      value: () => 'dall-e-3',
+      value: () => 'gemini-2.5-flash-image',
     },
     {
       id: 'prompt',
       title: 'Prompt',
       type: 'long-input',
       required: true,
-      placeholder: 'Describe the image you want to generate...',
+      placeholder: 'Describe the image you want to generate, edit, or fuse...',
     },
     {
       id: 'size',
@@ -171,38 +177,75 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
         { label: '4K', id: '4K' },
       ],
       value: () => '1K',
-      condition: { field: 'model', value: 'gemini-3-pro-image-preview' },
+      condition: { field: 'model', value: NANO_BANANA_PRO_MODEL },
     },
     {
       id: 'inputImage',
-      title: 'Input Image to Edit',
+      title: 'Reference Images',
       type: 'file-upload',
       acceptedTypes: 'image/*',
+      multiple: true,
+      uploadContext: 'image-fusion',
+      allowStartFilesReference: true,
       condition: {
         field: 'model',
-        value: ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'],
+        value: NANO_BANANA_MODELS,
       },
+    },
+    {
+      id: 'inputImageUrl',
+      title: 'Reference Image URLs',
+      type: 'long-input',
+      placeholder:
+        'Optional: add one or more image URLs or references. One image edits, multiple images fuse.',
+      mode: 'advanced',
+      condition: {
+        field: 'model',
+        value: NANO_BANANA_MODELS,
+      },
+    },
+    {
+      id: 'inputImages',
+      title: 'Legacy Fusion Images',
+      type: 'file-upload',
+      acceptedTypes: 'image/*',
+      multiple: true,
+      uploadContext: 'image-fusion',
+      allowStartFilesReference: true,
+      hidden: true,
+      condition: { field: 'model', value: NANO_BANANA_PRO_MODEL },
+    },
+    {
+      id: 'inputImageUrls',
+      title: 'Legacy Fusion Image URLs',
+      type: 'long-input',
+      placeholder:
+        'Optional: enter fusion image URLs (one per line or comma-separated), or use a reference like <agent1.urls>.',
+      hidden: true,
+      condition: { field: 'model', value: NANO_BANANA_PRO_MODEL },
     },
   ],
   tools: {
-    access: ['openai_image', 'google_imagen', 'google_nano_banana'],
+    access: ['openai_image_v2', 'google_imagen_v2', 'google_nano_banana_v2'],
     config: {
-      tool: (params) => {
-        // Select tool based on model
-        if (params.model?.startsWith('imagen-')) {
-          return 'google_imagen'
-        }
-        if (params.model?.startsWith('gemini-')) {
-          return 'google_nano_banana'
-        }
-        return 'openai_image'
-      },
+      tool: createVersionedToolSelector({
+        baseToolSelector: (params) => {
+          if (params.model?.startsWith('imagen-')) {
+            return 'google_imagen'
+          }
+          if (params.model?.startsWith('gemini-')) {
+            return 'google_nano_banana'
+          }
+          return 'openai_image'
+        },
+        suffix: '_v2',
+        fallbackToolId: 'openai_image_v2',
+      }),
       params: (params) => {
         if (!params.prompt) {
           throw new Error('Prompt is required')
         }
 
-        // Handle Google Imagen models
         if (params.model?.startsWith('imagen-')) {
           return {
             model: params.model,
@@ -213,37 +256,37 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
           }
         }
 
-        // Handle Google Nano Banana models
         if (params.model?.startsWith('gemini-')) {
-          const nanoBase: Record<string, unknown> = {
+          const nanoBananaReferences = resolveNanoBananaReferences({
+            model: params.model,
+            uploadedReferences: [
+              ...normalizeReferenceFiles(params.inputImage),
+              ...normalizeReferenceFiles(params.inputImages),
+            ],
+            inputImageUrl: params.inputImageUrl,
+            inputImageUrls: params.inputImageUrls,
+          })
+          const base = {
             model: params.model,
             prompt: params.prompt,
             aspectRatio: params.aspectRatio || '1:1',
-          }
-          if (params.model === 'gemini-3-pro-image-preview') {
-            nanoBase.imageSize = params.imageSize || '1K'
-          }
-          const fromMulti = Array.isArray(params.inputImages) ? params.inputImages : []
-          const fromSingle =
-            params.inputImage != null && params.inputImage !== '' ? [params.inputImage] : []
-          const files = [...fromMulti, ...fromSingle]
-          const urlsFromField = parseImageUrls(params.inputImageUrls)
-          const urlsFromPrompt = extractUrlsFromText(params.prompt)
-          const urls = mergeUrlsAndDeduplicate(urlsFromField, urlsFromPrompt)
-          const httpUrls = urls.filter((u) => !isS3Uri(u))
-          const s3Refs = urls.filter(isS3Uri).map(s3UriToPathObject)
-          const merged = [...files, ...httpUrls, ...s3Refs]
-          if (merged.length > 0) {
-            return { ...nanoBase, inputImages: merged }
-          }
-          return {
-            ...nanoBase,
-            inputImage: params.inputImage,
+            ...('inputImages' in nanoBananaReferences && nanoBananaReferences.inputImages
+              ? { inputImages: nanoBananaReferences.inputImages }
+              : {}),
+            ...('inputImage' in nanoBananaReferences && nanoBananaReferences.inputImage
+              ? { inputImage: nanoBananaReferences.inputImage }
+              : {}),
             inputImageMimeType: params.inputImageMimeType,
+            ...(nanoBananaReferences.inputImageWarning
+              ? { inputImageWarning: nanoBananaReferences.inputImageWarning }
+              : {}),
           }
+          if (params.model === NANO_BANANA_PRO_MODEL) {
+            return { ...base, imageSize: params.imageSize || '1K' }
+          }
+          return base
         }
 
-        // Handle OpenAI models
         const baseParams = {
           prompt: params.prompt,
           model: params.model || 'dall-e-3',
@@ -279,14 +322,41 @@ export const ImageGeneratorBlock: BlockConfig<DalleResponse> = {
     imageSize: { type: 'string', description: 'Output resolution (1K/2K/4K) for Nano Banana Pro' },
     personGeneration: { type: 'string', description: 'Person generation setting' },
     inputImage: {
+      type: 'json',
+      description:
+        'Reference images for Nano Banana as uploaded UserFiles, Start block files, or file references. One image edits; multiple images fuse on Nano Banana Pro.',
+    },
+    inputImageUrl: {
       type: 'string',
-      description: 'Base64 encoded input image for editing (Google Nano Banana)',
+      description:
+        'Reference image URLs or refs for Nano Banana. One image edits; multiple images fuse on Nano Banana Pro.',
+    },
+    inputImages: {
+      type: 'json',
+      description:
+        'Multiple input images for Nano Banana Pro fusion as uploaded UserFiles, Start block files, URLs, or storage references',
+    },
+    inputImageUrls: {
+      type: 'string',
+      description:
+        'Multiple image URLs or references for Nano Banana Pro fusion (newline or comma-separated)',
     },
     inputImageMimeType: { type: 'string', description: 'MIME type of input image' },
+    inputImageWarning: {
+      type: 'string',
+      description:
+        'Warning emitted when multiple input images were provided and the latest one was used',
+    },
   },
   outputs: {
     content: { type: 'string', description: 'Generation response' },
     image: { type: 'file', description: 'Generated image file (UserFile)' },
+    images: {
+      type: 'array',
+      description: 'All generated image files when the Images count is greater than 1',
+    },
     metadata: { type: 'json', description: 'Generation metadata' },
   },
 }
+
+export const ImageGeneratorBlock = ImageGeneratorBlockV2

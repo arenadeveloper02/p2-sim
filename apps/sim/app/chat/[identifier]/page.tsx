@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import ArenaChatClient from '@/app/chat/[identifier]/ArenaDeployedChat'
+import ArenaChatClient from '@/app/chat/[identifier]/chat'
 
 export const metadata: Metadata = {
   title: 'Chat',

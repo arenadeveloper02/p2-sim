@@ -12,6 +12,11 @@ import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
+import {
+  toPersistedChatAttachment,
+  updateExecutionHistoryData,
+} from '@/lib/chat/history-persistence'
 import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -26,7 +31,6 @@ import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/
 
 const logger = createLogger('ChatIdentifierAPI')
 
-// Agent department mapping
 const agentDepartments = [
   { value: 'creative', label: 'Creative' },
   { value: 'ma', label: 'MA' },
@@ -45,6 +49,68 @@ const departmentLabelMap: Record<string, string> = agentDepartments.reduce(
   },
   {} as Record<string, string>
 )
+
+function isRenderableImageUrlString(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) return false
+
+  return (
+    (trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://') ||
+      trimmed.startsWith('/api/files/serve/')) &&
+    (/\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(trimmed) ||
+      trimmed.includes('agent-generated-images') ||
+      trimmed.includes('/api/files/serve/'))
+  )
+}
+
+function stripImageOnlyStructuredText(content: string): string {
+  const trimmed = content.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  const parseImageUrlArray = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value.filter(
+          (item): item is string => typeof item === 'string' && isRenderableImageUrlString(item)
+        )
+      : []
+
+  if (trimmed.startsWith('[')) {
+    try {
+      if (parseImageUrlArray(JSON.parse(trimmed)).length > 0) {
+        return ''
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  if (trimmed.startsWith('```')) {
+    const fencedMatch = trimmed.match(/^```(?:json|javascript|js)?\s*([\s\S]*?)\s*```$/i)
+    if (fencedMatch?.[1]) {
+      try {
+        if (parseImageUrlArray(JSON.parse(fencedMatch[1])).length > 0) {
+          return ''
+        }
+      } catch {
+        // fall through
+      }
+    }
+  }
+
+  const nonEmptyLines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  if (nonEmptyLines.length > 0 && nonEmptyLines.every((line) => isRenderableImageUrlString(line))) {
+    return ''
+  }
+
+  return content
+}
 interface ChatConfigSource {
   id: string
   title: string
@@ -78,9 +144,8 @@ const chatPostBodySchema = z.object({
   password: z.string().optional(),
   email: z.string().email('Invalid email format').optional().or(z.literal('')),
   conversationId: z.string().optional(),
-  chatId: z.string().optional(), // chatId for tracking conversation context
+  chatId: z.string().optional(),
   files: z.array(chatFileSchema).optional().default([]),
-  // Additional Start Block inputs (custom fields from inputFormat)
   startBlockInputs: z.record(z.unknown()).optional(),
 })
 
@@ -277,14 +342,11 @@ export const POST = withRouteHandler(
         )
       }
 
-      // Store chat details in deployed_chat table if chatId is provided
-      // Ensures each chatId is added only once, even with concurrent requests
       if (parsedBody.chatId) {
         try {
           const chatId = parsedBody.chatId
           logger.debug(`[${requestId}] Processing chatId: ${chatId}`)
 
-          // Get the executing user ID from session
           let executingUserId: string | undefined
           try {
             const session = await getSession()
@@ -297,8 +359,6 @@ export const POST = withRouteHandler(
             )
           }
 
-          // Check if chatId already exists in deployed_chat table
-          // Using both chatId and workflowId to ensure proper context
           const existingChat = await db
             .select({ id: deployedChat.id })
             .from(deployedChat)
@@ -306,7 +366,6 @@ export const POST = withRouteHandler(
             .limit(1)
 
           if (existingChat.length > 0) {
-            // ChatId already exists - just update the timestamp and user ID
             const existingChatId = existingChat[0].id
             logger.debug(`[${requestId}] ChatId already exists, updating timestamp: ${chatId}`)
 
@@ -320,8 +379,6 @@ export const POST = withRouteHandler(
 
             logger.debug(`[${requestId}] Successfully updated existing chat: ${chatId}`)
           } else {
-            // ChatId doesn't exist - create a new record
-            // Prefer Start Block input values for title; otherwise use first 5 words of input
             const startBlockValues =
               parsedBody.startBlockInputs && typeof parsedBody.startBlockInputs === 'object'
                 ? Object.values(parsedBody.startBlockInputs)
@@ -364,16 +421,14 @@ export const POST = withRouteHandler(
 
               logger.info(`[${requestId}] Successfully created new chat record: ${chatId}`)
             } catch (insertError: any) {
-              // Handle race condition: if another request created the record between our check and insert
               if (
-                insertError?.code === '23505' || // PostgreSQL unique violation
+                insertError?.code === '23505' ||
                 (insertError instanceof Error && insertError.message.includes('unique'))
               ) {
                 logger.debug(
                   `[${requestId}] Race condition detected - chatId was created by another request: ${chatId}`
                 )
 
-                // Verify the record exists and update it
                 const raceConditionCheck = await db
                   .select({ id: deployedChat.id })
                   .from(deployedChat)
@@ -392,13 +447,11 @@ export const POST = withRouteHandler(
                   logger.debug(`[${requestId}] Updated chat record after race condition: ${chatId}`)
                 }
               } else {
-                // Re-throw if it's a different error
                 throw insertError
               }
             }
           }
         } catch (error: any) {
-          // Log error but don't fail the request - chat functionality should continue
           logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, {
             message: error.message,
             code: error.code,
@@ -419,7 +472,6 @@ export const POST = withRouteHandler(
         startBlockInputs,
       } = parsedBody
 
-      // Get userId from session for external chat API requests
       const session = await getSession()
       const userId = session?.user?.id || null
 
@@ -431,7 +483,6 @@ export const POST = withRouteHandler(
         return response
       }
 
-      // Check if we have any input: either input field, files, or startBlockInputs with values
       const hasStartBlockInputs =
         startBlockInputs &&
         typeof startBlockInputs === 'object' &&
@@ -488,13 +539,10 @@ export const POST = withRouteHandler(
         )
       }
 
-      // Format startBlockInputs into initialInput format
-      // Format: variable1: Value entered by User\nvariable2: value entered by User
       let formattedInitialInput = input || ''
       if (startBlockInputs && typeof startBlockInputs === 'object') {
         const startBlockInputLines: string[] = []
         for (const [key, value] of Object.entries(startBlockInputs)) {
-          // Skip reserved fields and empty values
           if (key === 'input' || key === 'conversationId' || key === 'files') {
             continue
           }
@@ -511,7 +559,6 @@ export const POST = withRouteHandler(
         }
       }
 
-      // Start logging session with chat metadata
       await loggingSession.safeStart({
         userId: userId || workspaceOwnerId,
         workspaceId,
@@ -569,6 +616,9 @@ export const POST = withRouteHandler(
 
             if (uploadedFiles.length > 0) {
               workflowInput.files = uploadedFiles
+              await updateExecutionHistoryData(executionId, {
+                userAttachments: uploadedFiles.map(toPersistedChatAttachment),
+              })
               logger.info(`[${requestId}] Successfully processed ${uploadedFiles.length} files`)
             }
           } catch (fileError: any) {
@@ -632,7 +682,6 @@ export const POST = withRouteHandler(
             ),
         })
 
-        // Wrap the stream to capture final output and update workflowExecutionLogs
         const wrappedStream = new ReadableStream({
           async start(controller) {
             const reader = originalStream.getReader()
@@ -646,11 +695,9 @@ export const POST = withRouteHandler(
                 const { done, value } = await reader.read()
                 if (done) break
 
-                // Decode and process the chunk
                 const chunk = decoder.decode(value, { stream: true })
                 buffer += chunk
 
-                // Process complete SSE messages
                 const lines = buffer.split('\n\n')
                 buffer = lines.pop() || ''
 
@@ -670,12 +717,10 @@ export const POST = withRouteHandler(
                     const json = JSON.parse(data)
                     const { event, data: eventData, chunk: contentChunk } = json
 
-                    // Capture streaming content chunks
                     if (contentChunk) {
                       accumulatedContent += contentChunk
                     }
 
-                    // Handle final event - format output and update log
                     if (event === 'final' && eventData) {
                       const finalData = eventData as {
                         success: boolean
@@ -703,7 +748,6 @@ export const POST = withRouteHandler(
                         return undefined
                       }
 
-                      /** Check if value is a knowledge base results array (documentId, documentName, content, chunkIndex) */
                       const isKnowledgeResultsArray = (
                         value: unknown
                       ): value is Array<Record<string, unknown>> =>
@@ -805,7 +849,20 @@ export const POST = withRouteHandler(
                         controller.enqueue(encoder.encode(`data: ${knowledgeResultsEvent}\n\n`))
                       }
 
-                      /** Minimal refs for history: one per chunk (document name + chunk index + chunk link). */
+                      let generatedImages: ReturnType<typeof extractGeneratedImagesFromData> = []
+                      if (
+                        deployment.outputConfigs &&
+                        Array.isArray(deployment.outputConfigs) &&
+                        finalData.output
+                      ) {
+                        for (const config of deployment.outputConfigs) {
+                          const blockOutputs = finalData.output[config.blockId]
+                          if (!blockOutputs) continue
+                          const value = getOutputValue(blockOutputs, config.path)
+                          generatedImages = extractGeneratedImagesFromData(value, generatedImages)
+                        }
+                      }
+
                       const knowledgeRefs =
                         knowledgeResultsPayload.length > 0
                           ? (() => {
@@ -839,7 +896,6 @@ export const POST = withRouteHandler(
                             })()
                           : []
 
-                      // Format final output based on outputConfigs (exclude raw "results" for knowledge block)
                       let finalChatOutput = accumulatedContent.trim()
 
                       if (
@@ -849,6 +905,9 @@ export const POST = withRouteHandler(
                       ) {
                         const formatValue = (value: any): string | null => {
                           if (value === null || value === undefined) {
+                            return null
+                          }
+                          if (extractGeneratedImagesFromData(value).length > 0) {
                             return null
                           }
                           if (typeof value === 'string') {
@@ -902,28 +961,34 @@ export const POST = withRouteHandler(
                         }
                       }
 
-                      // Update workflowExecutionLogs with final output and optional knowledgeRefs (for history)
-                      if (finalChatOutput) {
+                      if (generatedImages.length > 0) {
+                        finalChatOutput = stripImageOnlyStructuredText(finalChatOutput)
+                        const imageUrls = generatedImages.map((image) => image.url).filter(Boolean)
+                        if (imageUrls.length > 0) {
+                          finalChatOutput = finalChatOutput
+                            ? `${finalChatOutput}\n\n${imageUrls.join('\n')}`
+                            : imageUrls.join('\n')
+                        }
+                      }
+
+                      if (
+                        finalChatOutput ||
+                        knowledgeRefs.length > 0 ||
+                        generatedImages.length > 0
+                      ) {
                         try {
-                          const updatePayload: { finalChatOutput: string; executionData?: object } =
-                            {
-                              finalChatOutput,
-                            }
-                          if (knowledgeRefs.length > 0) {
-                            const [row] = await db
-                              .select({ executionData: workflowExecutionLogs.executionData })
-                              .from(workflowExecutionLogs)
+                          if (finalChatOutput) {
+                            await db
+                              .update(workflowExecutionLogs)
+                              .set({ finalChatOutput })
                               .where(eq(workflowExecutionLogs.executionId, executionId))
-                            const existing = (row?.executionData as object) ?? {}
-                            updatePayload.executionData = {
-                              ...existing,
-                              knowledgeRefs,
-                            }
                           }
-                          await db
-                            .update(workflowExecutionLogs)
-                            .set(updatePayload)
-                            .where(eq(workflowExecutionLogs.executionId, executionId))
+                          if (knowledgeRefs.length > 0 || generatedImages.length > 0) {
+                            await updateExecutionHistoryData(executionId, {
+                              knowledgeRefs,
+                              generatedImages,
+                            })
+                          }
                           logger.debug(
                             `[${requestId}] Updated finalChatOutput for execution ${executionId}`
                           )
@@ -936,10 +1001,8 @@ export const POST = withRouteHandler(
                       }
                     }
 
-                    // Pass through the original data
                     controller.enqueue(encoder.encode(`${line}\n\n`))
-                  } catch (parseError) {
-                    // If parsing fails, just pass through the original line
+                  } catch {
                     controller.enqueue(encoder.encode(`${line}\n\n`))
                   }
                 }

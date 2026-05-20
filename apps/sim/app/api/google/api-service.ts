@@ -1,8 +1,11 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import sharp from 'sharp'
+import type { ToolResponse } from '@/tools/types'
 import type { StorageContext } from '@/lib/uploads'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
+import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import {
   extractStorageKey,
   inferContextFromKey,
@@ -55,6 +58,179 @@ export interface NanoBananaRequestBody {
 interface InlineImageData {
   mimeType: string
   data: string
+}
+
+interface NanoBananaResponseParams {
+  model?: string
+  aspectRatio?: string
+  imageSize?: string
+  inputImage?: unknown
+  inputImageMimeType?: string
+  inputImages?: unknown[]
+  _context?: {
+    workflowId?: string
+    sessionUserId?: string
+    userId?: string
+  }
+}
+
+interface CandidatePart {
+  text?: string
+  inlineData?: {
+    mimeType?: string
+    data?: string
+  }
+  inline_data?: {
+    mime_type?: string
+    data?: string
+  }
+  image?: {
+    data?: string
+    mimeType?: string
+    mime_type?: string
+  }
+}
+
+function getObjectKeys(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return []
+  }
+
+  return Object.keys(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const extractCandidateParts = (candidate: Record<string, unknown>): CandidatePart[] => {
+  const directParts = candidate.parts
+  if (Array.isArray(directParts)) {
+    return directParts as CandidatePart[]
+  }
+
+  const content = candidate.content as
+    | { parts?: CandidatePart[]; role?: string }
+    | CandidatePart[]
+    | undefined
+
+  if (Array.isArray(content)) {
+    return content
+  }
+
+  if (content?.parts && Array.isArray(content.parts)) {
+    return content.parts
+  }
+
+  return []
+}
+
+export async function buildNanoBananaToolResponse(
+  dt: unknown,
+  params?: NanoBananaResponseParams
+): Promise<ToolResponse> {
+  const responseData = isRecord(dt) && isRecord(dt.data) ? dt.data : dt
+  const candidates = isRecord(responseData) ? responseData.candidates : undefined
+
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    logger.error('No candidates found in Nano Banana response', {
+      topLevelKeys: getObjectKeys(dt),
+      dataKeys: getObjectKeys(responseData),
+    })
+    throw new Error('No candidates found in response')
+  }
+
+  const candidate = candidates[0] as Record<string, unknown>
+  const finishReason =
+    typeof candidate.finishReason === 'string' ? candidate.finishReason : 'UNKNOWN'
+  if (finishReason === 'NO_IMAGE') {
+    logger.error('Nano Banana did not return an image', {
+      finishReason,
+      candidateKeys: getObjectKeys(candidate),
+      hasPromptFeedback: Boolean(isRecord(responseData) ? responseData.promptFeedback : undefined),
+      modelVersion: isRecord(responseData) ? responseData.modelVersion : undefined,
+    })
+    throw new Error(
+      'Google Nano Banana returned NO_IMAGE. The model did not generate an image for this prompt; try a shorter/simpler prompt or a different aspect ratio.'
+    )
+  }
+
+  const candidateParts = extractCandidateParts(candidate)
+  if (candidateParts.length === 0) {
+    logger.error('No content parts found in Nano Banana candidate', {
+      candidateKeys: getObjectKeys(candidate),
+    })
+    throw new Error(
+      `No content parts found in candidate (keys: ${Object.keys(candidate).join(', ') || 'none'})`
+    )
+  }
+
+  let base64Image: string | null = null
+  let mimeType = 'image/png'
+
+  for (const part of candidateParts) {
+    const inlineData = part.inlineData ?? part.inline_data
+    const imageData = inlineData?.data ?? part.image?.data
+    if (imageData) {
+      base64Image = imageData
+      mimeType =
+        part.inlineData?.mimeType ??
+        part.inline_data?.mime_type ??
+        part.image?.mimeType ??
+        part.image?.mime_type ??
+        'image/png'
+      logger.info('Found image data in part', { mimeType })
+      break
+    }
+  }
+
+  if (!base64Image) {
+    logger.error('No image data found in Nano Banana response parts', {
+      candidatePartCount: candidateParts.length,
+    })
+    throw new Error('No image data found in response parts')
+  }
+
+  logger.info('Successfully received Nano Banana image', { base64Length: base64Image.length })
+
+  const workflowId = params?._context?.workflowId || 'unknown'
+  const userId = params?._context?.sessionUserId ?? params?._context?.userId ?? 'unknown'
+
+  let finalImageUrl: string | null = null
+  let s3UploadFailed: boolean | undefined
+  try {
+    const saveResult = await saveGeneratedImage(base64Image, workflowId, userId, mimeType)
+    finalImageUrl = saveResult.url
+    s3UploadFailed = saveResult.s3UploadFailed
+    logger.info('Successfully saved Nano Banana image to storage', { url: finalImageUrl })
+  } catch (error) {
+    logger.error('Error saving Nano Banana image to storage:', error)
+    throw new Error(`Failed to save generated image to storage: ${toError(error).message}`)
+  }
+
+  const metadata = {
+    model: params?.model || 'gemini-2.5-flash-image',
+    mimeType,
+    aspectRatio: params?.aspectRatio || '1:1',
+    imageSize: params?.imageSize ?? null,
+    hasInputImage: !!(params?.inputImage && params?.inputImageMimeType),
+    hasInputImages: Array.isArray(params?.inputImages) && params.inputImages.length > 0,
+    inputImageCount: Array.isArray(params?.inputImages) ? params.inputImages.length : null,
+    inputImageMimeType: params?.inputImageMimeType || null,
+    stored: !!finalImageUrl,
+    s3UploadFailed,
+  }
+
+  return {
+    success: true,
+    output: {
+      content: finalImageUrl || 'nano-banana-generated-image',
+      image: finalImageUrl,
+      images: [finalImageUrl],
+      metadata,
+      s3UploadFailed,
+    },
+  }
 }
 
 /**
@@ -111,9 +287,7 @@ export const resolveInlineImageData = async (
         return ensureSupportedMime(buffer, mimeType)
       } catch (error) {
         logger.error('Failed to fetch image from URL', { url: str.slice(0, 80), error })
-        throw new Error(
-          `Failed to fetch image from URL: ${error instanceof Error ? error.message : 'Unknown error'}`
-        )
+        throw new Error(`Failed to fetch image from URL: ${toError(error).message}`)
       }
     }
     const mimeType = inputImageMimeType || 'image/png'
@@ -136,7 +310,7 @@ export const resolveInlineImageData = async (
     } catch (error) {
       logger.error('Failed to resolve inline image data from key', error)
       throw new Error(
-        `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to process input image: ${toError(error).message}`
       )
     }
   }
@@ -169,7 +343,7 @@ export const resolveInlineImageData = async (
     } catch (error) {
       logger.error('Failed to resolve inline image data', error)
       throw new Error(
-        `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to process input image: ${toError(error).message}`
       )
     }
   }
@@ -184,7 +358,7 @@ export const resolveInlineImageData = async (
     } catch (error) {
       logger.error('Failed to resolve inline image data from URL', error)
       throw new Error(
-        `Failed to process input image: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to process input image: ${toError(error).message}`
       )
     }
   }
