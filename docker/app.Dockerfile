@@ -106,7 +106,6 @@ ENV DATABASE_URL=${DATABASE_URL}
 
 # Provide dummy NEXT_PUBLIC_APP_URL for build-time evaluation
 # Runtime environments should override this with the actual URL
-# ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
 
 RUN bun run build
 
