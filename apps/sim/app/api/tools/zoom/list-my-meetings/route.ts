@@ -11,6 +11,11 @@ import {
 } from '@/lib/core/security/input-validation.server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import {
+  buildScheduledSessions,
+  enrichZoomMeetingList,
+  type ZoomMeetingListBase,
+} from '@/lib/zoom/meeting-enrichment'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,22 +30,8 @@ const ListMyMeetingsSchema = z.object({
   nextPageToken: z.string().nullish(),
 })
 
-interface ZoomMeetingListItem {
-  id: number
-  uuid?: string
-  host_id?: string
-  topic?: string
-  type?: number
-  start_time?: string
-  duration?: number
-  timezone?: string
-  agenda?: string
-  created_at?: string
-  join_url?: string
-}
-
 interface ZoomListMeetingsApiResponse {
-  meetings?: ZoomMeetingListItem[]
+  meetings?: ZoomMeetingListBase[]
   page_count?: number
   page_number?: number
   page_size?: number
@@ -151,23 +142,32 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const data = (await response.json()) as ZoomListMeetingsApiResponse
 
+    const baseMeetings: ZoomMeetingListBase[] = (data.meetings || []).map((meeting) => ({
+      id: meeting.id,
+      uuid: meeting.uuid,
+      host_id: meeting.host_id,
+      topic: meeting.topic,
+      type: meeting.type,
+      start_time: meeting.start_time,
+      duration: meeting.duration,
+      timezone: meeting.timezone,
+      agenda: meeting.agenda,
+      created_at: meeting.created_at,
+      join_url: meeting.join_url,
+    }))
+
+    const meetings = await enrichZoomMeetingList(baseMeetings, accessToken, {
+      listType: type,
+      requestId,
+    })
+    const scheduledSessions = buildScheduledSessions(meetings)
+
     return NextResponse.json({
       success: true,
       output: {
         userEmail,
-        meetings: (data.meetings || []).map((meeting) => ({
-          id: meeting.id,
-          uuid: meeting.uuid,
-          host_id: meeting.host_id,
-          topic: meeting.topic,
-          type: meeting.type,
-          start_time: meeting.start_time,
-          duration: meeting.duration,
-          timezone: meeting.timezone,
-          agenda: meeting.agenda,
-          created_at: meeting.created_at,
-          join_url: meeting.join_url,
-        })),
+        meetings,
+        scheduledSessions,
         pageInfo: {
           pageCount: data.page_count || 0,
           pageNumber: data.page_number || 0,

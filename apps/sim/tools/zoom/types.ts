@@ -134,13 +134,78 @@ export const MEETING_LIST_ITEM_OUTPUT_PROPERTIES = {
   uuid: { type: 'string', description: 'Meeting UUID' },
   host_id: { type: 'string', description: 'Host user ID' },
   topic: { type: 'string', description: 'Meeting topic' },
-  type: { type: 'number', description: 'Meeting type' },
-  start_time: { type: 'string', description: 'Start time in ISO 8601 format' },
+  type: {
+    type: 'number',
+    description:
+      'Meeting type: 1=instant, 2=scheduled, 3=recurring no fixed time, 8=recurring fixed time',
+  },
+  meeting_type_label: {
+    type: 'string',
+    description:
+      'Human-readable meeting type (scheduled, recurring_no_fixed_time, recurring_fixed_time, etc.)',
+  },
+  has_scheduled_start_time: {
+    type: 'boolean',
+    description:
+      'True when start_time is set on the list item. False for recurring templates until occurrences are expanded.',
+  },
+  is_recurring_template: {
+    type: 'boolean',
+    description:
+      'True for recurring meeting templates (type 3 or 8) without a single list-level start_time',
+  },
+  start_time: {
+    type: 'string',
+    description:
+      'Scheduled start time in ISO 8601 (type 2). May be absent for recurring templates; use next_occurrence_start_time or scheduledSessions.',
+  },
+  next_occurrence_start_time: {
+    type: 'string',
+    description: 'Next upcoming occurrence start time for recurring templates (type 3/8)',
+  },
+  upcoming_occurrences: {
+    type: 'array',
+    description: 'Upcoming occurrences for recurring templates (type 3/8)',
+    items: {
+      type: 'object',
+      properties: OCCURRENCE_OUTPUT_PROPERTIES,
+    },
+  },
+  recurrence: RECURRENCE_OUTPUT,
+  scheduling_note: {
+    type: 'string',
+    description:
+      'Present when Zoom does not expose a concrete upcoming time; warns not to use created_at',
+  },
   duration: { type: 'number', description: 'Duration in minutes' },
   timezone: { type: 'string', description: 'Timezone' },
   agenda: { type: 'string', description: 'Meeting agenda' },
-  created_at: { type: 'string', description: 'Creation timestamp' },
+  created_at: {
+    type: 'string',
+    description:
+      'When the meeting was created in Zoom — NOT when it occurs. Do not use for scheduling questions.',
+  },
   join_url: { type: 'string', description: 'URL for participants to join' },
+} as const satisfies Record<string, OutputProperty>
+
+export const SCHEDULED_SESSION_OUTPUT_PROPERTIES = {
+  meeting_id: { type: 'number', description: 'Parent meeting ID' },
+  topic: { type: 'string', description: 'Meeting topic' },
+  start_time: {
+    type: 'string',
+    description: 'Concrete session start time in ISO 8601 — use for date/time filtering',
+  },
+  duration: { type: 'number', description: 'Duration in minutes' },
+  timezone: { type: 'string', description: 'Timezone' },
+  join_url: { type: 'string', description: 'Join URL for this session' },
+  occurrence_id: {
+    type: 'string',
+    description: 'Occurrence ID when source is recurring_occurrence',
+  },
+  source: {
+    type: 'string',
+    description: 'scheduled = one-off/scheduled meeting; recurring_occurrence = expanded occurrence',
+  },
 } as const satisfies Record<string, OutputProperty>
 
 /**
@@ -441,10 +506,22 @@ export interface ZoomListMyMeetingsParams extends ZoomBaseParams {
   nextPageToken?: string
 }
 
+export interface ZoomScheduledSession {
+  meeting_id: number
+  topic: string
+  start_time: string
+  duration?: number
+  timezone?: string
+  join_url?: string
+  occurrence_id?: string
+  source: 'scheduled' | 'recurring_occurrence'
+}
+
 export interface ZoomListMyMeetingsResponse extends ToolResponse {
   output: {
     userEmail: string
     meetings: ZoomMeeting[]
+    scheduledSessions: ZoomScheduledSession[]
     pageInfo: {
       pageCount: number
       pageNumber: number

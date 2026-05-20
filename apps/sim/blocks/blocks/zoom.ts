@@ -767,6 +767,11 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     // Meeting outputs
     meeting: { type: 'json', description: 'Meeting data (create_meeting, get_meeting)' },
     meetings: { type: 'json', description: 'List of meetings (list_meetings, list_my_meetings)' },
+    scheduledSessions: {
+      type: 'json',
+      description:
+        'Flattened sessions with start_time for scheduling (list_my_meetings); use for date filters like tomorrow',
+    },
     userEmail: {
       type: 'string',
       description: 'Logged-in user email used as Zoom user ID (list_my_meetings)',
