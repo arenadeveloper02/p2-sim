@@ -23,9 +23,7 @@ const logger = createLogger('ZoomListMyMeetingsAPI')
 
 const ListMyMeetingsSchema = z.object({
   accessToken: z.string().min(1, 'Access token is required'),
-  type: z
-    .enum(['scheduled', 'live', 'upcoming', 'upcoming_meetings', 'previous_meetings'])
-    .nullish(),
+  type: z.enum(['live', 'upcoming']).nullish(),
   pageSize: z.number().int().min(1).max(300).nullish(),
   nextPageToken: z.string().nullish(),
 })

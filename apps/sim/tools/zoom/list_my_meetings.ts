@@ -23,12 +23,12 @@ export const zoomListMyMeetingsTool: ToolConfig<
   },
 
   params: {
-    type: {
+    listType: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Filter: upcoming/upcoming_meetings/scheduled for future; previous_meetings for past (prefer List My Recordings with from/to for past — more accurate). Use live for in-progress.',
+        'Filter: `upcoming` for future meetings (e.g. tomorrow — then filter scheduledSessions by start_time). `live` for in-progress only. For past meetings use List My Recordings with from/to.',
     },
     pageSize: {
       type: 'number',
@@ -52,7 +52,7 @@ export const zoomListMyMeetingsTool: ToolConfig<
     }),
     body: (params) => ({
       accessToken: params.accessToken,
-      ...(params.type ? { type: params.type } : {}),
+      ...(params.listType ? { type: params.listType } : {}),
       ...(params.pageSize != null ? { pageSize: params.pageSize } : {}),
       ...(params.nextPageToken?.trim() ? { nextPageToken: params.nextPageToken.trim() } : {}),
     }),

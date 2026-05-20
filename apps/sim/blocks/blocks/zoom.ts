@@ -315,11 +315,12 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         value: ['zoom_create_meeting', 'zoom_update_meeting'],
       },
     },
-    // List meetings filter
+    // List meetings filter (List Meetings — full Zoom type set)
     {
       id: 'listType',
       title: 'Meeting Type Filter',
       type: 'dropdown',
+      canonicalParamId: 'listType',
       options: [
         { label: 'Scheduled', id: 'scheduled' },
         { label: 'Live', id: 'live' },
@@ -327,11 +328,28 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         { label: 'Upcoming Meetings', id: 'upcoming_meetings' },
         { label: 'Previous Meetings', id: 'previous_meetings' },
       ],
-      value: () => 'scheduled',
+      value: () => '',
       mode: 'advanced',
       condition: {
         field: 'operation',
-        value: ['zoom_list_meetings', 'zoom_list_my_meetings'],
+        value: 'zoom_list_meetings',
+      },
+    },
+    // List my meetings filter (live + upcoming only; maps to tool param `listType`)
+    {
+      id: 'listMyMeetingsListType',
+      title: 'Meeting Type Filter',
+      type: 'dropdown',
+      canonicalParamId: 'listType',
+      options: [
+        { label: 'Live', id: 'live' },
+        { label: 'Upcoming', id: 'upcoming' },
+      ],
+      value: () => '',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: 'zoom_list_my_meetings',
       },
     },
     // Pagination
@@ -567,27 +585,36 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
               autoRecording: params.autoRecording !== 'none' ? params.autoRecording : undefined,
             }
 
-          case 'zoom_list_meetings':
+          case 'zoom_list_meetings': {
             if (!params.userId?.trim()) {
               throw new Error('User ID is required.')
             }
+            const listType =
+              typeof params.listType === 'string' && params.listType.trim()
+                ? params.listType.trim()
+                : undefined
             return {
               ...baseParams,
               userId: params.userId.trim(),
-              type: params.listType,
+              ...(listType ? { type: listType } : {}),
               pageSize: params.pageSize ? Number(params.pageSize) : undefined,
               nextPageToken: params.nextPageToken,
             }
+          }
 
-          case 'zoom_list_my_meetings':
+          case 'zoom_list_my_meetings': {
+            const rawListType = params.listMyMeetingsListType ?? params.listType
+            const listType =
+              typeof rawListType === 'string' && rawListType.trim() ? rawListType.trim() : undefined
             return {
               ...baseParams,
-              type: params.listType,
+              ...(listType ? { type: listType } : {}),
               pageSize: params.pageSize ? Number(params.pageSize) : undefined,
               ...(params.nextPageToken?.trim()
                 ? { nextPageToken: params.nextPageToken.trim() }
                 : {}),
             }
+          }
 
           case 'zoom_get_meeting':
             if (!params.meetingId?.trim()) {

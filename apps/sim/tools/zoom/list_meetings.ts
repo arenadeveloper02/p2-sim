@@ -25,7 +25,7 @@ export const zoomListMeetingsTool: ToolConfig<ZoomListMeetingsParams, ZoomListMe
       description:
         'The user ID or email address (e.g., "me", "user@example.com", or "AbcDefGHi"). Use "me" for the authenticated user.',
     },
-    type: {
+    listType: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
@@ -51,8 +51,8 @@ export const zoomListMeetingsTool: ToolConfig<ZoomListMeetingsParams, ZoomListMe
       const baseUrl = `https://api.zoom.us/v2/users/${encodeURIComponent(params.userId)}/meetings`
       const queryParams = new URLSearchParams()
 
-      if (params.type) {
-        queryParams.append('type', params.type)
+      if (params.listType) {
+        queryParams.append('type', params.listType)
       }
       if (params.pageSize) {
         queryParams.append('page_size', String(params.pageSize))

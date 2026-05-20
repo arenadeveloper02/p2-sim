@@ -482,7 +482,7 @@ export interface ZoomCreateMeetingResponse extends ToolResponse {
 // List Meetings tool types
 export interface ZoomListMeetingsParams extends ZoomBaseParams {
   userId: string
-  type?: 'scheduled' | 'live' | 'upcoming' | 'upcoming_meetings' | 'previous_meetings'
+  listType?: 'scheduled' | 'live' | 'upcoming' | 'upcoming_meetings' | 'previous_meetings'
   pageSize?: number
   nextPageToken?: string
 }
@@ -501,7 +501,7 @@ export interface ZoomListMeetingsResponse extends ToolResponse {
 }
 
 export interface ZoomListMyMeetingsParams extends ZoomBaseParams {
-  type?: 'scheduled' | 'live' | 'upcoming' | 'upcoming_meetings' | 'previous_meetings'
+  listType?: 'live' | 'upcoming'
   pageSize?: number
   nextPageToken?: string
 }
