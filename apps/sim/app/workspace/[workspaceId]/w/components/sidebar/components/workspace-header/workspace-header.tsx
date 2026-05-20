@@ -721,7 +721,7 @@ function WorkspaceHeaderImpl({
                           setIsWorkspaceMenuOpen(false)
                           setIsCreateModalOpen(true)
                         }}
-                        disabled={isCreatingWorkspace || !canCreateWorkspace}
+                        // disabled={isCreatingWorkspace || !canCreateWorkspace}
                         title={createWorkspaceDisabledReason ?? undefined}
                       >
                         <Plus className='h-[14px] w-[14px] shrink-0 text-[var(--text-icon)]' />
