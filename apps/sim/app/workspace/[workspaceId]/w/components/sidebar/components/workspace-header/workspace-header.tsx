@@ -221,10 +221,10 @@ function WorkspaceHeaderImpl({
 
   const handleInviteClick = useCallback(() => {
     if (isInvitationsDisabled) return
-    if (!inviteMembersEnabled && inviteUpgradeRequired && workspaceId) {
-      router.push(`/workspace/${workspaceId}/settings/subscription`)
-      return
-    }
+    // if (!inviteMembersEnabled && inviteUpgradeRequired && workspaceId) {
+    //   router.push(`/workspace/${workspaceId}/settings/subscription`)
+    //   return
+    // }
     if (!inviteMembersEnabled) return
     setIsInviteModalOpen(true)
   }, [isInvitationsDisabled, inviteMembersEnabled, inviteUpgradeRequired, workspaceId, router])
