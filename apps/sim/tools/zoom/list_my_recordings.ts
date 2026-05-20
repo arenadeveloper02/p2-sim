@@ -12,7 +12,7 @@ export const zoomListMyRecordingsTool: ToolConfig<
   id: 'zoom_list_my_recordings',
   name: 'Zoom List My Recordings',
   description:
-    'List cloud recordings for the logged-in Sim user using their account email as the Zoom user ID',
+    'List cloud recordings for the logged-in Sim user (date filters: from/to in yyyy-mm-dd). Tool selection: prefer this FIRST for past/previous meetings — date filters make historical sessions more accurate than List My Meetings. For today, combine with List My Meetings. For future/upcoming meetings, use List My Meetings instead.',
   version: '1.0.0',
 
   oauth: {
@@ -26,13 +26,14 @@ export const zoomListMyRecordingsTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Start date in yyyy-mm-dd format (within last 6 months)',
+      description:
+        'Start date in yyyy-mm-dd (within last 6 months). Set with to when querying past meetings — preferred over List My Meetings for historical date ranges.',
     },
     to: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'End date in yyyy-mm-dd format',
+      description: 'End date in yyyy-mm-dd. Use with from for past meeting date ranges.',
     },
     pageSize: {
       type: 'number',
@@ -102,7 +103,8 @@ export const zoomListMyRecordingsTool: ToolConfig<
     },
     recordings: {
       type: 'array',
-      description: 'List of recordings for the logged-in user',
+      description:
+        'Past meeting recordings with start_time per session — preferred source for historical date queries (use from/to params)',
       items: {
         type: 'object',
         properties: RECORDING_OUTPUT_PROPERTIES,

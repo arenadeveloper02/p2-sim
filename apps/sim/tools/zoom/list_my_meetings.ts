@@ -13,7 +13,7 @@ export const zoomListMyMeetingsTool: ToolConfig<
   id: 'zoom_list_my_meetings',
   name: 'Zoom List My Meetings',
   description:
-    'List meetings for the logged-in Sim user. For scheduling (e.g. tomorrow), use scheduledSessions or start_time — not created_at. Recurring templates (type 3) omit list-level start_time; occurrences are expanded automatically.',
+    'List meetings for the logged-in Sim user (upcoming/scheduled; use scheduledSessions or start_time — not created_at). Tool selection: for past/previous meetings, use List My Recordings first (date filters are more accurate). For today, combine with List My Recordings. For future/upcoming (e.g. tomorrow), use this tool. Recurring templates (type 3) may omit list-level start_time; occurrences are expanded when available.',
   version: '1.0.0',
 
   oauth: {
@@ -28,7 +28,7 @@ export const zoomListMyMeetingsTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Meeting type filter: scheduled, live, upcoming, upcoming_meetings, or previous_meetings',
+        'Filter: upcoming/upcoming_meetings/scheduled for future; previous_meetings for past (prefer List My Recordings with from/to for past — more accurate). Use live for in-progress.',
     },
     pageSize: {
       type: 'number',
@@ -101,7 +101,7 @@ export const zoomListMyMeetingsTool: ToolConfig<
     scheduledSessions: {
       type: 'array',
       description:
-        'Flattened sessions with concrete start_time values — preferred for date/time questions (e.g. meetings tomorrow)',
+        'Flattened sessions with concrete start_time — use for future/today scheduling (e.g. tomorrow). For past dates, prefer List My Recordings with from/to.',
       items: {
         type: 'object',
         properties: SCHEDULED_SESSION_OUTPUT_PROPERTIES,
