@@ -267,16 +267,31 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
 /**
  * Returns chats shared with the user via allowedEmails (exact or domain match),
  * excluding workflows created by that user.
+ *
+ * @param departmentValue - When set, only chats in this department are returned.
  */
-async function fetchSharedWithMeChats(emailId: string, userId: string): Promise<AgentChatRow[]> {
-  const chats = await fetchAgentChats(
-    and(
-      eq(chat.isActive, true),
-      ne(workflow.userId, userId),
-      isNull(webhook.id),
-      isNull(workflowSchedule.id)
-    )
-  )
+async function fetchSharedWithMeChats(
+  emailId: string,
+  userId: string,
+  departmentValue?: string
+): Promise<AgentChatRow[]> {
+  const sharedWhereConditions =
+    departmentValue !== undefined
+      ? and(
+          eq(chat.isActive, true),
+          eq(chat.department, departmentValue),
+          ne(workflow.userId, userId),
+          isNull(webhook.id),
+          isNull(workflowSchedule.id)
+        )
+      : and(
+          eq(chat.isActive, true),
+          ne(workflow.userId, userId),
+          isNull(webhook.id),
+          isNull(workflowSchedule.id)
+        )
+
+  const chats = await fetchAgentChats(sharedWhereConditions)
 
   return getAgentsListAllowedEmail(chats, emailId)
 }
@@ -343,7 +358,7 @@ async function getGlobalAgentsList(
     .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails))
     .map((row) => toAgentListItem(row))
 
-  const sharedChats = await fetchSharedWithMeChats(emailId, userId)
+  const sharedChats = await fetchSharedWithMeChats(emailId, userId, departmentValue)
   const sharedAgentList = sharedChats.map((row) => toAgentListItem(row))
 
   const mergedAgentList = mergeAgentListsById(globalAgentList, sharedAgentList)
@@ -361,7 +376,7 @@ async function getGlobalAgentsList(
  * Query: tabName=global — returns global agents (domain allowedEmails) plus shared-with-me agents, sorted by recent usage; requires emailId.
  *        tabName=myagents — returns agents created by user or in allowedEmails; requires emailId.
  *        tabName=sharedwithme — returns agents where emailId is in allowedEmails (exact or domain) but NOT created by this user; requires emailId.
- * Optional for global: departmentName — filters global agents by department (shared-with-me agents are not department-filtered).
+ * Optional for global: departmentName — filters both global and shared-with-me agents by department.
  */
 export async function GET(request: NextRequest) {
   const authError = verifyCronAuth(request, 'Schedule execution')
