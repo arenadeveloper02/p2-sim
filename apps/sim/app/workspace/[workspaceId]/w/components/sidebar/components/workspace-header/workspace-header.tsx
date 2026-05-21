@@ -220,12 +220,12 @@ function WorkspaceHeaderImpl({
   const inviteButtonDisabled = !inviteMembersEnabled && !inviteUpgradeRequired
 
   const handleInviteClick = useCallback(() => {
-    if (isInvitationsDisabled) return
+    // if (isInvitationsDisabled) return
     // if (!inviteMembersEnabled && inviteUpgradeRequired && workspaceId) {
     //   router.push(`/workspace/${workspaceId}/settings/subscription`)
     //   return
     // }
-    if (!inviteMembersEnabled) return
+    // if (!inviteMembersEnabled) return
     setIsInviteModalOpen(true)
   }, [isInvitationsDisabled, inviteMembersEnabled, inviteUpgradeRequired, workspaceId, router])
 
@@ -721,7 +721,7 @@ function WorkspaceHeaderImpl({
                           setIsWorkspaceMenuOpen(false)
                           setIsCreateModalOpen(true)
                         }}
-                        disabled={isCreatingWorkspace || !canCreateWorkspace}
+                        // disabled={isCreatingWorkspace || !canCreateWorkspace}
                         title={createWorkspaceDisabledReason ?? undefined}
                       >
                         <Plus className='h-[14px] w-[14px] shrink-0 text-[var(--text-icon)]' />
