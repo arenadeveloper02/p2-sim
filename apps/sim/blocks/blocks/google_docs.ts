@@ -128,7 +128,7 @@ Return ONLY the document title - no explanations, no extra text.`,
       title: 'Content',
       type: 'long-input',
       placeholder: 'Enter document content',
-      condition: { field: 'operation', value: ['create', 'write'] },
+      condition: { field: 'operation', value: 'write' },
       required: true,
       wandConfig: {
         enabled: true,
@@ -137,6 +137,22 @@ The content should be well-structured and appropriate for a Google Doc.
 
 Return ONLY the document content - no explanations, no extra text.`,
         placeholder: 'Describe the document content you want to write...',
+      },
+    },
+    // Content Field for create operation
+    {
+      id: 'content',
+      title: 'Content',
+      type: 'long-input',
+      placeholder: 'Enter document content',
+      condition: { field: 'operation', value: 'create' },
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate initial document content based on the user's request.
+The content should be well-structured and appropriate for a new Google Doc.
+
+Return ONLY the document content - no explanations, no extra text.`,
+        placeholder: 'Describe the document content you want to create...',
       },
     },
   ],
