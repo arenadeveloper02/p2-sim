@@ -38,6 +38,7 @@ interface AgentChatRow {
   createdAt: Date
   allowedEmails: unknown
   description: string | null
+  identifier?: string | null
 }
 
 /**
@@ -88,7 +89,8 @@ function toAgentListItem(row: AgentChatRow) {
     created_at: row.createdAt.toISOString(),
     workflow_description: row.description,
     status: 'published',
-    redirect_url: `${getBaseUrl()}/chat/${row.workflowId}?workspaceId=${row.workspaceId}`,
+    identifier: row.identifier,
+    redirect_url: `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
     // allowedEmails: row.allowedEmails,
   }
 }
@@ -212,6 +214,7 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
       workspaceId: workflow.workspaceId,
       authorEmail: user.email,
       description: chat.description,
+      identifier: chat.identifier,
     })
     .from(chat)
     .innerJoin(workflow, eq(chat.workflowId, workflow.id))
