@@ -515,6 +515,19 @@ export const ArenaBlock: BlockConfig = {
         value: ['arena_get_meetings'],
       },
     },
+
+    {
+      id: 'get-my-tasks-within-minutes',
+      title: 'Last N Minutes',
+      type: 'short-input',
+      required: false,
+      placeholder: 'e.g. 60 — tasks updated in the last N minutes',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_get_my_tasks'],
+      },
+    },
   ],
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
@@ -573,7 +586,16 @@ export const ArenaBlock: BlockConfig = {
         }
       },
       params: (params) => {
-        return params
+        const normalized = { ...params }
+        const rawWithinMinutes = params['get-my-tasks-within-minutes']
+        if (
+          rawWithinMinutes !== undefined &&
+          rawWithinMinutes !== null &&
+          String(rawWithinMinutes).trim() !== ''
+        ) {
+          normalized.withinMinutes = Number(rawWithinMinutes)
+        }
+        return normalized
       },
     },
   },
