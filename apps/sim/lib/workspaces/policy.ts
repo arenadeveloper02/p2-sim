@@ -266,18 +266,18 @@ export async function getWorkspaceCreationPolicy({
   const maxWorkspaces = isMax(plan) ? 10 : isPro(plan) ? 3 : 1
   const currentWorkspaceCount = await countNonOrganizationOwnedWorkspaces(userId)
 
-  if (currentWorkspaceCount >= maxWorkspaces) {
-    return {
-      canCreate: false,
-      workspaceMode: WORKSPACE_MODE.PERSONAL,
-      organizationId: null,
-      billedAccountUserId: userId,
-      maxWorkspaces,
-      currentWorkspaceCount,
-      reason: `This plan supports up to ${maxWorkspaces} personal workspace${maxWorkspaces === 1 ? '' : 's'}.`,
-      status: 403,
-    }
-  }
+  // if (currentWorkspaceCount >= maxWorkspaces) {
+  //   return {
+  //     canCreate: false,
+  //     workspaceMode: WORKSPACE_MODE.PERSONAL,
+  //     organizationId: null,
+  //     billedAccountUserId: userId,
+  //     maxWorkspaces,
+  //     currentWorkspaceCount,
+  //     reason: `This plan supports up to ${maxWorkspaces} personal workspace${maxWorkspaces === 1 ? '' : 's'}.`,
+  //     status: 403,
+  //   }
+  // }
 
   return {
     canCreate: true,
