@@ -58,26 +58,26 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
       },
     },
     //----------------------------------
-    rerankerEnabled: {
-      type: 'boolean',
-      required: false,
-      visibility: 'user-only',
-      description: 'Whether to apply Cohere reranking to vector search results',
-    },
-    rerankerModel: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description:
-        'Cohere rerank model to use (one of: rerank-v4.0-pro, rerank-v4.0-fast, rerank-v3.5)',
-    },
-    rerankerInputCount: {
-      type: 'number',
-      required: false,
-      visibility: 'user-only',
-      description:
-        'Number of vector results sent to the Cohere reranker (1–100). Defaults to topK × 4 capped at 100.',
-    },
+    // rerankerEnabled: {
+    //   type: 'boolean',
+    //   required: false,
+    //   visibility: 'user-only',
+    //   description: 'Whether to apply Cohere reranking to vector search results',
+    // },
+    // rerankerModel: {
+    //   type: 'string',
+    //   required: false,
+    //   visibility: 'user-only',
+    //   description:
+    //     'Cohere rerank model to use (one of: rerank-v4.0-pro, rerank-v4.0-fast, rerank-v3.5)',
+    // },
+    // rerankerInputCount: {
+    //   type: 'number',
+    //   required: false,
+    //   visibility: 'user-only',
+    //   description:
+    //     'Number of vector results sent to the Cohere reranker (1–100). Defaults to topK × 4 capped at 100.',
+    // },
     apiKey: {
       type: 'string',
       required: false,

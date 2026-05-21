@@ -108,12 +108,12 @@ export const KnowledgeBlock: BlockConfig = {
       dependsOn: ['knowledgeBaseSelector'],
       condition: { field: 'operation', value: 'search' },
     },
-    {
-      id: 'rerankerEnabled',
-      title: 'Rerank Results',
-      type: 'switch',
-      condition: { field: 'operation', value: 'search' },
-    },
+    // {
+    //   id: 'rerankerEnabled',
+    //   title: 'Rerank Results',
+    //   type: 'switch',
+    //   condition: { field: 'operation', value: 'search' },
+    // },
     {
       id: 'rerankerModel',
       title: 'Rerank Model',
@@ -494,12 +494,12 @@ export const KnowledgeBlock: BlockConfig = {
     rerankTopN: { type: 'number', description: 'Optional rerank top N' },
     //----------------------------------
     // Document tags for create document (JSON string of tag objects)
-    rerankerEnabled: { type: 'boolean', description: 'Apply Cohere reranking to search results' },
-    rerankerModel: { type: 'string', description: 'Cohere rerank model identifier' },
-    rerankerInputCount: {
-      type: 'number',
-      description: 'Number of vector results sent to the Cohere reranker (1–100)',
-    },
+    // rerankerEnabled: { type: 'boolean', description: 'Apply Cohere reranking to search results' },
+    // rerankerModel: { type: 'string', description: 'Cohere rerank model identifier' },
+    // rerankerInputCount: {
+    //   type: 'number',
+    //   description: 'Number of vector results sent to the Cohere reranker (1–100)',
+    // },
     apiKey: { type: 'string', description: 'Cohere API key (self-hosted only)' },
     documentTags: { type: 'string', description: 'Document tags' },
     chunkSearch: { type: 'string', description: 'Search filter for chunks' },
