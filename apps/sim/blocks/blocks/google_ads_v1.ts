@@ -5,9 +5,9 @@ import type { ToolResponse } from '@/tools/types'
 export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
   type: 'google_ads_v1',
   name: 'Google Ads V1',
-  description: 'AI-powered Google Ads query tool with simplified GAQL generation',
+  description: 'AI-powered Google Ads tool with multi-skill routing (GAQL queries & RSA ad copy)',
   longDescription:
-    'Simplified Google Ads block that uses AI (Grok with GPT-4o fallback) to automatically generate GAQL queries from natural language prompts. Perfect for quick queries without complex configuration. Supports campaign performance, keyword analysis, search terms, and more.',
+    'Multi-skill Google Ads block that uses AI to automatically route between GAQL query generation and RSA ad copy creation. Supports campaign performance, keyword analysis, search terms, and responsive search ad generation - all from natural language prompts.',
   docsLink: 'https://docs.sim.ai/tools/google-ads-v1',
   category: 'tools',
   bgColor: '#4285f4',
@@ -87,17 +87,24 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       required: true,
       wandConfig: {
         enabled: true,
-        prompt: `You are a Google Ads V1 query assistant. Help users create effective natural language prompts for Google Ads data.
+        prompt: `You are a Google Ads V1 assistant. Help users create effective natural language prompts for Google Ads data and ad copy.
 
 ### EXAMPLES OF GOOD PROMPTS
+
+**Data Queries:**
 - "show campaign performance for the last 30 days"
 - "keywords with quality score below 5"
 - "search terms this week ordered by cost"
 - "campaigns that spent more than $100 last week"
 - "ad groups in Brand campaign"
-- "RSA ads with poor ad strength"
 - "geographic performance by state"
 - "top 20 keywords by conversions"
+
+**Ad Copy Generation:**
+- "Write 15 RSA headlines + 4 descriptions for dental clinic"
+- "Generate RSA ad copy for e-commerce store selling shoes"
+- "Create responsive search ads for SaaS product with trial offer"
+- "Write RSA headlines for local plumber service"
 
 ### AVAILABLE DATA
 **Resources (Tables):**
@@ -123,12 +130,11 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
 
 ### HOW IT WORKS
 The AI will automatically:
-1. Generate a valid GAQL query from your prompt
-2. Handle all date filtering logic
-3. Add proper filters (e.g., only active campaigns)
-4. Execute the query and return results
+1. Analyze your query and decide which skill to use
+2. For data queries: Generate a valid GAQL query, handle date filtering, execute and return results
+3. For ad copy: Generate RSA headlines and descriptions with character counts and pin positions
 
-Generate a clear, specific prompt for what the user wants to query from Google Ads.`,
+Generate a clear, specific prompt for what the user wants to query or generate from Google Ads.`,
       },
     },
   ],
@@ -150,14 +156,24 @@ Generate a clear, specific prompt for what the user wants to query from Google A
     accounts: { type: 'string', description: 'Selected Google Ads account' },
   },
   outputs: {
-    success: { type: 'boolean', description: 'Whether the query succeeded' },
+    success: { type: 'boolean', description: 'Whether the request succeeded' },
+    skill: { type: 'string', description: 'Which skill was used (gaql or rsa)' },
     query: { type: 'string', description: 'Original natural language query' },
-    gaql_query: { type: 'string', description: 'Generated GAQL query' },
-    query_type: { type: 'string', description: 'Type of query (campaigns, keywords, etc.)' },
-    tables_used: { type: 'json', description: 'List of tables used in the query' },
-    metrics_used: { type: 'json', description: 'List of metrics used in the query' },
-    results: { type: 'json', description: 'Query results with campaigns and totals' },
+    // GAQL-specific outputs
+    gaql_query: { type: 'string', description: 'Generated GAQL query (if skill=gaql)' },
+    query_type: { type: 'string', description: 'Type of query (campaigns, keywords, etc.) (if skill=gaql)' },
+    tables_used: { type: 'json', description: 'List of tables used in the query (if skill=gaql)' },
+    metrics_used: { type: 'json', description: 'List of metrics used in the query (if skill=gaql)' },
+    results: { type: 'json', description: 'Query results with campaigns and totals (if skill=gaql)' },
+    date_range: { type: 'json', description: 'Date range used for the query (if skill=gaql)' },
+    row_count: { type: 'number', description: 'Number of rows returned (if skill=gaql)' },
+    total_rows: { type: 'number', description: 'Total rows available (if skill=gaql)' },
+    totals: { type: 'json', description: 'Aggregated totals (if skill=gaql)' },
+    // RSA-specific outputs
+    headlines: { type: 'json', description: 'RSA headlines with character counts and pin positions (if skill=rsa)' },
+    descriptions: { type: 'json', description: 'RSA descriptions with character counts (if skill=rsa)' },
+    // Common outputs
     account: { type: 'json', description: 'Account information (id, name)' },
-    execution_time_ms: { type: 'number', description: 'Query execution time in milliseconds' },
+    execution_time_ms: { type: 'number', description: 'Request execution time in milliseconds' },
   },
 }

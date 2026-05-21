@@ -7,7 +7,7 @@ import { executeProviderRequest } from '@/providers'
 import { resolveAIProvider } from './ai-provider'
 import { DEFAULT_DATE_RANGE_DAYS } from './constants'
 import { getGaqlSystemPrompt } from './prompt'
-import type { GAQLResponse } from './types'
+import type { GoogleAdsRouterResponse, GAQLResponse, RSAResponse } from './types'
 
 const logger = createLogger('GoogleAdsV1QueryGen')
 
@@ -80,13 +80,13 @@ function addDefaultDateFilter(query: string): {
 }
 
 /**
- * Parses AI response and extracts GAQL query
+ * Parses AI response and extracts router response (GAQL or RSA)
  *
  * @param aiResponse - Response from AI provider
- * @returns Parsed GAQL response
+ * @returns Parsed router response (GAQL or RSA)
  * @throws Error if response is invalid
  */
-function parseAIResponse(aiResponse: any): GAQLResponse {
+function parseAIResponse(aiResponse: any): GoogleAdsRouterResponse {
   // Extract content from AI response
   const responseContent =
     typeof aiResponse === 'string'
@@ -97,31 +97,48 @@ function parseAIResponse(aiResponse: any): GAQLResponse {
 
   // Try to extract JSON from response
   const jsonMatch = responseContent.match(/\{[\s\S]*\}/)
-  const parsed: GAQLResponse = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(responseContent)
+  const parsed: GoogleAdsRouterResponse = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(responseContent)
 
-  if (!parsed.gaql_query) {
-    throw new Error('AI did not return a GAQL query')
+  // Validate skill field
+  if (!parsed.skill || (parsed.skill !== 'gaql' && parsed.skill !== 'rsa')) {
+    throw new Error('AI did not return a valid skill field (must be "gaql" or "rsa")')
+  }
+
+  // Validate GAQL-specific fields
+  if (parsed.skill === 'gaql' && !parsed.gaql_query) {
+    throw new Error('AI did not return a GAQL query for skill=gaql')
+  }
+
+  // Validate RSA-specific fields
+  if (parsed.skill === 'rsa' && (!parsed.headlines || !parsed.descriptions)) {
+    throw new Error('AI did not return headlines or descriptions for skill=rsa')
   }
 
   return parsed
 }
 
 /**
- * Validates and fixes GAQL query date filtering
+ * Validates and fixes GAQL query date filtering (only applies to GAQL skill)
  *
- * @param response - Parsed GAQL response
- * @returns Response with validated/fixed date filtering
+ * @param response - Parsed router response
+ * @returns Response with validated/fixed date filtering (if GAQL skill)
  */
-function validateDateFiltering(response: GAQLResponse): GAQLResponse {
+function validateDateFiltering(response: GoogleAdsRouterResponse): GoogleAdsRouterResponse {
+  // Only apply date filtering validation for GAQL skill
+  if (response.skill !== 'gaql') {
+    return response
+  }
+
+  const gaqlResponse = response as GAQLResponse
   const hasDateFilter =
-    response.gaql_query.includes('segments.date') && response.gaql_query.includes('BETWEEN')
+    gaqlResponse.gaql_query.includes('segments.date') && gaqlResponse.gaql_query.includes('BETWEEN')
 
   if (!hasDateFilter) {
     logger.warn('Query missing BETWEEN date filter, adding default last 30 days ending yesterday', {
-      originalQuery: response.gaql_query,
+      originalQuery: gaqlResponse.gaql_query,
     })
 
-    const { query, startDate, endDate } = addDefaultDateFilter(response.gaql_query)
+    const { query, startDate, endDate } = addDefaultDateFilter(gaqlResponse.gaql_query)
 
     logger.info('Updated query with default BETWEEN date filter (last 30 days ending yesterday)', {
       updatedQuery: query,
@@ -130,7 +147,7 @@ function validateDateFiltering(response: GAQLResponse): GAQLResponse {
     })
 
     return {
-      ...response,
+      ...gaqlResponse,
       gaql_query: query,
     }
   }
@@ -139,23 +156,23 @@ function validateDateFiltering(response: GAQLResponse): GAQLResponse {
 }
 
 /**
- * Generates GAQL query using AI
+ * Generates Google Ads response using AI (routes to GAQL or RSA based on query)
  *
  * This function:
  * - Resolves the appropriate AI provider (Grok or GPT-4o)
- * - Sends the user prompt to the AI with the GAQL system prompt
- * - Parses and validates the response
- * - Ensures proper date filtering is present
+ * - Sends the user prompt to the AI with the router system prompt
+ * - Parses and validates the response (GAQL or RSA based on skill)
+ * - For GAQL: ensures proper date filtering is present
  *
  * @param userPrompt - Natural language query from user
- * @returns GAQL query response with metadata
+ * @returns Router response (GAQL or RSA) with metadata
  * @throws Error if generation fails
  */
-export async function generateGAQLQuery(userPrompt: string): Promise<GAQLResponse> {
+export async function generateGAQLQuery(userPrompt: string): Promise<GoogleAdsRouterResponse> {
   try {
     const { provider, model, apiKey } = resolveAIProvider(logger)
 
-    logger.info('Generating GAQL query', {
+    logger.info('Generating Google Ads response (routing to GAQL or RSA)', {
       provider,
       model,
       userPrompt,
@@ -166,11 +183,11 @@ export async function generateGAQLQuery(userPrompt: string): Promise<GAQLRespons
     const aiResponse = await executeProviderRequest(provider, {
       model,
       systemPrompt,
-      context: `Generate GAQL query for: "${userPrompt}"`,
+      context: `Generate Google Ads response for: "${userPrompt}"`,
       messages: [
         {
           role: 'user',
-          content: `Generate a GAQL query for: "${userPrompt}"`,
+          content: `Generate a Google Ads response for: "${userPrompt}"`,
         },
       ],
       apiKey,
@@ -183,18 +200,27 @@ export async function generateGAQLQuery(userPrompt: string): Promise<GAQLRespons
     // Parse AI response
     const parsed = parseAIResponse(aiResponse)
 
-    // Validate and fix date filtering if needed
+    // Validate and fix date filtering if needed (only for GAQL)
     const validated = validateDateFiltering(parsed)
 
-    logger.info('Successfully generated GAQL query', {
-      gaql: validated.gaql_query,
-      queryType: validated.query_type,
-      tables: validated.tables_used,
-    })
+    if (validated.skill === 'gaql') {
+      const gaqlResponse = validated as GAQLResponse
+      logger.info('Successfully generated GAQL query', {
+        gaql: gaqlResponse.gaql_query,
+        queryType: gaqlResponse.query_type,
+        tables: gaqlResponse.tables_used,
+      })
+    } else {
+      const rsaResponse = validated as RSAResponse
+      logger.info('Successfully generated RSA ad copy', {
+        headlineCount: rsaResponse.headlines.length,
+        descriptionCount: rsaResponse.descriptions.length,
+      })
+    }
 
     return validated
   } catch (error) {
-    logger.error('GAQL generation failed', { error, userPrompt })
+    logger.error('Google Ads response generation failed', { error, userPrompt })
     throw error
   }
 }

@@ -8,11 +8,32 @@ export interface GoogleAdsV1Request {
 }
 
 export interface GAQLResponse {
+  skill: 'gaql'
   gaql_query: string
   query_type?: string
   tables_used?: string[]
   metrics_used?: string[]
 }
+
+export interface RSAHeadline {
+  text: string
+  charCount: number
+  pinPosition?: string
+  type?: string
+}
+
+export interface RSADescription {
+  text: string
+  charCount: number
+}
+
+export interface RSAResponse {
+  skill: 'rsa'
+  headlines: RSAHeadline[]
+  descriptions: RSADescription[]
+}
+
+export type GoogleAdsRouterResponse = GAQLResponse | RSAResponse
 
 export interface ProcessedResults {
   rows: any[]

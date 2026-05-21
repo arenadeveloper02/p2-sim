@@ -80,3 +80,7 @@ i18n.cache
 ## Claude Code
 .claude/launch.json
 .claude/worktrees/
+
+# Local Google Ads Seeding Script
+/packages/db/scripts/seed-google-ads-router.ts
+

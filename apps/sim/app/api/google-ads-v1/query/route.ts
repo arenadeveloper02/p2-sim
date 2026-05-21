@@ -10,7 +10,7 @@ import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
 import { makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
-import type { GoogleAdsV1Request } from './types'
+import type { GoogleAdsV1Request, GoogleAdsRouterResponse, GAQLResponse, RSAResponse } from './types'
 
 const logger = createLogger('GoogleAdsV1API')
 
@@ -99,19 +99,45 @@ export async function POST(request: NextRequest) {
       accountName: accountInfo.name,
     })
 
-    // Generate GAQL query using AI
+    // Generate response using the multi-skill router
     const queryResult = await generateGAQLQuery(query)
 
+    if (queryResult.skill === 'rsa') {
+      const rsaResult = queryResult as RSAResponse
+      const executionTime = Date.now() - startTime
+
+      logger.info(`[${requestId}] RSA query processed successfully`, {
+        headlines: rsaResult.headlines.length,
+        descriptions: rsaResult.descriptions.length,
+      })
+
+      return NextResponse.json({
+        success: true,
+        skill: 'rsa',
+        query,
+        results: {
+          headlines: rsaResult.headlines,
+          descriptions: rsaResult.descriptions,
+        },
+        headlines: rsaResult.headlines,
+        descriptions: rsaResult.descriptions,
+        execution_time_ms: executionTime,
+      })
+    }
+
+    // Otherwise, handle GAQL skill
+    const gaqlResult = queryResult as GAQLResponse
+
     logger.info(`[${requestId}] Generated GAQL query`, {
-      gaqlQuery: queryResult.gaql_query,
-      queryType: queryResult.query_type,
-      tables: queryResult.tables_used,
-      metrics: queryResult.metrics_used,
+      gaqlQuery: gaqlResult.gaql_query,
+      queryType: gaqlResult.query_type,
+      tables: gaqlResult.tables_used,
+      metrics: gaqlResult.metrics_used,
     })
 
     // Execute the GAQL query against Google Ads API
     logger.info(`[${requestId}] Executing GAQL query against account ${accountInfo.id}`)
-    const apiResult = await makeGoogleAdsRequest(accountInfo.id, queryResult.gaql_query)
+    const apiResult = await makeGoogleAdsRequest(accountInfo.id, gaqlResult.gaql_query)
 
     // Process results
     const processedResults = processResults(apiResult, requestId, logger)
@@ -125,20 +151,21 @@ export async function POST(request: NextRequest) {
     const executionTime = Date.now() - startTime
 
     // Extract date range from GAQL query
-    const dateRange = extractDateRange(queryResult.gaql_query)
+    const dateRange = extractDateRange(gaqlResult.gaql_query)
 
     // Build response with pagination info
     const response = {
       success: true,
+      skill: 'gaql',
       query: query,
       account: {
         id: accountInfo.id,
         name: accountInfo.name,
       },
-      gaql_query: queryResult.gaql_query,
-      query_type: queryResult.query_type,
-      tables_used: queryResult.tables_used,
-      metrics_used: queryResult.metrics_used,
+      gaql_query: gaqlResult.gaql_query,
+      query_type: gaqlResult.query_type,
+      tables_used: gaqlResult.tables_used,
+      metrics_used: gaqlResult.metrics_used,
       date_range: dateRange
         ? {
             start_date: dateRange.startDate,

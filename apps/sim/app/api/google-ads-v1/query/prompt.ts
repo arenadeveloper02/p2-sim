@@ -14,12 +14,16 @@ import { CURRENT_DATE } from './constants'
 
 const logger = createLogger('GoogleAdsV1Prompt')
 
-export const GAQL_PROMPT_NAME = 'gaql_system_prompt'
+export const GAQL_PROMPT_NAME = 'google_ads_router'
 
 /**
- * Loads the active GAQL system prompt from the database.
+ * Loads the active Google Ads Router prompt from the database.
  *
- * Looks up the row in `prompts` keyed by name = 'gaql_system_prompt' and
+ * This is a multi-skill router prompt that contains:
+ * - SKILL 1: GAQL Query Generation (for data queries)
+ * - SKILL 2: RSA Generator (for ad copy generation)
+ *
+ * Looks up the row in `prompts` keyed by name = 'google_ads_router' and
  * returns its `content`. Throws if the DB row is missing or the query fails.
  * Any `${CURRENT_DATE}` tokens in the stored content are replaced with today's date.
  */
