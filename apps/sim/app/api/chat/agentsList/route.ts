@@ -44,9 +44,14 @@ interface AgentChatRow {
  * Returns true when allowedEmails has at least one string whose first character is '@'
  * (e.g. '@position2.com', '@northstar'). Ignores email-style entries (e.g. saiteja.s@position2.com).
  */
-function hasAllowedEmailStartingWithAtSymbol(allowedEmails: unknown): boolean {
+function hasAllowedEmailStartingWithAtSymbol(
+  allowedEmails: unknown,
+  userEmailDomain: string
+): boolean {
   const list = Array.isArray(allowedEmails) ? allowedEmails : []
-  return list.some((entry) => typeof entry === 'string' && entry.length > 0 && entry[0] === '@')
+  return list.some(
+    (entry) => typeof entry === 'string' && entry.length > 0 && entry.startsWith(userEmailDomain)
+  )
 }
 
 /**
@@ -352,10 +357,11 @@ async function getGlobalAgentsList(
           isNull(workflowSchedule.id)
         )
       : and(eq(chat.isActive, true), isNull(webhook.id), isNull(workflowSchedule.id))
+  const userEmailDomain = `@${emailId.split('@')[1]}`
 
   const globalChats = await fetchAgentChats(globalWhereConditions)
   const globalAgentList = globalChats
-    .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails))
+    .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails, userEmailDomain))
     .map((row) => toAgentListItem(row))
 
   const sharedChats = await fetchSharedWithMeChats(emailId, userId, departmentValue)
