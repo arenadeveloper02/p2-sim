@@ -31,6 +31,8 @@ export async function getArenaTokenByWorkflowId(workflowId: string): Promise<Wor
   const details = await db
     .select({
       arenaToken: userArenaDetails.arenaToken,
+      timezone: userArenaDetails.timezone,
+      persona: userArenaDetails.persona,
     })
     .from(userArenaDetails)
     .where(eq(userArenaDetails.userIdRef, userId))
@@ -45,5 +47,7 @@ export async function getArenaTokenByWorkflowId(workflowId: string): Promise<Wor
     workflowId,
     userId,
     arenaToken: details[0].arenaToken,
+    timezone: details[0].timezone ?? null,
+    persona: details[0].persona ?? null,
   }
 }

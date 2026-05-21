@@ -2396,6 +2396,8 @@ export const userArenaDetails = pgTable(
     airbyteGenerationId: bigint('_airbyte_generation_id', { mode: 'number' }), // int8
     airbyteMeta: jsonb('_airbyte_meta'), // jsonb
     arenaToken: text('arena_token'), // text
+    timezone: text('timezone'), // nullable
+    persona: text('persona'), // nullable
   },
   (table) => ({
     airbyteRawIdIdx: index('user_arena_details__airbyte_raw_id_idx').on(table.airbyteRawId),
