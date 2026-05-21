@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateShortId } from '@sim/utils/id'
+import { truncate } from '@sim/utils/string'
 import { cacheLargeValue, materializeLargeValueRefSync } from '@/lib/execution/payloads/cache'
 import {
   LARGE_VALUE_REF_VERSION,
@@ -23,6 +24,8 @@ export interface LargeValueStoreContext {
   workflowId?: string
   executionId?: string
   largeValueExecutionIds?: string[]
+  largeValueKeys?: string[]
+  fileKeys?: string[]
   allowLargeValueWorkflowScope?: boolean
   userId?: string
   requireDurable?: boolean
@@ -38,7 +41,7 @@ function getKind(value: unknown): LargeValueKind {
 
 function getPreview(value: unknown): unknown {
   if (typeof value === 'string') {
-    return value.length > 256 ? `${value.slice(0, 256)}...` : value
+    return truncate(value, 256)
   }
   if (Array.isArray(value)) {
     return { length: value.length }
@@ -151,6 +154,7 @@ export async function materializeLargeValueRef(
       workflowId: context.workflowId,
       executionId: context.executionId,
       largeValueExecutionIds: context.largeValueExecutionIds,
+      largeValueKeys: context.largeValueKeys,
       allowLargeValueWorkflowScope: context.allowLargeValueWorkflowScope,
       userId: context.userId,
       maxBytes: context.maxBytes ?? ref.size,

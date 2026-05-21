@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { sanitizeFileName } from '@/executor/constants'
 import '@/lib/uploads/core/setup.server'
@@ -20,11 +21,7 @@ import {
   validateFileType,
 } from '@/lib/uploads/utils/validation'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
-import {
-  createErrorResponse,
-  createOptionsResponse,
-  InvalidRequestError,
-} from '@/app/api/files/utils'
+import { createErrorResponse, InvalidRequestError } from '@/app/api/files/utils'
 
 const ALLOWED_EXTENSIONS = new Set<string>(SUPPORTED_ATTACHMENT_EXTENSIONS)
 
@@ -218,8 +215,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           uploadResults.push(userFile)
           continue
         } catch (workspaceError) {
-          const errorMessage =
-            workspaceError instanceof Error ? workspaceError.message : 'Upload failed'
+          const errorMessage = getErrorMessage(workspaceError, 'Upload failed')
           const isDuplicate = errorMessage.includes('already exists')
           const isStorageLimitError =
             errorMessage.includes('Storage limit exceeded') ||
@@ -429,8 +425,4 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     logger.error('Error in file upload:', error)
     return createErrorResponse(error instanceof Error ? error : new Error('File upload failed'))
   }
-})
-
-export const OPTIONS = withRouteHandler(async () => {
-  return createOptionsResponse()
 })
