@@ -9,6 +9,7 @@ import { createApiKey } from '@/lib/api-key/auth'
 import { hashApiKey } from '@/lib/api-key/crypto'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { parsePostgresConnectionFromBody } from '@/lib/workflows/default-user-workflows/postgres'
 import {
   type DefaultWorkflowSourceInput,
   getOldestActiveCredentialsByProvider,
@@ -40,6 +41,7 @@ interface ImportedWorkflowResult {
     populatedProviders: string[]
     missingProviders: string[]
   }
+  postgresBlocksPopulated?: number
   version?: number
   deployedAt?: string
   warnings?: string[]
@@ -268,6 +270,12 @@ export const POST = withRouteHandler(async (request) => {
       return badRequestResponse(error || 'Invalid workflow input.')
     }
 
+    const postgresParsed = parsePostgresConnectionFromBody(body)
+    if (postgresParsed && 'error' in postgresParsed) {
+      return badRequestResponse(postgresParsed.error)
+    }
+    const postgresConnection = postgresParsed
+
     const apiKeyName =
       typeof body.apiKeyName === 'string' && body.apiKeyName.trim()
         ? body.apiKeyName.trim()
@@ -310,6 +318,7 @@ export const POST = withRouteHandler(async (request) => {
           workspaceId: personalWorkspace.workspaceId,
           userId: targetUser.id,
           credentialsByProvider,
+          postgresConnection,
         })
 
         const deployResult = await performFullDeploy({
@@ -330,6 +339,7 @@ export const POST = withRouteHandler(async (request) => {
             imported: true,
             deployed: false,
             credentialPopulation: provisioned.credentialPopulation,
+            postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
             error: deployResult.error || 'Failed to deploy workflow',
           })
           continue
@@ -349,6 +359,7 @@ export const POST = withRouteHandler(async (request) => {
           imported: true,
           deployed: true,
           credentialPopulation: provisioned.credentialPopulation,
+          postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
           version: deployResult.version,
           deployedAt: deployResult.deployedAt?.toISOString(),
           warnings: deployResult.warnings,

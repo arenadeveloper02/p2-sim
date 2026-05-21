@@ -4,6 +4,10 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import {
+  type PostgresConnectionConfig,
+  populatePostgresBlocks,
+} from '@/lib/workflows/default-user-workflows/postgres'
 import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
 import { performFullDeploy } from '@/lib/workflows/orchestration'
 import {
@@ -47,6 +51,7 @@ export interface ProvisionDefaultUserWorkflowParams {
   workspaceId: string
   userId: string
   credentialsByProvider: Map<string, string>
+  postgresConnection?: PostgresConnectionConfig
 }
 
 export interface ProvisionDefaultUserWorkflowResult {
@@ -55,6 +60,7 @@ export interface ProvisionDefaultUserWorkflowResult {
   created: boolean
   refreshed: boolean
   credentialPopulation: CredentialPopulationSummary
+  postgresBlocksPopulated: number
 }
 
 export interface SyncDefaultWorkflowsParams {
@@ -62,6 +68,7 @@ export interface SyncDefaultWorkflowsParams {
   deploy?: boolean
   requestId: string
   request: NextRequest
+  postgresConnection?: PostgresConnectionConfig
 }
 
 export interface SyncDefaultWorkflowUserResult {
@@ -69,6 +76,7 @@ export interface SyncDefaultWorkflowUserResult {
   userWorkflowId: string
   updated: boolean
   deployed: boolean
+  postgresBlocksPopulated?: number
   version?: number
   deployedAt?: string
   warnings?: string[]
@@ -254,23 +262,45 @@ async function buildWorkflowDataFromSource(input: DefaultWorkflowSourceInput) {
   return { sourceWorkflow, workflowData, workflowName }
 }
 
+function enrichWorkflowDataForProvision(params: {
+  workflowData: { blocks: Record<string, unknown> }
+  credentialsByProvider: Map<string, string>
+  postgresConnection?: PostgresConnectionConfig
+}): {
+  credentialPopulation: CredentialPopulationSummary
+  postgresBlocksPopulated: number
+} {
+  const credentialPopulation = populateWorkflowCredentials(
+    params.workflowData,
+    params.credentialsByProvider
+  )
+  const postgresBlocksPopulated = params.postgresConnection
+    ? populatePostgresBlocks(params.workflowData, params.postgresConnection)
+    : 0
+
+  return { credentialPopulation, postgresBlocksPopulated }
+}
+
 async function applyWorkflowStateToTarget(params: {
   targetWorkflowId: string
   input: DefaultWorkflowSourceInput
   credentialsByProvider: Map<string, string>
+  postgresConnection?: PostgresConnectionConfig
 }): Promise<{
   name: string
   credentialPopulation: CredentialPopulationSummary
+  postgresBlocksPopulated: number
   sourceWorkflow: typeof workflow.$inferSelect
   workflowData: NonNullable<Awaited<ReturnType<typeof parseWorkflowJson>>['data']>
 }> {
   const { sourceWorkflow, workflowData, workflowName } = await buildWorkflowDataFromSource(
     params.input
   )
-  const credentialPopulation = populateWorkflowCredentials(
+  const { credentialPopulation, postgresBlocksPopulated } = enrichWorkflowDataForProvision({
     workflowData,
-    params.credentialsByProvider
-  )
+    credentialsByProvider: params.credentialsByProvider,
+    postgresConnection: params.postgresConnection,
+  })
   const now = new Date()
 
   const saveResult = await saveWorkflowToNormalizedTables(params.targetWorkflowId, workflowData)
@@ -299,6 +329,7 @@ async function applyWorkflowStateToTarget(params: {
   return {
     name: targetWorkflow?.name ?? workflowName,
     credentialPopulation,
+    postgresBlocksPopulated,
     sourceWorkflow,
     workflowData,
   }
@@ -365,14 +396,16 @@ async function createDefaultUserWorkflow(params: {
   workspaceId: string
   userId: string
   credentialsByProvider: Map<string, string>
+  postgresConnection?: PostgresConnectionConfig
 }): Promise<ProvisionDefaultUserWorkflowResult> {
   const { sourceWorkflow, workflowData, workflowName } = await buildWorkflowDataFromSource(
     params.input
   )
-  const credentialPopulation = populateWorkflowCredentials(
+  const { credentialPopulation, postgresBlocksPopulated } = enrichWorkflowDataForProvision({
     workflowData,
-    params.credentialsByProvider
-  )
+    credentialsByProvider: params.credentialsByProvider,
+    postgresConnection: params.postgresConnection,
+  })
 
   const workflowId = generateId()
   const now = new Date()
@@ -415,6 +448,7 @@ async function createDefaultUserWorkflow(params: {
     created: true,
     refreshed: false,
     credentialPopulation,
+    postgresBlocksPopulated,
   }
 }
 
@@ -471,10 +505,11 @@ export async function provisionOrRefreshDefaultUserWorkflow(
     const { sourceWorkflow, workflowData, workflowName } = await buildWorkflowDataFromSource(
       params.input
     )
-    const credentialPopulation = populateWorkflowCredentials(
+    const { credentialPopulation, postgresBlocksPopulated } = enrichWorkflowDataForProvision({
       workflowData,
-      params.credentialsByProvider
-    )
+      credentialsByProvider: params.credentialsByProvider,
+      postgresConnection: params.postgresConnection,
+    })
     const workflowId = generateId()
     const now = new Date()
     const dedupedName = await deduplicateWorkflowName(workflowName, params.workspaceId, null)
@@ -517,6 +552,7 @@ export async function provisionOrRefreshDefaultUserWorkflow(
       created: true,
       refreshed: false,
       credentialPopulation,
+      postgresBlocksPopulated,
     }
   }
 
@@ -525,6 +561,7 @@ export async function provisionOrRefreshDefaultUserWorkflow(
     targetWorkflowId: existingMapping.userWorkflowId,
     input: params.input,
     credentialsByProvider: params.credentialsByProvider,
+    postgresConnection: params.postgresConnection,
   })
 
   await upsertDefaultUserMapping({
@@ -543,6 +580,7 @@ export async function provisionOrRefreshDefaultUserWorkflow(
     created: false,
     refreshed: true,
     credentialPopulation: refreshed.credentialPopulation,
+    postgresBlocksPopulated: refreshed.postgresBlocksPopulated,
   }
 }
 
@@ -597,6 +635,7 @@ export async function syncDefaultWorkflowsForSource(
         targetWorkflowId: mapping.userWorkflowId,
         input: { sourceWorkflowId: params.sourceWorkflowId },
         credentialsByProvider,
+        postgresConnection: params.postgresConnection,
       })
 
       const now = new Date()
@@ -630,6 +669,7 @@ export async function syncDefaultWorkflowsForSource(
             userWorkflowId: mapping.userWorkflowId,
             updated: true,
             deployed: false,
+            postgresBlocksPopulated: refreshed.postgresBlocksPopulated,
             error: deployResult.error || 'Failed to deploy workflow',
           })
           continue
@@ -665,6 +705,7 @@ export async function syncDefaultWorkflowsForSource(
         userWorkflowId: mapping.userWorkflowId,
         updated: true,
         deployed,
+        postgresBlocksPopulated: refreshed.postgresBlocksPopulated,
         version,
         deployedAt,
         warnings,

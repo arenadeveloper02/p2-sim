@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { parsePostgresConnectionFromBody } from '@/lib/workflows/default-user-workflows/postgres'
 import { syncDefaultWorkflowsForSource } from '@/lib/workflows/default-user-workflows/service'
 import { authenticateCronSecretRequest } from '@/app/api/v1/admin/cron-secret-auth'
 import {
@@ -22,7 +23,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Overwrites all user copies of a source default workflow from the template and redeploys.
  *
  * Request body:
- *   { sourceWorkflowId: string, deploy?: boolean }  // deploy defaults to true
+ *   {
+ *     sourceWorkflowId: string,
+ *     deploy?: boolean,
+ *     postgres?: { host, port?, database, username, password, ssl? }
+ *   }
  */
 export const POST = withRouteHandler(async (request) => {
   const requestId = generateRequestId()
@@ -46,11 +51,18 @@ export const POST = withRouteHandler(async (request) => {
 
     const deploy = body.deploy !== false
 
+    const postgresParsed = parsePostgresConnectionFromBody(body)
+    if (postgresParsed && 'error' in postgresParsed) {
+      return badRequestResponse(postgresParsed.error)
+    }
+    const postgresConnection = postgresParsed
+
     const result = await syncDefaultWorkflowsForSource({
       sourceWorkflowId,
       deploy,
       requestId,
       request,
+      postgresConnection,
     })
 
     logger.info(`[${requestId}] Admin API: Synced default workflows from source`, {
