@@ -234,10 +234,7 @@ function extractContentFromFinalData(dataRecord: Record<string, unknown>): strin
   return parts.join('\n\n')
 }
 
-function extractTextFromFinalOutput(
-  output: unknown,
-  selectedOutputs: readonly string[]
-): string {
+function extractTextFromFinalOutput(output: unknown, selectedOutputs: readonly string[]): string {
   if (!output || typeof output !== 'object') return ''
 
   const outputRecord = output as Record<string, unknown>

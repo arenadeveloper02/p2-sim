@@ -38,15 +38,21 @@ interface AgentChatRow {
   createdAt: Date
   allowedEmails: unknown
   description: string | null
+  identifier?: string | null
 }
 
 /**
  * Returns true when allowedEmails has at least one string whose first character is '@'
  * (e.g. '@position2.com', '@northstar'). Ignores email-style entries (e.g. saiteja.s@position2.com).
  */
-function hasAllowedEmailStartingWithAtSymbol(allowedEmails: unknown): boolean {
+function hasAllowedEmailStartingWithAtSymbol(
+  allowedEmails: unknown,
+  userEmailDomain: string
+): boolean {
   const list = Array.isArray(allowedEmails) ? allowedEmails : []
-  return list.some((entry) => typeof entry === 'string' && entry.length > 0 && entry[0] === '@')
+  return list.some(
+    (entry) => typeof entry === 'string' && entry.length > 0 && entry.startsWith(userEmailDomain)
+  )
 }
 
 /**
@@ -83,9 +89,92 @@ function toAgentListItem(row: AgentChatRow) {
     created_at: row.createdAt.toISOString(),
     workflow_description: row.description,
     status: 'published',
-    redirect_url: `${getBaseUrl()}/chat/${row.workflowId}?workspaceId=${row.workspaceId}`,
+    identifier: row.identifier,
+    redirect_url: `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
     // allowedEmails: row.allowedEmails,
   }
+}
+
+type AgentListItem = ReturnType<typeof toAgentListItem>
+
+/**
+ * Returns execution log rows for the given workflowIds and userId, ordered by started_at desc.
+ * Deduplicated by workflowId so each workflow appears once (most recent first).
+ */
+async function getRecentUsedAgentsFromLogs(
+  workflowIds: string[],
+  userId: string
+): Promise<{ workflowId: string; startedAt: Date }[]> {
+  if (workflowIds.length === 0) return []
+  const rows = await db
+    .select({
+      workflowId: workflowExecutionLogs.workflowId,
+      startedAt: workflowExecutionLogs.startedAt,
+    })
+    .from(workflowExecutionLogs)
+    .where(
+      and(
+        isNotNull(workflowExecutionLogs.chatId),
+        eq(workflowExecutionLogs.userId, userId),
+        inArray(workflowExecutionLogs.workflowId, workflowIds)
+      )
+    )
+    .orderBy(desc(workflowExecutionLogs.startedAt))
+
+  const seen = new Set<string>()
+  const deduped: { workflowId: string; startedAt: Date }[] = []
+  for (const row of rows) {
+    if (row.workflowId && !seen.has(row.workflowId)) {
+      seen.add(row.workflowId)
+      deduped.push({ workflowId: row.workflowId, startedAt: row.startedAt })
+    }
+  }
+  return deduped
+}
+
+/**
+ * Sorts agent list so items match the order of workflow IDs (recently used first).
+ * Items whose workflow_id is not in the order list are placed last.
+ */
+function sortAgentListByWorkflowOrder<T extends { workflow_id: string }>(
+  agentList: T[],
+  orderedWorkflowIds: string[]
+): T[] {
+  const orderMap = new Map(orderedWorkflowIds.map((id, i) => [id, i]))
+  return [...agentList].sort((a, b) => {
+    const aIdx = orderMap.get(a.workflow_id) ?? Number.MAX_SAFE_INTEGER
+    const bIdx = orderMap.get(b.workflow_id) ?? Number.MAX_SAFE_INTEGER
+    return aIdx - bIdx
+  })
+}
+
+/**
+ * Builds workflow ID order: recently used first, then remaining agents in stable order.
+ */
+async function sortAgentListByRecentUsage(
+  agentList: AgentListItem[],
+  userId: string
+): Promise<AgentListItem[]> {
+  const workflowIds = agentList.map((row) => row.workflow_id)
+  const recentUsedAgents = await getRecentUsedAgentsFromLogs(workflowIds, userId)
+  const orderedWorkflowIds = recentUsedAgents.map((r) => r.workflowId)
+  for (const workflowId of workflowIds) {
+    if (!orderedWorkflowIds.includes(workflowId)) {
+      orderedWorkflowIds.push(workflowId)
+    }
+  }
+  return sortAgentListByWorkflowOrder(agentList, orderedWorkflowIds)
+}
+
+/** Merges agent lists by chat id; later entries replace earlier ones for the same id. */
+function mergeAgentListsById(...lists: AgentListItem[][]): AgentListItem[] {
+  const byId = new Map<string, AgentListItem>()
+  for (const list of lists) {
+    for (const item of list) {
+      byId.set(item.id, item)
+    }
+  }
+  return Array.from(byId.values())
 }
 
 const getAgentsListAllowedEmail = (chats: AgentChatRow[], emailId: string) => {
@@ -125,6 +214,7 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
       workspaceId: workflow.workspaceId,
       authorEmail: user.email,
       description: chat.description,
+      identifier: chat.identifier,
     })
     .from(chat)
     .innerJoin(workflow, eq(chat.workflowId, workflow.id))
@@ -143,56 +233,6 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
  * Creator is determined by workflow.userId, not chat.userId.
  */
 async function getMyAgentsList(emailId: string): Promise<NextResponse> {
-  /**
-   * Returns execution log rows for the given workflowIds and userId, ordered by started_at desc (most recent first).
-   * Deduplicated by workflowId so each workflow appears once (first occurrence = most recent); order preserved.
-   */
-  async function getRecentUsedAgentsFromLogs(
-    workflowIds: string[],
-    userId: string
-  ): Promise<{ workflowId: string; startedAt: Date }[]> {
-    if (workflowIds.length === 0) return []
-    const rows = await db
-      .select({
-        workflowId: workflowExecutionLogs.workflowId,
-        startedAt: workflowExecutionLogs.startedAt,
-      })
-      .from(workflowExecutionLogs)
-      .where(
-        and(
-          isNotNull(workflowExecutionLogs.chatId),
-          eq(workflowExecutionLogs.userId, userId),
-          inArray(workflowExecutionLogs.workflowId, workflowIds)
-        )
-      )
-      .orderBy(desc(workflowExecutionLogs.startedAt))
-
-    const seen = new Set<string>()
-    const deduped: { workflowId: string; startedAt: Date }[] = []
-    for (const row of rows) {
-      if (row.workflowId && !seen.has(row.workflowId)) {
-        seen.add(row.workflowId)
-        deduped.push({ workflowId: row.workflowId, startedAt: row.startedAt })
-      }
-    }
-    return deduped
-  }
-
-  /**
-   * Sorts agent list so items match the order of workflow IDs (recently used first). Items whose workflow_id is not in the order list are placed last.
-   */
-  function sortAgentListByWorkflowOrder<T extends { workflow_id: string }>(
-    agentList: T[],
-    orderedWorkflowIds: string[]
-  ): T[] {
-    const orderMap = new Map(orderedWorkflowIds.map((id, i) => [id, i]))
-    return [...agentList].sort((a, b) => {
-      const aIdx = orderMap.get(a.workflow_id) ?? Number.MAX_SAFE_INTEGER
-      const bIdx = orderMap.get(b.workflow_id) ?? Number.MAX_SAFE_INTEGER
-      return aIdx - bIdx
-    })
-  }
-
   const userRecord = await db
     .select({ id: user.id, email: user.email })
     .from(user)
@@ -222,20 +262,46 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
    */
   const accessibleChats = getAgentsListAllowedEmail(chats, emailId)
 
-  let agentList = accessibleChats.map((row) => toAgentListItem(row))
-
-  const myAgentWorkflowIds = agentList.map((row) => row.workflow_id)
-  const recentUsedAgents = await getRecentUsedAgentsFromLogs(myAgentWorkflowIds, creatorUserId)
-
-  const orderedWorkflowIds = recentUsedAgents.map((r) => r.workflowId)
-  for (const wid of myAgentWorkflowIds) {
-    if (!orderedWorkflowIds.includes(wid)) orderedWorkflowIds.push(wid)
-  }
-  agentList = sortAgentListByWorkflowOrder(agentList, orderedWorkflowIds)
+  const agentList = await sortAgentListByRecentUsage(
+    accessibleChats.map((row) => toAgentListItem(row)),
+    creatorUserId
+  )
 
   logger.info(`agentsList (myagents): returning ${agentList.length} chats for ${emailId}`)
 
   return NextResponse.json({ success: true, agentList, count: agentList.length }, { status: 200 })
+}
+
+/**
+ * Returns chats shared with the user via allowedEmails (exact or domain match),
+ * excluding workflows created by that user.
+ *
+ * @param departmentValue - When set, only chats in this department are returned.
+ */
+async function fetchSharedWithMeChats(
+  emailId: string,
+  userId: string,
+  departmentValue?: string
+): Promise<AgentChatRow[]> {
+  const sharedWhereConditions =
+    departmentValue !== undefined
+      ? and(
+          eq(chat.isActive, true),
+          eq(chat.department, departmentValue),
+          ne(workflow.userId, userId),
+          isNull(webhook.id),
+          isNull(workflowSchedule.id)
+        )
+      : and(
+          eq(chat.isActive, true),
+          ne(workflow.userId, userId),
+          isNull(webhook.id),
+          isNull(workflowSchedule.id)
+        )
+
+  const chats = await fetchAgentChats(sharedWhereConditions)
+
+  return getAgentsListAllowedEmail(chats, emailId)
 }
 
 /**
@@ -253,23 +319,8 @@ async function getSharedWithMeAgentsList(emailId: string): Promise<NextResponse>
     logger.warn(`User not found for sharedwithme: ${emailId}`)
     return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
   }
-  const sharedWithMeUserId = userRecord[0].id
 
-  const chats = await fetchAgentChats(
-    and(
-      eq(chat.isActive, true),
-      ne(workflow.userId, sharedWithMeUserId),
-      isNull(webhook.id),
-      isNull(workflowSchedule.id)
-    )
-  )
-
-  /**
-   * Core logic: "sharedwithme" returns chats that the user can access via `allowedEmails`,
-   * but excludes chats created by the user (so it doesn't overlap with "myagents").
-   */
-  const sharedChats = getAgentsListAllowedEmail(chats, emailId)
-
+  const sharedChats = await fetchSharedWithMeChats(emailId, userRecord[0].id)
   const agentList = sharedChats.map((row) => toAgentListItem(row))
 
   logger.info(
@@ -280,11 +331,61 @@ async function getSharedWithMeAgentsList(emailId: string): Promise<NextResponse>
 }
 
 /**
+ * Returns global agents (domain-wide allowedEmails) combined with shared-with-me agents,
+ * sorted by the requesting user's recent chat usage.
+ */
+async function getGlobalAgentsList(
+  emailId: string,
+  departmentValue: string | undefined
+): Promise<NextResponse> {
+  const userRecord = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.email, emailId))
+    .limit(1)
+
+  if (userRecord.length === 0) {
+    logger.warn(`User not found for global: ${emailId}`)
+    return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
+  }
+
+  const userId = userRecord[0].id
+
+  const globalWhereConditions =
+    departmentValue !== undefined
+      ? and(
+          eq(chat.isActive, true),
+          eq(chat.department, departmentValue),
+          isNull(webhook.id),
+          isNull(workflowSchedule.id)
+        )
+      : and(eq(chat.isActive, true), isNull(webhook.id), isNull(workflowSchedule.id))
+  const userEmailDomain = `@${emailId.split('@')[1]}`
+
+  const globalChats = await fetchAgentChats(globalWhereConditions)
+  const globalAgentList = globalChats
+    .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails, userEmailDomain))
+    .map((row) => toAgentListItem(row))
+
+  const sharedChats = await fetchSharedWithMeChats(emailId, userId, departmentValue)
+  const sharedAgentList = sharedChats.map((row) => toAgentListItem(row))
+
+  const mergedAgentList = mergeAgentListsById(globalAgentList, sharedAgentList)
+  const agentList = await sortAgentListByRecentUsage(mergedAgentList, userId)
+
+  logger.info(
+    `agentsList (global): returning ${agentList.length} chats for ${emailId} (${globalAgentList.length} global + ${sharedAgentList.length} shared, deduped)`
+  )
+
+  return NextResponse.json({ success: true, agentList, count: agentList.length }, { status: 200 })
+}
+
+/**
  * GET /api/chat/agentsList
- * Query: tabName=global — returns active chats whose allowedEmails contains any string starting with '@'.
+ * Query: tabName=global — returns global agents (domain allowedEmails) plus shared-with-me agents, sorted by recent usage; requires emailId.
  *        tabName=myagents — returns agents created by user or in allowedEmails; requires emailId.
  *        tabName=sharedwithme — returns agents where emailId is in allowedEmails (exact or domain) but NOT created by this user; requires emailId.
- * Optional for global: departmentName — filters by department.
+ * Optional for global: departmentName — filters both global and shared-with-me agents by department.
  */
 export async function GET(request: NextRequest) {
   const authError = verifyCronAuth(request, 'Schedule execution')
@@ -318,31 +419,17 @@ export async function GET(request: NextRequest) {
     }
 
     if (tabName === 'global') {
+      if (!emailId?.trim()) {
+        return NextResponse.json(
+          { success: false, error: 'emailId is required when tabName=global' },
+          { status: 400 }
+        )
+      }
+
       const departmentName = searchParams.get('departmentName')
       const departmentValue = resolveDepartmentValue(departmentName)
 
-      const whereConditions =
-        departmentValue !== undefined
-          ? and(
-              eq(chat.isActive, true),
-              eq(chat.department, departmentValue),
-              isNull(webhook.id),
-              isNull(workflowSchedule.id)
-            )
-          : and(eq(chat.isActive, true), isNull(webhook.id), isNull(workflowSchedule.id))
-
-      const chats = await fetchAgentChats(whereConditions)
-
-      const agentList = chats
-        .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails))
-        .map((row) => toAgentListItem(row))
-
-      logger.info(`agentsList: returning ${agentList.length} global agent chats`)
-
-      return NextResponse.json(
-        { success: true, agentList, count: agentList.length },
-        { status: 200 }
-      )
+      return await getGlobalAgentsList(emailId.trim(), departmentValue)
     }
 
     return NextResponse.json({ success: true, agentList: [], count: 0 }, { status: 200 })
