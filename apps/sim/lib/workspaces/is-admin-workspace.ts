@@ -1,4 +1,4 @@
-import { env } from '@/lib/core/config/env'
+import { env, getEnv } from '@/lib/core/config/env'
 
 export interface AdminWorkspaceContext {
   isAdminWorkspace: boolean
@@ -44,9 +44,11 @@ export function parseAdminWorkspaceIds(raw: AdminWorkspaceIdsEnv): string[] {
 }
 
 /**
- * Workspace IDs from `ADMIN_WORKSPACE_IDS`.
+ * Workspace IDs from `ADMIN_WORKSPACE_IDS` (server) or `NEXT_PUBLIC_ADMIN_WORKSPACE_IDS` (client).
  */
 export function getAdminWorkspaceIds(): string[] {
+  const publicIds = parseAdminWorkspaceIds(getEnv('NEXT_PUBLIC_ADMIN_WORKSPACE_IDS'))
+  if (publicIds.length > 0) return publicIds
   return parseAdminWorkspaceIds(env.ADMIN_WORKSPACE_IDS)
 }
 

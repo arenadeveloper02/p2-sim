@@ -1,5 +1,6 @@
 import { HubspotIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { HubSpotResponse } from '@/tools/hubspot/types'
@@ -14,6 +15,32 @@ const campaignCache = new Map<
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 // Track in-flight requests to deduplicate concurrent calls
 const campaignInFlightRequests = new Map<string, Promise<Array<{ label: string; id: string }>>>()
+
+const HUBSPOT_COND_NEVER = '__hubspot_cond_never__'
+
+function getWorkspaceIdFromClientPath(): string | undefined {
+  if (typeof window === 'undefined') return undefined
+  const match = window.location.pathname.match(/\/workspace\/([^/]+)/)
+  return match?.[1]
+}
+
+/** Show Accounts dropdown (admin workspaces only). */
+function hubspotAdminOnlyCondition(_values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(getWorkspaceIdFromClientPath())
+  if (isAdmin) {
+    return { field: 'operation', value: HUBSPOT_COND_NEVER, not: true as const }
+  }
+  return { field: 'operation', value: HUBSPOT_COND_NEVER }
+}
+
+/** Show OAuth / manual credential fields (non-admin workspaces only). */
+function hubspotNonAdminOnlyCondition(_values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(getWorkspaceIdFromClientPath())
+  if (isAdmin) {
+    return { field: 'operation', value: HUBSPOT_COND_NEVER }
+  }
+  return { field: 'operation', value: HUBSPOT_COND_NEVER, not: true as const }
+}
 
 const fetchCampaignOptions = async (
   blockId: string
@@ -30,7 +57,9 @@ const fetchCampaignOptions = async (
     const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
     const blockValues = workflowValues?.[blockId]
 
-    const credentialId = blockValues?.accounts as string
+    const credentialId = (blockValues?.accounts ??
+      blockValues?.credential ??
+      blockValues?.oauthCredential) as string
 
     if (!credentialId) {
       return []
@@ -100,7 +129,9 @@ const fetchCampaignOptions = async (
       if (activeWorkflowId) {
         const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
         const blockValues = workflowValues?.[blockId]
-        const credentialId = blockValues?.accounts as string
+        const credentialId = (blockValues?.accounts ??
+          blockValues?.credential ??
+          blockValues?.oauthCredential) as string
 
         if (credentialId) {
           const cached = campaignCache.get(credentialId)
@@ -201,6 +232,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       id: 'accounts',
       title: 'Accounts',
       type: 'dropdown',
+      required: true,
+      condition: hubspotAdminOnlyCondition,
       options: [
         { label: 'Position2', id: 'position2' },
         { label: 'Northstar Anesthesia', id: 'northstar_anesthesia' },
@@ -217,9 +250,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       serviceId: 'hubspot',
       requiredScopes: getScopesForService('hubspot'),
       placeholder: 'Select HubSpot account',
-      /** Auth is resolved from `accounts` only; this field is not user-edited. */
-      required: false,
-      hidden: true,
+      required: true,
+      condition: hubspotNonAdminOnlyCondition,
     },
     {
       id: 'manualCredential',
@@ -228,8 +260,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
       placeholder: 'Enter credential ID',
-      /** Not used when only shared `accounts` options are supported. */
-      required: false,
+      required: true,
+      condition: hubspotNonAdminOnlyCondition,
     },
     {
       id: 'contactId',
@@ -1743,8 +1775,13 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           ...rest
         } = params
 
+        const oauthCredential = (accounts ??
+          params.credential ??
+          params.oauthCredential ??
+          params.manualCredential) as string
+
         const cleanParams: Record<string, any> = {
-          oauthCredential: accounts as string,
+          oauthCredential,
         }
 
         const createUpdateOps = [
