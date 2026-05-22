@@ -84,6 +84,46 @@ export const ExaBlock: BlockConfig<ExaResponse> = {
       mode: 'advanced',
     },
     {
+      id: 'startCrawlDate',
+      title: 'Start Crawl Date',
+      type: 'short-input',
+      placeholder: '2023-01-01T00:00:00.000Z',
+      description:
+        'ISO 8601: results crawled after this time. Unsupported for Exa company/people categories.',
+      condition: { field: 'operation', value: 'exa_search' },
+      mode: 'advanced',
+    },
+    {
+      id: 'endCrawlDate',
+      title: 'End Crawl Date',
+      type: 'short-input',
+      placeholder: '2023-12-31T00:00:00.000Z',
+      description:
+        'ISO 8601: results crawled before this time. Unsupported for Exa company/people categories.',
+      condition: { field: 'operation', value: 'exa_search' },
+      mode: 'advanced',
+    },
+    {
+      id: 'startPublishedDate',
+      title: 'Start Published Date',
+      type: 'short-input',
+      placeholder: '2023-01-01T00:00:00.000Z',
+      description:
+        'ISO 8601: links published after this time. Unsupported for Exa company/people categories.',
+      condition: { field: 'operation', value: 'exa_search' },
+      mode: 'advanced',
+    },
+    {
+      id: 'endPublishedDate',
+      title: 'End Published Date',
+      type: 'short-input',
+      placeholder: '2023-12-31T00:00:00.000Z',
+      description:
+        'ISO 8601: links published before this time. Unsupported for Exa company/people categories.',
+      condition: { field: 'operation', value: 'exa_search' },
+      mode: 'advanced',
+    },
+    {
       id: 'category',
       title: 'Category Filter',
       type: 'dropdown',
@@ -368,6 +408,19 @@ export const ExaBlock: BlockConfig<ExaResponse> = {
     type: { type: 'string', description: 'Search type' },
     includeDomains: { type: 'string', description: 'Include domains filter' },
     excludeDomains: { type: 'string', description: 'Exclude domains filter' },
+    startCrawlDate: {
+      type: 'string',
+      description: 'ISO 8601 crawl lower bound (Exa startCrawlDate)',
+    },
+    endCrawlDate: { type: 'string', description: 'ISO 8601 crawl upper bound (Exa endCrawlDate)' },
+    startPublishedDate: {
+      type: 'string',
+      description: 'ISO 8601 published-date lower bound (Exa startPublishedDate)',
+    },
+    endPublishedDate: {
+      type: 'string',
+      description: 'ISO 8601 published-date upper bound (Exa endPublishedDate)',
+    },
     category: { type: 'string', description: 'Category filter' },
     text: { type: 'boolean', description: 'Include text content' },
     highlights: { type: 'boolean', description: 'Include highlights' },

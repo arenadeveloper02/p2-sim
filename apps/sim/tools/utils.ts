@@ -263,10 +263,12 @@ export async function formatRequestParams(
   const hasBody = method !== 'GET' && method !== 'HEAD' && !!tool.request.body
   const bodyResult = tool.request.body ? await tool.request.body(params) : undefined
 
-  // Special handling for NDJSON content type or 'application/x-www-form-urlencoded'
+  // Special handling for content types whose body is not JSON (pre-formatted strings)
+  const contentType = headers['Content-Type'] ?? ''
   const isPreformattedContent =
-    headers['Content-Type'] === 'application/x-ndjson' ||
-    headers['Content-Type'] === 'application/x-www-form-urlencoded'
+    contentType === 'application/x-ndjson' ||
+    contentType === 'application/x-www-form-urlencoded' ||
+    contentType.startsWith('multipart/')
 
   let body: string | undefined
   if (hasBody) {

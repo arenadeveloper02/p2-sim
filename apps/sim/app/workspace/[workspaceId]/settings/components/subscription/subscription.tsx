@@ -477,7 +477,7 @@ export function Subscription() {
       return { text: `${subscription.seats} seats`, variant: 'blue-secondary' }
     if (isDispute) return { text: 'Get Help', variant: 'red' }
     if (isBlocked) return { text: 'Fix Now', variant: 'red' }
-    if (subscription.isFree) return { text: 'Upgrade', variant: 'blue-secondary' }
+    // if (subscription.isFree) return { text: 'Upgrade', variant: 'blue-secondary' }
     return { text: '', variant: 'blue-secondary' }
   }
   const badgeConfig = getBadgeConfig()
@@ -576,9 +576,13 @@ export function Subscription() {
 
   if (isLoading) return <SubscriptionSkeleton />
 
-  const showUpgradePlans = permissions.showUpgradePlans
-  const hasEnterprise = visiblePlans.includes('enterprise')
-  const showTeamCard = visiblePlans.includes('pro') || visiblePlans.includes('team')
+  // const showUpgradePlans = permissions.showUpgradePlans
+  // const hasEnterprise = visiblePlans.includes('enterprise')
+  // const showTeamCard = visiblePlans.includes('pro') || visiblePlans.includes('team')
+
+  const showUpgradePlans = false
+  const hasEnterprise = false
+  const showTeamCard = false
 
   return (
     <div className='flex h-full flex-col gap-5'>

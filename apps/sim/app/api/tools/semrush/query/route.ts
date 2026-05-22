@@ -5,6 +5,36 @@ import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('SemrushQueryAPI')
 
+const INVALID_SEMRUSH_TYPES = new Set(['', 'semrush_query', 'semrush_organic_positions', 'semrush'])
+
+function sanitizeDomainQueryParam(raw: string): string {
+  const t = raw.trim()
+  if (!t) return t
+  const m = t.match(/^([a-zA-Z0-9](?:[a-zA-Z0-9-]*\.)+[a-zA-Z]{2,})/)
+  if (m && m[1].length < t.length) {
+    logger.warn('Semrush proxy: sanitized domain query param', { raw: t, domain: m[1] })
+    return m[1]
+  }
+  return t
+}
+
+function coerceSemrushTypeParam(
+  typeParam: string | null,
+  domain: string | null,
+  url: string | null
+): string {
+  const raw = (typeParam ?? 'domain_organic').trim().toLowerCase()
+  if (!INVALID_SEMRUSH_TYPES.has(raw) && /^[a-z][a-z0-9_]*$/.test(raw)) {
+    return raw
+  }
+  const d = (domain ?? '').trim()
+  const u = (url ?? '').trim()
+  if (d && !u) return 'domain_organic'
+  if (u && !d) return 'url_organic'
+  if (d && u) return 'domain_organic'
+  return 'domain_organic'
+}
+
 /**
  * Proxies Semrush API requests so the tool hits our server (avoiding external URL
  * validation) and we add the API key server-side. Accepts internal JWT (executor)
@@ -28,7 +58,9 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const type = searchParams.get('type') ?? 'domain_organic'
+    const rawDomain = searchParams.get('domain')
+    const rawUrl = searchParams.get('url')
+    const type = coerceSemrushTypeParam(searchParams.get('type'), rawDomain, rawUrl)
     const database = searchParams.get('database') ?? 'us'
 
     const semrushParams = new URLSearchParams()
@@ -37,7 +69,7 @@ export async function GET(request: NextRequest) {
     semrushParams.set('database', database)
 
     if (type.startsWith('url_')) {
-      const url = searchParams.get('url')
+      const url = rawUrl
       if (!url) {
         return NextResponse.json(
           { error: 'Parameter "url" is required for URL-based report types.' },
@@ -46,7 +78,7 @@ export async function GET(request: NextRequest) {
       }
       semrushParams.set('url', url)
     } else {
-      const domain = searchParams.get('domain')
+      const domain = rawDomain ? sanitizeDomainQueryParam(rawDomain) : null
       if (!domain) {
         return NextResponse.json(
           { error: 'Parameter "domain" is required for domain-based report types.' },

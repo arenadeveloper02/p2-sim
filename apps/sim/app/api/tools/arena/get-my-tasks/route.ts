@@ -5,9 +5,22 @@ import { getArenaToken } from '@/app/api/tools/arena/utils/get-token'
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const workflowId = searchParams.get('workflowId')
+  const withinMinutesParam = searchParams.get('withinMinutes')?.trim()
 
   if (!workflowId) {
     return NextResponse.json({ error: 'Missing required field: workflowId' }, { status: 400 })
+  }
+
+  let withinMinutes: number | undefined
+  if (withinMinutesParam) {
+    const parsed = Number(withinMinutesParam)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return NextResponse.json(
+        { error: 'Invalid withinMinutes: must be a positive number' },
+        { status: 400 }
+      )
+    }
+    withinMinutes = parsed
   }
 
   const tokenObject = await getArenaToken(req, workflowId)
@@ -21,7 +34,12 @@ export async function GET(req: NextRequest) {
 
   try {
     const arenaBackendBaseUrl = env.ARENA_BACKEND_BASE_URL
-    const res = await fetch(`${arenaBackendBaseUrl}/sol/v1/tasks/get-my-tasks`, {
+    const arenaUrl = new URL(`${arenaBackendBaseUrl}/sol/v1/tasks/get-my-tasks`)
+    if (withinMinutes !== undefined) {
+      arenaUrl.searchParams.set('withinMinutes', String(withinMinutes))
+    }
+
+    const res = await fetch(arenaUrl.toString(), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

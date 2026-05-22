@@ -8,6 +8,8 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
   description: 'Get SEO data from Semrush',
   longDescription:
     'Access Semrush SEO data including organic keywords, backlinks, domain rank, and competitor analysis.',
+  bestPractices:
+    "Runs use Sim's Semrush API proxy; authentication is the server environment variable SEMRUSH_API_KEY (operators configure it on the deployment). Do not tell users to add Semrush API keys to the workflow, use {{SEMRUSH_API_KEY}}, or treat a missing block API key as user error—agents and docs should not ask for an end-user Semrush key for this native block.",
   docsLink: '',
   category: 'tools',
   bgColor: '#E0E0E0',
@@ -64,13 +66,15 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
         value: ['tracking_position_organic'],
       },
     },
-    // Position Tracking: URL(s) with mask
+    // Position tracking URL mask (unique id avoids duplicate React keys with `url` for url_organic;
+    // canonicalParamId maps to tool param `url` for semrush_organic_positions)
     {
       id: 'trackingUrl',
       title: 'Tracked URL',
       type: 'short-input',
       placeholder: '*.example.com/* or *.apple.com/*:*.amazon.com/*',
       required: true,
+      canonicalParamId: 'url',
       description: 'URL with mask; use : to separate multiple domains',
       condition: {
         field: 'operation',
@@ -178,6 +182,67 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
         value: ['tracking_position_organic'],
       },
     },
+    {
+      id: 'displayFilter',
+      title: 'Display filter',
+      type: 'short-input',
+      placeholder: 'e.g. +|Ph|Co|keyword',
+      description: 'Filter for Ph, Nq, Cp columns (API display_filter)',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    {
+      id: 'topFilter',
+      title: 'Top filter',
+      type: 'short-input',
+      placeholder: 'e.g. top_3, top_1page, top_100',
+      description: 'Position filter (top_filter)',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    {
+      id: 'useVolume',
+      title: 'Use volume',
+      type: 'dropdown',
+      options: [
+        { label: 'Default', id: '' },
+        { label: 'National', id: 'national' },
+        { label: 'Regional', id: 'regional' },
+        { label: 'Local', id: 'local' },
+      ],
+      value: () => '',
+      description: 'Volume level for the report (use_volume)',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    {
+      id: 'businessName',
+      title: 'Business name',
+      type: 'short-input',
+      placeholder: 'Google Business Profile name',
+      description: 'Must match your Google Business Profile when required by the project',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
+    {
+      id: 'serpFeatureFilter',
+      title: 'SERP feature filter',
+      type: 'short-input',
+      placeholder: 'e.g. fsn,0',
+      description: 'SERP feature filter (serp_feature_filter), e.g. fsn,0 for Featured Snippet',
+      condition: {
+        field: 'operation',
+        value: ['tracking_position_organic'],
+      },
+    },
     // Database
     {
       id: 'database',
@@ -237,8 +302,9 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       id: 'displayLimit',
       title: 'Display Limit',
       type: 'short-input',
-      placeholder: '50',
-      defaultValue: '50',
+      placeholder: '10',
+      defaultValue: '10',
+      description: 'Number of API rows to return',
       condition: {
         field: 'operation',
         value: [
@@ -269,14 +335,16 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
       },
     },
     {
-      id: 'apiKey',
-      title: 'API Key',
+      id: 'additionalParams',
+      title: 'Additional Params',
       type: 'short-input',
-      placeholder: 'Enter your Semrush API key',
-      password: true,
+      placeholder: 'e.g. display_sort=nq_desc',
       required: false,
-      hidden: true,
-      description: 'Enter your Semrush API key',
+      description: 'Optional extra Semrush API parameters as a URL query string',
+      condition: {
+        field: 'operation',
+        value: ['url_organic', 'domain_organic', 'domain_organic_organic'],
+      },
     },
   ],
   tools: {
@@ -288,9 +356,9 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
           : 'semrush_query',
       params: (params: Record<string, any>) => {
         if (params.operation === 'tracking_position_organic') {
-          return {
+          const out: Record<string, unknown> = {
             campaignId: params.campaignId ?? '',
-            url: params.trackingUrl ?? '',
+            url: (params.trackingUrl ?? params.url ?? '') as string,
             dateBegin: params.dateBegin || undefined,
             dateEnd: params.dateEnd || undefined,
             linktypeFilter: params.linktypeFilter || undefined,
@@ -299,37 +367,51 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
             displaySort: params.displaySort || undefined,
             displayLimit: params.displayLimit || undefined,
             displayOffset: params.displayOffset || undefined,
-            apiKey: params.apiKey || undefined,
+            displayFilter: params.displayFilter || undefined,
+            topFilter: params.topFilter || undefined,
+            useVolume: params.useVolume || undefined,
+            businessName: params.businessName || undefined,
+            serpFeatureFilter: params.serpFeatureFilter || undefined,
           }
+          if (out.displayLimit != null && out.displayLimit !== '') {
+            out.displayLimit = String(out.displayLimit)
+          }
+          return out
         }
 
-        const reportType = params.operation || 'url_organic'
-        const target = reportType.startsWith('url_') ? params.url || '' : params.domain || ''
-
-        const exportColumns = params.exportColumns || 'Ph,Nq,Cp'
-        const displayLimit =
-          params.displayLimit || (reportType === 'url_organic' ? '50' : undefined)
-
-        return {
-          reportType,
-          target,
-          database: params.database || 'us',
-          displayLimit,
-          exportColumns: exportColumns || undefined,
-          apiKey: params.apiKey || undefined,
+        const out: Record<string, unknown> = {}
+        const displayLimitRaw = params.displayLimit
+        out.displayLimit =
+          displayLimitRaw != null && String(displayLimitRaw).trim() !== ''
+            ? String(displayLimitRaw)
+            : '10'
+        const exportRaw = params.exportColumns
+        out.exportColumns =
+          typeof exportRaw === 'string' && exportRaw.trim() !== '' ? exportRaw : 'Ph,Nq,Cp'
+        const extra = params.additionalParams
+        if (typeof extra === 'string' && extra.trim() !== '') {
+          out.additionalParams = extra
         }
+        return out
       },
     },
   },
   inputs: {
     operation: { type: 'string', description: 'Semrush operation selection' },
-    url: { type: 'string', description: 'URL to analyze' },
+    url: { type: 'string', description: 'Page URL to analyze (url_organic report)' },
+    trackingUrl: {
+      type: 'string',
+      description: 'Position Tracking URL mask (tracking_position_organic)',
+    },
     domain: { type: 'string', description: 'Domain to analyze' },
     database: { type: 'string', description: 'Geographic database code' },
-    displayLimit: { type: 'string', description: 'Number of results to return' },
+    displayLimit: { type: 'string', description: 'Number of results to return (default 10)' },
     exportColumns: { type: 'string', description: 'Comma-separated column codes' },
+    additionalParams: {
+      type: 'string',
+      description: 'Optional Semrush API parameters as URL query string',
+    },
     campaignId: { type: 'string', description: 'Position Tracking campaign ID' },
-    trackingUrl: { type: 'string', description: 'Tracked URL(s) with mask for Position Tracking' },
     dateBegin: { type: 'string', description: 'Start date YYYYMMDD' },
     dateEnd: { type: 'string', description: 'End date YYYYMMDD' },
     linktypeFilter: { type: 'string', description: 'Link type filter for Position Tracking' },
@@ -337,10 +419,14 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     displayOffset: { type: 'string', description: 'Pagination offset' },
     displayTags: { type: 'string', description: 'Tag filter for Position Tracking' },
     displayTagsCondition: { type: 'string', description: 'Tag condition filter' },
-    apiKey: {
+    displayFilter: {
       type: 'string',
-      description: 'Semrush API key',
+      description: 'Column filter (Position Tracking display_filter)',
     },
+    topFilter: { type: 'string', description: 'Position top_filter' },
+    useVolume: { type: 'string', description: 'use_volume: national, regional, or local' },
+    businessName: { type: 'string', description: 'Google Business Profile business name' },
+    serpFeatureFilter: { type: 'string', description: 'SERP feature filter' },
   },
   outputs: {
     reportType: {

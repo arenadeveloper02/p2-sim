@@ -8,14 +8,7 @@ export const getToken: ToolConfig<ArenaGetTokenParams, ArenaGetTokenResponse> = 
     'Get Arena token for the logged-in user or workflow owner. Both must have @position2.com email.',
   version: '1.0.0',
 
-  params: {
-    operation: {
-      type: 'string',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Operation to perform (get_token)',
-    },
-  },
+  params: {},
 
   request: {
     url: (params: ArenaGetTokenParams) => {
@@ -60,8 +53,11 @@ export const getToken: ToolConfig<ArenaGetTokenParams, ArenaGetTokenResponse> = 
         success: true,
         found: data.found,
         userId: data.userId,
+        name: data.name,
         email: data.email,
         arenaToken: data.arenaToken,
+        timezone: data.timezone ?? null,
+        persona: data.persona ?? null,
       },
     }
   },
@@ -70,8 +66,11 @@ export const getToken: ToolConfig<ArenaGetTokenParams, ArenaGetTokenResponse> = 
     success: { type: 'boolean', description: 'Whether the request succeeded' },
     found: { type: 'boolean', description: 'Whether a token was found for the user' },
     userId: { type: 'string', description: 'User id (when found)' },
+    name: { type: 'string', description: 'User display name from user table (when found)' },
     email: { type: 'string', description: 'User email (when found)' },
     arenaToken: { type: 'string', description: 'Arena token for the user (when found)' },
+    timezone: { type: 'string', description: 'User timezone from Arena details (when found)' },
+    persona: { type: 'string', description: 'User persona from Arena details (when found)' },
     reason: { type: 'string', description: 'Error or failure reason (when not found)' },
   },
 }

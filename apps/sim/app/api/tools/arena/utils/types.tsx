@@ -3,6 +3,8 @@ export interface WorkflowTokenResult {
   workflowId: string
   userId: string
   arenaToken: string
+  timezone: string | null
+  persona: string | null
 }
 
 export interface WorkflowTokenNotFound {

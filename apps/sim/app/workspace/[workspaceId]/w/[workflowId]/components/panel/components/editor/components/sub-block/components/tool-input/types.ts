@@ -19,7 +19,7 @@ export interface StoredTool {
   /** Direct tool ID for execution (optional for new custom tool format) */
   toolId?: string
   /** Parameter values configured by the user */
-  params?: Record<string, string>
+  params?: Record<string, any>
   /** Whether the tool details are expanded in UI */
   isExpanded?: boolean
   /** Database ID for custom tools (new format - reference only) */

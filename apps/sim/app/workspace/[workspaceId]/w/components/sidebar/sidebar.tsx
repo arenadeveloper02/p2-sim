@@ -5,7 +5,7 @@ import { createLogger } from '@sim/logger'
 import { Compass, MoreHorizontal } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useParams, usePathname, useRouter } from 'next/navigation'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import {
   Blimp,
@@ -348,6 +348,8 @@ export const Sidebar = memo(function Sidebar() {
   const workflowId = params.workflowId as string | undefined
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const hideSidebarForArenaV3 = searchParams.get('from') === 'arena_v3'
 
   const sidebarRef = useRef<HTMLElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -1352,7 +1354,8 @@ export const Sidebar = memo(function Sidebar() {
           ref={sidebarRef}
           className={cn(
             'sidebar-container relative h-full overflow-hidden bg-[var(--surface-1)]',
-            isResizing && 'is-resizing'
+            isResizing && 'is-resizing',
+            hideSidebarForArenaV3 && 'hidden'
           )}
           data-collapsed={isCollapsed || undefined}
           aria-label='Workspace sidebar'

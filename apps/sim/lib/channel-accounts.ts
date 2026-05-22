@@ -62,8 +62,35 @@ export async function getGoogleAdsAccounts(): Promise<Record<string, ChannelAcco
 }
 
 /**
- * Fetches Facebook Ads accounts from database
+ * Fetches Facebook Ads accounts from database (facebook_accounts table)
  */
 export async function getFacebookAdsAccounts(): Promise<Record<string, ChannelAccount>> {
-  return getChannelAccounts('facebook')
+  try {
+    const result = await db.execute(sql`
+      SELECT account_id, account_name 
+      FROM facebook_accounts 
+      ORDER BY account_name
+    `)
+
+    const accounts: Record<string, ChannelAccount> = {}
+
+    for (const row of result as unknown as Array<{ account_id: string; account_name: string }>) {
+      const key = String(row.account_name)
+        .toLowerCase()
+        .replace(/[^a-zA-Z0-9\s]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '')
+
+      accounts[key] = {
+        id: String(row.account_id),
+        name: String(row.account_name),
+      }
+    }
+
+    return accounts
+  } catch (error) {
+    console.error('Error fetching facebook accounts from database:', error)
+    return {}
+  }
 }
