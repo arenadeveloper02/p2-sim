@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
-import { env } from '@/lib/core/config/env'
+import { resolveUnipileApiKeyFromRequestBody } from '@/lib/unipile/resolve-api-key-from-body'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileRetrieveCompanyDetailsAPI')
@@ -21,15 +21,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const apiKey = env.UNIPILE_API_KEY?.trim()
-  if (!apiKey) {
-    return NextResponse.json({ error: 'UNIPILE_API_KEY is not configured' }, { status: 503 })
-  }
-
   const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
 
   try {
     const body = await request.json()
+    let apiKey: string
+    try {
+      apiKey = resolveUnipileApiKeyFromRequestBody(body)
+    } catch (keyError) {
+      const message =
+        keyError instanceof Error ? keyError.message : 'Unipile API key is not configured'
+      return NextResponse.json({ error: message }, { status: 503 })
+    }
     const { identifier, account_id } = RequestSchema.parse(body)
     const encoded = encodeURIComponent(identifier.trim())
     const query = new URLSearchParams()

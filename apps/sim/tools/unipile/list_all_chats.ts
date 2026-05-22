@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
 import type {
@@ -61,6 +62,7 @@ export const unipileListAllChatsTool: ToolConfig<
       description:
         'Optional provider filter: WHATSAPP, LINKEDIN, SLACK, TWITTER, MESSENGER, INSTAGRAM, TELEGRAM',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
@@ -94,7 +96,7 @@ export const unipileListAllChatsTool: ToolConfig<
       if (typeof params.account_type === 'string' && params.account_type.trim() !== '') {
         out.account_type = params.account_type.trim()
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

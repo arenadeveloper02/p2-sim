@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import type {
   UnipileCommentPostParams,
@@ -85,6 +86,7 @@ export const unipileCommentPostTool: ToolConfig<
       description:
         'Optional files as UserFile array (multipart `attachments` parts, same as send message / create post). Legacy string still accepted.',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
@@ -126,7 +128,7 @@ export const unipileCommentPostTool: ToolConfig<
           out.attachments = att.trim()
         }
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
 import type {
@@ -28,13 +29,15 @@ export const unipileListUserRelationsTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Optional Unipile `filter` query (match by user name)',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
     url: '/api/tools/unipile/list-user-relations',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
+    body: (params) =>
+      attachUnipileInternalContext(params, {
       account_id: params.account_id?.trim(),
       filter: params.filter,
     }),

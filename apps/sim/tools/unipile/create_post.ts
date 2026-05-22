@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import type { UnipileCreatePostParams, UnipileCreatePostToolResponse } from '@/tools/unipile/types'
 
@@ -68,13 +69,15 @@ export const unipileCreatePostTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'as_organization form field',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
     url: '/api/tools/unipile/create-post',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
+    body: (params) =>
+      attachUnipileInternalContext(params, {
       account_id: params.account_id?.trim(),
       text: params.text,
       attachments: params.attachments,

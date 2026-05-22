@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import type {
   UnipileGetUserProfileParams,
@@ -47,6 +48,7 @@ export const unipileGetUserProfileTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Optional `notify` query: whether the profile visit is notified to the viewee',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
@@ -75,7 +77,7 @@ export const unipileGetUserProfileTool: ToolConfig<
       if (params.notify === true || params.notify === false) {
         out.notify = params.notify
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

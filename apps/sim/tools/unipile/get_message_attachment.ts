@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import type {
   UnipileGetMessageAttachmentParams,
@@ -27,13 +28,15 @@ export const unipileGetMessageAttachmentTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Attachment id',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
     url: '/api/tools/unipile/get-message-attachment',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
+    body: (params) =>
+      attachUnipileInternalContext(params, {
       message_id: params.message_id?.trim(),
       attachment_id: params.attachment_id?.trim(),
     }),

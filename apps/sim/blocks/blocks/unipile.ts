@@ -1,4 +1,8 @@
 import { UnipileIcon } from '@/components/icons'
+import {
+  isAdminWorkspace,
+  resolveWorkspaceIdForAdminCheck,
+} from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
@@ -8,6 +12,28 @@ import { getLinkedinSearchParameterTypeDropdownOptions } from '@/tools/unipile/l
 import type { UnipileResponse } from '@/tools/unipile/types'
 
 /** Normalizes attendees to a de-duplicated string array for Unipile `attendees_ids`. */
+const UNIPILE_COND_NEVER = '__unipile_cond_never__'
+
+/** Show Unipile API key field (admin workspaces only). */
+function unipileAdminOnlyCondition(values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
+  if (isAdmin) {
+    return { field: 'operation', value: UNIPILE_COND_NEVER, not: true as const }
+  }
+  return { field: 'operation', value: UNIPILE_COND_NEVER }
+}
+
+function withUnipileApiKey(
+  params: Record<string, unknown>,
+  out: Record<string, unknown>
+): Record<string, unknown> {
+  const key = typeof params.unipileApiKey === 'string' ? params.unipileApiKey.trim() : ''
+  if (key) {
+    out.unipileApiKey = key
+  }
+  return out
+}
+
 const UNIPILE_COMMENT_MENTION_COL_NAME = 'Display name'
 const UNIPILE_COMMENT_MENTION_COL_PROFILE_ID = 'Profile ID'
 const UNIPILE_COMMENT_MENTION_COL_IS_COMPANY = 'Is company'
@@ -227,6 +253,16 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           return null
         }
       },
+    },
+    {
+      id: 'unipileApiKey',
+      title: 'Unipile API Key',
+      type: 'short-input',
+      required: true,
+      password: true,
+      placeholder: 'Unipile API key',
+      description: 'Unipile API key (X-API-KEY) for admin workspaces.',
+      condition: unipileAdminOnlyCondition,
     },
     {
       id: 'operation',
@@ -1117,6 +1153,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       tool: (params) => `unipile_${params.operation}`,
       params: (params) => {
         const op = params.operation as string
+        const finish = (out: Record<string, unknown>) => withUnipileApiKey(params, out)
         if (op === 'get_user_profile') {
           const out: Record<string, unknown> = {
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
@@ -1144,7 +1181,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           } else if (notify === 'false') {
             out.notify = false
           }
-          return out
+          return finish(out)
         }
         if (
           op === 'list_user_posts' ||
@@ -1174,7 +1211,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
               out.is_company = false
             }
           }
-          return out
+          return finish(out)
         }
         if (op === 'list_all_chats') {
           const out: Record<string, unknown> = {}
@@ -1221,12 +1258,12 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           ) {
             out.account_type = params.chats_account_type_filter.trim()
           }
-          return out
+          return finish(out)
         }
         if (op === 'list_chat_attendees') {
-          return {
+          return finish({
             chat_id: typeof params.chat_id === 'string' ? params.chat_id.trim() : '',
-          }
+          })
         }
         if (op === 'list_post_comments') {
           const out: Record<string, unknown> = {
@@ -1258,7 +1295,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           ) {
             out.comment_id = params.post_comments_thread_comment_id.trim()
           }
-          return out
+          return finish(out)
         }
         if (op === 'list_post_reactions') {
           const out: Record<string, unknown> = {
@@ -1280,7 +1317,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           } else if (typeof limRaw === 'number' && Number.isFinite(limRaw)) {
             out.limit = Math.trunc(limRaw)
           }
-          return out
+          return finish(out)
         }
         if (op === 'get_linkedin_search_parameters') {
           const out: Record<string, unknown> = {
@@ -1308,7 +1345,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           } else if (typeof limRaw === 'number' && Number.isFinite(limRaw)) {
             out.limit = Math.trunc(limRaw)
           }
-          return out
+          return finish(out)
         }
         if (op === 'list_user_relations') {
           const out: Record<string, unknown> = {
@@ -1320,7 +1357,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           ) {
             out.filter = params.relations_filter.trim()
           }
-          return out
+          return finish(out)
         }
         if (op === 'linkedin_search') {
           const out: Record<string, unknown> = {
@@ -1339,7 +1376,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           } else if (typeof limRaw === 'number' && Number.isFinite(limRaw)) {
             out.limit = Math.trunc(limRaw)
           }
-          return out
+          return finish(out)
         }
         if (op === 'comment_post') {
           const out: Record<string, unknown> = {
@@ -1368,7 +1405,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           if (mentions) {
             out.mentions = mentions
           }
-          return out
+          return finish(out)
         }
         if (op === 'create_post') {
           const out: Record<string, unknown> = {
@@ -1406,7 +1443,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           if (mentions) {
             out.mentions = mentions
           }
-          return out
+          return finish(out)
         }
         if (op === 'send_chat_message') {
           const out: Record<string, unknown> = {
@@ -1431,7 +1468,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             copyIfString('attachments')
           }
           copyIfString('typing_duration')
-          return out
+          return finish(out)
         }
         if (op === 'start_new_chat') {
           const out: Record<string, unknown> = {
@@ -1516,25 +1553,29 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             }
           }
 
-          return out
+          return finish(out)
         }
         if (op === 'retrieve_company_details') {
-          return {
+          return finish({
             identifier: typeof params.identifier === 'string' ? params.identifier.trim() : '',
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
-          }
+          })
         }
         if (op === 'get_post') {
-          return {
+          return finish({
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
             account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
-          }
+          })
         }
-        return {}
+        return finish({})
       },
     },
   },
   inputs: {
+    unipileApiKey: {
+      type: 'string',
+      description: 'Unipile API key (X-API-KEY) for admin workspaces.',
+    },
     operation: { type: 'string', description: 'Operation to perform' },
     identifier: {
       type: 'string',

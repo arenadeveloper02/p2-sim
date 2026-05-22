@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
 import type {
@@ -47,6 +48,7 @@ export const unipileListUserPostsTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'LinkedIn: true when the identifier is a company page',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
@@ -77,7 +79,7 @@ export const unipileListUserPostsTool: ToolConfig<
       if (params.is_company === true || params.is_company === false) {
         out.is_company = params.is_company
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import type {
   UnipileStartNewChatParams,
@@ -130,13 +131,15 @@ export const unipileStartNewChatTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Recruiter API: JSON string for follow_up object',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
     url: '/api/tools/unipile/start-chat',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
+    body: (params) =>
+      attachUnipileInternalContext(params, {
       account_id: params.account_id?.trim(),
       text: params.text,
       attendees_ids: params.attendees_ids,

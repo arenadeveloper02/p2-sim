@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import type {
   UnipileRetrieveCompanyDetailsParams,
@@ -27,16 +28,18 @@ export const unipileRetrieveCompanyDetailsTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Unipile connected account id (`account_id` query parameter)',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
     url: '/api/tools/unipile/retrieve-company-details',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      identifier: params.identifier?.trim(),
-      account_id: params.account_id?.trim(),
-    }),
+    body: (params) =>
+      attachUnipileInternalContext(params, {
+        identifier: params.identifier?.trim(),
+        account_id: params.account_id?.trim(),
+      }),
   },
 
   transformResponse: async (response: Response) => {

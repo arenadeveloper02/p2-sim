@@ -1,3 +1,4 @@
+import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
 import type {
@@ -42,6 +43,7 @@ export const unipileListPostReactionsTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Optional page size per upstream request (1–100, default 100).',
     },
+    ...unipileApiKeyToolParam,
   },
 
   request: {
@@ -63,7 +65,7 @@ export const unipileListPostReactionsTool: ToolConfig<
       ) {
         out.limit = Number(params.limit)
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 
