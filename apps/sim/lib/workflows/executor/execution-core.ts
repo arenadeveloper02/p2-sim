@@ -429,7 +429,7 @@ export async function executeWorkflowCore(
         'FIRECRAWL_API_KEY',
         'BROWSER_USE_API_KEY',
         'SPYFU_API_PASSWORD',
-        'SPYFU_API_USERNAME',
+        'SPYFU_API_USER_ID',
         'CHROMEDRIVER_PATH',
         'FIGMA_API_KEY',
         'GOOGLE_ADS_REFRESH_TOKEN',

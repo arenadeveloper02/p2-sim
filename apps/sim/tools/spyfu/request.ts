@@ -23,16 +23,16 @@ interface PreparedSpyfuRequest {
   endpointPath: string
 }
 
-function resolveCredentials(params: SpyfuRequestParams): { username: string; password: string } {
-  const username = env.SPYFU_API_USERNAME || 'cd1416d3-d722-4030-ae59-173f8a6e95e0'
-  const password = env.SPYFU_API_PASSWORD || 'CSUDXHCS'
-  if (!username || !password) {
+function resolveCredentials(params: SpyfuRequestParams): { userId: string; password: string } {
+  const userId = env.SPYFU_API_USER_ID 
+  const password = env.SPYFU_API_PASSWORD
+  if (!userId || !password) {
     throw new Error(
-      'SpyFu API credentials are missing. Provide username/password in the block or set SPYFU_API_USERNAME and SPYFU_API_PASSWORD.'
+      'SpyFu API credentials are missing. Provide userId/password in the block or set SPYFU_API_USER_ID and SPYFU_API_PASSWORD.'
     )
   }
 
-  return { username, password }
+  return { userId, password }
 }
 
 function normalizeQueryParams(params: SpyfuRequestParams): Record<string, string> {
@@ -119,12 +119,12 @@ function prepareRequest(params: SpyfuRequestParams): PreparedSpyfuRequest {
     hasCountryCode: !!query.countryCode,
     domain: query.domain,
     countryCode: query.countryCode,
-    credentialsPresent: !!credentials.username && !!credentials.password,
+    credentialsPresent: !!credentials.userId && !!credentials.password,
   })
 
   const headers: Record<string, string> = {
     accept: 'application/json',
-    authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`,
+    authorization: `Basic ${Buffer.from(`${credentials.userId}:${credentials.password}`).toString('base64')}`,
   }
 
   if (method !== 'GET' && method !== 'HEAD') {

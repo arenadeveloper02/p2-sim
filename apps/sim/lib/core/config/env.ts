@@ -119,7 +119,7 @@ export const env = createEnv({
     FIREWORKS_API_KEY:                     z.string().optional(),                  // Optional Fireworks AI API key for model listing
     ELEVENLABS_API_KEY:                    z.string().min(1).optional(),           // ElevenLabs API key for text-to-speech in deployed chat
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
-    SPYFU_API_USERNAME:                    z.string().min(1).optional(),           // SpyFu API basic auth username
+    SPYFU_API_USER_ID:                    z.string().min(1).optional(),           // SpyFu API basic auth username
     SPYFU_API_PASSWORD:                    z.string().min(1).optional(),           // SpyFu API basic auth password
     SAMBANOVA_API_KEY:                     z.string().min(1).optional(),           // SambaNova AI API key
     SAMBANOVA_API_KEY_1:                   z.string().min(1).optional(),           // Additional SambanovaAI API key for load balancing
