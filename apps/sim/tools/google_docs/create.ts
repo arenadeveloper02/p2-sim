@@ -1,8 +1,59 @@
 import { createLogger } from '@sim/logger'
+import { generateShortId } from '@sim/utils/id'
 import type { GoogleDocsCreateResponse, GoogleDocsToolParams } from '@/tools/google_docs/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('GoogleDocsCreateTool')
+
+const DOC_MIME_TYPE = 'application/vnd.google-apps.document'
+
+/**
+ * Reduce unsupported markdown/HTML/GFM features before sending `text/markdown` to Drive
+ * so imports are less likely to error or lose content unexpectedly.
+ */
+function sanitizeMarkdownForDrive(content: string): string {
+  return content
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[$1]($2)')
+    .replace(
+      /<img[^>]+src="([^"]+)"[^>]*(?:alt="([^"]*)")?[^>]*\/?>/gi,
+      (_, src, alt) => `[${alt || 'Image'}](${src})`
+    )
+    .replace(/^---[\s\S]*?---\n/, '')
+    .replace(/==([^=]+)==/g, '$1')
+    .replace(/^\[\^[^\]]+\]:.*$/gm, '')
+    .replace(/\[\^[^\]]+\]/g, '')
+    .replace(/^> \[!(NOTE|WARNING|TIP|IMPORTANT)\]/gm, '> **$1:**')
+    .replace(/<(u|kbd|sup|sub|br|details|summary|div|p|h[1-6])[^>]*>([\s\S]*?)<\/\1>/gi, '$2')
+    .replace(/<(br|img)[^>]*\/?>/gi, '')
+}
+
+/**
+ * Build a multipart/related body for Drive's files.create upload endpoint.
+ * Used when converting Markdown to a Google Doc in a single round-trip.
+ * See: https://developers.google.com/workspace/drive/api/guides/manage-uploads
+ */
+function buildMarkdownMultipartBody(
+  metadata: Record<string, unknown>,
+  markdownContent: string,
+  boundary: string
+): string {
+  return (
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: text/markdown\r\n\r\n` +
+    `${sanitizeMarkdownForDrive(markdownContent)}\r\n` +
+    `--${boundary}--`
+  )
+}
+
+function shouldUseMarkdownUpload(params: GoogleDocsToolParams): boolean {
+  // Always use the Drive markdown upload path when content is present.
+  // This is a single round-trip and handles plain text transparently
+  // (no markdown syntax → same output as plain text insertion).
+  return Boolean(params.content)
+}
 
 export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateResponse> = {
   id: 'google_docs_create',
@@ -34,29 +85,34 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
       visibility: 'user-or-llm',
       description: 'The content of the document to create',
     },
-    folderSelector: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Google Drive folder ID to create the document in (e.g., 1ABCxyz...)',
-    },
     folderId: {
       type: 'string',
       required: false,
       visibility: 'hidden',
-      description: 'The ID of the folder to create the document in (internal use)',
+      description: 'Drive folder ID (optional). Omit to create at My Drive root.',
     },
   },
 
   request: {
-    url: () => {
-      return 'https://www.googleapis.com/drive/v3/files?supportsAllDrives=true'
+    url: (params) => {
+      return shouldUseMarkdownUpload(params)
+        ? 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
+        : 'https://www.googleapis.com/drive/v3/files?supportsAllDrives=true'
     },
     method: 'POST',
     headers: (params) => {
-      // Validate access token
       if (!params.accessToken) {
         throw new Error('Access token is required')
+      }
+
+      if (shouldUseMarkdownUpload(params)) {
+        const boundary = `sim_gdocs_md_${generateShortId(24)}`
+        // Stash on params so body() uses the matching boundary string
+        ;(params as GoogleDocsToolParams & { _boundary?: string })._boundary = boundary
+        return {
+          Authorization: `Bearer ${params.accessToken}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
+        }
       }
 
       return {
@@ -69,18 +125,30 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
         throw new Error('Title is required')
       }
 
-      const requestBody: any = {
+      const folderId = params.folderId
+      const metadata: Record<string, unknown> = {
         name: params.title,
-        mimeType: 'application/vnd.google-apps.document',
+        mimeType: DOC_MIME_TYPE,
       }
-
-      // Add parent folder if specified (prefer folderSelector over folderId)
-      const folderId = params.folderSelector || params.folderId
       if (folderId) {
-        requestBody.parents = [folderId]
+        metadata.parents = [folderId]
       }
 
-      return requestBody
+      if (shouldUseMarkdownUpload(params)) {
+        const boundary = (params as GoogleDocsToolParams & { _boundary?: string })._boundary
+        if (!boundary) {
+          // headers() runs before body() in formatRequestParams and stashes the boundary
+          // on the same params reference. Missing _boundary means that contract was broken,
+          // which would silently produce a Content-Type / body boundary mismatch (HTTP 400).
+          // Throw loudly instead of fabricating a mismatched boundary.
+          throw new Error(
+            'Multipart boundary missing on params — headers() must run before body() for markdown upload'
+          )
+        }
+        return buildMarkdownMultipartBody(metadata, params.content ?? '', boundary)
+      }
+
+      return metadata
     },
   },
 
@@ -90,6 +158,12 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
     }
 
     const documentId = result.output.metadata.documentId
+
+    // When the markdown upload path ran, content was already inserted via Drive's
+    // text/markdown import conversion during files.create — no follow-up write needed.
+    if (shouldUseMarkdownUpload(params)) {
+      return result
+    }
 
     if (params.content && documentId) {
       try {
@@ -128,7 +202,7 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
       const metadata = {
         documentId,
         title: title || 'Untitled Document',
-        mimeType: 'application/vnd.google-apps.document',
+        mimeType: DOC_MIME_TYPE,
         url: `https://docs.google.com/document/d/${documentId}/edit`,
       }
 

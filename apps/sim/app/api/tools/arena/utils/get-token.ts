@@ -12,8 +12,11 @@ const logger = createLogger('ArenaGetToken')
 export interface ArenaTokenResult {
   found: true
   userId: string
+  name: string
   email: string
   arenaToken: string
+  timezone: string | null
+  persona: string | null
 }
 
 export interface ArenaTokenNotFound {
@@ -81,7 +84,7 @@ export async function fetchArenaTokenFromApi(req: NextRequest): Promise<ArenaTok
   const userId = resolved.userId
 
   const userRow = await db
-    .select({ email: user.email })
+    .select({ email: user.email, name: user.name })
     .from(user)
     .where(eq(user.id, userId))
     .limit(1)
@@ -91,13 +94,18 @@ export async function fetchArenaTokenFromApi(req: NextRequest): Promise<ArenaTok
   }
 
   const email = userRow[0].email
+  const name = userRow[0].name
   if (!email || !isAllowedEmail(email)) {
     logger.warn(`Get token rejected: user email domain not allowed (userId: ${userId})`)
     return { found: false, reason: 'Only @position2.com users are allowed' }
   }
 
   const details = await db
-    .select({ arenaToken: userArenaDetails.arenaToken })
+    .select({
+      arenaToken: userArenaDetails.arenaToken,
+      timezone: userArenaDetails.timezone,
+      persona: userArenaDetails.persona,
+    })
     .from(userArenaDetails)
     .where(eq(userArenaDetails.userIdRef, userId))
     .limit(1)
@@ -109,8 +117,11 @@ export async function fetchArenaTokenFromApi(req: NextRequest): Promise<ArenaTok
   return {
     found: true,
     userId,
+    name,
     email,
     arenaToken: details[0].arenaToken,
+    timezone: details[0].timezone ?? null,
+    persona: details[0].persona ?? null,
   }
 }
 
@@ -125,11 +136,22 @@ export async function getArenaToken(
   if (!tokenObject.found && workflowId) {
     const wf = await getArenaTokenByWorkflowId(workflowId)
     if (wf.found) {
-      const email =
-        (
-          await db.select({ email: user.email }).from(user).where(eq(user.id, wf.userId)).limit(1)
-        )[0]?.email ?? ''
-      tokenObject = { found: true, userId: wf.userId, email, arenaToken: wf.arenaToken }
+      const userRecord = (
+        await db
+          .select({ email: user.email, name: user.name })
+          .from(user)
+          .where(eq(user.id, wf.userId))
+          .limit(1)
+      )[0]
+      tokenObject = {
+        found: true,
+        userId: wf.userId,
+        name: userRecord?.name ?? '',
+        email: userRecord?.email ?? '',
+        arenaToken: wf.arenaToken,
+        timezone: wf.timezone ?? null,
+        persona: wf.persona ?? null,
+      }
     } else {
       tokenObject = { found: false, reason: wf.reason }
     }

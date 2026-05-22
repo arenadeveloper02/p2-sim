@@ -134,6 +134,7 @@ export type ArenaGetMeetingsParams = {
 export interface ArenaGetMeetingsResponse extends ToolResponse {}
 
 export type ArenaGetMyTasksParams = {
+  withinMinutes?: number
   _context: {
     workflowId: string
   }
