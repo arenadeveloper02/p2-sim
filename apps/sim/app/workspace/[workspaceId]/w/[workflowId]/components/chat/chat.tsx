@@ -735,8 +735,14 @@ export function Chat() {
             finalizeMessageStream(responseMessageId, contentToSet, {
               files:
                 assetSources.length > 0 ? extractAssistantFilesFromData(assetSources) : undefined,
-              generatedImages:
-                assetSources.length > 0 ? extractGeneratedImagesFromData(assetSources) : undefined,
+              generatedImages: (() => {
+                const fromSources =
+                  assetSources.length > 0 ? extractGeneratedImagesFromData(assetSources) : []
+                if (fromSources.length > 0) {
+                  return fromSources
+                }
+                return contentToSet ? extractGeneratedImagesFromData(contentToSet) : undefined
+              })(),
             })
             break
           }

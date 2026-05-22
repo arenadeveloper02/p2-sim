@@ -168,6 +168,47 @@ describe('ExecutionLogger', () => {
       expect(completedData.hasTraceSpans).toBe(false)
       expect(completedData.traceSpanCount).toBe(0)
     })
+
+    test('preserves chat attachment and generated image metadata when execution completes', () => {
+      const loggerInstance = new ExecutionLogger() as any
+      const userAttachments = [
+        {
+          id: 'file-1',
+          key: 'execution/workspace/wf/exec/ref.png',
+          filename: 'ref.png',
+          media_type: 'image/png',
+          size: 1024,
+        },
+      ]
+      const generatedImages = [
+        {
+          id: 'img-1',
+          name: 'generated.png',
+          url: '/api/files/serve/agent-generated-images/wf/user/generated.png',
+          type: 'image/png',
+          key: 'agent-generated-images/wf/user/generated.png',
+        },
+      ]
+      const knowledgeRefs = [{ id: 'kb-1', name: 'Doc', workspaceId: 'workspace-123' }]
+
+      const completedData = loggerInstance.buildCompletedExecutionData({
+        existingExecutionData: {
+          userAttachments,
+          generatedImages,
+          knowledgeRefs,
+        },
+        traceSpans: [],
+        finalOutput: { ok: true },
+        executionCost: {
+          tokens: { input: 0, output: 0, total: 0 },
+          models: {},
+        },
+      })
+
+      expect(completedData.userAttachments).toEqual(userAttachments)
+      expect(completedData.generatedImages).toEqual(generatedImages)
+      expect(completedData.knowledgeRefs).toEqual(knowledgeRefs)
+    })
   })
 
   describe('file extraction', () => {

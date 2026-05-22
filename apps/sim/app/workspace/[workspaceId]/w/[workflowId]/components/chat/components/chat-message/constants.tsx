@@ -3,6 +3,10 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Check, Download, Expand, X } from 'lucide-react'
 import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
+import { normalizeImageUrlForCompare } from '@/lib/chat/assistant-assets'
+import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
+
+export { normalizeImageUrlForCompare } from '@/lib/chat/assistant-assets'
 
 /**
  * Common base64-encoded image headers
@@ -1337,17 +1341,6 @@ export function sanitizeMessagesForPersistence<T extends ChatMessageWithBase64>(
 export const S3_UPLOAD_FAILED_DISMISS_MS = 10_000
 
 /**
- * Normalizes a URL for deduplication (e.g. encoded vs decoded path).
- */
-export function normalizeImageUrlForCompare(s: string): string {
-  try {
-    return decodeURIComponent(s.trim())
-  } catch {
-    return s.trim()
-  }
-}
-
-/**
  * True if the string is an http(s) or app file-serve URL that should render as an image.
  */
 export function isRenderableImageUrl(s: string): boolean {
@@ -1414,6 +1407,11 @@ export function mergeToolOutputImageUrls(
     for (const value of imagesField) {
       if (typeof value === 'string' && isRenderableImageUrl(value)) {
         add(value)
+        continue
+      }
+
+      if (isUserFileWithMetadata(value) && value.type.startsWith('image/') && value.url) {
+        add(value.url)
       }
     }
   }

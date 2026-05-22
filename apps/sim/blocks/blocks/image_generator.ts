@@ -40,7 +40,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'Nano Banana', id: 'gemini-2.5-flash-image' },
         { label: 'Nano Banana Pro', id: NANO_BANANA_PRO_MODEL },
       ],
-      value: () => 'gemini-2.5-flash-image',
+      value: () => NANO_BANANA_PRO_MODEL,
     },
     {
       id: 'prompt',
@@ -266,25 +266,32 @@ export const ImageGeneratorBlockV2: BlockConfig = {
             inputImageUrl: params.inputImageUrl,
             inputImageUrls: params.inputImageUrls,
           })
-          const base = {
+
+          const geminiParams: Record<string, unknown> = {
             model: params.model,
             prompt: params.prompt,
             aspectRatio: params.aspectRatio || '1:1',
-            ...('inputImages' in nanoBananaReferences && nanoBananaReferences.inputImages
-              ? { inputImages: nanoBananaReferences.inputImages }
-              : {}),
-            ...('inputImage' in nanoBananaReferences && nanoBananaReferences.inputImage
-              ? { inputImage: nanoBananaReferences.inputImage }
-              : {}),
-            inputImageMimeType: params.inputImageMimeType,
+            inputImage: undefined,
+            inputImages: undefined,
+            inputImageUrl: undefined,
+            inputImageUrls: undefined,
+            ...(params.inputImageMimeType ? { inputImageMimeType: params.inputImageMimeType } : {}),
             ...(nanoBananaReferences.inputImageWarning
               ? { inputImageWarning: nanoBananaReferences.inputImageWarning }
               : {}),
           }
-          if (params.model === NANO_BANANA_PRO_MODEL) {
-            return { ...base, imageSize: params.imageSize || '1K' }
+
+          if (nanoBananaReferences.inputImages) {
+            geminiParams.inputImages = nanoBananaReferences.inputImages
+          } else if (nanoBananaReferences.inputImage) {
+            geminiParams.inputImage = nanoBananaReferences.inputImage
           }
-          return base
+
+          if (params.model === NANO_BANANA_PRO_MODEL) {
+            geminiParams.imageSize = params.imageSize || '1K'
+          }
+
+          return geminiParams
         }
 
         const baseParams = {

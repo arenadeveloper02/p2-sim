@@ -74,6 +74,50 @@ const DEFAULT_VOICE_SETTINGS = {
   voiceId: 'EXAVITQu4vr4xnSDxMaL', // Default ElevenLabs voice (Bella)
 }
 
+interface ChatFilePayload {
+  name: string
+  size: number
+  type: string
+  data?: string
+  url?: string
+}
+
+/**
+ * Builds the chat API file payload. Images already on this app are sent by URL so we do not
+ * re-embed multi-megabyte base64 blobs in the JSON body.
+ */
+async function buildChatFilePayload(file: {
+  name: string
+  size: number
+  type: string
+  file: File
+  dataUrl?: string
+  url?: string
+}): Promise<ChatFilePayload> {
+  const normalizedSize = file.size > 0 ? file.size : 1
+  const dataUrl = file.dataUrl?.trim() ?? ''
+  const directUrl = file.url?.trim() ?? ''
+  const serveUrl = [dataUrl, directUrl].find((value) => value.includes('/api/files/serve/'))
+  if (serveUrl) {
+    const url = serveUrl.startsWith('http')
+      ? serveUrl
+      : `${window.location.origin}${serveUrl.startsWith('/') ? serveUrl : `/${serveUrl}`}`
+    return {
+      name: file.name,
+      size: normalizedSize,
+      type: file.type,
+      url,
+    }
+  }
+
+  return {
+    name: file.name,
+    size: normalizedSize,
+    type: file.type,
+    data: dataUrl || (await fileToBase64(file.file)),
+  }
+}
+
 /**
  * Converts a File object to a base64 data URL
  */
@@ -736,14 +780,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       // Add files if present (convert to base64 for JSON transmission)
       if (combinedFiles.length > 0) {
-        payload.files = await Promise.all(
-          combinedFiles.map(async (file) => ({
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            data: file.dataUrl || (await fileToBase64(file.file)),
-          }))
-        )
+        payload.files = await Promise.all(combinedFiles.map((file) => buildChatFilePayload(file)))
       }
 
       logger.info('API payload:', {
@@ -767,9 +804,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       clearTimeout(timeoutId)
 
       if (!response.ok) {
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({}))
         logger.error('API error response:', errorData)
-        throw new Error(errorData.error || 'Failed to get response')
+        const apiError =
+          typeof errorData.error === 'string'
+            ? errorData.error
+            : typeof errorData.message === 'string'
+              ? errorData.message
+              : 'Failed to get response'
+        throw new Error(apiError)
       }
 
       if (!response.body) {
@@ -819,9 +862,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       logger.error('Error sending message:', error)
       setIsLoading(false)
+      const displayError =
+        error instanceof Error &&
+        (error.message.startsWith('Failed to load selected image') ||
+          error.message.startsWith('Invalid request body'))
+          ? error.message
+          : CHAT_ERROR_MESSAGES.GENERIC_ERROR
       const errorMessage: ChatMessage = {
         id: generateId(),
-        content: CHAT_ERROR_MESSAGES.GENERIC_ERROR,
+        content: displayError,
         type: 'assistant',
         timestamp: new Date(),
       }

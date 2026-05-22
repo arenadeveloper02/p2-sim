@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
+import {
+  extractGeneratedImagesFromData,
+  normalizeImageUrlForCompare,
+  resolveSelectableGeneratedImage,
+} from '@/lib/chat/assistant-assets'
 
 describe('extractGeneratedImagesFromData', () => {
   it('ignores nested profile icon urls in non-image answer objects', () => {
@@ -32,6 +36,7 @@ describe('extractGeneratedImagesFromData', () => {
       'https://example.com/generated-1.png',
       'https://example.com/generated-2.webp',
     ])
+    expect(images.map((image) => image.type)).toEqual(['image/png', 'image/webp'])
   })
 
   it('extracts image arrays selected directly as an output value', () => {
@@ -43,5 +48,42 @@ describe('extractGeneratedImagesFromData', () => {
     ])
 
     expect(images).toHaveLength(4)
+  })
+
+  it('preserves storage keys for internal serve URLs so chat reuse stays URL-based', () => {
+    const images = extractGeneratedImagesFromData([
+      '/api/files/serve/agent-generated-images%2Fworkflow%2Fuser%2Fimage.png',
+    ])
+
+    expect(images).toEqual([
+      expect.objectContaining({
+        url: '/api/files/serve/agent-generated-images%2Fworkflow%2Fuser%2Fimage.png',
+        key: 'agent-generated-images/workflow/user/image.png',
+        context: 'agent-generated-images',
+      }),
+    ])
+  })
+
+  it('normalizes absolute and relative serve URLs to the same storage key', () => {
+    const relative = '/api/files/serve/agent-generated-images%2Fworkflow%2Fuser%2Fimage.png'
+    const absolute =
+      'https://app.example.com/api/files/serve/agent-generated-images%2Fworkflow%2Fuser%2Fimage.png'
+
+    expect(normalizeImageUrlForCompare(relative)).toBe('agent-generated-images/workflow/user/image.png')
+    expect(normalizeImageUrlForCompare(absolute)).toBe('agent-generated-images/workflow/user/image.png')
+  })
+
+  it('resolves selectable images from rendered URLs when metadata is missing', () => {
+    const imageUrl =
+      'https://app.example.com/api/files/serve/agent-generated-images%2Fworkflow%2Fuser%2Fimage.png'
+    const resolved = resolveSelectableGeneratedImage(imageUrl, new Map())
+
+    expect(resolved).toEqual(
+      expect.objectContaining({
+        url: imageUrl,
+        key: 'agent-generated-images/workflow/user/image.png',
+        context: 'agent-generated-images',
+      })
+    )
   })
 })

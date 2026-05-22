@@ -437,6 +437,13 @@ export function useChatStreaming() {
                   }
                 }
 
+                const resolvedGeneratedImages =
+                  generatedImages.length > 0
+                    ? generatedImages
+                    : contentToSet
+                      ? extractGeneratedImagesFromData(contentToSet)
+                      : []
+
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === messageId
@@ -447,7 +454,8 @@ export function useChatStreaming() {
                           executionId: finalData?.executionId || msg.executionId,
                           liked: null,
                           files: extractedFiles.length > 0 ? extractedFiles : undefined,
-                          generatedImages: generatedImages.length > 0 ? generatedImages : undefined,
+                          generatedImages:
+                            resolvedGeneratedImages.length > 0 ? resolvedGeneratedImages : undefined,
                           knowledgeResults: pendingKnowledgeResults,
                         }
                       : msg

@@ -18,6 +18,39 @@ const SVG_MIME = 'image/svg+xml'
 const MAX_URL_IMAGE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
 const URL_FETCH_TIMEOUT_MS = 30_000 // 30 seconds
 
+function detectImageMimeType(buffer: Buffer): string | null {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return 'image/png'
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer.toString('ascii', 0, 4) === 'RIFF' &&
+    buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return 'image/webp'
+  }
+  if (
+    buffer.length >= 6 &&
+    (buffer.toString('ascii', 0, 6) === 'GIF87a' || buffer.toString('ascii', 0, 6) === 'GIF89a')
+  ) {
+    return 'image/gif'
+  }
+  return null
+}
+
 /**
  * Gemini image API does not support image/svg+xml. Convert SVG to PNG for API compatibility.
  */
@@ -26,6 +59,10 @@ async function ensureSupportedMime(
   mimeType: string
 ): Promise<{ mimeType: string; data: string }> {
   const normalized = mimeType.toLowerCase().split(';')[0].trim()
+  if (!normalized || normalized === 'image/*') {
+    const detected = detectImageMimeType(buffer) ?? 'image/png'
+    return { mimeType: detected, data: buffer.toString('base64') }
+  }
   if (normalized !== SVG_MIME) {
     return { mimeType: normalized || 'image/png', data: buffer.toString('base64') }
   }
@@ -103,6 +140,63 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+const IMAGE_GENERATION_FAILURE_FINISH_REASONS = new Set([
+  'NO_IMAGE',
+  'IMAGE_OTHER',
+  'IMAGE_PROHIBITED_CONTENT',
+  'IMAGE_SAFETY',
+  'SAFETY',
+  'RECITATION',
+  'BLOCKLIST',
+])
+
+function getCandidateFinishReason(candidate: Record<string, unknown>): string {
+  const reason = candidate.finishReason ?? candidate.finish_reason
+  return typeof reason === 'string' && reason.length > 0 ? reason : 'UNKNOWN'
+}
+
+function getCandidateFinishMessage(candidate: Record<string, unknown>): string | undefined {
+  const message = candidate.finishMessage ?? candidate.finish_message
+  if (typeof message === 'string' && message.trim().length > 0) {
+    return message.trim()
+  }
+  return undefined
+}
+
+function formatNanoBananaEmptyCandidateError(
+  finishReason: string,
+  finishMessage?: string,
+  imageSize?: string
+): string {
+  if (finishMessage) {
+    const resolutionHint =
+      imageSize === '4K'
+        ? ' Try Resolution 2K or 1K, fewer reference images, or smaller reference images.'
+        : ''
+    return `Google Nano Banana could not generate an image (${finishReason}): ${finishMessage}${resolutionHint}`
+  }
+
+  switch (finishReason) {
+    case 'NO_IMAGE':
+      return 'Google Nano Banana returned NO_IMAGE. The model did not generate an image for this prompt; try a shorter/simpler prompt or a different aspect ratio.'
+    case 'IMAGE_OTHER':
+      return imageSize === '4K'
+        ? 'Google Nano Banana could not generate a 4K image for this prompt. Try Resolution 2K or 1K, fewer reference images, or a simpler prompt.'
+        : 'Google Nano Banana could not generate an image for this prompt. Try a shorter prompt, a different aspect ratio, or fewer reference images.'
+    case 'IMAGE_PROHIBITED_CONTENT':
+      return 'Google Nano Banana blocked image generation because a reference image or prompt was flagged as prohibited content.'
+    case 'IMAGE_SAFETY':
+    case 'SAFETY':
+      return 'Google Nano Banana blocked image generation for safety reasons. Try changing the prompt or reference images.'
+    case 'RECITATION':
+      return 'Google Nano Banana stopped image generation because the output was too close to existing content.'
+    case 'BLOCKLIST':
+      return 'Google Nano Banana blocked image generation because the prompt or reference content matched a blocklist.'
+    default:
+      return `Google Nano Banana returned no image data (${finishReason}). Try a simpler prompt, lower resolution, or fewer reference images.`
+  }
+}
+
 const extractCandidateParts = (candidate: Record<string, unknown>): CandidatePart[] => {
   const directParts = candidate.parts
   if (Array.isArray(directParts)) {
@@ -141,27 +235,21 @@ export async function buildNanoBananaToolResponse(
   }
 
   const candidate = candidates[0] as Record<string, unknown>
-  const finishReason =
-    typeof candidate.finishReason === 'string' ? candidate.finishReason : 'UNKNOWN'
-  if (finishReason === 'NO_IMAGE') {
-    logger.error('Nano Banana did not return an image', {
+  const finishReason = getCandidateFinishReason(candidate)
+  const finishMessage = getCandidateFinishMessage(candidate)
+  const candidateParts = extractCandidateParts(candidate)
+
+  if (candidateParts.length === 0) {
+    logger.error('Nano Banana candidate returned without image parts', {
       finishReason,
+      finishMessage,
       candidateKeys: getObjectKeys(candidate),
       hasPromptFeedback: Boolean(isRecord(responseData) ? responseData.promptFeedback : undefined),
       modelVersion: isRecord(responseData) ? responseData.modelVersion : undefined,
+      imageSize: params?.imageSize,
     })
     throw new Error(
-      'Google Nano Banana returned NO_IMAGE. The model did not generate an image for this prompt; try a shorter/simpler prompt or a different aspect ratio.'
-    )
-  }
-
-  const candidateParts = extractCandidateParts(candidate)
-  if (candidateParts.length === 0) {
-    logger.error('No content parts found in Nano Banana candidate', {
-      candidateKeys: getObjectKeys(candidate),
-    })
-    throw new Error(
-      `No content parts found in candidate (keys: ${Object.keys(candidate).join(', ') || 'none'})`
+      formatNanoBananaEmptyCandidateError(finishReason, finishMessage, params?.imageSize)
     )
   }
 
@@ -187,7 +275,14 @@ export async function buildNanoBananaToolResponse(
   if (!base64Image) {
     logger.error('No image data found in Nano Banana response parts', {
       candidatePartCount: candidateParts.length,
+      finishReason,
+      finishMessage,
     })
+    if (IMAGE_GENERATION_FAILURE_FINISH_REASONS.has(finishReason) || finishMessage) {
+      throw new Error(
+        formatNanoBananaEmptyCandidateError(finishReason, finishMessage, params?.imageSize)
+      )
+    }
     throw new Error('No image data found in response parts')
   }
 

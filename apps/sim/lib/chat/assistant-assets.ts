@@ -1,4 +1,5 @@
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
+import { extractStorageKey, inferContextFromKey, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 
 export interface AssistantChatFile {
   id: string
@@ -26,7 +27,25 @@ function isDataImageUrl(value: string): boolean {
 
 function getDataImageMimeType(value: string): string {
   const match = value.trim().match(/^data:(image\/[a-z0-9.+-]+);base64,/i)
-  return match?.[1]?.toLowerCase() ?? 'image/*'
+  return match?.[1]?.toLowerCase() ?? 'image/png'
+}
+
+function inferImageMimeTypeFromUrl(value: string): string {
+  const cleanValue = value.split('?')[0].split('#')[0].toLowerCase()
+  const decodedValue = (() => {
+    try {
+      return decodeURIComponent(cleanValue)
+    } catch {
+      return cleanValue
+    }
+  })()
+
+  if (/\.(jpg|jpeg)$/.test(decodedValue)) return 'image/jpeg'
+  if (/\.png$/.test(decodedValue)) return 'image/png'
+  if (/\.webp$/.test(decodedValue)) return 'image/webp'
+  if (/\.gif$/.test(decodedValue)) return 'image/gif'
+  if (/\.svg$/.test(decodedValue)) return 'image/svg+xml'
+  return 'image/png'
 }
 
 function getGeneratedImageId(value: string): string {
@@ -35,6 +54,79 @@ function getGeneratedImageId(value: string): string {
     hash = (hash * 31 + value.charCodeAt(index)) | 0
   }
   return `generated-image:${value.length}:${Math.abs(hash)}`
+}
+
+/**
+ * Normalizes image URLs for deduplication and selection matching.
+ * Internal serve URLs compare by storage key so absolute and relative URLs match.
+ */
+export function normalizeImageUrlForCompare(url: string): string {
+  const trimmed = url.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  const stripQuery = (value: string) => value.split('?')[0].split('#')[0]
+
+  if (isDataImageUrl(trimmed)) {
+    return getGeneratedImageId(trimmed)
+  }
+
+  try {
+    let candidate = decodeURIComponent(trimmed)
+    candidate = stripQuery(candidate)
+
+    if (candidate.includes('/api/files/serve/')) {
+      return extractStorageKey(candidate)
+    }
+
+    if (candidate.startsWith('http://') || candidate.startsWith('https://')) {
+      try {
+        const pathname = stripQuery(new URL(candidate).pathname)
+        if (pathname.includes('/api/files/serve/')) {
+          return extractStorageKey(pathname)
+        }
+      } catch {
+        // Ignore malformed absolute URLs and fall back to the decoded candidate.
+      }
+    }
+
+    return candidate
+  } catch {
+    return stripQuery(trimmed)
+  }
+}
+
+/**
+ * Resolves a rendered image URL to selectable generated-image metadata.
+ */
+export function resolveSelectableGeneratedImage(
+  imageUrl: string | undefined,
+  generatedImagesByUrl: Map<string, AssistantGeneratedImage>
+): AssistantGeneratedImage | undefined {
+  if (!imageUrl?.trim()) {
+    return undefined
+  }
+
+  const existing = generatedImagesByUrl.get(normalizeImageUrlForCompare(imageUrl))
+  if (existing) {
+    return existing
+  }
+
+  if (!isAssistantImageUrl(imageUrl)) {
+    return undefined
+  }
+
+  const trimmed = imageUrl.trim()
+  const key = isInternalFileUrl(trimmed) ? extractStorageKey(trimmed) : undefined
+
+  return {
+    id: getGeneratedImageId(normalizeImageUrlForCompare(trimmed)),
+    name: 'Generated image',
+    url: trimmed,
+    type: isDataImageUrl(trimmed) ? getDataImageMimeType(trimmed) : inferImageMimeTypeFromUrl(trimmed),
+    ...(key ? { key, context: inferContextFromKey(key) } : {}),
+  }
 }
 
 function isGeneratedImageField(key: string): boolean {
@@ -56,12 +148,14 @@ function addGeneratedImageUrl(
   }
 
   seenUrls.add(value)
-  const type = isDataImageUrl(value) ? getDataImageMimeType(value) : 'image/*'
+  const type = isDataImageUrl(value) ? getDataImageMimeType(value) : inferImageMimeTypeFromUrl(value)
+  const key = isInternalFileUrl(value) ? extractStorageKey(value) : undefined
   images.push({
-    id: getGeneratedImageId(value),
+    id: getGeneratedImageId(normalizeImageUrlForCompare(value)),
     name,
     url: value,
     type,
+    ...(key ? { key, context: inferContextFromKey(key) } : {}),
   })
 }
 

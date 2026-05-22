@@ -42,24 +42,52 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function removeInlinePayloadFromFileReference(reference: unknown): unknown {
+export function stripInlinePayloadFromFileReference(reference: unknown): unknown {
+  if (Array.isArray(reference)) {
+    return reference.map(stripInlinePayloadFromFileReference)
+  }
+
   if (!isRecord(reference)) {
     return reference
   }
 
-  const hasStoredFileReference =
-    typeof reference.key === 'string' ||
-    typeof reference.path === 'string' ||
-    typeof reference.url === 'string'
-
-  if (!hasStoredFileReference) {
-    return reference
+  const sanitized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(reference)) {
+    sanitized[key] = stripInlinePayloadFromFileReference(value)
   }
-
-  const sanitized = { ...reference }
   for (const key of INLINE_IMAGE_PAYLOAD_KEYS) {
     delete sanitized[key]
   }
+  return sanitized
+}
+
+/**
+ * Sanitizes Image Generation wrapper params before JSON serialization.
+ * Strips inline image bytes from file references and removes redundant legacy
+ * input fields so merged block inputs cannot reintroduce multi-megabyte payloads.
+ */
+export function sanitizeImageGenerationWrapperParams(
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  const sanitized = stripInlinePayloadFromFileReference(params) as Record<string, unknown>
+
+  const hasInputImages = Array.isArray(sanitized.inputImages) && sanitized.inputImages.length > 0
+  const hasInputImage =
+    sanitized.inputImage !== undefined &&
+    sanitized.inputImage !== null &&
+    sanitized.inputImage !== ''
+
+  if (hasInputImages || hasInputImage) {
+    delete sanitized.inputImageUrl
+    delete sanitized.inputImageUrls
+  }
+
+  if (hasInputImages) {
+    delete sanitized.inputImage
+  } else if (hasInputImage) {
+    delete sanitized.inputImages
+  }
+
   return sanitized
 }
 
@@ -77,7 +105,7 @@ export function resolveNanoBananaReferences({
   const httpUrls = urls.filter((url) => !isS3Uri(url))
   const s3Refs = urls.filter(isS3Uri).map(s3UriToPathObject)
   const references = [
-    ...uploadedReferences.map(removeInlinePayloadFromFileReference),
+    ...uploadedReferences.map(stripInlinePayloadFromFileReference),
     ...httpUrls,
     ...s3Refs,
   ]

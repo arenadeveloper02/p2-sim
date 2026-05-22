@@ -62,6 +62,7 @@ export function toPersistedChatAttachment(file: UserFile): PersistedChatAttachme
 export function toHistoryAttachment(attachment: PersistedChatAttachment) {
   return {
     id: attachment.id,
+    key: attachment.key,
     name: attachment.filename,
     type: attachment.media_type,
     size: attachment.size,

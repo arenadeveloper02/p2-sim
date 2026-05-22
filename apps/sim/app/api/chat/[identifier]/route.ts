@@ -131,13 +131,18 @@ function toChatConfigResponse(deployment: ChatConfigSource) {
   }
 }
 
-const chatFileSchema = z.object({
-  name: z.string().min(1, 'File name is required'),
-  type: z.string().min(1, 'File type is required'),
-  size: z.number().positive('File size must be positive'),
-  data: z.string().min(1, 'File data is required'),
-  lastModified: z.number().optional(),
-})
+const chatFileSchema = z
+  .object({
+    name: z.string().min(1, 'File name is required'),
+    type: z.string().min(1, 'File type is required'),
+    size: z.number().positive('File size must be positive'),
+    data: z.string().optional(),
+    url: z.string().optional(),
+    lastModified: z.number().optional(),
+  })
+  .refine((file) => Boolean(file.data?.trim() || file.url?.trim()), {
+    message: 'File data or url is required',
+  })
 
 const chatPostBodySchema = z.object({
   input: z.string().optional(),

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
+import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
 import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components'
@@ -203,7 +204,7 @@ export function ChatMessage({
         return {}
       }
 
-      const matchedImage = generatedImagesByUrl.get(normalizeImageUrlForCompare(imageUrl))
+      const matchedImage = resolveSelectableGeneratedImage(imageUrl, generatedImagesByUrl)
       if (!matchedImage) {
         return {}
       }

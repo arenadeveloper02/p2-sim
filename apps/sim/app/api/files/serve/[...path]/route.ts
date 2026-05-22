@@ -189,6 +189,62 @@ export const GET = withRouteHandler(
         return await handleAgentGeneratedImageLocal(fullPath, userId)
       }
 
+      if (fullPath.startsWith('execution/')) {
+        const pathSegments = fullPath.split('/')
+        const hasValidStructure =
+          pathSegments.length >= 5 &&
+          pathSegments[0] === 'execution' &&
+          pathSegments[1] &&
+          pathSegments[2] &&
+          pathSegments[3] &&
+          pathSegments[4]
+
+        if (!hasValidStructure) {
+          logger.warn(
+            'Execution file path must be execution/[workspace_id]/[workflow_id]/[execution_id]/[file]',
+            { fullPath, segmentCount: pathSegments.length }
+          )
+          return NextResponse.json({ error: 'Not found' }, { status: 404 })
+        }
+
+        const workflowIdFromPath = pathSegments[2]
+        const raw = request.nextUrl.searchParams.get('raw') === '1'
+        logger.info('Execution file serve: checking auth', { fullPath, workflowIdFromPath })
+
+        const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+
+        if (authResult.success && authResult.userId) {
+          logger.info('Execution file serve: hybrid auth success', {
+            userId: authResult.userId,
+            authType: authResult.authType ?? 'hybrid',
+          })
+          if (isUsingCloudStorage()) {
+            return await handleCloudProxy(cloudKey, authResult.userId, raw, request.signal)
+          }
+          return await handleLocalFile(cloudKey, authResult.userId, raw, request.signal)
+        }
+
+        const deployedChatOk = await canAccessAgentGeneratedImageViaDeployedChat(
+          request,
+          workflowIdFromPath
+        )
+        if (!deployedChatOk) {
+          logger.warn('Unauthorized execution file access attempt', {
+            path,
+            fullPath,
+            error: authResult.error || 'Missing userId',
+            authType: authResult.authType,
+          })
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
+        logger.info('Execution file serve: deployed chat access', { workflowIdFromPath })
+        if (isUsingCloudStorage()) {
+          return await handleDeployedChatExecutionFileCloud(fullPath)
+        }
+        return await handleDeployedChatExecutionFileLocal(fullPath)
+      }
+
       const isPublicByKeyPrefix =
         cloudKey.startsWith('profile-pictures/') ||
         cloudKey.startsWith('og-images/') ||
@@ -448,6 +504,60 @@ async function handleAgentGeneratedImageLocal(
     })
   } catch (error) {
     logger.error('Error reading agent-generated image:', error)
+    throw error
+  }
+}
+
+async function handleDeployedChatExecutionFileLocal(filename: string): Promise<NextResponse> {
+  try {
+    const filePath = await findLocalFile(filename)
+
+    if (!filePath) {
+      throw new FileNotFoundError(`File not found: ${filename}`)
+    }
+
+    const fileBuffer = await readFile(filePath)
+    const contentType = getContentType(filename)
+
+    logger.info('Execution file served locally for deployed chat', {
+      filename,
+      filePath,
+      size: fileBuffer.length,
+    })
+
+    return createFileResponse({
+      buffer: fileBuffer,
+      contentType,
+      filename,
+    })
+  } catch (error) {
+    logger.error('Error reading execution file for deployed chat:', error)
+    throw error
+  }
+}
+
+async function handleDeployedChatExecutionFileCloud(cloudKey: string): Promise<NextResponse> {
+  try {
+    const fileBuffer = await downloadFile({
+      key: cloudKey,
+      context: 'execution',
+    })
+
+    const originalFilename = cloudKey.split('/').pop() || 'download'
+    const contentType = getContentType(originalFilename)
+
+    logger.info('Execution file served from cloud for deployed chat', {
+      key: cloudKey,
+      size: fileBuffer.length,
+    })
+
+    return createFileResponse({
+      buffer: fileBuffer,
+      contentType,
+      filename: originalFilename,
+    })
+  } catch (error) {
+    logger.error('Error downloading execution file for deployed chat:', error)
     throw error
   }
 }

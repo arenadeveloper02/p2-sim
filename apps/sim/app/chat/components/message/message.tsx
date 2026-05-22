@@ -18,6 +18,7 @@ export interface ChatAttachment {
   name: string
   type: string
   dataUrl: string
+  key?: string
   size?: number
 }
 

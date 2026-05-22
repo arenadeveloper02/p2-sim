@@ -1,4 +1,5 @@
 import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
+import { sanitizeImageGenerationWrapperParams } from '@/lib/image-generation/nano-banana-inputs'
 import type { ToolConfig } from '@/tools/types'
 import type {
   ImageGenerationWrapperParams,
@@ -97,7 +98,7 @@ export function createImageGenerationWrapperTool(
       body: (params) => {
         return {
           baseToolId,
-          params,
+          params: sanitizeImageGenerationWrapperParams(params as Record<string, unknown>),
         }
       },
     },

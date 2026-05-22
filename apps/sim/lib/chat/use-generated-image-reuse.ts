@@ -1,7 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
+import {
+  extractGeneratedImagesFromData,
+  type AssistantGeneratedImage,
+} from '@/lib/chat/assistant-assets'
 import {
   materializeSelectedGeneratedImage,
   toSelectedGeneratedImage,
@@ -11,6 +14,7 @@ import {
 
 interface MessageWithGeneratedImages {
   id: string
+  content?: unknown
   generatedImages?: AssistantGeneratedImage[]
   attachments?: Array<{ id: string }>
 }
@@ -23,6 +27,7 @@ export function useGeneratedImageReuse(messages: MessageWithGeneratedImages[]) {
         messages.flatMap((message) => [
           ...(message.generatedImages ?? []).map((image) => image.id),
           ...(message.attachments ?? []).map((attachment) => attachment.id),
+          ...extractGeneratedImagesFromData(message.content).map((image) => image.id),
         ])
       ),
     [messages]

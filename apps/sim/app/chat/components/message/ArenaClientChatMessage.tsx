@@ -18,6 +18,7 @@ import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
+import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 import type {
@@ -497,7 +498,7 @@ export const ArenaClientChatMessage = memo(
           return {}
         }
 
-        const matchedImage = generatedImagesByUrl.get(normalizeImageUrlForCompare(imageUrl))
+        const matchedImage = resolveSelectableGeneratedImage(imageUrl, generatedImagesByUrl)
         if (!matchedImage) {
           return {}
         }
@@ -510,7 +511,9 @@ export const ArenaClientChatMessage = memo(
               id: matchedImage.id,
               name: matchedImage.name || 'Generated image',
               url: matchedImage.url,
+              key: matchedImage.key,
               type: matchedImage.type,
+              size: matchedImage.size,
             }),
           selectLabel: isSelected ? 'Selected' : 'Select',
           isSelected,
@@ -841,6 +844,7 @@ export const ArenaClientChatMessage = memo(
                                         id: attachment.id,
                                         name: attachment.name || `Uploaded image ${index + 1}`,
                                         url: attachment.dataUrl,
+                                        key: attachment.key,
                                         type: attachment.type,
                                       })
                                   : undefined

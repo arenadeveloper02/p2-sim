@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')
@@ -101,9 +102,9 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
         imageSize: params.imageSize,
       }
       if (Array.isArray(params.inputImages) && params.inputImages.length > 0) {
-        body.inputImages = params.inputImages
+        body.inputImages = params.inputImages.map(stripInlinePayloadFromFileReference)
       } else {
-        body.inputImage = params.inputImage
+        body.inputImage = stripInlinePayloadFromFileReference(params.inputImage)
         body.inputImageMimeType = params.inputImageMimeType
       }
       return body
