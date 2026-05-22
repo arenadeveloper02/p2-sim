@@ -10,6 +10,24 @@ export type Intent =
   | 'location_targeting'
   | 'brand_vs_nonbrand'
   | 'ad_copy_optimization'
+  // New intents — full prompts coverage
+  | 'wasted_search_terms'
+  | 'keyword_expansion'
+  | 'pause_or_cut'
+  | 'scale_budget'
+  | 'pacing'
+  | 'conversion_tracking'
+  | 'ad_rejections'
+  | 'placements'
+  | 'final_urls'
+  | 'sitelinks_performance'
+  | 'device'
+  | 'audience'
+  | 'asset_distribution'
+  | 'full_audit'
+  | 'impression_share_audit'
+  | 'quality_score_audit'
+  | 'opportunities'
 
 export interface PromptContext {
   comparison?: {
@@ -683,6 +701,198 @@ Return JSON with THREE query arrays:
 - Focus on returning the correct ad data with all required fields
 `.trim()
 
+// ============================================
+// NEW FRAGMENTS - aligned with full prompts list
+// ============================================
+
+const wastedSearchTermsFragment: FragmentBuilder = () =>
+  `
+**WASTED SEARCH-TERM SPEND (negatives candidates):**
+- Use search_term_view for SEARCH campaigns. For Performance Max use campaign_search_term_view.
+- ALWAYS include: campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, segments.keyword.info.text, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value.
+- Filter: segments.date BETWEEN/DURING the requested range, campaign.status = 'ENABLED'.
+- For "zero/low conversion + high impression" requests: add metrics.conversions = 0 (or < 1) AND metrics.impressions >= 100 in the WHERE clause when supported. Otherwise return all rows and the consumer will rank.
+- For "exclude already-negated" or "symmetric negatives" requests, include search_term_view.status so the consumer can filter ADDED_EXCLUDED / EXCLUDED.
+- ORDER BY metrics.cost_micros DESC. Default LIMIT 100 when the user asks for "top N wasted queries".
+- Cost filter: convert dollars to micros (e.g., $25 = 25,000,000).
+- DO NOT include segments.date in SELECT (date is filter-only).
+`.trim()
+
+const keywordExpansionFragment: FragmentBuilder = () =>
+  `
+**KEYWORD EXPANSION FROM TOP CONVERTERS:**
+- Pull search terms that ALREADY converted in the requested range (default last 90 days).
+- Use search_term_view with search_term_view.status = 'NONE' to find terms not yet added as keywords.
+- ALWAYS include: campaign.id, campaign.name, ad_group.id, ad_group.name, search_term_view.search_term, search_term_view.status, segments.keyword.info.text, metrics.clicks, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value.
+- Filter: segments.date DURING/BETWEEN range, campaign.status = 'ENABLED', metrics.conversions > 0.
+- ORDER BY metrics.conversions DESC. LIMIT 50 unless user specifies otherwise.
+- The downstream consumer will cluster terms into ad groups and recommend match types.
+`.trim()
+
+const pauseOrCutFragment: FragmentBuilder = () =>
+  `
+**PAUSE / BUDGET-CUT CANDIDATES:**
+- Use campaign resource. Pull both spend and conversion fields.
+- ALWAYS include: campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_budget.amount_micros, metrics.cost_micros, metrics.clicks, metrics.impressions, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc.
+- Filter: segments.date DURING/BETWEEN requested range, campaign.status = 'ENABLED'.
+- Cost / conversion thresholds: convert dollars to micros. Apply metrics.cost_micros > threshold_micros in WHERE when user specifies a $/week or $/period limit.
+- Do NOT compute ROAS in GAQL (it does not exist) — return cost_micros + conversions_value; consumer divides them.
+- For "Search partners + Display expansion %" hints, also surface campaign.network_settings.target_search_network and campaign.network_settings.target_content_network when available.
+- ORDER BY metrics.cost_micros DESC.
+`.trim()
+
+const scaleBudgetFragment: FragmentBuilder = () =>
+  `
+**SCALE-CANDIDATE CAMPAIGNS:**
+- Use campaign resource. Need both performance and impression-share fields.
+- ALWAYS include: campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_budget.amount_micros, metrics.cost_micros, metrics.clicks, metrics.conversions, metrics.conversions_value, metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share, metrics.average_cpc.
+- Filter: segments.date DURING/BETWEEN range, campaign.status = 'ENABLED'.
+- Do NOT filter by ROAS in WHERE (calc downstream). Do filter metrics.search_budget_lost_impression_share > 0.10 when the user says "IS lost to budget > 10%".
+- Include trend hints by NOT putting segments.date in SELECT (consumer compares periods via comparison flow if needed).
+- ORDER BY metrics.cost_micros DESC.
+`.trim()
+
+const pacingFragment: FragmentBuilder = () =>
+  `
+**BUDGET PACING:**
+- Use campaign resource with campaign_budget.amount_micros and metrics.cost_micros for current month.
+- ALWAYS include: campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_budget.amount_micros, campaign_budget.delivery_method, metrics.cost_micros, metrics.clicks, metrics.conversions.
+- Default date filter to month-to-date (segments.date BETWEEN first-of-month AND yesterday) unless the user specifies otherwise.
+- ORDER BY metrics.cost_micros DESC.
+- Pacing ratio = MTD cost / (daily_budget * days_elapsed_in_month). Compute downstream; do NOT compute in GAQL.
+`.trim()
+
+const conversionTrackingFragment: FragmentBuilder = () =>
+  `
+**CONVERSION TRACKING HEALTH:**
+- For account-level conversion volume: use campaign with metrics.conversions, metrics.all_conversions, metrics.cost_per_conversion, metrics.conversions_value over the requested window.
+- For per-action breakdown use conversion_action resource: conversion_action.id, conversion_action.name, conversion_action.status, conversion_action.type, conversion_action.category, conversion_action.counting_type, conversion_action.primary_for_goal, conversion_action.include_in_conversions_metric.
+- conversion_action does NOT support segments.date — query it without date filtering.
+- For "conversion gaps (<10 conv / 7 days)" surface campaigns whose metrics.conversions < 10 in the last 7 days via segments.date BETWEEN — consumer filters.
+`.trim()
+
+const adRejectionsFragment: FragmentBuilder = () =>
+  `
+**AD REJECTIONS / DELIVERY HEALTH:**
+- Use ad_group_ad with ad_group_ad.policy_summary fields.
+- ALWAYS include: campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad.type, ad_group_ad.status, ad_group_ad.policy_summary.approval_status, ad_group_ad.policy_summary.review_status, ad_group_ad.policy_summary.policy_topic_entries.
+- Filter campaign.status = 'ENABLED'. Do NOT use segments.date with policy_summary fields.
+- For "are all my ads delivering?" return rows where approval_status IN ('DISAPPROVED', 'APPROVED_LIMITED', 'AREA_OF_INTEREST_ONLY') first via ORDER BY ad_group_ad.policy_summary.approval_status.
+`.trim()
+
+const placementsFragment: FragmentBuilder = () =>
+  `
+**PLACEMENT / NETWORK REPORTS:**
+- Use detail_placement_view for Display/Video/Discovery/PMax automatic placements.
+- ALWAYS include: campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, detail_placement_view.placement, detail_placement_view.placement_type, detail_placement_view.target_url, detail_placement_view.display_name, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions.
+- Filter: segments.date DURING/BETWEEN range, campaign.status = 'ENABLED', metrics.impressions > 0.
+- ORDER BY metrics.cost_micros DESC.
+- For Search "where am I showing?" the resource is search_term_view (see search_terms guidance) — placements only apply to Display/PMax/Video/Discovery.
+`.trim()
+
+const finalUrlsFragment: FragmentBuilder = () =>
+  `
+**FINAL URLS INVENTORY:**
+- Use ad_group_ad to list active ad final URLs.
+- ALWAYS include: campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad.type, ad_group_ad.ad.final_urls, ad_group_ad.ad.final_mobile_urls, ad_group_ad.ad.tracking_url_template, ad_group_ad.status.
+- Filter: campaign.status = 'ENABLED', ad_group_ad.status = 'ENABLED'. Do NOT use segments.date.
+- ORDER BY campaign.name, ad_group.name.
+- Live HTTP reachability and domain-match are NOT in GAQL — only return URLs; the consumer/agent does the fetch check.
+- For sitelink URLs include the campaign_asset path as in extensionsFragment (asset.final_urls).
+`.trim()
+
+const sitelinksPerformanceFragment: FragmentBuilder = () =>
+  `
+**SITELINK PERFORMANCE (conversions / clicks):**
+- campaign_asset / asset resources do NOT support metrics directly with segments.date in a single query for all asset types.
+- Use ad_group_ad_asset_view (or campaign_asset_set + asset) when you need metric-attributed data on a single asset. For account-wide sitelink performance, prefer:
+  SELECT asset.id, asset.sitelink_asset.link_text, asset.final_urls, asset.type, metrics.clicks, metrics.impressions, metrics.conversions, metrics.cost_micros FROM ad_group_ad_asset_view WHERE asset.type = 'SITELINK' AND campaign.status = 'ENABLED' AND segments.date DURING LAST_30_DAYS ORDER BY metrics.conversions DESC
+- For static inventory of sitelinks (no metrics), keep using campaign_asset (see extensions fragment).
+- Return BOTH the inventory query AND, when metrics are requested, the ad_group_ad_asset_view query.
+`.trim()
+
+const deviceFragment: FragmentBuilder = () =>
+  `
+**DEVICE BIFURCATION:**
+- Use campaign (or ad_group) resource with segments.device.
+- ALWAYS include: campaign.id, campaign.name, campaign.status, segments.device, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc.
+- Filter: segments.date DURING/BETWEEN range, campaign.status = 'ENABLED'.
+- segments.device values: MOBILE, DESKTOP, TABLET, CONNECTED_TV, OTHER.
+- ORDER BY metrics.cost_micros DESC.
+`.trim()
+
+const audienceFragment: FragmentBuilder = () =>
+  `
+**AUDIENCE SEGMENT PERFORMANCE:**
+- Use ad_group_audience_view or campaign_audience_view for audience-attributed performance.
+- ALWAYS include: campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.type, ad_group_criterion.user_list.user_list, ad_group_criterion.user_interest.user_interest_category, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value.
+- Filter: segments.date DURING/BETWEEN range, campaign.status = 'ENABLED'.
+- ORDER BY metrics.conversions DESC for "best audience" queries.
+`.trim()
+
+const assetDistributionFragment: FragmentBuilder = () =>
+  `
+**ASSET / CREATIVE IMPRESSION DISTRIBUTION:**
+- For RSA headline/description performance use ad_group_ad_asset_view with asset.type IN ('HEADLINE','DESCRIPTION').
+- ALWAYS include: campaign.id, campaign.name, ad_group.id, ad_group.name, ad_group_ad_asset_view.field_type, ad_group_ad_asset_view.performance_label, asset.text_asset.text, asset.type, metrics.impressions, metrics.clicks.
+- Filter: segments.date DURING/BETWEEN range, campaign.status = 'ENABLED'.
+- ORDER BY metrics.impressions DESC.
+- For PMax asset group assets use asset_group_asset (no date segments) with asset_group_asset.performance_label as the only signal.
+`.trim()
+
+const impressionShareAuditFragment: FragmentBuilder = () =>
+  `
+**IMPRESSION SHARE LOST (BUDGET vs RANK):**
+- Use campaign resource. ALWAYS include: campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_budget.amount_micros, metrics.search_impression_share, metrics.search_budget_lost_impression_share, metrics.search_rank_lost_impression_share, metrics.search_top_impression_share, metrics.search_absolute_top_impression_share, metrics.impressions, metrics.cost_micros, metrics.conversions, metrics.conversions_value.
+- Filter: campaign.advertising_channel_type IN ('SEARCH','SHOPPING') (impression-share metrics are Search/Shopping only), campaign.status = 'ENABLED', segments.date DURING/BETWEEN range.
+- ORDER BY metrics.search_budget_lost_impression_share DESC.
+- Consumer classifies each row: budget-lost > rank-lost ⇒ budget bottleneck; vice versa ⇒ rank/CTR bottleneck.
+`.trim()
+
+const qualityScoreAuditFragment: FragmentBuilder = () =>
+  `
+**QUALITY-SCORE WEIGHTED UNDERPERFORMERS:**
+- Use keyword_view (NOT metrics.quality_score — that field does not exist).
+- ALWAYS include: campaign.id, campaign.name, campaign.status, ad_group.id, ad_group.name, ad_group_criterion.criterion_id, ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, ad_group_criterion.quality_info.creative_quality_score, ad_group_criterion.quality_info.post_click_quality_score, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value, metrics.ctr.
+- Filter: segments.date DURING/BETWEEN range, campaign.status = 'ENABLED', ad_group_criterion.quality_info.quality_score <= 5 when user asks "QS-weighted underperformers". Combine with metrics.cost_micros > threshold_micros when user provides a spend floor.
+- ORDER BY metrics.cost_micros DESC.
+`.trim()
+
+const fullAuditFragment: FragmentBuilder = () =>
+  `
+**FULL ACCOUNT AUDIT — MULTI-QUERY MODE:**
+A full audit needs MULTIPLE GAQL queries that the consumer will fuse. When the user asks for a "full audit / top 5 issues / wasted spend + ROAS uplift", return the PRIMARY query plus an "additional_queries" array. Each item: { name, gaql_query }.
+
+Required queries (use the SAME date range across all):
+1. CAMPAIGN_PERF — campaign-level performance with IS metrics.
+2. KEYWORDS_QS — keyword_view with quality-info fields (see quality_score_audit fragment).
+3. SEARCH_TERMS_WASTED — search_term_view ordered by cost with status, conversions = 0 candidates (see wasted_search_terms fragment).
+4. AD_STRENGTH — ad_group_ad RSA with ad_group_ad.ad_strength, headlines, descriptions.
+5. CONV_HEALTH — conversion_action inventory + per-campaign metrics.conversions for the range.
+
+Response shape:
+{
+  "gaql_query": "<primary: CAMPAIGN_PERF>",
+  "additional_queries": [
+    { "name": "KEYWORDS_QS", "gaql_query": "..." },
+    { "name": "SEARCH_TERMS_WASTED", "gaql_query": "..." },
+    { "name": "AD_STRENGTH", "gaql_query": "..." },
+    { "name": "CONV_HEALTH", "gaql_query": "..." }
+  ],
+  "is_comparison": false,
+  "start_date": "...",
+  "end_date": "..."
+}
+The dollar-impact ranking and ROAS-uplift estimates are NOT done in GAQL — the consumer/agent computes them from the returned rows.
+`.trim()
+
+const opportunitiesFragment: FragmentBuilder = () =>
+  `
+**TOP OPTIMIZATION OPPORTUNITIES:**
+- Treat similarly to full_audit but tighter: return CAMPAIGN_PERF + IS + WASTED_TERMS + QS_WEIGHTED queries in additional_queries.
+- Meta data is NOT available via this API — do not fabricate Meta rows. Mention in additional_queries name = "META_PLACEHOLDER" only if explicitly asked, with gaql_query = "".
+`.trim()
+
 const FRAGMENT_MAP: Record<Intent, FragmentBuilder> = {
   comparison: comparisonFragment,
   rsa: rsaFragment,
@@ -693,6 +903,23 @@ const FRAGMENT_MAP: Record<Intent, FragmentBuilder> = {
   location_targeting: locationTargetingFragment,
   brand_vs_nonbrand: brandVsNonBrandFragment,
   ad_copy_optimization: adCopyOptimizationFragment,
+  wasted_search_terms: wastedSearchTermsFragment,
+  keyword_expansion: keywordExpansionFragment,
+  pause_or_cut: pauseOrCutFragment,
+  scale_budget: scaleBudgetFragment,
+  pacing: pacingFragment,
+  conversion_tracking: conversionTrackingFragment,
+  ad_rejections: adRejectionsFragment,
+  placements: placementsFragment,
+  final_urls: finalUrlsFragment,
+  sitelinks_performance: sitelinksPerformanceFragment,
+  device: deviceFragment,
+  audience: audienceFragment,
+  asset_distribution: assetDistributionFragment,
+  full_audit: fullAuditFragment,
+  impression_share_audit: impressionShareAuditFragment,
+  quality_score_audit: qualityScoreAuditFragment,
+  opportunities: opportunitiesFragment,
 }
 
 export function buildSystemPrompt(intents: Intent[], context: PromptContext): string {

@@ -167,8 +167,60 @@ export async function POST(request: NextRequest) {
       addComparisonToAccountResult(accountResult, comparisonResults)
     }
 
+    // Execute additional queries (full audit / opportunities multi-query mode)
+    const additionalQueryResults: Array<{
+      name: string
+      gaql_query: string
+      resource: string
+      row_count: number
+      rows: any[]
+      totals?: Record<string, number>
+      error?: string
+    }> = []
+
+    if (queryResult.additionalQueries && queryResult.additionalQueries.length > 0) {
+      logger.info(`[${requestId}] Executing ${queryResult.additionalQueries.length} additional queries`)
+      for (const additional of queryResult.additionalQueries) {
+        if (!additional.gaqlQuery?.trim()) continue
+        try {
+          const additionalApiResult = await makeGoogleAdsRequest(
+            accountInfo.id,
+            additional.gaqlQuery
+          )
+          const processed = processGoogleAdsResults(
+            additionalApiResult,
+            `${requestId}:${additional.name}`,
+            additional.gaqlQuery,
+            additional.name
+          )
+          additionalQueryResults.push({
+            name: additional.name,
+            gaql_query: additional.gaqlQuery,
+            resource: processed.resource,
+            row_count: processed.rows.length,
+            rows: processed.rows,
+            totals: processed.genericTotals,
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          logger.warn(`[${requestId}] Additional query failed`, {
+            name: additional.name,
+            error: message,
+          })
+          additionalQueryResults.push({
+            name: additional.name,
+            gaql_query: additional.gaqlQuery,
+            resource: 'unknown',
+            row_count: 0,
+            rows: [],
+            error: message,
+          })
+        }
+      }
+    }
+
     // Build complete API response
-    const response = buildApiResponse(
+    const baseResponse = buildApiResponse(
       query,
       queryResult,
       accountInfo,
@@ -177,15 +229,40 @@ export async function POST(request: NextRequest) {
       accountResult
     )
 
+    const response = {
+      ...baseResponse,
+      intents: queryResult.intents || [],
+      primary: {
+        gaql_query: queryResult.gaqlQuery,
+        resource: primaryResults.resource,
+        row_count: primaryResults.rows.length,
+        rows: primaryResults.rows,
+        totals: primaryResults.genericTotals,
+      },
+      comparison: comparisonResults
+        ? {
+            gaql_query: queryResult.comparisonQuery,
+            resource: comparisonResults.resource,
+            row_count: comparisonResults.rows.length,
+            rows: comparisonResults.rows,
+            totals: comparisonResults.genericTotals,
+          }
+        : null,
+      additional_queries: additionalQueryResults,
+    }
+
     const executionTime = Date.now() - startTime
     logger.info(`[${requestId}] Google Ads query completed successfully`, {
       executionTime,
       accountsFound: 1,
       totalCampaigns: primaryResults.campaigns.length,
+      primaryRows: primaryResults.rows.length,
       grandTotalCost: response.grand_totals.cost,
       isComparison: queryResult.isComparison,
       comparisonCampaigns: comparisonResults?.campaigns.length || 0,
       comparisonTotalCost: comparisonResults?.accountTotals.cost || 0,
+      additionalQueriesRun: additionalQueryResults.length,
+      intents: queryResult.intents,
     })
 
     logger.info(`[${requestId}] Returning response`, {

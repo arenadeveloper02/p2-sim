@@ -5,7 +5,8 @@ import { AuthMode, IntegrationType } from '@/blocks/types'
 
 export const GoogleAdsBlock: BlockConfig = {
   type: 'google_ads',
-  name: 'Google Ads',
+  name: 'Google Ads (OAuth)',
+  hideFromToolbar: true,
   description: 'Query campaigns, ad groups, and performance metrics',
   longDescription:
     'Connect to Google Ads to list accessible accounts, list campaigns, view ad group details, get performance metrics, and run custom GAQL queries.',

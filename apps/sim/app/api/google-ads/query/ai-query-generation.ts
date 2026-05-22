@@ -42,6 +42,8 @@ export async function generateSmartGAQL(
       comparisonQuery: aiResult.comparisonQuery,
       comparisonStartDate: aiResult.comparisonStartDate,
       comparisonEndDate: aiResult.comparisonEndDate,
+      additionalQueries: aiResult.additionalQueries,
+      intents: aiResult.intents,
     }
   } catch (error) {
     logger.error('AI GAQL generation failed', { error, userQuestion, accountName })
@@ -263,6 +265,11 @@ Please re-run the agent with a clearer date specification.`
       comparisonQuery: parsed.comparisonQuery,
       comparisonStartDate: parsed.comparisonStartDate,
       comparisonEndDate: parsed.comparisonEndDate,
+      additionalQueries: parsed.additionalQueries?.map((q) => ({
+        name: q.name,
+        gaqlQuery: q.gaqlQuery,
+      })),
+      intents,
     }
   } catch (error) {
     logger.error('AI query parsing failed', { error })

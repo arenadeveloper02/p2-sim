@@ -270,6 +270,7 @@ export const blockTypeToIconMap: Record<string, IconComponent> = {
   gong: GongIcon,
   google_ads: GoogleAdsIcon,
   google_ads_v1: GoogleIcon,
+  google_ads_v2: GoogleAdsIcon,
   google_bigquery: GoogleBigQueryIcon,
   google_books: GoogleBooksIcon,
   google_calendar_v2: GoogleCalendarIcon,

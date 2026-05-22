@@ -57,12 +57,16 @@ export interface GaqlQueryResult {
   comparisonQuery?: string
   comparisonStartDate?: string
   comparisonEndDate?: string
+  additionalQueries?: Array<{ name: string; gaqlQuery: string }>
+  intents?: string[]
 }
 
 export interface ProcessedResults {
   result: any[]
+  rows: any[]
   campaigns: Campaign[]
   gaqlQuery: string
+  resource: string
   accountTotals: {
     clicks: number
     impressions: number
@@ -70,4 +74,15 @@ export interface ProcessedResults {
     conversions: number
     conversions_value: number
   }
+  genericTotals?: Record<string, number>
+}
+
+export interface AdditionalQueryResult {
+  name: string
+  gaql_query: string
+  resource: string
+  row_count: number
+  rows: any[]
+  totals?: Record<string, number>
+  error?: string
 }

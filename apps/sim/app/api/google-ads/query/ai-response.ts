@@ -5,6 +5,11 @@ type Logger = {
   debug?: (message: string, meta?: Record<string, unknown>) => void
 }
 
+export interface AdditionalGaqlQuery {
+  name: string
+  gaqlQuery: string
+}
+
 export interface ParsedGaqlResponse {
   gaqlQuery: string
   queryType?: string
@@ -15,6 +20,7 @@ export interface ParsedGaqlResponse {
   comparisonQuery?: string
   comparisonStartDate?: string
   comparisonEndDate?: string
+  additionalQueries?: AdditionalGaqlQuery[]
 }
 
 export function parseAiResponse(
@@ -55,6 +61,8 @@ export function parseAiResponse(
     cleaned_gaql: cleanedGaqlQuery,
   })
 
+  const additionalQueries = extractAdditionalQueries(parsedResponse, logger)
+
   return {
     gaqlQuery: cleanedGaqlQuery,
     queryType: parsedResponse.query_type,
@@ -67,7 +75,41 @@ export function parseAiResponse(
       : undefined,
     comparisonStartDate: parsedResponse.comparison_start_date,
     comparisonEndDate: parsedResponse.comparison_end_date,
+    additionalQueries,
   }
+}
+
+function extractAdditionalQueries(
+  parsedResponse: any,
+  logger: Logger
+): AdditionalGaqlQuery[] | undefined {
+  const candidates: AdditionalGaqlQuery[] = []
+  const raw =
+    parsedResponse?.additional_queries ||
+    parsedResponse?.additionalQueries ||
+    parsedResponse?.extra_queries ||
+    parsedResponse?.queries
+  if (!Array.isArray(raw)) return undefined
+
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const name =
+      (entry as any).name || (entry as any).label || (entry as any).id || 'additional_query'
+    const query = (entry as any).gaql_query || (entry as any).query
+    if (typeof query !== 'string' || !query.trim()) continue
+    try {
+      const cleaned = cleanGaqlQuery(query, logger)
+      validateGaqlQuery(cleaned, logger)
+      candidates.push({ name: String(name), gaqlQuery: cleaned })
+    } catch (error) {
+      logger.warn('Skipping invalid additional GAQL query', {
+        name,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return candidates.length > 0 ? candidates : undefined
 }
 
 function extractAiContent(aiResponse: unknown): string {

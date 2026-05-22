@@ -69,6 +69,7 @@ import { GongBlock } from '@/blocks/blocks/gong'
 import { GoogleSearchBlock } from '@/blocks/blocks/google'
 import { GoogleAdsBlock } from '@/blocks/blocks/google_ads'
 import { GoogleAdsV1Block } from '@/blocks/blocks/google_ads_v1'
+import { GoogleAdsV2Block } from '@/blocks/blocks/google_ads_v2'
 import { GoogleBigQueryBlock } from '@/blocks/blocks/google_bigquery'
 import { GoogleBooksBlock } from '@/blocks/blocks/google_books'
 import { GoogleCalendarBlock, GoogleCalendarV2Block } from '@/blocks/blocks/google_calendar'
@@ -313,9 +314,9 @@ export const registry: Record<string, BlockConfig> = {
   github_v2: GitHubV2Block,
   gitlab: GitLabBlock,
   gmail: GmailBlock,
-  // google_ads: GoogleAdsBlock,
   gmail_v2: GmailV2Block,
   google_ads_v1: GoogleAdsV1Block,
+  google_ads_v2: GoogleAdsV2Block,
   google_calendar: GoogleCalendarBlock,
   google_calendar_v2: GoogleCalendarV2Block,
   google_ads: GoogleAdsBlock,
