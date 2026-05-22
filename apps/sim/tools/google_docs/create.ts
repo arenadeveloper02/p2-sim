@@ -8,6 +8,26 @@ const logger = createLogger('GoogleDocsCreateTool')
 const DOC_MIME_TYPE = 'application/vnd.google-apps.document'
 
 /**
+ * Reduce unsupported markdown/HTML/GFM features before sending `text/markdown` to Drive
+ * so imports are less likely to error or lose content unexpectedly.
+ */
+function sanitizeMarkdownForDrive(content: string): string {
+  return content
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[$1]($2)')
+    .replace(
+      /<img[^>]+src="([^"]+)"[^>]*(?:alt="([^"]*)")?[^>]*\/?>/gi,
+      (_, src, alt) => `[${alt || 'Image'}](${src})`
+    )
+    .replace(/^---[\s\S]*?---\n/, '')
+    .replace(/==([^=]+)==/g, '$1')
+    .replace(/^\[\^[^\]]+\]:.*$/gm, '')
+    .replace(/\[\^[^\]]+\]/g, '')
+    .replace(/^> \[!(NOTE|WARNING|TIP|IMPORTANT)\]/gm, '> **$1:**')
+    .replace(/<(u|kbd|sup|sub|br|details|summary|div|p|h[1-6])[^>]*>([\s\S]*?)<\/\1>/gi, '$2')
+    .replace(/<(br|img)[^>]*\/?>/gi, '')
+}
+
+/**
  * Build a multipart/related body for Drive's files.create upload endpoint.
  * Used when converting Markdown to a Google Doc in a single round-trip.
  * See: https://developers.google.com/workspace/drive/api/guides/manage-uploads
@@ -23,7 +43,7 @@ function buildMarkdownMultipartBody(
     `${JSON.stringify(metadata)}\r\n` +
     `--${boundary}\r\n` +
     `Content-Type: text/markdown\r\n\r\n` +
-    `${markdownContent}\r\n` +
+    `${sanitizeMarkdownForDrive(markdownContent)}\r\n` +
     `--${boundary}--`
   )
 }
@@ -65,24 +85,11 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
       visibility: 'user-or-llm',
       description: 'The content of the document to create',
     },
-    folderSelector: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Google Drive folder ID to create the document in (e.g., 1ABCxyz...)',
-    },
     folderId: {
       type: 'string',
       required: false,
       visibility: 'hidden',
-      description: 'The ID of the folder to create the document in (internal use)',
-    },
-    markdown: {
-      type: 'boolean',
-      required: false,
-      visibility: 'user-or-llm',
-      description:
-        'When true, content is interpreted as Markdown and converted to formatted Google Docs content (headings, bold/italic, lists, tables, links, code blocks, blockquotes). Default: false (content inserted as plain text).',
+      description: 'Drive folder ID (optional). Omit to create at My Drive root.',
     },
   },
 
@@ -118,7 +125,7 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
         throw new Error('Title is required')
       }
 
-      const folderId = params.folderSelector || params.folderId
+      const folderId = params.folderId
       const metadata: Record<string, unknown> = {
         name: params.title,
         mimeType: DOC_MIME_TYPE,
