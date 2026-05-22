@@ -665,7 +665,8 @@ async function handleExecutePost(
           workflowData.edges,
           workflowData.loops,
           workflowData.parallels,
-          false
+          false,
+          workspaceId
         )
 
         const executionContext = {

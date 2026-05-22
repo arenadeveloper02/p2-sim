@@ -492,6 +492,7 @@ export const env = createEnv({
     NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:               z.string().url().optional(),            // Arena backend base URL
     NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:               z.string().url().optional(),            // Arena frontend app URL        z.string().url().optional(),            // Arena frontend app URL
     NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS:                z.array(z.string().email()).optional(),          // Platform admin emails
+    NEXT_PUBLIC_ADMIN_WORKSPACE_IDS:                  z.string().optional(),                  // Admin workspace IDs for client UI (JSON array or comma-separated; mirrors ADMIN_WORKSPACE_IDS)
     NEXT_PUBLIC_TURNSTILE_SITE_KEY:        z.string().min(1).optional(),           // Cloudflare Turnstile site key for captcha widget
   },
 
@@ -545,6 +546,7 @@ export const env = createEnv({
     NEXT_TELEMETRY_DISABLED: process.env.NEXT_TELEMETRY_DISABLED,
     NEXT_PUBLIC_FIRECRAWL_API_KEY: process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY,
     NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS: process.env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS,
+    NEXT_PUBLIC_ADMIN_WORKSPACE_IDS: process.env.NEXT_PUBLIC_ADMIN_WORKSPACE_IDS,
     NEXT_PUBLIC_MIX_PANEL_TOKEN: process.env.NEXT_PUBLIC_MIX_PANEL_TOKEN,
   },
 })

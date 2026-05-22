@@ -1,4 +1,4 @@
-import type { ToolResponse } from '@/tools/types'
+import type { ToolResponse, WorkflowToolExecutionContext } from '@/tools/types'
 
 export interface SpyfuRequestParams {
   operationId?: string
@@ -10,6 +10,9 @@ export interface SpyfuRequestParams {
   query?: string
   includeDomainsCsv?: string
   isIntersection?: boolean
+  userId?: string
+  password?: string
+  _context?: WorkflowToolExecutionContext
 }
 
 export interface SpyfuResponse extends ToolResponse {

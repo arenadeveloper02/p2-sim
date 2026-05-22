@@ -1,5 +1,6 @@
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
+import { WORKSPACE_ID_CONDITION_KEY } from '@/lib/workspaces/is-admin-workspace'
 import type { SubBlockConfig } from '@/blocks/types'
 
 export type CanonicalMode = 'basic' | 'advanced'
@@ -129,10 +130,13 @@ export function evaluateSubBlockCondition(
     | SubBlockCondition
     | ((values?: Record<string, unknown>) => SubBlockCondition)
     | undefined,
-  values: Record<string, unknown>
+  values: Record<string, unknown>,
+  workspaceId?: string
 ): boolean {
   if (!condition) return true
-  const actual = typeof condition === 'function' ? condition(values) : condition
+  const conditionValues =
+    workspaceId != null ? { ...values, [WORKSPACE_ID_CONDITION_KEY]: workspaceId } : values
+  const actual = typeof condition === 'function' ? condition(conditionValues) : condition
   const fieldValue = values[actual.field]
   const valueMatch = Array.isArray(actual.value)
     ? fieldValue != null &&

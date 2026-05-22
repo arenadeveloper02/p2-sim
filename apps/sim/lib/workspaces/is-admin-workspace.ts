@@ -1,5 +1,8 @@
 import { env, getEnv } from '@/lib/core/config/env'
 
+/** Injected into subblock condition `values` during server-side serialization. */
+export const WORKSPACE_ID_CONDITION_KEY = '__workspaceId'
+
 export interface AdminWorkspaceContext {
   isAdminWorkspace: boolean
   workspaceId: string | null
@@ -44,12 +47,35 @@ export function parseAdminWorkspaceIds(raw: AdminWorkspaceIdsEnv): string[] {
 }
 
 /**
- * Workspace IDs from `ADMIN_WORKSPACE_IDS` (server) or `NEXT_PUBLIC_ADMIN_WORKSPACE_IDS` (client).
+ * Workspace IDs from `NEXT_PUBLIC_ADMIN_WORKSPACE_IDS` (client UI) and/or `ADMIN_WORKSPACE_IDS` (server).
+ * Block visibility runs in the browser — set `NEXT_PUBLIC_ADMIN_WORKSPACE_IDS` for admin-only subblocks.
  */
 export function getAdminWorkspaceIds(): string[] {
   const publicIds = parseAdminWorkspaceIds(getEnv('NEXT_PUBLIC_ADMIN_WORKSPACE_IDS'))
-  if (publicIds.length > 0) return publicIds
-  return parseAdminWorkspaceIds(env.ADMIN_WORKSPACE_IDS)
+  const serverIds = parseAdminWorkspaceIds(env.ADMIN_WORKSPACE_IDS)
+  if (publicIds.length === 0) return serverIds
+  if (serverIds.length === 0) return publicIds
+  return [...new Set([...publicIds, ...serverIds])]
+}
+
+/**
+ * Resolves workspace ID for admin-only subblock conditions (browser path or serializer injection).
+ */
+export function resolveWorkspaceIdForAdminCheck(
+  values?: Record<string, unknown>
+): string | undefined {
+  const fromValues = values?.[WORKSPACE_ID_CONDITION_KEY]
+  if (typeof fromValues === 'string') {
+    const trimmed = fromValues.trim()
+    if (trimmed) return trimmed
+  }
+
+  if (typeof window !== 'undefined') {
+    const match = window.location.pathname.match(/\/workspace\/([^/]+)/)
+    return match?.[1]
+  }
+
+  return undefined
 }
 
 /**

@@ -23,10 +23,7 @@ describe('parseAdminWorkspaceIds', () => {
   })
 
   it('parses JSON array string values', () => {
-    expect(parseAdminWorkspaceIds('["ws-json-1","ws-json-2"]')).toEqual([
-      'ws-json-1',
-      'ws-json-2',
-    ])
+    expect(parseAdminWorkspaceIds('["ws-json-1","ws-json-2"]')).toEqual(['ws-json-1', 'ws-json-2'])
   })
 
   it('parses comma-separated string values', () => {

@@ -101,8 +101,8 @@ export class WorkflowBlockHandler implements BlockHandler {
       }
 
       const childWorkflow = ctx.isDeployedContext
-        ? await this.loadChildWorkflowDeployed(workflowId, ctx.userId)
-        : await this.loadChildWorkflow(workflowId, ctx.userId)
+        ? await this.loadChildWorkflowDeployed(workflowId, ctx.userId, ctx.workspaceId)
+        : await this.loadChildWorkflow(workflowId, ctx.userId, ctx.workspaceId)
 
       if (!childWorkflow) {
         throw new Error(`Child workflow ${workflowId} not found`)
@@ -320,7 +320,7 @@ export class WorkflowBlockHandler implements BlockHandler {
     return { chain, rootError: rootError.trim() || 'Unknown error' }
   }
 
-  private async loadChildWorkflow(workflowId: string, userId?: string) {
+  private async loadChildWorkflow(workflowId: string, userId?: string, workspaceId?: string) {
     const headers = await buildAuthHeaders(userId)
     const url = buildAPIUrl(`/api/workflows/${workflowId}`)
 
@@ -353,7 +353,8 @@ export class WorkflowBlockHandler implements BlockHandler {
       workflowState.edges || [],
       workflowState.loops || {},
       workflowState.parallels || {},
-      true
+      true,
+      workspaceId
     )
 
     const workflowVariables = (workflowData.variables as Record<string, any>) || {}
@@ -401,7 +402,11 @@ export class WorkflowBlockHandler implements BlockHandler {
     }
   }
 
-  private async loadChildWorkflowDeployed(workflowId: string, userId?: string) {
+  private async loadChildWorkflowDeployed(
+    workflowId: string,
+    userId?: string,
+    workspaceId?: string
+  ) {
     const headers = await buildAuthHeaders(userId)
     const deployedUrl = buildAPIUrl(`/api/workflows/${workflowId}/deployed`)
 
@@ -441,7 +446,8 @@ export class WorkflowBlockHandler implements BlockHandler {
       deployedState.edges || [],
       deployedState.loops || {},
       deployedState.parallels || {},
-      true
+      true,
+      workspaceId
     )
 
     const workflowVariables = (wfData?.variables as Record<string, any>) || {}

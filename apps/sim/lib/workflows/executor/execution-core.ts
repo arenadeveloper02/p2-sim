@@ -564,7 +564,8 @@ export async function executeWorkflowCore(
       filteredEdges,
       loops,
       parallels,
-      true
+      true,
+      providedWorkspaceId
     )
 
     processedInput = input || {}

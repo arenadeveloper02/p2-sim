@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { env } from '@/lib/core/config/env'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import {
   getSpyfuOperationDefinition,
   SPYFU_BASE_URL,
@@ -24,11 +25,16 @@ interface PreparedSpyfuRequest {
 }
 
 function resolveCredentials(params: SpyfuRequestParams): { userId: string; password: string } {
-  const userId = env.SPYFU_API_USER_ID 
-  const password = env.SPYFU_API_PASSWORD
+  const isAdmin = isAdminWorkspace(params._context?.workspaceId)
+
+  const userId = isAdmin ? params.userId?.trim() : env.SPYFU_API_USER_ID
+  const password = isAdmin ? params.password?.trim() : env.SPYFU_API_PASSWORD
+
   if (!userId || !password) {
     throw new Error(
-      'SpyFu API credentials are missing. Provide userId/password in the block or set SPYFU_API_USER_ID and SPYFU_API_PASSWORD.'
+      isAdmin
+        ? 'SpyFu API credentials are missing. Provide userId and password in the SpyFu block.'
+        : 'SpyFu API credentials are missing. Set SPYFU_API_USER_ID and SPYFU_API_PASSWORD.'
     )
   }
 
@@ -182,6 +188,18 @@ export const spyfuRequestTool: ToolConfig<SpyfuRequestParams, SpyfuResponse> = {
       visibility: 'user-or-llm',
       description:
         'SpyFu country code (US, UK, DE, etc.) appended as `countryCode` query parameter.',
+    },
+    userId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'SpyFu API user ID for Basic authentication.',
+    },
+    password: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'SpyFu API password for Basic authentication.',
     },
   },
   outputs: {

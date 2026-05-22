@@ -48,10 +48,18 @@ function shouldSerializeSubBlock(
   isTriggerContext: boolean,
   isTriggerCategory: boolean,
   canonicalIndex: ReturnType<typeof buildCanonicalIndex>,
-  canonicalModeOverrides?: CanonicalModeOverrides
+  canonicalModeOverrides?: CanonicalModeOverrides,
+  workspaceId?: string
 ): boolean {
   if (!isSubBlockFeatureEnabled(subBlockConfig)) return false
   if (isSubBlockHidden(subBlockConfig)) return false
+
+  if (
+    typeof subBlockConfig.condition === 'function' &&
+    isNonEmptyValue(values[subBlockConfig.id])
+  ) {
+    return true
+  }
 
   if (subBlockConfig.mode === 'trigger') {
     if (!isTriggerContext && !isTriggerCategory) return false
@@ -72,9 +80,9 @@ function shouldSerializeSubBlock(
         mode === 'advanced'
           ? group.advancedIds.includes(subBlockConfig.id)
           : group.basicId === subBlockConfig.id
-      return matchesMode && evaluateSubBlockCondition(subBlockConfig.condition, values)
+      return matchesMode && evaluateSubBlockCondition(subBlockConfig.condition, values, workspaceId)
     }
-    return evaluateSubBlockCondition(subBlockConfig.condition, values)
+    return evaluateSubBlockCondition(subBlockConfig.condition, values, workspaceId)
   }
 
   if (subBlockConfig.mode === 'advanced' && !displayAdvancedOptions) {
@@ -84,7 +92,7 @@ function shouldSerializeSubBlock(
     return false
   }
 
-  return evaluateSubBlockCondition(subBlockConfig.condition, values)
+  return evaluateSubBlockCondition(subBlockConfig.condition, values, workspaceId)
 }
 
 /**
@@ -150,7 +158,8 @@ export class Serializer {
     edges: Edge[],
     loops?: Record<string, Loop>,
     parallels?: Record<string, Parallel>,
-    validateRequired = false
+    validateRequired = false,
+    workspaceId?: string
   ): SerializedWorkflow {
     const canonicalLoops = generateLoopBlocks(blocks)
     const canonicalParallels = generateParallelBlocks(blocks)
@@ -167,6 +176,7 @@ export class Serializer {
         this.serializeBlock(block, {
           validateRequired,
           allBlocks: blocks,
+          workspaceId,
         })
       ),
       connections: edges.map((edge) => ({
@@ -197,6 +207,7 @@ export class Serializer {
     options: {
       validateRequired: boolean
       allBlocks: Record<string, BlockState>
+      workspaceId?: string
     }
   ): SerializedBlock {
     // Special handling for subflow blocks (loops, parallels, etc.)
@@ -227,7 +238,7 @@ export class Serializer {
     }
 
     // Extract parameters from UI state
-    const params = this.extractParams(block)
+    const params = this.extractParams(block, options.workspaceId)
 
     const isTriggerCategory = blockConfig.category === 'triggers'
     if (block.triggerMode === true || isTriggerCategory) {
@@ -239,7 +250,7 @@ export class Serializer {
 
     // Validate required fields that only users can provide (before execution starts)
     if (options.validateRequired) {
-      this.validateRequiredFieldsBeforeExecution(block, blockConfig, params)
+      this.validateRequiredFieldsBeforeExecution(block, blockConfig, params, options.workspaceId)
     }
 
     let toolId = ''
@@ -303,7 +314,7 @@ export class Serializer {
     return serialized
   }
 
-  private extractParams(block: BlockState): Record<string, any> {
+  private extractParams(block: BlockState, workspaceId?: string): Record<string, any> {
     if (block.type === 'loop' || block.type === 'parallel') {
       return {}
     }
@@ -345,7 +356,8 @@ export class Serializer {
             isTriggerContext,
             isTriggerCategory,
             canonicalIndex,
-            canonicalModeOverrides
+            canonicalModeOverrides,
+            workspaceId
           )
         )
 
@@ -370,7 +382,8 @@ export class Serializer {
           isTriggerContext,
           isTriggerCategory,
           canonicalIndex,
-          canonicalModeOverrides
+          canonicalModeOverrides,
+          workspaceId
         )
       ) {
         params[id] = subBlockConfig.value(params)
@@ -400,7 +413,8 @@ export class Serializer {
   private validateRequiredFieldsBeforeExecution(
     block: BlockState,
     blockConfig: any,
-    params: Record<string, any>
+    params: Record<string, any>,
+    workspaceId?: string
   ) {
     // Skip validation if the block is disabled
     if (block.enabled === false) {
@@ -451,13 +465,14 @@ export class Serializer {
                 isTriggerContext,
                 isTriggerCategory,
                 canonicalIndex,
-                canonicalModeOverrides
+                canonicalModeOverrides,
+                workspaceId
               )
 
               const isRequired = (() => {
                 if (!subBlockConfig.required) return false
                 if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
-                return evaluateSubBlockCondition(subBlockConfig.required, params)
+                return evaluateSubBlockCondition(subBlockConfig.required, params, workspaceId)
               })()
 
               return includedByMode && isRequired
@@ -478,7 +493,8 @@ export class Serializer {
                 isTriggerContext,
                 isTriggerCategory,
                 canonicalIndex,
-                canonicalModeOverrides
+                canonicalModeOverrides,
+                workspaceId
               )
             )
             const displayName = activeConfig?.title || paramId
@@ -505,7 +521,8 @@ export class Serializer {
         isTriggerContext,
         isTriggerCategory,
         canonicalIndex,
-        canonicalModeOverrides
+        canonicalModeOverrides,
+        workspaceId
       )
 
       if (!isVisible) {
@@ -516,7 +533,7 @@ export class Serializer {
       const isRequired = (() => {
         if (!subBlockConfig.required) return false
         if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
-        return evaluateSubBlockCondition(subBlockConfig.required, params)
+        return evaluateSubBlockCondition(subBlockConfig.required, params, workspaceId)
       })()
 
       if (!isRequired) {
