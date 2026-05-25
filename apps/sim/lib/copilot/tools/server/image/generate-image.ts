@@ -79,7 +79,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
     }
 
     try {
-      const apiKey = getRotatingApiKey('gemini')
+      const apiKey = getRotatingApiKey('google')
       const ai = new GoogleGenAI({ apiKey })
 
       const aspectRatio = params.aspectRatio || '1:1'

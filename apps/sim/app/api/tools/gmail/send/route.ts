@@ -153,6 +153,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
                 { ownerKey, signal: request.signal }
               )
 
+              if (buffer.length === 0) {
+                throw new Error(
+                  `Attachment "${file.name}" is empty. Save the file content before sending it.`
+                )
+              }
+
               return {
                 filename: file.name,
                 mimeType: contentType || file.type || 'application/octet-stream',

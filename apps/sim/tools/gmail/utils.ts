@@ -294,6 +294,65 @@ function generateBoundary(): string {
   return `----=_Part_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`
 }
 
+const MIME_CRLF = '\r\n'
+
+function joinMimeParts(parts: string[]): string {
+  return parts.join(MIME_CRLF)
+}
+
+function wrapBase64Lines(base64: string): string {
+  return base64.match(/.{1,76}/g)?.join(MIME_CRLF) ?? base64
+}
+
+function encodeMimeTextBody(body: string): { transferEncoding: string; content: string } {
+  const isSevenBitSafe = (value: string): boolean => {
+    for (let i = 0; i < value.length; i++) {
+      const code = value.charCodeAt(i)
+      if (code === 13 || code === 10) {
+        if (value[i] === '\r' && value[i + 1] === '\n') {
+          i++
+          continue
+        }
+        return false
+      }
+      if (code > 127 || code === 0) {
+        return false
+      }
+    }
+    return true
+  }
+
+  if (isSevenBitSafe(body)) {
+    return { transferEncoding: '7bit', content: body }
+  }
+
+  return {
+    transferEncoding: 'base64',
+    content: wrapBase64Lines(Buffer.from(body, 'utf-8').toString('base64')),
+  }
+}
+
+function formatAttachmentContentType(mimeType: string): string {
+  if (
+    mimeType.startsWith('text/') ||
+    mimeType === 'image/svg+xml' ||
+    mimeType === 'application/xml' ||
+    mimeType === 'application/json'
+  ) {
+    return `${mimeType}; charset="UTF-8"`
+  }
+  return mimeType
+}
+
+function encodeAttachmentFilename(filename: string): string {
+  const sanitized = filename.replace(/[\r\n"]/g, '_')
+  if (/[^\x20-\x7E]/.test(sanitized)) {
+    const asciiFallback = sanitized.replace(/[^\x20-\x7E]/g, '_') || 'attachment'
+    return `filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+  }
+  return `filename="${sanitized}"`
+}
+
 /**
  * Encode a header value using RFC 2047 Base64 encoding if it contains non-ASCII characters.
  * This matches Google's own Gmail API sample: `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`
@@ -312,7 +371,8 @@ export function encodeRfc2047(value: string): string {
  * Gmail API requires base64url encoding for the raw message field
  */
 export function base64UrlEncode(data: string | Buffer): string {
-  const base64 = Buffer.from(data).toString('base64')
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf-8')
+  const base64 = buffer.toString('base64')
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
@@ -411,22 +471,23 @@ export function buildMimeMessage(params: BuildMimeMessageParams): string {
     messageParts.push(`Content-Type: multipart/mixed; boundary="${boundary}"`)
     messageParts.push('')
     messageParts.push(`--${boundary}`)
+
+    const encodedBody = encodeMimeTextBody(body)
     messageParts.push(`Content-Type: ${mimeContentType}; charset="UTF-8"`)
-    messageParts.push('Content-Transfer-Encoding: 7bit')
+    messageParts.push(`Content-Transfer-Encoding: ${encodedBody.transferEncoding}`)
     messageParts.push('')
-    messageParts.push(body)
+    messageParts.push(encodedBody.content)
     messageParts.push('')
 
     for (const attachment of attachments) {
       messageParts.push(`--${boundary}`)
-      messageParts.push(`Content-Type: ${attachment.mimeType}`)
-      messageParts.push(`Content-Disposition: attachment; filename="${attachment.filename}"`)
+      messageParts.push(`Content-Type: ${formatAttachmentContentType(attachment.mimeType)}`)
+      messageParts.push(
+        `Content-Disposition: attachment; ${encodeAttachmentFilename(attachment.filename)}`
+      )
       messageParts.push('Content-Transfer-Encoding: base64')
       messageParts.push('')
-
-      const base64Content = attachment.content.toString('base64')
-      const lines = base64Content.match(/.{1,76}/g) || []
-      messageParts.push(...lines)
+      messageParts.push(wrapBase64Lines(attachment.content.toString('base64')))
       messageParts.push('')
     }
 
@@ -438,5 +499,5 @@ export function buildMimeMessage(params: BuildMimeMessageParams): string {
     messageParts.push(body)
   }
 
-  return messageParts.join('\n')
+  return joinMimeParts(messageParts)
 }
