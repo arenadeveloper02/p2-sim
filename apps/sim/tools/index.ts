@@ -34,6 +34,7 @@ import type {
 import {
   formatRequestParams,
   getTool,
+  resolveToolId,
   safeStringify,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
@@ -885,10 +886,13 @@ export async function executeTool(
         startTimeISO
       )
     } else {
-      // For built-in tools, use the synchronous version
-      tool = getTool(normalizedToolId)
+      // Copilot tool schemas use stripVersionSuffix names; registry keys are versioned (e.g. _v2).
+      const registryToolId = resolveToolId(normalizedToolId)
+      tool = getTool(registryToolId)
       if (!tool) {
-        logger.error(`[${requestId}] Built-in tool not found: ${normalizedToolId}`)
+        logger.error(
+          `[${requestId}] Built-in tool not found: ${normalizedToolId}${registryToolId !== normalizedToolId ? ` (resolved: ${registryToolId})` : ''}`
+        )
       }
     }
 

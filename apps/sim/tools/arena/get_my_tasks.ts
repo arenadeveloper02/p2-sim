@@ -7,12 +7,28 @@ export const getMyTasks: ToolConfig<ArenaGetMyTasksParams, ArenaGetMyTasksRespon
   description: 'Get the current user’s tasks from Arena.',
   version: '1.0.0',
 
-  params: {},
+  params: {
+    withinMinutes: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Optional. Return tasks updated within the last N minutes from now (passed to Arena as withinMinutes).',
+    },
+  },
 
   request: {
     url: (params: ArenaGetMyTasksParams) => {
       if (!params._context?.workflowId) throw new Error('Missing required field: workflowId')
-      return `/api/tools/arena/get-my-tasks?workflowId=${encodeURIComponent(params._context.workflowId)}`
+      let url = `/api/tools/arena/get-my-tasks?workflowId=${encodeURIComponent(params._context.workflowId)}`
+      if (
+        params.withinMinutes !== undefined &&
+        params.withinMinutes !== null &&
+        !Number.isNaN(params.withinMinutes)
+      ) {
+        url += `&withinMinutes=${encodeURIComponent(String(params.withinMinutes))}`
+      }
+      return url
     },
     method: 'GET',
     headers: () => ({
