@@ -1,6 +1,32 @@
 import { GoogleIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
+import {
+  isAdminWorkspace,
+  resolveWorkspaceIdForAdminCheck,
+} from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
+import { AuthMode } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
+
+const GOOGLE_ADS_V1_COND_NEVER = '__google_ads_v1_cond_never__'
+
+/** Show admin account dropdown fields (admin workspaces only). */
+function googleAdsV1AdminOnlyCondition(values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
+  if (isAdmin) {
+    return { field: 'prompt', value: GOOGLE_ADS_V1_COND_NEVER, not: true as const }
+  }
+  return { field: 'prompt', value: GOOGLE_ADS_V1_COND_NEVER }
+}
+
+/** Show OAuth / BYOK credential fields (non-admin workspaces only). */
+function googleAdsV1NonAdminOnlyCondition(values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
+  if (isAdmin) {
+    return { field: 'prompt', value: GOOGLE_ADS_V1_COND_NEVER }
+  }
+  return { field: 'prompt', value: GOOGLE_ADS_V1_COND_NEVER, not: true as const }
+}
 
 export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
   type: 'google_ads_v1',
@@ -12,8 +38,55 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
   category: 'tools',
   bgColor: '#4285f4',
   icon: GoogleIcon,
+  authMode: AuthMode.OAuth,
   subBlocks: [
-    // Google Ads Account (basic mode - dropdown)
+    {
+      id: 'credential',
+      title: 'Google Ads Account',
+      type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
+      required: true,
+      serviceId: 'google-ads',
+      requiredScopes: getScopesForService('google-ads'),
+      placeholder: 'Select Google Ads account',
+      condition: googleAdsV1NonAdminOnlyCondition,
+    },
+    {
+      id: 'manualCredential',
+      title: 'Google Ads Account',
+      type: 'short-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
+      condition: googleAdsV1NonAdminOnlyCondition,
+    },
+    {
+      id: 'developerToken',
+      title: 'Developer Token',
+      type: 'short-input',
+      placeholder: 'Enter your Google Ads API developer token',
+      required: true,
+      password: true,
+      condition: googleAdsV1NonAdminOnlyCondition,
+    },
+    {
+      id: 'customerId',
+      title: 'Customer ID',
+      type: 'short-input',
+      placeholder: 'Google Ads customer ID (no dashes)',
+      required: true,
+      condition: googleAdsV1NonAdminOnlyCondition,
+    },
+    {
+      id: 'managerCustomerId',
+      title: 'Manager Customer ID',
+      type: 'short-input',
+      placeholder: 'Manager account ID (optional)',
+      mode: 'advanced',
+      condition: googleAdsV1NonAdminOnlyCondition,
+    },
     {
       id: 'accounts',
       title: 'Google Ads Account',
@@ -24,8 +97,6 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
           const response = await fetch('/api/google-ads/accounts')
           const data = await response.json()
 
-          console.log('Google Ads V1 API response:', data)
-
           if (data?.success && data.accounts && typeof data.accounts === 'object') {
             const accounts = data.accounts as Record<string, { id: string; name: string }>
             const options = Object.entries(accounts).map(([key, account]) => ({
@@ -33,13 +104,10 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
               label: account.name,
               value: key,
             }))
-            console.log('Google Ads V1 options:', options)
             return Array.isArray(options) ? options : []
           }
-          console.log('Google Ads V1: Invalid response format')
           return []
-        } catch (error) {
-          console.error('Failed to fetch Google Ads V1 accounts:', error)
+        } catch {
           return []
         }
       },
@@ -57,17 +125,16 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
             }
           }
           return null
-        } catch (error) {
-          console.error('Failed to fetch Google Ads V1 account:', error)
+        } catch {
           return null
         }
       },
-      placeholder: 'Select account...',
+      placeholder: 'Select Google Ads account',
       required: true,
       mode: 'basic',
       canonicalParamId: 'accounts',
+      condition: googleAdsV1AdminOnlyCondition,
     },
-    // Google Ads Account (advanced mode - text input)
     {
       id: 'accountsAdvanced',
       title: 'Google Ads Account',
@@ -76,6 +143,7 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       placeholder: 'Enter account key (e.g., ami, heartland)',
       required: true,
       mode: 'advanced',
+      condition: googleAdsV1AdminOnlyCondition,
     },
     {
       id: 'prompt',
@@ -136,10 +204,37 @@ Generate a clear, specific prompt for what the user wants to query from Google A
     access: ['google_ads_v1_query'],
     config: {
       tool: () => 'google_ads_v1_query',
-      params: (params) => ({
-        accounts: params.accounts,
-        prompt: params.prompt,
-      }),
+      params: (params) => {
+        const workspaceId = resolveWorkspaceIdForAdminCheck(
+          params as Record<string, unknown> | undefined
+        )
+        const isAdmin = isAdminWorkspace(workspaceId)
+
+        if (isAdmin) {
+          return {
+            accounts: params.accounts,
+            prompt: params.prompt,
+            workspaceId,
+            _context: params._context,
+          }
+        }
+
+        const oauthCredential =
+          (typeof params.oauthCredential === 'string' && params.oauthCredential) ||
+          (typeof params.credential === 'string' && params.credential) ||
+          (typeof params.manualCredential === 'string' && params.manualCredential) ||
+          undefined
+
+        return {
+          prompt: params.prompt,
+          workspaceId,
+          oauthCredential,
+          customerId: params.customerId,
+          developerToken: params.developerToken,
+          managerCustomerId: params.managerCustomerId,
+          _context: params._context,
+        }
+      },
     },
   },
   inputs: {
@@ -148,6 +243,10 @@ Generate a clear, specific prompt for what the user wants to query from Google A
       description: 'Natural language description of what data you want',
     },
     accounts: { type: 'string', description: 'Selected Google Ads account' },
+    oauthCredential: { type: 'string', description: 'Google Ads OAuth credential' },
+    developerToken: { type: 'string', description: 'Google Ads API developer token' },
+    customerId: { type: 'string', description: 'Google Ads customer ID (numeric, no dashes)' },
+    managerCustomerId: { type: 'string', description: 'Manager account customer ID' },
   },
   outputs: {
     success: { type: 'boolean', description: 'Whether the query succeeded' },

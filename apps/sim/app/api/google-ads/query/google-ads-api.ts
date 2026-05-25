@@ -3,8 +3,60 @@ import { POSITION2_MANAGER } from './constants'
 
 const logger = createLogger('GoogleAdsAPI')
 
+export interface GoogleAdsOAuthRequestOptions {
+  customerId: string
+  gaqlQuery: string
+  accessToken: string
+  developerToken: string
+  managerCustomerId?: string
+}
+
 /**
- * Makes a request to the Google Ads API using GAQL query
+ * Executes a GAQL query using a user OAuth access token and developer token (non-admin workspaces).
+ */
+export async function makeGoogleAdsOAuthRequest(
+  options: GoogleAdsOAuthRequestOptions
+): Promise<unknown> {
+  const formattedCustomerId = options.customerId.replace(/-/g, '')
+  const adsApiUrl = `https://googleads.googleapis.com/v22/customers/${formattedCustomerId}/googleAds:search`
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${options.accessToken}`,
+    'developer-token': options.developerToken,
+    'Content-Type': 'application/json',
+  }
+
+  const managerId = options.managerCustomerId?.trim().replace(/-/g, '')
+  if (managerId) {
+    headers['login-customer-id'] = managerId
+  }
+
+  logger.info('Making Google Ads OAuth API request', {
+    customerId: formattedCustomerId,
+    hasManagerCustomerId: Boolean(managerId),
+  })
+
+  const adsResponse = await fetch(adsApiUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ query: options.gaqlQuery.trim() }),
+  })
+
+  if (!adsResponse.ok) {
+    const errorText = await adsResponse.text()
+    logger.error('Google Ads OAuth API request failed', {
+      status: adsResponse.status,
+      customerId: formattedCustomerId,
+      error: errorText,
+    })
+    throw new Error(`Google Ads API request failed: ${adsResponse.status} - ${errorText}`)
+  }
+
+  return adsResponse.json()
+}
+
+/**
+ * Makes a request to the Google Ads API using GAQL query and server env credentials (admin workspaces).
  */
 export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string): Promise<any> {
   logger.info('Making real Google Ads API request', { accountId, gaqlQuery })

@@ -4,7 +4,14 @@
 
 export interface GoogleAdsV1Request {
   query: string
-  accounts: string
+  /** Admin workspace: account key or numeric ID from GOOGLE_ADS_ACCOUNTS. */
+  accounts?: string
+  workspaceId?: string
+  /** Non-admin workspace: OAuth access token (resolved by tool executor). */
+  accessToken?: string
+  customerId?: string
+  developerToken?: string
+  managerCustomerId?: string
 }
 
 export interface GAQLResponse {
