@@ -27,6 +27,7 @@ import {
   JiraIcon,
   LinearIcon,
   LinkedInIcon,
+  MetaIcon,
   MicrosoftDataverseIcon,
   MicrosoftExcelIcon,
   MicrosoftIcon,
@@ -1074,6 +1075,21 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'linkedin',
   },
+  'facebook-ads': {
+    name: 'Facebook',
+    icon: MetaIcon,
+    services: {
+      'facebook-ads': {
+        name: 'Facebook Ads',
+        description: 'Query Facebook Ads campaign and performance data.',
+        providerId: 'facebook-ads',
+        icon: MetaIcon,
+        baseProviderIcon: MetaIcon,
+        scopes: ['ads_read', 'read_insights', 'business_management'],
+      },
+    },
+    defaultService: 'facebook-ads',
+  },
   salesforce: {
     name: 'Salesforce',
     icon: SalesforceIcon,
@@ -1478,6 +1494,16 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       )
       return {
         tokenEndpoint: 'https://www.linkedin.com/oauth/v2/accessToken',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: false,
+      }
+    }
+    case 'facebook-ads': {
+      const { clientId, clientSecret } = getCredentials(env.FB_CLIENT_ID, env.FB_CLIENT_SECRET)
+      return {
+        tokenEndpoint: 'https://graph.facebook.com/v22.0/oauth/access_token',
         clientId,
         clientSecret,
         useBasicAuth: false,

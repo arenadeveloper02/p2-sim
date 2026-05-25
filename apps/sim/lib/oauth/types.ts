@@ -50,6 +50,7 @@ export type OAuthProvider =
   | 'spotify'
   | 'calcom'
   | 'docusign'
+  | 'facebook-ads'
 
 export type OAuthService =
   | 'google'
@@ -100,6 +101,7 @@ export type OAuthService =
   | 'spotify'
   | 'calcom'
   | 'docusign'
+  | 'facebook-ads'
   | 'github'
   | 'monday'
 

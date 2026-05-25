@@ -345,6 +345,11 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   // LinkedIn scopes
   w_member_social: 'Access LinkedIn profile',
 
+  // Facebook / Meta Ads scopes
+  ads_read: 'Read Facebook Ads account and campaign data',
+  read_insights: 'Read Facebook Ads performance insights',
+  business_management: 'Access Business Manager ad accounts',
+
   // Box scopes
   root_readwrite: 'Read and write all files and folders in Box account',
   root_readonly: 'Read all files and folders in Box account',

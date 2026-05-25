@@ -685,6 +685,7 @@ export const auth = betterAuth({
         'pipedrive',
         'hubspot',
         'linkedin',
+        'facebook-ads',
         'spotify',
         'google-email',
         'google-calendar',
@@ -2641,6 +2642,48 @@ export const auth = betterAuth({
               }
             } catch (error) {
               logger.error('Error in Webflow getUserInfo:', { error })
+              return null
+            }
+          },
+        },
+        // Facebook Ads provider
+        {
+          providerId: 'facebook-ads',
+          clientId: env.FB_CLIENT_ID as string,
+          clientSecret: env.FB_CLIENT_SECRET as string,
+          authorizationUrl: 'https://www.facebook.com/v22.0/dialog/oauth',
+          tokenUrl: 'https://graph.facebook.com/v22.0/oauth/access_token',
+          scopes: getCanonicalScopesForProvider('facebook-ads'),
+          responseType: 'code',
+          accessType: 'offline',
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/facebook-ads`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch(
+                `https://graph.facebook.com/v22.0/me?fields=id,name,email&access_token=${encodeURIComponent(tokens.accessToken ?? '')}`
+              )
+              if (!response.ok) {
+                logger.error('Failed to fetch Facebook user info', { status: response.status })
+                throw new Error('Failed to fetch Facebook user info')
+              }
+              const profile = (await response.json()) as {
+                id?: string
+                name?: string
+                email?: string
+              }
+              const now = new Date()
+              const fbId = profile.id ?? generateId()
+              return {
+                id: `${fbId}-${generateId()}`,
+                name: profile.name || 'Facebook User',
+                email: profile.email || `${fbId}@facebook.user`,
+                emailVerified: Boolean(profile.email),
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Facebook getUserInfo', { error })
               return null
             }
           },

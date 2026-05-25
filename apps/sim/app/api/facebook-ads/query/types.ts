@@ -13,7 +13,15 @@ export type PromptContext = Record<string, never>
 
 export interface FacebookAdsRequest {
   query: string
-  account: string
+  /** Admin workspace: account key from channel accounts. */
+  account?: string
+  workspaceId?: string
+  /** Non-admin workspace: OAuth access token (resolved by tool executor). */
+  accessToken?: string
+  fbClientId?: string
+  fbClientSecret?: string
+  /** Non-admin workspace: ad account ID (act_123 or numeric). */
+  adAccountId?: string
   date_preset?: string
   time_range?: { since: string; until: string }
   fields?: string[]
