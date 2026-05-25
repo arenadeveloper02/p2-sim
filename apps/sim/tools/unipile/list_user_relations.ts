@@ -1,6 +1,9 @@
-import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileListUserRelationsParams,
   UnipileListUserRelationsToolResponse,
@@ -38,9 +41,9 @@ export const unipileListUserRelationsTool: ToolConfig<
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) =>
       attachUnipileInternalContext(params, {
-      account_id: params.account_id?.trim(),
-      filter: params.filter,
-    }),
+        account_id: params.account_id?.trim(),
+        filter: params.filter,
+      }),
   },
 
   transformResponse: async (response: Response) => {

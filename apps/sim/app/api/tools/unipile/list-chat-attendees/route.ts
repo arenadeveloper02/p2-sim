@@ -3,7 +3,6 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { resolveUnipileApiKeyFromRequestBody } from '@/lib/unipile/resolve-api-key-from-body'
-
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileListChatAttendeesAPI')
@@ -27,7 +26,8 @@ export async function POST(request: NextRequest) {
     body = await request.json()
     apiKey = resolveUnipileApiKeyFromRequestBody(body)
   } catch (keyError) {
-    const message = keyError instanceof Error ? keyError.message : 'Unipile API key is not configured'
+    const message =
+      keyError instanceof Error ? keyError.message : 'Unipile API key is not configured'
     const status =
       message.includes('not configured') || message.toLowerCase().includes('missing') ? 503 : 400
     return NextResponse.json({ error: message }, { status })
