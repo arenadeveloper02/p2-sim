@@ -90,6 +90,7 @@ interface ChatFile {
   type: string
   size: number
   file: File
+  dataUrl?: string
 }
 
 const FILE_READ_TIMEOUT_MS = 60000
@@ -100,41 +101,43 @@ const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ChatMessag
       let previewUrl: string | undefined
       if (file.type.startsWith('image/')) {
         try {
-          previewUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            let settled = false
+          previewUrl =
+            file.dataUrl ||
+            (await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              let settled = false
 
-            const timeoutId = setTimeout(() => {
-              if (!settled) {
-                settled = true
-                reader.abort()
-                reject(new Error(`File read timed out after ${FILE_READ_TIMEOUT_MS}ms`))
-              }
-            }, FILE_READ_TIMEOUT_MS)
+              const timeoutId = setTimeout(() => {
+                if (!settled) {
+                  settled = true
+                  reader.abort()
+                  reject(new Error(`File read timed out after ${FILE_READ_TIMEOUT_MS}ms`))
+                }
+              }, FILE_READ_TIMEOUT_MS)
 
-            reader.onload = () => {
-              if (!settled) {
-                settled = true
-                clearTimeout(timeoutId)
-                resolve(reader.result as string)
+              reader.onload = () => {
+                if (!settled) {
+                  settled = true
+                  clearTimeout(timeoutId)
+                  resolve(reader.result as string)
+                }
               }
-            }
-            reader.onerror = () => {
-              if (!settled) {
-                settled = true
-                clearTimeout(timeoutId)
-                reject(reader.error)
+              reader.onerror = () => {
+                if (!settled) {
+                  settled = true
+                  clearTimeout(timeoutId)
+                  reject(reader.error)
+                }
               }
-            }
-            reader.onabort = () => {
-              if (!settled) {
-                settled = true
-                clearTimeout(timeoutId)
-                reject(new Error('File read aborted'))
+              reader.onabort = () => {
+                if (!settled) {
+                  settled = true
+                  clearTimeout(timeoutId)
+                  reject(new Error('File read aborted'))
+                }
               }
-            }
-            reader.readAsDataURL(file.file)
-          })
+              reader.readAsDataURL(file.file)
+            }))
         } catch (error) {
           logger.error('Error reading file as data URL:', error)
         }
@@ -893,7 +896,14 @@ export function Chat() {
     (
       userInput: string,
       conversationId: string,
-      files?: Array<{ name: string; size: number; type: string; file: File }>,
+      files?: Array<{
+        id?: string
+        name: string
+        size: number
+        type: string
+        file: File
+        dataUrl?: string
+      }>,
       overrideValues?: Record<string, unknown>
     ) => {
       const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
@@ -964,6 +974,7 @@ export function Chat() {
           size: image.size,
           type: image.type,
           file: image.file,
+          dataUrl: image.dataUrl,
         })),
       ]
       const attachmentsWithData = await processFileAttachments(combinedChatFiles)
@@ -982,6 +993,8 @@ export function Chat() {
               size: chatFile.size,
               type: chatFile.type,
               file: chatFile.file,
+              id: chatFile.id,
+              dataUrl: chatFile.dataUrl,
             }))
           : undefined
 

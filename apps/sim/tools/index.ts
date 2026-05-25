@@ -15,8 +15,10 @@ import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { isUserFile } from '@/lib/core/utils/user-file'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
+import { stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { resolveWorkspaceFileReference } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { generateNanoBananaImage } from '@/app/api/google/api-service'
 import { assertPermissionsAllowed } from '@/ee/access-control/utils/permission-check'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
@@ -51,6 +53,24 @@ interface ToolExecutionScope {
   isDeployedContext?: boolean
   enforceCredentialAccess?: boolean
   copilotToolExecution?: boolean
+}
+
+async function executeNanoBananaDirect(params: Record<string, any>): Promise<ToolResponse> {
+  logger.info('Running Nano Banana generation in-process')
+  const inputImages = Array.isArray(params.inputImages) ? params.inputImages : undefined
+  const { toolResponse } = await generateNanoBananaImage({
+    model: params.model ?? '',
+    prompt: params.prompt ?? '',
+    aspectRatio: params.aspectRatio,
+    imageSize: params.imageSize,
+    inputImage: inputImages?.length
+      ? undefined
+      : stripInlinePayloadFromFileReference(params.inputImage),
+    inputImageMimeType: params.inputImageMimeType,
+    inputImages: inputImages?.map(stripInlinePayloadFromFileReference),
+    _context: params._context,
+  })
+  return toolResponse
 }
 
 function resolveToolScope(
@@ -807,6 +827,11 @@ async function processFileOutputs(
   }
 }
 
+export interface ExecuteToolOptions {
+  /** Use the exact registry tool id instead of upgrading to the latest _vN variant. */
+  exactToolId?: boolean
+}
+
 /**
  * Execute a tool by making the appropriate HTTP request
  * All requests go directly - internal routes use regular fetch, external use SSRF-protected fetch
@@ -815,7 +840,8 @@ export async function executeTool(
   toolId: string,
   params: Record<string, any>,
   skipPostProcess = false,
-  executionContext?: ExecutionContext
+  executionContext?: ExecutionContext,
+  options?: ExecuteToolOptions
 ): Promise<ToolResponse> {
   // Capture start time for precise timing
   const startTime = new Date()
@@ -890,7 +916,9 @@ export async function executeTool(
       )
     } else {
       // Copilot tool schemas use stripVersionSuffix names; registry keys are versioned (e.g. _v2).
-      const registryToolId = resolveToolId(normalizedToolId)
+      const registryToolId = options?.exactToolId
+        ? normalizedToolId
+        : resolveToolId(normalizedToolId)
       tool = getTool(registryToolId)
       if (!tool) {
         logger.error(
@@ -1067,9 +1095,11 @@ export async function executeTool(
     }
 
     // Check for direct execution (no HTTP request needed)
-    if (tool.directExecution) {
+    const directExecution =
+      normalizedToolId === 'google_nano_banana' ? executeNanoBananaDirect : tool.directExecution
+    if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
-      const result = await tool.directExecution(contextParams)
+      const result = await directExecution(contextParams)
 
       // Apply post-processing if available and not skipped
       let finalResult = result

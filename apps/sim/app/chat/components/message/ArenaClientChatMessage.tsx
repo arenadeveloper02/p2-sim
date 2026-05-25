@@ -204,7 +204,15 @@ export const ArenaClientChatMessage = memo(
     onCopySegmentToInput?: (text: string) => void
     onToggleGeneratedImage?: (
       messageId: string,
-      image: { id: string; name: string; url: string; type: string }
+      image: {
+        id: string
+        name: string
+        url: string
+        key?: string
+        type: string
+        size?: number
+        context?: string
+      }
     ) => void
     selectedGeneratedImageIds?: Set<string>
     selectedGeneratedImageIdsKey?: string
@@ -485,10 +493,12 @@ export const ArenaClientChatMessage = memo(
     const containsBase64Images = hasBase64Images(cleanTextContent)
     const hasImageUrl = !!getImageUrlFromContent(cleanTextContent)
     const generatedImagesByUrl = useMemo(() => {
-      const entries = (message.generatedImages ?? []).map((image): [string, AssistantGeneratedImage] => [
-        normalizeImageUrlForCompare(image.url),
-        image,
-      ])
+      const entries = (message.generatedImages ?? []).map(
+        (image): [string, AssistantGeneratedImage] => [
+          normalizeImageUrlForCompare(image.url),
+          image,
+        ]
+      )
       return new Map(entries)
     }, [message.generatedImages])
 
@@ -514,6 +524,7 @@ export const ArenaClientChatMessage = memo(
               key: matchedImage.key,
               type: matchedImage.type,
               size: matchedImage.size,
+              context: matchedImage.context,
             }),
           selectLabel: isSelected ? 'Selected' : 'Select',
           isSelected,

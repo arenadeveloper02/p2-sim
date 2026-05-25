@@ -212,10 +212,16 @@ export async function POST(request: NextRequest) {
       async (index) => {
         try {
           const promptForImage = normalizeOptionalString(singleImagePrompts?.[index]) ?? promptToExecute
-          const result = await executeTool(validated.baseToolId, {
-            ...resolvedBaseParams,
-            ...(promptForImage ? { prompt: promptForImage } : {}),
-          })
+          const result = await executeTool(
+            validated.baseToolId,
+            {
+              ...resolvedBaseParams,
+              ...(promptForImage ? { prompt: promptForImage } : {}),
+            },
+            false,
+            undefined,
+            { exactToolId: true }
+          )
           return { status: 'fulfilled' as const, value: result }
         } catch (err) {
           return {

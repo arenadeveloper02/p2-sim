@@ -45,7 +45,15 @@ interface ChatMessageProps {
   }
   onToggleGeneratedImage?: (
     messageId: string,
-    image: { id: string; name: string; url: string; type: string }
+    image: {
+      id: string
+      name: string
+      url: string
+      key?: string
+      type: string
+      size?: number
+      context?: string
+    }
   ) => void
   onToggleUserAttachmentImage?: (messageId: string, attachment: ChatMessageAttachment) => void
   selectedGeneratedImageIds?: Set<string>
@@ -191,10 +199,9 @@ export function ChatMessage({
   const throttled = useThrottledValue(rawContent)
   const formattedContent = message.type === 'user' ? rawContent : throttled
   const generatedImagesByUrl = useMemo(() => {
-    const entries = (message.generatedImages ?? []).map((image): [string, AssistantGeneratedImage] => [
-      normalizeImageUrlForCompare(image.url),
-      image,
-    ])
+    const entries = (message.generatedImages ?? []).map(
+      (image): [string, AssistantGeneratedImage] => [normalizeImageUrlForCompare(image.url), image]
+    )
     return new Map(entries)
   }, [message.generatedImages])
 
@@ -217,7 +224,10 @@ export function ChatMessage({
             id: matchedImage.id,
             name: matchedImage.name || 'Generated image',
             url: matchedImage.url,
+            key: matchedImage.key,
             type: matchedImage.type,
+            size: matchedImage.size,
+            context: matchedImage.context,
           }),
         selectLabel: isSelected ? 'Selected' : 'Select',
         isSelected,

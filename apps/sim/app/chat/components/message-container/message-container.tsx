@@ -34,7 +34,15 @@ interface ChatMessageContainerProps {
   onAskInChat?: (text: string) => void
   onToggleGeneratedImage?: (
     messageId: string,
-    image: { id: string; name: string; url: string; type: string }
+    image: {
+      id: string
+      name: string
+      url: string
+      key?: string
+      type: string
+      size?: number
+      context?: string
+    }
   ) => void
   selectedGeneratedImageIds?: Set<string>
   selectedGeneratedImageIdsKey?: string

@@ -89,6 +89,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
       return '/api/google'
     },
     method: 'POST',
+    timeout: 180000,
     headers: () => {
       return {
         'Content-Type': 'application/json',

@@ -67,8 +67,67 @@ interface DebugValidationResult {
 
 const WORKFLOW_EXECUTION_FAILURE_MESSAGE = 'Workflow execution failed'
 
+interface WorkflowInputFileData {
+  id?: string
+  name: string
+  size: number
+  type: string
+  file: File
+  dataUrl?: string
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function inferFileContextFromKey(key: string): string | undefined {
+  if (key.startsWith('agent-generated-images/')) return 'agent-generated-images'
+  if (key.startsWith('workspace/')) return 'workspace'
+  if (key.startsWith('execution/')) return 'execution'
+  return undefined
+}
+
+function resolveExistingStoredFile(
+  fileData: WorkflowInputFileData
+): Record<string, unknown> | null {
+  const fileUrl = fileData.dataUrl?.trim()
+  if (!fileUrl?.includes('/api/files/serve/')) {
+    return null
+  }
+
+  try {
+    const parsed = new URL(
+      fileUrl.startsWith('http') ? fileUrl : `${window.location.origin}${fileUrl}`
+    )
+    const prefix = '/api/files/serve/'
+    if (!parsed.pathname.startsWith(prefix)) {
+      return null
+    }
+
+    let key = decodeURIComponent(parsed.pathname.slice(prefix.length))
+    if (key.startsWith('s3/')) {
+      key = key.slice(3)
+    } else if (key.startsWith('blob/')) {
+      key = key.slice(5)
+    }
+    if (!key) {
+      return null
+    }
+
+    const context = parsed.searchParams.get('context') ?? inferFileContextFromKey(key)
+
+    return {
+      id: fileData.id || generateId(),
+      name: fileData.name,
+      url: parsed.toString(),
+      size: fileData.size > 0 ? fileData.size : 1,
+      type: fileData.type,
+      key,
+      ...(context ? { context } : {}),
+    }
+  } catch {
+    return null
+  }
 }
 
 function sanitizeMessage(value: unknown): string | undefined {
@@ -446,6 +505,12 @@ export function useWorkflowExecution() {
             if (workflowInput.files && Array.isArray(workflowInput.files)) {
               try {
                 for (const fileData of workflowInput.files) {
+                  const existingStoredFile = resolveExistingStoredFile(fileData)
+                  if (existingStoredFile) {
+                    uploadedFiles.push(existingStoredFile)
+                    continue
+                  }
+
                   // Create FormData for upload
                   const formData = new FormData()
                   formData.append('file', fileData.file)
@@ -472,6 +537,7 @@ export function useWorkflowExecution() {
                       size: result.size,
                       type: result.type,
                       key: result.key,
+                      context: result.context,
                       uploadedAt: result.uploadedAt,
                       expiresAt: result.expiresAt,
                     })

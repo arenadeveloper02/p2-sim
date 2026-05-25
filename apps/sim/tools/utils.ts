@@ -318,7 +318,7 @@ export async function formatRequestParams(
   }
 
   const MAX_TIMEOUT_MS = getMaxExecutionTimeout()
-  const rawTimeout = params.timeout
+  const rawTimeout = params.timeout ?? tool.request.timeout
   const timeout = rawTimeout != null ? Number(rawTimeout) : undefined
   const validTimeout =
     timeout != null && Number.isFinite(timeout) && timeout > 0

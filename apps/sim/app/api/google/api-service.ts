@@ -1,16 +1,17 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import sharp from 'sharp'
-import type { ToolResponse } from '@/tools/types'
+import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import type { StorageContext } from '@/lib/uploads'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
-import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import {
   extractStorageKey,
   inferContextFromKey,
   isInternalFileUrl,
 } from '@/lib/uploads/utils/file-utils'
+import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
+import type { ToolResponse } from '@/tools/types'
 
 const logger = createLogger('GoogleApiService')
 
@@ -69,6 +70,58 @@ async function ensureSupportedMime(
   logger.info('Converting SVG to PNG for Gemini API compatibility')
   const pngBuffer = await sharp(buffer).png().toBuffer()
   return { mimeType: 'image/png', data: pngBuffer.toString('base64') }
+}
+
+async function fetchImageUrlForInlineData(
+  url: string,
+  preferredMimeType?: string
+): Promise<InlineImageData> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), URL_FETCH_TIMEOUT_MS)
+  let response: Response
+  try {
+    response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Sim-Workflow/1.0' },
+    })
+  } finally {
+    clearTimeout(timeoutId)
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
+  }
+
+  const arrayBuffer = await response.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
+  if (buffer.length === 0) {
+    throw new Error('Image from URL is empty')
+  }
+  if (buffer.length > MAX_URL_IMAGE_SIZE_BYTES) {
+    throw new Error(
+      `Image from URL exceeds 20MB limit (${(buffer.length / (1024 * 1024)).toFixed(2)}MB)`
+    )
+  }
+
+  const detectedMimeType = detectImageMimeType(buffer)
+  const responseMimeType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase()
+  const normalizedPreferredMimeType = preferredMimeType?.split(';')[0].trim().toLowerCase()
+  const isGenericResponseMimeType =
+    !responseMimeType ||
+    responseMimeType === 'application/octet-stream' ||
+    responseMimeType === 'binary/octet-stream'
+  const mimeType =
+    detectedMimeType ??
+    (isGenericResponseMimeType ? normalizedPreferredMimeType : responseMimeType) ??
+    normalizedPreferredMimeType ??
+    'image/png'
+
+  if (!mimeType.startsWith('image/')) {
+    throw new Error(`URL did not return an image (${mimeType})`)
+  }
+
+  logger.info('Fetched image from URL for inline data', { mimeType, size: buffer.length })
+  return ensureSupportedMime(buffer, mimeType)
 }
 const GOOGLE_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
 
@@ -359,27 +412,7 @@ export const resolveInlineImageData = async (
     const str = inputImage.trim()
     if (str.startsWith('http://') || str.startsWith('https://')) {
       try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), URL_FETCH_TIMEOUT_MS)
-        const response = await fetch(str, {
-          signal: controller.signal,
-          headers: { 'User-Agent': 'Sim-Workflow/1.0' },
-        })
-        clearTimeout(timeoutId)
-        if (!response.ok) {
-          throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
-        }
-        const arrayBuffer = await response.arrayBuffer()
-        const buffer = Buffer.from(arrayBuffer)
-        if (buffer.length > MAX_URL_IMAGE_SIZE_BYTES) {
-          throw new Error(
-            `Image from URL exceeds 20MB limit (${(buffer.length / (1024 * 1024)).toFixed(2)}MB)`
-          )
-        }
-        const contentType = response.headers.get('content-type') || 'image/png'
-        const mimeType = contentType.split(';')[0].trim() || inputImageMimeType || 'image/png'
-        logger.info('Fetched image from URL for inline data', { mimeType, size: buffer.length })
-        return ensureSupportedMime(buffer, mimeType)
+        return await fetchImageUrlForInlineData(str, inputImageMimeType)
       } catch (error) {
         logger.error('Failed to fetch image from URL', { url: str.slice(0, 80), error })
         throw new Error(`Failed to fetch image from URL: ${toError(error).message}`)
@@ -404,9 +437,7 @@ export const resolveInlineImageData = async (
       return ensureSupportedMime(fileBuffer, mimeType)
     } catch (error) {
       logger.error('Failed to resolve inline image data from key', error)
-      throw new Error(
-        `Failed to process input image: ${toError(error).message}`
-      )
+      throw new Error(`Failed to process input image: ${toError(error).message}`)
     }
   }
 
@@ -437,9 +468,7 @@ export const resolveInlineImageData = async (
       return ensureSupportedMime(fileBuffer, mimeType)
     } catch (error) {
       logger.error('Failed to resolve inline image data', error)
-      throw new Error(
-        `Failed to process input image: ${toError(error).message}`
-      )
+      throw new Error(`Failed to process input image: ${toError(error).message}`)
     }
   }
 
@@ -452,9 +481,19 @@ export const resolveInlineImageData = async (
       return ensureSupportedMime(fileBuffer, mimeType)
     } catch (error) {
       logger.error('Failed to resolve inline image data from URL', error)
-      throw new Error(
-        `Failed to process input image: ${toError(error).message}`
-      )
+      throw new Error(`Failed to process input image: ${toError(error).message}`)
+    }
+  }
+
+  if (obj.url && (obj.url.startsWith('http://') || obj.url.startsWith('https://'))) {
+    try {
+      return await fetchImageUrlForInlineData(obj.url, obj.type || inputImageMimeType)
+    } catch (error) {
+      logger.error('Failed to fetch image from object URL', {
+        url: obj.url.slice(0, 80),
+        error,
+      })
+      throw new Error(`Failed to fetch image from URL: ${toError(error).message}`)
     }
   }
 
@@ -567,4 +606,153 @@ export const buildNanoBananaRequestBody = async (params: {
     }
   }
   return body
+}
+
+/** Timeout for the outgoing request to Google – fail before route maxDuration on stuck generations. */
+const GOOGLE_API_TIMEOUT_MS = 3 * 60 * 1000
+
+export interface NanoBananaGenerationParams {
+  model: string
+  prompt: string
+  aspectRatio?: string
+  imageSize?: string
+  inputImage?: unknown
+  inputImageMimeType?: string
+  inputImages?: unknown[]
+  _context?: {
+    workflowId?: string
+    userId?: string
+    sessionUserId?: string
+  }
+}
+
+export interface NanoBananaGenerationResult {
+  toolResponse: ToolResponse
+  httpStatus: number
+}
+
+/**
+ * Generate a Nano Banana image in-process (avoids nested internal HTTP calls that can deadlock dev servers).
+ */
+export async function generateNanoBananaImage(
+  params: NanoBananaGenerationParams
+): Promise<NanoBananaGenerationResult> {
+  const {
+    model,
+    prompt,
+    aspectRatio,
+    imageSize,
+    inputImage,
+    inputImageMimeType,
+    inputImages,
+    _context,
+  } = params
+
+  if (!model || !prompt) {
+    return {
+      toolResponse: {
+        success: false,
+        output: {},
+        error: 'Missing required fields: model and prompt are required',
+      },
+      httpStatus: 400,
+    }
+  }
+
+  try {
+    const apiKey = getRotatingApiKey('google')
+    const url = buildGenerateContentUrl(model)
+    const requestBody = await buildNanoBananaRequestBody({
+      prompt,
+      aspectRatio,
+      imageSize,
+      inputImage,
+      inputImageMimeType,
+      inputImages,
+    })
+
+    const imageCount = inputImages?.length ?? (inputImage ? 1 : 0)
+    logger.info('Sending Nano Banana request', {
+      model,
+      aspectRatio,
+      imageCount,
+    })
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), GOOGLE_API_TIMEOUT_MS)
+
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timeoutId)
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      let errorMessage = `Nano Banana API error: ${response.status} ${response.statusText}`
+      try {
+        const errJson = JSON.parse(errorText) as { error?: { message?: string } }
+        if (errJson?.error?.message) {
+          errorMessage = `Nano Banana API error: ${errJson.error.message}`
+          if (errJson.error.message.toLowerCase().includes('deadline')) {
+            errorMessage +=
+              '. Try using Resolution 1K, fewer input images, or smaller images for fusion.'
+          }
+        }
+      } catch {
+        if (errorText) errorMessage += ` - ${errorText.slice(0, 500)}`
+      }
+      logger.error('Nano Banana API error response', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+      })
+      return {
+        toolResponse: {
+          success: false,
+          output: {},
+          error: errorMessage,
+        },
+        httpStatus: response.status,
+      }
+    }
+
+    const data = await response.json()
+    logger.info('Nano Banana API success', data)
+
+    const userId = _context?.sessionUserId ?? _context?.userId
+    const toolResponse = await buildNanoBananaToolResponse(data, {
+      model,
+      aspectRatio,
+      imageSize,
+      inputImage,
+      inputImageMimeType,
+      inputImages,
+      _context: {
+        workflowId: _context?.workflowId,
+        userId,
+      },
+    })
+
+    return { toolResponse, httpStatus: 200 }
+  } catch (error) {
+    logger.error('Unhandled Nano Banana API error', error)
+    return {
+      toolResponse: {
+        success: false,
+        output: {},
+        error: toError(error).message,
+      },
+      httpStatus: 500,
+    }
+  }
 }

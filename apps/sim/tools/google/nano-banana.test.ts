@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockSaveGeneratedImage } = vi.hoisted(() => ({
   mockSaveGeneratedImage: vi.fn(),
@@ -11,7 +11,7 @@ vi.mock('@/lib/uploads/utils/image-storage.server', () => ({
   saveGeneratedImage: mockSaveGeneratedImage,
 }))
 
-import { buildNanoBananaToolResponse } from '@/app/api/google/api-service'
+import { buildNanoBananaToolResponse, resolveInlineImageData } from '@/app/api/google/api-service'
 import { nanoBananaTool } from '@/tools/google/nano-banana'
 
 describe('Nano Banana tool', () => {
@@ -21,6 +21,10 @@ describe('Nano Banana tool', () => {
       url: 'https://storage.example.com/nano-banana-4k.png',
       s3UploadFailed: false,
     })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('saves generated image data before returning output', async () => {
@@ -104,6 +108,56 @@ describe('Nano Banana tool', () => {
       ],
     })
     expect(JSON.stringify(body)).not.toContain('large-base64-payload')
+  })
+
+  it('keeps server-only direct execution out of the client-bundled tool config', () => {
+    expect(nanoBananaTool.directExecution).toBeUndefined()
+  })
+
+  it('resolves external object URL references into inline image data', async () => {
+    const jpegBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0x00])
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(jpegBytes, {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await resolveInlineImageData({
+      url: 'https://files.example.com/generated-image',
+      type: 'image/jpeg',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://files.example.com/generated-image',
+      expect.objectContaining({
+        headers: { 'User-Agent': 'Sim-Workflow/1.0' },
+      })
+    )
+    expect(result).toEqual({
+      mimeType: 'image/jpeg',
+      data: Buffer.from(jpegBytes).toString('base64'),
+    })
+  })
+
+  it('rejects empty external object URL references before Gemini', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(new Uint8Array(), {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        })
+      )
+    )
+
+    await expect(
+      resolveInlineImageData({
+        url: 'https://files.example.com/empty-image',
+        type: 'image/png',
+      })
+    ).rejects.toThrow('Failed to fetch image from URL: Image from URL is empty')
   })
 
   it('surfaces finishMessage when Gemini returns empty content without image parts', async () => {

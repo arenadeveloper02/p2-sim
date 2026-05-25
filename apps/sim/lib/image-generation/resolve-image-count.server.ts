@@ -12,6 +12,9 @@ const SLM_MODEL = 'gemini-3.1-flash-lite'
 /** Hard timeout for the SLM call so a hung Gemini request never blocks generation. */
 const SLM_TIMEOUT_MS = 8000
 
+/** JSON count/prompt rewrite needs only a small response; large values slow the SLM call. */
+const SLM_MAX_OUTPUT_TOKENS = 2048
+
 const PROMPT_IMAGE_URL_REGEX = /https?:\/\/[^\s"'<>`]+/i
 
 const SlmResponseSchema = z.object({
@@ -248,7 +251,7 @@ Examples:
           systemInstruction: { parts: [{ text: systemInstruction }] },
           generationConfig: {
             temperature: 0,
-            maxOutputTokens: 100000,
+            maxOutputTokens: SLM_MAX_OUTPUT_TOKENS,
             responseMimeType: 'application/json',
           },
         }),

@@ -76,7 +76,10 @@ describe('Image Generation Wrapper API Route', () => {
         model: 'gemini-3-pro-image-preview',
         prompt: 'Fuse these images together',
         inputImages,
-      })
+      }),
+      false,
+      undefined,
+      { exactToolId: true }
     )
     expect(mockExecuteTool.mock.calls[0]?.[1]).not.toHaveProperty('inputImage')
     expect(data).toMatchObject({
@@ -108,7 +111,10 @@ describe('Image Generation Wrapper API Route', () => {
         model: 'gemini-3-pro-image-preview',
         prompt: 'Edit this image',
         inputImage: 'https://example.com/single-image.png',
-      })
+      }),
+      false,
+      undefined,
+      { exactToolId: true }
     )
   })
 
@@ -144,7 +150,10 @@ describe('Image Generation Wrapper API Route', () => {
       expect.objectContaining({
         prompt: 'Give me variation 1 with a blue jersey',
         inputImage: 'https://example.com/source.png',
-      })
+      }),
+      false,
+      undefined,
+      { exactToolId: true }
     )
     expect(mockExecuteTool).toHaveBeenNthCalledWith(
       2,
@@ -152,7 +161,10 @@ describe('Image Generation Wrapper API Route', () => {
       expect.objectContaining({
         prompt: 'Give me variation 2 with a red jersey',
         inputImage: 'https://example.com/source.png',
-      })
+      }),
+      false,
+      undefined,
+      { exactToolId: true }
     )
     expect(mockExecuteTool).toHaveBeenNthCalledWith(
       3,
@@ -160,7 +172,10 @@ describe('Image Generation Wrapper API Route', () => {
       expect.objectContaining({
         prompt: 'Give me variation 3 with a green jersey',
         inputImage: 'https://example.com/source.png',
-      })
+      }),
+      false,
+      undefined,
+      { exactToolId: true }
     )
   })
 

@@ -21,6 +21,7 @@ describe('materializeSelectedGeneratedImage', () => {
     })
 
     expect(result.size).toBeGreaterThan(0)
+    expect(result.file.size).toBe(0)
     expect(result.dataUrl).toContain('/api/files/serve/')
     expect(fetch).not.toHaveBeenCalled()
   })
