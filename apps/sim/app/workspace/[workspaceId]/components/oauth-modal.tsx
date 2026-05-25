@@ -216,7 +216,10 @@ export function OAuthModal(props: OAuthModalProps) {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callbackURL: callbackURL.toString() }),
+          body: JSON.stringify({
+            callbackURL: callbackURL.toString(),
+            workspaceId,
+          }),
         })
         const data = (await response.json().catch(() => ({}))) as {
           url?: string

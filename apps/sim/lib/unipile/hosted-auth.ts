@@ -3,12 +3,12 @@ import { account, credential } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
+import { env } from '@/lib/core/config/env'
 import { handleCreateCredentialFromDraft } from '@/lib/credentials/draft-hooks'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
-import { env } from '@/lib/core/config/env'
 import { resolveUnipileApiKey } from '@/lib/unipile/resolve-api-key'
-import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 import { safeAccountInsert } from '@/app/api/auth/oauth/utils'
+import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileHostedAuth')
 
@@ -20,6 +20,12 @@ export interface CreateUnipileHostedAuthLinkParams {
   userId: string
   callbackURL: string
   correlationName: string
+  workspaceId?: string | null
+  /**
+   * External Unipile account id (`account.account_id`). When set, creates a reconnect hosted link
+   * (`type: reconnect`, `reconnect_account`) instead of a new connection.
+   */
+  reconnectExternalAccountId?: string | null
 }
 
 export interface CreateUnipileHostedAuthLinkResult {
@@ -35,12 +41,22 @@ export function buildHostedAuthExpiresOn(): string {
 }
 
 /**
- * Creates a Unipile hosted authentication URL for LinkedIn connect.
+ * Reads hosted-auth notify `status` (`CREATION_SUCCESS` or `RECONNECTED`).
+ */
+export function extractUnipileHostedAuthStatusFromNotifyPayload(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null
+  const status = (body as Record<string, unknown>).status
+  return typeof status === 'string' && status.trim() !== '' ? status.trim() : null
+}
+
+/**
+ * Creates a Unipile hosted authentication URL for LinkedIn connect or reconnect.
  */
 export async function createUnipileHostedAuthLink(
   params: CreateUnipileHostedAuthLinkParams
 ): Promise<CreateUnipileHostedAuthLinkResult> {
-  const apiKey = resolveUnipileApiKey({})
+  const reconnectAccountId = params.reconnectExternalAccountId?.trim() || null
+  const apiKey = resolveUnipileApiKey({ workspaceId: params.workspaceId })
   const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
   const appBase = env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')
   const notifyUrl = `${appBase}/api/auth/unipile/hosted/notify`
@@ -50,8 +66,8 @@ export async function createUnipileHostedAuthLink(
   const failureUrl = new URL(params.callbackURL)
   failureUrl.searchParams.set('unipile_hosted', 'failure')
 
-  const body = {
-    type: 'create',
+  const body: Record<string, unknown> = {
+    type: reconnectAccountId ? 'reconnect' : 'create',
     providers: ['LINKEDIN'],
     api_url: baseUrl,
     expiresOn: buildHostedAuthExpiresOn(),
@@ -60,6 +76,10 @@ export async function createUnipileHostedAuthLink(
     failure_redirect_url: failureUrl.toString(),
     bypass_success_screen: true,
     notify_url: notifyUrl,
+  }
+
+  if (reconnectAccountId) {
+    body.reconnect_account = reconnectAccountId
   }
 
   const response = await fetch(`${baseUrl}${HOSTED_LINK_PATH}`, {

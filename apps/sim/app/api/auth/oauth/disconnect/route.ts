@@ -101,12 +101,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       })
       .from(credentialSetMember)
       .innerJoin(credentialSet, eq(credentialSetMember.credentialSetId, credentialSet.id))
-      .where(
-        and(
-          eq(credentialSetMember.userId, userId),
-          eq(credentialSetMember.status, 'active')
-        )
-      )
+      .where(and(eq(credentialSetMember.userId, userId), eq(credentialSetMember.status, 'active')))
 
     for (const membership of userMemberships) {
       const matchesProvider =

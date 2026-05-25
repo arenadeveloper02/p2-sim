@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { client } from '@/lib/auth/auth-client'
+import { readOAuthReturnContext } from '@/lib/credentials/client-state'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
 
 const logger = createLogger('OAuthConnectionsQuery')
@@ -255,11 +256,15 @@ export function useConnectOAuthService() {
       }
 
       if (providerId === 'unipile_linkedin') {
+        const returnCtx = readOAuthReturnContext()
         const response = await fetch(`${origin}/api/auth/unipile/hosted/link`, {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callbackURL }),
+          body: JSON.stringify({
+            callbackURL,
+            workspaceId: returnCtx?.workspaceId,
+          }),
         })
         const data = (await response.json().catch(() => ({}))) as {
           url?: string

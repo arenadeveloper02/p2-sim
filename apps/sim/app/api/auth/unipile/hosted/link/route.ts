@@ -4,11 +4,14 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { createUnipileHostedAuthLink } from '@/lib/unipile/hosted-auth'
+import { resolveUnipileReconnectExternalAccountId } from '@/lib/unipile/resolve-reconnect-account'
 
 const logger = createLogger('UnipileHostedLinkAPI')
 
 const RequestSchema = z.object({
   callbackURL: z.string().url(),
+  workspaceId: z.string().min(1).optional(),
+  credentialId: z.string().min(1).optional(),
 })
 
 /**
@@ -32,13 +35,25 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   }
 
   try {
+    const reconnectExternalAccountId = await resolveUnipileReconnectExternalAccountId({
+      userId: session.user.id,
+      workspaceId: body.workspaceId,
+      credentialId: body.credentialId,
+    })
+
     const { url } = await createUnipileHostedAuthLink({
       userId: session.user.id,
       callbackURL: body.callbackURL,
       correlationName: session.user.id,
+      workspaceId: body.workspaceId,
+      reconnectExternalAccountId,
     })
 
-    return NextResponse.json({ success: true, url })
+    return NextResponse.json({
+      success: true,
+      url,
+      reconnect: Boolean(reconnectExternalAccountId),
+    })
   } catch (error) {
     logger.error('Failed to create Unipile hosted auth link', { error })
     return NextResponse.json(

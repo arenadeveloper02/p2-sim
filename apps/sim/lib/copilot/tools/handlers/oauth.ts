@@ -128,6 +128,7 @@ export async function generateOAuthLink(
       userId,
       callbackURL,
       correlationName: userId,
+      workspaceId,
     })
     return { url, providerId, serviceName }
   }

@@ -1,11 +1,12 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   extractCorrelationUserIdFromNotifyPayload,
   extractUnipileAccountIdFromNotifyPayload,
+  extractUnipileHostedAuthStatusFromNotifyPayload,
   finalizeUnipileLinkedInHostedAuth,
 } from '@/lib/unipile/hosted-auth'
-import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('UnipileHostedNotifyAPI')
 
@@ -23,6 +24,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
   const unipileAccountId = extractUnipileAccountIdFromNotifyPayload(body)
   const userId = extractCorrelationUserIdFromNotifyPayload(body)
+  const hostedStatus = extractUnipileHostedAuthStatusFromNotifyPayload(body)
 
   if (!unipileAccountId || !userId) {
     logger.warn('Unipile hosted notify missing account or user correlation', {
@@ -40,6 +42,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     logger.info('Persisted Unipile LinkedIn account from hosted notify', {
       userId,
       unipileAccountId,
+      hostedStatus,
       credentialId: result.credentialId,
     })
     return NextResponse.json({ received: true, persisted: true })

@@ -97,8 +97,7 @@ export async function handleUnipileHostedRedirect(
   }
 
   const isUnipileContext = ctx?.providerId === UNIPILE_LINKEDIN_PROVIDER_ID
-  const isSuccess =
-    params.hosted === 'success' || (Boolean(params.accountId) && isUnipileContext)
+  const isSuccess = params.hosted === 'success' || (Boolean(params.accountId) && isUnipileContext)
 
   if (!isSuccess) {
     return { handled: true, ctx: null }
