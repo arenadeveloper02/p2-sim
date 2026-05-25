@@ -1,5 +1,4 @@
-import type { ToolConfig } from '@/tools/types'
-import type { WorkflowToolExecutionContext } from '@/tools/types'
+import type { ToolConfig, WorkflowToolExecutionContext } from '@/tools/types'
 
 export const unipileApiKeyToolParam = {
   unipileApiKey: {

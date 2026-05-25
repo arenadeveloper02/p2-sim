@@ -1,5 +1,8 @@
-import { attachUnipileInternalContext, unipileApiKeyToolParam } from '@/tools/unipile/shared-tool-params'
 import type { ToolConfig } from '@/tools/types'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type { UnipileGetPostParams, UnipileGetPostToolResponse } from '@/tools/unipile/types'
 
 export const unipileGetPostTool: ToolConfig<UnipileGetPostParams, UnipileGetPostToolResponse> = {
@@ -32,9 +35,9 @@ export const unipileGetPostTool: ToolConfig<UnipileGetPostParams, UnipileGetPost
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) =>
       attachUnipileInternalContext(params, {
-      post_id: params.post_id?.trim(),
-      account_id: params.account_id?.trim(),
-    }),
+        post_id: params.post_id?.trim(),
+        account_id: params.account_id?.trim(),
+      }),
   },
 
   transformResponse: async (response: Response) => {
