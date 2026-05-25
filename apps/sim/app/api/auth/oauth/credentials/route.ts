@@ -266,7 +266,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         .select({
           id: credential.id,
           displayName: credential.displayName,
-          providerId: account.providerId,
+          providerId: credential.providerId,
+          accountProviderId: account.providerId,
           scope: account.scope,
           updatedAt: account.updatedAt,
         })
@@ -284,12 +285,18 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           and(
             eq(credential.workspaceId, effectiveWorkspaceId),
             eq(credential.type, 'oauth'),
-            eq(account.providerId, providerParam)
+            eq(credential.providerId, providerParam)
           )
         )
 
       const results = credentialsData.map((row) =>
-        toCredentialResponse(row.id, row.displayName, row.providerId, row.updatedAt, row.scope)
+        toCredentialResponse(
+          row.id,
+          row.displayName,
+          row.providerId ?? row.accountProviderId ?? providerParam,
+          row.updatedAt,
+          row.scope
+        )
       )
 
       const saProviderId = getServiceAccountProviderForProviderId(providerParam)

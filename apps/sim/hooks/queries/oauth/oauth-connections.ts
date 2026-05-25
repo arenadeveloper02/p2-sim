@@ -254,6 +254,28 @@ export function useConnectOAuthService() {
         return { success: true }
       }
 
+      if (providerId === 'unipile_linkedin') {
+        const response = await fetch(`${origin}/api/auth/unipile/hosted/link`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callbackURL }),
+        })
+        const data = (await response.json().catch(() => ({}))) as {
+          url?: string
+          error?: string
+        }
+        if (!response.ok || !data.url) {
+          throw new Error(data.error || 'Failed to start LinkedIn (Unipile) connection')
+        }
+        if (delegateToParent) {
+          postArenaV3OAuthNavigateToParent(data.url)
+        } else {
+          window.location.href = data.url
+        }
+        return { success: true }
+      }
+
       if (delegateToParent) {
         const url = await fetchOAuth2LinkAuthorizeUrl(providerId, callbackURL)
         postArenaV3OAuthNavigateToParent(url)

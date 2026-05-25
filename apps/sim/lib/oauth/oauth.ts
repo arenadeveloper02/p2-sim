@@ -44,6 +44,7 @@ import {
   SlackIcon,
   SpotifyIcon,
   TrelloIcon,
+  UnipileIcon,
   VertexIcon,
   WealthboxIcon,
   WebflowIcon,
@@ -1073,6 +1074,22 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
       },
     },
     defaultService: 'linkedin',
+  },
+  unipile_linkedin: {
+    name: 'LinkedIn (Unipile)',
+    icon: UnipileIcon,
+    services: {
+      unipile_linkedin: {
+        name: 'LinkedIn (Unipile)',
+        description:
+          'Connect a LinkedIn account via Unipile for messaging, search, posts, and profiles in workflows.',
+        providerId: 'unipile_linkedin',
+        icon: UnipileIcon,
+        baseProviderIcon: UnipileIcon,
+        scopes: [],
+      },
+    },
+    defaultService: 'unipile_linkedin',
   },
   salesforce: {
     name: 'Salesforce',

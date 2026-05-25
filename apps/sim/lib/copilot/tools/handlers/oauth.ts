@@ -122,6 +122,16 @@ export async function generateOAuthLink(
     }
   }
 
+  if (providerId === 'unipile_linkedin') {
+    const { createUnipileHostedAuthLink } = await import('@/lib/unipile/hosted-auth')
+    const { url } = await createUnipileHostedAuthLink({
+      userId,
+      callbackURL,
+      correlationName: userId,
+    })
+    return { url, providerId, serviceName }
+  }
+
   let displayName = serviceName
   try {
     const [row] = await db.select({ name: user.name }).from(user).where(eq(user.id, userId))
