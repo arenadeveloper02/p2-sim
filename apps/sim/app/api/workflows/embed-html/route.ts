@@ -153,7 +153,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       agentBaseUrl,
       workflowId: resolveWorkflowId,
       apiKey: resolveApiKey,
-      body: { userId: session.user.id },
+      body: { userId: session.user.id, email: session.user.email },
       logLabel: 'resolve-credentials',
     })
 
