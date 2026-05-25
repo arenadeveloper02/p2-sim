@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
+import { isValidUuid } from '@sim/utils/id'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import { generateInternalToken } from '@/lib/auth/internal'
 import { isHosted } from '@/lib/core/config/feature-flags'
@@ -16,6 +17,7 @@ import { isUserFile } from '@/lib/core/utils/user-file'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import { parseMcpToolId } from '@/lib/mcp/utils'
+import { resolveUnipileExternalAccountId } from '@/lib/unipile/account-from-credential'
 import { resolveWorkspaceFileReference } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { assertPermissionsAllowed } from '@/ee/access-control/utils/permission-check'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
@@ -263,6 +265,40 @@ async function injectOAuthCredentialFromUserContextIfNeeded(
       error: error instanceof Error ? error.message : String(error),
     })
   }
+}
+
+/**
+ * Resolves workspace credential UUIDs to external Unipile account ids for tool routes.
+ */
+async function injectUnipileAccountIdFromCredentialIfNeeded(
+  params: Record<string, unknown>,
+  requestId: string
+): Promise<void> {
+  const pick = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+  const raw =
+    pick(params.account_id) ||
+    pick(params.unipileCredential) ||
+    pick(params.oauthCredential) ||
+    pick(params.credential)
+  if (!raw) return
+
+  if (!isValidUuid(raw)) {
+    params.account_id = raw
+    return
+  }
+
+  const externalId = await resolveUnipileExternalAccountId(raw)
+  if (!externalId) {
+    logger.warn(`[${requestId}] Could not resolve Unipile account for credential`, {
+      credentialId: raw,
+    })
+    return
+  }
+
+  params.account_id = externalId
+  logger.info(`[${requestId}] Resolved Unipile account_id for credential`, {
+    credentialId: raw,
+  })
 }
 
 /**
@@ -919,6 +955,10 @@ export async function executeTool(
     await normalizeCopilotFileParams(tool, contextParams, scope)
     normalizeCopilotCredentialParams(contextParams)
     enforceCopilotCredentialSelection(toolId, tool, contextParams, scope)
+
+    if (normalizedToolId.startsWith('unipile_')) {
+      await injectUnipileAccountIdFromCredentialIfNeeded(contextParams, requestId)
+    }
 
     // Inject hosted API key if tool supports it and user didn't provide one
     const hostedKeyInfo = await injectHostedKeyIfNeeded(

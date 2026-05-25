@@ -9,6 +9,10 @@ import {
   type OAuthReturnContext,
   readOAuthReturnContext,
 } from '@/lib/credentials/client-state'
+import {
+  handleUnipileHostedRedirect,
+  readAndClearUnipileHostedRedirectParams,
+} from '@/lib/unipile/hosted-return-client'
 import { useNotificationStore } from '@/stores/notifications/store'
 
 const OAUTH_CREDENTIAL_UPDATED_EVENT = 'oauth-credentials-updated'
@@ -68,6 +72,36 @@ export function useOAuthReturnRouter() {
 
   useEffect(() => {
     if (handledRef.current) return
+
+    const redirectParams = readAndClearUnipileHostedRedirectParams()
+    if (redirectParams.hosted === 'failure') {
+      handledRef.current = true
+      toast.error('LinkedIn connection was not completed.', { duration: 5000 })
+      consumeOAuthReturnContext()
+      return
+    }
+
+    if (redirectParams.hosted || redirectParams.accountId) {
+      handledRef.current = true
+      void (async () => {
+        const { ctx } = await handleUnipileHostedRedirect(redirectParams)
+        if (redirectParams.hosted === 'success' || redirectParams.accountId) {
+          if (ctx) {
+            const message = await resolveOAuthMessage(ctx)
+            toast.success(message, { duration: 5000 })
+            dispatchCredentialUpdate(ctx)
+            consumeOAuthReturnContext()
+          } else {
+            toast.error(
+              'Connection session expired. Open Integrations and connect LinkedIn again.',
+              { duration: 5000 }
+            )
+          }
+        }
+      })()
+      return
+    }
+
     const ctx = readOAuthReturnContext()
     if (!ctx) return
     if (Date.now() - ctx.requestedAt > CONTEXT_MAX_AGE_MS) {
@@ -115,13 +149,52 @@ export function useOAuthReturnRouter() {
  */
 export function useOAuthReturnForWorkflow(workflowId: string) {
   const addNotification = useNotificationStore((state) => state.addNotification)
+  const handledRef = useRef(false)
 
   useEffect(() => {
+    if (handledRef.current) return
+
+    const redirectParams = readAndClearUnipileHostedRedirectParams()
+
+    if (redirectParams.hosted === 'failure') {
+      handledRef.current = true
+      addNotification({
+        level: 'error',
+        message: 'LinkedIn connection was not completed.',
+        workflowId,
+      })
+      consumeOAuthReturnContext()
+      return
+    }
+
+    if (redirectParams.hosted || redirectParams.accountId) {
+      handledRef.current = true
+      void (async () => {
+        const { ctx } = await handleUnipileHostedRedirect(redirectParams)
+        if (ctx && ctx.origin === 'workflow' && ctx.workflowId === workflowId) {
+          const message = await resolveOAuthMessage(ctx)
+          addNotification({ level: 'info', message, workflowId })
+          dispatchCredentialUpdate(ctx)
+          consumeOAuthReturnContext()
+        } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
+          addNotification({
+            level: 'info',
+            message: 'LinkedIn account linked. Select it in the block credential picker.',
+            workflowId,
+          })
+          consumeOAuthReturnContext()
+        }
+      })()
+      return
+    }
+
     const ctx = readOAuthReturnContext()
     if (!ctx || ctx.origin !== 'workflow') return
     if (ctx.workflowId !== workflowId) return
     consumeOAuthReturnContext()
     if (Date.now() - ctx.requestedAt > CONTEXT_MAX_AGE_MS) return
+
+    handledRef.current = true
 
     void (async () => {
       const message = await resolveOAuthMessage(ctx)
@@ -136,12 +209,44 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
  * Consumes the return context and shows a toast notification.
  */
 export function useOAuthReturnForKBConnectors(knowledgeBaseId: string) {
+  const handledRef = useRef(false)
+
   useEffect(() => {
+    if (handledRef.current) return
+
+    const redirectParams = readAndClearUnipileHostedRedirectParams()
+
+    if (redirectParams.hosted === 'failure') {
+      handledRef.current = true
+      toast.error('LinkedIn connection was not completed.', { duration: 5000 })
+      consumeOAuthReturnContext()
+      return
+    }
+
+    if (redirectParams.hosted || redirectParams.accountId) {
+      handledRef.current = true
+      void (async () => {
+        const { ctx } = await handleUnipileHostedRedirect(redirectParams)
+        if (ctx && ctx.origin === 'kb-connectors' && ctx.knowledgeBaseId === knowledgeBaseId) {
+          const message = await resolveOAuthMessage(ctx)
+          toast.success(message, { duration: 5000 })
+          dispatchCredentialUpdate(ctx)
+          consumeOAuthReturnContext()
+        } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
+          toast.success('LinkedIn account linked.', { duration: 5000 })
+          consumeOAuthReturnContext()
+        }
+      })()
+      return
+    }
+
     const ctx = readOAuthReturnContext()
     if (!ctx || ctx.origin !== 'kb-connectors') return
     if (ctx.knowledgeBaseId !== knowledgeBaseId) return
     consumeOAuthReturnContext()
     if (Date.now() - ctx.requestedAt > CONTEXT_MAX_AGE_MS) return
+
+    handledRef.current = true
 
     void (async () => {
       const message = await resolveOAuthMessage(ctx)

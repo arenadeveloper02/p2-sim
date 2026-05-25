@@ -8,6 +8,11 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { UnipileDeleteAccountError } from '@/lib/unipile/delete-account'
+import {
+  listAccountsToDisconnect,
+  unlinkUnipileAccountsFromProvider,
+} from '@/lib/unipile/disconnect-accounts'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 
 export const dynamic = 'force-dynamic'
@@ -54,37 +59,40 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
 
     const { provider, providerId, accountId } = parseResult.data
+    const userId = session.user.id
 
     logger.info(`[${requestId}] Processing OAuth disconnect request`, {
       provider,
       hasProviderId: !!providerId,
+      hasAccountId: !!accountId,
     })
 
-    // If a specific account row ID is provided, delete that exact account
+    const accountsToRemove = await listAccountsToDisconnect({
+      userId,
+      provider,
+      providerId,
+      accountRowId: accountId,
+    })
+
+    await unlinkUnipileAccountsFromProvider(accountsToRemove)
+
     if (accountId) {
-      await db
-        .delete(account)
-        .where(and(eq(account.userId, session.user.id), eq(account.id, accountId)))
+      await db.delete(account).where(and(eq(account.userId, userId), eq(account.id, accountId)))
     } else if (providerId) {
-      // If a specific providerId is provided, delete accounts for that provider ID
       await db
         .delete(account)
-        .where(and(eq(account.userId, session.user.id), eq(account.providerId, providerId)))
+        .where(and(eq(account.userId, userId), eq(account.providerId, providerId)))
     } else {
-      // Otherwise, delete all accounts for this provider
-      // Handle both exact matches (e.g., 'confluence') and prefixed matches (e.g., 'google-email')
       await db
         .delete(account)
         .where(
           and(
-            eq(account.userId, session.user.id),
+            eq(account.userId, userId),
             or(eq(account.providerId, provider), like(account.providerId, `${provider}-%`))
           )
         )
     }
 
-    // Sync webhooks for all credential sets the user is a member of
-    // This removes webhooks that were using the disconnected credential
     const userMemberships = await db
       .select({
         id: credentialSetMember.id,
@@ -93,16 +101,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       })
       .from(credentialSetMember)
       .innerJoin(credentialSet, eq(credentialSetMember.credentialSetId, credentialSet.id))
-      .where(
-        and(
-          eq(credentialSetMember.userId, session.user.id),
-          eq(credentialSetMember.status, 'active')
-        )
-      )
+      .where(and(eq(credentialSetMember.userId, userId), eq(credentialSetMember.status, 'active')))
 
     for (const membership of userMemberships) {
-      // Only sync if the credential set matches this provider
-      // Credential sets store OAuth provider IDs like 'google-email' or 'outlook'
       const matchesProvider =
         membership.providerId === provider ||
         membership.providerId === providerId ||
@@ -116,7 +117,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             provider,
           })
         } catch (error) {
-          // Log but don't fail the disconnect - credential is already removed
           logger.error(`[${requestId}] Failed to sync webhooks after credential disconnect`, {
             credentialSetId: membership.credentialSetId,
             provider,
@@ -128,7 +128,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     recordAudit({
       workspaceId: null,
-      actorId: session.user.id,
+      actorId: userId,
       action: AuditAction.OAUTH_DISCONNECTED,
       resourceType: AuditResourceType.OAUTH,
       resourceId: providerId ?? provider,
@@ -136,12 +136,30 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       actorEmail: session.user.email ?? undefined,
       resourceName: provider,
       description: `Disconnected OAuth provider: ${provider}`,
-      metadata: { provider, providerId },
+      metadata: { provider, providerId, accountId },
       request,
     })
 
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {
+    if (error instanceof UnipileDeleteAccountError) {
+      logger.warn(`[${requestId}] Unipile unlink failed during disconnect`, {
+        status: error.status,
+        message: error.message,
+      })
+      return NextResponse.json({ error: error.message }, { status: 502 })
+    }
+
+    const message = error instanceof Error ? error.message : 'Internal server error'
+    if (
+      message.includes('Unipile API key') ||
+      message.includes('UNIPILE_API_KEY') ||
+      message.includes('Failed to unlink LinkedIn')
+    ) {
+      logger.warn(`[${requestId}] Unipile disconnect configuration error`, { message })
+      return NextResponse.json({ error: message }, { status: 502 })
+    }
+
     logger.error(`[${requestId}] Error disconnecting OAuth provider`, error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

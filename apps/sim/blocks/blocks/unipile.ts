@@ -4,7 +4,7 @@ import {
   resolveWorkspaceIdForAdminCheck,
 } from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
-import { IntegrationType } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
 import { UNIPILE_LINKEDIN_PROFILE_SECTIONS } from '@/tools/unipile/linkedin_profile_query'
 import { buildLinkedinSearchBodyFromForm } from '@/tools/unipile/linkedin_search_form'
@@ -47,10 +47,20 @@ function unipileParseMentionIsCompanyCell(raw: string): boolean | undefined {
 }
 
 type UnipileCommentMentionRow = { name: string; profile_id: string; is_company?: boolean }
-type UnipileAccountOption = { id: string; label: string }
 
-let unipileAccountOptionsCache: UnipileAccountOption[] | null = null
-let unipileAccountOptionsRequest: Promise<UnipileAccountOption[]> | null = null
+/** Credential id or legacy raw Unipile account id from block params (resolved at execution). */
+function unipileAccountIdFromParams(params: Record<string, unknown>): string {
+  const cred =
+    typeof params.unipileCredential === 'string'
+      ? params.unipileCredential.trim()
+      : typeof params.credential === 'string'
+        ? params.credential.trim()
+        : typeof params.oauthCredential === 'string'
+          ? params.oauthCredential.trim()
+          : ''
+  const legacy = typeof params.account_id === 'string' ? params.account_id.trim() : ''
+  return cred || legacy
+}
 
 /** Same row shape as Start block `input-format` fields (id, name, type, value, description). */
 function unipileMentionsFromInputFormat(raw: unknown): UnipileCommentMentionRow[] | undefined {
@@ -188,8 +198,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
   name: 'LinkedIn (Unipile)',
   description: 'LinkedIn company data and messaging via Unipile',
   docsLink: 'https://developer.unipile.com/reference/',
+  authMode: AuthMode.OAuth,
   longDescription:
-    'Uses `UNIPILE_API_KEY` from the deployment environment. Pick a Unipile account first, then an operation. Enter chat ids and comma-separated attendee relation ids as plain text. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
+    'Connect your LinkedIn account via Unipile hosted authentication, then run operations. Uses `UNIPILE_API_KEY` from the deployment environment (admin workspaces may supply a block-level key). Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
   category: 'tools',
   integrationType: IntegrationType.Communication,
   tags: ['messaging', 'sales-engagement'],
@@ -197,62 +208,25 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
   icon: UnipileIcon,
   subBlocks: [
     {
-      id: 'account_id',
-      title: 'Unipile Account',
-      type: 'dropdown',
-      options: [],
-      placeholder: 'Select a connected account',
+      id: 'credential',
+      title: 'LinkedIn Account',
+      type: 'oauth-input',
+      serviceId: 'unipile_linkedin',
+      canonicalParamId: 'unipileCredential',
+      mode: 'basic',
+      placeholder: 'Connect or select LinkedIn account',
       required: true,
-      description: 'Accounts returned from your deployment workspace (`GET /api/v1/accounts`).',
-      fetchOptions: async () => {
-        if (unipileAccountOptionsCache) {
-          return unipileAccountOptionsCache
-        }
-        if (!unipileAccountOptionsRequest) {
-          unipileAccountOptionsRequest = (async () => {
-            const response = await fetch('/api/unipile/accounts')
-            const data = (await response.json()) as {
-              success?: boolean
-              error?: string
-              items?: UnipileAccountOption[]
-            }
-            if (!response.ok || !data?.success) {
-              throw new Error(data?.error || 'Failed to fetch Unipile accounts')
-            }
-            const items = Array.isArray(data.items) ? data.items : []
-            unipileAccountOptionsCache = items
-            return items
-          })().finally(() => {
-            unipileAccountOptionsRequest = null
-          })
-        }
-        return unipileAccountOptionsRequest
-      },
-      fetchOptionById: async (_blockId: string, optionId: string) => {
-        try {
-          const options =
-            unipileAccountOptionsCache ??
-            (await (async () => {
-              const response = await fetch('/api/unipile/accounts')
-              const data = (await response.json()) as {
-                success?: boolean
-                items?: UnipileAccountOption[]
-              }
-              if (!data?.success || !Array.isArray(data.items)) {
-                return []
-              }
-              unipileAccountOptionsCache = data.items
-              return data.items
-            })())
-          if (options.length === 0) {
-            return null
-          }
-          const match = options.find((item) => item.id === optionId)
-          return match ?? null
-        } catch {
-          return null
-        }
-      },
+      description:
+        'Connect LinkedIn through Unipile (redirects to Unipile, then back to this page). You can add multiple accounts.',
+    },
+    {
+      id: 'manualCredential',
+      title: 'LinkedIn Account',
+      type: 'short-input',
+      canonicalParamId: 'unipileCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
+      required: true,
     },
     {
       id: 'unipileApiKey',
@@ -578,7 +552,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'short-input',
       placeholder: 'Comma-separated Unipile account ids (overrides picker if set)',
       description:
-        'Optional `account_id` query: one id or comma-separated list. If empty, uses the Unipile Account picker above.',
+        'Optional `account_id` query: one id or comma-separated list. If empty, uses the connected LinkedIn account above.',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_all_chats' },
       mode: 'advanced',
@@ -1156,7 +1130,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         const finish = (out: Record<string, unknown>) => withUnipileApiKey(params, out)
         if (op === 'get_user_profile') {
           const out: Record<string, unknown> = {
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
             user_identifier:
               typeof params.user_identifier === 'string' ? params.user_identifier.trim() : '',
           }
@@ -1189,7 +1163,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
           op === 'list_user_reactions'
         ) {
           const out: Record<string, unknown> = {
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
             user_identifier:
               typeof params.user_identifier === 'string' ? params.user_identifier.trim() : '',
           }
@@ -1219,7 +1193,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
             typeof params.list_chats_account_ids_csv === 'string'
               ? params.list_chats_account_ids_csv.trim()
               : ''
-          const picker = typeof params.account_id === 'string' ? params.account_id.trim() : ''
+          const picker = unipileAccountIdFromParams(params)
           if (csv) {
             out.account_id = csv
           } else if (picker) {
@@ -1268,7 +1242,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'list_post_comments') {
           const out: Record<string, unknown> = {
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
           }
           if (typeof params.list_cursor === 'string' && params.list_cursor.trim() !== '') {
             out.cursor = params.list_cursor.trim()
@@ -1300,7 +1274,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'list_post_reactions') {
           const out: Record<string, unknown> = {
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
           }
           if (
             typeof params.reactions_comment_id === 'string' &&
@@ -1321,7 +1295,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         }
         if (op === 'get_linkedin_search_parameters') {
           const out: Record<string, unknown> = {
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
             type:
               typeof params.linkedin_search_param_type === 'string' &&
               params.linkedin_search_param_type.trim() !== ''
@@ -1349,7 +1323,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         }
         if (op === 'list_user_relations') {
           const out: Record<string, unknown> = {
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
           }
           if (
             typeof params.relations_filter === 'string' &&
@@ -1361,7 +1335,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         }
         if (op === 'linkedin_search') {
           const out: Record<string, unknown> = {
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
             search_body: JSON.stringify(
               buildLinkedinSearchBodyFromForm(params as Record<string, unknown>)
             ),
@@ -1381,7 +1355,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'comment_post') {
           const out: Record<string, unknown> = {
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
             text: pickUnipileBodyText(params as Record<string, unknown>, op),
           }
           const copyIfString = (fromKey: string, toKey: string) => {
@@ -1409,7 +1383,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         }
         if (op === 'create_post') {
           const out: Record<string, unknown> = {
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
             text: pickUnipileBodyText(params as Record<string, unknown>, op),
           }
           const normalizedAttachments = normalizeFileInput(
@@ -1448,7 +1422,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'send_chat_message') {
           const out: Record<string, unknown> = {
             chat_id: typeof params.chat_id === 'string' ? params.chat_id.trim() : '',
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
             text: pickUnipileBodyText(params as Record<string, unknown>, op),
           }
           const normalizedAttachments = normalizeFileInput(
@@ -1472,7 +1446,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         }
         if (op === 'start_new_chat') {
           const out: Record<string, unknown> = {
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
             text: pickUnipileBodyText(params as Record<string, unknown>, op),
           }
           const normalizedAttachments = normalizeFileInput(
@@ -1558,13 +1532,13 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'retrieve_company_details') {
           return finish({
             identifier: typeof params.identifier === 'string' ? params.identifier.trim() : '',
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
           })
         }
         if (op === 'get_post') {
           return finish({
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
           })
         }
         return finish({})
@@ -1572,6 +1546,10 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     },
   },
   inputs: {
+    unipileCredential: {
+      type: 'string',
+      description: 'Workspace credential id for the connected LinkedIn (Unipile) account',
+    },
     unipileApiKey: {
       type: 'string',
       description: 'Unipile API key (X-API-KEY) for admin workspaces.',
@@ -1668,7 +1646,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     chats_list_limit: { type: 'string', description: 'List all chats: optional limit 1–250' },
     account_id: {
       type: 'string',
-      description: 'Unipile connected account id (from account picker)',
+      description: 'Unipile connected account id (from LinkedIn account credential)',
     },
     chat_message_text: {
       type: 'string',

@@ -206,6 +206,32 @@ export function OAuthModal(props: OAuthModalProps) {
         return
       }
 
+      if (providerId === 'unipile_linkedin') {
+        if (!isConnect) onClose()
+        const callbackURL = new URL(window.location.href)
+        if (connectorType) {
+          callbackURL.searchParams.set(ADD_CONNECTOR_SEARCH_PARAM, connectorType)
+        }
+        const response = await fetch('/api/auth/unipile/hosted/link', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            callbackURL: callbackURL.toString(),
+            workspaceId,
+          }),
+        })
+        const data = (await response.json().catch(() => ({}))) as {
+          url?: string
+          error?: string
+        }
+        if (!response.ok || !data.url) {
+          throw new Error(data.error || 'Failed to start LinkedIn connection')
+        }
+        window.location.href = data.url
+        return
+      }
+
       const callbackURL = new URL(window.location.href)
       if (connectorType) {
         callbackURL.searchParams.set(ADD_CONNECTOR_SEARCH_PARAM, connectorType)

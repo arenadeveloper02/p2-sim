@@ -6,7 +6,7 @@ export const unipileApiKeyToolParam = {
     required: false,
     visibility: 'user-only',
     description:
-      'Unipile API key for admin workspaces. Non-admin workspaces use UNIPILE_API_KEY from the server environment.',
+      'Optional Unipile API key override (admin workspaces). When empty, UNIPILE_API_KEY from the server environment is used.',
   },
 } as const satisfies ToolConfig['params']
 
