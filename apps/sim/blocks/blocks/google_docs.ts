@@ -11,7 +11,7 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
   description: 'Read, write, and create documents',
   authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Google Docs into the workflow. Can read, write, and create documents.',
+    'Integrate Google Docs into the workflow. Can read, write, and create documents. Create supports GitHub Flavored Markdown (GFM) — pass markdown in content to store or import formatted documents.',
   docsLink: 'https://docs.sim.ai/tools/google_docs',
   category: 'tools',
   integrationType: IntegrationType.Documents,
@@ -192,7 +192,10 @@ Return ONLY the document content - no explanations, no extra text.`,
     documentId: { type: 'string', description: 'Document identifier (canonical param)' },
     title: { type: 'string', description: 'Document title' },
     folderId: { type: 'string', description: 'Parent folder identifier (canonical param)' },
-    content: { type: 'string', description: 'Document content' },
+    content: {
+      type: 'string',
+      description: 'Document content (GitHub Flavored Markdown supported on create)',
+    },
   },
   outputs: {
     content: { type: 'string', description: 'Document content' },
