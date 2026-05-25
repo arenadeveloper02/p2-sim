@@ -1,8 +1,4 @@
 import type { ToolConfig } from '@/tools/types'
-import {
-  attachUnipileInternalContext,
-  unipileApiKeyToolParam,
-} from '@/tools/unipile/shared-tool-params'
 import type { UnipileGetChatParams, UnipileGetChatToolResponse } from '@/tools/unipile/types'
 
 export const unipileGetChatTool: ToolConfig<UnipileGetChatParams, UnipileGetChatToolResponse> = {
@@ -19,17 +15,15 @@ export const unipileGetChatTool: ToolConfig<UnipileGetChatParams, UnipileGetChat
       visibility: 'user-or-llm',
       description: 'Unipile chat id',
     },
-    ...unipileApiKeyToolParam,
   },
 
   request: {
     url: '/api/tools/unipile/get-chat',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) =>
-      attachUnipileInternalContext(params, {
-        chat_id: params.chat_id?.trim(),
-      }),
+    body: (params) => ({
+      chat_id: params.chat_id?.trim(),
+    }),
   },
 
   transformResponse: async (response: Response) => {

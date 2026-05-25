@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { client } from '@/lib/auth/auth-client'
+import { readOAuthReturnContext } from '@/lib/credentials/client-state'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
 
 const logger = createLogger('OAuthConnectionsQuery')
@@ -250,6 +251,32 @@ export function useConnectOAuthService() {
           postArenaV3OAuthNavigateToParent(url)
         } else {
           window.location.href = url
+        }
+        return { success: true }
+      }
+
+      if (providerId === 'unipile_linkedin') {
+        const returnCtx = readOAuthReturnContext()
+        const response = await fetch(`${origin}/api/auth/unipile/hosted/link`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            callbackURL,
+            workspaceId: returnCtx?.workspaceId,
+          }),
+        })
+        const data = (await response.json().catch(() => ({}))) as {
+          url?: string
+          error?: string
+        }
+        if (!response.ok || !data.url) {
+          throw new Error(data.error || 'Failed to start LinkedIn (Unipile) connection')
+        }
+        if (delegateToParent) {
+          postArenaV3OAuthNavigateToParent(data.url)
+        } else {
+          window.location.href = data.url
         }
         return { success: true }
       }
