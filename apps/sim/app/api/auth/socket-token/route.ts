@@ -1,5 +1,7 @@
+import { db, session as sessionTable } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
@@ -15,6 +17,46 @@ export const POST = withRouteHandler(async () => {
 
   try {
     const hdrs = await headers()
+
+    // Read session from cookie cache first (HMAC-verified, trustworthy).
+    const cookieSession = await auth.api.getSession({ headers: hdrs })
+
+    if (!cookieSession?.user?.id) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    // Confirm the session row exists in the database. The realtime server's
+    // verifyOneTimeToken has no cookie cache — it queries the DB directly for the
+    // session token stored in the verification table. If the row is missing
+    // (e.g. the DB was replaced but old cookies are still active), recreate it
+    // so the realtime server can find it without forcing the user to re-login.
+    const dbSession = await auth.api.getSession({
+      headers: hdrs,
+      query: { disableCookieCache: true },
+    })
+
+    if (!dbSession?.user?.id) {
+      logger.info('Session missing from DB but cookie is valid — restoring session row', {
+        userId: cookieSession.user.id,
+      })
+
+      await db
+        .insert(sessionTable)
+        .values({
+          id: generateId(),
+          token: cookieSession.session.token,
+          userId: cookieSession.user.id,
+          expiresAt: new Date(cookieSession.session.expiresAt),
+          createdAt: new Date(cookieSession.session.createdAt),
+          updatedAt: new Date(),
+          ipAddress: cookieSession.session.ipAddress ?? null,
+          userAgent: cookieSession.session.userAgent ?? null,
+          activeOrganizationId: null,
+          impersonatedBy: null,
+        })
+        .onConflictDoNothing()
+    }
+
     const response = await auth.api.generateOneTimeToken({
       headers: hdrs,
     })

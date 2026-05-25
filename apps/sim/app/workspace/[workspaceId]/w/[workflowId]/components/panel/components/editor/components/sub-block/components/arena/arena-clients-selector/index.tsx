@@ -3,9 +3,9 @@
 import * as React from 'react'
 import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
-import { useArenaClientsByUser } from '@/hooks/queries/arena-clients'
-import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
+import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useArenaClientsByUser } from '@/hooks/queries/arena-clients'
 
 interface Client {
   clientId: string
@@ -62,10 +62,7 @@ export function ArenaClientsSelector({
   )
 
   return (
-    <div
-      className={cn('w-full pt-1', layout === 'half' && 'max-w-md')}
-      id={`client-${subBlockId}`}
-    >
+    <div className={cn('w-full pt-1', layout === 'half' && 'max-w-md')} id={`client-${subBlockId}`}>
       <Combobox
         options={options}
         value={selectedId}

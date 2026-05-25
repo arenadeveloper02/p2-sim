@@ -12,8 +12,11 @@ import {
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, count, eq, inArray, isNull } from 'drizzle-orm'
+import {
+  getHubSpotSharedAccountOptionIds,
+  mergeOAuthIntegrationPresence,
+} from '@/lib/copilot/chat/env-integration-presence'
 import { normalizeVfsSegment } from '@/lib/copilot/vfs/normalize-segment'
-import { mergeOAuthIntegrationPresence, getHubSpotSharedAccountOptionIds } from '@/lib/copilot/chat/env-integration-presence'
 import {
   getAccessibleEnvCredentials,
   getAccessibleOAuthCredentials,
@@ -457,8 +460,7 @@ export async function generateWorkspaceContext(
         hubspotSharedAccounts
       ),
       envVariables: [...new Set(envCredentials.map((c) => c.envKey).filter(Boolean))] as string[],
-      hubspotSharedAccounts:
-        hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
+      hubspotSharedAccounts: hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
       customTools: customTools.map((t) => ({ id: t.id, name: t.title })),
       mcpServers: mcpServerRows,
       skills: skillRows.map((s) => ({ id: s.id, name: s.name, description: s.description })),

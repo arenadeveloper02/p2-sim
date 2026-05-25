@@ -115,7 +115,10 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
 
       const channel =
         normalizeId(params.channel, ['channel_id', 'id']) ??
-        normalizeId((params as SlackMessageParams & { channelId?: unknown }).channelId, ['channel_id', 'id'])
+        normalizeId((params as SlackMessageParams & { channelId?: unknown }).channelId, [
+          'channel_id',
+          'id',
+        ])
       const dmUserId = normalizeId(params.dmUserId, ['user_id', 'id'])
       const userId = normalizeId(params.userId, ['user_id', 'id'])
 
@@ -123,9 +126,10 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
       const hasDmUser = Boolean(dmUserId || userId)
 
       const destinationType: 'channel' | 'dm' = (() => {
-        const explicit = params.destinationType === 'channel' || params.destinationType === 'dm'
-          ? params.destinationType
-          : null
+        const explicit =
+          params.destinationType === 'channel' || params.destinationType === 'dm'
+            ? params.destinationType
+            : null
 
         if (explicit === 'channel') {
           if (hasChannel) return 'channel'

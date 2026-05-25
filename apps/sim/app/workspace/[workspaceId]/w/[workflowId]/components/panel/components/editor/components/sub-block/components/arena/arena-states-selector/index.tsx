@@ -7,8 +7,8 @@ import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
-import { useSubBlockValue } from '../../../hooks/use-sub-block-value'
 import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
+import { useSubBlockValue } from '../../../hooks/use-sub-block-value'
 
 interface ArenaState {
   id: string
@@ -102,10 +102,7 @@ export function ArenaStatesSelector({
   }
 
   return (
-    <div
-      className={cn('w-full pt-1', layout === 'half' && 'max-w-md')}
-      id={`state-${subBlockId}`}
-    >
+    <div className={cn('w-full pt-1', layout === 'half' && 'max-w-md')} id={`state-${subBlockId}`}>
       <Combobox
         options={options}
         multiSelect
