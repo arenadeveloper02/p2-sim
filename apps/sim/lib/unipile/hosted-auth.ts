@@ -6,7 +6,6 @@ import { and, eq } from 'drizzle-orm'
 import { env } from '@/lib/core/config/env'
 import { handleCreateCredentialFromDraft } from '@/lib/credentials/draft-hooks'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
-import { resolveUnipileApiKey } from '@/lib/unipile/resolve-api-key'
 import { safeAccountInsert } from '@/app/api/auth/oauth/utils'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
@@ -56,7 +55,10 @@ export async function createUnipileHostedAuthLink(
   params: CreateUnipileHostedAuthLinkParams
 ): Promise<CreateUnipileHostedAuthLinkResult> {
   const reconnectAccountId = params.reconnectExternalAccountId?.trim() || null
-  const apiKey = resolveUnipileApiKey({ workspaceId: params.workspaceId })
+  const apiKey = env.UNIPILE_API_KEY?.trim()
+  if (!apiKey) {
+    throw new Error('UNIPILE_API_KEY is not configured')
+  }
   const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
   const appBase = env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')
   const notifyUrl = `${appBase}/api/auth/unipile/hosted/notify`

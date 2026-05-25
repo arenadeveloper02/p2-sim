@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { resolveUnipileApiKey } from '@/lib/unipile/resolve-api-key'
+import { env } from '@/lib/core/config/env'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileDeleteAccount')
@@ -33,10 +33,10 @@ export async function deleteUnipileExternalAccount(
     throw new UnipileDeleteAccountError('Missing Unipile account id', 400)
   }
 
-  const apiKey = resolveUnipileApiKey({
-    workspaceId: params.workspaceId,
-    unipileApiKey: params.unipileApiKey,
-  })
+  const apiKey = env.UNIPILE_API_KEY?.trim()
+  if (!apiKey) {
+    throw new UnipileDeleteAccountError('UNIPILE_API_KEY is not configured', 503)
+  }
   const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
   const url = `${baseUrl}/api/v1/accounts/${encodeURIComponent(externalId)}`
 
