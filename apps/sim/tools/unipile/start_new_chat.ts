@@ -1,8 +1,4 @@
 import type { ToolConfig } from '@/tools/types'
-import {
-  attachUnipileInternalContext,
-  unipileApiKeyToolParam,
-} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileStartNewChatParams,
   UnipileStartNewChatToolResponse,
@@ -134,35 +130,33 @@ export const unipileStartNewChatTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Recruiter API: JSON string for follow_up object',
     },
-    ...unipileApiKeyToolParam,
   },
 
   request: {
     url: '/api/tools/unipile/start-chat',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) =>
-      attachUnipileInternalContext(params, {
-        account_id: params.account_id?.trim(),
-        text: params.text,
-        attendees_ids: params.attendees_ids,
-        attachments: params.attachments,
-        voice_message: params.voice_message,
-        video_message: params.video_message,
-        subject: params.subject,
-        api: params.api,
-        topic: params.topic,
-        applicant_id: params.applicant_id,
-        invitation_id: params.invitation_id,
-        inmail: params.inmail,
-        signature: params.signature,
-        hiring_project_id: params.hiring_project_id,
-        job_posting_id: params.job_posting_id,
-        sourcing_channel: params.sourcing_channel,
-        email_address: params.email_address,
-        visibility: params.visibility,
-        follow_up: params.follow_up,
-      }),
+    body: (params) => ({
+      account_id: params.account_id?.trim(),
+      text: params.text,
+      attendees_ids: params.attendees_ids,
+      attachments: params.attachments,
+      voice_message: params.voice_message,
+      video_message: params.video_message,
+      subject: params.subject,
+      api: params.api,
+      topic: params.topic,
+      applicant_id: params.applicant_id,
+      invitation_id: params.invitation_id,
+      inmail: params.inmail,
+      signature: params.signature,
+      hiring_project_id: params.hiring_project_id,
+      job_posting_id: params.job_posting_id,
+      sourcing_channel: params.sourcing_channel,
+      email_address: params.email_address,
+      visibility: params.visibility,
+      follow_up: params.follow_up,
+    }),
   },
 
   transformResponse: async (response: Response) => {

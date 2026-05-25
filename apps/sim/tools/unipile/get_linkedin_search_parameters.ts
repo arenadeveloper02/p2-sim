@@ -1,9 +1,5 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
-import {
-  attachUnipileInternalContext,
-  unipileApiKeyToolParam,
-} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileGetLinkedinSearchParametersParams,
   UnipileGetLinkedinSearchParametersToolResponse,
@@ -52,7 +48,6 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Optional page size 1–100 (Unipile default 10).',
     },
-    ...unipileApiKeyToolParam,
   },
 
   request: {
@@ -77,7 +72,7 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
       ) {
         out.limit = Number(params.limit)
       }
-      return attachUnipileInternalContext(params, out)
+      return out
     },
   },
 

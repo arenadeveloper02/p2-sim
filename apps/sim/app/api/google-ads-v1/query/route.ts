@@ -126,7 +126,9 @@ export async function POST(request: NextRequest) {
       }
 
       accountInfo = { id: customerId.replace(/-/g, ''), name: `Customer ${customerId}` }
-      logger.info(`[${requestId}] Executing with user OAuth credentials for customer ${accountInfo.id}`)
+      logger.info(
+        `[${requestId}] Executing with user OAuth credentials for customer ${accountInfo.id}`
+      )
       apiResult = await makeGoogleAdsOAuthRequest({
         customerId,
         gaqlQuery: queryResult.gaql_query,

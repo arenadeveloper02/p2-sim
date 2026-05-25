@@ -1,8 +1,4 @@
 import type { ToolConfig } from '@/tools/types'
-import {
-  attachUnipileInternalContext,
-  unipileApiKeyToolParam,
-} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileSendChatMessageParams,
   UnipileSendChatMessageToolResponse,
@@ -62,7 +58,6 @@ export const unipileSendChatMessageTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Typing duration field (form string)',
     },
-    ...unipileApiKeyToolParam,
   },
 
   request: {
@@ -92,7 +87,7 @@ export const unipileSendChatMessageTool: ToolConfig<
           body.attachments = attachments.trim()
         }
       }
-      return attachUnipileInternalContext(params, body)
+      return body
     },
   },
 

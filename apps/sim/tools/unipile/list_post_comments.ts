@@ -1,9 +1,5 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
-import {
-  attachUnipileInternalContext,
-  unipileApiKeyToolParam,
-} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileListPostCommentsParams,
   UnipileListPostCommentsToolResponse,
@@ -57,7 +53,6 @@ export const unipileListPostCommentsTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Optional: list replies for this comment id (LinkedIn: from comments list)',
     },
-    ...unipileApiKeyToolParam,
   },
 
   request: {
@@ -85,7 +80,7 @@ export const unipileListPostCommentsTool: ToolConfig<
       if (typeof params.comment_id === 'string' && params.comment_id.trim() !== '') {
         out.comment_id = params.comment_id.trim()
       }
-      return attachUnipileInternalContext(params, out)
+      return out
     },
   },
 

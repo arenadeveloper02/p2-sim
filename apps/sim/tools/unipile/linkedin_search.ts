@@ -1,8 +1,4 @@
 import type { ToolConfig } from '@/tools/types'
-import {
-  attachUnipileInternalContext,
-  unipileApiKeyToolParam,
-} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileLinkedinSearchParams,
   UnipileLinkedinSearchToolResponse,
@@ -45,7 +41,6 @@ export const unipileLinkedinSearchTool: ToolConfig<
       description:
         'Optional result limit 0–100 (Unipile default 10). Sales Navigator / Recruiter up to 100; LinkedIn Classic should not exceed 50.',
     },
-    ...unipileApiKeyToolParam,
   },
 
   request: {
@@ -70,7 +65,7 @@ export const unipileLinkedinSearchTool: ToolConfig<
       ) {
         out.limit = Number(params.limit)
       }
-      return attachUnipileInternalContext(params, out)
+      return out
     },
   },
 
