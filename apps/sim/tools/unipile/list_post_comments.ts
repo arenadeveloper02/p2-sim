@@ -1,5 +1,9 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileListPostCommentsParams,
   UnipileListPostCommentsToolResponse,
@@ -16,6 +20,7 @@ export const unipileListPostCommentsTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     post_id: {
       type: 'string',
       required: true,
@@ -80,7 +85,7 @@ export const unipileListPostCommentsTool: ToolConfig<
       if (typeof params.comment_id === 'string' && params.comment_id.trim() !== '') {
         out.comment_id = params.comment_id.trim()
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

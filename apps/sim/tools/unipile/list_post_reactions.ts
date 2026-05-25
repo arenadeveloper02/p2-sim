@@ -1,5 +1,9 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileListPostReactionsParams,
   UnipileListPostReactionsToolResponse,
@@ -16,6 +20,7 @@ export const unipileListPostReactionsTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     post_id: {
       type: 'string',
       required: true,
@@ -63,7 +68,7 @@ export const unipileListPostReactionsTool: ToolConfig<
       ) {
         out.limit = Number(params.limit)
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

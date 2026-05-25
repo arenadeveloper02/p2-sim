@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { env } from '@/lib/core/config/env'
+import { resolveUnipileApiKeyFromSearchParams } from '@/lib/unipile/resolve-api-key-from-search-params'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileChatsAPI')
@@ -28,12 +28,13 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const apiKey = env.UNIPILE_API_KEY?.trim()
-  if (!apiKey) {
-    return NextResponse.json(
-      { success: false, error: 'UNIPILE_API_KEY is not configured', items: [] },
-      { status: 503 }
-    )
+  let apiKey: string
+  try {
+    apiKey = resolveUnipileApiKeyFromSearchParams(request.nextUrl.searchParams)
+  } catch (keyError) {
+    const message =
+      keyError instanceof Error ? keyError.message : 'UNIPILE_API_KEY is not configured'
+    return NextResponse.json({ success: false, error: message, items: [] }, { status: 503 })
   }
 
   const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')

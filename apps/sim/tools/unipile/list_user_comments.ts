@@ -1,5 +1,9 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileListUserCommentsParams,
   UnipileListUserCommentsToolResponse,
@@ -16,6 +20,7 @@ export const unipileListUserCommentsTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     account_id: {
       type: 'string',
       required: true,
@@ -40,12 +45,13 @@ export const unipileListUserCommentsTool: ToolConfig<
     url: '/api/tools/unipile/list-user-comments',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      account_id:
-        typeof params.account_id === 'string' ? params.account_id.trim() : params.account_id,
-      user_identifier: params.user_identifier?.trim(),
-      cursor: params.cursor,
-    }),
+    body: (params) =>
+      attachUnipileInternalContext(params, {
+        account_id:
+          typeof params.account_id === 'string' ? params.account_id.trim() : params.account_id,
+        user_identifier: params.user_identifier?.trim(),
+        cursor: params.cursor,
+      }),
   },
 
   transformResponse: async (response: Response) => {

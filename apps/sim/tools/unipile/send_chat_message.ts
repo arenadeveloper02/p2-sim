@@ -1,4 +1,8 @@
 import type { ToolConfig } from '@/tools/types'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileSendChatMessageParams,
   UnipileSendChatMessageToolResponse,
@@ -15,6 +19,7 @@ export const unipileSendChatMessageTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     chat_id: {
       type: 'string',
       required: true,
@@ -87,7 +92,7 @@ export const unipileSendChatMessageTool: ToolConfig<
           body.attachments = attachments.trim()
         }
       }
-      return body
+      return attachUnipileInternalContext(params, body)
     },
   },
 

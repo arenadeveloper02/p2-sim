@@ -1,4 +1,8 @@
 import type { ToolConfig } from '@/tools/types'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileCommentPostParams,
   UnipileCommentPostToolResponse,
@@ -15,6 +19,7 @@ export const unipileCommentPostTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     post_id: {
       type: 'string',
       required: true,
@@ -126,7 +131,7 @@ export const unipileCommentPostTool: ToolConfig<
           out.attachments = att.trim()
         }
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

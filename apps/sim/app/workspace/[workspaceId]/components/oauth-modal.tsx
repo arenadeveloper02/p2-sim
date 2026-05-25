@@ -25,6 +25,7 @@ import {
   parseProvider,
 } from '@/lib/oauth'
 import { getScopeDescription } from '@/lib/oauth/utils'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { useCreateCredentialDraft } from '@/hooks/queries/credentials'
 
 const logger = createLogger('OAuthModal')
@@ -58,6 +59,8 @@ type OAuthModalConnectProps = OAuthModalBaseProps & {
   mode: 'connect'
   workspaceId: string
   credentialCount: number
+  /** Pre-fill from LinkedIn (Unipile) block when connecting in a client workspace. */
+  initialUnipileApiKey?: string
 } & (
     | { workflowId: string; knowledgeBaseId?: never; connectorType?: never }
     | { workflowId?: never; knowledgeBaseId: string; connectorType?: string }
@@ -113,6 +116,10 @@ export function OAuthModal(props: OAuthModalProps) {
   const [displayName, setDisplayName] = useState(() =>
     isConnect ? getDefaultCredentialName(session?.user?.name, providerName, credentialCount) : ''
   )
+  const initialUnipileApiKey = isConnect ? (props.initialUnipileApiKey ?? '') : ''
+  const [unipileApiKey, setUnipileApiKey] = useState(initialUnipileApiKey)
+  const needsUnipileApiKey =
+    providerId === 'unipile_linkedin' && isConnect && !isAdminWorkspace(workspaceId)
 
   const newScopesSet = useMemo(
     () =>
@@ -208,6 +215,11 @@ export function OAuthModal(props: OAuthModalProps) {
 
       if (providerId === 'unipile_linkedin') {
         if (!isConnect) onClose()
+        const trimmedUnipileKey = unipileApiKey.trim()
+        if (needsUnipileApiKey && !trimmedUnipileKey) {
+          setError('Unipile API key is required.')
+          return
+        }
         const callbackURL = new URL(window.location.href)
         if (connectorType) {
           callbackURL.searchParams.set(ADD_CONNECTOR_SEARCH_PARAM, connectorType)
@@ -219,6 +231,7 @@ export function OAuthModal(props: OAuthModalProps) {
           body: JSON.stringify({
             callbackURL: callbackURL.toString(),
             workspaceId,
+            ...(trimmedUnipileKey ? { unipileApiKey: trimmedUnipileKey } : {}),
           }),
         })
         const data = (await response.json().catch(() => ({}))) as {
@@ -245,7 +258,9 @@ export function OAuthModal(props: OAuthModalProps) {
   }
 
   const isPending = isConnect && createDraft.isPending
-  const isConnectDisabled = isConnect ? !displayName.trim() || Boolean(isPending) : false
+  const isConnectDisabled = isConnect
+    ? !displayName.trim() || Boolean(isPending) || (needsUnipileApiKey && !unipileApiKey.trim())
+    : false
 
   const subtitle = isConnect
     ? `Grant access to use ${providerName} in your ${knowledgeBaseId ? 'knowledge base' : 'workflow'}`
@@ -311,6 +326,29 @@ export function OAuthModal(props: OAuthModalProps) {
                     if (e.key === 'Enter' && !isPending) void handleConnect()
                   }}
                   placeholder={`My ${providerName} account`}
+                  autoComplete='off'
+                  data-lpignore='true'
+                  className='mt-1.5'
+                />
+              </div>
+            )}
+
+            {needsUnipileApiKey && (
+              <div>
+                <Label>
+                  Unipile API key <span className='text-[var(--text-muted)]'>*</span>
+                </Label>
+                <Input
+                  type='password'
+                  value={unipileApiKey}
+                  onChange={(e) => {
+                    setUnipileApiKey(e.target.value)
+                    setError(null)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isPending) void handleConnect()
+                  }}
+                  placeholder='Unipile API key (X-API-KEY)'
                   autoComplete='off'
                   data-lpignore='true'
                   className='mt-1.5'

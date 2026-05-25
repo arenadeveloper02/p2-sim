@@ -1,4 +1,8 @@
 import type { ToolConfig } from '@/tools/types'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileRetrieveCompanyDetailsParams,
   UnipileRetrieveCompanyDetailsToolResponse,
@@ -15,6 +19,7 @@ export const unipileRetrieveCompanyDetailsTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     identifier: {
       type: 'string',
       required: true,
@@ -33,10 +38,11 @@ export const unipileRetrieveCompanyDetailsTool: ToolConfig<
     url: '/api/tools/unipile/retrieve-company-details',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      identifier: params.identifier?.trim(),
-      account_id: params.account_id?.trim(),
-    }),
+    body: (params) =>
+      attachUnipileInternalContext(params, {
+        identifier: params.identifier?.trim(),
+        account_id: params.account_id?.trim(),
+      }),
   },
 
   transformResponse: async (response: Response) => {

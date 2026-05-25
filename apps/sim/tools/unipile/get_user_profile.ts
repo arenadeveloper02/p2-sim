@@ -1,4 +1,8 @@
 import type { ToolConfig } from '@/tools/types'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileGetUserProfileParams,
   UnipileGetUserProfileToolResponse,
@@ -15,6 +19,7 @@ export const unipileGetUserProfileTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     account_id: {
       type: 'string',
       required: true,
@@ -75,7 +80,7 @@ export const unipileGetUserProfileTool: ToolConfig<
       if (params.notify === true || params.notify === false) {
         out.notify = params.notify
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

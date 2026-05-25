@@ -1,4 +1,8 @@
 import type { ToolConfig } from '@/tools/types'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileLinkedinSearchParams,
   UnipileLinkedinSearchToolResponse,
@@ -15,6 +19,7 @@ export const unipileLinkedinSearchTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     account_id: {
       type: 'string',
       required: true,
@@ -65,7 +70,7 @@ export const unipileLinkedinSearchTool: ToolConfig<
       ) {
         out.limit = Number(params.limit)
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

@@ -1,5 +1,9 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileListUserPostsParams,
   UnipileListUserPostsToolResponse,
@@ -16,6 +20,7 @@ export const unipileListUserPostsTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     account_id: {
       type: 'string',
       required: true,
@@ -77,7 +82,7 @@ export const unipileListUserPostsTool: ToolConfig<
       if (params.is_company === true || params.is_company === false) {
         out.is_company = params.is_company
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

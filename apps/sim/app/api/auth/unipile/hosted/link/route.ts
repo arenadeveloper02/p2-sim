@@ -12,6 +12,7 @@ const RequestSchema = z.object({
   callbackURL: z.string().url(),
   workspaceId: z.string().min(1).optional(),
   credentialId: z.string().min(1).optional(),
+  unipileApiKey: z.string().min(1).optional(),
 })
 
 /**
@@ -47,6 +48,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       correlationName: session.user.id,
       workspaceId: body.workspaceId,
       reconnectExternalAccountId,
+      unipileApiKey: body.unipileApiKey,
     })
 
     return NextResponse.json({

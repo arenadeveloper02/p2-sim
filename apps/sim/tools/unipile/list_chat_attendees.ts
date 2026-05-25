@@ -1,5 +1,9 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileListChatAttendeesParams,
   UnipileListChatAttendeesToolResponse,
@@ -16,6 +20,7 @@ export const unipileListChatAttendeesTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     chat_id: {
       type: 'string',
       required: true,
@@ -28,9 +33,7 @@ export const unipileListChatAttendeesTool: ToolConfig<
     url: '/api/tools/unipile/list-chat-attendees',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      chat_id: params.chat_id?.trim(),
-    }),
+    body: (params) => attachUnipileInternalContext(params, { chat_id: params.chat_id?.trim() }),
   },
 
   transformResponse: async (response: Response) => {

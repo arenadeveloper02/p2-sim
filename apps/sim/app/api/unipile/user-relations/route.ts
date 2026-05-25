@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { env } from '@/lib/core/config/env'
+import { resolveUnipileApiKeyFromSearchParams } from '@/lib/unipile/resolve-api-key-from-search-params'
 import { fetchAllUnipileUserRelationItems } from '@/tools/unipile/fetch_all_user_relations'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
@@ -22,14 +22,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const apiKey = env.UNIPILE_API_KEY?.trim()
-  if (!apiKey) {
-    return NextResponse.json(
-      { success: false, error: 'UNIPILE_API_KEY is not configured', items: [] },
-      { status: 503 }
-    )
-  }
-
   const accountId = request.nextUrl.searchParams.get('account_id')?.trim()
   if (!accountId) {
     return NextResponse.json(
@@ -44,6 +36,18 @@ export async function GET(request: NextRequest) {
 
   const filter = request.nextUrl.searchParams.get('filter')?.trim()
   const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
+
+  let apiKey: string
+  try {
+    apiKey = resolveUnipileApiKeyFromSearchParams(request.nextUrl.searchParams)
+  } catch (keyError) {
+    const message =
+      keyError instanceof Error ? keyError.message : 'UNIPILE_API_KEY is not configured'
+    return NextResponse.json(
+      { success: false, error: message, items: [] as UnipileRelationOption[] },
+      { status: 503 }
+    )
+  }
 
   try {
     const { items } = await fetchAllUnipileUserRelationItems({

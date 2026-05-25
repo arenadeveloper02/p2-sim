@@ -1,5 +1,9 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileGetLinkedinSearchParametersParams,
   UnipileGetLinkedinSearchParametersToolResponse,
@@ -16,6 +20,7 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     account_id: {
       type: 'string',
       required: true,
@@ -72,7 +77,7 @@ export const unipileGetLinkedinSearchParametersTool: ToolConfig<
       ) {
         out.limit = Number(params.limit)
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 

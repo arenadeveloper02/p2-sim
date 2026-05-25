@@ -1,4 +1,8 @@
 import type { ToolConfig } from '@/tools/types'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileGetMessageAttachmentParams,
   UnipileGetMessageAttachmentToolResponse,
@@ -15,6 +19,7 @@ export const unipileGetMessageAttachmentTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     message_id: {
       type: 'string',
       required: true,
@@ -33,10 +38,11 @@ export const unipileGetMessageAttachmentTool: ToolConfig<
     url: '/api/tools/unipile/get-message-attachment',
     method: 'POST',
     headers: () => ({ 'Content-Type': 'application/json' }),
-    body: (params) => ({
-      message_id: params.message_id?.trim(),
-      attachment_id: params.attachment_id?.trim(),
-    }),
+    body: (params) =>
+      attachUnipileInternalContext(params, {
+        message_id: params.message_id?.trim(),
+        attachment_id: params.attachment_id?.trim(),
+      }),
   },
 
   transformResponse: async (response: Response) => {

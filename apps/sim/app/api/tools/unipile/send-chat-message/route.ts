@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
-import { env } from '@/lib/core/config/env'
+import { resolveUnipileApiKeyFromRequestBody } from '@/lib/unipile/resolve-api-key-from-body'
 import { RawFileInputArraySchema } from '@/lib/uploads/utils/file-schemas'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
@@ -55,9 +55,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const apiKey = env.UNIPILE_API_KEY?.trim()
-  if (!apiKey) {
-    return NextResponse.json({ error: 'UNIPILE_API_KEY is not configured' }, { status: 503 })
+  let apiKey: string
+  let body: unknown
+  try {
+    body = await request.json()
+    apiKey = resolveUnipileApiKeyFromRequestBody(body)
+  } catch (keyError) {
+    const message =
+      keyError instanceof Error ? keyError.message : 'Unipile API key is not configured'
+    const status =
+      message.includes('not configured') || message.toLowerCase().includes('missing') ? 503 : 400
+    return NextResponse.json({ error: message }, { status })
   }
 
   const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')

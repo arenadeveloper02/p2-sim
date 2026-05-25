@@ -56,6 +56,7 @@ export function CredentialSelector({
   const [isEditing, setIsEditing] = useState(false)
   const { activeWorkflowId } = useWorkflowRegistry()
   const [storeValue, setStoreValue] = useSubBlockValue<string | null>(blockId, subBlock.id)
+  const [unipileApiKeyFromBlock] = useSubBlockValue<string>(blockId, 'unipileApiKey')
 
   const requiredScopes = subBlock.requiredScopes || []
   const label = subBlock.placeholder || 'Select credential'
@@ -463,6 +464,13 @@ export function CredentialSelector({
           workspaceId={workspaceId}
           workflowId={activeWorkflowId || ''}
           credentialCount={credentials.length}
+          initialUnipileApiKey={
+            effectiveProviderId === 'unipile_linkedin'
+              ? typeof unipileApiKeyFromBlock === 'string'
+                ? unipileApiKeyFromBlock
+                : ''
+              : undefined
+          }
         />
       )}
 

@@ -1,5 +1,9 @@
 import type { ToolConfig } from '@/tools/types'
 import { parseUnipilePagedBody } from '@/tools/unipile/parse_paged_body'
+import {
+  attachUnipileInternalContext,
+  unipileApiKeyToolParam,
+} from '@/tools/unipile/shared-tool-params'
 import type {
   UnipileListAllChatsParams,
   UnipileListAllChatsToolResponse,
@@ -16,6 +20,7 @@ export const unipileListAllChatsTool: ToolConfig<
   version: '1.0.0',
 
   params: {
+    ...unipileApiKeyToolParam,
     account_id: {
       type: 'string',
       required: false,
@@ -94,7 +99,7 @@ export const unipileListAllChatsTool: ToolConfig<
       if (typeof params.account_type === 'string' && params.account_type.trim() !== '') {
         out.account_type = params.account_type.trim()
       }
-      return out
+      return attachUnipileInternalContext(params, out)
     },
   },
 
