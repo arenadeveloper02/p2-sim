@@ -4,7 +4,11 @@
 
 export interface GoogleAdsV1Request {
   query: string
-  accounts: string
+  accounts?: string
+  customerId?: string
+  managerCustomerId?: string
+  developerToken?: string
+  oauthCredential?: string
 }
 
 export interface GAQLResponse {

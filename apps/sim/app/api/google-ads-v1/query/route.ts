@@ -5,9 +5,16 @@
 
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { resolveSessionOrInternalUserId } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { toError } from '@sim/utils/errors'
 import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
 import { makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
+import {
+  makeGoogleAdsOAuthRequest,
+  resolveGoogleAdsDeveloperToken,
+} from '../../google-ads/query/google-ads-oauth-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
 import type { GoogleAdsV1Request } from './types'
@@ -56,50 +63,93 @@ function resolveAccountKey(accountInput: string): string {
  * - totals: Aggregated metrics (if applicable)
  * - execution_time_ms: Total execution time
  */
-export async function POST(request: NextRequest) {
+export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
   const startTime = Date.now()
 
   try {
     logger.info(`[${requestId}] Google Ads V1 query request started`)
 
-    // Parse request body
     const body: GoogleAdsV1Request = await request.json()
     logger.info(`[${requestId}] Request body received`, { body })
 
-    const { query, accounts } = body
+    const {
+      query,
+      accounts,
+      customerId: customerIdParam,
+      managerCustomerId,
+      developerToken,
+      oauthCredential,
+    } = body
 
-    // Validate query
     if (!query) {
       logger.error(`[${requestId}] No query provided in request`)
       return NextResponse.json({ error: 'No query provided' }, { status: 400 })
     }
 
-    // Resolve account input (supports both keys and numeric IDs)
-    const resolvedAccountKey = resolveAccountKey(accounts)
+    let customerId: string
+    let accountName: string
 
-    // Get account information
-    const accountInfo = GOOGLE_ADS_ACCOUNTS[resolvedAccountKey]
-    if (!accountInfo) {
-      logger.error(`[${requestId}] Invalid account key or ID`, {
-        accounts,
-        resolvedAccountKey,
-        availableAccounts: Object.keys(GOOGLE_ADS_ACCOUNTS),
-      })
-      return NextResponse.json(
-        {
-          error: `Invalid account key or ID: ${accounts}. Available accounts: ${Object.keys(GOOGLE_ADS_ACCOUNTS).join(', ')}`,
-        },
-        { status: 400 }
-      )
+    let executionUserId: string | undefined
+
+    if (oauthCredential) {
+      const auth = await resolveSessionOrInternalUserId(request)
+      if (!auth.success || !auth.userId) {
+        return NextResponse.json(
+          { error: auth.error ?? 'User not authenticated' },
+          { status: 401 }
+        )
+      }
+      executionUserId = auth.userId
+
+      const rawCustomerId = customerIdParam ?? accounts
+      if (!rawCustomerId) {
+        return NextResponse.json(
+          { error: 'Google Ads customer ID is required when using OAuth credentials' },
+          { status: 400 }
+        )
+      }
+
+      customerId = String(rawCustomerId).replace(/-/g, '')
+      accountName = customerId
+
+      try {
+        resolveGoogleAdsDeveloperToken(developerToken)
+      } catch (tokenError) {
+        const err = toError(tokenError)
+        return NextResponse.json({ error: err.message }, { status: 400 })
+      }
+    } else {
+      if (!accounts) {
+        return NextResponse.json({ error: 'Google Ads account is required' }, { status: 400 })
+      }
+
+      const resolvedAccountKey = resolveAccountKey(accounts)
+      const accountInfo = GOOGLE_ADS_ACCOUNTS[resolvedAccountKey]
+      if (!accountInfo) {
+        logger.error(`[${requestId}] Invalid account key or ID`, {
+          accounts,
+          resolvedAccountKey,
+          availableAccounts: Object.keys(GOOGLE_ADS_ACCOUNTS),
+        })
+        return NextResponse.json(
+          {
+            error: `Invalid account key or ID: ${accounts}. Available accounts: ${Object.keys(GOOGLE_ADS_ACCOUNTS).join(', ')}`,
+          },
+          { status: 400 }
+        )
+      }
+
+      customerId = accountInfo.id
+      accountName = accountInfo.name
     }
 
     logger.info(`[${requestId}] Found account`, {
-      accountId: accountInfo.id,
-      accountName: accountInfo.name,
+      accountId: customerId,
+      accountName,
+      usesOAuth: Boolean(oauthCredential),
     })
 
-    // Generate GAQL query using AI
     const queryResult = await generateGAQLQuery(query)
 
     logger.info(`[${requestId}] Generated GAQL query`, {
@@ -109,9 +159,17 @@ export async function POST(request: NextRequest) {
       metrics: queryResult.metrics_used,
     })
 
-    // Execute the GAQL query against Google Ads API
-    logger.info(`[${requestId}] Executing GAQL query against account ${accountInfo.id}`)
-    const apiResult = await makeGoogleAdsRequest(accountInfo.id, queryResult.gaql_query)
+    logger.info(`[${requestId}] Executing GAQL query against account ${customerId}`)
+    const apiResult = oauthCredential
+      ? await makeGoogleAdsOAuthRequest(
+          oauthCredential,
+          executionUserId!,
+          customerId,
+          queryResult.gaql_query,
+          managerCustomerId,
+          developerToken
+        )
+      : await makeGoogleAdsRequest(customerId, queryResult.gaql_query)
 
     // Process results
     const processedResults = processResults(apiResult, requestId, logger)
@@ -132,8 +190,8 @@ export async function POST(request: NextRequest) {
       success: true,
       query: query,
       account: {
-        id: accountInfo.id,
-        name: accountInfo.name,
+        id: customerId,
+        name: accountName,
       },
       gaql_query: queryResult.gaql_query,
       query_type: queryResult.query_type,
@@ -155,21 +213,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(response)
   } catch (error) {
     const executionTime = Date.now() - startTime
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    const err = toError(error)
 
     logger.error(`[${requestId}] Google Ads V1 query failed`, {
-      error: errorMessage,
+      error: err.message,
       executionTime,
     })
 
     return NextResponse.json(
       {
         success: false,
-        error: errorMessage,
+        error: err.message,
         details: 'Failed to process Google Ads V1 query',
         suggestion: 'Please check your query and try again.',
       },
       { status: 500 }
     )
   }
-}
+})

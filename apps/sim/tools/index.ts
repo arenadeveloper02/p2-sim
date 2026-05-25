@@ -1302,6 +1302,20 @@ function isSelfOriginUrl(url: string): boolean {
   return false
 }
 
+type ToolExecutionContext = {
+  userId?: string
+  sessionUserId?: string
+  workflowUserId?: string
+}
+
+/**
+ * Resolves the user id embedded in internal JWTs for workflow tool requests.
+ */
+function resolveToolExecutionUserId(context?: ToolExecutionContext): string | undefined {
+  if (!context) return undefined
+  return context.sessionUserId ?? context.workflowUserId ?? context.userId
+}
+
 /**
  * Add internal authentication token to headers if running on server
  * @param headers - Headers object to modify
@@ -1492,7 +1506,7 @@ async function executeToolRequest(
       isInternalRoute,
       requestId,
       toolId,
-      params._context?.userId
+      resolveToolExecutionUserId(params._context as ToolExecutionContext | undefined)
     )
 
     const shouldPropagateCallChain = isInternalRoute || isSelfOriginUrl(fullUrl)

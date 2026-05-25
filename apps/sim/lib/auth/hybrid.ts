@@ -107,6 +107,28 @@ export async function checkInternalAuth(
 }
 
 /**
+ * Resolves the acting user for routes called from the UI (session) or workflow executor
+ * (internal JWT, with optional `userId` query param from tool requests).
+ */
+export async function resolveSessionOrInternalUserId(
+  request: NextRequest
+): Promise<AuthResult> {
+  const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+  if (!auth.success) {
+    return auth
+  }
+
+  const userId =
+    auth.userId ?? new URL(request.url).searchParams.get('userId')?.trim() ?? undefined
+
+  if (!userId) {
+    return { success: false, error: 'User not authenticated' }
+  }
+
+  return { ...auth, userId }
+}
+
+/**
  * Check for session or internal JWT authentication.
  * Use this for routes that should be accessible by the UI and executor,
  * but NOT by external API keys.

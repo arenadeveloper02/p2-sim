@@ -63,6 +63,7 @@ export type SubBlockType =
   | 'arena-client-selector'
   | 'slack-client-selector'
   | 'slack-channel-selector'
+  | 'google-ads-v1-account'
 
 export interface OutputCondition {
   field: string

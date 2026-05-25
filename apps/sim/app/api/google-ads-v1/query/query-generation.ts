@@ -95,9 +95,19 @@ function parseAIResponse(aiResponse: any): GAQLResponse {
         ? aiResponse.content
         : JSON.stringify(aiResponse)
 
+  const trimmed = String(responseContent).trim()
+  if (trimmed.startsWith('<')) {
+    throw new Error('AI provider returned an HTML error page instead of a GAQL query')
+  }
+
   // Try to extract JSON from response
-  const jsonMatch = responseContent.match(/\{[\s\S]*\}/)
-  const parsed: GAQLResponse = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(responseContent)
+  const jsonMatch = trimmed.match(/\{[\s\S]*\}/)
+  let parsed: GAQLResponse
+  try {
+    parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(trimmed)
+  } catch {
+    throw new Error('AI provider returned a response that could not be parsed as GAQL JSON')
+  }
 
   if (!parsed.gaql_query) {
     throw new Error('AI did not return a GAQL query')

@@ -4,7 +4,11 @@ import type { ToolConfig } from '@/tools/types'
 const logger = createLogger('GoogleAdsV1Query')
 
 interface GoogleAdsV1QueryParams {
-  accounts: string
+  accounts?: string
+  customerId?: string
+  managerCustomerId?: string
+  developerToken?: string
+  oauthCredential?: string
   prompt: string
 }
 
@@ -82,23 +86,49 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, any> = {
     headers: () => ({
       'Content-Type': 'application/json',
     }),
-    body: (params: GoogleAdsV1QueryParams) => ({
-      query: params.prompt,
-      accounts: params.accounts,
-    }),
+    body: (params: GoogleAdsV1QueryParams) => {
+      const customerId = params.oauthCredential
+        ? params.customerId ?? params.accounts
+        : params.accounts ?? params.customerId
+
+      return {
+        query: params.prompt,
+        ...(customerId ? { accounts: customerId, customerId } : {}),
+        ...(params.managerCustomerId?.trim()
+          ? { managerCustomerId: params.managerCustomerId.trim() }
+          : {}),
+        ...(params.developerToken?.trim()
+          ? { developerToken: params.developerToken.trim() }
+          : {}),
+        ...(params.oauthCredential ? { oauthCredential: params.oauthCredential } : {}),
+      }
+    },
   },
 
   transformResponse: async (response: Response, params?: GoogleAdsV1QueryParams) => {
     try {
+      const responseText = await response.text()
+      const trimmed = responseText.trim()
+
       if (!response.ok) {
-        const errorText = await response.text()
-        logger.error('Response not ok', { status: response.status, errorText })
+        logger.error('Response not ok', { status: response.status, errorText: trimmed })
         throw new Error(
-          `Google Ads V1 API error: ${response.status} ${response.statusText} - ${errorText}`
+          `Google Ads V1 API error: ${response.status} ${response.statusText} - ${trimmed.slice(0, 500)}`
         )
       }
 
-      const data = await response.json()
+      if (!trimmed || trimmed.startsWith('<')) {
+        throw new Error(
+          `Google Ads V1 API returned HTML instead of JSON (${response.status}). Check that /api/google-ads-v1/query is reachable.`
+        )
+      }
+
+      let data: Record<string, unknown>
+      try {
+        data = JSON.parse(trimmed) as Record<string, unknown>
+      } catch {
+        throw new Error('Google Ads V1 API returned a response that could not be parsed as JSON')
+      }
 
       // Check for API errors
       if (data.error || !data.success) {

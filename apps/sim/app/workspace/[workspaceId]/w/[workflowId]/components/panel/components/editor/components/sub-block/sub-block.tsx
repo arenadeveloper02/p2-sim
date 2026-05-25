@@ -67,6 +67,7 @@ import { ArenaProjectSelector } from './components/arena/arena-projects-selector
 import { ArenaStatesSelector } from './components/arena/arena-states-selector'
 import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-subtask-selector'
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
+import { GoogleAdsV1AccountInput } from './components/google-ads-v1-account-input/google-ads-v1-account-input'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { SlackClientSelector } from './components/slack-client-selector'
 
@@ -1044,6 +1045,17 @@ function SubBlockComponent({
             isPreview={isPreview}
             previewValue={previewValue}
             previewContextValues={contextValues}
+          />
+        )
+
+      case 'google-ads-v1-account':
+        return (
+          <GoogleAdsV1AccountInput
+            blockId={blockId}
+            subBlock={config}
+            disabled={isDisabled}
+            isPreview={isPreview}
+            previewValue={previewValue as string | null}
           />
         )
 
