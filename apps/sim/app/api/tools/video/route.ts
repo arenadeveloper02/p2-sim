@@ -7,15 +7,52 @@ import { videoProviders, videoToolContract } from '@/lib/api/contracts/tools/med
 import { getValidationErrorMessage, parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
+import {
+  assertKnownSizeWithinLimit,
+  DEFAULT_MAX_ERROR_BODY_BYTES,
+  isPayloadSizeLimitError,
+  PayloadSizeLimitError,
+  readResponseJsonWithLimit,
+  readResponseTextWithLimit,
+  readResponseToBufferWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { assertToolFileAccess } from '@/app/api/files/authorization'
 import type { UserFile } from '@/executor/types'
 
 const logger = createLogger('VideoProxyAPI')
+const MAX_VIDEO_OUTPUT_BYTES = 250 * 1024 * 1024
+const MAX_VIDEO_REFERENCE_IMAGE_BYTES = 25 * 1024 * 1024
+const MAX_VIDEO_JSON_BYTES = 2 * 1024 * 1024
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 600 // 10 minutes for video generation
+
+async function readVideoResponseBuffer(response: Response, label: string): Promise<Buffer> {
+  return readResponseToBufferWithLimit(response, {
+    maxBytes: MAX_VIDEO_OUTPUT_BYTES,
+    label,
+  })
+}
+
+async function readVideoJson<T = Record<string, unknown>>(
+  response: Response,
+  label: string
+): Promise<T> {
+  return readResponseJsonWithLimit<T>(response, {
+    maxBytes: MAX_VIDEO_JSON_BYTES,
+    label,
+  })
+}
+
+async function readVideoErrorText(response: Response, label: string): Promise<string> {
+  return readResponseTextWithLimit(response, {
+    maxBytes: DEFAULT_MAX_ERROR_BODY_BYTES,
+    label,
+  }).catch(() => '')
+}
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateId()
@@ -102,6 +139,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     let height: number | undefined
     let jobId: string | undefined
     let actualDuration: number | undefined
+    let falaiCost: FalAICostMetadata | undefined
 
     if (body.visualReference) {
       const denied = await assertToolFileAccess(
@@ -200,6 +238,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           resolution,
           body.promptOptimizer,
           body.generateAudio,
+          body.useHostedCostTracking === true,
           requestId,
           logger
         )
@@ -208,13 +247,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         height = result.height
         jobId = result.jobId
         actualDuration = result.duration
+        falaiCost = result.falaiCost
       } else {
         return NextResponse.json({ error: `Unknown provider: ${provider}` }, { status: 400 })
       }
     } catch (error) {
       logger.error(`[${requestId}] Video generation failed:`, error)
       const errorMessage = getErrorMessage(error, 'Video generation failed')
-      return NextResponse.json({ error: errorMessage }, { status: 500 })
+      return NextResponse.json(
+        { error: errorMessage },
+        { status: isPayloadSizeLimitError(error) ? 413 : 500 }
+      )
     }
 
     const executionContext =
@@ -262,6 +305,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         provider,
         model: model || 'default',
         jobId,
+        __falaiCostDollars: falaiCost?.costDollars,
+        __falaiBilling: falaiCost,
       })
     }
 
@@ -294,11 +339,16 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       provider,
       model: model || 'default',
       jobId,
+      __falaiCostDollars: falaiCost?.costDollars,
+      __falaiBilling: falaiCost,
     })
   } catch (error) {
     logger.error(`[${requestId}] Video proxy error:`, error)
     const errorMessage = getErrorMessage(error, 'Unknown error')
-    return NextResponse.json({ error: errorMessage }, { status: 500 })
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: isPayloadSizeLimitError(error) ? 413 : 500 }
+    )
   }
 })
 
@@ -333,7 +383,21 @@ async function generateWithRunway(
   }
 
   if (visualReference) {
-    const refBuffer = await downloadFileFromStorage(visualReference, requestId, logger)
+    if (visualReference.size > MAX_VIDEO_REFERENCE_IMAGE_BYTES) {
+      throw new PayloadSizeLimitError({
+        label: 'video visual reference',
+        maxBytes: MAX_VIDEO_REFERENCE_IMAGE_BYTES,
+        observedBytes: visualReference.size,
+      })
+    }
+    const refBuffer = await downloadFileFromStorage(visualReference, requestId, logger, {
+      maxBytes: MAX_VIDEO_REFERENCE_IMAGE_BYTES,
+    })
+    assertKnownSizeWithinLimit(
+      refBuffer.length,
+      MAX_VIDEO_REFERENCE_IMAGE_BYTES,
+      'video visual reference'
+    )
     const refBase64 = refBuffer.toString('base64')
     createPayload.promptImage = `data:${visualReference.type};base64,${refBase64}` // Use promptImage
   }
@@ -349,11 +413,11 @@ async function generateWithRunway(
   })
 
   if (!createResponse.ok) {
-    const error = await createResponse.text()
+    const error = await readVideoErrorText(createResponse, 'Runway create error response')
     throw new Error(`Runway API error: ${createResponse.status} - ${error}`)
   }
 
-  const createData = await createResponse.json()
+  const createData = await readVideoJson<{ id: string }>(createResponse, 'Runway create response')
   const taskId = createData.id
 
   logger.info(`[${requestId}] Runway task created: ${taskId}`)
@@ -373,24 +437,32 @@ async function generateWithRunway(
     })
 
     if (!statusResponse.ok) {
-      await statusResponse.text().catch(() => {})
+      await readVideoErrorText(statusResponse, 'Runway status error response')
       throw new Error(`Runway status check failed: ${statusResponse.status}`)
     }
 
-    const statusData = await statusResponse.json()
+    const statusData = await readVideoJson<{
+      status?: string
+      output?: string[]
+      failure?: string
+    }>(statusResponse, 'Runway status response')
 
     if (statusData.status === 'SUCCEEDED') {
       logger.info(`[${requestId}] Runway generation completed after ${attempts * 5}s`)
 
-      const videoResponse = await fetch(statusData.output[0])
+      const videoUrl = statusData.output?.[0]
+      if (!videoUrl) {
+        throw new Error('No video URL in response')
+      }
+
+      const videoResponse = await fetch(videoUrl)
       if (!videoResponse.ok) {
-        await videoResponse.text().catch(() => {})
+        await readVideoErrorText(videoResponse, 'Runway video error response')
         throw new Error(`Failed to download video: ${videoResponse.status}`)
       }
 
-      const arrayBuffer = await videoResponse.arrayBuffer()
       return {
-        buffer: Buffer.from(arrayBuffer),
+        buffer: await readVideoResponseBuffer(videoResponse, 'Runway video response'),
         width: dimensions.width,
         height: dimensions.height,
         jobId: taskId,
@@ -455,11 +527,11 @@ async function generateWithVeo(
   )
 
   if (!createResponse.ok) {
-    const error = await createResponse.text()
+    const error = await readVideoErrorText(createResponse, 'Veo create error response')
     throw new Error(`Veo API error: ${createResponse.status} - ${error}`)
   }
 
-  const createData = await createResponse.json()
+  const createData = await readVideoJson<{ name: string }>(createResponse, 'Veo create response')
   const operationName = createData.name
 
   logger.info(`[${requestId}] Veo operation created: ${operationName}`)
@@ -481,11 +553,17 @@ async function generateWithVeo(
     )
 
     if (!statusResponse.ok) {
-      await statusResponse.text().catch(() => {})
+      await readVideoErrorText(statusResponse, 'Veo status error response')
       throw new Error(`Veo status check failed: ${statusResponse.status}`)
     }
 
-    const statusData = await statusResponse.json()
+    const statusData = await readVideoJson<{
+      done?: boolean
+      error?: { message?: string }
+      response?: {
+        generateVideoResponse?: { generatedSamples?: Array<{ video?: { uri?: string } }> }
+      }
+    }>(statusResponse, 'Veo status response')
 
     if (statusData.done) {
       if (statusData.error) {
@@ -506,13 +584,12 @@ async function generateWithVeo(
       })
 
       if (!videoResponse.ok) {
-        await videoResponse.text().catch(() => {})
+        await readVideoErrorText(videoResponse, 'Veo video error response')
         throw new Error(`Failed to download video: ${videoResponse.status}`)
       }
 
-      const arrayBuffer = await videoResponse.arrayBuffer()
       return {
-        buffer: Buffer.from(arrayBuffer),
+        buffer: await readVideoResponseBuffer(videoResponse, 'Veo video response'),
         width: dimensions.width,
         height: dimensions.height,
         jobId: operationName,
@@ -570,11 +647,11 @@ async function generateWithLuma(
   })
 
   if (!createResponse.ok) {
-    const error = await createResponse.text()
+    const error = await readVideoErrorText(createResponse, 'Luma create error response')
     throw new Error(`Luma API error: ${createResponse.status} - ${error}`)
   }
 
-  const createData = await createResponse.json()
+  const createData = await readVideoJson<{ id: string }>(createResponse, 'Luma create response')
   const generationId = createData.id
 
   logger.info(`[${requestId}] Luma generation created: ${generationId}`)
@@ -596,11 +673,15 @@ async function generateWithLuma(
     )
 
     if (!statusResponse.ok) {
-      await statusResponse.text().catch(() => {})
+      await readVideoErrorText(statusResponse, 'Luma status error response')
       throw new Error(`Luma status check failed: ${statusResponse.status}`)
     }
 
-    const statusData = await statusResponse.json()
+    const statusData = await readVideoJson<{
+      state?: string
+      failure_reason?: string
+      assets?: { video?: string }
+    }>(statusResponse, 'Luma status response')
 
     if (statusData.state === 'completed') {
       logger.info(`[${requestId}] Luma generation completed after ${attempts * 5}s`)
@@ -612,13 +693,12 @@ async function generateWithLuma(
 
       const videoResponse = await fetch(videoUrl)
       if (!videoResponse.ok) {
-        await videoResponse.text().catch(() => {})
+        await readVideoErrorText(videoResponse, 'Luma video error response')
         throw new Error(`Failed to download video: ${videoResponse.status}`)
       }
 
-      const arrayBuffer = await videoResponse.arrayBuffer()
       return {
-        buffer: Buffer.from(arrayBuffer),
+        buffer: await readVideoResponseBuffer(videoResponse, 'Luma video response'),
         width: dimensions.width,
         height: dimensions.height,
         jobId: generationId,
@@ -677,7 +757,7 @@ async function generateWithMiniMax(
   })
 
   if (!createResponse.ok) {
-    const errorText = await createResponse.text()
+    const errorText = await readVideoErrorText(createResponse, 'MiniMax create error response')
     if (createResponse.status === 401 || createResponse.status === 1004) {
       throw new Error(
         `MiniMax API authentication failed (${createResponse.status}). Please ensure you're using a valid MiniMax API key from platform.minimax.io. Error: ${errorText}`
@@ -686,7 +766,10 @@ async function generateWithMiniMax(
     throw new Error(`MiniMax API error: ${createResponse.status} - ${errorText}`)
   }
 
-  const createData = await createResponse.json()
+  const createData = await readVideoJson<{
+    base_resp?: { status_code?: number; status_msg?: string }
+    task_id?: string
+  }>(createResponse, 'MiniMax create response')
 
   // Check for error in response
   if (createData.base_resp?.status_code !== 0) {
@@ -694,6 +777,9 @@ async function generateWithMiniMax(
   }
 
   const taskId = createData.task_id
+  if (!taskId) {
+    throw new Error('MiniMax response missing task_id')
+  }
 
   logger.info(`[${requestId}] MiniMax task created: ${taskId}`)
 
@@ -714,11 +800,16 @@ async function generateWithMiniMax(
     )
 
     if (!statusResponse.ok) {
-      await statusResponse.text().catch(() => {})
+      await readVideoErrorText(statusResponse, 'MiniMax status error response')
       throw new Error(`MiniMax status check failed: ${statusResponse.status}`)
     }
 
-    const statusData = await statusResponse.json()
+    const statusData = await readVideoJson<{
+      base_resp?: { status_code?: number; status_msg?: string }
+      status?: string
+      file_id?: string
+      error?: string
+    }>(statusResponse, 'MiniMax status response')
 
     if (
       statusData.base_resp?.status_code !== 0 &&
@@ -748,11 +839,14 @@ async function generateWithMiniMax(
       )
 
       if (!fileResponse.ok) {
-        await fileResponse.text().catch(() => {})
+        await readVideoErrorText(fileResponse, 'MiniMax file error response')
         throw new Error(`Failed to download video: ${fileResponse.status}`)
       }
 
-      const fileData = await fileResponse.json()
+      const fileData = await readVideoJson<{ file?: { download_url?: string } }>(
+        fileResponse,
+        'MiniMax file response'
+      )
       const videoUrl = fileData.file?.download_url
 
       if (!videoUrl) {
@@ -762,13 +856,12 @@ async function generateWithMiniMax(
       // Download the actual video file
       const videoResponse = await fetch(videoUrl)
       if (!videoResponse.ok) {
-        await videoResponse.text().catch(() => {})
+        await readVideoErrorText(videoResponse, 'MiniMax video error response')
         throw new Error(`Failed to download video from URL: ${videoResponse.status}`)
       }
 
-      const arrayBuffer = await videoResponse.arrayBuffer()
       return {
-        buffer: Buffer.from(arrayBuffer),
+        buffer: await readVideoResponseBuffer(videoResponse, 'MiniMax video response'),
         width: dimensions.width,
         height: dimensions.height,
         jobId: taskId,
@@ -1082,9 +1175,17 @@ async function generateWithFalAI(
   resolution: string | undefined,
   promptOptimizer: boolean | undefined,
   generateAudio: boolean | undefined,
+  useHostedCostTracking: boolean,
   requestId: string,
   logger: ReturnType<typeof createLogger>
-): Promise<{ buffer: Buffer; width: number; height: number; jobId: string; duration: number }> {
+): Promise<{
+  buffer: Buffer
+  width: number
+  height: number
+  jobId: string
+  duration: number
+  falaiCost?: FalAICostMetadata
+}> {
   logger.info(`[${requestId}] Starting Fal.ai generation with model: ${model}`)
 
   const modelConfig = FALAI_MODEL_CONFIGS[model]
@@ -1125,11 +1226,11 @@ async function generateWithFalAI(
   })
 
   if (!createResponse.ok) {
-    const error = await createResponse.text()
+    const error = await readVideoErrorText(createResponse, 'Fal.ai create error response')
     throw new Error(`Fal.ai API error: ${createResponse.status} - ${error}`)
   }
 
-  const createData = (await createResponse.json()) as unknown
+  const createData = await readVideoJson<unknown>(createResponse, 'Fal.ai queue response')
   if (!isRecord(createData)) {
     throw new Error('Invalid Fal.ai queue response')
   }
@@ -1162,11 +1263,11 @@ async function generateWithFalAI(
     })
 
     if (!statusResponse.ok) {
-      await statusResponse.text().catch(() => {})
+      await readVideoErrorText(statusResponse, 'Fal.ai status error response')
       throw new Error(`Fal.ai status check failed: ${statusResponse.status}`)
     }
 
-    const statusData = (await statusResponse.json()) as unknown
+    const statusData = await readVideoJson<unknown>(statusResponse, 'Fal.ai status response')
     if (!isRecord(statusData)) {
       throw new Error('Invalid Fal.ai status response')
     }
@@ -1189,11 +1290,11 @@ async function generateWithFalAI(
       )
 
       if (!resultResponse.ok) {
-        await resultResponse.text().catch(() => {})
+        await readVideoErrorText(resultResponse, 'Fal.ai result error response')
         throw new Error(`Failed to fetch result: ${resultResponse.status}`)
       }
 
-      const resultData = (await resultResponse.json()) as unknown
+      const resultData = await readVideoJson<unknown>(resultResponse, 'Fal.ai result response')
       if (!isRecord(resultData)) {
         throw new Error('Invalid Fal.ai result response')
       }
@@ -1208,11 +1309,9 @@ async function generateWithFalAI(
 
       const videoResponse = await fetch(videoUrl)
       if (!videoResponse.ok) {
-        await videoResponse.text().catch(() => {})
+        await readVideoErrorText(videoResponse, 'Fal.ai video error response')
         throw new Error(`Failed to download video: ${videoResponse.status}`)
       }
-
-      const arrayBuffer = await videoResponse.arrayBuffer()
 
       let width = getNumberProperty(videoOutput, 'width') || 1920
       let height = getNumberProperty(videoOutput, 'height') || 1080
@@ -1224,11 +1323,18 @@ async function generateWithFalAI(
       }
 
       return {
-        buffer: Buffer.from(arrayBuffer),
+        buffer: await readVideoResponseBuffer(videoResponse, 'Fal.ai video response'),
         width,
         height,
         jobId: requestIdFal,
         duration: getNumberProperty(videoOutput, 'duration') || duration || 5,
+        falaiCost: useHostedCostTracking
+          ? await getFalAICostMetadata({
+              apiKey,
+              endpointId: modelConfig.endpoint,
+              requestId: requestIdFal,
+            })
+          : undefined,
       }
     }
 

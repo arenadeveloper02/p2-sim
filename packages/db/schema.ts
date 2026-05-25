@@ -367,6 +367,80 @@ export const workflowExecutionLogs = pgTable(
   })
 )
 
+export const executionLargeValueReferenceSourceEnum = pgEnum(
+  'execution_large_value_reference_source',
+  ['execution_log', 'paused_snapshot']
+)
+
+export const executionLargeValues = pgTable(
+  'execution_large_values',
+  {
+    key: text('key').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    ownerExecutionId: text('owner_execution_id').notNull(),
+    size: integer('size').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at'),
+  },
+  (table) => ({
+    ownerExecutionIdIdx: index('execution_large_values_owner_execution_id_idx').on(
+      table.ownerExecutionId
+    ),
+    cleanupIdx: index('execution_large_values_cleanup_idx')
+      .on(table.workspaceId, table.createdAt, table.key)
+      .where(sql`${table.deletedAt} IS NULL`),
+    tombstoneCleanupIdx: index('execution_large_values_tombstone_cleanup_idx')
+      .on(table.workspaceId, table.deletedAt, table.key)
+      .where(sql`${table.deletedAt} IS NOT NULL`),
+  })
+)
+
+export const executionLargeValueReferences = pgTable(
+  'execution_large_value_references',
+  {
+    key: text('key').notNull(),
+    executionId: text('execution_id').notNull(),
+    source: executionLargeValueReferenceSourceEnum('source').notNull(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.key, table.executionId, table.source] }),
+    workspaceExecutionSourceIdx: index(
+      'execution_large_value_references_workspace_execution_source_idx'
+    ).on(table.workspaceId, table.executionId, table.source),
+  })
+)
+
+export const executionLargeValueDependencies = pgTable(
+  'execution_large_value_dependencies',
+  {
+    parentKey: text('parent_key').notNull(),
+    childKey: text('child_key').notNull(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.parentKey, table.childKey] }),
+    workspaceParentKeyIdx: index('execution_large_value_dependencies_workspace_parent_key_idx').on(
+      table.workspaceId,
+      table.parentKey
+    ),
+    workspaceChildKeyIdx: index('execution_large_value_dependencies_workspace_child_key_idx').on(
+      table.workspaceId,
+      table.childKey
+    ),
+  })
+)
+
 export const pausedExecutions = pgTable(
   'paused_executions',
   {
@@ -567,6 +641,9 @@ export const workflowSchedule = pgTable(
       archivedAtPartialIdx: index('workflow_schedule_archived_at_partial_idx')
         .on(table.archivedAt)
         .where(sql`${table.archivedAt} IS NOT NULL`),
+      sourceWorkspaceSourceTypeIdx: index(
+        'idx_workflow_schedule_on_source_workspace_id_source_t_c07f3bba6'
+      ).on(table.sourceWorkspaceId, table.sourceType, table.archivedAt, table.status),
     }
   }
 )
@@ -651,6 +728,14 @@ export const webhook = pgTable(
       archivedAtPartialIdx: index('webhook_archived_at_partial_idx')
         .on(table.archivedAt)
         .where(sql`${table.archivedAt} IS NOT NULL`),
+      providerActiveWorkflowDeploymentIdx: index(
+        'idx_webhook_on_provider_is_active_workflow_id_deploym_bdeed5468'
+      ).on(table.provider, table.isActive, table.workflowId, table.deploymentVersionId),
+      workflowBlockUpdatedDescIdx: index('idx_webhook_on_workflow_id_block_id_updated_at_desc').on(
+        table.workflowId,
+        table.blockId,
+        table.updatedAt.desc()
+      ),
     }
   }
 )
@@ -951,6 +1036,10 @@ export const chat = pgTable(
       archivedAtPartialIdx: index('chat_archived_at_partial_idx')
         .on(table.archivedAt)
         .where(sql`${table.archivedAt} IS NOT NULL`),
+      workflowArchivedAtIdx: index('idx_chat_on_workflow_id_archived_at').on(
+        table.workflowId,
+        table.archivedAt
+      ),
     }
   }
 )
