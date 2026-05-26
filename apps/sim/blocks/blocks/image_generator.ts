@@ -187,6 +187,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
       multiple: true,
       uploadContext: 'image-fusion',
       allowStartFilesReference: true,
+      defaultValue: '<start.files>',
       condition: {
         field: 'model',
         value: NANO_BANANA_MODELS,
