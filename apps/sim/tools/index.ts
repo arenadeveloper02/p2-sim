@@ -915,10 +915,10 @@ export async function executeTool(
         startTimeISO
       )
     } else {
-      // Copilot tool schemas use stripVersionSuffix names; registry keys are versioned (e.g. _v2).
-      const registryToolId = options?.exactToolId
-        ? normalizedToolId
-        : resolveToolId(normalizedToolId)
+      // Copilot/mothership agent schemas omit `_vN`; canvas blocks serialize exact registry ids.
+      const registryToolId = scope.copilotToolExecution
+        ? resolveToolId(normalizedToolId)
+        : normalizedToolId
       tool = getTool(registryToolId)
       if (!tool) {
         logger.error(

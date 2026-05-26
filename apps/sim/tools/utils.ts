@@ -52,14 +52,14 @@ export function getLatestVersionTools(
 }
 
 /**
- * Resolves a tool id to the **canonical latest** registry id for its version family (same base after
- * {@link stripVersionSuffix}), matching Copilot integration schemas that omit `_vN`.
- * When legacy unversioned and `_vN` keys both exist (`google_sheets_write` vs `google_sheets_write_v2`),
- * callers using the stripped/base name bind the latest toolkit, not the legacy key.
+ * Resolves an agent integration tool name (Copilot, mothership chat, subagents) to the **canonical
+ * latest** registry id for its version family (same base after {@link stripVersionSuffix}). Agent
+ * integration schemas omit `_vN`; when legacy unversioned and `_vN` keys both exist
+ * (`google_sheets_write` vs `google_sheets_write_v2`), stripped names bind the latest toolkit.
  *
- * If a newer `_vN` exists for that base, older explicit ids resolve to newest (pins to superseded ids are uncommon).
+ * Workflow block execution must not call this — serialized block tool ids are already exact keys.
  *
- * @param toolName Stripped Copilot name, `_vN` suffix, or legacy registry key
+ * @param toolName Stripped agent integration name or `_vN` suffix
  * @returns Latest registry id when the base exists in versioning; unknown ids unchanged
  */
 export function resolveToolId(toolName: string): string {
