@@ -45,12 +45,40 @@ vi.mock('@/tools/registry', () => ({
       name: 'Run Workflow',
       description: 'Run a workflow from the client',
     },
+    google_sheets_write: {
+      id: 'google_sheets_write',
+      name: 'Google Sheets Write V1',
+      description: 'Legacy write',
+    },
+    google_sheets_write_v2: {
+      id: 'google_sheets_write_v2',
+      name: 'Google Sheets Write V2',
+      description: 'Latest write',
+    },
   },
 }))
 
 vi.mock('@/tools/utils', () => ({
-  getLatestVersionTools: vi.fn((input) => input),
-  stripVersionSuffix: vi.fn((toolId: string) => toolId),
+  getLatestVersionTools: vi.fn((input: Record<string, unknown>) => {
+    const latest: Record<string, unknown> = {}
+    const groups: Record<string, { toolId: string; version: number }[]> = {}
+
+    for (const toolId of Object.keys(input)) {
+      const baseName = toolId.replace(/_v\d+$/, '')
+      const versionMatch = toolId.match(/_v(\d+)$/)
+      const version = versionMatch ? Number.parseInt(versionMatch[1], 10) : 1
+      if (!groups[baseName]) groups[baseName] = []
+      groups[baseName].push({ toolId, version })
+    }
+
+    for (const versions of Object.values(groups)) {
+      const winner = versions.reduce((prev, curr) => (curr.version > prev.version ? curr : prev))
+      latest[winner.toolId] = input[winner.toolId]
+    }
+
+    return latest
+  }),
+  stripVersionSuffix: vi.fn((toolId: string) => toolId.replace(/_v\d+$/, '')),
 }))
 
 vi.mock('@/tools/params', () => ({
@@ -119,6 +147,20 @@ describe('buildIntegrationToolSchemas', () => {
     )
     expect(mockCreateUserToolSchema).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'brandfetch_search' }),
+      { surface: 'copilot' }
+    )
+  })
+
+  it('builds stripped integration tool names from the latest registry tool config', async () => {
+    mockGetHighestPrioritySubscription.mockResolvedValue({ plan: 'pro', status: 'active' })
+
+    const toolSchemas = await buildIntegrationToolSchemas('user-latest-schema')
+    const sheetsTool = toolSchemas.find((tool) => tool.name === 'google_sheets_write')
+
+    expect(sheetsTool).toBeDefined()
+    expect(sheetsTool?.description).toBe('Latest write')
+    expect(mockCreateUserToolSchema).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'google_sheets_write_v2' }),
       { surface: 'copilot' }
     )
   })

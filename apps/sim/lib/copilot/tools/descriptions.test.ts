@@ -99,4 +99,17 @@ describe('getCopilotToolDescription', () => {
       )
     ).toBe('Send emails using Gmail')
   })
+
+  it.concurrent('appends the Google Docs GFM instruction for create tool', () => {
+    expect(
+      getCopilotToolDescription(
+        {
+          id: 'google_docs_create',
+          name: 'Create Google Docs Document',
+          description: 'Create a new Google Docs document',
+        },
+        {}
+      )
+    ).toContain('accepts GitHub Flavored Markdown (GFM) in content')
+  })
 })

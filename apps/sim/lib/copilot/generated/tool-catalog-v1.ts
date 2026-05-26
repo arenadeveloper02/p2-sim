@@ -2649,7 +2649,7 @@ export const Superagent: ToolCatalogEntry = {
     properties: {
       task: {
         description:
-          "A single sentence — the agent has full conversation context. Do NOT pre-read credentials or look up configs. Example: 'send the email we discussed' or 'check my calendar for tomorrow'.",
+          "A single sentence — the agent has full conversation context. Do NOT pre-read credentials or look up configs. Example: 'send the email we discussed' or 'check my calendar for tomorrow'. When creating a Google Doc from a workspace file, say to read the file and pass its exact GFM markdown to google_docs_create.content — do not ask to convert or reformat markdown; Drive handles GFM import.",
         type: 'string',
       },
     },
