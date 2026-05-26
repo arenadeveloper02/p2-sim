@@ -22,5 +22,7 @@ export async function prepareExecutionContext(
     workspaceId,
     chatId,
     decryptedEnvVars,
+    /** Copilot, mothership chat, subagents, and MCP agent routes use stripped integration tool names. */
+    copilotToolExecution: true,
   }
 }
