@@ -89,7 +89,7 @@ export function ToolCredentialSelector({
   const effectiveProviderId = useMemo(() => getProviderIdFromServiceId(serviceId), [serviceId])
 
   const {
-    data: credentials = [],
+    data: rawCredentials = [],
     isFetching: credentialsLoading,
     refetch: refetchCredentials,
   } = useOAuthCredentials(effectiveProviderId, {
@@ -98,9 +98,14 @@ export function ToolCredentialSelector({
     workflowId: effectiveWorkflowId,
   })
 
+  const credentials = useMemo(
+    () => rawCredentials,
+    [rawCredentials]
+  )
+
   const selectedCredential = useMemo(
-    () => credentials.find((cred) => cred.id === selectedId),
-    [credentials, selectedId]
+    () => rawCredentials.find((cred) => cred.id === selectedId),
+    [rawCredentials, selectedId]
   )
 
   const { data: inaccessibleCredential } = useWorkspaceCredential(
@@ -166,6 +171,9 @@ export function ToolCredentialSelector({
   }, [credentials, provider])
 
   const selectedCredentialProvider = selectedCredential?.provider ?? provider
+  const reauthorizeProvider = selectedCredentialProvider
+  const reauthorizeServiceId = selectedCredential?.provider ?? serviceId
+  const reauthorizeRequiredScopes = getCanonicalScopesForProvider(reauthorizeProvider)
 
   const overlayContent = useMemo(() => {
     if (!inputValue) return null
@@ -228,8 +236,8 @@ export function ToolCredentialSelector({
               writeOAuthReturnContext({
                 origin: 'workflow',
                 workflowId: effectiveWorkflowId || '',
-                displayName: selectedCredential?.name ?? getProviderName(provider),
-                providerId: effectiveProviderId,
+                displayName: selectedCredential?.name ?? getProviderName(reauthorizeProvider),
+                providerId: reauthorizeProvider,
                 preCount: credentials.length,
                 workspaceId,
                 requestedAt: Date.now(),
@@ -264,11 +272,11 @@ export function ToolCredentialSelector({
             consumeOAuthReturnContext()
             setShowOAuthModal(false)
           }}
-          provider={provider}
-          toolName={getProviderName(provider)}
-          requiredScopes={getCanonicalScopesForProvider(effectiveProviderId)}
+          provider={reauthorizeProvider}
+          toolName={getProviderName(reauthorizeProvider)}
+          requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
-          serviceId={serviceId}
+          serviceId={reauthorizeServiceId}
         />
       )}
     </div>

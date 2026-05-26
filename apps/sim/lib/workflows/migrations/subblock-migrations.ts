@@ -24,6 +24,10 @@ export const SUBBLOCK_ID_MIGRATIONS: Record<string, Record<string, string>> = {
   knowledge: {
     knowledgeBaseId: 'knowledgeBaseSelector',
   },
+  zoom: {
+    credentialAdmin: 'credential',
+    manualCredentialAdmin: 'manualCredential',
+  },
   dynamodb: {
     key: 'getKey',
     filterExpression: 'queryFilterExpression',

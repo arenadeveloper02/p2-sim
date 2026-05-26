@@ -11,6 +11,7 @@ import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/creden
 import {
   getCanonicalScopesForProvider,
   getProviderIdFromServiceId,
+  getServiceConfigByProviderId,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   parseProvider,
@@ -125,7 +126,7 @@ export function CredentialSelector({
 
   const credentialsLoading = isAllCredentials ? allCredentialsLoading : oauthCredentialsLoading
 
-  const credentials = useMemo(
+  const selectionPool = useMemo(
     () =>
       isTriggerMode
         ? rawCredentials.filter((cred) => cred.type !== 'service_account')
@@ -133,9 +134,14 @@ export function CredentialSelector({
     [rawCredentials, isTriggerMode]
   )
 
+  const credentials = useMemo(
+    () => selectionPool,
+    [selectionPool]
+  )
+
   const selectedCredential = useMemo(
-    () => credentials.find((cred) => cred.id === selectedId),
-    [credentials, selectedId]
+    () => selectionPool.find((cred) => cred.id === selectedId),
+    [selectionPool, selectedId]
   )
 
   const selectedAllCredential = useMemo(
@@ -236,6 +242,11 @@ export function CredentialSelector({
   }, [])
 
   const getProviderName = useCallback((providerName: OAuthProvider) => {
+    const serviceConfig = getServiceConfigByProviderId(providerName)
+    if (serviceConfig) {
+      return serviceConfig.name
+    }
+
     const { baseProvider } = parseProvider(providerName)
     const baseProviderConfig = OAUTH_PROVIDERS[baseProvider]
 
@@ -354,6 +365,9 @@ export function CredentialSelector({
   ])
 
   const selectedCredentialProvider = selectedCredential?.provider ?? provider
+  const reauthorizeProvider = selectedCredentialProvider
+  const reauthorizeServiceId = selectedCredential?.provider ?? serviceId
+  const reauthorizeRequiredScopes = getCanonicalScopesForProvider(reauthorizeProvider)
 
   const overlayContent = useMemo(() => {
     if (!displayValue) return null
@@ -492,8 +506,8 @@ export function CredentialSelector({
               writeOAuthReturnContext({
                 origin: 'workflow',
                 workflowId: activeWorkflowId || '',
-                displayName: selectedCredential?.name ?? getProviderName(provider),
-                providerId: effectiveProviderId,
+                displayName: selectedCredential?.name ?? getProviderName(reauthorizeProvider),
+                providerId: reauthorizeProvider,
                 preCount: credentials.length,
                 workspaceId,
                 requestedAt: Date.now(),
@@ -531,11 +545,11 @@ export function CredentialSelector({
             consumeOAuthReturnContext()
             setShowOAuthModal(false)
           }}
-          provider={provider}
-          toolName={getProviderName(provider)}
-          requiredScopes={getCanonicalScopesForProvider(effectiveProviderId)}
+          provider={reauthorizeProvider}
+          toolName={getProviderName(reauthorizeProvider)}
+          requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
-          serviceId={serviceId}
+          serviceId={reauthorizeServiceId}
         />
       )}
     </div>

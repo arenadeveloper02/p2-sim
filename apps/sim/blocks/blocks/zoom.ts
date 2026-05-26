@@ -6,9 +6,6 @@ import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { ZoomResponse } from '@/tools/zoom/types'
 import { getTrigger } from '@/triggers'
 
-/**
- * Zoom block uses two OAuth flows: personal (user-managed app) vs admin (account-wide) app.
- */
 const ZOOM_MEETING_SUBBLOCK_OPS = [
   'zoom_get_meeting',
   'zoom_update_meeting',
@@ -20,12 +17,8 @@ const ZOOM_MEETING_SUBBLOCK_OPS = [
 ] as const
 
 const ZOOM_MEETING_OPS_LIST = [...ZOOM_MEETING_SUBBLOCK_OPS]
-const ZOOM_ADMIN_ONLY_OPS = [
-  'zoom_list_account_recordings',
-  'zoom_get_account_recordings_with_transcript',
-] as const
 
-function hasPersonalZoomAuth(values: Record<string, unknown> | undefined): boolean {
+function hasZoomAuth(values: Record<string, unknown> | undefined): boolean {
   if (!values) return false
   return (
     String(values.credential ?? values.manualCredential ?? values.oauthCredential ?? '').trim()
@@ -34,13 +27,13 @@ function hasPersonalZoomAuth(values: Record<string, unknown> | undefined): boole
 }
 
 /**
- * Show personal Zoom meeting picker / ID when the operation needs a meeting and a personal credential exists.
+ * Show Zoom meeting picker / ID when the operation needs a meeting and a credential exists.
  */
 function personalZoomMeetingSubblockCondition(values: Record<string, unknown> | undefined) {
   const op = values?.operation
   const needsMeeting =
     typeof op === 'string' && (ZOOM_MEETING_SUBBLOCK_OPS as readonly string[]).includes(op)
-  if (!needsMeeting || !hasPersonalZoomAuth(values)) {
+  if (!needsMeeting || !hasZoomAuth(values)) {
     return { field: 'operation', value: [] } satisfies SubBlockCondition
   }
   return { field: 'operation', value: ZOOM_MEETING_OPS_LIST } satisfies SubBlockCondition
@@ -109,22 +102,8 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
           serviceId: 'zoom-admin',
         },
       ],
-      placeholder: 'Personal — select or connect',
-      required: false,
-    },
-    {
-      id: 'credentialAdmin',
-      type: 'oauth-input',
-      serviceId: 'zoom-admin',
-      canonicalParamId: 'oauthCredentialAdmin',
-      mode: 'basic',
-      requiredScopes: getScopesForService('zoom-admin'),
-      placeholder: 'Admin — select or connect (account recordings only)',
-      required: false,
-      condition: {
-        field: 'operation',
-        value: [...ZOOM_ADMIN_ONLY_OPS],
-      },
+      placeholder: 'Select or connect Zoom account',
+      required: true,
     },
     {
       id: 'manualCredential',
@@ -132,20 +111,8 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       type: 'short-input',
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
-      placeholder: 'Personal credential ID',
+      placeholder: 'Zoom credential ID',
       required: true,
-    },
-    {
-      id: 'manualCredentialAdmin',
-      type: 'short-input',
-      canonicalParamId: 'oauthCredentialAdmin',
-      mode: 'advanced',
-      placeholder: 'Admin credential ID (account recordings only)',
-      required: true,
-      condition: {
-        field: 'operation',
-        value: [...ZOOM_ADMIN_ONLY_OPS],
-      },
     },
     // User ID for create/list operations
     {
@@ -579,27 +546,14 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
         return params.operation || 'zoom_create_meeting'
       },
       params: (params) => {
-        const adminZoomOnlyOps = new Set([
-          'zoom_list_account_recordings',
-          'zoom_get_account_recordings_with_transcript',
-        ])
+        const credential = String(params.oauthCredential ?? '').trim()
 
-        const op = params.operation ?? ''
-        const personalCred = String(params.oauthCredential ?? '').trim()
-        const adminCred = String(params.oauthCredentialAdmin ?? '').trim()
-
-        const credentialResolved = adminZoomOnlyOps.has(op) ? adminCred : personalCred
-
-        if (adminZoomOnlyOps.has(op)) {
-          if (!adminCred) {
-            throw new Error('Connect a Zoom admin account for account recordings operations.')
-          }
-        } else if (!personalCred) {
-          throw new Error('Connect a Zoom account (personal) for this operation.')
+        if (!credential) {
+          throw new Error('Connect a Zoom account for this operation.')
         }
 
         const baseParams: Record<string, unknown> = {
-          credential: credentialResolved,
+          credential,
         }
 
         switch (params.operation) {
@@ -772,11 +726,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    oauthCredential: { type: 'string', description: 'OAuth credential for personal Zoom' },
-    oauthCredentialAdmin: {
-      type: 'string',
-      description: 'OAuth credential for Zoom admin / account-wide app',
-    },
+    oauthCredential: { type: 'string', description: 'OAuth credential for Zoom' },
     userId: { type: 'string', description: 'User ID or email (use "me" for authenticated user)' },
     meetingId: { type: 'string', description: 'Meeting ID' },
     topic: { type: 'string', description: 'Meeting topic' },
