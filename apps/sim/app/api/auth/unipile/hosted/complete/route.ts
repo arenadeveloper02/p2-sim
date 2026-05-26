@@ -58,10 +58,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       accountRowId: result.accountRowId,
       credentialId: result.credentialId,
     })
+    const unipileAccountId = body.accountId.trim()
     return NextResponse.json({
       success: true,
       accountRowId: result.accountRowId,
       credentialId: result.credentialId,
+      unipileAccountId,
     })
   } catch (error) {
     logger.error('Failed to complete Unipile hosted auth from redirect', {

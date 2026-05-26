@@ -605,12 +605,7 @@ export async function processDocumentAsync(
 
     if (!embeddingIsBYOK && totalEmbeddingTokens > 0 && kb[0].userId) {
       try {
-        const { total: cost } = calculateCost(
-          embeddingModelName,
-          totalEmbeddingTokens,
-          0,
-          false
-        )
+        const { total: cost } = calculateCost(embeddingModelName, totalEmbeddingTokens, 0, false)
         if (cost > 0) {
           await recordUsage({
             userId: kb[0].userId,

@@ -4,12 +4,19 @@ import {
   type OAuthReturnContext,
   readOAuthReturnContext,
 } from '@/lib/credentials/client-state'
+import {
+  UNIPILE_HOSTED_ACCOUNT_ID_PARAM,
+  UNIPILE_HOSTED_SUCCESS_PARAM,
+  UNIPILE_LINKEDIN_PROVIDER_ID,
+} from '@/lib/unipile/constants'
 
 const logger = createLogger('UnipileHostedReturnClient')
 
-export const UNIPILE_HOSTED_SUCCESS_PARAM = 'unipile_hosted'
-export const UNIPILE_HOSTED_ACCOUNT_ID_PARAM = 'account_id'
-export const UNIPILE_LINKEDIN_PROVIDER_ID = 'unipile_linkedin' as const
+export {
+  UNIPILE_HOSTED_ACCOUNT_ID_PARAM,
+  UNIPILE_HOSTED_SUCCESS_PARAM,
+  UNIPILE_LINKEDIN_PROVIDER_ID,
+} from '@/lib/unipile/constants'
 
 export interface UnipileHostedRedirectParams {
   hosted: 'success' | 'failure' | null
@@ -76,6 +83,8 @@ async function persistUnipileAccountFromRedirect(
 export interface HandleUnipileHostedRedirectResult {
   handled: boolean
   ctx: OAuthReturnContext | null
+  /** External Unipile account id from redirect query (when present). */
+  unipileAccountId?: string
 }
 
 /**
@@ -86,26 +95,27 @@ export async function handleUnipileHostedRedirect(
   params: UnipileHostedRedirectParams
 ): Promise<HandleUnipileHostedRedirectResult> {
   if (!hasUnipileHostedRedirectParams(params)) {
-    return { handled: false, ctx: null }
+    return { handled: false, ctx: null, unipileAccountId: undefined }
   }
 
   const ctx = readOAuthReturnContext()
 
   if (params.hosted === 'failure') {
     consumeOAuthReturnContext()
-    return { handled: true, ctx: null }
+    return { handled: true, ctx: null, unipileAccountId: undefined }
   }
 
   const isUnipileContext = ctx?.providerId === UNIPILE_LINKEDIN_PROVIDER_ID
   const isSuccess = params.hosted === 'success' || (Boolean(params.accountId) && isUnipileContext)
 
   if (!isSuccess) {
-    return { handled: true, ctx: null }
+    return { handled: true, ctx: null, unipileAccountId: undefined }
   }
 
-  if (params.accountId) {
-    await persistUnipileAccountFromRedirect(params.accountId, ctx)
+  const unipileAccountId = params.accountId?.trim() || undefined
+  if (unipileAccountId) {
+    await persistUnipileAccountFromRedirect(unipileAccountId, ctx)
   }
 
-  return { handled: true, ctx }
+  return { handled: true, ctx, unipileAccountId }
 }

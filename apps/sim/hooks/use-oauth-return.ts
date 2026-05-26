@@ -12,6 +12,7 @@ import {
 import {
   handleUnipileHostedRedirect,
   readAndClearUnipileHostedRedirectParams,
+  UNIPILE_LINKEDIN_PROVIDER_ID,
 } from '@/lib/unipile/hosted-return-client'
 import { useNotificationStore } from '@/stores/notifications/store'
 
@@ -46,10 +47,17 @@ async function resolveOAuthMessage(ctx: OAuthReturnContext): Promise<string> {
   }
 }
 
-function dispatchCredentialUpdate(ctx: OAuthReturnContext) {
+function dispatchCredentialUpdate(
+  ctx: OAuthReturnContext,
+  options?: { unipileAccountId?: string }
+) {
   window.dispatchEvent(
     new CustomEvent(OAUTH_CREDENTIAL_UPDATED_EVENT, {
-      detail: { providerId: ctx.providerId, workspaceId: ctx.workspaceId },
+      detail: {
+        providerId: ctx.providerId,
+        workspaceId: ctx.workspaceId,
+        unipileAccountId: options?.unipileAccountId,
+      },
     })
   )
 }
@@ -84,12 +92,12 @@ export function useOAuthReturnRouter() {
     if (redirectParams.hosted || redirectParams.accountId) {
       handledRef.current = true
       void (async () => {
-        const { ctx } = await handleUnipileHostedRedirect(redirectParams)
+        const { ctx, unipileAccountId } = await handleUnipileHostedRedirect(redirectParams)
         if (redirectParams.hosted === 'success' || redirectParams.accountId) {
           if (ctx) {
             const message = await resolveOAuthMessage(ctx)
             toast.success(message, { duration: 5000 })
-            dispatchCredentialUpdate(ctx)
+            dispatchCredentialUpdate(ctx, { unipileAccountId })
             consumeOAuthReturnContext()
           } else {
             toast.error(
@@ -170,16 +178,28 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
     if (redirectParams.hosted || redirectParams.accountId) {
       handledRef.current = true
       void (async () => {
-        const { ctx } = await handleUnipileHostedRedirect(redirectParams)
+        const { ctx, unipileAccountId } = await handleUnipileHostedRedirect(redirectParams)
         if (ctx && ctx.origin === 'workflow' && ctx.workflowId === workflowId) {
           const message = await resolveOAuthMessage(ctx)
           addNotification({ level: 'info', message, workflowId })
-          dispatchCredentialUpdate(ctx)
+          dispatchCredentialUpdate(ctx, { unipileAccountId })
           consumeOAuthReturnContext()
         } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
+          if (unipileAccountId) {
+            window.dispatchEvent(
+              new CustomEvent(OAUTH_CREDENTIAL_UPDATED_EVENT, {
+                detail: {
+                  providerId: UNIPILE_LINKEDIN_PROVIDER_ID,
+                  unipileAccountId,
+                },
+              })
+            )
+          }
           addNotification({
             level: 'info',
-            message: 'LinkedIn account linked. Select it in the block credential picker.',
+            message: unipileAccountId
+              ? 'LinkedIn account linked and selected on the block.'
+              : 'LinkedIn account linked. Select it in the block credential picker.',
             workflowId,
           })
           consumeOAuthReturnContext()
@@ -226,11 +246,11 @@ export function useOAuthReturnForKBConnectors(knowledgeBaseId: string) {
     if (redirectParams.hosted || redirectParams.accountId) {
       handledRef.current = true
       void (async () => {
-        const { ctx } = await handleUnipileHostedRedirect(redirectParams)
+        const { ctx, unipileAccountId } = await handleUnipileHostedRedirect(redirectParams)
         if (ctx && ctx.origin === 'kb-connectors' && ctx.knowledgeBaseId === knowledgeBaseId) {
           const message = await resolveOAuthMessage(ctx)
           toast.success(message, { duration: 5000 })
-          dispatchCredentialUpdate(ctx)
+          dispatchCredentialUpdate(ctx, { unipileAccountId })
           consumeOAuthReturnContext()
         } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
           toast.success('LinkedIn account linked.', { duration: 5000 })

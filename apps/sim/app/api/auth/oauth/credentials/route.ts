@@ -41,7 +41,8 @@ function toCredentialResponse(
   providerId: string,
   updatedAt: Date,
   scope: string | null,
-  credentialType: 'oauth' | 'service_account' = 'oauth'
+  credentialType: 'oauth' | 'service_account' = 'oauth',
+  externalAccountId?: string | null
 ) {
   const storedScope = scope?.trim()
   // Some providers (e.g. Box) don't return scopes in their token response,
@@ -53,6 +54,7 @@ function toCredentialResponse(
     : getCanonicalScopesForProvider(providerId)
   const [_, featureType = 'default'] = providerId.split('-')
 
+  const trimmedExternal = externalAccountId?.trim()
   return {
     id,
     name: displayName,
@@ -61,6 +63,7 @@ function toCredentialResponse(
     lastUsed: updatedAt.toISOString(),
     isDefault: featureType === 'default',
     scopes,
+    ...(trimmedExternal ? { externalAccountId: trimmedExternal } : {}),
   }
 }
 
@@ -159,6 +162,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           accountProviderId: account.providerId,
           accountScope: account.scope,
           accountUpdatedAt: account.updatedAt,
+          externalAccountId: account.accountId,
         })
         .from(credential)
         .leftJoin(account, eq(credential.accountId, account.id))
@@ -247,7 +251,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
                 platformCredential.displayName,
                 platformCredential.accountProviderId,
                 platformCredential.accountUpdatedAt,
-                platformCredential.accountScope
+                platformCredential.accountScope,
+                'oauth',
+                platformCredential.externalAccountId
               ),
             ],
           },
@@ -270,6 +276,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           accountProviderId: account.providerId,
           scope: account.scope,
           updatedAt: account.updatedAt,
+          externalAccountId: account.accountId,
         })
         .from(credential)
         .innerJoin(account, eq(credential.accountId, account.id))
@@ -295,7 +302,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           row.displayName,
           row.providerId ?? row.accountProviderId ?? providerParam,
           row.updatedAt,
-          row.scope
+          row.scope,
+          'oauth',
+          row.externalAccountId
         )
       )
 

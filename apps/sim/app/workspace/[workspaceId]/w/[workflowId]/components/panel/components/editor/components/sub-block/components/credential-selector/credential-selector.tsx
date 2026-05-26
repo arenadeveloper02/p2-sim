@@ -1,6 +1,6 @@
 'use client'
 
-import { createElement, useCallback, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { ExternalLink, KeyRound, Users } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { Button, Combobox } from '@/components/emcn/components'
@@ -8,6 +8,7 @@ import { getSubscriptionAccessState } from '@/lib/billing/client'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { getPollingProviderFromOAuth } from '@/lib/credential-sets/providers'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
+import type { Credential } from '@/lib/oauth'
 import {
   getCanonicalScopesForProvider,
   getProviderIdFromServiceId,
@@ -16,6 +17,7 @@ import {
   parseProvider,
 } from '@/lib/oauth'
 import { getMissingRequiredScopes } from '@/lib/oauth/utils'
+import { UNIPILE_LINKEDIN_PROVIDER_ID } from '@/lib/unipile/constants'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -30,6 +32,24 @@ import { useCredentialRefreshTriggers } from '@/hooks/use-credential-refresh-tri
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
+
+function unipileCredentialPickerValue(cred: Credential): string {
+  return cred.externalAccountId?.trim() || cred.id
+}
+
+function credentialMatchesSelection(
+  cred: Credential,
+  selectedValue: string,
+  providerId: string
+): boolean {
+  const value = selectedValue.trim()
+  if (!value) return false
+  if (cred.id === value) return true
+  if (providerId === UNIPILE_LINKEDIN_PROVIDER_ID && cred.externalAccountId?.trim() === value) {
+    return true
+  }
+  return false
+}
 
 interface CredentialSelectorProps {
   blockId: string
@@ -127,8 +147,11 @@ export function CredentialSelector({
   )
 
   const selectedCredential = useMemo(
-    () => credentials.find((cred) => cred.id === selectedId),
-    [credentials, selectedId]
+    () =>
+      credentials.find((cred) =>
+        credentialMatchesSelection(cred, rawSelectedId, effectiveProviderId)
+      ),
+    [credentials, rawSelectedId, effectiveProviderId]
   )
 
   const selectedAllCredential = useMemo(
@@ -175,6 +198,34 @@ export function CredentialSelector({
   )
 
   useCredentialRefreshTriggers(refetch, effectiveProviderId, workspaceId)
+
+  useEffect(() => {
+    const handleCredentialsUpdated = (
+      event: CustomEvent<{
+        providerId?: string
+        workspaceId?: string
+        unipileAccountId?: string
+      }>
+    ) => {
+      if (effectiveProviderId !== UNIPILE_LINKEDIN_PROVIDER_ID) return
+      if (event.detail?.providerId && event.detail.providerId !== effectiveProviderId) return
+      if (event.detail?.workspaceId && workspaceId && event.detail.workspaceId !== workspaceId) {
+        return
+      }
+      const unipileAccountId = event.detail?.unipileAccountId?.trim()
+      if (!unipileAccountId || isPreview) return
+      setStoreValue(unipileAccountId)
+      setIsEditing(false)
+    }
+
+    window.addEventListener('oauth-credentials-updated', handleCredentialsUpdated as EventListener)
+    return () => {
+      window.removeEventListener(
+        'oauth-credentials-updated',
+        handleCredentialsUpdated as EventListener
+      )
+    }
+  }, [effectiveProviderId, workspaceId, isPreview, setStoreValue])
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
@@ -275,7 +326,10 @@ export function CredentialSelector({
 
       const credentialItems = credentials.map((cred) => ({
         label: cred.name,
-        value: cred.id,
+        value:
+          effectiveProviderId === UNIPILE_LINKEDIN_PROVIDER_ID
+            ? unipileCredentialPickerValue(cred)
+            : cred.id,
         iconElement: getProviderIcon((cred.provider ?? provider) as OAuthProvider),
       }))
       credentialItems.push({
@@ -297,7 +351,10 @@ export function CredentialSelector({
 
     const options = credentials.map((cred) => ({
       label: cred.name,
-      value: cred.id,
+      value:
+        effectiveProviderId === UNIPILE_LINKEDIN_PROVIDER_ID
+          ? unipileCredentialPickerValue(cred)
+          : cred.id,
       iconElement: getProviderIcon((cred.provider ?? provider) as OAuthProvider),
     }))
 
@@ -386,9 +443,17 @@ export function CredentialSelector({
 
       const matchedCred = (
         isAllCredentials ? allWorkspaceCredentials.filter((c) => c.type === 'oauth') : credentials
-      ).find((c) => c.id === value)
+      ).find((c) =>
+        isAllCredentials
+          ? c.id === value
+          : credentialMatchesSelection(c as Credential, value, effectiveProviderId)
+      )
       if (matchedCred) {
-        handleSelect(value)
+        const storeValue =
+          !isAllCredentials && effectiveProviderId === UNIPILE_LINKEDIN_PROVIDER_ID
+            ? unipileCredentialPickerValue(matchedCred as Credential)
+            : value
+        handleSelect(storeValue)
         return
       }
 
@@ -403,6 +468,7 @@ export function CredentialSelector({
       handleAddCredential,
       handleSelect,
       handleCredentialSetSelect,
+      effectiveProviderId,
     ]
   )
 

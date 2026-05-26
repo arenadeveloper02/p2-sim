@@ -28,8 +28,7 @@ function parsePositiveNumber(raw: unknown): number | null {
 
 /** Reads USAGE_LOG_COST_MULTIPLIER from process.env (reliable in Next.js server). */
 export function getUsageLogCostMultiplier(): number {
-  const raw =
-    process.env.USAGE_LOG_COST_MULTIPLIER ?? process.env.COST_MULTIPLIER ?? undefined
+  const raw = process.env.USAGE_LOG_COST_MULTIPLIER ?? process.env.COST_MULTIPLIER ?? undefined
   return parsePositiveNumber(raw) ?? 1
 }
 

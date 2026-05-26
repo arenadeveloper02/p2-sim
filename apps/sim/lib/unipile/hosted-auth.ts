@@ -7,11 +7,12 @@ import { env } from '@/lib/core/config/env'
 import { handleCreateCredentialFromDraft } from '@/lib/credentials/draft-hooks'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 import { safeAccountInsert } from '@/app/api/auth/oauth/utils'
+import { UNIPILE_LINKEDIN_PROVIDER_ID } from '@/lib/unipile/constants'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileHostedAuth')
 
-export const UNIPILE_LINKEDIN_PROVIDER_ID = 'unipile_linkedin' as const
+export { UNIPILE_LINKEDIN_PROVIDER_ID } from '@/lib/unipile/constants'
 
 const HOSTED_LINK_PATH = '/api/v1/hosted/accounts/link'
 
@@ -213,7 +214,8 @@ export async function persistUnipileLinkedInAccount(
 
 /**
  * Loads the Better Auth account row for a user’s Unipile LinkedIn connection.
- * `account.account_id` holds the external Unipile id; `account.id` is the internal FK target for `credential.account_id`.
+ * `account.account_id` holds the external Unipile id (API `account_id`).
+ * `account.id` is the internal row id referenced by `credential.account_id` (FK — not the Unipile id).
  */
 async function findUnipileLinkedInAccountRow(userId: string, externalUnipileAccountId: string) {
   return (

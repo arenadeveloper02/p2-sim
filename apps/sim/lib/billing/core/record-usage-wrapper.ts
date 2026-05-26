@@ -1,9 +1,9 @@
 /** @deprecated Import recordUsage from usage-log.ts — kept for existing import paths. */
 export {
   getUsageLogCostMultiplier,
+  type RecordUsageParams,
   recordUsage,
   scaleUsageLogCost,
-  type RecordUsageParams,
   type UsageCostLogContext,
   type UsageEntry,
   type UsageLogCategory,

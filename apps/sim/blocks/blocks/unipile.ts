@@ -22,9 +22,13 @@ function unipileParseMentionIsCompanyCell(raw: string): boolean | undefined {
 
 type UnipileCommentMentionRow = { name: string; profile_id: string; is_company?: boolean }
 
-/** Credential id or legacy raw Unipile account id from block params (resolved at execution). */
+/**
+ * Unipile `account_id` for API calls from the block LinkedIn Account field.
+ * Stores the external Unipile id (e.g. from hosted auth); legacy workflows may still hold a credential UUID
+ * (resolved to external id in `injectUnipileAccountIdFromCredentialIfNeeded` at execution).
+ */
 function unipileAccountIdFromParams(params: Record<string, unknown>): string {
-  const cred =
+  const fromCredential =
     typeof params.unipileCredential === 'string'
       ? params.unipileCredential.trim()
       : typeof params.credential === 'string'
@@ -32,8 +36,8 @@ function unipileAccountIdFromParams(params: Record<string, unknown>): string {
         : typeof params.oauthCredential === 'string'
           ? params.oauthCredential.trim()
           : ''
-  const legacy = typeof params.account_id === 'string' ? params.account_id.trim() : ''
-  return cred || legacy
+  const fromAccountId = typeof params.account_id === 'string' ? params.account_id.trim() : ''
+  return fromCredential || fromAccountId
 }
 
 /** Same row shape as Start block `input-format` fields (id, name, type, value, description). */
@@ -199,7 +203,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'short-input',
       canonicalParamId: 'unipileCredential',
       mode: 'advanced',
-      placeholder: 'Enter credential ID',
+      placeholder: 'Unipile account id or credential id',
       required: true,
     },
     {

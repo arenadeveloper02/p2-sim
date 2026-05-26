@@ -4,10 +4,7 @@ import { getFacebookAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { parseQueryWithAI } from './ai-query-generation'
-import {
-  makeFacebookAdsOAuthRequest,
-  makeFacebookAdsRequest,
-} from './facebook-ads-api'
+import { makeFacebookAdsOAuthRequest, makeFacebookAdsRequest } from './facebook-ads-api'
 import type { FacebookAdsRequest, FacebookAdsResponse } from './types'
 
 const logger = createLogger('FacebookAdsAPI')

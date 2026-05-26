@@ -146,6 +146,11 @@ export interface Credential {
   lastUsed?: string
   isDefault?: boolean
   scopes?: string[]
+  /**
+   * Provider external account id (e.g. Unipile `account_id` from hosted auth).
+   * Used as the LinkedIn (Unipile) block picker value so tools receive the id Unipile expects.
+   */
+  externalAccountId?: string
 }
 
 export interface ProviderConfig {
