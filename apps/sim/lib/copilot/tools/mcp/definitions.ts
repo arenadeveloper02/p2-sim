@@ -506,7 +506,7 @@ Supports full and partial execution:
     name: 'sim_superagent',
     agentId: 'superagent',
     description:
-      'Execute direct actions NOW: send an email, post to Slack, make an API call, etc. Use when the user wants to DO something immediately rather than build a workflow for it.',
+      'Execute direct actions NOW: send an email, post to Slack, make an API call, etc. Use when the user wants to DO something immediately rather than build a workflow for it. When creating a Google Doc from a workspace file, instruct the agent to read the file and pass its exact GFM markdown to google_docs_create.content without rewriting.',
     inputSchema: {
       type: 'object',
       properties: {
