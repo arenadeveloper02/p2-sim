@@ -512,7 +512,14 @@ describe('parseProvider', () => {
     const config = parseProvider('zoom' as OAuthProvider)
 
     expect(config.baseProvider).toBe('zoom')
-    expect(config.featureType).toBe('zoom')
+    expect(config.featureType).toBe('zoom-client')
+  })
+
+  it.concurrent('should parse Zoom Admin provider', () => {
+    const adminConfig = parseProvider('zoom-admin' as OAuthProvider)
+
+    expect(adminConfig.baseProvider).toBe('zoom')
+    expect(adminConfig.featureType).toBe('zoom-admin')
   })
 
   it.concurrent('should parse WordPress provider', () => {

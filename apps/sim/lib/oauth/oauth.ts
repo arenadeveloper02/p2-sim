@@ -1126,10 +1126,34 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     name: 'Zoom',
     icon: ZoomIcon,
     services: {
-      zoom: {
+      /** User OAuth app — meetings and user-scoped recordings (default for workflows). */
+      'zoom-client': {
         name: 'Zoom',
-        description: 'Create and manage Zoom meetings, users, and recordings.',
+        description:
+          'Connect with a user-managed Zoom Marketplace app — create meetings and manage recordings for the signed-in Zoom user.',
         providerId: 'zoom',
+        icon: ZoomIcon,
+        baseProviderIcon: ZoomIcon,
+        scopes: [
+          'user:read:user',
+          'meeting:write:meeting',
+          'meeting:read:meeting',
+          'meeting:read:list_meetings',
+          'meeting:update:meeting',
+          'meeting:delete:meeting',
+          'meeting:read:invitation',
+          'meeting:read:list_past_participants',
+          'cloud_recording:read:list_user_recordings',
+          'cloud_recording:read:list_recording_files',
+          'cloud_recording:delete:recording_file',
+        ],
+      },
+      /** Admin/account OAuth app — account-wide listing and transcripts. */
+      'zoom-admin': {
+        name: 'Zoom (Admin)',
+        description:
+          'Connect with an admin-level Zoom Marketplace app for account-wide cloud recordings (requires admin approval in Zoom).',
+        providerId: 'zoom-admin',
         icon: ZoomIcon,
         baseProviderIcon: ZoomIcon,
         scopes: [
@@ -1139,7 +1163,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'user:read:list_schedulers:admin',
           'user:read:email:admin',
 
-          //admin Meeting registrants, polls & participants (account-wide)
           'meeting:read:list_meetings:admin',
           'meeting:read:meeting:admin',
           'meeting:read:list_registrants:admin',
@@ -1147,17 +1170,19 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'meeting:read:list_polls:admin',
           'meeting:read:participant:admin',
 
-          //admin Cloud recording – advanced / account-level
           'cloud_recording:read:list_recording_registrants:admin',
           'cloud_recording:read:list_recording_files:admin',
           'cloud_recording:read:list_user_recordings:admin',
           'cloud_recording:read:recording:admin',
           'cloud_recording:read:meeting_transcript:admin',
           'cloud_recording:read:list_account_recordings:admin',
+
+          'recording:read:list_account_recordings',
+          'recording:read:admin',
         ],
       },
     },
-    defaultService: 'zoom',
+    defaultService: 'zoom-client',
   },
   wordpress: {
     name: 'WordPress',
@@ -1565,6 +1590,19 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         supportsRefreshTokenRotation: false,
       }
     }
+    case 'zoom-admin': {
+      const { clientId, clientSecret } = getCredentials(
+        env.ZOOM_ADMIN_CLIENT_ID,
+        env.ZOOM_ADMIN_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://zoom.us/oauth/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: true,
+        supportsRefreshTokenRotation: false,
+      }
+    }
     case 'wordpress': {
       // WordPress.com does NOT support refresh tokens
       // Users will need to re-authorize when tokens expire (~2 weeks)
@@ -1680,7 +1718,8 @@ export async function refreshOAuthToken(
   alias?: string
 ): Promise<{ accessToken: string; expiresIn: number; refreshToken: string } | null> {
   try {
-    const provider = getBaseProviderForService(providerId)
+    const provider =
+      providerId === 'zoom-admin' ? 'zoom-admin' : getBaseProviderForService(providerId)
 
     const config = getProviderAuthConfig(provider, alias)
 

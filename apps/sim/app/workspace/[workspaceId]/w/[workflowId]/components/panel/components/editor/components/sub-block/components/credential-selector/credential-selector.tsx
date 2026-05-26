@@ -60,6 +60,7 @@ export function CredentialSelector({
   const requiredScopes = subBlock.requiredScopes || []
   const label = subBlock.placeholder || 'Select credential'
   const serviceId = subBlock.serviceId || ''
+  const additionalConnectOptions = subBlock.additionalConnectOptions || []
   const isAllCredentials = !serviceId
   const supportsCredentialSets = subBlock.supportsCredentialSets || false
 
@@ -115,6 +116,12 @@ export function CredentialSelector({
     isFetching: allCredentialsLoading,
     refetch: refetchAllCredentials,
   } = useWorkspaceCredentials({ workspaceId, enabled: isAllCredentials })
+
+  const { data: additionalWorkspaceCredentials = [] } = useWorkspaceCredentials({
+    workspaceId,
+    type: 'oauth',
+    enabled: additionalConnectOptions.length > 0,
+  })
 
   const credentialsLoading = isAllCredentials ? allCredentialsLoading : oauthCredentialsLoading
 
@@ -242,6 +249,26 @@ export function CredentialSelector({
       .join(' ')
   }, [])
 
+  const additionalConnectItems = useMemo(
+    () =>
+      additionalConnectOptions.map((option) => {
+        const optionProvider = getProviderIdFromServiceId(option.serviceId) as OAuthProvider
+        const credentialCount = additionalWorkspaceCredentials.filter(
+          (cred) => cred.providerId === optionProvider
+        ).length
+
+        return {
+          label: option.label,
+          value: `__connect_account__:${option.serviceId}`,
+          iconElement: <ExternalLink className='h-3 w-3' />,
+          serviceId: option.serviceId,
+          provider: optionProvider,
+          credentialCount,
+        }
+      }),
+    [additionalConnectOptions, additionalWorkspaceCredentials]
+  )
+
   const { comboboxOptions, comboboxGroups } = useMemo(() => {
     if (isAllCredentials) {
       const oauthCredentials = allWorkspaceCredentials.filter((c) => c.type === 'oauth')
@@ -286,6 +313,7 @@ export function CredentialSelector({
         value: '__connect_account__',
         iconElement: <ExternalLink className='h-3 w-3' />,
       })
+      credentialItems.push(...additionalConnectItems)
 
       groups.push({
         section: 'Personal Credential',
@@ -309,6 +337,7 @@ export function CredentialSelector({
       value: '__connect_account__',
       iconElement: <ExternalLink className='h-3 w-3' />,
     })
+    options.push(...additionalConnectItems)
 
     return { comboboxOptions: options, comboboxGroups: undefined }
   }, [
@@ -321,6 +350,7 @@ export function CredentialSelector({
     getProviderName,
     canUseCredentialSets,
     credentialSets,
+    additionalConnectItems,
   ])
 
   const selectedCredentialProvider = selectedCredential?.provider ?? provider
@@ -375,6 +405,23 @@ export function CredentialSelector({
         return
       }
 
+      if (value.startsWith('__connect_account__:')) {
+        const targetServiceId = value.replace('__connect_account__:', '')
+        const targetOption = additionalConnectItems.find(
+          (option) => option.serviceId === targetServiceId
+        )
+
+        if (targetOption) {
+          setConnectModalConfig({
+            provider: targetOption.provider,
+            serviceId: targetOption.serviceId,
+            credentialCount: targetOption.credentialCount,
+          })
+          setShowConnectModal(true)
+          return
+        }
+      }
+
       if (value.startsWith(CREDENTIAL_SET.PREFIX)) {
         const credentialSetId = value.slice(CREDENTIAL_SET.PREFIX.length)
         const matchedSet = credentialSets.find((cs) => cs.id === credentialSetId)
@@ -403,8 +450,15 @@ export function CredentialSelector({
       handleAddCredential,
       handleSelect,
       handleCredentialSetSelect,
+      additionalConnectItems,
     ]
   )
+
+  const [connectModalConfig, setConnectModalConfig] = useState<{
+    provider: OAuthProvider
+    serviceId: string
+    credentialCount: number
+  } | null>(null)
 
   return (
     <div>
@@ -457,12 +511,15 @@ export function CredentialSelector({
         <OAuthModal
           mode='connect'
           isOpen={showConnectModal}
-          onClose={() => setShowConnectModal(false)}
-          provider={provider}
-          serviceId={serviceId}
+          onClose={() => {
+            setShowConnectModal(false)
+            setConnectModalConfig(null)
+          }}
+          provider={connectModalConfig?.provider ?? provider}
+          serviceId={connectModalConfig?.serviceId ?? serviceId}
           workspaceId={workspaceId}
           workflowId={activeWorkflowId || ''}
-          credentialCount={credentials.length}
+          credentialCount={connectModalConfig?.credentialCount ?? credentials.length}
         />
       )}
 

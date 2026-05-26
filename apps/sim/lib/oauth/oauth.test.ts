@@ -45,6 +45,8 @@ vi.mock('@/lib/core/config/env', () =>
     SHOPIFY_CLIENT_SECRET: 'shopify_client_secret',
     ZOOM_CLIENT_ID: 'zoom_client_id',
     ZOOM_CLIENT_SECRET: 'zoom_client_secret',
+    ZOOM_ADMIN_CLIENT_ID: 'zoom_admin_client_id',
+    ZOOM_ADMIN_CLIENT_SECRET: 'zoom_admin_client_secret',
     WORDPRESS_CLIENT_ID: 'wordpress_client_id',
     WORDPRESS_CLIENT_SECRET: 'wordpress_client_secret',
     SPOTIFY_CLIENT_ID: 'spotify_client_id',
@@ -79,7 +81,12 @@ function withMockFetch<T>(mockFetch: ReturnType<typeof vi.fn>, fn: () => Promise
 
 describe('OAuth Token Refresh', () => {
   describe('Basic Auth Providers', () => {
-    const basicAuthProviders = [
+    const basicAuthProviders: Array<{
+      name: string
+      providerId: string
+      endpoint: string
+      expectedBasicAuthPair?: `${string}:${string}`
+    }> = [
       {
         name: 'Airtable',
         providerId: 'airtable',
@@ -109,13 +116,19 @@ describe('OAuth Token Refresh', () => {
         endpoint: 'https://zoom.us/oauth/token',
       },
       {
+        name: 'Zoom Admin',
+        providerId: 'zoom-admin',
+        endpoint: 'https://zoom.us/oauth/token',
+        expectedBasicAuthPair: 'zoom_admin_client_id:zoom_admin_client_secret',
+      },
+      {
         name: 'Spotify',
         providerId: 'spotify',
         endpoint: 'https://accounts.spotify.com/api/token',
       },
     ]
 
-    basicAuthProviders.forEach(({ name, providerId, endpoint }) => {
+    basicAuthProviders.forEach(({ name, providerId, endpoint, expectedBasicAuthPair }) => {
       it.concurrent(
         `should send ${name} request with Basic Auth header and no credentials in body`,
         async () => {
@@ -148,8 +161,11 @@ describe('OAuth Token Refresh', () => {
           const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8')
           const [clientId, clientSecret] = credentials.split(':')
 
-          expect(clientId).toBe(`${providerId}_client_id`)
-          expect(clientSecret).toBe(`${providerId}_client_secret`)
+          const expectedPair =
+            expectedBasicAuthPair ?? `${providerId}_client_id:${providerId}_client_secret`
+          const [expectedClientId, expectedSecret] = expectedPair.split(':')
+          expect(clientId).toBe(expectedClientId)
+          expect(clientSecret).toBe(expectedSecret)
 
           const bodyParams = new URLSearchParams(requestOptions.body)
           const bodyKeys = Array.from(bodyParams.keys())
