@@ -25,6 +25,7 @@ const PROVIDER_BY_TOOL_TYPE: Record<string, string> = {
   gmail: 'google-email',
   gmail_v2: 'google-email',
   google_calendar: 'google-calendar',
+  google_calendar_v2: 'google-calendar',
   google_drive: 'google-drive',
   slack: 'slack',
 } as const
