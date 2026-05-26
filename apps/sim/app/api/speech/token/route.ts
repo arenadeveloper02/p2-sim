@@ -5,9 +5,9 @@ import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
-import { recordUsage } from '@/lib/billing/core/usage-log'
+import { recordUsage } from '@/lib/billing/core/record-usage-wrapper'
 import { env } from '@/lib/core/config/env'
-import { getCostMultiplier, isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { RateLimiter } from '@/lib/core/rate-limiter'
 import { validateAuthToken } from '@/lib/core/security/deployment'
 import { getClientIp } from '@/lib/core/utils/request'
@@ -158,7 +158,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             category: 'fixed',
             source: 'voice-input',
             description: `Voice input session (${maxMinutes} min)`,
-            cost: sessionCost * getCostMultiplier(),
+            cost: sessionCost,
           },
         ],
       }).catch((err) => {

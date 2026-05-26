@@ -8,6 +8,103 @@ import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 
 const logger = createLogger('UsageLog')
 
+export interface UsageCostLogContext {
+  userId?: string
+  workspaceId?: string
+  workflowId?: string
+  executionId?: string
+}
+
+function parsePositiveNumber(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === '') {
+    return null
+  }
+  const parsed = typeof raw === 'number' ? raw : Number.parseFloat(String(raw).trim())
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null
+  }
+  return parsed
+}
+
+/** Reads USAGE_LOG_COST_MULTIPLIER from process.env (reliable in Next.js server). */
+export function getUsageLogCostMultiplier(): number {
+  const raw =
+    process.env.USAGE_LOG_COST_MULTIPLIER ?? process.env.COST_MULTIPLIER ?? undefined
+  return parsePositiveNumber(raw) ?? 1
+}
+
+export function scaleUsageLogCost(cost: number): number {
+  if (cost <= 0) {
+    return cost
+  }
+  const multiplier = getUsageLogCostMultiplier()
+  return multiplier === 1 ? cost : cost * multiplier
+}
+
+function scaleUsageEntry<T extends UsageEntry>(entry: T, multiplier: number): T {
+  const scaledCost = multiplier === 1 ? entry.cost : entry.cost * multiplier
+
+  if (!entry.metadata || typeof entry.metadata !== 'object' || Array.isArray(entry.metadata)) {
+    return { ...entry, cost: scaledCost }
+  }
+
+  const metadata = entry.metadata as ModelUsageMetadata
+  if (metadata.toolCost != null && metadata.toolCost > 0) {
+    return {
+      ...entry,
+      cost: scaledCost,
+      metadata: {
+        ...metadata,
+        toolCost: multiplier === 1 ? metadata.toolCost : metadata.toolCost * multiplier,
+      },
+    }
+  }
+
+  return { ...entry, cost: scaledCost }
+}
+
+function logUsageCostBreakdown(params: {
+  context: UsageCostLogContext
+  multiplier: number
+  rawEntries: UsageEntry[]
+  scaledEntries: UsageEntry[]
+}): void {
+  const { context, multiplier, rawEntries, scaledEntries } = params
+
+  const lineItems = rawEntries.map((raw, index) => {
+    const scaled = scaledEntries[index]
+    return {
+      label: [raw.source, raw.category, raw.description].filter(Boolean).join('/'),
+      costBefore: raw.cost,
+      costAfter: scaled?.cost ?? raw.cost,
+    }
+  })
+
+  logger.info('Usage billing cost breakdown', {
+    ...context,
+    multiplier,
+    envUsageLogCostMultiplier: process.env.USAGE_LOG_COST_MULTIPLIER,
+    envCostMultiplier: process.env.COST_MULTIPLIER,
+    totalCostBefore: rawEntries.reduce((sum, e) => sum + e.cost, 0),
+    totalCostAfter: scaledEntries.reduce((sum, e) => sum + e.cost, 0),
+    lineItems,
+  })
+}
+
+function scaleUsageLogCosts(entries: UsageEntry[], context: UsageCostLogContext): UsageEntry[] {
+  const multiplier = getUsageLogCostMultiplier()
+  const scaled = entries.map((entry) => scaleUsageEntry(entry, multiplier))
+
+  logUsageCostBreakdown({
+    context,
+    multiplier,
+    rawEntries: entries,
+    scaledEntries: scaled,
+  })
+
+  return scaled
+}
+
 /**
  * Usage log category types
  */
@@ -86,7 +183,13 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
     return
   }
 
-  const { userId, entries, workspaceId, workflowId, executionId, additionalStats } = params
+  const { userId, workspaceId, workflowId, executionId, additionalStats } = params
+  const entries = scaleUsageLogCosts(params.entries, {
+    userId,
+    workspaceId,
+    workflowId,
+    executionId,
+  })
 
   const validEntries = entries.filter((e) => e.cost > 0)
   const totalCost = validEntries.reduce((sum, e) => sum + e.cost, 0)
@@ -145,11 +248,20 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
     }
   })
 
-  logger.debug('Recorded usage', {
+  logger.info('Recorded usage to usage_log and user_stats', {
     userId,
-    totalCost,
+    workspaceId,
+    workflowId,
+    executionId,
+    totalCostAddedToUserStats: totalCost,
     entryCount: validEntries.length,
     sources: [...new Set(validEntries.map((e) => e.source))],
+    persistedCosts: validEntries.map((e) => ({
+      category: e.category,
+      source: e.source,
+      description: e.description,
+      cost: e.cost,
+    })),
   })
 }
 
