@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react'
+import { CLIENT_USER_CONDITION_KEY } from '@/lib/users/client-user-condition'
 import {
   buildCanonicalIndex,
   evaluateSubBlockCondition,
@@ -7,6 +8,7 @@ import {
   isSubBlockVisibleForMode,
 } from '@/lib/workflows/subblocks/visibility'
 import type { BlockConfig, SubBlockConfig, SubBlockType } from '@/blocks/types'
+import { useIsClientUser } from '@/hooks/use-is-client-user'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useReactiveConditions } from '@/hooks/use-reactive-conditions'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff'
@@ -39,6 +41,7 @@ export function useEditorSubblockLayout(
     useCallback((state) => state.blocks?.[blockId]?.data, [blockId])
   )
   const { config: permissionConfig } = usePermissionConfig()
+  const isClientUser = useIsClientUser()
 
   // Evaluate reactive conditions (hooks-based, must be called before useMemo)
   const hiddenByReactiveCondition = useReactiveConditions(
@@ -117,6 +120,8 @@ export function useEditorSubblockLayout(
       rawValues.__canonicalModes = canonicalModeOverrides
     }
 
+    rawValues[CLIENT_USER_CONDITION_KEY] = isClientUser
+
     const visibleSubBlocks = (config.subBlocks || []).filter((block) => {
       if (block.hidden) return false
 
@@ -180,5 +185,6 @@ export function useEditorSubblockLayout(
     blockDataFromStore,
     hiddenByReactiveCondition,
     permissionConfig.disableSkills,
+    isClientUser,
   ])
 }

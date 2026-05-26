@@ -21,6 +21,7 @@ export interface UserProfile {
   image: string | null
   createdAt: string
   updatedAt: string
+  userType: string | null
 }
 
 /**
@@ -35,6 +36,7 @@ export function mapUserProfileResponse(user: Record<string, unknown>): UserProfi
     image: (user.image as string) || null,
     createdAt: user.createdAt as string,
     updatedAt: user.updatedAt as string,
+    userType: typeof user.userType === 'string' ? user.userType : null,
   }
 }
 

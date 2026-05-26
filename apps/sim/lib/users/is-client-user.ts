@@ -1,4 +1,4 @@
-import { env } from '@/lib/core/config/env'
+import { env, getEnv } from '@/lib/core/config/env'
 
 /** Arena `user_arena_details.user_type` value for external / client stakeholders. */
 export const CLIENT_STAKEHOLDER_USER_TYPE = 'client_stakeholder' as const
@@ -31,7 +31,10 @@ function normalizeDomain(domain: string): string {
  * Used only when `userType` is absent and `userTypeOnly` is false.
  */
 function getInternalUserDomains(): string[] {
-  const raw = env.INTERNAL_USER_DOMAINS
+  const raw =
+    typeof window !== 'undefined'
+      ? getEnv('NEXT_PUBLIC_INTERNAL_USER_DOMAINS') || env.INTERNAL_USER_DOMAINS
+      : env.INTERNAL_USER_DOMAINS
   if (!raw) return []
   return raw.split(',').map(normalizeDomain).filter(Boolean)
 }

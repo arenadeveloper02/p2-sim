@@ -25,8 +25,8 @@ import {
   parseProvider,
 } from '@/lib/oauth'
 import { getScopeDescription } from '@/lib/oauth/utils'
-import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { useCreateCredentialDraft } from '@/hooks/queries/credentials'
+import { useIsClientUser } from '@/hooks/use-is-client-user'
 
 const logger = createLogger('OAuthModal')
 const EMPTY_SCOPES: string[] = []
@@ -59,7 +59,7 @@ type OAuthModalConnectProps = OAuthModalBaseProps & {
   mode: 'connect'
   workspaceId: string
   credentialCount: number
-  /** Pre-fill from LinkedIn (Unipile) block when connecting in a client workspace. */
+  /** Pre-fill from LinkedIn (Unipile) block when connecting as a client user. */
   initialUnipileApiKey?: string
 } & (
     | { workflowId: string; knowledgeBaseId?: never; connectorType?: never }
@@ -91,6 +91,7 @@ export function OAuthModal(props: OAuthModalProps) {
   const onConnectOverride = !isConnect ? props.onConnect : undefined
 
   const { data: session } = useSession()
+  const isClientUser = useIsClientUser()
   const [error, setError] = useState<string | null>(null)
   const createDraft = useCreateCredentialDraft()
 
@@ -118,8 +119,7 @@ export function OAuthModal(props: OAuthModalProps) {
   )
   const initialUnipileApiKey = isConnect ? (props.initialUnipileApiKey ?? '') : ''
   const [unipileApiKey, setUnipileApiKey] = useState(initialUnipileApiKey)
-  const needsUnipileApiKey =
-    providerId === 'unipile_linkedin' && isConnect && !isAdminWorkspace(workspaceId)
+  const needsUnipileApiKey = providerId === 'unipile_linkedin' && isConnect && isClientUser
 
   const newScopesSet = useMemo(
     () =>

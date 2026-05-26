@@ -58,9 +58,10 @@ export async function createUnipileHostedAuthLink(
   params: CreateUnipileHostedAuthLinkParams
 ): Promise<CreateUnipileHostedAuthLinkResult> {
   const reconnectAccountId = params.reconnectExternalAccountId?.trim() || null
-  const apiKey = resolveUnipileApiKey({
+  const apiKey = await resolveUnipileApiKey({
     workspaceId: params.workspaceId,
     unipileApiKey: params.unipileApiKey,
+    userId: params.userId,
   })
   const baseUrl = UNIPILE_BASE_URL.replace(/\/$/, '')
   const appBase = env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')

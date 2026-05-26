@@ -11,6 +11,7 @@ import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
 import { clearExecutionCancellation } from '@/lib/execution/cancellation'
 import type { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
+import { lookupIsClientUserForUserId } from '@/lib/users/lookup-client-user'
 import {
   loadDeployedWorkflowState,
   loadWorkflowFromNormalizedTables,
@@ -673,12 +674,15 @@ export async function executeWorkflowCore(
       }
     }
 
+    const isClientUserFlag = userId ? await lookupIsClientUserForUserId(userId) : false
+
     const contextExtensions: ContextExtensions = {
       stream: !!onStream,
       selectedOutputs,
       executionId,
       workspaceId: providedWorkspaceId,
       userId,
+      isClientUser: isClientUserFlag,
       isDeployedContext: !metadata.isClientSession,
       enforceCredentialAccess: metadata.enforceCredentialAccess ?? false,
       onBlockStart: wrappedOnBlockStart,

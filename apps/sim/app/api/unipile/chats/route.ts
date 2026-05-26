@@ -30,7 +30,11 @@ export async function GET(request: NextRequest) {
 
   let apiKey: string
   try {
-    apiKey = resolveUnipileApiKeyFromSearchParams(request.nextUrl.searchParams)
+    const searchParams = new URLSearchParams(request.nextUrl.searchParams)
+    if (!searchParams.get('userId') && auth.userId) {
+      searchParams.set('userId', auth.userId)
+    }
+    apiKey = await resolveUnipileApiKeyFromSearchParams(searchParams)
   } catch (keyError) {
     const message =
       keyError instanceof Error ? keyError.message : 'UNIPILE_API_KEY is not configured'

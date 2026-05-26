@@ -9,6 +9,7 @@ export interface DeleteUnipileExternalAccountParams {
   externalAccountId: string
   workspaceId?: string | null
   unipileApiKey?: string | null
+  userId?: string | null
 }
 
 export class UnipileDeleteAccountError extends Error {
@@ -35,9 +36,10 @@ export async function deleteUnipileExternalAccount(
 
   let apiKey: string
   try {
-    apiKey = resolveUnipileApiKey({
+    apiKey = await resolveUnipileApiKey({
       workspaceId: params.workspaceId,
       unipileApiKey: params.unipileApiKey,
+      userId: params.userId,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unipile API key is not configured'

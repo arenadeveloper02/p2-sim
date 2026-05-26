@@ -9,6 +9,7 @@ export interface ReconnectUnipileExternalAccountParams {
   externalAccountId: string
   workspaceId?: string | null
   unipileApiKey?: string | null
+  userId?: string | null
   /** Provider-specific reconnect payload (e.g. `{ provider: 'LINKEDIN', username, password }`). */
   body: Record<string, unknown>
 }
@@ -43,9 +44,10 @@ export async function reconnectUnipileExternalAccount(
 
   let apiKey: string
   try {
-    apiKey = resolveUnipileApiKey({
+    apiKey = await resolveUnipileApiKey({
       workspaceId: params.workspaceId,
       unipileApiKey: params.unipileApiKey,
+      userId: params.userId,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unipile API key is not configured'

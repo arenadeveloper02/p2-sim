@@ -74,7 +74,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       accountRowId: accountId,
     })
 
-    await unlinkUnipileAccountsFromProvider(accountsToRemove)
+    await unlinkUnipileAccountsFromProvider(accountsToRemove, { userId })
 
     if (accountId) {
       await db.delete(account).where(and(eq(account.userId, userId), eq(account.id, accountId)))

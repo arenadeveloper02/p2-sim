@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   let body: unknown
   try {
     body = await request.json()
-    apiKey = resolveUnipileApiKeyFromRequestBody(body)
+    apiKey = await resolveUnipileApiKeyFromRequestBody(body)
   } catch (keyError) {
     const message =
       keyError instanceof Error ? keyError.message : 'Unipile API key is not configured'

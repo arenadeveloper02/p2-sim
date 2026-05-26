@@ -6,7 +6,7 @@ export const unipileApiKeyToolParam = {
     required: false,
     visibility: 'user-only',
     description:
-      'Unipile API key for client workspaces. Admin workspaces use UNIPILE_API_KEY from the server environment.',
+      'Unipile API key for client users. Internal users use UNIPILE_API_KEY from the server environment.',
   },
 } as const satisfies ToolConfig['params']
 
@@ -21,6 +21,12 @@ export function attachUnipileInternalContext(
   const result = { ...payload }
   if (ctx?.workspaceId) {
     result.workspaceId = ctx.workspaceId
+  }
+  if (ctx?.userId) {
+    result.userId = ctx.userId
+  }
+  if (typeof ctx?.isClientUser === 'boolean') {
+    result.isClientUser = ctx.isClientUser
   }
   const key = typeof params.unipileApiKey === 'string' ? params.unipileApiKey.trim() : ''
   if (key) {

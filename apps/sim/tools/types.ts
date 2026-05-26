@@ -29,6 +29,8 @@ export type WorkflowToolExecutionContext = {
   workflowId?: string
   executionId?: string
   userId?: string
+  /** When true, Unipile tools require `unipileApiKey` from the block instead of deployment env. */
+  isClientUser?: boolean
 }
 
 export type OutputType =

@@ -177,6 +177,7 @@ export interface ExecutionContext {
   workspaceId?: string
   executionId?: string
   userId?: string
+  isClientUser?: boolean
   isDeployedContext?: boolean
   enforceCredentialAccess?: boolean
   copilotToolExecution?: boolean

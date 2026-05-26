@@ -270,6 +270,7 @@ export class DAGExecutor {
       workspaceId: this.contextExtensions.workspaceId,
       executionId: this.contextExtensions.executionId,
       userId: this.contextExtensions.userId,
+      isClientUser: this.contextExtensions.isClientUser,
       isDeployedContext: this.contextExtensions.isDeployedContext,
       enforceCredentialAccess: this.contextExtensions.enforceCredentialAccess,
       blockStates: state.getBlockStates(),

@@ -75,7 +75,8 @@ async function resolveWorkspaceIdForAccountRow(accountRowId: string): Promise<st
  * Calls Unipile `DELETE /api/v1/accounts/{id}` for each LinkedIn (Unipile) row before local DB delete.
  */
 export async function unlinkUnipileAccountsFromProvider(
-  rows: AccountRowToDisconnect[]
+  rows: AccountRowToDisconnect[],
+  options?: { userId?: string; unipileApiKey?: string | null }
 ): Promise<void> {
   for (const row of rows) {
     if (row.providerId !== UNIPILE_LINKEDIN_PROVIDER_ID) {
@@ -87,6 +88,8 @@ export async function unlinkUnipileAccountsFromProvider(
       await deleteUnipileExternalAccount({
         externalAccountId: row.externalUnipileAccountId,
         workspaceId,
+        userId: options?.userId,
+        unipileApiKey: options?.unipileApiKey,
       })
     } catch (error) {
       logger.error('Failed to unlink Unipile account before local disconnect', {

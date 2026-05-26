@@ -1,11 +1,18 @@
 import { resolveUnipileApiKey } from '@/lib/unipile/resolve-api-key'
 
 /**
- * Reads optional `workspaceId` and `unipileApiKey` from URL search params (block editor pickers).
+ * Reads optional `unipileApiKey`, `isClientUser`, and `userId` from URL search params (block editor pickers).
  */
-export function resolveUnipileApiKeyFromSearchParams(searchParams: URLSearchParams): string {
+export async function resolveUnipileApiKeyFromSearchParams(
+  searchParams: URLSearchParams
+): Promise<string> {
+  const isClientUserRaw = searchParams.get('isClientUser')
+  const isClientUser =
+    isClientUserRaw === 'true' ? true : isClientUserRaw === 'false' ? false : undefined
+
   return resolveUnipileApiKey({
-    workspaceId: searchParams.get('workspaceId') ?? undefined,
     unipileApiKey: searchParams.get('unipileApiKey') ?? undefined,
+    isClientUser,
+    userId: searchParams.get('userId') ?? undefined,
   })
 }

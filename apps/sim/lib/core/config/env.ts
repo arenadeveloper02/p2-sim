@@ -433,6 +433,7 @@ export const env = createEnv({
   client: {
     // Core Application URLs - Required for frontend functionality
     NEXT_PUBLIC_APP_URL:                   z.string().url(),                       // Base URL of the application (e.g., https://www.sim.ai)
+    NEXT_PUBLIC_INTERNAL_USER_DOMAINS:     z.string().optional(),                  // Client-side mirror of INTERNAL_USER_DOMAINS for editor isClientUser checks
 
     // Client-side Services
     NEXT_PUBLIC_SOCKET_URL:                z.string().url().optional(),            // WebSocket server URL for real-time features
@@ -547,6 +548,7 @@ export const env = createEnv({
     NEXT_PUBLIC_FIRECRAWL_API_KEY: process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY,
     NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS: process.env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS,
     NEXT_PUBLIC_ADMIN_WORKSPACE_IDS: process.env.NEXT_PUBLIC_ADMIN_WORKSPACE_IDS,
+    NEXT_PUBLIC_INTERNAL_USER_DOMAINS: process.env.NEXT_PUBLIC_INTERNAL_USER_DOMAINS,
     NEXT_PUBLIC_MIX_PANEL_TOKEN: process.env.NEXT_PUBLIC_MIX_PANEL_TOKEN,
   },
 })

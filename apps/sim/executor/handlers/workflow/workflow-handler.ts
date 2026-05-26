@@ -175,6 +175,7 @@ export class WorkflowBlockHandler implements BlockHandler {
           enforceCredentialAccess: ctx.enforceCredentialAccess,
           workspaceId: ctx.workspaceId,
           userId: ctx.userId,
+          isClientUser: ctx.isClientUser,
           executionId: ctx.executionId,
           metadata: ctx.metadata as ExecutionMetadata | undefined,
           abortSignal: ctx.abortSignal,

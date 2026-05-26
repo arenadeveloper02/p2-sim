@@ -1,8 +1,5 @@
 import { UnipileIcon } from '@/components/icons'
-import {
-  isAdminWorkspace,
-  resolveWorkspaceIdForAdminCheck,
-} from '@/lib/workspaces/is-admin-workspace'
+import { clientUserOnlyCondition } from '@/lib/users/client-user-condition'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
@@ -12,17 +9,6 @@ import { getLinkedinSearchParameterTypeDropdownOptions } from '@/tools/unipile/l
 import type { UnipileResponse } from '@/tools/unipile/types'
 
 /** Normalizes attendees to a de-duplicated string array for Unipile `attendees_ids`. */
-const UNIPILE_COND_NEVER = '__unipile_cond_never__'
-
-/** Show Unipile API key field (client workspaces only; admin uses deployment env). */
-function unipileClientOnlyCondition(values?: Record<string, unknown>) {
-  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
-  if (isAdmin) {
-    return { field: 'operation', value: UNIPILE_COND_NEVER }
-  }
-  return { field: 'operation', value: UNIPILE_COND_NEVER, not: true as const }
-}
-
 function withUnipileApiKey(
   params: Record<string, unknown>,
   out: Record<string, unknown>
@@ -200,9 +186,9 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
   docsLink: 'https://developer.unipile.com/reference/',
   authMode: AuthMode.OAuth,
   bestPractices:
-    'Admin workspaces use the deployment `UNIPILE_API_KEY` (like Semrush). Client workspaces must enter their Unipile API key on this block before connecting LinkedIn or running operations—do not assume `UNIPILE_API_KEY` env for client users.',
+    'Internal users use the deployment `UNIPILE_API_KEY`. Client users must enter their Unipile API key on this block before connecting LinkedIn or running operations.',
   longDescription:
-    'Connect your LinkedIn account via Unipile hosted authentication, then run operations. Admin workspaces use `UNIPILE_API_KEY` from the deployment environment; client workspaces enter their own Unipile API key on this block. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
+    'Connect your LinkedIn account via Unipile hosted authentication, then run operations. Internal users use `UNIPILE_API_KEY` from the deployment environment; client users enter their own Unipile API key on this block. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
   category: 'tools',
   integrationType: IntegrationType.Communication,
   tags: ['messaging', 'sales-engagement'],
@@ -238,8 +224,8 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       password: true,
       placeholder: 'Unipile API key (X-API-KEY)',
       description:
-        'Your Unipile API key. Required for client workspaces; admin workspaces use the server environment variable instead.',
-      condition: unipileClientOnlyCondition,
+        'Your Unipile API key. Required for client users; internal users use the server environment variable instead.',
+      condition: clientUserOnlyCondition,
     },
     {
       id: 'operation',
@@ -1551,7 +1537,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
   inputs: {
     unipileApiKey: {
       type: 'string',
-      description: 'Unipile API key (X-API-KEY) for client workspaces.',
+      description: 'Unipile API key (X-API-KEY) for client users.',
     },
     operation: { type: 'string', description: 'Operation to perform' },
     identifier: {
