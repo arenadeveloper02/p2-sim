@@ -7,6 +7,8 @@ import {
   createParamSchema,
   formatRequestParams,
   getClientEnvVars,
+  getLatestVersionTools,
+  resolveToolId,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
 import { executeRequest } from '@/tools/utils.server'
@@ -657,6 +659,35 @@ describe('getClientEnvVars', () => {
     const result = getClientEnvVars()
 
     expect(result).toEqual({})
+  })
+})
+
+describe('resolveToolId', () => {
+  it('resolves stripped names to the latest version in a tool family', () => {
+    expect(resolveToolId('google_sheets_write')).toBe('google_sheets_write_v2')
+    expect(resolveToolId('notion_search')).toBe('notion_search_v2')
+  })
+
+  it('returns unknown tool ids unchanged', () => {
+    expect(resolveToolId('nonexistent_tool_xyz')).toBe('nonexistent_tool_xyz')
+  })
+})
+
+describe('getLatestVersionTools', () => {
+  it('keeps only the highest version per base name', () => {
+    const toolsMap = {
+      google_sheets_write: { id: 'google_sheets_write' },
+      google_sheets_write_v2: { id: 'google_sheets_write_v2' },
+      notion_search: { id: 'notion_search' },
+      notion_search_v2: { id: 'notion_search_v2' },
+      standalone_tool: { id: 'standalone_tool' },
+    } as Record<string, { id: string }>
+
+    const latest = getLatestVersionTools(toolsMap as any)
+
+    expect(Object.keys(latest).sort()).toEqual(
+      ['google_sheets_write_v2', 'notion_search_v2', 'standalone_tool'].sort()
+    )
   })
 })
 

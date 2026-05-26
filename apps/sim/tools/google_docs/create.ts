@@ -10,21 +10,112 @@ const DOC_MIME_TYPE = 'application/vnd.google-apps.document'
 /**
  * Reduce unsupported markdown/HTML/GFM features before sending `text/markdown` to Drive
  * so imports are less likely to error or lose content unexpectedly.
+ *
+ * Conversion strategy:
+ *  - Unsupported syntax is converted to the nearest Drive-supported markdown equivalent
+ *    rather than being stripped, so content and intent are preserved.
+ *  - HTML tags that Drive's importer handles natively (<u>, <br>) are left as-is.
+ *  - Only tags Drive cannot handle (details, summary) are unwrapped to plain text.
+ *
+ * The following markdown/GFM features are NOT supported by Drive's text/markdown importer
+ * and are handled as described:
+ *
+ *  NOT SUPPORTED — Converted to nearest equivalent:
+ *  ─────────────────────────────────────────────────
+ *  ==highlight==          → **bold**         (Drive has no highlight; bold is closest emphasis)
+ *  [^1] footnotes         → *(1: text)*      (inlined as italic parenthetical at reference point)
+ *  YAML frontmatter       → *key: value*     (each line italicised, followed by ---)
+ *  ![alt](url) images     → [alt](url)       (Drive cannot embed images; URL preserved as link)
+ *  <img src="...">        → [alt](url)       (same as above for HTML img tags)
+ *  > [!NOTE/WARNING/TIP]  → > **NOTE:**      (GFM callout alerts → bold-label blockquote)
+ *  <details>/<summary>    → inner text       (unwrapped to preserve content)
+ *
+ *  NOT SUPPORTED — No equivalent, silently broken if left in:
+ *  ─────────────────────────────────────────────────────────
+ *  ~~strikethrough~~                  (Drive may or may not render; behaviour inconsistent)
+ *  Nested blockquotes (>>> level 3+)  (Drive flattens to a single blockquote level)
+ *  Definition lists (term\n: def)     (not CommonMark; Drive ignores entirely)
+ *  Task lists (- [ ] / - [x])         (rendered as plain list items, checkbox lost)
+ *  Emoji shortcodes (:smile:)         (not converted; renders as raw :smile: text)
+ *  Superscript/subscript (^x^, ~x~)  (not supported; renders as raw syntax)
+ *  Inline math ($x^2$)               (not supported; renders as raw LaTeX)
+ *  Block math ($$...$$)              (not supported; renders as raw LaTeX)
+ *  Custom HTML attributes            (e.g. {.class #id} — ignored by Drive's parser)
+ *  Multi-line table cells            (Drive only supports single-line cell content)
+ *  Indented code blocks (4 spaces)   (Drive prefers fenced ``` blocks; indented may not render)
+ *  HTML comments (<!-- -->)          (not stripped; may appear as visible text in the doc)
+ *
+ *  SUPPORTED NATIVELY — Left as-is:
+ *  ─────────────────────────────────
+ *  # Headings (h1–h6)
+ *  **bold**, *italic*, ***bold italic***
+ *  `inline code`, ``` fenced code blocks ```
+ *  [links](url)
+ *  > blockquotes (single level)
+ *  - / * / + unordered lists
+ *  1. ordered lists
+ *  --- horizontal rules
+ *  GFM tables (single-line cells)
+ *  <u>underline</u>, <br> line breaks (Drive handles these HTML tags natively)
  */
 function sanitizeMarkdownForDrive(content: string): string {
-  return content
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[$1]($2)')
-    .replace(
-      /<img[^>]+src="([^"]+)"[^>]*(?:alt="([^"]*)")?[^>]*\/?>/gi,
-      (_, src, alt) => `[${alt || 'Image'}](${src})`
-    )
-    .replace(/^---[\s\S]*?---\n/, '')
-    .replace(/==([^=]+)==/g, '$1')
-    .replace(/^\[\^[^\]]+\]:.*$/gm, '')
-    .replace(/\[\^[^\]]+\]/g, '')
-    .replace(/^> \[!(NOTE|WARNING|TIP|IMPORTANT)\]/gm, '> **$1:**')
-    .replace(/<(u|kbd|sup|sub|br|details|summary|div|p|h[1-6])[^>]*>([\s\S]*?)<\/\1>/gi, '$2')
-    .replace(/<(br|img)[^>]*\/?>/gi, '')
+  // --- FOOTNOTES ---
+  // Collect all footnote definitions (e.g. [^1]: some text) into a map
+  // so we can inline them at their reference points below.
+  // The definitions themselves are removed from the content.
+  const footnotes: Record<string, string> = {}
+  content = content.replace(/^\[\^([^\]]+)\]:\s*(.+)$/gm, (_, id, text) => {
+    footnotes[id] = text.trim()
+    return ''
+  })
+
+  // Replace each footnote reference (e.g. [^1]) with an inline italic parenthetical
+  // e.g. [^1] → *(1: footnote text)* — readable in Google Docs without raw syntax
+  content = content.replace(/\[\^([^\]]+)\]/g, (_, id) =>
+    footnotes[id] ? ` *(${id}: ${footnotes[id]})*` : `*(${id})*`
+  )
+
+  return (
+    content
+      // --- HIGHLIGHT SYNTAX ---
+      // ==text== is not in the CommonMark spec and Drive ignores it, leaving raw ==.
+      // Convert to bold (**text**) as the closest supported visual emphasis.
+      .replace(/==([^=]+)==/g, '**$1**')
+
+      // --- YAML FRONTMATTER ---
+      // Drive renders frontmatter as raw text. Convert each key: value line to italic
+      // so metadata is visible and readable, followed by a horizontal rule separator.
+      .replace(/^---\n([\s\S]*?)\n---\n/, (_, block) => {
+        const lines = block
+          .split('\n')
+          .map((l: string) => `*${l}*`)
+          .join('\n')
+        return `${lines}\n\n---\n`
+      })
+
+      // --- MARKDOWN IMAGES ---
+      // Drive does not embed images from markdown syntax.
+      // Convert ![alt](url) to a plain link [alt](url) so the URL is not silently lost.
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[$1]($2)')
+
+      // --- HTML IMAGES ---
+      // Same as above for <img> tags — convert to a markdown link to preserve the URL.
+      .replace(
+        /<img[^>]+src="([^"]+)"[^>]*(?:alt="([^"]*)")?[^>]*\/?>/gi,
+        (_, src, alt) => `[${alt || 'Image'}](${src})`
+      )
+
+      // --- UNSUPPORTED HTML TAGS ---
+      // <details> and <summary> are not supported by Drive's importer.
+      // Unwrap them to preserve the inner text rather than stripping it entirely.
+      // Note: <u> and <br> are intentionally left alone — Drive handles them natively.
+      .replace(/<(details|summary)[^>]*>([\s\S]*?)<\/\1>/gi, '$2')
+
+      // --- GFM CALLOUT ALERTS ---
+      // GitHub-flavoured > [!NOTE] / [!WARNING] etc. are not recognised by Drive.
+      // Convert to a bold label inside a standard blockquote, which Drive renders cleanly.
+      .replace(/> \[!(NOTE|WARNING|TIP|IMPORTANT)\]/gm, '> **$1:**')
+  )
 }
 
 /**
@@ -58,7 +149,8 @@ function shouldUseMarkdownUpload(params: GoogleDocsToolParams): boolean {
 export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateResponse> = {
   id: 'google_docs_create',
   name: 'Create Google Docs Document',
-  description: 'Create a new Google Docs document',
+  description:
+    'Create a new Google Docs document. Supports GitHub Flavored Markdown (GFM) in content — pass markdown directly and Google Drive converts it to formatted doc text (headings, bold, tables, lists, code blocks, horizontal rules). Use this to store or import markdown files. When content comes from read(), pass the GFM verbatim without rewriting.',
   version: '1.0',
 
   oauth: {
@@ -83,7 +175,8 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'The content of the document to create',
+      description:
+        'Document body as GitHub Flavored Markdown (GFM). Supported: # headings, **bold**, *italic*, | tables |, --- rules, - lists, > blockquotes, ``` code blocks ```, links, and emoji. Pass markdown directly to store or import it — Drive converts GFM to Google Doc formatting. When importing from read(), paste the exact GFM output unchanged.',
     },
     folderId: {
       type: 'string',
