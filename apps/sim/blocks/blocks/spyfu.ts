@@ -19,13 +19,12 @@ import type { SpyfuResponse } from '@/tools/spyfu/types'
 
 const SPYFU_COND_NEVER = '__spyfu_cond_never__'
 
-/** Show SpyFu API credential fields (admin workspaces only). */
 function spyfuAdminOnlyCondition(values?: Record<string, unknown>) {
   const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
   if (isAdmin) {
-    return { field: 'operationId', value: SPYFU_COND_NEVER, not: true as const }
+    return { field: 'operationId', value: SPYFU_COND_NEVER }
   }
-  return { field: 'operationId', value: SPYFU_COND_NEVER }
+  return { field: 'operationId', value: SPYFU_COND_NEVER, not: true as const }
 }
 
 export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
