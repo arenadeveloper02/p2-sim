@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { ttsToolContract } from '@/lib/api/contracts/tools/media/tts'
@@ -34,8 +35,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     )
     if (!parsed.success) return parsed.response
 
-    const { text, voiceId, apiKey, modelId, workspaceId, workflowId, executionId } =
-      parsed.data.body
+    const {
+      text,
+      voiceId,
+      apiKey,
+      modelId,
+      stability,
+      similarityBoost,
+      workspaceId,
+      workflowId,
+      executionId,
+    } = parsed.data.body
 
     const voiceIdValidation = validateAlphanumericId(voiceId, 'voiceId', 255)
     if (!voiceIdValidation.isValid) {
@@ -56,6 +66,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const endpoint = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`
 
+    const hasVoiceSetting = stability !== undefined || similarityBoost !== undefined
+    const voiceSettings = hasVoiceSetting
+      ? {
+          stability: stability ?? 0.5,
+          similarity_boost: similarityBoost ?? 0.75,
+        }
+      : undefined
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -66,6 +84,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       body: JSON.stringify({
         text,
         model_id: modelId,
+        ...(voiceSettings ? { voice_settings: voiceSettings } : {}),
       }),
       signal: AbortSignal.timeout(DEFAULT_EXECUTION_TIMEOUT_MS),
     })
@@ -139,7 +158,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json(
       {
-        error: `Internal Server Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Internal Server Error: ${getErrorMessage(error, 'Unknown error')}`,
       },
       { status: 500 }
     )

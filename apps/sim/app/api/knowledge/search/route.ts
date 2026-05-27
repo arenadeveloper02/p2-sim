@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { knowledgeBase } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -383,7 +384,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         }
       } catch (error) {
         logger.warn(`[${requestId}] Reranker failed; falling back to vector ordering`, {
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: getErrorMessage(error, 'Unknown error'),
           model: rerankerModel,
           candidateCount,
           workspaceId,
@@ -405,7 +406,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         cost = calculateCost(queryEmbeddingModel, tokenCount.count, 0, false)
       } catch (error) {
         logger.warn(`[${requestId}] Failed to calculate cost for search query`, {
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: getErrorMessage(error, 'Unknown error'),
         })
       }
     }
@@ -551,7 +552,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json(
       {
         error: 'Failed to perform vector search',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: getErrorMessage(error, 'Unknown error'),
       },
       { status: 500 }
     )

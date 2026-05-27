@@ -69,8 +69,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
     VERCEL_TELEMETRY_DISABLED=1 \
     DOCKER_BUILD=1
 
-# Provide dummy database URLs during image build so server code that imports @sim/db
-# can be evaluated without crashing. Runtime environments should override these.
+# Dummy values so next build can evaluate modules. Override at runtime.
 ARG DATABASE_URL="postgresql://user:pass@localhost:5432/dummy"
 ENV DATABASE_URL=${DATABASE_URL}
 

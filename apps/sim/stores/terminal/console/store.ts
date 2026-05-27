@@ -577,6 +577,14 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
                 : normalizeConsoleOutput(mergedOutput)
           }
 
+          if (update.blockName !== undefined) {
+            updatedEntry.blockName = update.blockName
+          }
+
+          if (update.blockType !== undefined) {
+            updatedEntry.blockType = update.blockType
+          }
+
           if (update.error !== undefined) {
             updatedEntry.error = normalizeConsoleError(update.error)
           }
@@ -675,7 +683,7 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
           .find((entry) => matchesEntryForUpdate(entry, blockId, executionId, update))
         notifyBlockError({
           error: update.error,
-          blockName: matchingEntry?.blockName || 'Unknown Block',
+          blockName: update.blockName || matchingEntry?.blockName || 'Unknown Block',
           workflowId: matchingEntry?.workflowId,
           logContext: { blockId },
         })

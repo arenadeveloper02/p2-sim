@@ -11,6 +11,7 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
 } from '@/components/emcn'
@@ -241,6 +242,9 @@ export function AddDocumentsModal({
     <Modal open={open} onOpenChange={handleOpenChange}>
       <ModalContent size='md'>
         <ModalHeader>New Documents</ModalHeader>
+        <ModalDescription className='sr-only'>
+          Upload files to add as documents to this knowledge base
+        </ModalDescription>
 
         <ModalBody>
           <div className='min-h-0 flex-1 overflow-y-auto'>

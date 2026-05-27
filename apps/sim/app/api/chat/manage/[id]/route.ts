@@ -3,6 +3,7 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { chat, workflowQueries } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { chatIdParamsSchema, updateChatContract } from '@/lib/api/contracts/chats'
@@ -20,10 +21,6 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
 const logger = createLogger('ChatDetailAPI')
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback
-}
 
 const sanitizeGoldenQueries = (queries?: string[]) => {
   if (!Array.isArray(queries)) return []

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { format } from 'date-fns'
 import { AlertCircle, Pencil, Plus, Tag, X } from 'lucide-react'
@@ -19,6 +20,7 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Tooltip,
@@ -83,12 +85,12 @@ const logger = createLogger('KnowledgeBase')
 const DOCUMENTS_PER_PAGE = 50
 
 const DOCUMENT_COLUMNS: ResourceColumn[] = [
-  { id: 'name', header: 'Name' },
-  { id: 'size', header: 'Size' },
-  { id: 'tokens', header: 'Tokens' },
-  { id: 'chunks', header: 'Chunks' },
+  { id: 'name', header: 'Name', widthMultiplier: 0.8 },
+  { id: 'size', header: 'Size', widthMultiplier: 0.75 },
+  { id: 'tokens', header: 'Tokens', widthMultiplier: 0.75 },
+  { id: 'chunks', header: 'Chunks', widthMultiplier: 0.75 },
   { id: 'uploaded', header: 'Uploaded' },
-  { id: 'status', header: 'Status' },
+  { id: 'status', header: 'Status', widthMultiplier: 0.75 },
   { id: 'tags', header: 'Tags' },
 ]
 
@@ -467,8 +469,7 @@ export function KnowledgeBase({
           logger.error('Error retrying document:', err)
           updateDocument(docId, {
             processingStatus: 'failed',
-            processingError:
-              err instanceof Error ? err.message : 'Failed to retry document processing',
+            processingError: getErrorMessage(err, 'Failed to retry document processing'),
           })
         },
       }
@@ -1182,7 +1183,7 @@ export function KnowledgeBase({
         <ModalContent size='sm'>
           <ModalHeader>Delete Knowledge Base</ModalHeader>
           <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
+            <ModalDescription className='text-[var(--text-secondary)]'>
               Are you sure you want to delete{' '}
               <span className='font-medium text-[var(--text-primary)]'>{knowledgeBaseName}</span>?
               <span className='text-[var(--text-error)]'>
@@ -1190,7 +1191,7 @@ export function KnowledgeBase({
                 {pagination.total === 1 ? '' : 's'} within it will be removed.
               </span>{' '}
               You can restore it from Recently Deleted in Settings.
-            </p>
+            </ModalDescription>
           </ModalBody>
           <ModalFooter>
             <Button
@@ -1214,7 +1215,7 @@ export function KnowledgeBase({
             {(() => {
               const docToDelete = documents.find((doc) => doc.id === documentToDelete)
               return (
-                <p className='text-[var(--text-secondary)]'>
+                <ModalDescription className='text-[var(--text-secondary)]'>
                   Are you sure you want to delete{' '}
                   <span className='font-medium text-[var(--text-primary)]'>
                     {docToDelete?.filename ?? 'this document'}
@@ -1233,7 +1234,7 @@ export function KnowledgeBase({
                       This action cannot be undone.
                     </>
                   )}
-                </p>
+                </ModalDescription>
               )
             })()}
           </ModalBody>
@@ -1258,7 +1259,7 @@ export function KnowledgeBase({
         <ModalContent size='sm'>
           <ModalHeader>Delete Documents</ModalHeader>
           <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
+            <ModalDescription className='text-[var(--text-secondary)]'>
               Are you sure you want to delete {selectedDocuments.size} document
               {selectedDocuments.size === 1 ? '' : 's'}?{' '}
               <span className='text-[var(--text-error)]'>
@@ -1266,7 +1267,7 @@ export function KnowledgeBase({
                 {selectedDocuments.size === 1 ? '' : 's'}.
               </span>{' '}
               This action cannot be undone.
-            </p>
+            </ModalDescription>
           </ModalBody>
           <ModalFooter>
             <Button variant='default' onClick={() => setShowBulkDeleteModal(false)}>
@@ -1312,6 +1313,9 @@ export function KnowledgeBase({
       <Modal open={showConnectorsModal} onOpenChange={setShowConnectorsModal}>
         <ModalContent size='lg'>
           <ModalHeader>Connected Sources</ModalHeader>
+          <ModalDescription className='sr-only'>
+            Manage connected data sources for this knowledge base
+          </ModalDescription>
           <ModalBody>
             <ConnectorsSection
               workspaceId={workspaceId}

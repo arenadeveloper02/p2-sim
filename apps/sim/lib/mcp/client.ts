@@ -8,6 +8,7 @@
  * - Custom security/consent layer
  */
 
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import {
@@ -16,7 +17,10 @@ import {
   ToolListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
+import { McpOauthRedirectRequired } from '@/lib/mcp/oauth'
+import { createMcpPinnedFetch } from '@/lib/mcp/pinned-fetch'
 import {
   type McpClientOptions,
   McpConnectionError,
@@ -42,6 +46,7 @@ export class McpClient {
   private connectionStatus: McpConnectionStatus
   private securityPolicy: McpSecurityPolicy
   private onToolsChanged?: McpToolsChangedCallback
+  private authProvider?: McpClientOptions['authProvider']
   private isConnected = false
 
   private static readonly SUPPORTED_VERSIONS = [
@@ -50,34 +55,16 @@ export class McpClient {
     '2024-11-05', // Initial stable release
   ]
 
-  /**
-   * Creates a new MCP client.
-   *
-   * Accepts either the legacy (config, securityPolicy?) signature
-   * or a single McpClientOptions object with an optional onToolsChanged callback.
-   */
-  constructor(config: McpServerConfig, securityPolicy?: McpSecurityPolicy)
-  constructor(options: McpClientOptions)
-  constructor(
-    configOrOptions: McpServerConfig | McpClientOptions,
-    securityPolicy?: McpSecurityPolicy
-  ) {
-    if ('config' in configOrOptions) {
-      this.config = configOrOptions.config
-      this.securityPolicy = configOrOptions.securityPolicy ?? {
-        requireConsent: true,
-        auditLevel: 'basic',
-        maxToolExecutionsPerHour: 1000,
-      }
-      this.onToolsChanged = configOrOptions.onToolsChanged
-    } else {
-      this.config = configOrOptions
-      this.securityPolicy = securityPolicy ?? {
-        requireConsent: true,
-        auditLevel: 'basic',
-        maxToolExecutionsPerHour: 1000,
-      }
+  constructor(options: McpClientOptions) {
+    this.config = options.config
+    this.securityPolicy = options.securityPolicy ?? {
+      requireConsent: true,
+      auditLevel: 'basic',
+      maxToolExecutionsPerHour: 1000,
     }
+    this.onToolsChanged = options.onToolsChanged
+    this.authProvider = options.authProvider
+    const resolvedIP = options.resolvedIP
 
     this.connectionStatus = { connected: false }
 
@@ -85,10 +72,14 @@ export class McpClient {
       throw new McpError('URL required for Streamable HTTP transport')
     }
 
+    if (this.config.authType === 'oauth' && this.authProvider == null) {
+      throw new McpError('OAuth MCP server requires an authProvider')
+    }
+    const useOauth = this.config.authType === 'oauth'
     this.transport = new StreamableHTTPClientTransport(new URL(this.config.url), {
-      requestInit: {
-        headers: this.config.headers,
-      },
+      authProvider: useOauth ? this.authProvider : undefined,
+      requestInit: { headers: this.config.headers },
+      ...(resolvedIP ? { fetch: createMcpPinnedFetch(resolvedIP) } : {}),
     })
 
     this.client = new Client(
@@ -131,9 +122,13 @@ export class McpClient {
         protocolVersion: serverVersion,
       })
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      this.connectionStatus.lastError = errorMessage
       this.isConnected = false
+      if (error instanceof McpOauthRedirectRequired || error instanceof UnauthorizedError) {
+        this.connectionStatus.lastError = undefined
+        throw error
+      }
+      const errorMessage = getErrorMessage(error, 'Unknown error')
+      this.connectionStatus.lastError = errorMessage
       logger.error(`Failed to connect to MCP server ${this.config.name}:`, error)
       throw new McpConnectionError(errorMessage, this.config.name)
     }

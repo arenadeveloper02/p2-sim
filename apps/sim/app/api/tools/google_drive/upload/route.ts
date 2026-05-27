@@ -1,4 +1,6 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
+import { generateShortId } from '@sim/utils/id'
 import { type NextRequest, NextResponse } from 'next/server'
 import { googleDriveUploadContract } from '@/lib/api/contracts/tools/google'
 import { parseRequest } from '@/lib/api/server'
@@ -247,7 +249,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       metadata.parents = [parentFolderId]
     }
 
-    const boundary = `boundary_${Date.now()}_${Math.random().toString(36).substring(7)}`
+    const boundary = `boundary_${Date.now()}_${generateShortId(7)}`
 
     const multipartBody = buildMultipartBody(metadata, fileBuffer, uploadMimeType, boundary)
 
@@ -356,7 +358,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
+        error: getErrorMessage(error, 'Internal server error'),
       },
       { status: 500 }
     )

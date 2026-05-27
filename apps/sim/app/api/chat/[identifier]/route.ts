@@ -7,6 +7,7 @@ import {
   workflowQueries,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -14,19 +15,94 @@ import { z } from 'zod'
 import { deployedChatPostContract } from '@/lib/api/contracts/chats'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
+import { validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { SSE_HEADERS } from '@/lib/core/utils/sse'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { ChatFiles } from '@/lib/uploads'
+import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
+import { createStreamingResponse } from '@/lib/workflows/streaming/streaming'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getWorkspaceIdsForUser } from '@/lib/workspaces/permissions/utils'
 import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatIdentifierAPI')
+
+interface DeployedChatOutputConfig {
+  blockId: string
+  path?: string
+}
+
+interface StartBlockSubBlocks {
+  inputFormat?: {
+    value?: unknown
+  }
+}
+
+function isDeployedChatOutputConfigs(value: unknown): value is DeployedChatOutputConfig[] {
+  if (!Array.isArray(value)) return false
+  return value.every(
+    (item) =>
+      item !== null &&
+      typeof item === 'object' &&
+      'blockId' in item &&
+      typeof (item as DeployedChatOutputConfig).blockId === 'string'
+  )
+}
+
+function objectValues<T extends Record<string, unknown>>(record: T): unknown[] {
+  const values: unknown[] = []
+  for (const key in record) {
+    if (Object.hasOwn(record, key)) {
+      values.push(record[key])
+    }
+  }
+  return values
+}
+
+function mergeIntoTarget(target: Record<string, unknown>, source: Record<string, unknown>): void {
+  for (const key in source) {
+    if (Object.hasOwn(source, key)) {
+      target[key] = source[key]
+    }
+  }
+}
+
+function arrayIncludes<T>(items: readonly T[], item: T): boolean {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] === item) return true
+  }
+  return false
+}
+
+function stringIncludes(value: string, search: string): boolean {
+  return value.indexOf(search) !== -1
+}
+
+function stringStartsWith(value: string, search: string): boolean {
+  return value.indexOf(search) === 0
+}
+
+function isPgUniqueViolation(error: unknown): boolean {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    if ((error as { code?: unknown }).code === '23505') return true
+  }
+  return stringIncludes(toError(error).message, 'unique')
+}
+
+function isInputFormatField(value: unknown): value is InputFormatField {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    'name' in value &&
+    typeof (value as InputFormatField).name === 'string'
+  )
+}
 
 // Agent department mapping
 const agentDepartments = [
@@ -131,7 +207,7 @@ async function softDeleteWorkflowQueries({
     .select({ id: workflowQueries.id, query: workflowQueries.query })
     .from(workflowQueries)
     .where(and(eq(workflowQueries.workflowId, workflowId), eq(workflowQueries.deleted, false)))
-  const toDeleteIds = rows.filter((row) => !keepIds.includes(row.id)).map((row) => row.id)
+  const toDeleteIds = rows.filter((row) => !arrayIncludes(keepIds, row.id)).map((row) => row.id)
   if (toDeleteIds.length === 0) return
   await db
     .update(workflowQueries)
@@ -139,7 +215,8 @@ async function softDeleteWorkflowQueries({
     .where(inArray(workflowQueries.id, toDeleteIds))
 
   await db.transaction(async (tx) => {
-    for (const [index, item] of keepQueries.entries()) {
+    for (let index = 0; index < keepQueries.length; index++) {
+      const item = keepQueries[index]
       if (!item.id) continue
       await tx
         .update(workflowQueries)
@@ -161,15 +238,11 @@ export const POST = withRouteHandler(
       const parsed = await parseRequest(deployedChatPostContract, request, context, {
         validationErrorResponse: (err) => {
           const message = err.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
-          return addCorsHeaders(
-            createErrorResponse(`Invalid request body: ${message}`, 400, 'VALIDATION_ERROR'),
-            request
-          )
+          return createErrorResponse(`Invalid request body: ${message}`, 400, 'VALIDATION_ERROR')
         },
-        invalidJsonResponse: () =>
-          addCorsHeaders(createErrorResponse('Invalid request body', 400), request),
+        invalidJsonResponse: () => createErrorResponse('Invalid request body', 400),
       })
-      if (!parsed.success) return parsed.response
+      if (parsed.success === false) return parsed.response
       const parsedBody = parsed.data.body
 
       const deploymentResult = await db
@@ -192,7 +265,7 @@ export const POST = withRouteHandler(
 
       if (deploymentResult.length === 0) {
         logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
-        return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+        return createErrorResponse('Chat not found', 404)
       }
 
       const deployment = deploymentResult[0]
@@ -211,10 +284,7 @@ export const POST = withRouteHandler(
           logger.warn(
             `[${requestId}] Cannot log: workflow ${deployment.workflowId} has no workspace`
           )
-          return addCorsHeaders(
-            createErrorResponse('This chat is currently unavailable', 403),
-            request
-          )
+          return createErrorResponse('This chat is currently unavailable', 403)
         }
 
         const executionId = generateId()
@@ -239,18 +309,12 @@ export const POST = withRouteHandler(
           traceSpans: [],
         })
 
-        return addCorsHeaders(
-          createErrorResponse('This chat is currently unavailable', 403),
-          request
-        )
+        return createErrorResponse('This chat is currently unavailable', 403)
       }
 
       const authResult = await validateChatAuth(requestId, deployment, request, parsedBody)
       if (!authResult.authorized) {
-        return addCorsHeaders(
-          createErrorResponse(authResult.error || 'Authentication required', 401),
-          request
-        )
+        return createErrorResponse(authResult.error || 'Authentication required', 401)
       }
 
       // Store chat details in deployed_chat table if chatId is provided
@@ -300,7 +364,7 @@ export const POST = withRouteHandler(
             // Prefer Start Block input values for title; otherwise use first 5 words of input
             const startBlockValues =
               parsedBody.startBlockInputs && typeof parsedBody.startBlockInputs === 'object'
-                ? Object.values(parsedBody.startBlockInputs)
+                ? objectValues(parsedBody.startBlockInputs)
                     .filter((value) => value !== undefined && value !== null)
                     .map((value) => {
                       const stringValue =
@@ -339,12 +403,9 @@ export const POST = withRouteHandler(
               })
 
               logger.info(`[${requestId}] Successfully created new chat record: ${chatId}`)
-            } catch (insertError: any) {
+            } catch (insertError: unknown) {
               // Handle race condition: if another request created the record between our check and insert
-              if (
-                insertError?.code === '23505' || // PostgreSQL unique violation
-                (insertError instanceof Error && insertError.message.includes('unique'))
-              ) {
+              if (isPgUniqueViolation(insertError)) {
                 logger.debug(
                   `[${requestId}] Race condition detected - chatId was created by another request: ${chatId}`
                 )
@@ -373,11 +434,16 @@ export const POST = withRouteHandler(
               }
             }
           }
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const err = toError(error)
+          const code =
+            typeof error === 'object' && error !== null && 'code' in error
+              ? (error as { code?: unknown }).code
+              : undefined
           // Log error but don't fail the request - chat functionality should continue
           logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, {
-            message: error.message,
-            code: error.code,
+            message: err.message,
+            code,
             chatId: parsedBody.chatId,
           })
         }
@@ -400,7 +466,7 @@ export const POST = withRouteHandler(
       const userId = session?.user?.id || null
 
       if ((password || email) && !input) {
-        const response = addCorsHeaders(createSuccessResponse({ authenticated: true }), request)
+        const response = createSuccessResponse(toChatConfigResponse(deployment))
 
         if (deployment.authType !== 'sso') {
           setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
@@ -416,12 +482,12 @@ export const POST = withRouteHandler(
         Object.keys(startBlockInputs).length > 0
       const hasStartBlockInputValues =
         hasStartBlockInputs &&
-        Object.values(startBlockInputs).some(
+        objectValues(startBlockInputs).some(
           (value) => value !== null && value !== undefined && value !== ''
         )
 
       if (!input && (!files || files.length === 0) && !hasStartBlockInputValues) {
-        return addCorsHeaders(createErrorResponse('No input provided', 400), request)
+        return createErrorResponse('No input provided', 400)
       }
 
       const executionId = generateId()
@@ -446,12 +512,9 @@ export const POST = withRouteHandler(
 
       if (!preprocessResult.success) {
         logger.warn(`[${requestId}] Preprocessing failed: ${preprocessResult.error?.message}`)
-        return addCorsHeaders(
-          createErrorResponse(
-            preprocessResult.error?.message || 'Failed to process request',
-            preprocessResult.error?.statusCode || 500
-          ),
-          request
+        return createErrorResponse(
+          preprocessResult.error?.message || 'Failed to process request',
+          preprocessResult.error?.statusCode || 500
         )
       }
 
@@ -460,10 +523,7 @@ export const POST = withRouteHandler(
       const workspaceId = workflowRecord?.workspaceId
       if (!workspaceId) {
         logger.error(`[${requestId}] Workflow ${deployment.workflowId} has no workspaceId`)
-        return addCorsHeaders(
-          createErrorResponse('Workflow has no associated workspace', 500),
-          request
-        )
+        return createErrorResponse('Workflow has no associated workspace', 500)
       }
 
       // Format startBlockInputs into initialInput format
@@ -471,7 +531,9 @@ export const POST = withRouteHandler(
       let formattedInitialInput = input || ''
       if (startBlockInputs && typeof startBlockInputs === 'object') {
         const startBlockInputLines: string[] = []
-        for (const [key, value] of Object.entries(startBlockInputs)) {
+        for (const key in startBlockInputs) {
+          if (!Object.hasOwn(startBlockInputs, key)) continue
+          const value = startBlockInputs[key]
           // Skip reserved fields and empty values
           if (key === 'input' || key === 'conversationId' || key === 'files') {
             continue
@@ -502,7 +564,7 @@ export const POST = withRouteHandler(
 
       try {
         const selectedOutputs: string[] = []
-        if (deployment.outputConfigs && Array.isArray(deployment.outputConfigs)) {
+        if (isDeployedChatOutputConfigs(deployment.outputConfigs)) {
           for (const config of deployment.outputConfigs) {
             const outputId = config.path
               ? `${config.blockId}_${config.path}`
@@ -511,16 +573,12 @@ export const POST = withRouteHandler(
           }
         }
 
-        const { createStreamingResponse } = await import('@/lib/workflows/streaming/streaming')
-        const { executeWorkflow } = await import('@/lib/workflows/executor/execute-workflow')
-        const { SSE_HEADERS } = await import('@/lib/core/utils/sse')
-
-        const workflowInput: any = { input, conversationId }
+        const workflowInput: Record<string, unknown> = { input, conversationId }
 
         // Merge additional Start Block inputs (custom fields from inputFormat)
         // Always merge to ensure all Start Block fields are included, even if empty
         if (startBlockInputs && typeof startBlockInputs === 'object') {
-          Object.assign(workflowInput, startBlockInputs)
+          mergeIntoTarget(workflowInput, startBlockInputs)
           logger.debug(
             `[${requestId}] Merged ${Object.keys(startBlockInputs).length} Start Block inputs`
           )
@@ -549,7 +607,8 @@ export const POST = withRouteHandler(
               workflowInput.files = uploadedFiles
               logger.info(`[${requestId}] Successfully processed ${uploadedFiles.length} files`)
             }
-          } catch (fileError: any) {
+          } catch (fileError: unknown) {
+            const err = toError(fileError)
             logger.error(`[${requestId}] Failed to process chat files:`, fileError)
 
             await loggingSession.safeStart({
@@ -561,8 +620,8 @@ export const POST = withRouteHandler(
 
             await loggingSession.safeCompleteWithError({
               error: {
-                message: `File upload failed: ${fileError.message || 'Unable to process uploaded files'}`,
-                stackTrace: fileError.stack,
+                message: `File upload failed: ${err.message || 'Unable to process uploaded files'}`,
+                stackTrace: err.stack,
               },
               traceSpans: [],
             })
@@ -636,7 +695,7 @@ export const POST = withRouteHandler(
                 buffer = lines.pop() || ''
 
                 for (const line of lines) {
-                  if (!line.trim() || !line.startsWith('data: ')) {
+                  if (!line.trim() || !stringStartsWith(line, 'data: ')) {
                     controller.enqueue(encoder.encode(`${line}\n\n`))
                     continue
                   }
@@ -661,10 +720,13 @@ export const POST = withRouteHandler(
                       const finalData = eventData as {
                         success: boolean
                         error?: string | { message?: string }
-                        output?: Record<string, Record<string, any>>
+                        output?: Record<string, Record<string, unknown>>
                       }
 
-                      const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
+                      const getOutputValue = (
+                        blockOutputs: Record<string, unknown>,
+                        path?: string
+                      ) => {
                         if (!path || path === 'content') {
                           if (blockOutputs.content !== undefined) return blockOutputs.content
                           if (blockOutputs.result !== undefined) return blockOutputs.result
@@ -673,10 +735,14 @@ export const POST = withRouteHandler(
                         if (blockOutputs[path] !== undefined) {
                           return blockOutputs[path]
                         }
-                        if (path.includes('.')) {
-                          return path.split('.').reduce<any>((current, segment) => {
-                            if (current && typeof current === 'object' && segment in current) {
-                              return current[segment]
+                        if (stringIncludes(path, '.')) {
+                          return path.split('.').reduce<unknown>((current, segment) => {
+                            if (
+                              current &&
+                              typeof current === 'object' &&
+                              segment in (current as Record<string, unknown>)
+                            ) {
+                              return (current as Record<string, unknown>)[segment]
                             }
                             return undefined
                           }, blockOutputs)
@@ -738,8 +804,7 @@ export const POST = withRouteHandler(
 
                       if (finalData.output) {
                         const fromOutputConfig =
-                          deployment.outputConfigs &&
-                          Array.isArray(deployment.outputConfigs) &&
+                          isDeployedChatOutputConfigs(deployment.outputConfigs) &&
                           (() => {
                             const aggregated: Array<{
                               documentId: string
@@ -768,9 +833,18 @@ export const POST = withRouteHandler(
                         if (Array.isArray(fromOutputConfig) && fromOutputConfig.length > 0) {
                           knowledgeResultsPayload = fromOutputConfig
                         } else {
-                          for (const blockOutputs of Object.values(finalData.output)) {
-                            if (!blockOutputs || typeof blockOutputs !== 'object') continue
-                            const value = getOutputValue(blockOutputs, 'results')
+                          for (const blockOutputs of objectValues(finalData.output)) {
+                            if (
+                              !blockOutputs ||
+                              typeof blockOutputs !== 'object' ||
+                              Array.isArray(blockOutputs)
+                            ) {
+                              continue
+                            }
+                            const value = getOutputValue(
+                              blockOutputs as Record<string, unknown>,
+                              'results'
+                            )
                             if (isKnowledgeResultsArray(value)) {
                               knowledgeResultsPayload.push(...mapToKnowledgePayload(value))
                             }
@@ -824,11 +898,10 @@ export const POST = withRouteHandler(
                       let finalChatOutput = accumulatedContent.trim()
 
                       if (
-                        deployment.outputConfigs &&
-                        Array.isArray(deployment.outputConfigs) &&
+                        isDeployedChatOutputConfigs(deployment.outputConfigs) &&
                         finalData.output
                       ) {
-                        const formatValue = (value: any): string | null => {
+                        const formatValue = (value: unknown): string | null => {
                           if (value === null || value === undefined) {
                             return null
                           }
@@ -939,20 +1012,14 @@ export const POST = withRouteHandler(
           status: 200,
           headers: SSE_HEADERS,
         })
-        return addCorsHeaders(streamResponse, request)
-      } catch (error: any) {
+        return streamResponse
+      } catch (error: unknown) {
         logger.error(`[${requestId}] Error processing chat request:`, error)
-        return addCorsHeaders(
-          createErrorResponse(error.message || 'Failed to process request', 500),
-          request
-        )
+        return createErrorResponse(getErrorMessage(error, 'Failed to process request'), 500)
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error(`[${requestId}] Error processing chat request:`, error)
-      return addCorsHeaders(
-        createErrorResponse(error.message || 'Failed to process request', 500),
-        request
-      )
+      return createErrorResponse(getErrorMessage(error, 'Failed to process request'), 500)
     }
   }
 )
@@ -971,14 +1038,11 @@ export const PATCH = withRouteHandler(
           const errorMessage = validation.error.errors
             .map((err) => `${err.path.join('.')}: ${err.message}`)
             .join(', ')
-          return addCorsHeaders(
-            createErrorResponse(`Invalid request body: ${errorMessage}`, 400),
-            request
-          )
+          return createErrorResponse(`Invalid request body: ${errorMessage}`, 400)
         }
         parsedBody = validation.data
       } catch (_error) {
-        return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
+        return createErrorResponse('Invalid request body', 400)
       }
 
       const deploymentResult = await db
@@ -997,16 +1061,13 @@ export const PATCH = withRouteHandler(
 
       if (deploymentResult.length === 0) {
         logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
-        return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+        return createErrorResponse('Chat not found', 404)
       }
 
       const deployment = deploymentResult[0]
       if (!deployment.isActive) {
         logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
-        return addCorsHeaders(
-          createErrorResponse('This chat is currently unavailable', 403),
-          request
-        )
+        return createErrorResponse('This chat is currently unavailable', 403)
       }
 
       const cookieName = `chat_auth_${deployment.id}`
@@ -1017,10 +1078,7 @@ export const PATCH = withRouteHandler(
       ) {
         const authResult = await validateChatAuth(requestId, deployment, request)
         if (!authResult.authorized) {
-          return addCorsHeaders(
-            createErrorResponse(authResult.error || 'Authentication required', 401),
-            request
-          )
+          return createErrorResponse(authResult.error || 'Authentication required', 401)
         }
       }
 
@@ -1042,13 +1100,10 @@ export const PATCH = withRouteHandler(
 
       await db.update(chat).set({ updatedAt: new Date() }).where(eq(chat.id, deployment.id))
 
-      return addCorsHeaders(createSuccessResponse({ goldenQueries: sanitizedQueries }), request)
-    } catch (error: any) {
+      return createSuccessResponse({ goldenQueries: sanitizedQueries })
+    } catch (error: unknown) {
       logger.error(`[${requestId}] Error updating golden queries:`, error)
-      return addCorsHeaders(
-        createErrorResponse(error.message || 'Failed to update golden queries', 500),
-        request
-      )
+      return createErrorResponse(getErrorMessage(error, 'Failed to update golden queries'), 500)
     }
   }
 )
@@ -1079,17 +1134,14 @@ export const GET = withRouteHandler(
 
       if (deploymentResult.length === 0) {
         logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
-        return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+        return createErrorResponse('Chat not found', 404)
       }
 
       const deployment = deploymentResult[0]
 
       if (!deployment.isActive) {
         logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
-        return addCorsHeaders(
-          createErrorResponse('This chat is currently unavailable', 403),
-          request
-        )
+        return createErrorResponse('This chat is currently unavailable', 403)
       }
 
       // Extract Start Block inputFormat for chat UI (before auth checks so it's available in all responses)
@@ -1100,30 +1152,23 @@ export const GET = withRouteHandler(
         )) as unknown as {
           blocks?: Record<string, unknown>
         }
-        const blocks = Object.values(deployedData.blocks ?? {}) as Array<Record<string, unknown>>
-        const startBlock = blocks.find(
-          (block) => block.type === 'start_trigger' || block.type === 'starter'
-        ) as { subBlocks?: Record<string, unknown> } | undefined
-        const inputFormatValue = (startBlock?.subBlocks as any)?.inputFormat?.value as unknown
-        if (inputFormatValue) {
-          if (Array.isArray(inputFormatValue)) {
-            inputFormat = inputFormatValue
-              .filter((field) => {
-                return (
-                  field !== null &&
-                  field !== undefined &&
-                  typeof field === 'object' &&
-                  !Array.isArray(field) &&
-                  'name' in field &&
-                  typeof (field as any).name === 'string'
-                )
-              })
-              .map((field: any) => ({
-                name: field.name,
-                type: field.type,
-                value: field.value,
-              }))
+        const blocks = objectValues(deployedData.blocks ?? {}) as Array<Record<string, unknown>>
+        let startBlock: Record<string, unknown> | undefined
+        for (let i = 0; i < blocks.length; i++) {
+          const block = blocks[i]
+          if (block.type === 'start_trigger' || block.type === 'starter') {
+            startBlock = block
+            break
           }
+        }
+        const subBlocks = startBlock?.subBlocks as StartBlockSubBlocks | undefined
+        const inputFormatValue = subBlocks?.inputFormat?.value
+        if (inputFormatValue && Array.isArray(inputFormatValue)) {
+          inputFormat = inputFormatValue.filter(isInputFormatField).map((field) => ({
+            name: field.name,
+            type: field.type,
+            value: field.value,
+          }))
         }
       } catch (error) {
         logger.warn(`[${requestId}] Failed to extract inputFormat:`, error)
@@ -1174,7 +1219,7 @@ export const GET = withRouteHandler(
         } catch {
           // Non-fatal; proceed without userWorkspaceIds
         }
-        return addCorsHeaders(buildChatConfigResponse(userWorkspaceIds), request)
+        return buildChatConfigResponse(userWorkspaceIds)
       }
 
       const authResult = await validateChatAuth(requestId, deployment, request)
@@ -1182,10 +1227,7 @@ export const GET = withRouteHandler(
         logger.info(
           `[${requestId}] Authentication required for chat: ${identifier}, type: ${deployment.authType}`
         )
-        return addCorsHeaders(
-          createErrorResponse(authResult.error || 'Authentication required', 401),
-          request
-        )
+        return createErrorResponse(authResult.error || 'Authentication required', 401)
       }
 
       let userWorkspaceIds: string[] | undefined
@@ -1200,17 +1242,14 @@ export const GET = withRouteHandler(
 
       const response = buildChatConfigResponse(userWorkspaceIds)
 
-      if (deployment.authType !== 'public') {
-        setChatAuthCookie(response, deployment.id, deployment.authType)
+      if (deployment.authType !== 'public' && deployment.authType !== 'sso') {
+        setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
       }
 
-      return addCorsHeaders(response, request)
-    } catch (error: any) {
+      return response
+    } catch (error: unknown) {
       logger.error(`[${requestId}] Error fetching chat info:`, error)
-      return addCorsHeaders(
-        createErrorResponse(error.message || 'Failed to fetch chat information', 500),
-        request
-      )
+      return createErrorResponse(getErrorMessage(error, 'Failed to fetch chat information'), 500)
     }
   }
 )

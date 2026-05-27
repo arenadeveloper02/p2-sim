@@ -11,6 +11,7 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Trash,
@@ -274,6 +275,9 @@ export function BaseTagsModal({
               <span>Tags</span>
             </div>
           </ModalHeader>
+          <ModalDescription className='sr-only'>
+            Manage tag definitions for this knowledge base
+          </ModalDescription>
 
           <ModalBody>
             <div className='min-h-0 flex-1 overflow-y-auto'>
@@ -428,14 +432,14 @@ export function BaseTagsModal({
           <ModalHeader>Delete Tag</ModalHeader>
           <ModalBody>
             <div className='space-y-2'>
-              <p className='text-[var(--text-secondary)]'>
+              <ModalDescription className='text-[var(--text-secondary)]'>
                 Are you sure you want to delete the "{selectedTag?.displayName}" tag?{' '}
                 <span className='text-[var(--text-error)]'>
                   This will remove this tag from {selectedTagUsage?.documentCount || 0} document
                   {selectedTagUsage?.documentCount !== 1 ? 's' : ''}.
                 </span>{' '}
                 This action cannot be undone.
-              </p>
+              </ModalDescription>
 
               {selectedTagUsage && selectedTagUsage.documentCount > 0 && (
                 <div className='flex flex-col gap-2'>
@@ -473,11 +477,11 @@ export function BaseTagsModal({
           <ModalHeader>Documents using "{selectedTag?.displayName}"</ModalHeader>
           <ModalBody>
             <div className='space-y-2'>
-              <p className='text-[var(--text-secondary)]'>
+              <ModalDescription className='text-[var(--text-secondary)]'>
                 {selectedTagUsage?.documentCount || 0} document
                 {selectedTagUsage?.documentCount !== 1 ? 's are' : ' is'} currently using this tag
                 definition.
-              </p>
+              </ModalDescription>
 
               {selectedTagUsage?.documentCount === 0 ? (
                 <div className='rounded-md border p-4 text-center'>

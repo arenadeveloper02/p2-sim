@@ -214,7 +214,7 @@ describe('generateRuntimeCSP', () => {
 })
 
 describe('addCSPSource', () => {
-  const originalDirectives = JSON.parse(JSON.stringify(buildTimeCSPDirectives))
+  const originalDirectives = structuredClone(buildTimeCSPDirectives)
 
   afterEach(() => {
     Object.keys(buildTimeCSPDirectives).forEach((key) => {
@@ -251,7 +251,7 @@ describe('addCSPSource', () => {
 })
 
 describe('removeCSPSource', () => {
-  const originalDirectives = JSON.parse(JSON.stringify(buildTimeCSPDirectives))
+  const originalDirectives = structuredClone(buildTimeCSPDirectives)
 
   afterEach(() => {
     Object.keys(buildTimeCSPDirectives).forEach((key) => {

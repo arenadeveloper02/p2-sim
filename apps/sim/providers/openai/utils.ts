@@ -3,6 +3,7 @@ import type OpenAI from 'openai'
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
 import type { Stream } from 'openai/streaming'
+import { buildOpenAIMessageContent } from '@/providers/attachments'
 import type { Message } from '@/providers/types'
 import { createOpenAICompatibleStream } from '@/providers/utils'
 
@@ -35,7 +36,7 @@ export interface ResponsesToolCall {
 export type ResponsesInputItem =
   | {
       role: 'system' | 'user' | 'assistant'
-      content: string
+      content: string | OpenAI.Responses.ResponseInputContent[]
     }
   | {
       type: 'function_call'
@@ -59,7 +60,10 @@ export interface ResponsesToolDefinition {
 /**
  * Converts chat-style messages into Responses API input items.
  */
-export function buildResponsesInputFromMessages(messages: Message[]): ResponsesInputItem[] {
+export function buildResponsesInputFromMessages(
+  messages: Message[],
+  providerId = 'openai'
+): ResponsesInputItem[] {
   const input: ResponsesInputItem[] = []
 
   for (const message of messages) {
@@ -72,13 +76,21 @@ export function buildResponsesInputFromMessages(messages: Message[]): ResponsesI
       continue
     }
 
-    if (
-      message.content &&
-      (message.role === 'system' || message.role === 'user' || message.role === 'assistant')
-    ) {
+    if (message.role === 'system' || message.role === 'user' || message.role === 'assistant') {
+      const content =
+        message.role === 'user'
+          ? buildOpenAIMessageContent(message.content, message.files, providerId)
+          : (message.content ?? '')
+      if (
+        (typeof content === 'string' && !content) ||
+        (Array.isArray(content) && content.length === 0)
+      ) {
+        continue
+      }
+
       input.push({
         role: message.role,
-        content: message.content,
+        content,
       })
     }
 

@@ -11,6 +11,7 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Trash,
@@ -29,11 +30,17 @@ import type {
   SelectableConfig,
   SortConfig,
 } from '@/app/workspace/[workspaceId]/components'
-import { Resource, ResourceHeader } from '@/app/workspace/[workspaceId]/components'
-import { ChunkContextMenu } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components/chunk-context-menu/chunk-context-menu'
-import { ChunkEditor } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components/chunk-editor/chunk-editor'
-import { DeleteChunkModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components/delete-chunk-modal/delete-chunk-modal'
-import { DocumentTagsModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components/document-tags-modal/document-tags-modal'
+import {
+  EMPTY_CELL_PLACEHOLDER,
+  Resource,
+  ResourceHeader,
+} from '@/app/workspace/[workspaceId]/components'
+import {
+  ChunkContextMenu,
+  ChunkEditor,
+  DeleteChunkModal,
+  DocumentTagsModal,
+} from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components'
 import { ActionBar } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
@@ -71,9 +78,9 @@ function UnsavedChangesModal({
       <ModalContent size='sm'>
         <ModalHeader>Unsaved Changes</ModalHeader>
         <ModalBody>
-          <p className='text-[var(--text-secondary)]'>
+          <ModalDescription className='text-[var(--text-secondary)]'>
             You have unsaved changes. Are you sure you want to discard them?
-          </p>
+          </ModalDescription>
         </ModalBody>
         <ModalFooter>
           <Button variant='default' onClick={onKeepEditing}>
@@ -125,9 +132,9 @@ function truncateContent(content: string, maxLength = 150, searchQuery = ''): st
 
 const CHUNK_COLUMNS: ResourceColumn[] = [
   { id: 'content', header: 'Content' },
-  { id: 'index', header: 'Index' },
-  { id: 'tokens', header: 'Tokens' },
-  { id: 'status', header: 'Status' },
+  { id: 'index', header: 'Index', widthMultiplier: 0.6 },
+  { id: 'tokens', header: 'Tokens', widthMultiplier: 0.6 },
+  { id: 'status', header: 'Status', widthMultiplier: 0.75 },
 ]
 
 export function Document({
@@ -964,9 +971,9 @@ export function Document({
                 </div>
               ),
             },
-            index: { label: '—' },
-            tokens: { label: '—' },
-            status: { label: '—' },
+            index: { label: EMPTY_CELL_PLACEHOLDER },
+            tokens: { label: EMPTY_CELL_PLACEHOLDER },
+            status: { label: EMPTY_CELL_PLACEHOLDER },
           },
         },
       ]
@@ -1264,7 +1271,7 @@ export function Document({
         <ModalContent size='sm'>
           <ModalHeader>Delete Document</ModalHeader>
           <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
+            <ModalDescription className='text-[var(--text-secondary)]'>
               Are you sure you want to delete{' '}
               <span className='font-medium text-[var(--text-primary)]'>
                 {effectiveDocumentName}
@@ -1283,7 +1290,7 @@ export function Document({
               ) : (
                 <>This action cannot be undone.</>
               )}
-            </p>
+            </ModalDescription>
           </ModalBody>
           <ModalFooter>
             <Button

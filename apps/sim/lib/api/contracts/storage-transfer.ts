@@ -290,6 +290,7 @@ export const fileDownloadBodySchema = z
     isExecutionFile: z.boolean().optional(),
     context: downloadContextSchema.optional(),
     url: z
+      .string()
       .url()
       .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol), {
         message: 'URL must use http or https',
@@ -302,6 +303,7 @@ export const fileParseBodySchema = z
   .object({
     filePath: z.union([z.string(), z.array(z.string())]).optional(),
     fileType: z.string().optional().default(''),
+    headers: z.record(z.string(), z.string()).optional(),
     workspaceId: z.string().optional().default(''),
     workflowId: z.string().optional(),
     executionId: z.string().optional(),

@@ -36,6 +36,8 @@ export interface ExecuteWorkflowOptions {
   base64MaxBytes?: number
   /** When set (e.g. deployed chat with logged-in user), Arena tools use this user's token from DB via getArenaToken. */
   sessionUserId?: string | null
+  largeValueKeys?: string[]
+  fileKeys?: string[]
   abortSignal?: AbortSignal
   /** Use the live/draft workflow state instead of the deployed state. Used by copilot. */
   useDraftState?: boolean
@@ -45,6 +47,7 @@ export interface ExecuteWorkflowOptions {
   runFromBlock?: {
     startBlockId: string
     sourceSnapshot: SerializableExecutionState
+    sourceExecutionId?: string
   }
   executionMode?: 'sync' | 'stream' | 'async'
 }
@@ -90,6 +93,10 @@ export async function executeWorkflow(
       useDraftState: streamConfig?.useDraftState ?? false,
       startTime: new Date().toISOString(),
       isClientSession: Boolean(sessionUserId),
+      // isClientSession: false,
+      largeValueExecutionIds: Array.from(new Set([executionId])),
+      largeValueKeys: streamConfig?.largeValueKeys,
+      fileKeys: streamConfig?.fileKeys,
       executionMode: streamConfig?.executionMode,
     }
 

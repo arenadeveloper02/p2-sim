@@ -1,5 +1,6 @@
 import { EmailClient, type EmailMessage } from '@azure/communication-email'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { Resend } from 'resend'
 import { env } from '@/lib/core/config/env'
 import { generateUnsubscribeToken, isUnsubscribed } from '@/lib/messaging/email/unsubscribe'
@@ -515,7 +516,7 @@ export async function sendBatchEmails(options: BatchEmailOptions): Promise<Batch
       } catch (error) {
         results.push({
           success: false,
-          message: error instanceof Error ? error.message : 'Failed to send email',
+          message: getErrorMessage(error, 'Failed to send email'),
         })
       }
     }

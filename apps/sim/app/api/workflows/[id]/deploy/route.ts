@@ -1,6 +1,7 @@
 // import { chat, db, workflow, workflowDeploymentVersion } from '@sim/db'
 import { db, workflow } from '@sim/db'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { assertWorkflowMutable, WorkflowLockedError } from '@sim/workflow-authz'
 import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
@@ -137,7 +138,7 @@ export const POST = withRouteHandler(
       if (error instanceof WorkflowLockedError) {
         return createErrorResponse(error.message, error.status)
       }
-      const message = error instanceof Error ? error.message : 'Failed to deploy workflow'
+      const message = getErrorMessage(error, 'Failed to deploy workflow')
       logger.error(`[${requestId}] Error deploying workflow: ${id}`, { error })
       return createErrorResponse(message, 500)
     }
@@ -196,8 +197,7 @@ export const PATCH = withRouteHandler(
       if (error instanceof WorkflowLockedError) {
         return createErrorResponse(error.message, error.status)
       }
-      const message =
-        error instanceof Error ? error.message : 'Failed to update deployment settings'
+      const message = getErrorMessage(error, 'Failed to update deployment settings')
       logger.error(`[${requestId}] Error updating deployment settings`, { error })
       return createErrorResponse(message, 500)
     }
@@ -248,7 +248,7 @@ export const DELETE = withRouteHandler(
       if (error instanceof WorkflowLockedError) {
         return createErrorResponse(error.message, error.status)
       }
-      const message = error instanceof Error ? error.message : 'Failed to undeploy workflow'
+      const message = getErrorMessage(error, 'Failed to undeploy workflow')
       logger.error(`[${requestId}] Error undeploying workflow: ${id}`, { error })
       return createErrorResponse(message, 500)
     }

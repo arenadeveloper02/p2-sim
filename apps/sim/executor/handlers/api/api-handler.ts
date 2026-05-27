@@ -80,8 +80,7 @@ export class ApiBlockHandler implements BlockHandler {
             callChain: ctx.callChain,
           },
         },
-        false,
-        ctx
+        { executionContext: ctx }
       )
 
       if (!result.success) {

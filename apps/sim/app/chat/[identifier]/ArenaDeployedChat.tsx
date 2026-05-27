@@ -2,9 +2,9 @@
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
-import { v4 as uuidv4 } from 'uuid'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
@@ -579,7 +579,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
     fetchChatConfig()
-    setConversationId(uuidv4())
+    setConversationId(generateId())
 
     // getFormattedGitHubStars()
     //   .then((formattedStars) => {
@@ -1075,7 +1075,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               router.push(newUrl)
             } else {
               // No threads exist yet: generate a new UUID chatId for a fresh chat
-              const newId = uuidv4()
+              const newId = generateId()
               setCurrentChatId(newId)
               params.set('chatId', newId)
               const newUrl = `/chat/${workflowId}?${params.toString()}`
@@ -1161,7 +1161,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setShowFeedbackView(false)
     setFeedbackError(null)
     setShowScrollButton(false)
-    const id = uuidv4()
+    const id = generateId()
     setCurrentChatId(id)
     // Clear messages except initial messages (greeting + welcome)
     setMessages((prev) => {

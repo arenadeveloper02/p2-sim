@@ -1,10 +1,9 @@
+import { randomBytes } from 'crypto'
 import { createLogger } from '@sim/logger'
-import {
-  getStorageConfig,
-  S3_AGENT_GENERATED_IMAGES_CONFIG,
-  S3_CONFIG,
-  USE_S3_STORAGE,
-} from '@/lib/uploads/config'
+import { getErrorMessage } from '@sim/utils/errors'
+import { getStorageConfig, USE_BLOB_STORAGE, USE_S3_STORAGE,S3_AGENT_GENERATED_IMAGES_CONFIG,
+  S3_CONFIG, } from '@/lib/uploads/config'
+import type { BlobConfig } from '@/lib/uploads/providers/blob/types'
 import type { S3Config } from '@/lib/uploads/providers/s3/types'
 import type {
   DeleteFileOptions,
@@ -55,6 +54,7 @@ async function insertFileMetadataHelper(
     key,
     userId: metadata.userId,
     workspaceId: metadata.workspaceId || null,
+    folderId: metadata.folderId || null,
     context,
     originalName: metadata.originalName || fileName,
     contentType,
@@ -284,6 +284,48 @@ export async function deleteFile(options: DeleteFileOptions): Promise<void> {
   await unlink(filePath)
 }
 
+/** AWS SDK v3 silently caps HTTP connections at 50/endpoint — stay well under. */
+const PER_FILE_DELETE_CONCURRENCY = 25
+
+/**
+ * Bulk delete via the provider's native multi-object API when available
+ * (S3 `DeleteObjects`), else bounded-concurrency per-file. All keys must
+ * share `context`. Idempotent on missing keys.
+ */
+export async function deleteFiles(
+  keys: string[],
+  context: StorageContext
+): Promise<{ deleted: number; failed: Array<{ key: string; error: string }> }> {
+  if (keys.length === 0) return { deleted: 0, failed: [] }
+
+  const config = getStorageConfig(context)
+
+  if (USE_S3_STORAGE) {
+    const { deleteManyFromS3 } = await import('@/lib/uploads/providers/s3/client')
+    const { failed } = await deleteManyFromS3(keys, createS3Config(config))
+    return { deleted: keys.length - failed.length, failed }
+  }
+
+  const failed: Array<{ key: string; error: string }> = []
+  let cursor = 0
+  const runWorker = async (): Promise<void> => {
+    while (cursor < keys.length) {
+      const idx = cursor++
+      const key = keys[idx]
+      try {
+        await deleteFile({ key, context })
+      } catch (error) {
+        failed.push({ key, error: getErrorMessage(error) })
+      }
+    }
+  }
+
+  const workerCount = Math.min(PER_FILE_DELETE_CONCURRENCY, keys.length)
+  await Promise.all(Array.from({ length: workerCount }, runWorker))
+
+  return { deleted: keys.length - failed.length, failed }
+}
+
 /**
  * Check whether an object exists in the configured cloud storage provider.
  * Returns object size and content-type when present, or null when missing.
@@ -340,7 +382,7 @@ export async function generatePresignedUploadUrl(
     key = customKey
   } else {
     const timestamp = Date.now()
-    const uniqueId = Math.random().toString(36).substring(2, 9)
+    const uniqueId = randomBytes(8).toString('hex')
     const safeFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_')
     key = `${context}/${timestamp}-${uniqueId}-${safeFileName}`
   }
