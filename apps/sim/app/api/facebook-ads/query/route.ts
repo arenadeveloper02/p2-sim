@@ -7,6 +7,7 @@ import { parseQueryWithAI } from './ai-query-generation'
 import {
   makeFacebookAdsOAuthRequest,
   makeFacebookAdsRequest,
+  resolveFacebookAccessToken,
 } from './facebook-ads-api'
 import type { FacebookAdsRequest, FacebookAdsResponse } from './types'
 
@@ -16,7 +17,7 @@ function resolveUsesAdminCredentials(body: FacebookAdsRequest): boolean {
   if (body.workspaceId) {
     return isAdminWorkspace(body.workspaceId)
   }
-  return Boolean(body.account && !body.accessToken)
+  return Boolean(body.account && !body.fbClientId)
 }
 
 function formatAdAccountId(raw: string): string {
@@ -50,14 +51,14 @@ async function resolveAccountForRequest(
     }
   }
 
-  const adAccountId = body.adAccountId?.trim()
-  if (!adAccountId) {
+  const rawAccountId = (body.accountId ?? body.adAccountId)?.trim()
+  if (!rawAccountId) {
     throw new Error('Facebook ad account ID is required')
   }
 
   return {
-    accountId: formatAdAccountId(adAccountId),
-    accountName: adAccountId,
+    accountId: formatAdAccountId(rawAccountId),
+    accountName: rawAccountId,
   }
 }
 
@@ -87,19 +88,28 @@ export async function POST(request: NextRequest) {
 
     const useAdminCredentials = resolveUsesAdminCredentials({ ...body, workspaceId })
 
+    let resolvedAccessToken: string | undefined
+
     if (!useAdminCredentials) {
-      const accessToken = body.accessToken?.trim()
-      if (!accessToken) {
+      const fbClientId = body.fbClientId?.trim()
+      const fbClientSecret = body.fbClientSecret?.trim()
+      const fbAccessToken = body.fbAccessToken?.trim()
+      const adAccountId = (body.accountId ?? body.adAccountId)?.trim()
+
+      if (!fbClientId || !fbClientSecret || !fbAccessToken || !adAccountId) {
         return NextResponse.json(
           {
             success: false,
-            error: 'Facebook OAuth connection and access token are required for this workspace',
+            error:
+              'FB client ID, client secret, access token (with ads_read), and account ID are required for this workspace',
             requestId,
             timestamp,
           },
           { status: 400 }
         )
       }
+
+      resolvedAccessToken = resolveFacebookAccessToken(fbAccessToken)
     }
 
     const { accountId, accountName } = await resolveAccountForRequest(
@@ -143,7 +153,7 @@ export async function POST(request: NextRequest) {
           requestOptions.filters,
           requestOptions.breakdowns
         )
-      : await makeFacebookAdsOAuthRequest(body.accessToken as string, requestOptions)
+      : await makeFacebookAdsOAuthRequest(resolvedAccessToken as string, requestOptions)
 
     const response: FacebookAdsResponse = {
       success: true,

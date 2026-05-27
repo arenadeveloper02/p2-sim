@@ -15,7 +15,45 @@ export interface FacebookAdsRequestOptions {
 }
 
 /**
- * Executes a Facebook Graph API request using a user OAuth access token (non-admin workspaces).
+ * Resolves the Marketing API access token. Requires a user or system user token with ads_read.
+ * Client ID + secret alone only produce an app token, which cannot read ad account insights.
+ */
+export function resolveFacebookAccessToken(accessToken?: string): string {
+  const explicitToken = accessToken?.trim()
+  if (explicitToken) {
+    return explicitToken
+  }
+
+  throw new Error(
+    'FB Access Token is required. Provide a user or system user token with ads_read or ads_management permission. Tokens generated from client ID + secret only (app token) cannot access ad account data.'
+  )
+}
+
+function formatFacebookApiError(status: number, errorText: string): string {
+  try {
+    const parsed = JSON.parse(errorText) as {
+      error?: { message?: string; code?: number }
+    }
+    const message = parsed.error?.message
+    if (
+      message &&
+      (message.includes('ads_read') ||
+        message.includes('ads_management') ||
+        parsed.error?.code === 200)
+    ) {
+      return `${message} Use a user or system user access token with ads_read (or ads_management), not an app-only token from client credentials.`
+    }
+    if (message) {
+      return `Facebook API request failed: ${status} - ${message}`
+    }
+  } catch {
+    // fall through to raw error text
+  }
+  return `Facebook API request failed: ${status} - ${errorText}`
+}
+
+/**
+ * Executes a Facebook Graph API request using a bearer access token (non-admin workspaces).
  */
 export async function makeFacebookAdsOAuthRequest(
   accessToken: string,
@@ -121,7 +159,7 @@ async function executeFacebookAdsGraphRequest(
       status: response.status,
       error: errorText,
     })
-    throw new Error(`Facebook API request failed: ${response.status} - ${errorText}`)
+    throw new Error(formatFacebookApiError(response.status, errorText))
   }
 
   const data = await response.json()

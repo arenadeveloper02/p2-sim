@@ -8,8 +8,10 @@ interface GoogleAdsV1QueryParams {
   accounts?: string
   prompt: string
   workspaceId?: string
-  oauthCredential?: string
-  accessToken?: string
+  clientId?: string
+  clientSecret?: string
+  refreshToken?: string
+  accountId?: string
   customerId?: string
   developerToken?: string
   managerCustomerId?: string
@@ -26,11 +28,6 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
   description:
     'Simplified Google Ads query tool that generates GAQL queries using AI (Grok with GPT-5 fallback). Just provide a natural language prompt and let AI handle the rest.',
   version: '1.0.0',
-
-  oauth: {
-    required: false,
-    provider: 'google-ads',
-  },
 
   params: {
     accounts: {
@@ -52,17 +49,29 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
       visibility: 'hidden',
       description: 'Workspace ID for admin vs user credential routing',
     },
-    oauthCredential: {
+    clientId: {
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'Google Ads OAuth credential (non-admin workspaces)',
+      description: 'Google OAuth client ID (non-admin workspaces)',
     },
-    accessToken: {
+    clientSecret: {
       type: 'string',
       required: false,
-      visibility: 'hidden',
-      description: 'OAuth access token resolved at execution time',
+      visibility: 'user-only',
+      description: 'Google OAuth client secret (non-admin workspaces)',
+    },
+    refreshToken: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Google OAuth refresh token (non-admin workspaces)',
+    },
+    accountId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Google Ads account ID (non-admin workspaces)',
     },
     customerId: {
       type: 'string',
@@ -94,8 +103,11 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
       query: params.prompt,
       accounts: params.accounts,
       workspaceId: params.workspaceId ?? params._context?.workspaceId,
-      accessToken: params.accessToken,
-      customerId: params.customerId,
+      clientId: params.clientId,
+      clientSecret: params.clientSecret,
+      refreshToken: params.refreshToken,
+      accountId: params.accountId,
+      customerId: params.accountId ?? params.customerId,
       developerToken: params.developerToken,
       managerCustomerId: params.managerCustomerId,
     }),

@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { POSITION2_MANAGER } from './constants'
+import { GOOGLE_ADS_API_VERSION, POSITION2_MANAGER } from './constants'
 
 const logger = createLogger('GoogleAdsAPI')
 
@@ -12,13 +12,53 @@ export interface GoogleAdsOAuthRequestOptions {
 }
 
 /**
- * Executes a GAQL query using a user OAuth access token and developer token (non-admin workspaces).
+ * Exchanges Google OAuth client credentials + refresh token for a short-lived access token.
+ */
+export async function refreshGoogleAdsAccessToken(
+  clientId: string,
+  clientSecret: string,
+  refreshToken: string
+): Promise<string> {
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  })
+
+  if (!tokenResponse.ok) {
+    const errorText = await tokenResponse.text()
+    logger.error('Google Ads access token refresh failed', {
+      status: tokenResponse.status,
+      error: errorText,
+    })
+    throw new Error(
+      `Failed to refresh Google Ads access token: ${tokenResponse.status} - ${errorText}`
+    )
+  }
+
+  const tokenData = (await tokenResponse.json()) as { access_token?: string }
+  if (!tokenData.access_token) {
+    throw new Error('Google Ads token response did not include access_token')
+  }
+
+  return tokenData.access_token
+}
+
+/**
+ * Executes a GAQL query using a bearer access token and developer token (non-admin workspaces).
  */
 export async function makeGoogleAdsOAuthRequest(
   options: GoogleAdsOAuthRequestOptions
 ): Promise<unknown> {
   const formattedCustomerId = options.customerId.replace(/-/g, '')
-  const adsApiUrl = `https://googleads.googleapis.com/v22/customers/${formattedCustomerId}/googleAds:search`
+  const adsApiUrl = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${formattedCustomerId}/googleAds:search`
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${options.accessToken}`,
@@ -132,7 +172,7 @@ export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string)
     const formattedCustomerId = accountId.replace(/-/g, '')
 
     // Make Google Ads API request
-    const adsApiUrl = `https://googleads.googleapis.com/v22/customers/${formattedCustomerId}/googleAds:search`
+    const adsApiUrl = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${formattedCustomerId}/googleAds:search`
 
     const requestPayload = {
       query: gaqlQuery.trim(),
