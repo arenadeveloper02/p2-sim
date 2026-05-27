@@ -96,6 +96,28 @@ export function isAdminWorkspace(workspaceId: string | null | undefined): boolea
 /**
  * Payload helper for APIs and workflow execute bodies that need an admin-workspace flag.
  */
+/** OAuth provider IDs shown only on admin workspaces (e.g. integrations settings). */
+export const ADMIN_WORKSPACE_ONLY_OAUTH_PROVIDER_IDS = ['zoom-admin'] as const
+
+/**
+ * Returns whether an OAuth provider is restricted to admin workspaces.
+ */
+export function isAdminWorkspaceOnlyOAuthProvider(providerId: string | null | undefined): boolean {
+  if (!providerId || typeof providerId !== 'string') return false
+  return (ADMIN_WORKSPACE_ONLY_OAUTH_PROVIDER_IDS as readonly string[]).includes(providerId)
+}
+
+/**
+ * Filters OAuth services/credentials for the current workspace (hides admin-only providers elsewhere).
+ */
+export function filterOAuthItemsForWorkspace<T extends { providerId?: string | null }>(
+  items: T[],
+  workspaceId: string | null | undefined
+): T[] {
+  if (isAdminWorkspace(workspaceId)) return items
+  return items.filter((item) => !isAdminWorkspaceOnlyOAuthProvider(item.providerId))
+}
+
 export function getAdminWorkspaceContext(
   workspaceId: string | null | undefined
 ): AdminWorkspaceContext {

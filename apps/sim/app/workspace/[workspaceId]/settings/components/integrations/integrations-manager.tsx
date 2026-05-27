@@ -36,6 +36,7 @@ import {
 } from '@/lib/credentials/client-state'
 import { getCanonicalScopesForProvider, getServiceConfigByProviderId } from '@/lib/oauth'
 import { getScopeDescription } from '@/lib/oauth/utils'
+import { filterOAuthItemsForWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { getUserColor } from '@/lib/workspaces/colors'
 import { CredentialSkeleton } from '@/app/workspace/[workspaceId]/settings/components/credentials/credential-skeleton'
 import { useBrandConfig } from '@/ee/whitelabeling'
@@ -199,9 +200,14 @@ export function IntegrationsManager() {
 
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId || null)
 
-  const oauthCredentials = useMemo(
-    () => credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account'),
-    [credentials]
+  const oauthCredentials = useMemo(() => {
+    const oauth = credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account')
+    return filterOAuthItemsForWorkspace(oauth, workspaceId)
+  }, [credentials, workspaceId])
+
+  const workspaceOAuthConnections = useMemo(
+    () => filterOAuthItemsForWorkspace(oauthConnections, workspaceId),
+    [oauthConnections, workspaceId]
   )
 
   const selectedCredential = useMemo(
@@ -221,8 +227,9 @@ export function IntegrationsManager() {
   const removeMember = useRemoveWorkspaceCredentialMember()
 
   const oauthServiceNameByProviderId = useMemo(
-    () => new Map(oauthConnections.map((service) => [service.providerId, service.name])),
-    [oauthConnections]
+    () =>
+      new Map(workspaceOAuthConnections.map((service) => [service.providerId, service.name])),
+    [workspaceOAuthConnections]
   )
   const resolveProviderLabel = (providerId?: string | null): string => {
     if (!providerId) return ''
@@ -240,7 +247,7 @@ export function IntegrationsManager() {
         resolveProviderLabel(credential.providerId).toLowerCase().includes(normalized)
       )
     })
-  }, [oauthCredentials, searchTerm, oauthConnections])
+  }, [oauthCredentials, searchTerm, workspaceOAuthConnections])
 
   const sortedCredentials = useMemo(() => {
     return [...filteredCredentials].sort((a, b) => {
@@ -251,19 +258,21 @@ export function IntegrationsManager() {
   }, [filteredCredentials])
 
   const filteredAvailableIntegrations = useMemo(() => {
-    if (!searchTerm.trim()) return oauthConnections
+    if (!searchTerm.trim()) return workspaceOAuthConnections
     const normalized = searchTerm.toLowerCase()
-    return oauthConnections.filter((service) => service.name.toLowerCase().includes(normalized))
-  }, [oauthConnections, searchTerm])
+    return workspaceOAuthConnections.filter((service) =>
+      service.name.toLowerCase().includes(normalized)
+    )
+  }, [workspaceOAuthConnections, searchTerm])
 
   const oauthServiceOptions = useMemo(
     () =>
-      oauthConnections.map((service) => ({
+      workspaceOAuthConnections.map((service) => ({
         value: service.providerId,
         label: service.name,
         icon: getServiceConfigByProviderId(service.providerId)?.icon,
       })),
-    [oauthConnections]
+    [workspaceOAuthConnections]
   )
 
   const activeMembers = useMemo(
@@ -286,8 +295,10 @@ export function IntegrationsManager() {
   }, [workspacePermissions?.users, activeMembers])
 
   const selectedOAuthService = useMemo(
-    () => oauthConnections.find((service) => service.providerId === createOAuthProviderId) || null,
-    [oauthConnections, createOAuthProviderId]
+    () =>
+      workspaceOAuthConnections.find((service) => service.providerId === createOAuthProviderId) ||
+      null,
+    [workspaceOAuthConnections, createOAuthProviderId]
   )
   const createOAuthRequiredScopes = useMemo(() => {
     if (!createOAuthProviderId) return []

@@ -1,9 +1,11 @@
 import { createEnvMock } from '@sim/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  filterOAuthItemsForWorkspace,
   getAdminWorkspaceContext,
   getAdminWorkspaceIds,
   isAdminWorkspace,
+  isAdminWorkspaceOnlyOAuthProvider,
   parseAdminWorkspaceIds,
 } from './is-admin-workspace'
 
@@ -58,6 +60,28 @@ describe('isAdminWorkspace', () => {
     expect(isAdminWorkspace('   ')).toBe(false)
     expect(isAdminWorkspace(null)).toBe(false)
     expect(isAdminWorkspace(undefined)).toBe(false)
+  })
+})
+
+describe('isAdminWorkspaceOnlyOAuthProvider', () => {
+  it('identifies zoom-admin as admin-only', () => {
+    expect(isAdminWorkspaceOnlyOAuthProvider('zoom-admin')).toBe(true)
+    expect(isAdminWorkspaceOnlyOAuthProvider('zoom')).toBe(false)
+  })
+})
+
+describe('filterOAuthItemsForWorkspace', () => {
+  const items = [
+    { providerId: 'zoom', name: 'Zoom' },
+    { providerId: 'zoom-admin', name: 'Zoom (Admin)' },
+  ]
+
+  it('returns all items for admin workspaces', () => {
+    expect(filterOAuthItemsForWorkspace(items, 'ws-admin-1')).toEqual(items)
+  })
+
+  it('removes admin-only providers for non-admin workspaces', () => {
+    expect(filterOAuthItemsForWorkspace(items, 'ws-other')).toEqual([items[0]])
   })
 })
 

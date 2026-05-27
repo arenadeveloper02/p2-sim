@@ -1,12 +1,30 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { mockIsAdminWorkspace, mockResolveWorkspaceIdForAdminCheck } = vi.hoisted(() => ({
+  mockIsAdminWorkspace: vi.fn(() => false),
+  mockResolveWorkspaceIdForAdminCheck: vi.fn(() => 'ws-normal'),
+}))
+
+vi.mock('@/lib/workspaces/is-admin-workspace', () => ({
+  isAdminWorkspace: mockIsAdminWorkspace,
+  resolveWorkspaceIdForAdminCheck: mockResolveWorkspaceIdForAdminCheck,
+}))
+
 import { ZoomBlock } from '@/blocks/blocks/zoom'
 
 describe('ZoomBlock', () => {
   const paramsFunction = ZoomBlock.tools.config?.params
+  const toolFunction = ZoomBlock.tools.config?.tool
 
-  if (!paramsFunction) {
-    throw new Error('ZoomBlock.tools.config.params function is missing')
+  if (!paramsFunction || !toolFunction) {
+    throw new Error('ZoomBlock.tools.config is missing')
   }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockIsAdminWorkspace.mockReturnValue(false)
+    mockResolveWorkspaceIdForAdminCheck.mockReturnValue('ws-normal')
+  })
 
   it('shows a single Zoom credential input with personal and admin connect paths', () => {
     const credential = ZoomBlock.subBlocks.find((subBlock) => subBlock.id === 'credential')
@@ -44,12 +62,57 @@ describe('ZoomBlock', () => {
     expect(result.credential).toBe('selected-cred')
   })
 
-  it('uses the same selected credential for account recording operations', () => {
+  it('hides account recording operations outside admin workspaces', () => {
+    const operationSubBlock = ZoomBlock.subBlocks.find((subBlock) => subBlock.id === 'operation')
+    const options =
+      typeof operationSubBlock?.options === 'function'
+        ? operationSubBlock.options()
+        : operationSubBlock?.options
+
+    const optionIds = options?.map((option) => option.id) ?? []
+    expect(optionIds).not.toContain('zoom_list_account_recordings')
+    expect(optionIds).not.toContain('zoom_get_account_recordings_with_transcript')
+    expect(optionIds).toContain('zoom_list_recordings')
+  })
+
+  it('shows account recording operations in admin workspaces', () => {
+    mockIsAdminWorkspace.mockReturnValue(true)
+
+    const operationSubBlock = ZoomBlock.subBlocks.find((subBlock) => subBlock.id === 'operation')
+    const options =
+      typeof operationSubBlock?.options === 'function'
+        ? operationSubBlock.options()
+        : operationSubBlock?.options
+
+    const optionIds = options?.map((option) => option.id) ?? []
+    expect(optionIds).toContain('zoom_list_account_recordings')
+    expect(optionIds).toContain('zoom_get_account_recordings_with_transcript')
+  })
+
+  it('rejects account recording operations outside admin workspaces at execution', () => {
+    expect(() =>
+      paramsFunction({
+        operation: 'zoom_list_account_recordings',
+        oauthCredential: 'selected-cred',
+      })
+    ).toThrow(/admin workspace/i)
+
+    expect(() =>
+      toolFunction({
+        operation: 'zoom_get_account_recordings_with_transcript',
+        oauthCredential: 'selected-cred',
+      })
+    ).toThrow(/admin workspace/i)
+  })
+
+  it('allows account recording operations in admin workspaces', () => {
+    mockIsAdminWorkspace.mockReturnValue(true)
+
     const result = paramsFunction({
       operation: 'zoom_list_account_recordings',
       oauthCredential: 'selected-cred',
-      from: '2026-05-01',
-      to: '2026-05-26',
+      fromDate: '2026-05-01',
+      toDate: '2026-05-26',
     })
 
     expect(result.credential).toBe('selected-cred')

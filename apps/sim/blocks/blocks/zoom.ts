@@ -1,5 +1,9 @@
 import { ZoomIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
+import {
+  isAdminWorkspace,
+  resolveWorkspaceIdForAdminCheck,
+} from '@/lib/workspaces/is-admin-workspace'
 import type { SubBlockCondition } from '@/lib/workflows/subblocks/visibility'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
@@ -17,6 +21,55 @@ const ZOOM_MEETING_SUBBLOCK_OPS = [
 ] as const
 
 const ZOOM_MEETING_OPS_LIST = [...ZOOM_MEETING_SUBBLOCK_OPS]
+
+/** Account-level recording tools; require admin workspace + zoom-admin OAuth. */
+const ZOOM_ADMIN_ACCOUNT_OPERATIONS = [
+  'zoom_list_account_recordings',
+  'zoom_get_account_recordings_with_transcript',
+] as const
+
+const ZOOM_OPERATION_OPTIONS = [
+  { label: 'Create Meeting', id: 'zoom_create_meeting' },
+  { label: 'List Meetings', id: 'zoom_list_meetings' },
+  { label: 'Get Meeting', id: 'zoom_get_meeting' },
+  { label: 'Update Meeting', id: 'zoom_update_meeting' },
+  { label: 'Delete Meeting', id: 'zoom_delete_meeting' },
+  { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
+  { label: 'List Recordings', id: 'zoom_list_recordings' },
+  { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
+  {
+    label: 'Get Account Recordings with Transcript',
+    id: 'zoom_get_account_recordings_with_transcript',
+  },
+  { label: 'Get Meeting Recordings', id: 'zoom_get_meeting_recordings' },
+  { label: 'Download Transcript/File', id: 'zoom_download_transcript' },
+  { label: 'Delete Recording', id: 'zoom_delete_recording' },
+  { label: 'List Past Participants', id: 'zoom_list_past_participants' },
+] as const
+
+function getZoomOperationOptions(): Array<{ label: string; id: string }> {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck())
+  if (isAdmin) {
+    return [...ZOOM_OPERATION_OPTIONS]
+  }
+  return ZOOM_OPERATION_OPTIONS.filter(
+    (option) => !(ZOOM_ADMIN_ACCOUNT_OPERATIONS as readonly string[]).includes(option.id)
+  )
+}
+
+function assertZoomAdminAccountOperationAllowed(
+  params: Record<string, unknown>,
+  operation: string
+): void {
+  if (!(ZOOM_ADMIN_ACCOUNT_OPERATIONS as readonly string[]).includes(operation)) {
+    return
+  }
+  if (!isAdminWorkspace(resolveWorkspaceIdForAdminCheck(params))) {
+    throw new Error(
+      'This operation is only available in admin workspaces. Connect a Zoom admin account to use account-level recordings.'
+    )
+  }
+}
 
 function hasZoomAuth(values: Record<string, unknown> | undefined): boolean {
   if (!values) return false
@@ -68,24 +121,7 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       id: 'operation',
       title: 'Operation',
       type: 'dropdown',
-      options: [
-        { label: 'Create Meeting', id: 'zoom_create_meeting' },
-        { label: 'List Meetings', id: 'zoom_list_meetings' },
-        { label: 'Get Meeting', id: 'zoom_get_meeting' },
-        { label: 'Update Meeting', id: 'zoom_update_meeting' },
-        { label: 'Delete Meeting', id: 'zoom_delete_meeting' },
-        { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
-        { label: 'List Recordings', id: 'zoom_list_recordings' },
-        { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
-        {
-          label: 'Get Account Recordings with Transcript',
-          id: 'zoom_get_account_recordings_with_transcript',
-        },
-        { label: 'Get Meeting Recordings', id: 'zoom_get_meeting_recordings' },
-        { label: 'Download Transcript/File', id: 'zoom_download_transcript' },
-        { label: 'Delete Recording', id: 'zoom_delete_recording' },
-        { label: 'List Past Participants', id: 'zoom_list_past_participants' },
-      ],
+      options: () => getZoomOperationOptions(),
       value: () => 'zoom_create_meeting',
     },
     {
@@ -543,7 +579,9 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     ],
     config: {
       tool: (params) => {
-        return params.operation || 'zoom_create_meeting'
+        const operation = params.operation || 'zoom_create_meeting'
+        assertZoomAdminAccountOperationAllowed(params as Record<string, unknown>, operation)
+        return operation
       },
       params: (params) => {
         const credential = String(params.oauthCredential ?? '').trim()
@@ -552,11 +590,14 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
           throw new Error('Connect a Zoom account for this operation.')
         }
 
+        const operation = params.operation || 'zoom_create_meeting'
+        assertZoomAdminAccountOperationAllowed(params as Record<string, unknown>, operation)
+
         const baseParams: Record<string, unknown> = {
           credential,
         }
 
-        switch (params.operation) {
+        switch (operation) {
           case 'zoom_create_meeting':
             if (!params.userId?.trim()) {
               throw new Error('User ID is required.')

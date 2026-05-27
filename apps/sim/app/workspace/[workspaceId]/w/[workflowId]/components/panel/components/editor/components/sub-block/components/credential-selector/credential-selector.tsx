@@ -17,6 +17,7 @@ import {
   parseProvider,
 } from '@/lib/oauth'
 import { getMissingRequiredScopes } from '@/lib/oauth/utils'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -61,7 +62,11 @@ export function CredentialSelector({
   const requiredScopes = subBlock.requiredScopes || []
   const label = subBlock.placeholder || 'Select credential'
   const serviceId = subBlock.serviceId || ''
-  const additionalConnectOptions = subBlock.additionalConnectOptions || []
+  const additionalConnectOptions = useMemo(() => {
+    const options = subBlock.additionalConnectOptions || []
+    if (options.length === 0) return options
+    return isAdminWorkspace(workspaceId) ? options : []
+  }, [subBlock.additionalConnectOptions, workspaceId])
   const isAllCredentials = !serviceId
   const supportsCredentialSets = subBlock.supportsCredentialSets || false
 
