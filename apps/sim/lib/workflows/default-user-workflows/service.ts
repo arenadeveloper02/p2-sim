@@ -1,5 +1,11 @@
 import { db } from '@sim/db'
-import { credential, credentialMember, defaultUserWorkflows, workflow } from '@sim/db/schema'
+import {
+  credential,
+  credentialMember,
+  defaultUserWorkflows,
+  workflow,
+  workflowFolder,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, isNull } from 'drizzle-orm'
@@ -13,13 +19,57 @@ import {
   loadWorkflowFromNormalizedTables,
   saveWorkflowToNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
-import { deduplicateWorkflowName } from '@/lib/workflows/utils'
+import { createFolderRecord, deduplicateWorkflowName } from '@/lib/workflows/utils'
 import { regenerateWorkflowIds } from '@/stores/workflows/utils'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('DefaultUserWorkflowsService')
 
 const DEFAULT_WORKFLOW_COLOR = '#3972F6'
+
+const SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME = 'System Workflows'
+
+/**
+ * Returns the workspace folder used for admin-provisioned default workflows.
+ * Reuses an existing root-level folder with the system name when present.
+ */
+async function getOrCreateSystemDefaultWorkflowFolder(params: {
+  workspaceId: string
+  userId: string
+}): Promise<string> {
+  const [existing] = await db
+    .select({ id: workflowFolder.id })
+    .from(workflowFolder)
+    .where(
+      and(
+        eq(workflowFolder.workspaceId, params.workspaceId),
+        eq(workflowFolder.name, SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME),
+        isNull(workflowFolder.parentId),
+        isNull(workflowFolder.archivedAt)
+      )
+    )
+    .orderBy(asc(workflowFolder.createdAt))
+    .limit(1)
+
+  if (existing) {
+    return existing.id
+  }
+
+  const { folderId } = await createFolderRecord({
+    userId: params.userId,
+    workspaceId: params.workspaceId,
+    name: SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME,
+    parentId: null,
+  })
+
+  logger.info('Created system default workflows folder', {
+    folderId,
+    workspaceId: params.workspaceId,
+    userId: params.userId,
+  })
+
+  return folderId
+}
 
 const PROVIDER_BY_TOOL_TYPE: Record<string, string> = {
   gmail: 'google-email',
@@ -398,6 +448,8 @@ async function createDefaultUserWorkflow(params: {
   input: DefaultWorkflowSourceInput
   workspaceId: string
   userId: string
+  systemFolderId: string
+  mappingId?: string
   credentialsByProvider: Map<string, string>
   postgresConnection?: PostgresConnectionConfig
 }): Promise<ProvisionDefaultUserWorkflowResult> {
@@ -412,13 +464,17 @@ async function createDefaultUserWorkflow(params: {
 
   const workflowId = generateId()
   const now = new Date()
-  const dedupedName = await deduplicateWorkflowName(workflowName, params.workspaceId, null)
+  const dedupedName = await deduplicateWorkflowName(
+    workflowName,
+    params.workspaceId,
+    params.systemFolderId
+  )
 
   await db.insert(workflow).values({
     id: workflowId,
     userId: params.userId,
     workspaceId: params.workspaceId,
-    folderId: null,
+    folderId: params.systemFolderId,
     name: dedupedName,
     description: sourceWorkflow.description || 'Imported via Admin API',
     color: sourceWorkflow.color || DEFAULT_WORKFLOW_COLOR,
@@ -438,6 +494,7 @@ async function createDefaultUserWorkflow(params: {
   }
 
   await upsertDefaultUserMapping({
+    ...(params.mappingId ? { id: params.mappingId } : {}),
     userId: params.userId,
     sourceWorkflowId: params.input.sourceWorkflowId,
     userWorkflowId: workflowId,
@@ -495,7 +552,11 @@ export async function provisionOrRefreshDefaultUserWorkflow(
   })
 
   if (!existingMapping) {
-    return createDefaultUserWorkflow(params)
+    const systemFolderId = await getOrCreateSystemDefaultWorkflowFolder({
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+    })
+    return createDefaultUserWorkflow({ ...params, systemFolderId })
   }
 
   const [existingWorkflow] = await db
@@ -505,58 +566,15 @@ export async function provisionOrRefreshDefaultUserWorkflow(
     .limit(1)
 
   if (!existingWorkflow) {
-    const { sourceWorkflow, workflowData, workflowName } = await buildWorkflowDataFromSource(
-      params.input
-    )
-    const { credentialPopulation, postgresBlocksPopulated } = enrichWorkflowDataForProvision({
-      workflowData,
-      credentialsByProvider: params.credentialsByProvider,
-      postgresConnection: params.postgresConnection,
-    })
-    const workflowId = generateId()
-    const now = new Date()
-    const dedupedName = await deduplicateWorkflowName(workflowName, params.workspaceId, null)
-
-    await db.insert(workflow).values({
-      id: workflowId,
-      userId: params.userId,
+    const systemFolderId = await getOrCreateSystemDefaultWorkflowFolder({
       workspaceId: params.workspaceId,
-      folderId: null,
-      name: dedupedName,
-      description: sourceWorkflow.description || 'Imported via Admin API',
-      color: sourceWorkflow.color || DEFAULT_WORKFLOW_COLOR,
-      lastSynced: now,
-      createdAt: now,
-      updatedAt: now,
-      isDeployed: false,
-      runCount: 0,
-      variables: workflowData.variables ?? sourceWorkflow.variables ?? {},
-      defaultAgent: true,
-    })
-
-    const saveResult = await saveWorkflowToNormalizedTables(workflowId, workflowData)
-    if (!saveResult.success) {
-      await db.delete(workflow).where(eq(workflow.id, workflowId))
-      throw new Error(`Failed to save workflow state: ${saveResult.error}`)
-    }
-
-    await upsertDefaultUserMapping({
-      id: existingMapping.id,
       userId: params.userId,
-      sourceWorkflowId: params.input.sourceWorkflowId,
-      userWorkflowId: workflowId,
-      userWorkspaceId: params.workspaceId,
-      lastSyncedAt: now,
     })
-
-    return {
-      workflowId,
-      name: dedupedName,
-      created: true,
-      refreshed: false,
-      credentialPopulation,
-      postgresBlocksPopulated,
-    }
+    return createDefaultUserWorkflow({
+      ...params,
+      systemFolderId,
+      mappingId: existingMapping.id,
+    })
   }
 
   const now = new Date()
