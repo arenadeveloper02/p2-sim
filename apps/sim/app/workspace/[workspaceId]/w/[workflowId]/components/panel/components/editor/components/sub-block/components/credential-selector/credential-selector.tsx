@@ -16,7 +16,7 @@ import {
   type OAuthProvider,
   parseProvider,
 } from '@/lib/oauth'
-import { getMissingRequiredScopes } from '@/lib/oauth/utils'
+import { getMissingRequiredScopes, getRequiredScopesForCredential } from '@/lib/oauth/utils'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
@@ -202,8 +202,12 @@ export function CredentialSelector({
   )
 
   const hasOAuthSelection = Boolean(selectedCredential)
+  const scopesForValidation = useMemo(
+    () => getRequiredScopesForCredential(selectedCredential, requiredScopes),
+    [selectedCredential, requiredScopes]
+  )
   const missingRequiredScopes = hasOAuthSelection
-    ? getMissingRequiredScopes(selectedCredential!, requiredScopes || [])
+    ? getMissingRequiredScopes(selectedCredential!, scopesForValidation)
     : []
 
   const needsUpdate =

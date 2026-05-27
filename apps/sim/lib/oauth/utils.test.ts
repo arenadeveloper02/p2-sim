@@ -4,6 +4,7 @@ import {
   getAllOAuthServices,
   getCanonicalScopesForProvider,
   getMissingRequiredScopes,
+  getRequiredScopesForCredential,
   getProviderIdFromServiceId,
   getScopesForService,
   getServiceByProviderAndId,
@@ -601,6 +602,23 @@ describe('getScopesForService', () => {
 
     expect(Array.isArray(scopes)).toBe(true)
     expect(scopes.length).toBe(0)
+  })
+})
+
+describe('getRequiredScopesForCredential', () => {
+  it.concurrent('uses zoom-admin canonical scopes when credential provider is zoom-admin', () => {
+    const scopes = getRequiredScopesForCredential(
+      { provider: 'zoom-admin' },
+      ['meeting:write:meeting']
+    )
+
+    expect(scopes).toContain('cloud_recording:read:list_account_recordings:admin')
+    expect(scopes).not.toContain('meeting:write:meeting')
+  })
+
+  it.concurrent('falls back to block scopes when credential has no provider', () => {
+    const fallback = ['meeting:write:meeting']
+    expect(getRequiredScopesForCredential(undefined, fallback)).toEqual(fallback)
   })
 })
 

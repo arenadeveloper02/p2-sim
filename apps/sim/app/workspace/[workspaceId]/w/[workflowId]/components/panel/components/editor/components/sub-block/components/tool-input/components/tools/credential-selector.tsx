@@ -14,7 +14,7 @@ import {
   type OAuthService,
   parseProvider,
 } from '@/lib/oauth'
-import { getMissingRequiredScopes } from '@/lib/oauth/utils'
+import { getMissingRequiredScopes, getRequiredScopesForCredential } from '@/lib/oauth/utils'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { useWorkspaceCredential } from '@/hooks/queries/credentials'
 import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
@@ -134,8 +134,12 @@ export function ToolCredentialSelector({
   )
 
   const hasSelection = Boolean(selectedCredential)
+  const scopesForValidation = useMemo(
+    () => getRequiredScopesForCredential(selectedCredential, requiredScopes),
+    [selectedCredential, requiredScopes]
+  )
   const missingRequiredScopes = hasSelection
-    ? getMissingRequiredScopes(selectedCredential!, requiredScopes || [])
+    ? getMissingRequiredScopes(selectedCredential!, scopesForValidation)
     : []
 
   const needsUpdate =

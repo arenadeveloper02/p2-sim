@@ -1176,9 +1176,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'cloud_recording:read:recording:admin',
           'cloud_recording:read:meeting_transcript:admin',
           'cloud_recording:read:list_account_recordings:admin',
-
-          'recording:read:list_account_recordings',
-          'recording:read:admin',
         ],
       },
     },
