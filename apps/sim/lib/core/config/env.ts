@@ -156,6 +156,7 @@ export const env = createEnv({
     // Monitoring & Analytics
     TELEMETRY_ENDPOINT:                    z.string().url().optional(),            // Custom telemetry/analytics endpoint
     COST_MULTIPLIER:                       z.number().optional(),                  // Multiplier for cost calculations
+    USAGE_LOG_COST_MULTIPLIER:             z.coerce.number().positive().optional(), // Multiplier on usage_log / user_stats persist (record-usage-wrapper; default 1)
     LOG_LEVEL:                             z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR']).optional(), // Minimum log level to display (defaults to ERROR in production, DEBUG in development)
     PROFOUND_API_KEY:                      z.string().min(1).optional(),           // Profound analytics API key
     PROFOUND_ENDPOINT:                     z.string().url().optional(),            // Profound analytics endpoint

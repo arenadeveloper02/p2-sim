@@ -27,14 +27,14 @@ interface PreparedSpyfuRequest {
 function resolveCredentials(params: SpyfuRequestParams): { userId: string; password: string } {
   const isAdmin = isAdminWorkspace(params._context?.workspaceId)
 
-  const userId = isAdmin ? params.userId?.trim() : env.SPYFU_API_USER_ID
-  const password = isAdmin ? params.password?.trim() : env.SPYFU_API_PASSWORD
+  const userId = (isAdmin ? env.SPYFU_API_USER_ID : params.userId)?.trim()
+  const password = (isAdmin ? env.SPYFU_API_PASSWORD : params.password)?.trim()
 
   if (!userId || !password) {
     throw new Error(
       isAdmin
-        ? 'SpyFu API credentials are missing. Provide userId and password in the SpyFu block.'
-        : 'SpyFu API credentials are missing. Set SPYFU_API_USER_ID and SPYFU_API_PASSWORD.'
+        ? 'SpyFu API credentials are missing. Set SPYFU_API_USER_ID and SPYFU_API_PASSWORD.'
+        : 'SpyFu API credentials are missing. Provide userId and password in the SpyFu block.'
     )
   }
 

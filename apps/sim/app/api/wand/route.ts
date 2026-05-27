@@ -5,10 +5,10 @@ import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import { getSession } from '@/lib/auth'
-import { recordUsage } from '@/lib/billing/core/usage-log'
+import { recordUsage } from '@/lib/billing/core/record-usage-wrapper'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { env } from '@/lib/core/config/env'
-import { getCostMultiplier, isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { enrichTableSchema } from '@/lib/table/llm/wand'
@@ -121,7 +121,6 @@ async function updateUserStatsForWand(
 
     if (!isBYOK) {
       const pricing = getModelPricing(modelName)
-      const costMultiplier = getCostMultiplier()
       let modelCost = 0
 
       if (pricing) {
@@ -132,7 +131,7 @@ async function updateUserStatsForWand(
         modelCost = (promptTokens / 1000000) * 0.005 + (completionTokens / 1000000) * 0.015
       }
 
-      costToStore = modelCost * costMultiplier
+      costToStore = modelCost
     }
 
     await recordUsage({

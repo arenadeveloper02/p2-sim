@@ -27,11 +27,11 @@ import {
   type SQL,
   sql,
 } from 'drizzle-orm'
-import { recordUsage } from '@/lib/billing/core/usage-log'
+import { recordUsage } from '@/lib/billing/core/record-usage-wrapper'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
 import { env } from '@/lib/core/config/env'
-import { getCostMultiplier, isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
+import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
 import { processDocument } from '@/lib/knowledge/documents/document-processor'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
 import { generateEmbeddings } from '@/lib/knowledge/embeddings'
@@ -605,13 +605,11 @@ export async function processDocumentAsync(
 
     if (!embeddingIsBYOK && totalEmbeddingTokens > 0 && kb[0].userId) {
       try {
-        const costMultiplier = getCostMultiplier()
         const { total: cost } = calculateCost(
           embeddingModelName,
           totalEmbeddingTokens,
           0,
-          false,
-          costMultiplier
+          false
         )
         if (cost > 0) {
           await recordUsage({

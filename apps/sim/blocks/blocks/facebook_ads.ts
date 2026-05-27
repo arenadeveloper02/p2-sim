@@ -1,11 +1,9 @@
 import { MetaIcon } from '@/components/icons'
-import { getScopesForService } from '@/lib/oauth/utils'
 import {
   isAdminWorkspace,
   resolveWorkspaceIdForAdminCheck,
 } from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
 import type { FacebookAdsQueryResponse } from '@/tools/facebook_ads/index'
 
 const FACEBOOK_ADS_COND_NEVER = '__facebook_ads_cond_never__'
@@ -19,7 +17,7 @@ function facebookAdsAdminOnlyCondition(values?: Record<string, unknown>) {
   return { field: 'query', value: FACEBOOK_ADS_COND_NEVER }
 }
 
-/** Show OAuth / BYOK fields (non-admin workspaces only). */
+/** Show explicit Facebook app credential fields (non-admin workspaces only). */
 function facebookAdsNonAdminOnlyCondition(values?: Record<string, unknown>) {
   const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
   if (isAdmin) {
@@ -38,30 +36,7 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
   category: 'tools',
   bgColor: '#1877F2',
   icon: MetaIcon,
-  authMode: AuthMode.OAuth,
   subBlocks: [
-    {
-      id: 'credential',
-      title: 'Facebook Account',
-      type: 'oauth-input',
-      canonicalParamId: 'oauthCredential',
-      mode: 'basic',
-      required: true,
-      serviceId: 'facebook-ads',
-      requiredScopes: getScopesForService('facebook-ads'),
-      placeholder: 'Select Facebook account',
-      condition: facebookAdsNonAdminOnlyCondition,
-    },
-    {
-      id: 'manualCredential',
-      title: 'Facebook Account',
-      type: 'short-input',
-      canonicalParamId: 'oauthCredential',
-      mode: 'advanced',
-      placeholder: 'Enter credential ID',
-      required: true,
-      condition: facebookAdsNonAdminOnlyCondition,
-    },
     {
       id: 'fbClientId',
       title: 'FB Client ID',
@@ -80,10 +55,19 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
       condition: facebookAdsNonAdminOnlyCondition,
     },
     {
-      id: 'adAccountId',
-      title: 'Facebook Ad Account ID',
+      id: 'fbAccessToken',
+      title: 'FB Access Token',
       type: 'short-input',
-      canonicalParamId: 'account',
+      placeholder: 'User or system user token with ads_read permission',
+      required: true,
+      password: true,
+      condition: facebookAdsNonAdminOnlyCondition,
+    },
+    {
+      id: 'accountId',
+      title: 'Account ID',
+      type: 'short-input',
+      canonicalParamId: 'adAccountId',
       placeholder: 'Ad account ID (e.g. act_123456789)',
       required: true,
       condition: facebookAdsNonAdminOnlyCondition,
@@ -156,19 +140,13 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
           }
         }
 
-        const oauthCredential =
-          (typeof params.oauthCredential === 'string' && params.oauthCredential) ||
-          (typeof params.credential === 'string' && params.credential) ||
-          (typeof params.manualCredential === 'string' && params.manualCredential) ||
-          undefined
-
         return {
           query: params.query,
           workspaceId,
-          oauthCredential,
           fbClientId: params.fbClientId,
           fbClientSecret: params.fbClientSecret,
-          adAccountId: params.adAccountId ?? params.account,
+          fbAccessToken: params.fbAccessToken,
+          adAccountId: params.accountId ?? params.adAccountId ?? params.account,
           _context: params._context,
         }
       },
@@ -183,9 +161,10 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
       type: 'string',
       description: 'Natural language query from user chat',
     },
-    oauthCredential: { type: 'string', description: 'Facebook OAuth credential' },
     fbClientId: { type: 'string', description: 'Facebook app client ID' },
     fbClientSecret: { type: 'string', description: 'Facebook app client secret' },
+    fbAccessToken: { type: 'string', description: 'Facebook Marketing API access token' },
+    accountId: { type: 'string', description: 'Facebook ad account ID (act_...)' },
     adAccountId: { type: 'string', description: 'Facebook ad account ID (act_...)' },
   },
   outputs: {

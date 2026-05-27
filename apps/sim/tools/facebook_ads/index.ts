@@ -8,10 +8,10 @@ interface FacebookAdsQueryParams {
   account?: string
   query: string
   workspaceId?: string
-  oauthCredential?: string
-  accessToken?: string
   fbClientId?: string
   fbClientSecret?: string
+  fbAccessToken?: string
+  accountId?: string
   adAccountId?: string
   _context?: {
     workspaceId?: string
@@ -26,10 +26,6 @@ export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> =
   name: 'Facebook Ads Query',
   description:
     'Query Facebook Ads API for campaign performance, ad set metrics, and account insights using natural language. Supports all Position2 Facebook ad accounts.',
-  oauth: {
-    required: false,
-    provider: 'facebook-ads',
-  },
   params: {
     account: {
       type: 'string',
@@ -49,18 +45,6 @@ export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> =
       visibility: 'hidden',
       description: 'Workspace ID for admin vs user credential routing',
     },
-    oauthCredential: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Facebook OAuth credential (non-admin workspaces)',
-    },
-    accessToken: {
-      type: 'string',
-      required: false,
-      visibility: 'hidden',
-      description: 'OAuth access token resolved at execution time',
-    },
     fbClientId: {
       type: 'string',
       required: false,
@@ -72,6 +56,19 @@ export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> =
       required: false,
       visibility: 'user-only',
       description: 'Facebook app client secret (non-admin workspaces)',
+    },
+    fbAccessToken: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description:
+        'User or system user access token with ads_read or ads_management (non-admin workspaces)',
+    },
+    accountId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Facebook ad account ID (non-admin workspaces)',
     },
     adAccountId: {
       type: 'string',
@@ -90,10 +87,11 @@ export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> =
       account: params.account,
       query: params.query,
       workspaceId: params.workspaceId ?? params._context?.workspaceId,
-      accessToken: params.accessToken,
       fbClientId: params.fbClientId,
       fbClientSecret: params.fbClientSecret,
-      adAccountId: params.adAccountId,
+      fbAccessToken: params.fbAccessToken,
+      accountId: params.accountId,
+      adAccountId: params.accountId ?? params.adAccountId,
     }),
   },
   transformResponse: async (response: Response, params?: FacebookAdsQueryParams) => {

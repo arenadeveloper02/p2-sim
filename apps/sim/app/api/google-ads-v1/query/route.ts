@@ -11,6 +11,7 @@ import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
 import {
   makeGoogleAdsOAuthRequest,
   makeGoogleAdsRequest,
+  refreshGoogleAdsAccessToken,
 } from '../../google-ads/query/google-ads-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
@@ -42,14 +43,14 @@ function resolveUsesAdminCredentials(body: GoogleAdsV1Request): boolean {
   if (body.workspaceId) {
     return isAdminWorkspace(body.workspaceId)
   }
-  return Boolean(body.accounts && !body.accessToken)
+  return Boolean(body.accounts && !body.clientId)
 }
 
 /**
  * POST /api/google-ads-v1/query
  *
  * Admin workspaces: env credentials (GOOGLE_ADS_* ) + account from GOOGLE_ADS_ACCOUNTS.
- * Non-admin workspaces: user OAuth access token, developer token, and customer ID from the block.
+ * Non-admin workspaces: client ID, client secret, refresh token, developer token, and customer ID.
  */
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
@@ -111,15 +112,17 @@ export async function POST(request: NextRequest) {
       logger.info(`[${requestId}] Executing with env credentials for account ${accountInfo.id}`)
       apiResult = await makeGoogleAdsRequest(accountInfo.id, queryResult.gaql_query)
     } else {
-      const customerId = body.customerId?.trim()
+      const customerId = (body.accountId ?? body.customerId)?.trim()
       const developerToken = body.developerToken?.trim()
-      const accessToken = body.accessToken?.trim()
+      const clientId = body.clientId?.trim()
+      const clientSecret = body.clientSecret?.trim()
+      const refreshToken = body.refreshToken?.trim()
 
-      if (!customerId || !developerToken || !accessToken) {
+      if (!customerId || !developerToken || !clientId || !clientSecret || !refreshToken) {
         return NextResponse.json(
           {
             error:
-              'Google Ads account, developer token, and OAuth connection are required for this workspace',
+              'Client ID, client secret, refresh token, developer token, and customer ID are required for this workspace',
           },
           { status: 400 }
         )
@@ -127,8 +130,9 @@ export async function POST(request: NextRequest) {
 
       accountInfo = { id: customerId.replace(/-/g, ''), name: `Customer ${customerId}` }
       logger.info(
-        `[${requestId}] Executing with user OAuth credentials for customer ${accountInfo.id}`
+        `[${requestId}] Executing with user-provided Google Ads credentials for customer ${accountInfo.id}`
       )
+      const accessToken = await refreshGoogleAdsAccessToken(clientId, clientSecret, refreshToken)
       apiResult = await makeGoogleAdsOAuthRequest({
         customerId,
         gaqlQuery: queryResult.gaql_query,
