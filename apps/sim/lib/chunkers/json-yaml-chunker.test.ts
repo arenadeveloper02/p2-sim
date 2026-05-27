@@ -5,9 +5,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { JsonYamlChunker } from './json-yaml-chunker'
 
-vi.mock('@sim/logger', () => loggerMock)
-
-vi.mock('@/lib/tokenization/accurate', () => ({
+vi.mock('@/lib/tokenization', () => ({
   getAccurateTokenCount: (text: string) => Math.ceil(text.length / 4),
 }))
 

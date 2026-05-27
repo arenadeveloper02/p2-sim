@@ -6,7 +6,6 @@ export default {
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     './app/**/*.{js,ts,jsx,tsx,mdx}',
-    '!./app/api/**/*',
     '!./app/node_modules/**',
     '!**/node_modules/**',
   ],

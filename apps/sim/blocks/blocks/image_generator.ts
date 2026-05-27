@@ -38,6 +38,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
       type: 'dropdown',
       options: [
         { label: 'Nano Banana', id: 'gemini-2.5-flash-image' },
+        // { label: 'GPT Image', id: 'gpt-image-1' },
         { label: 'Nano Banana Pro', id: NANO_BANANA_PRO_MODEL },
       ],
       value: () => NANO_BANANA_PRO_MODEL,

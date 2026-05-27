@@ -3,9 +3,7 @@ import { MEMORY } from '@/executor/constants'
 import { Memory } from '@/executor/handlers/agent/memory'
 import type { Message } from '@/executor/handlers/agent/types'
 
-vi.mock('@sim/logger', () => loggerMock)
-
-vi.mock('@/lib/tokenization/accurate', () => ({
+vi.mock('@/lib/tokenization/estimators', () => ({
   getAccurateTokenCount: vi.fn((text: string) => {
     return Math.ceil(text.length / 4)
   }),

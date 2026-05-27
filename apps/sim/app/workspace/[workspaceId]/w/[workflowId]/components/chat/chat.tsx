@@ -77,6 +77,11 @@ import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('FloatingChat')
 
+/**
+ * Formats file size in human-readable format
+ * @param bytes - Size in bytes
+ * @returns Formatted string with appropriate unit (B, KB, MB, GB)
+ */
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -84,6 +89,9 @@ const formatFileSize = (bytes: number): string => {
   return `${Math.round((bytes / 1024 ** i) * 10) / 10} ${units[i]}`
 }
 
+/**
+ * Represents a chat file attachment before processing
+ */
 interface ChatFile {
   id: string
   name: string
@@ -93,8 +101,14 @@ interface ChatFile {
   dataUrl?: string
 }
 
+/** Timeout for FileReader operations in milliseconds */
 const FILE_READ_TIMEOUT_MS = 60000
 
+/**
+ * Reads files and converts them to data URLs for image display
+ * @param chatFiles - Array of chat files to process
+ * @returns Promise resolving to array of files with data URLs for images
+ */
 const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ChatMessageAttachment[]> => {
   return Promise.all(
     chatFiles.map(async (file) => {
@@ -153,6 +167,12 @@ const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ChatMessag
   )
 }
 
+/**
+ * Extracts output value from logs based on output ID
+ * @param logs - Array of block logs from workflow execution
+ * @param outputId - Output identifier in format blockId or blockId.path
+ * @returns Extracted output value or undefined if not found
+ */
 const extractOutputFromLogs = (logs: BlockLog[] | undefined, outputId: string): unknown => {
   const blockId = extractBlockIdFromOutputId(outputId)
   const path = extractPathFromOutputId(outputId, blockId)
@@ -179,6 +199,11 @@ const extractOutputFromLogs = (logs: BlockLog[] | undefined, outputId: string): 
   return output
 }
 
+/**
+ * Formats output content for display in chat
+ * @param output - Output value to format (string, object, or other)
+ * @returns Formatted string, markdown code block for objects, or empty string
+ */
 const formatOutputContent = (output: unknown): string => {
   if (typeof output === 'string') {
     return output
@@ -234,6 +259,9 @@ const getAssistantAssetSourcesFromResult = (
   return []
 }
 
+/**
+ * Represents a field in the start block's input format configuration
+ */
 interface StartInputFormatField {
   id?: string
   name?: string
@@ -242,6 +270,18 @@ interface StartInputFormatField {
   collapsed?: boolean
 }
 
+/**
+ * Floating chat modal component
+ *
+ * A draggable chat interface positioned over the workflow canvas that allows users to:
+ * - Send messages and execute workflows
+ * - Upload and attach files
+ * - View streaming responses
+ * - Select workflow outputs as context
+ *
+ * The modal is constrained by sidebar, panel, and terminal dimensions and persists
+ * position across sessions using the floating chat store.
+ */
 export function Chat() {
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -250,6 +290,7 @@ export function Chat() {
   const triggerWorkflowUpdate = useWorkflowStore((state) => state.triggerUpdate)
   const setSubBlockValue = useSubBlockStore((state) => state.setValue)
   const { data: workspaceData } = useWorkspaceSettings(workspaceId)
+  // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
   const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
 
   const {
@@ -472,10 +513,12 @@ export function Chat() {
     return Boolean(lastMessage?.isStreaming)
   }, [workflowMessages])
 
+  // Get custom fields (excluding reserved fields: input, conversationId, files)
   const customFields = useMemo(() => {
     return getCustomInputFields(startBlockInputFormat as InputFormatField[])
   }, [startBlockInputFormat])
 
+  // Reset modal flags when workflow changes or messages are added
   useEffect(() => {
     if (workflowMessages.length > 0) {
       hasShownModalRef.current = false
@@ -483,16 +526,21 @@ export function Chat() {
     }
   }, [workflowMessages.length, activeWorkflowId])
 
+  // Reset check flag when chat closes
   useEffect(() => {
     if (!isChatOpen) {
       hasCheckedModalRef.current = false
     }
   }, [isChatOpen])
 
+  // Show modal on load if no history and there are custom fields
+  // Only check once when chat opens to prevent infinite loops
   useEffect(() => {
+    // Only check once per chat session when chat opens
     if (isChatOpen && !hasCheckedModalRef.current && workflowMessages.length === 0) {
       hasCheckedModalRef.current = true
 
+      // Check if we have custom fields (check once, don't depend on it)
       if (customFields.length > 0 && !hasShownModalRef.current) {
         hasShownModalRef.current = true
         setIsInputModalOpen(true)
@@ -500,6 +548,7 @@ export function Chat() {
     }
   }, [isChatOpen, workflowMessages.length, customFields.length])
 
+  // Map chat messages to copilot message format (type -> role) for scroll hook
   const messagesForScrollHook = useMemo(() => {
     return workflowMessages.map((msg) => ({
       ...msg,
@@ -636,10 +685,13 @@ export function Chat() {
           const { done, value } = await reader.read()
 
           if (done) {
+            // Process any remaining buffer before finalizing
             if (buffer.trim()) {
+              // Try to process remaining buffer - might contain partial or complete messages
               const lines = buffer.split('\n\n').filter((line) => line.trim())
               for (const line of lines) {
                 if (!line.startsWith('data: ')) {
+                  // Try to process as data even without prefix
                   const trimmed = line.trim()
                   if (trimmed && trimmed !== '[DONE]') {
                     try {
@@ -656,7 +708,9 @@ export function Chat() {
                         appendMessageContent(responseMessageId, contentChunk)
                         chunkCount++
                       }
-                    } catch {}
+                    } catch {
+                      // Ignore parse errors
+                    }
                   }
                   continue
                 }
@@ -679,7 +733,9 @@ export function Chat() {
                     appendMessageContent(responseMessageId, contentChunk)
                     chunkCount++
                   }
-                } catch {}
+                } catch {
+                  // Ignore parse errors for remaining buffer
+                }
               }
             }
 
@@ -757,11 +813,14 @@ export function Chat() {
 
           const separatorIndex = buffer.lastIndexOf('\n\n')
           if (separatorIndex === -1) {
+            // No complete message yet, continue reading
             continue
           }
 
           const processable = buffer.slice(0, separatorIndex)
           buffer = buffer.slice(separatorIndex + 2)
+
+          // Split by double newlines to get individual SSE messages
           const lines = processable.split('\n\n').filter((line) => line.trim())
 
           for (const line of lines) {
@@ -776,6 +835,7 @@ export function Chat() {
               const json = JSON.parse(data)
               const { event, data: eventData, chunk: contentChunk, blockId } = json
 
+              // Handle final event - mark it but continue processing chunks
               if (event === 'final' && eventData) {
                 receivedFinalEvent = true
                 finalEventData = eventData as ExecutionResult
@@ -909,22 +969,29 @@ export function Chat() {
       const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
       const completeInput: Record<string, unknown> = {}
 
+      // Read values from Start Block inputFormat field values (field.value)
+      // This ensures values persist and are used naturally in execution flow
       for (const field of normalizedFields) {
         const fieldName = field.name?.trim()
         if (fieldName) {
+          // Priority: overrideValues (temporary) > field.value (persisted) > startBlockInputs (state) > empty string
           if (overrideValues && fieldName in overrideValues) {
             completeInput[fieldName] = overrideValues[fieldName] ?? ''
           } else if (field.value !== undefined && field.value !== null) {
+            // Use the value from Start Block inputFormat field (persisted value)
             completeInput[fieldName] = field.value
           } else {
+            // Fallback to state or empty string
             completeInput[fieldName] = startBlockInputs[fieldName] ?? ''
           }
         }
       }
 
+      // Override with actual values for reserved fields
       completeInput.input = userInput
       completeInput.conversationId = conversationId
 
+      // Handle files - only include if present, otherwise don't set it
       if (files && files.length > 0) {
         completeInput.files = files
       }
@@ -934,6 +1001,11 @@ export function Chat() {
     [startBlockInputFormat, startBlockInputs]
   )
 
+  /**
+   * Sends a chat message and executes the workflow.
+   * Processes file attachments, adds the user message to the chat,
+   * and triggers workflow execution with the message as input.
+   */
   const handleSendMessage = useCallback(async () => {
     if (
       (!chatMessage.trim() && chatFiles.length === 0 && effectiveGeneratedImages.length === 0) ||

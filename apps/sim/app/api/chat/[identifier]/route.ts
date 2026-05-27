@@ -31,6 +31,7 @@ import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/
 
 const logger = createLogger('ChatIdentifierAPI')
 
+// Agent department mapping
 const agentDepartments = [
   { value: 'creative', label: 'Creative' },
   { value: 'ma', label: 'MA' },
@@ -149,8 +150,9 @@ const chatPostBodySchema = z.object({
   password: z.string().optional(),
   email: z.string().email('Invalid email format').optional().or(z.literal('')),
   conversationId: z.string().optional(),
-  chatId: z.string().optional(),
+  chatId: z.string().optional(), // chatId for tracking conversation context
   files: z.array(chatFileSchema).optional().default([]),
+  // Additional Start Block inputs (custom fields from inputFormat)
   startBlockInputs: z.record(z.unknown()).optional(),
 })
 
@@ -347,11 +349,14 @@ export const POST = withRouteHandler(
         )
       }
 
+      // Store chat details in deployed_chat table if chatId is provided
+      // Ensures each chatId is added only once, even with concurrent requests
       if (parsedBody.chatId) {
         try {
           const chatId = parsedBody.chatId
           logger.debug(`[${requestId}] Processing chatId: ${chatId}`)
 
+          // Get the executing user ID from session
           let executingUserId: string | undefined
           try {
             const session = await getSession()
@@ -364,6 +369,8 @@ export const POST = withRouteHandler(
             )
           }
 
+          // Check if chatId already exists in deployed_chat table
+          // Using both chatId and workflowId to ensure proper context
           const existingChat = await db
             .select({ id: deployedChat.id })
             .from(deployedChat)
@@ -371,6 +378,7 @@ export const POST = withRouteHandler(
             .limit(1)
 
           if (existingChat.length > 0) {
+            // ChatId already exists - just update the timestamp and user ID
             const existingChatId = existingChat[0].id
             logger.debug(`[${requestId}] ChatId already exists, updating timestamp: ${chatId}`)
 
@@ -384,6 +392,8 @@ export const POST = withRouteHandler(
 
             logger.debug(`[${requestId}] Successfully updated existing chat: ${chatId}`)
           } else {
+            // ChatId doesn't exist - create a new record
+            // Prefer Start Block input values for title; otherwise use first 5 words of input
             const startBlockValues =
               parsedBody.startBlockInputs && typeof parsedBody.startBlockInputs === 'object'
                 ? Object.values(parsedBody.startBlockInputs)
@@ -426,14 +436,16 @@ export const POST = withRouteHandler(
 
               logger.info(`[${requestId}] Successfully created new chat record: ${chatId}`)
             } catch (insertError: any) {
+              // Handle race condition: if another request created the record between our check and insert
               if (
-                insertError?.code === '23505' ||
+                insertError?.code === '23505' || // PostgreSQL unique violation
                 (insertError instanceof Error && insertError.message.includes('unique'))
               ) {
                 logger.debug(
                   `[${requestId}] Race condition detected - chatId was created by another request: ${chatId}`
                 )
 
+                // Verify the record exists and update it
                 const raceConditionCheck = await db
                   .select({ id: deployedChat.id })
                   .from(deployedChat)
@@ -452,11 +464,13 @@ export const POST = withRouteHandler(
                   logger.debug(`[${requestId}] Updated chat record after race condition: ${chatId}`)
                 }
               } else {
+                // Re-throw if it's a different error
                 throw insertError
               }
             }
           }
         } catch (error: any) {
+          // Log error but don't fail the request - chat functionality should continue
           logger.error(`[${requestId}] Error storing chat details in deployed_chat table:`, {
             message: error.message,
             code: error.code,
@@ -477,6 +491,7 @@ export const POST = withRouteHandler(
         startBlockInputs,
       } = parsedBody
 
+      // Get userId from session for external chat API requests
       const session = await getSession()
       const userId = session?.user?.id || null
 
@@ -488,6 +503,7 @@ export const POST = withRouteHandler(
         return response
       }
 
+      // Check if we have any input: either input field, files, or startBlockInputs with values
       const hasStartBlockInputs =
         startBlockInputs &&
         typeof startBlockInputs === 'object' &&
@@ -544,10 +560,13 @@ export const POST = withRouteHandler(
         )
       }
 
+      // Format startBlockInputs into initialInput format
+      // Format: variable1: Value entered by User\nvariable2: value entered by User
       let formattedInitialInput = input || ''
       if (startBlockInputs && typeof startBlockInputs === 'object') {
         const startBlockInputLines: string[] = []
         for (const [key, value] of Object.entries(startBlockInputs)) {
+          // Skip reserved fields and empty values
           if (key === 'input' || key === 'conversationId' || key === 'files') {
             continue
           }
@@ -564,6 +583,7 @@ export const POST = withRouteHandler(
         }
       }
 
+      // Start logging session with chat metadata
       await loggingSession.safeStart({
         userId: userId || workspaceOwnerId,
         workspaceId,
@@ -687,6 +707,7 @@ export const POST = withRouteHandler(
             ),
         })
 
+        // Wrap the stream to capture final output and update workflowExecutionLogs
         const wrappedStream = new ReadableStream({
           async start(controller) {
             const reader = originalStream.getReader()
@@ -700,9 +721,11 @@ export const POST = withRouteHandler(
                 const { done, value } = await reader.read()
                 if (done) break
 
+                // Decode and process the chunk
                 const chunk = decoder.decode(value, { stream: true })
                 buffer += chunk
 
+                // Process complete SSE messages
                 const lines = buffer.split('\n\n')
                 buffer = lines.pop() || ''
 
@@ -722,10 +745,12 @@ export const POST = withRouteHandler(
                     const json = JSON.parse(data)
                     const { event, data: eventData, chunk: contentChunk } = json
 
+                    // Capture streaming content chunks
                     if (contentChunk) {
                       accumulatedContent += contentChunk
                     }
 
+                    // Handle final event - format output and update log
                     if (event === 'final' && eventData) {
                       const finalData = eventData as {
                         success: boolean
@@ -753,6 +778,7 @@ export const POST = withRouteHandler(
                         return undefined
                       }
 
+                      /** Check if value is a knowledge base results array (documentId, documentName, content, chunkIndex) */
                       const isKnowledgeResultsArray = (
                         value: unknown
                       ): value is Array<Record<string, unknown>> =>
@@ -868,6 +894,7 @@ export const POST = withRouteHandler(
                         }
                       }
 
+                      /** Minimal refs for history: one per chunk (document name + chunk index + chunk link). */
                       const knowledgeRefs =
                         knowledgeResultsPayload.length > 0
                           ? (() => {
@@ -903,6 +930,7 @@ export const POST = withRouteHandler(
 
                       let finalChatOutput = accumulatedContent.trim()
 
+                      // Format final output based on outputConfigs (exclude raw "results" for knowledge block)
                       if (
                         deployment.outputConfigs &&
                         Array.isArray(deployment.outputConfigs) &&
@@ -981,6 +1009,7 @@ export const POST = withRouteHandler(
                         knowledgeRefs.length > 0 ||
                         generatedImages.length > 0
                       ) {
+                        // Update workflowExecutionLogs with final output and optional knowledgeRefs (for history)
                         try {
                           if (finalChatOutput) {
                             await db
@@ -1006,8 +1035,10 @@ export const POST = withRouteHandler(
                       }
                     }
 
+                    // Pass through the original data
                     controller.enqueue(encoder.encode(`${line}\n\n`))
                   } catch {
+                    // If parsing fails, just pass through the original line
                     controller.enqueue(encoder.encode(`${line}\n\n`))
                   }
                 }
