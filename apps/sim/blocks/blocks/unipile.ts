@@ -1495,13 +1495,13 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
         if (op === 'retrieve_company_details') {
           return {
             identifier: typeof params.identifier === 'string' ? params.identifier.trim() : '',
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
           }
         }
         if (op === 'get_post') {
           return {
             post_id: typeof params.post_id === 'string' ? params.post_id.trim() : '',
-            account_id: typeof params.account_id === 'string' ? params.account_id.trim() : '',
+            account_id: unipileAccountIdFromParams(params),
           }
         }
         return {}

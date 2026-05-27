@@ -198,6 +198,7 @@ describe('Model Capabilities', () => {
         'unsupported-model',
         'cerebras/llama-3.3-70b',
         'groq/meta-llama/llama-4-scout-17b-16e-instruct',
+        'claude-opus-4-7',
         'o1',
         'o3',
         'o4-mini',
@@ -272,6 +273,7 @@ describe('Model Capabilities', () => {
       expect(getMaxTemperature('unsupported-model')).toBeUndefined()
       expect(getMaxTemperature('cerebras/llama-3.3-70b')).toBeUndefined()
       expect(getMaxTemperature('groq/meta-llama/llama-4-scout-17b-16e-instruct')).toBeUndefined()
+      expect(getMaxTemperature('claude-opus-4-7')).toBeUndefined()
       expect(getMaxTemperature('o1')).toBeUndefined()
       expect(getMaxTemperature('o3')).toBeUndefined()
       expect(getMaxTemperature('o4-mini')).toBeUndefined()
