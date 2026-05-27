@@ -135,6 +135,7 @@ Return ONLY the JSON array.`,
       defaultValue: 'gpt-4o',
       searchable: true,
       options: getAgentModelOptions,
+      commandSearchable: true,
     },
     {
       id: 'attachmentFiles',

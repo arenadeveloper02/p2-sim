@@ -1134,7 +1134,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
             output: { result: null, stdout: cleanStdout(shellStdout), executionTime },
           },
           routeContext,
-          { status: 500 }
+          { status: 422 }
         )
       }
 
@@ -1271,7 +1271,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
               output: { result: null, stdout: cleanedOutput, executionTime },
             },
             routeContext,
-            { status: 500 }
+            { status: 422 }
           )
         }
 
@@ -1358,7 +1358,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
             output: { result: null, stdout: cleanedOutput, executionTime },
           },
           routeContext,
-          { status: 500 }
+          { status: 422 }
         )
       }
 

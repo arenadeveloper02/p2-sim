@@ -1,8 +1,8 @@
 import { randomBytes } from 'crypto'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { getStorageConfig, USE_BLOB_STORAGE, USE_S3_STORAGE,S3_AGENT_GENERATED_IMAGES_CONFIG,
-  S3_CONFIG, } from '@/lib/uploads/config'
+import { assertKnownSizeWithinLimit } from '@/lib/core/utils/stream-limits'
+import { getStorageConfig, USE_BLOB_STORAGE, USE_S3_STORAGE, S3_AGENT_GENERATED_IMAGES_CONFIG, S3_CONFIG } from '@/lib/uploads/config'
 import type { BlobConfig } from '@/lib/uploads/providers/blob/types'
 import type { S3Config } from '@/lib/uploads/providers/s3/types'
 import type {
@@ -22,6 +22,31 @@ import {
 } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('StorageService')
+
+
+/**
+ * Create a Blob config from StorageConfig
+ * @throws Error if required properties are missing
+ */
+function createBlobConfig(config: StorageConfig): BlobConfig {
+  if (!config.containerName || !config.accountName) {
+    throw new Error('Blob configuration missing required properties: containerName and accountName')
+  }
+
+  if (!config.connectionString && !config.accountKey) {
+    throw new Error(
+      'Blob configuration missing authentication: either connectionString or accountKey must be provided'
+    )
+  }
+
+  return {
+    containerName: config.containerName,
+    accountName: config.accountName,
+    accountKey: config.accountKey,
+    connectionString: config.connectionString,
+  }
+}
+
 
 /**
  * Create an S3 config from StorageConfig
@@ -206,7 +231,7 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
  * Download a file from the configured storage provider
  */
 export async function downloadFile(options: DownloadFileOptions): Promise<Buffer> {
-  const { key, context } = options
+  const { key, context, maxBytes } = options
 
   if (
     context === 'agent-generated-images' &&
@@ -226,19 +251,34 @@ export async function downloadFile(options: DownloadFileOptions): Promise<Buffer
 
     const useS3ForThisDownload =
       USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
+    if (USE_BLOB_STORAGE) {
+      const { downloadFromBlob } = await import('@/lib/uploads/providers/blob/client')
+      const blobConfig = createBlobConfig(config)
+      return maxBytes === undefined
+        ? downloadFromBlob(key, blobConfig)
+        : downloadFromBlob(key, blobConfig, maxBytes)
+    }
 
     if (useS3ForThisDownload && config.bucket && config.region) {
       const { downloadFromS3 } = await import('@/lib/uploads/providers/s3/client')
-      return downloadFromS3(key, createS3Config(config))
+      const s3Config = createS3Config(config)
+      return maxBytes === undefined
+        ? downloadFromS3(key, s3Config)
+        : downloadFromS3(key, s3Config, maxBytes)
     }
   }
 
-  const { readFile } = await import('fs/promises')
+  const { readFile, stat } = await import('fs/promises')
   const { join } = await import('path')
   const { UPLOAD_DIR_SERVER } = await import('./setup.server')
 
   const safeKey = sanitizeFileKey(key)
   const filePath = join(UPLOAD_DIR_SERVER, safeKey)
+
+  if (maxBytes !== undefined) {
+    const fileStats = await stat(filePath)
+    assertKnownSizeWithinLimit(fileStats.size, maxBytes, 'storage download')
+  }
 
   return readFile(filePath)
 }

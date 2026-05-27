@@ -1,4 +1,4 @@
-export type ProviderName = 'ollama' | 'vllm' | 'openrouter' | 'base' | 'sambanova' | 'fireworks'
+export type ProviderName = 'ollama' | 'vllm' | 'litellm' | 'openrouter' | 'base' | 'sambanova' | 'fireworks'
 
 export interface OpenRouterModelInfo {
   id: string

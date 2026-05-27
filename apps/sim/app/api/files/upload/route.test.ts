@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
   const mockGetStorageProvider = vi.fn()
   const mockIsUsingCloudStorage = vi.fn()
   const mockUploadFile = vi.fn()
+  const mockUploadExecutionFile = vi.fn()
 
   return {
     mockVerifyFileAccess,
@@ -30,6 +31,7 @@ const mocks = vi.hoisted(() => {
     mockVerifyKBFileAccess,
     mockVerifyCopilotFileAccess,
     mockUploadWorkspaceFile,
+    mockUploadExecutionFile,
     mockGetStorageProvider,
     mockIsUsingCloudStorage,
     mockUploadFile,
@@ -82,6 +84,10 @@ vi.mock('@/lib/uploads/contexts/workspace', () => ({
   uploadWorkspaceFile: mocks.mockUploadWorkspaceFile,
 }))
 
+vi.mock('@/lib/uploads/contexts/execution', () => ({
+  uploadExecutionFile: mocks.mockUploadExecutionFile,
+}))
+
 vi.mock('@/lib/uploads', () => ({
   getStorageProvider: mocks.mockGetStorageProvider,
   isUsingCloudStorage: mocks.mockIsUsingCloudStorage,
@@ -89,6 +95,14 @@ vi.mock('@/lib/uploads', () => ({
 }))
 
 vi.mock('@/lib/uploads/core/storage-service', () => storageServiceMock)
+
+vi.mock('@/lib/uploads/shared/types', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/uploads/shared/types')>()
+  return {
+    ...actual,
+    MAX_WORKSPACE_FORMDATA_FILE_SIZE: 1024,
+  }
+})
 
 vi.mock('@/lib/uploads/setup.server', () => ({
   UPLOAD_DIR_SERVER: '/tmp/test-uploads',
@@ -119,11 +133,20 @@ function setupFileApiMocks(
     authMockFns.mockGetSession.mockResolvedValue(null)
   }
 
-  hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValue({
-    success: authenticated,
-    userId: authenticated ? 'test-user-id' : undefined,
-    error: authenticated ? undefined : 'Unauthorized',
-  })
+  if (authenticated) {
+    hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValue({
+      success: true,
+      userId: 'test-user-id',
+      userName: 'Test User',
+      userEmail: 'test@example.com',
+      authType: 'session',
+    })
+  } else {
+    hybridAuthMockFns.mockCheckHybridAuth.mockResolvedValue({
+      success: false,
+      error: 'Unauthorized',
+    })
+  }
 
   mocks.mockVerifyFileAccess.mockResolvedValue(true)
   mocks.mockVerifyWorkspaceFileAccess.mockResolvedValue(true)
@@ -141,6 +164,16 @@ function setupFileApiMocks(
     key: 'workspace/test-workspace-id/1234567890-test.txt',
     uploadedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  })
+
+  mocks.mockUploadExecutionFile.mockResolvedValue({
+    id: 'exec-file-id',
+    name: 'fusion.webp',
+    url: '/api/files/serve/execution/test-workspace-id/wf/ex/fusion.webp',
+    size: 4,
+    type: 'image/webp',
+    key: 'execution/test-workspace-id/wf/ex/fusion.webp',
+    uploadedAt: new Date().toISOString(),
   })
 
   mocks.mockGetStorageProvider.mockReturnValue(storageProvider)
@@ -179,6 +212,13 @@ describe('File Upload API Route', () => {
     return new File([content], name, { type })
   }
 
+  const createUploadRequest = (formData: FormData): NextRequest =>
+    new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      headers: { 'content-length': '1024' },
+      body: formData,
+    })
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -196,10 +236,7 @@ describe('File Upload API Route', () => {
     const mockFile = createMockFile()
     const formData = createMockFormData([mockFile])
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -215,6 +252,26 @@ describe('File Upload API Route', () => {
     expect(uploadWorkspaceFile).toHaveBeenCalled()
   })
 
+  it('should accept chunked multipart uploads without a content-length header', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+
+    const formData = createMockFormData([createMockFile()])
+    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    expect(req.headers.get('content-length')).toBeNull()
+
+    const response = await POST(req)
+
+    expect(response.status).toBe(200)
+    expect(uploadWorkspaceFile).toHaveBeenCalled()
+  })
+
   it('should upload a file to S3 when in S3 mode', async () => {
     setupFileApiMocks({
       cloudEnabled: true,
@@ -224,10 +281,7 @@ describe('File Upload API Route', () => {
     const mockFile = createMockFile()
     const formData = createMockFormData([mockFile])
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -253,10 +307,7 @@ describe('File Upload API Route', () => {
     const mockFile2 = createMockFile('file2.txt', 'text/plain')
     const formData = createMockFormData([mockFile1, mockFile2])
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -267,45 +318,63 @@ describe('File Upload API Route', () => {
   })
 
   it('should accept webp and other chat-style images for execution context', async () => {
-    vi.resetModules()
     setupFileApiMocks({
       cloudEnabled: false,
       storageProvider: 'local',
     })
 
-    vi.doMock('@/lib/uploads/contexts/execution', () => ({
-      uploadExecutionFile: vi.fn().mockResolvedValue({
-        id: 'exec-file-id',
-        name: 'fusion.webp',
-        url: '/api/files/serve/execution/test-workspace-id/wf/ex/fusion.webp',
-        size: 4,
-        type: 'image/webp',
-        key: 'execution/test-workspace-id/wf/ex/fusion.webp',
-        uploadedAt: new Date().toISOString(),
-      }),
-    }))
+    const executionFormData = new FormData()
+    executionFormData.append('context', 'execution')
+    executionFormData.append('workspaceId', 'test-workspace-id')
+    executionFormData.append('workflowId', 'wf-id')
+    executionFormData.append('executionId', 'ex-id')
+    executionFormData.append('file', new File(['webp'], 'fusion.webp', { type: 'image/webp' }))
 
-    const formData = new FormData()
-    formData.append('context', 'execution')
-    formData.append('workspaceId', 'test-workspace-id')
-    formData.append('workflowId', 'wf-id')
-    formData.append('executionId', 'ex-id')
-    formData.append('file', new File(['webp'], 'fusion.webp', { type: 'image/webp' }))
-
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+    const executionReq = new NextRequest('http://localhost:3000/api/files/upload', {
       method: 'POST',
-      body: formData,
+      headers: { 'content-length': '1024' },
+      body: executionFormData,
     })
 
-    const { POST } = await import('@/app/api/files/upload/route')
-    const response = await POST(req)
-    const data = await response.json()
+    const executionResponse = await POST(executionReq)
+    const executionData = await executionResponse.json()
 
-    expect(response.status).toBe(200)
-    expect(data).toMatchObject({ name: 'fusion.webp', type: 'image/webp' })
+    expect(executionResponse.status).toBe(200)
+    expect(executionData).toMatchObject({ name: 'fusion.webp', type: 'image/webp' })
+    expect(mocks.mockUploadExecutionFile).toHaveBeenCalled()
+    expect(uploadWorkspaceFile).not.toHaveBeenCalled()
+  })
 
-    const { uploadExecutionFile } = await import('@/lib/uploads/contexts/execution')
-    expect(uploadExecutionFile).toHaveBeenCalled()
+  it('should reject workspace files that exceed the server formdata size limit before buffering', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+
+    const oversizedFile = createMockFile('large.txt', 'text/plain', 'x'.repeat(1025))
+    const arrayBufferSpy = vi.spyOn(oversizedFile, 'arrayBuffer')
+    const oversizedFormData = {
+      getAll: (name: string) => (name === 'file' ? [oversizedFile] : []),
+      get: (name: string) => {
+        if (name === 'context') return 'workspace'
+        if (name === 'workspaceId') return 'test-workspace-id'
+        return null
+      },
+    } as unknown as FormData
+
+    const oversizedReq = {
+      formData: async () => oversizedFormData,
+    } as unknown as NextRequest
+
+    const oversizedResponse = await POST(oversizedReq)
+    const oversizedData = await oversizedResponse.json()
+
+    expect(oversizedResponse.status).toBe(413)
+    expect(oversizedData.error).toBe('PayloadSizeLimitError')
+    expect(oversizedData.message).toContain('File exceeds the server upload limit')
+    expect(oversizedData.message).toContain('Use direct upload for larger workspace files')
+    expect(arrayBufferSpy).not.toHaveBeenCalled()
+    expect(uploadWorkspaceFile).not.toHaveBeenCalled()
   })
 
   it('should handle missing files', async () => {
@@ -313,10 +382,7 @@ describe('File Upload API Route', () => {
 
     const formData = new FormData()
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -337,10 +403,7 @@ describe('File Upload API Route', () => {
     const mockFile = createMockFile()
     const formData = createMockFormData([mockFile])
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -404,6 +467,7 @@ describe('File Upload Security Tests', () => {
 
         const req = new Request('http://localhost/api/files/upload', {
           method: 'POST',
+          headers: { 'content-length': '1024' },
           body: formData,
         })
 
@@ -423,6 +487,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -442,6 +507,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -460,6 +526,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -479,6 +546,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -504,6 +572,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -525,6 +594,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 

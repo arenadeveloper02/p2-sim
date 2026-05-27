@@ -17,6 +17,7 @@ export type ProviderId =
   | 'fireworks'
   | 'vllm'
   | 'sambanova'
+  | 'litellm'
   | 'bedrock'
 
 export interface ModelPricing {

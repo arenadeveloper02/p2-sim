@@ -152,6 +152,18 @@ export interface WorkflowExecutionLog {
       }
     >
     executionState?: SerializableExecutionState
+    executionStateSummary?: {
+      executedBlockCount: number
+      blockLogCount: number
+      completedLoopCount: number
+      activeExecutionPathLength: number
+      pendingQueueLength: number
+    }
+    executionDataTruncated?: boolean
+    executionDataOriginalBytes?: number
+    executionDataStoredBytes?: number
+    executionDataMaxBytes?: number
+    executionDataTruncationReason?: string
     finalOutput?: any
     workflowInput?: unknown
     errorDetails?: {
@@ -418,6 +430,27 @@ export interface SnapshotCreationResult {
   isNew: boolean
 }
 
+export interface ExecutionCostSummary {
+  totalCost: number
+  totalInputCost: number
+  totalOutputCost: number
+  totalTokens: number
+  totalPromptTokens: number
+  totalCompletionTokens: number
+  baseExecutionCharge: number
+  modelCost: number
+  models: Record<
+    string,
+    {
+      input: number
+      output: number
+      total: number
+      toolCost?: number
+      tokens: { input: number; output: number; total: number }
+    }
+  >
+}
+
 export interface ExecutionLoggerService {
   startWorkflowExecution(params: {
     workflowId: string
@@ -435,21 +468,16 @@ export interface ExecutionLoggerService {
     executionId: string
     endedAt: string
     totalDurationMs: number
-
-    costSummary: {
-      totalCost: number
-      totalInputCost: number
-      totalOutputCost: number
-      totalTokens: number
-    }
+    costSummary: ExecutionCostSummary
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
-    workflowInput?: any
+    workflowInput?: unknown
+    finalChatOutput?: string
     executionState?: SerializableExecutionState
     finalizationPath?: ExecutionFinalizationPath
     completionFailure?: string
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
   }): Promise<WorkflowExecutionLog>
 }

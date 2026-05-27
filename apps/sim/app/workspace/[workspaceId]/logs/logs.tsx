@@ -105,6 +105,8 @@ import {
 const LOGS_PER_PAGE = 50 as const
 const SORTABLE_COLUMNS: readonly LogSortBy[] = ['date', 'duration', 'cost', 'status'] as const
 const REFRESH_SPINNER_DURATION_MS = 1000 as const
+const LIVE_REFRESH_INTERVAL_MS = 10_000 as const
+const ACTIVE_RUN_DETAIL_REFRESH_MS = 3_000 as const
 
 const LOG_COLUMNS: ResourceColumn[] = [
   { id: 'workflow', header: 'Workflow' },
@@ -320,7 +322,7 @@ export default function Logs() {
     (query: { state: { data?: WorkflowLogDetail } }) => {
       if (!isLive) return false
       const status = query.state.data?.status
-      return status === 'running' || status === 'pending' ? 3000 : false
+      return status === 'running' || status === 'pending' ? ACTIVE_RUN_DETAIL_REFRESH_MS : false
     },
     [isLive]
   )
@@ -368,7 +370,7 @@ export default function Logs() {
   )
 
   const logsQuery = useLogsList(workspaceId, logFilters, {
-    refetchInterval: isLive ? 3000 : false,
+    refetchInterval: isLive ? LIVE_REFRESH_INTERVAL_MS : false,
   })
 
   const dashboardFilters = useMemo(
@@ -386,7 +388,7 @@ export default function Logs() {
   )
 
   const dashboardStatsQuery = useDashboardStats(workspaceId, dashboardFilters, {
-    refetchInterval: isLive ? 3000 : false,
+    refetchInterval: isLive ? LIVE_REFRESH_INTERVAL_MS : false,
   })
 
   const logs = useMemo(() => {

@@ -648,7 +648,7 @@ export const PlatformEvents = {
   workflowExecuted: (attrs: {
     workflowId: string
     durationMs: number
-    status: 'success' | 'error' | 'cancelled' | 'paused'
+    status: 'success' | 'error' | 'cancelled' | 'paused' | 'skipped'
     trigger: string
     blocksExecuted: number
     hasErrors: boolean

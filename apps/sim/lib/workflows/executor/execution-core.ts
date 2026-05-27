@@ -543,6 +543,7 @@ export async function executeWorkflowCore(
       deploymentVersionId,
       conversationId,
       initialInput,
+      workflowState: { blocks, edges, loops, parallels },
     })
 
     // Use edges directly - trigger-to-trigger edges are prevented at creation time

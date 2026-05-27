@@ -334,6 +334,8 @@ export interface SubBlockConfig {
   searchable?: boolean
   /** When true, show a clear (X) button when a value is selected (optional field) */
   clearable?: boolean
+  /** Dropdown-specific: include static options as Cmd K search entries that preset this subblock. */
+  commandSearchable?: boolean
   // Wand configuration for AI assistance
   wandConfig?: {
     enabled: boolean

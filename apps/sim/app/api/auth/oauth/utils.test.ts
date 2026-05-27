@@ -4,6 +4,7 @@
  * @vitest-environment node
  */
 
+import { redisConfigMock, redisConfigMockFns } from '@sim/testing'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/oauth/oauth', () => ({
@@ -11,7 +12,16 @@ vi.mock('@/lib/oauth/oauth', () => ({
   OAUTH_PROVIDERS: {},
 }))
 
+vi.mock('@/lib/oauth/terminal-errors', () => ({
+  getRecentTerminalError: vi.fn().mockResolvedValue(null),
+  isTerminalRefreshError: vi.fn().mockReturnValue(false),
+  markCredentialDead: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/core/config/redis', () => redisConfigMock)
+
 import { db } from '@sim/db'
+import { __resetCoalesceLocallyForTests } from '@/lib/concurrency/singleflight'
 import { refreshOAuthToken } from '@/lib/oauth'
 import {
   getCredential,
@@ -49,6 +59,11 @@ function mockUpdateChain() {
 describe('OAuth Utils', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDb.select.mockReset()
+    __resetCoalesceLocallyForTests()
+    redisConfigMockFns.mockGetRedisClient.mockReturnValue(null)
+    redisConfigMockFns.mockAcquireLock.mockResolvedValue(true)
+    redisConfigMockFns.mockReleaseLock.mockResolvedValue(true)
   })
 
   afterEach(() => {
@@ -60,18 +75,22 @@ describe('OAuth Utils', () => {
       const mockCredentialRow = { type: 'oauth', accountId: 'resolved-account-id' }
       const mockAccountRow = { id: 'resolved-account-id', userId: 'test-user-id' }
 
+      mockSelectChain([])
+      mockSelectChain([])
       mockSelectChain([mockCredentialRow])
       mockSelectChain([mockAccountRow])
 
       const credential = await getCredential('request-id', 'credential-id', 'test-user-id')
 
-      expect(mockDb.select).toHaveBeenCalledTimes(2)
+      expect(mockDb.select).toHaveBeenCalledTimes(4)
 
       expect(credential).toMatchObject(mockAccountRow)
       expect(credential).toMatchObject({ resolvedCredentialId: 'resolved-account-id' })
     })
 
     it('should return undefined when credential is not found', async () => {
+      mockSelectChain([])
+      mockSelectChain([])
       mockSelectChain([])
       mockSelectChain([])
 
@@ -107,6 +126,7 @@ describe('OAuth Utils', () => {
       }
 
       mockRefreshOAuthToken.mockResolvedValueOnce({
+        ok: true,
         accessToken: 'new-token',
         expiresIn: 3600,
         refreshToken: 'new-refresh-token',
@@ -116,7 +136,7 @@ describe('OAuth Utils', () => {
 
       const result = await refreshTokenIfNeeded('request-id', mockCredential, 'credential-id')
 
-      expect(mockRefreshOAuthToken).toHaveBeenCalledWith('google', 'refresh-token')
+      expect(mockRefreshOAuthToken).toHaveBeenCalledWith('google', 'refresh-token', undefined)
       expect(mockDb.update).toHaveBeenCalled()
       expect(result).toEqual({ accessToken: 'new-token', refreshed: true })
     })
@@ -130,7 +150,11 @@ describe('OAuth Utils', () => {
         providerId: 'google',
       }
 
-      mockRefreshOAuthToken.mockResolvedValueOnce(null)
+      mockRefreshOAuthToken.mockResolvedValueOnce({
+        ok: false,
+        errorCode: 'invalid_grant',
+        message: 'Failed',
+      })
 
       await expect(
         refreshTokenIfNeeded('request-id', mockCredential, 'credential-id')
@@ -198,6 +222,7 @@ describe('OAuth Utils', () => {
       mockUpdateChain()
 
       mockRefreshOAuthToken.mockResolvedValueOnce({
+        ok: true,
         accessToken: 'new-token',
         expiresIn: 3600,
         refreshToken: 'new-refresh-token',
@@ -205,13 +230,12 @@ describe('OAuth Utils', () => {
 
       const token = await refreshAccessTokenIfNeeded('credential-id', 'test-user-id', 'request-id')
 
-      expect(mockRefreshOAuthToken).toHaveBeenCalledWith('google', 'refresh-token')
+      expect(mockRefreshOAuthToken).toHaveBeenCalledWith('google', 'refresh-token', undefined)
       expect(mockDb.update).toHaveBeenCalled()
       expect(token).toBe('new-token')
     })
 
     it('should return null if credential not found', async () => {
-      mockSelectChain([])
       mockSelectChain([])
 
       const token = await refreshAccessTokenIfNeeded('nonexistent-id', 'test-user-id', 'request-id')
@@ -237,7 +261,11 @@ describe('OAuth Utils', () => {
       mockSelectChain([mockResolvedCredential])
       mockSelectChain([mockAccountRow])
 
-      mockRefreshOAuthToken.mockResolvedValueOnce(null)
+      mockRefreshOAuthToken.mockResolvedValueOnce({
+        ok: false,
+        errorCode: 'invalid_grant',
+        message: 'Failed',
+      })
 
       const token = await refreshAccessTokenIfNeeded('credential-id', 'test-user-id', 'request-id')
 

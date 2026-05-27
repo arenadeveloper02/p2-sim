@@ -15,6 +15,8 @@ import { requestJson } from '@/lib/api/client/request'
 import { fileDeleteContract } from '@/lib/api/contracts/storage-transfer'
 import { cn } from '@/lib/core/utils/cn'
 import { getExtensionFromMimeType } from '@/lib/uploads/utils/file-utils'
+import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
+import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { START_FILES_REF } from '@/executor/constants'
 import {
@@ -22,6 +24,7 @@ import {
   useWorkspaceFiles,
   workspaceFilesKeys,
 } from '@/hooks/queries/workspace-files'
+import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -40,6 +43,7 @@ interface FileUploadProps {
   isPreview?: boolean
   previewValue?: any | null
   disabled?: boolean
+  activeSearchTarget?: ActiveSearchTarget | null
 }
 
 interface UploadedFile {
@@ -63,6 +67,7 @@ interface SingleFileSelectorProps {
   formatFileSize: (bytes: number) => string
   truncateMiddle: (text: string, start?: number, end?: number) => string
   isDeleting: boolean
+  workflowSearchHighlight?: ReturnType<typeof getWorkflowSearchLabelHighlight>
 }
 
 /**
@@ -83,6 +88,7 @@ function SingleFileSelector({
   formatFileSize,
   truncateMiddle,
   isDeleting,
+  workflowSearchHighlight,
 }: SingleFileSelectorProps) {
   const displayLabel = `${truncateMiddle(file.name, 20, 12)} (${formatFileSize(file.size)})`
   const [searchQuery, setSearchQuery] = useState('')
@@ -124,6 +130,13 @@ function SingleFileSelector({
         inputProps={{
           className: 'pr-[60px]',
         }}
+        overlayContent={
+          workflowSearchHighlight ? (
+            <span className='block truncate'>
+              {formatDisplayText(comboboxValue, { workflowSearchHighlight })}
+            </span>
+          ) : undefined
+        }
       />
       <Button
         type='button'
@@ -159,6 +172,7 @@ export function FileUpload({
   isPreview = false,
   previewValue,
   disabled = false,
+  activeSearchTarget,
 }: FileUploadProps) {
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId)
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
@@ -506,9 +520,17 @@ export function FileUpload({
     }
   }
 
-  const renderFileItem = (file: UploadedFile) => {
+  const renderFileItem = (file: UploadedFile, index: number) => {
     const fileKey = file.path || ''
     const isDeleting = deletingFiles[fileKey]
+    const displayName = truncateMiddle(file.name)
+    const workflowSearchHighlight = getWorkflowSearchLabelHighlight({
+      activeSearchTarget,
+      blockId,
+      subBlockId,
+      valuePath: [index, 'name'],
+      label: displayName,
+    })
 
     return (
       <div
@@ -516,7 +538,9 @@ export function FileUpload({
         className='relative rounded-sm border border-[var(--border-1)] bg-[var(--surface-5)] px-2 py-1.5 hover-hover:bg-[var(--surface-active)] dark:bg-[var(--surface-5)]'
       >
         <div className='truncate pr-6 text-sm' title={file.name}>
-          <span className='text-[var(--text-primary)]'>{truncateMiddle(file.name)}</span>
+          <span className='text-[var(--text-primary)]'>
+            {formatDisplayText(displayName, { workflowSearchHighlight })}
+          </span>
           <span className='ml-2 text-[var(--text-muted)]'>({formatFileSize(file.size)})</span>
         </div>
         <Button
@@ -680,11 +704,11 @@ export function FileUpload({
         <div className={cn('space-y-2', multiple && 'mb-2')}>
           {/* Only show files that aren't currently uploading (for multiple mode only) */}
           {multiple &&
-            filesArray.map((file) => {
+            filesArray.map((file, index) => {
               const isCurrentlyUploading = uploadingFiles.some(
                 (uploadingFile) => uploadingFile.name === file.name
               )
-              return !isCurrentlyUploading && renderFileItem(file)
+              return !isCurrentlyUploading && renderFileItem(file, index)
             })}
           {isUploading && (
             <>
@@ -738,6 +762,13 @@ export function FileUpload({
           formatFileSize={formatFileSize}
           truncateMiddle={truncateMiddle}
           isDeleting={deletingFiles[filesArray[0]?.path || '']}
+          workflowSearchHighlight={getWorkflowSearchLabelHighlight({
+            activeSearchTarget,
+            blockId,
+            subBlockId,
+            valuePath: [],
+            label: `${truncateMiddle(filesArray[0].name, 20, 12)} (${formatFileSize(filesArray[0].size)})`,
+          })}
         />
       )}
 

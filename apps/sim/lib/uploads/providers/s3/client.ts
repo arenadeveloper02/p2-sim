@@ -14,6 +14,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { env } from '@/lib/core/config/env'
+import {
+  assertKnownSizeWithinLimit,
+  readNodeStreamToBufferWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { S3_CONFIG, S3_KB_CONFIG } from '@/lib/uploads/config'
 import type {
   S3Config,
@@ -211,7 +215,17 @@ export async function downloadFromS3(key: string): Promise<Buffer>
  */
 export async function downloadFromS3(key: string, customConfig: S3Config): Promise<Buffer>
 
-export async function downloadFromS3(key: string, customConfig?: S3Config): Promise<Buffer> {
+export async function downloadFromS3(
+  key: string,
+  customConfig: S3Config,
+  maxBytes: number
+): Promise<Buffer>
+
+export async function downloadFromS3(
+  key: string,
+  customConfig?: S3Config,
+  maxBytes?: number
+): Promise<Buffer> {
   const config = customConfig || { bucket: S3_CONFIG.bucket, region: S3_CONFIG.region }
 
   const command = new GetObjectCommand({
@@ -224,13 +238,21 @@ export async function downloadFromS3(key: string, customConfig?: S3Config): Prom
       ? getS3ClientForRegion(config.region)
       : getS3Client()
   const response = await s3Client.send(command)
-  const stream = response.Body as any
 
-  return new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = []
-    stream.on('data', (chunk: Buffer) => chunks.push(chunk))
-    stream.on('end', () => resolve(Buffer.concat(chunks)))
-    stream.on('error', reject)
+  if (maxBytes !== undefined && response.ContentLength !== undefined) {
+    try {
+      assertKnownSizeWithinLimit(response.ContentLength, maxBytes, 'storage download')
+    } catch (error) {
+      const body = response.Body as { destroy?: (error?: Error) => void } | undefined
+      body?.destroy?.(error instanceof Error ? error : undefined)
+      throw error
+    }
+  }
+
+  const stream = response.Body as NodeJS.ReadableStream
+  return readNodeStreamToBufferWithLimit(stream, {
+    maxBytes: maxBytes ?? Number.MAX_SAFE_INTEGER,
+    label: 'storage download',
   })
 }
 

@@ -13,6 +13,7 @@ import {
   loadWorkflowStateForExecution,
 } from '@/lib/logs/execution/logging-factory'
 import type {
+  ExecutionCostSummary,
   ExecutionEnvironment,
   ExecutionFinalizationPath,
   ExecutionLastCompletedBlock,
@@ -86,6 +87,7 @@ export interface SessionStartParams {
   conversationId?: string
   initialInput?: string
   deploymentVersionId?: string // ID of the deployment version used (null for manual/editor executions)
+  workflowState?: WorkflowState
 }
 
 export interface SessionCompleteParams {
@@ -261,28 +263,11 @@ export class LoggingSession {
   private async completeExecutionWithFinalization(params: {
     endedAt: string
     totalDurationMs: number
-    costSummary: {
-      totalCost: number
-      totalInputCost: number
-      totalOutputCost: number
-      totalTokens: number
-      totalPromptTokens: number
-      totalCompletionTokens: number
-      baseExecutionCharge: number
-      modelCost: number
-      models: Record<
-        string,
-        {
-          input: number
-          output: number
-          total: number
-          tokens: { input: number; output: number; total: number }
-        }
-      >
-    }
+    costSummary: ExecutionCostSummary
     finalOutput: Record<string, unknown>
     traceSpans: TraceSpan[]
     workflowInput?: unknown
+    finalChatOutput?: string
     executionState?: SerializableExecutionState
     finalizationPath: ExecutionFinalizationPath
     completionFailure?: string
@@ -297,6 +282,7 @@ export class LoggingSession {
       finalOutput: params.finalOutput,
       traceSpans: params.traceSpans,
       workflowInput: params.workflowInput,
+      finalChatOutput: params.finalChatOutput,
       executionState: params.executionState,
       finalizationPath: params.finalizationPath,
       completionFailure: params.completionFailure,
@@ -445,6 +431,7 @@ export class LoggingSession {
       conversationId,
       initialInput,
       deploymentVersionId,
+      workflowState,
     } = params
 
     try {
@@ -457,11 +444,11 @@ export class LoggingSession {
         workspaceId,
         variables
       )
-      // Use deployed state if deploymentVersionId is provided (non-manual execution)
-      // Otherwise fall back to loading from normalized tables (manual/draft execution)
-      this.workflowState = deploymentVersionId
-        ? await loadDeployedWorkflowStateForLogging(this.workflowId)
-        : await loadWorkflowStateForExecution(this.workflowId)
+      this.workflowState =
+        workflowState ??
+        (deploymentVersionId
+          ? await loadDeployedWorkflowStateForLogging(this.workflowId)
+          : await loadWorkflowStateForExecution(this.workflowId))
 
       // Store chat metadata for later use
       this.chatMetadata = {
@@ -528,7 +515,6 @@ export class LoggingSession {
         finalOutput: finalOutput || {},
         traceSpans: traceSpans || [],
         workflowInput,
-        isResume: this.isResume,
         finalChatOutput,
         executionState,
         finalizationPath: 'completed',
@@ -1030,6 +1016,7 @@ export class LoggingSession {
           chatId,
           initialInput,
           deploymentVersionId,
+          workflowState
         } = params
         this.trigger = createTriggerObject(this.triggerType, triggerData)
         this.correlation = triggerData?.correlation
@@ -1040,14 +1027,13 @@ export class LoggingSession {
           workspaceId,
           variables
         )
-        // Minimal workflow state when normalized/deployed data is unavailable
-        const minimalWorkflowState: WorkflowState = {
+        const fallbackWorkflowState: WorkflowState = workflowState ?? {
           blocks: {},
           edges: [],
           loops: {},
           parallels: {},
         }
-        this.workflowState = minimalWorkflowState
+        this.workflowState = fallbackWorkflowState
 
         await executionLogger.startWorkflowExecution({
           workflowId: this.workflowId,
@@ -1260,6 +1246,8 @@ export class LoggingSession {
         totalDurationMs: params?.totalDurationMs,
         errorMessage: 'Execution skipped by intent analyzer',
         isError: false,
+        finalizationPath: 'fallback_completed',
+        finalOutput: { skipped: true },
         status: 'skipped',
       })
     }
