@@ -100,11 +100,31 @@ export function isAdminWorkspace(workspaceId: string | null | undefined): boolea
 export const ADMIN_WORKSPACE_ONLY_OAUTH_PROVIDER_IDS = ['zoom-admin'] as const
 
 /**
+ * Integration tool IDs exposed to Mothership/Copilot only in admin workspaces.
+ * Add entries here when a block registers separate admin-only tools in the registry.
+ */
+export const ADMIN_WORKSPACE_ONLY_TOOL_IDS = [
+  'zoom_list_account_recordings',
+  'zoom_get_account_recordings_with_transcript',
+] as const
+
+/**
  * Returns whether an OAuth provider is restricted to admin workspaces.
  */
 export function isAdminWorkspaceOnlyOAuthProvider(providerId: string | null | undefined): boolean {
   if (!providerId || typeof providerId !== 'string') return false
   return (ADMIN_WORKSPACE_ONLY_OAUTH_PROVIDER_IDS as readonly string[]).includes(providerId)
+}
+
+/**
+ * Returns whether an integration tool is restricted to admin workspaces.
+ */
+export function isAdminWorkspaceOnlyTool(toolId: string | null | undefined): boolean {
+  if (!toolId || typeof toolId !== 'string') return false
+  const normalized = toolId.trim()
+  if (!normalized) return false
+  const baseId = normalized.replace(/_v\d+$/, '')
+  return (ADMIN_WORKSPACE_ONLY_TOOL_IDS as readonly string[]).includes(baseId)
 }
 
 /**

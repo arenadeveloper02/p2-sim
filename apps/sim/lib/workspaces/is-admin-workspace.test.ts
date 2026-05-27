@@ -6,6 +6,7 @@ import {
   getAdminWorkspaceIds,
   isAdminWorkspace,
   isAdminWorkspaceOnlyOAuthProvider,
+  isAdminWorkspaceOnlyTool,
   parseAdminWorkspaceIds,
 } from './is-admin-workspace'
 
@@ -67,6 +68,25 @@ describe('isAdminWorkspaceOnlyOAuthProvider', () => {
   it('identifies zoom-admin as admin-only', () => {
     expect(isAdminWorkspaceOnlyOAuthProvider('zoom-admin')).toBe(true)
     expect(isAdminWorkspaceOnlyOAuthProvider('zoom')).toBe(false)
+  })
+})
+
+describe('isAdminWorkspaceOnlyTool', () => {
+  it('identifies Zoom account recording tools as admin-only', () => {
+    expect(isAdminWorkspaceOnlyTool('zoom_list_account_recordings')).toBe(true)
+    expect(isAdminWorkspaceOnlyTool('zoom_get_account_recordings_with_transcript')).toBe(true)
+    expect(isAdminWorkspaceOnlyTool('zoom_list_account_recordings_v2')).toBe(true)
+  })
+
+  it('returns false for normal integration tools', () => {
+    expect(isAdminWorkspaceOnlyTool('zoom_list_meetings')).toBe(false)
+    expect(isAdminWorkspaceOnlyTool('gmail_send')).toBe(false)
+  })
+
+  it('returns false for missing or invalid tool ids', () => {
+    expect(isAdminWorkspaceOnlyTool('')).toBe(false)
+    expect(isAdminWorkspaceOnlyTool(null)).toBe(false)
+    expect(isAdminWorkspaceOnlyTool(undefined)).toBe(false)
   })
 })
 

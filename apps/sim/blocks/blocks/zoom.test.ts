@@ -6,6 +6,10 @@ const { mockIsAdminWorkspace, mockResolveWorkspaceIdForAdminCheck } = vi.hoisted
 }))
 
 vi.mock('@/lib/workspaces/is-admin-workspace', () => ({
+  ADMIN_WORKSPACE_ONLY_TOOL_IDS: [
+    'zoom_list_account_recordings',
+    'zoom_get_account_recordings_with_transcript',
+  ],
   isAdminWorkspace: mockIsAdminWorkspace,
   resolveWorkspaceIdForAdminCheck: mockResolveWorkspaceIdForAdminCheck,
 }))

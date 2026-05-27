@@ -1,6 +1,7 @@
 import { ZoomIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
 import {
+  ADMIN_WORKSPACE_ONLY_TOOL_IDS,
   isAdminWorkspace,
   resolveWorkspaceIdForAdminCheck,
 } from '@/lib/workspaces/is-admin-workspace'
@@ -23,10 +24,7 @@ const ZOOM_MEETING_SUBBLOCK_OPS = [
 const ZOOM_MEETING_OPS_LIST = [...ZOOM_MEETING_SUBBLOCK_OPS]
 
 /** Account-level recording tools; require admin workspace + zoom-admin OAuth. */
-const ZOOM_ADMIN_ACCOUNT_OPERATIONS = [
-  'zoom_list_account_recordings',
-  'zoom_get_account_recordings_with_transcript',
-] as const
+const ZOOM_ADMIN_ACCOUNT_OPERATIONS = ADMIN_WORKSPACE_ONLY_TOOL_IDS
 
 const ZOOM_OPERATION_OPTIONS = [
   { label: 'Create Meeting', id: 'zoom_create_meeting' },
