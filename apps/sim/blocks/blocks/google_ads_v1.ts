@@ -1,12 +1,28 @@
 import { GoogleIcon } from '@/components/icons'
 import {
   isAdminWorkspace,
+  resolveExecutionWorkspaceId,
   resolveWorkspaceIdForAdminCheck,
 } from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
 
 const GOOGLE_ADS_V1_COND_NEVER = '__google_ads_v1_cond_never__'
+
+/** Resolves account/customer ID from serialized params (supports legacy `customerId` key). */
+function resolveGoogleAdsV1AccountId(params: Record<string, unknown>): string | undefined {
+  for (const key of ['accountId', 'customerId'] as const) {
+    const value = params[key]
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (trimmed) return trimmed
+    }
+    if (typeof value === 'number' && !Number.isNaN(value)) {
+      return String(value)
+    }
+  }
+  return undefined
+}
 
 /** Show admin account dropdown fields (admin workspaces only). */
 function googleAdsV1AdminOnlyCondition(values?: Record<string, unknown>) {
@@ -76,7 +92,6 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       id: 'accountId',
       title: 'Account ID',
       type: 'short-input',
-      canonicalParamId: 'customerId',
       placeholder: 'Google Ads account / customer ID (no dashes)',
       required: true,
       condition: googleAdsV1NonAdminOnlyCondition,
@@ -207,31 +222,29 @@ Generate a clear, specific prompt for what the user wants to query from Google A
     config: {
       tool: () => 'google_ads_v1_query',
       params: (params) => {
-        const workspaceId = resolveWorkspaceIdForAdminCheck(
+        const workspaceId = resolveExecutionWorkspaceId(
           params as Record<string, unknown> | undefined
         )
-        const isAdmin = isAdminWorkspace(workspaceId)
+        const accountId = resolveGoogleAdsV1AccountId(params as Record<string, unknown>)
 
-        if (isAdmin) {
-          return {
-            accounts: params.accounts,
-            prompt: params.prompt,
-            workspaceId,
-            _context: params._context,
-          }
-        }
-
-        return {
+        const result: Record<string, unknown> = {
           prompt: params.prompt,
           workspaceId,
+          accounts: params.accounts ?? params.accountsAdvanced,
           clientId: params.clientId,
           clientSecret: params.clientSecret,
           refreshToken: params.refreshToken,
-          customerId: params.accountId ?? params.customerId,
           developerToken: params.developerToken,
           managerCustomerId: params.managerCustomerId,
           _context: params._context,
         }
+
+        if (accountId) {
+          result.accountId = accountId
+          result.customerId = accountId
+        }
+
+        return result
       },
     },
   },

@@ -59,6 +59,20 @@ export function getAdminWorkspaceIds(): string[] {
 }
 
 /**
+ * Resolves workspace ID during block tool param transforms (execution context or condition injection).
+ */
+export function resolveExecutionWorkspaceId(
+  params?: Record<string, unknown>
+): string | undefined {
+  const context = params?._context as { workspaceId?: string } | undefined
+  if (typeof context?.workspaceId === 'string') {
+    const fromContext = context.workspaceId.trim()
+    if (fromContext) return fromContext
+  }
+  return resolveWorkspaceIdForAdminCheck(params)
+}
+
+/**
  * Resolves workspace ID for admin-only subblock conditions (browser path or serializer injection).
  */
 export function resolveWorkspaceIdForAdminCheck(

@@ -5,6 +5,8 @@ import {
   getAdminWorkspaceIds,
   isAdminWorkspace,
   parseAdminWorkspaceIds,
+  resolveExecutionWorkspaceId,
+  WORKSPACE_ID_CONDITION_KEY,
 } from './is-admin-workspace'
 
 vi.mock('@/lib/core/config/env', () =>
@@ -58,6 +60,25 @@ describe('isAdminWorkspace', () => {
     expect(isAdminWorkspace('   ')).toBe(false)
     expect(isAdminWorkspace(null)).toBe(false)
     expect(isAdminWorkspace(undefined)).toBe(false)
+  })
+})
+
+describe('resolveExecutionWorkspaceId', () => {
+  it('prefers workspace id from execution context', () => {
+    expect(
+      resolveExecutionWorkspaceId({
+        _context: { workspaceId: 'ws-from-context' },
+        [WORKSPACE_ID_CONDITION_KEY]: 'ws-from-condition',
+      })
+    ).toBe('ws-from-context')
+  })
+
+  it('falls back to condition-injected workspace id', () => {
+    expect(
+      resolveExecutionWorkspaceId({
+        [WORKSPACE_ID_CONDITION_KEY]: ' ws-admin-1 ',
+      })
+    ).toBe('ws-admin-1')
   })
 })
 

@@ -4,6 +4,7 @@
  */
 
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
@@ -22,6 +23,19 @@ const logger = createLogger('GoogleAdsV1API')
 /**
  * Resolves account input to account key (supports both keys and numeric IDs)
  */
+function resolveGoogleAdsCustomerId(body: GoogleAdsV1Request): string | undefined {
+  for (const value of [body.accountId, body.customerId]) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (trimmed) return trimmed
+    }
+    if (typeof value === 'number' && !Number.isNaN(value)) {
+      return String(value)
+    }
+  }
+  return undefined
+}
+
 function resolveAccountKey(accountInput: string): string {
   if (GOOGLE_ADS_ACCOUNTS[accountInput]) {
     return accountInput
@@ -39,11 +53,24 @@ function resolveAccountKey(accountInput: string): string {
   return accountInput
 }
 
+function hasUserProvidedGoogleAdsCredentials(body: GoogleAdsV1Request): boolean {
+  return Boolean(
+    body.clientId?.trim() ||
+      body.clientSecret?.trim() ||
+      body.refreshToken?.trim() ||
+      body.developerToken?.trim() ||
+      resolveGoogleAdsCustomerId(body)
+  )
+}
+
 function resolveUsesAdminCredentials(body: GoogleAdsV1Request): boolean {
+  if (hasUserProvidedGoogleAdsCredentials(body)) {
+    return false
+  }
   if (body.workspaceId) {
     return isAdminWorkspace(body.workspaceId)
   }
-  return Boolean(body.accounts && !body.clientId)
+  return Boolean(body.accounts?.trim())
 }
 
 /**
@@ -112,17 +139,26 @@ export async function POST(request: NextRequest) {
       logger.info(`[${requestId}] Executing with env credentials for account ${accountInfo.id}`)
       apiResult = await makeGoogleAdsRequest(accountInfo.id, queryResult.gaql_query)
     } else {
-      const customerId = (body.accountId ?? body.customerId)?.trim()
+      const customerId = resolveGoogleAdsCustomerId(body)
       const developerToken = body.developerToken?.trim()
       const clientId = body.clientId?.trim()
       const clientSecret = body.clientSecret?.trim()
       const refreshToken = body.refreshToken?.trim()
 
-      if (!customerId || !developerToken || !clientId || !clientSecret || !refreshToken) {
+      if (!clientId || !clientSecret || !refreshToken || !developerToken || !customerId) {
+        const missingFields: string[] = []
+        if (!clientId) missingFields.push('Client ID')
+        if (!clientSecret) missingFields.push('Client Secret')
+        if (!refreshToken) missingFields.push('Refresh Token')
+        if (!developerToken) missingFields.push('Developer Token')
+        if (!customerId) missingFields.push('Account ID')
+        logger.warn(`[${requestId}] Missing Google Ads credentials in request body`, {
+          missingFields,
+          hasWorkspaceId: Boolean(workspaceId),
+        })
         return NextResponse.json(
           {
-            error:
-              'Client ID, client secret, refresh token, developer token, and customer ID are required for this workspace',
+            error: `Missing required Google Ads fields: ${missingFields.join(', ')}. Fill them in the block and run again.`,
           },
           { status: 400 }
         )
@@ -179,7 +215,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     const executionTime = Date.now() - startTime
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    const errorMessage = toError(error).message
 
     logger.error(`[${requestId}] Google Ads V1 query failed`, {
       error: errorMessage,
