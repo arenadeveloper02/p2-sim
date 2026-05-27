@@ -1,6 +1,6 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { apiKey, permissions, user, workspace } from '@sim/db/schema'
+import { apiKey, permissions, user, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId, generateShortId } from '@sim/utils/id'
@@ -9,6 +9,14 @@ import { createApiKey } from '@/lib/api-key/auth'
 import { hashApiKey } from '@/lib/api-key/crypto'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import {
+  type ChatOutputConfigInput,
+  DEFAULT_CHAT_AUTH_TYPE,
+  DEFAULT_CHAT_DEPARTMENT,
+  DEFAULT_CHAT_WELCOME_MESSAGE,
+  parseChatOutputConfigInputs,
+  resolveChatOutputConfigs,
+} from '@/lib/workflows/default-user-workflows/chat-deploy-import'
 import { parsePostgresConnectionFromBody } from '@/lib/workflows/default-user-workflows/postgres'
 import {
   type DefaultWorkflowSourceInput,
@@ -16,7 +24,7 @@ import {
   provisionOrRefreshDefaultUserWorkflow,
   recordDefaultUserWorkflowDeploy,
 } from '@/lib/workflows/default-user-workflows/service'
-import { performFullDeploy } from '@/lib/workflows/orchestration'
+import { performChatDeploy, performFullDeploy } from '@/lib/workflows/orchestration'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
 import { authenticateCronSecretRequest } from '@/app/api/v1/admin/cron-secret-auth'
 import {
@@ -37,6 +45,9 @@ interface ImportedWorkflowResult {
   refreshed: boolean
   imported: boolean
   deployed: boolean
+  chatDeployed?: boolean
+  chatId?: string
+  chatUrl?: string
   credentialPopulation?: {
     populatedProviders: string[]
     missingProviders: string[]
@@ -107,6 +118,23 @@ function normalizeSourceWorkflowInput(
       ? rawWorkflow.name.trim()
       : undefined
 
+  const deployAsChat = !(isRecord(rawWorkflow) && rawWorkflow.deployAsChat === false)
+
+  if (isRecord(rawWorkflow) && rawWorkflow.chat !== undefined && !deployAsChat) {
+    return {
+      error: `Source workflow at index ${index}: chat must not be provided when deployAsChat is false.`,
+    }
+  }
+
+  let chatOutputConfigs: ChatOutputConfigInput[] | undefined
+  if (deployAsChat) {
+    const parsedChatOutputs = parseChatOutputConfigInputs(rawWorkflow)
+    if (parsedChatOutputs && 'error' in parsedChatOutputs) {
+      return { error: parsedChatOutputs.error }
+    }
+    chatOutputConfigs = parsedChatOutputs
+  }
+
   const sourceWorkflowId =
     isRecord(rawWorkflow) && typeof rawWorkflow.sourceWorkflowId === 'string'
       ? rawWorkflow.sourceWorkflowId.trim()
@@ -118,7 +146,12 @@ function normalizeSourceWorkflowInput(
     return { error: `Source workflow at index ${index} must be a workflow ID string.` }
   }
 
-  return { sourceWorkflowId, nameOverride }
+  return {
+    sourceWorkflowId,
+    nameOverride,
+    deployAsChat,
+    ...(deployAsChat && chatOutputConfigs !== undefined && { chatOutputConfigs }),
+  }
 }
 
 async function getOrCreatePersonalWorkspace(params: {
@@ -321,16 +354,87 @@ export const POST = withRouteHandler(async (request) => {
           postgresConnection,
         })
 
-        const deployResult = await performFullDeploy({
-          workflowId: provisioned.workflowId,
-          userId: targetUser.id,
+        const deployOptions = {
           workflowName: provisioned.name,
           requestId,
           request,
-          actorId: 'admin-api',
+          actorId: 'admin-api' as const,
+        }
+
+        if (!input.deployAsChat) {
+          const deployResult = await performFullDeploy({
+            workflowId: provisioned.workflowId,
+            userId: targetUser.id,
+            ...deployOptions,
+          })
+
+          if (!deployResult.success) {
+            results.push({
+              workflowId: provisioned.workflowId,
+              name: provisioned.name,
+              created: provisioned.created,
+              refreshed: provisioned.refreshed,
+              imported: true,
+              deployed: false,
+              chatDeployed: false,
+              credentialPopulation: provisioned.credentialPopulation,
+              postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
+              error: deployResult.error || 'Failed to deploy workflow',
+              warnings: deployResult.warnings,
+            })
+            continue
+          }
+
+          await recordDefaultUserWorkflowDeploy({
+            userId: targetUser.id,
+            sourceWorkflowId: input.sourceWorkflowId,
+            version: deployResult.version,
+          })
+
+          results.push({
+            workflowId: provisioned.workflowId,
+            name: provisioned.name,
+            created: provisioned.created,
+            refreshed: provisioned.refreshed,
+            imported: true,
+            deployed: true,
+            chatDeployed: false,
+            credentialPopulation: provisioned.credentialPopulation,
+            postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
+            version: deployResult.version,
+            deployedAt: deployResult.deployedAt?.toISOString(),
+            warnings: deployResult.warnings,
+          })
+          continue
+        }
+
+        const [workflowRecord] = await db
+          .select({ description: workflow.description })
+          .from(workflow)
+          .where(eq(workflow.id, provisioned.workflowId))
+          .limit(1)
+
+        const outputConfigs = await resolveChatOutputConfigs(
+          provisioned.workflowId,
+          input.chatOutputConfigs ?? []
+        )
+
+        const chatDeployResult = await performChatDeploy({
+          workflowId: provisioned.workflowId,
+          userId: targetUser.id,
+          identifier: provisioned.workflowId,
+          title: provisioned.name,
+          description: workflowRecord?.description ?? '',
+          department: DEFAULT_CHAT_DEPARTMENT,
+          customizations: { welcomeMessage: DEFAULT_CHAT_WELCOME_MESSAGE },
+          authType: DEFAULT_CHAT_AUTH_TYPE,
+          allowedEmails: [targetUser.email],
+          outputConfigs,
+          workspaceId: personalWorkspace.workspaceId,
+          deployOptions,
         })
 
-        if (!deployResult.success) {
+        if (!chatDeployResult.success) {
           results.push({
             workflowId: provisioned.workflowId,
             name: provisioned.name,
@@ -338,9 +442,10 @@ export const POST = withRouteHandler(async (request) => {
             refreshed: provisioned.refreshed,
             imported: true,
             deployed: false,
+            chatDeployed: false,
             credentialPopulation: provisioned.credentialPopulation,
             postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
-            error: deployResult.error || 'Failed to deploy workflow',
+            error: chatDeployResult.error || 'Failed to deploy chat',
           })
           continue
         }
@@ -348,7 +453,7 @@ export const POST = withRouteHandler(async (request) => {
         await recordDefaultUserWorkflowDeploy({
           userId: targetUser.id,
           sourceWorkflowId: input.sourceWorkflowId,
-          version: deployResult.version,
+          version: chatDeployResult.version,
         })
 
         results.push({
@@ -358,11 +463,13 @@ export const POST = withRouteHandler(async (request) => {
           refreshed: provisioned.refreshed,
           imported: true,
           deployed: true,
+          chatDeployed: true,
+          chatId: chatDeployResult.chatId,
+          chatUrl: chatDeployResult.chatUrl,
           credentialPopulation: provisioned.credentialPopulation,
           postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
-          version: deployResult.version,
-          deployedAt: deployResult.deployedAt?.toISOString(),
-          warnings: deployResult.warnings,
+          version: chatDeployResult.version,
+          deployedAt: chatDeployResult.deployedAt?.toISOString(),
         })
       } catch (error) {
         results.push({

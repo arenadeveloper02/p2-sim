@@ -10,6 +10,7 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import type { ChatOutputConfigInput } from '@/lib/workflows/default-user-workflows/chat-deploy-import'
 import {
   type PostgresConnectionConfig,
   populatePostgresBlocks,
@@ -90,6 +91,10 @@ const PROVIDER_BY_TOOL_ID_PREFIX: Array<{ prefix: string; providerId: string }> 
 export interface DefaultWorkflowSourceInput {
   sourceWorkflowId: string
   nameOverride?: string
+  /** When false, import provisions the workflow but deploy skips chat (workflow deploy only). */
+  deployAsChat: boolean
+  /** Per-workflow chat output selections from `chat.outputConfigs` in the import body. */
+  chatOutputConfigs?: ChatOutputConfigInput[]
 }
 
 export interface CredentialPopulationSummary {
