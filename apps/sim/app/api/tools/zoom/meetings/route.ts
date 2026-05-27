@@ -44,35 +44,44 @@ export const POST = withRouteHandler(async (request: Request) => {
       )
     }
 
-    const response = await fetch(
-      'https://api.zoom.us/v2/users/me/meetings?page_size=300&type=scheduled',
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    )
+    const meetingTypes = ['scheduled', 'live', 'upcoming'] as const
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      logger.error('Failed to fetch Zoom meetings', {
-        status: response.status,
-        error: errorData,
-      })
-      return NextResponse.json(
-        { error: 'Failed to fetch Zoom meetings', details: errorData },
-        { status: response.status }
+    // "Instant" meetings (created with type=1) are not reliably returned under `type=scheduled`.
+    // For the meeting picker dropdown, fetch multiple list types and merge by id.
+    const meetingsById = new Map<string, { id: string; name: string }>()
+
+    for (const type of meetingTypes) {
+      const response = await fetch(
+        `https://api.zoom.us/v2/users/me/meetings?page_size=300&type=${encodeURIComponent(type)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
       )
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        logger.warn('Failed to fetch Zoom meetings for type', {
+          type,
+          status: response.status,
+          error: errorData,
+        })
+        continue
+      }
+
+      const data = (await response.json()) as {
+        meetings?: Array<{ id: number; topic?: string }>
+      }
+
+      for (const meeting of data.meetings || []) {
+        const id = String(meeting.id)
+        meetingsById.set(id, { id, name: meeting.topic ?? '' })
+      }
     }
 
-    const data = await response.json()
-    const meetings = (data.meetings || []).map((meeting: { id: number; topic: string }) => ({
-      id: String(meeting.id),
-      name: meeting.topic,
-    }))
-
-    return NextResponse.json({ meetings })
+    return NextResponse.json({ meetings: Array.from(meetingsById.values()) })
   } catch (error) {
     logger.error('Error processing Zoom meetings request:', error)
     return NextResponse.json(

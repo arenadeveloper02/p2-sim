@@ -96,6 +96,48 @@ export function isAdminWorkspace(workspaceId: string | null | undefined): boolea
 /**
  * Payload helper for APIs and workflow execute bodies that need an admin-workspace flag.
  */
+/** OAuth provider IDs shown only on admin workspaces (e.g. integrations settings). */
+export const ADMIN_WORKSPACE_ONLY_OAUTH_PROVIDER_IDS = ['zoom-admin'] as const
+
+/**
+ * Integration tool IDs exposed to Mothership/Copilot only in admin workspaces.
+ * Add entries here when a block registers separate admin-only tools in the registry.
+ */
+export const ADMIN_WORKSPACE_ONLY_TOOL_IDS = [
+  'zoom_list_account_recordings',
+  'zoom_get_account_recordings_with_transcript',
+] as const
+
+/**
+ * Returns whether an OAuth provider is restricted to admin workspaces.
+ */
+export function isAdminWorkspaceOnlyOAuthProvider(providerId: string | null | undefined): boolean {
+  if (!providerId || typeof providerId !== 'string') return false
+  return (ADMIN_WORKSPACE_ONLY_OAUTH_PROVIDER_IDS as readonly string[]).includes(providerId)
+}
+
+/**
+ * Returns whether an integration tool is restricted to admin workspaces.
+ */
+export function isAdminWorkspaceOnlyTool(toolId: string | null | undefined): boolean {
+  if (!toolId || typeof toolId !== 'string') return false
+  const normalized = toolId.trim()
+  if (!normalized) return false
+  const baseId = normalized.replace(/_v\d+$/, '')
+  return (ADMIN_WORKSPACE_ONLY_TOOL_IDS as readonly string[]).includes(baseId)
+}
+
+/**
+ * Filters OAuth services/credentials for the current workspace (hides admin-only providers elsewhere).
+ */
+export function filterOAuthItemsForWorkspace<T extends { providerId?: string | null }>(
+  items: T[],
+  workspaceId: string | null | undefined
+): T[] {
+  if (isAdminWorkspace(workspaceId)) return items
+  return items.filter((item) => !isAdminWorkspaceOnlyOAuthProvider(item.providerId))
+}
+
 export function getAdminWorkspaceContext(
   workspaceId: string | null | undefined
 ): AdminWorkspaceContext {

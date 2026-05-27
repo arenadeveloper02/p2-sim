@@ -11,11 +11,13 @@ import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/creden
 import {
   getCanonicalScopesForProvider,
   getProviderIdFromServiceId,
+  getServiceConfigByProviderId,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   parseProvider,
 } from '@/lib/oauth'
-import { getMissingRequiredScopes } from '@/lib/oauth/utils'
+import { getMissingRequiredScopes, getRequiredScopesForCredential } from '@/lib/oauth/utils'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -60,6 +62,11 @@ export function CredentialSelector({
   const requiredScopes = subBlock.requiredScopes || []
   const label = subBlock.placeholder || 'Select credential'
   const serviceId = subBlock.serviceId || ''
+  const additionalConnectOptions = useMemo(() => {
+    const options = subBlock.additionalConnectOptions || []
+    if (options.length === 0) return options
+    return isAdminWorkspace(workspaceId) ? options : []
+  }, [subBlock.additionalConnectOptions, workspaceId])
   const isAllCredentials = !serviceId
   const supportsCredentialSets = subBlock.supportsCredentialSets || false
 
@@ -116,9 +123,15 @@ export function CredentialSelector({
     refetch: refetchAllCredentials,
   } = useWorkspaceCredentials({ workspaceId, enabled: isAllCredentials })
 
+  const { data: additionalWorkspaceCredentials = [] } = useWorkspaceCredentials({
+    workspaceId,
+    type: 'oauth',
+    enabled: additionalConnectOptions.length > 0,
+  })
+
   const credentialsLoading = isAllCredentials ? allCredentialsLoading : oauthCredentialsLoading
 
-  const credentials = useMemo(
+  const selectionPool = useMemo(
     () =>
       isTriggerMode
         ? rawCredentials.filter((cred) => cred.type !== 'service_account')
@@ -126,9 +139,14 @@ export function CredentialSelector({
     [rawCredentials, isTriggerMode]
   )
 
+  const credentials = useMemo(
+    () => selectionPool,
+    [selectionPool]
+  )
+
   const selectedCredential = useMemo(
-    () => credentials.find((cred) => cred.id === selectedId),
-    [credentials, selectedId]
+    () => selectionPool.find((cred) => cred.id === selectedId),
+    [selectionPool, selectedId]
   )
 
   const selectedAllCredential = useMemo(
@@ -184,8 +202,12 @@ export function CredentialSelector({
   )
 
   const hasOAuthSelection = Boolean(selectedCredential)
+  const scopesForValidation = useMemo(
+    () => getRequiredScopesForCredential(selectedCredential, requiredScopes),
+    [selectedCredential, requiredScopes]
+  )
   const missingRequiredScopes = hasOAuthSelection
-    ? getMissingRequiredScopes(selectedCredential!, requiredScopes || [])
+    ? getMissingRequiredScopes(selectedCredential!, scopesForValidation)
     : []
 
   const needsUpdate =
@@ -229,6 +251,11 @@ export function CredentialSelector({
   }, [])
 
   const getProviderName = useCallback((providerName: OAuthProvider) => {
+    const serviceConfig = getServiceConfigByProviderId(providerName)
+    if (serviceConfig) {
+      return serviceConfig.name
+    }
+
     const { baseProvider } = parseProvider(providerName)
     const baseProviderConfig = OAUTH_PROVIDERS[baseProvider]
 
@@ -241,6 +268,26 @@ export function CredentialSelector({
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ')
   }, [])
+
+  const additionalConnectItems = useMemo(
+    () =>
+      additionalConnectOptions.map((option) => {
+        const optionProvider = getProviderIdFromServiceId(option.serviceId) as OAuthProvider
+        const credentialCount = additionalWorkspaceCredentials.filter(
+          (cred) => cred.providerId === optionProvider
+        ).length
+
+        return {
+          label: option.label,
+          value: `__connect_account__:${option.serviceId}`,
+          iconElement: <ExternalLink className='h-3 w-3' />,
+          serviceId: option.serviceId,
+          provider: optionProvider,
+          credentialCount,
+        }
+      }),
+    [additionalConnectOptions, additionalWorkspaceCredentials]
+  )
 
   const { comboboxOptions, comboboxGroups } = useMemo(() => {
     if (isAllCredentials) {
@@ -286,6 +333,7 @@ export function CredentialSelector({
         value: '__connect_account__',
         iconElement: <ExternalLink className='h-3 w-3' />,
       })
+      credentialItems.push(...additionalConnectItems)
 
       groups.push({
         section: 'Personal Credential',
@@ -309,6 +357,7 @@ export function CredentialSelector({
       value: '__connect_account__',
       iconElement: <ExternalLink className='h-3 w-3' />,
     })
+    options.push(...additionalConnectItems)
 
     return { comboboxOptions: options, comboboxGroups: undefined }
   }, [
@@ -321,9 +370,13 @@ export function CredentialSelector({
     getProviderName,
     canUseCredentialSets,
     credentialSets,
+    additionalConnectItems,
   ])
 
   const selectedCredentialProvider = selectedCredential?.provider ?? provider
+  const reauthorizeProvider = selectedCredentialProvider
+  const reauthorizeServiceId = selectedCredential?.provider ?? serviceId
+  const reauthorizeRequiredScopes = getCanonicalScopesForProvider(reauthorizeProvider)
 
   const overlayContent = useMemo(() => {
     if (!displayValue) return null
@@ -375,6 +428,23 @@ export function CredentialSelector({
         return
       }
 
+      if (value.startsWith('__connect_account__:')) {
+        const targetServiceId = value.replace('__connect_account__:', '')
+        const targetOption = additionalConnectItems.find(
+          (option) => option.serviceId === targetServiceId
+        )
+
+        if (targetOption) {
+          setConnectModalConfig({
+            provider: targetOption.provider,
+            serviceId: targetOption.serviceId,
+            credentialCount: targetOption.credentialCount,
+          })
+          setShowConnectModal(true)
+          return
+        }
+      }
+
       if (value.startsWith(CREDENTIAL_SET.PREFIX)) {
         const credentialSetId = value.slice(CREDENTIAL_SET.PREFIX.length)
         const matchedSet = credentialSets.find((cs) => cs.id === credentialSetId)
@@ -403,8 +473,15 @@ export function CredentialSelector({
       handleAddCredential,
       handleSelect,
       handleCredentialSetSelect,
+      additionalConnectItems,
     ]
   )
+
+  const [connectModalConfig, setConnectModalConfig] = useState<{
+    provider: OAuthProvider
+    serviceId: string
+    credentialCount: number
+  } | null>(null)
 
   return (
     <div>
@@ -438,8 +515,8 @@ export function CredentialSelector({
               writeOAuthReturnContext({
                 origin: 'workflow',
                 workflowId: activeWorkflowId || '',
-                displayName: selectedCredential?.name ?? getProviderName(provider),
-                providerId: effectiveProviderId,
+                displayName: selectedCredential?.name ?? getProviderName(reauthorizeProvider),
+                providerId: reauthorizeProvider,
                 preCount: credentials.length,
                 workspaceId,
                 requestedAt: Date.now(),
@@ -457,12 +534,15 @@ export function CredentialSelector({
         <OAuthModal
           mode='connect'
           isOpen={showConnectModal}
-          onClose={() => setShowConnectModal(false)}
-          provider={provider}
-          serviceId={serviceId}
+          onClose={() => {
+            setShowConnectModal(false)
+            setConnectModalConfig(null)
+          }}
+          provider={connectModalConfig?.provider ?? provider}
+          serviceId={connectModalConfig?.serviceId ?? serviceId}
           workspaceId={workspaceId}
           workflowId={activeWorkflowId || ''}
-          credentialCount={credentials.length}
+          credentialCount={connectModalConfig?.credentialCount ?? credentials.length}
         />
       )}
 
@@ -474,11 +554,11 @@ export function CredentialSelector({
             consumeOAuthReturnContext()
             setShowOAuthModal(false)
           }}
-          provider={provider}
-          toolName={getProviderName(provider)}
-          requiredScopes={getCanonicalScopesForProvider(effectiveProviderId)}
+          provider={reauthorizeProvider}
+          toolName={getProviderName(reauthorizeProvider)}
+          requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
-          serviceId={serviceId}
+          serviceId={reauthorizeServiceId}
         />
       )}
     </div>

@@ -9,6 +9,7 @@ import { getBlock } from '@/blocks'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('SubblockMigrations')
+const ZOOM_OAUTH_CANONICAL_IDS = new Set(['oauthCredential', 'oauthCredentialAdmin'])
 
 /**
  * Maps old subblock IDs to their current equivalents per block type.
@@ -22,6 +23,10 @@ const logger = createLogger('SubblockMigrations')
 export const SUBBLOCK_ID_MIGRATIONS: Record<string, Record<string, string>> = {
   knowledge: {
     knowledgeBaseId: 'knowledgeBaseSelector',
+  },
+  zoom: {
+    credentialAdmin: 'credential',
+    manualCredentialAdmin: 'manualCredential',
   },
   dynamodb: {
     key: 'getKey',
@@ -133,7 +138,9 @@ export function migrateSubblockIds(blocks: Record<string, BlockState>): {
 }
 
 /**
- * Backfills missing `canonicalModes` entries in block data.
+ * Backfills missing `canonicalModes` entries in block data and normalizes
+ * stale Zoom OAuth pairs that were accidentally persisted in advanced mode
+ * with no manual/basic value set.
  *
  * When a canonical pair is added to a block definition, existing blocks
  * won't have the entry in `data.canonicalModes`. Without it the editor
@@ -167,7 +174,31 @@ export function backfillCanonicalModes(blocks: Record<string, BlockState>): {
     const values = buildSubBlockValues(block.subBlocks)
 
     for (const group of pairs) {
-      if (existing[group.canonicalId] != null) continue
+      const currentMode = existing[group.canonicalId]
+
+      if (
+        block.type === 'zoom' &&
+        currentMode === 'advanced' &&
+        ZOOM_OAUTH_CANONICAL_IDS.has(group.canonicalId)
+      ) {
+        const basicValue = group.basicId ? values[group.basicId] : undefined
+        const hasBasicValue =
+          basicValue !== null &&
+          basicValue !== undefined &&
+          String(basicValue).trim().length > 0
+        const hasAdvancedValue = group.advancedIds.some((advancedId) => {
+          const value = values[advancedId]
+          return value !== null && value !== undefined && String(value).trim().length > 0
+        })
+
+        if (!hasBasicValue && !hasAdvancedValue) {
+          if (!patched) patched = { ...existing }
+          patched[group.canonicalId] = 'basic'
+        }
+        continue
+      }
+
+      if (currentMode != null) continue
 
       const resolved = resolveCanonicalMode(group, values)
       if (!patched) patched = { ...existing }

@@ -1,9 +1,80 @@
 import { ZoomIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
+import {
+  ADMIN_WORKSPACE_ONLY_TOOL_IDS,
+  isAdminWorkspace,
+  resolveWorkspaceIdForAdminCheck,
+} from '@/lib/workspaces/is-admin-workspace'
+import type { SubBlockCondition } from '@/lib/workflows/subblocks/visibility'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { ZoomResponse } from '@/tools/zoom/types'
 import { getTrigger } from '@/triggers'
+
+const ZOOM_MEETING_SUBBLOCK_OPS = [
+  'zoom_get_meeting',
+  'zoom_update_meeting',
+  'zoom_delete_meeting',
+  'zoom_get_meeting_invitation',
+  'zoom_get_meeting_recordings',
+  'zoom_delete_recording',
+  'zoom_list_past_participants',
+] as const
+
+const ZOOM_MEETING_OPS_LIST = [...ZOOM_MEETING_SUBBLOCK_OPS]
+
+/** Account-level recording tools; require admin workspace + zoom-admin OAuth. */
+const ZOOM_ADMIN_ACCOUNT_OPERATIONS = ADMIN_WORKSPACE_ONLY_TOOL_IDS
+
+const ZOOM_OPERATION_OPTIONS = [
+  { label: 'Create Meeting', id: 'zoom_create_meeting' },
+  { label: 'List Meetings', id: 'zoom_list_meetings' },
+  { label: 'Get Meeting', id: 'zoom_get_meeting' },
+  { label: 'Update Meeting', id: 'zoom_update_meeting' },
+  { label: 'Delete Meeting', id: 'zoom_delete_meeting' },
+  { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
+  { label: 'List Recordings', id: 'zoom_list_recordings' },
+  { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
+  {
+    label: 'Get Account Recordings with Transcript',
+    id: 'zoom_get_account_recordings_with_transcript',
+  },
+  { label: 'Get Meeting Recordings', id: 'zoom_get_meeting_recordings' },
+  { label: 'Download Transcript/File', id: 'zoom_download_transcript' },
+  { label: 'Delete Recording', id: 'zoom_delete_recording' },
+  { label: 'List Past Participants', id: 'zoom_list_past_participants' },
+] as const
+
+function getZoomOperationOptions(): Array<{ label: string; id: string }> {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck())
+  if (isAdmin) {
+    return [...ZOOM_OPERATION_OPTIONS]
+  }
+  return ZOOM_OPERATION_OPTIONS.filter(
+    (option) => !(ZOOM_ADMIN_ACCOUNT_OPERATIONS as readonly string[]).includes(option.id)
+  )
+}
+
+function hasZoomAuth(values: Record<string, unknown> | undefined): boolean {
+  if (!values) return false
+  return (
+    String(values.credential ?? values.manualCredential ?? values.oauthCredential ?? '').trim()
+      .length > 0
+  )
+}
+
+/**
+ * Show Zoom meeting picker / ID when the operation needs a meeting and a credential exists.
+ */
+function personalZoomMeetingSubblockCondition(values: Record<string, unknown> | undefined) {
+  const op = values?.operation
+  const needsMeeting =
+    typeof op === 'string' && (ZOOM_MEETING_SUBBLOCK_OPS as readonly string[]).includes(op)
+  if (!needsMeeting || !hasZoomAuth(values)) {
+    return { field: 'operation', value: [] } satisfies SubBlockCondition
+  }
+  return { field: 'operation', value: ZOOM_MEETING_OPS_LIST } satisfies SubBlockCondition
+}
 
 export const ZoomBlock: BlockConfig<ZoomResponse> = {
   type: 'zoom',
@@ -34,44 +105,33 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       id: 'operation',
       title: 'Operation',
       type: 'dropdown',
-      options: [
-        { label: 'Create Meeting', id: 'zoom_create_meeting' },
-        { label: 'List Meetings', id: 'zoom_list_meetings' },
-        { label: 'Get Meeting', id: 'zoom_get_meeting' },
-        { label: 'Update Meeting', id: 'zoom_update_meeting' },
-        { label: 'Delete Meeting', id: 'zoom_delete_meeting' },
-        { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
-        { label: 'List Recordings', id: 'zoom_list_recordings' },
-        { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
-        {
-          label: 'Get Account Recordings with Transcript',
-          id: 'zoom_get_account_recordings_with_transcript',
-        },
-        { label: 'Get Meeting Recordings', id: 'zoom_get_meeting_recordings' },
-        { label: 'Download Transcript/File', id: 'zoom_download_transcript' },
-        { label: 'Delete Recording', id: 'zoom_delete_recording' },
-        { label: 'List Past Participants', id: 'zoom_list_past_participants' },
-      ],
+      options: () => getZoomOperationOptions(),
       value: () => 'zoom_create_meeting',
     },
     {
       id: 'credential',
-      title: 'Zoom Account',
+      title: 'Zoom account',
       type: 'oauth-input',
-      serviceId: 'zoom',
+      serviceId: 'zoom-client',
       canonicalParamId: 'oauthCredential',
       mode: 'basic',
-      requiredScopes: getScopesForService('zoom'),
-      placeholder: 'Select Zoom account',
+      requiredScopes: getScopesForService('zoom-client'),
+      additionalConnectOptions: [
+        {
+          label: 'Connect Zoom admin account',
+          serviceId: 'zoom-admin',
+        },
+      ],
+      placeholder: 'Select or connect Zoom account',
       required: true,
     },
     {
       id: 'manualCredential',
-      title: 'Zoom Account',
+      title: 'Zoom account',
       type: 'short-input',
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
-      placeholder: 'Enter credential ID',
+      placeholder: 'Zoom credential ID',
       required: true,
     },
     // User ID for create/list operations
@@ -92,46 +152,25 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       title: 'Meeting',
       type: 'project-selector',
       canonicalParamId: 'meetingId',
-      serviceId: 'zoom',
+      serviceId: 'zoom-client',
       selectorKey: 'zoom.meetings',
       selectorAllowSearch: true,
       placeholder: 'Select Zoom meeting',
-      dependsOn: ['credential'],
+      dependsOn: ['credential', 'manualCredential'],
       mode: 'basic',
       required: true,
-      condition: {
-        field: 'operation',
-        value: [
-          'zoom_get_meeting',
-          'zoom_update_meeting',
-          'zoom_delete_meeting',
-          'zoom_get_meeting_invitation',
-          'zoom_get_meeting_recordings',
-          'zoom_delete_recording',
-          'zoom_list_past_participants',
-        ],
-      },
+      condition: (values) => personalZoomMeetingSubblockCondition(values),
     },
     {
-      id: 'meetingId',
+      id: 'meetingIdClient',
       title: 'Meeting ID',
       type: 'short-input',
       canonicalParamId: 'meetingId',
       placeholder: 'Enter meeting ID',
       mode: 'advanced',
       required: true,
-      condition: {
-        field: 'operation',
-        value: [
-          'zoom_get_meeting',
-          'zoom_update_meeting',
-          'zoom_delete_meeting',
-          'zoom_get_meeting_invitation',
-          'zoom_get_meeting_recordings',
-          'zoom_delete_recording',
-          'zoom_list_past_participants',
-        ],
-      },
+      dependsOn: ['credential', 'manualCredential'],
+      condition: (values) => personalZoomMeetingSubblockCondition(values),
     },
     // Topic for create/update
     {
@@ -524,14 +563,22 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     ],
     config: {
       tool: (params) => {
-        return params.operation || 'zoom_create_meeting'
+        const operation = params.operation || 'zoom_create_meeting'
+        return operation
       },
       params: (params) => {
-        const baseParams: Record<string, any> = {
-          credential: params.oauthCredential,
+        const credential = String(params.oauthCredential ?? '').trim()
+
+        if (!credential) {
+          throw new Error('Connect a Zoom account for this operation.')
         }
 
-        switch (params.operation) {
+        const operation = params.operation || 'zoom_create_meeting'
+        const baseParams: Record<string, unknown> = {
+          credential,
+        }
+
+        switch (operation) {
           case 'zoom_create_meeting':
             if (!params.userId?.trim()) {
               throw new Error('User ID is required.')
@@ -701,7 +748,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    oauthCredential: { type: 'string', description: 'Zoom access token' },
+    oauthCredential: { type: 'string', description: 'OAuth credential for Zoom' },
     userId: { type: 'string', description: 'User ID or email (use "me" for authenticated user)' },
     meetingId: { type: 'string', description: 'Meeting ID' },
     topic: { type: 'string', description: 'Meeting topic' },

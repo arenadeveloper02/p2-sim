@@ -339,6 +339,12 @@ function ConnectorCard({
   })
 
   useCredentialRefreshTriggers(refetchCredentials, providerId ?? '', workspaceId)
+  const selectedCredential = credentials?.find((credential) => credential.id === connector.credentialId)
+  const selectedCredentialProvider = selectedCredential?.provider ?? providerId
+  const reauthorizeServiceId = selectedCredential?.provider ?? serviceId
+  const reauthorizeRequiredScopes = selectedCredentialProvider
+    ? getCanonicalScopesForProvider(selectedCredentialProvider)
+    : requiredScopes
 
   const missingScopes = useMemo(() => {
     if (!credentials || !connector.credentialId) return []
@@ -520,7 +526,7 @@ function ConnectorCard({
                       origin: 'kb-connectors',
                       knowledgeBaseId,
                       displayName: connectorDef?.name ?? connector.connectorType,
-                      providerId: providerId!,
+                      providerId: selectedCredentialProvider ?? providerId!,
                       preCount: credentials?.length ?? 0,
                       workspaceId,
                       requestedAt: Date.now(),
@@ -600,11 +606,11 @@ function ConnectorCard({
             consumeOAuthReturnContext()
             setShowOAuthModal(false)
           }}
-          provider={providerId as OAuthProvider}
+          provider={(selectedCredentialProvider ?? providerId) as OAuthProvider}
           toolName={connectorDef?.name ?? connector.connectorType}
-          requiredScopes={getCanonicalScopesForProvider(providerId)}
+          requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingScopes}
-          serviceId={serviceId}
+          serviceId={reauthorizeServiceId ?? serviceId}
         />
       )}
     </div>

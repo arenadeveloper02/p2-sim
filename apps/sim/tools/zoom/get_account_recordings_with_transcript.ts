@@ -64,7 +64,7 @@ export const zoomGetAccountRecordingsWithTranscriptTool: ToolConfig<
 
   oauth: {
     required: true,
-    provider: 'zoom',
+    provider: 'zoom-admin',
     requiredScopes: [
       'recording:read:list_account_recordings',
       'recording:read:admin',

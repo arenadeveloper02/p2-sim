@@ -515,6 +515,22 @@ export function getCanonicalScopesForProvider(providerId: string): string[] {
 }
 
 /**
+ * Scopes to validate a stored credential against. Uses the credential OAuth provider
+ * (e.g. `zoom-admin`) when present; otherwise falls back to block/tool `requiredScopes`.
+ */
+export function getRequiredScopesForCredential(
+  credential: { provider?: string } | undefined,
+  fallbackScopes: string[] = []
+): string[] {
+  const providerId = credential?.provider?.trim()
+  if (providerId) {
+    const canonical = getCanonicalScopesForProvider(providerId)
+    if (canonical.length > 0) return canonical
+  }
+  return fallbackScopes
+}
+
+/**
  * Get canonical scopes for a service by its serviceId key in OAUTH_PROVIDERS.
  * Useful for block definitions to reference scopes from the single source of truth.
  */
