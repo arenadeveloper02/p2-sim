@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { mergeSubblockStateWithValues } from '@sim/workflow-persistence/subblocks'
 import {
   Button,
   ButtonGroup,
@@ -19,6 +20,8 @@ import {
 import type { WorkflowDeploymentVersionResponse } from '@/lib/workflows/persistence/utils'
 import { Preview, PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview'
 import { useDeploymentVersionState, useRevertToVersion } from '@/hooks/queries/workflows'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 import { Versions } from './components'
 
@@ -58,6 +61,13 @@ export function GeneralDeploy({
   const [showExpandedPreview, setShowExpandedPreview] = useState(false)
   const [versionToLoad, setVersionToLoad] = useState<number | null>(null)
   const [versionToPromote, setVersionToPromote] = useState<number | null>(null)
+  const blocks = useWorkflowStore((state) => state.blocks)
+  const edges = useWorkflowStore((state) => state.edges)
+  const loops = useWorkflowStore((state) => state.loops)
+  const parallels = useWorkflowStore((state) => state.parallels)
+  const subBlockValues = useSubBlockStore((state) =>
+    workflowId ? state.workflowValues[workflowId] : null
+  )
 
   const selectedVersionInfo = versions.find((v) => v.version === selectedVersion)
   const versionToPromoteInfo = versions.find((v) => v.version === versionToPromote)
@@ -111,12 +121,23 @@ export function GeneralDeploy({
     }
   }
 
+  const liveWorkflowState = useMemo((): WorkflowState | null => {
+    if (!workflowId) return null
+
+    return {
+      blocks: mergeSubblockStateWithValues(blocks, subBlockValues ?? {}),
+      edges,
+      loops,
+      parallels,
+    }
+  }, [workflowId, blocks, edges, loops, parallels, subBlockValues])
+
   const workflowToShow = useMemo(() => {
     if (previewMode === 'selected' && selectedVersionState) {
       return selectedVersionState
     }
-    return deployedState
-  }, [previewMode, selectedVersionState, deployedState])
+    return liveWorkflowState
+  }, [previewMode, selectedVersionState, liveWorkflowState])
 
   const showToggle = selectedVersion !== null && deployedState
 
