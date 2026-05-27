@@ -248,7 +248,7 @@ async function extractTextFromPdfWithClaudeVision(
   const base64Data = fileBuffer.toString('base64')
 
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: 'claude-sonnet-4-6',
     max_tokens: 16384,
     temperature: 0,
     system:
@@ -576,7 +576,7 @@ async function generateHTMLCSS(systemPrompt: string, userPrompt: string): Promis
   })
 
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929', // Claude Sonnet 4.5 - Latest model for advanced design generation
+    model: 'claude-sonnet-4-6',
     max_tokens: 16384, // Large token limit for complex, multi-section designs with detailed HTML/CSS
     system: systemPrompt,
     messages: [

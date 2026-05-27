@@ -231,7 +231,7 @@ async function callAIService(
     })
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929', // Claude Sonnet 4.5 - Latest model for advanced design generation
+      model: 'claude-sonnet-4-6',
       max_tokens: 16384, // Large token limit for complex, multi-section designs with detailed HTML/CSS
       system:
         'You are an expert frontend developer specializing in converting Figma designs to clean, semantic, and accessible HTML/CSS code. Always respond with a single HTML document that includes embedded CSS in <style> tags within the <head> section. Do NOT generate separate HTML and CSS sections. Return only one complete HTML document with embedded styles. Remove all newline characters from the output.',
@@ -251,7 +251,7 @@ async function callAIService(
 
     return {
       combinedHtml: textContent.text,
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'claude-sonnet-4-6',
       tokens: message.usage?.output_tokens || 0,
     }
   } catch (error) {
