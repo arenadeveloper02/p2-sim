@@ -8,14 +8,14 @@ import {
   type PostgresConnectionConfig,
   populatePostgresBlocks,
 } from '@/lib/workflows/default-user-workflows/postgres'
-import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
 import { performFullDeploy } from '@/lib/workflows/orchestration'
 import {
   loadWorkflowFromNormalizedTables,
   saveWorkflowToNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
-import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
+import { regenerateWorkflowIds } from '@/stores/workflows/utils'
+import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('DefaultUserWorkflowsService')
 
@@ -235,28 +235,30 @@ async function buildWorkflowDataFromSource(input: DefaultWorkflowSourceInput) {
     throw new Error(`Source workflow has no normalized data: ${input.sourceWorkflowId}`)
   }
 
-  const sourceState = {
-    blocks: normalizedData.blocks,
-    edges: normalizedData.edges,
-    loops: normalizedData.loops,
-    parallels: normalizedData.parallels,
-    metadata: {
-      name: input.nameOverride || sourceWorkflow.name,
-      description: sourceWorkflow.description ?? undefined,
-      color: sourceWorkflow.color,
-    },
-    variables:
-      sourceWorkflow.variables && isRecord(sourceWorkflow.variables)
-        ? sourceWorkflow.variables
-        : undefined,
-  }
+  const rawWorkflowData = JSON.parse(
+    JSON.stringify({
+      blocks: normalizedData.blocks,
+      edges: normalizedData.edges,
+      loops: normalizedData.loops,
+      parallels: normalizedData.parallels,
+      metadata: {
+        name: input.nameOverride || sourceWorkflow.name,
+        description: sourceWorkflow.description ?? undefined,
+        color: sourceWorkflow.color,
+      },
+      variables:
+        sourceWorkflow.variables && isRecord(sourceWorkflow.variables)
+          ? sourceWorkflow.variables
+          : undefined,
+    })
+  )
 
-  const exportData = sanitizeForExport(sourceState)
-  const { data: workflowData, errors } = parseWorkflowJson(JSON.stringify(exportData))
-
-  if (!workflowData || errors.length > 0) {
-    throw new Error(`Failed to parse source workflow: ${errors.join(', ')}`)
-  }
+  // `workflow_blocks.id` is a global primary key; regenerate block/edge IDs so syncing a
+  // shared template into multiple user workflows never collides on existing block IDs.
+  const { idMap: _idMap, ...workflowData } = regenerateWorkflowIds(
+    rawWorkflowData as WorkflowState,
+    { clearTriggerRuntimeValues: false }
+  )
 
   const workflowName = input.nameOverride || sourceWorkflow.name
 
@@ -292,7 +294,7 @@ async function applyWorkflowStateToTarget(params: {
   credentialPopulation: CredentialPopulationSummary
   postgresBlocksPopulated: number
   sourceWorkflow: typeof workflow.$inferSelect
-  workflowData: NonNullable<Awaited<ReturnType<typeof parseWorkflowJson>>['data']>
+  workflowData: WorkflowState
 }> {
   const { sourceWorkflow, workflowData, workflowName } = await buildWorkflowDataFromSource(
     params.input
