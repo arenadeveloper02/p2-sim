@@ -365,4 +365,44 @@ describe('backfillCanonicalModes', () => {
     const modes = blocks.b1.data?.canonicalModes as Record<string, string>
     expect(modes.knowledgeBaseId).toBe('basic')
   })
+
+  it('should normalize stale zoom oauth canonical mode back to basic when empty', () => {
+    const input: Record<string, BlockState> = {
+      b1: makeBlock({
+        type: 'zoom',
+        data: { canonicalModes: { oauthCredential: 'advanced' } },
+        subBlocks: {
+          operation: { id: 'operation', type: 'dropdown', value: 'zoom_create_meeting' },
+          credential: { id: 'credential', type: 'oauth-input', value: '' },
+          manualCredential: { id: 'manualCredential', type: 'short-input', value: '' },
+        },
+      }),
+    }
+
+    const { blocks, migrated } = backfillCanonicalModes(input)
+
+    expect(migrated).toBe(true)
+    const modes = blocks.b1.data?.canonicalModes as Record<string, string>
+    expect(modes.oauthCredential).toBe('basic')
+  })
+
+  it('should preserve zoom advanced oauth mode when manual credential is present', () => {
+    const input: Record<string, BlockState> = {
+      b1: makeBlock({
+        type: 'zoom',
+        data: { canonicalModes: { oauthCredential: 'advanced' } },
+        subBlocks: {
+          operation: { id: 'operation', type: 'dropdown', value: 'zoom_create_meeting' },
+          credential: { id: 'credential', type: 'oauth-input', value: '' },
+          manualCredential: { id: 'manualCredential', type: 'short-input', value: 'cred_123' },
+        },
+      }),
+    }
+
+    const { blocks, migrated } = backfillCanonicalModes(input)
+
+    expect(migrated).toBe(true)
+    const modes = blocks.b1.data?.canonicalModes as Record<string, string>
+    expect(modes.oauthCredential).toBe('advanced')
+  })
 })

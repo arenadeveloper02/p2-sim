@@ -2,7 +2,7 @@ import { db } from '@sim/db'
 import { account, credential, credentialMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
@@ -34,6 +34,14 @@ const credentialsQuerySchema = z
     message: 'Provider or credentialId is required',
     path: ['provider'],
   })
+
+function getProviderIdsForQuery(providerId: string): string[] {
+  if (providerId === 'zoom') {
+    return ['zoom', 'zoom-admin']
+  }
+
+  return [providerId]
+}
 
 function toCredentialResponse(
   id: string,
@@ -257,6 +265,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     if (effectiveWorkspaceId && providerParam) {
+      const providerIds = getProviderIdsForQuery(providerParam)
+
       await syncWorkspaceOAuthCredentialsForUser({
         workspaceId: effectiveWorkspaceId,
         userId: requesterUserId,
@@ -285,7 +295,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           and(
             eq(credential.workspaceId, effectiveWorkspaceId),
             eq(credential.type, 'oauth'),
-            eq(credential.providerId, providerParam)
+            providerIds.length === 1
+              ? eq(credential.providerId, providerParam)
+              : inArray(credential.providerId, providerIds)
           )
         )
 

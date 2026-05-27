@@ -344,8 +344,10 @@ export const env = createEnv({
     LINKEDIN_CLIENT_SECRET:                z.string().optional(),                  // LinkedIn OAuth client secret
     SHOPIFY_CLIENT_ID:                     z.string().optional(),                  // Shopify OAuth client ID
     SHOPIFY_CLIENT_SECRET:                 z.string().optional(),                  // Shopify OAuth client secret
-    ZOOM_CLIENT_ID:                        z.string().optional(),                  // Zoom OAuth client ID
-    ZOOM_CLIENT_SECRET:                    z.string().optional(),                  // Zoom OAuth client secret
+    ZOOM_CLIENT_ID:                        z.string().optional(),                  // Zoom OAuth client ID (user-managed / personal Zoom app)
+    ZOOM_CLIENT_SECRET:                    z.string().optional(),                  // Zoom OAuth client secret (user-managed app)
+    ZOOM_ADMIN_CLIENT_ID:                  z.string().optional(),                  // Zoom OAuth client ID for the admin/account-wide Zoom Marketplace app
+    ZOOM_ADMIN_CLIENT_SECRET:              z.string().optional(),                  // Zoom OAuth client secret for the admin app
     WORDPRESS_CLIENT_ID:                   z.string().optional(),                  // WordPress.com OAuth client ID
     WORDPRESS_CLIENT_SECRET:               z.string().optional(),                  // WordPress.com OAuth client secret
     SPOTIFY_CLIENT_ID:                     z.string().optional(),                  // Spotify OAuth client ID

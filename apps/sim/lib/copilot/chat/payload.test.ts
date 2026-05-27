@@ -4,9 +4,14 @@
 import { featureFlagsMock, workflowsUtilsMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCreateUserToolSchema, mockGetHighestPrioritySubscription } = vi.hoisted(() => ({
+const {
+  mockCreateUserToolSchema,
+  mockGetHighestPrioritySubscription,
+  mockIsAdminWorkspace,
+} = vi.hoisted(() => ({
   mockCreateUserToolSchema: vi.fn(() => ({ type: 'object', properties: {} })),
   mockGetHighestPrioritySubscription: vi.fn(),
+  mockIsAdminWorkspace: vi.fn(() => false),
 }))
 
 vi.mock('@/lib/billing/core/subscription', () => ({
@@ -44,6 +49,16 @@ vi.mock('@/tools/registry', () => ({
       id: 'run_workflow',
       name: 'Run Workflow',
       description: 'Run a workflow from the client',
+    },
+    zoom_list_meetings: {
+      id: 'zoom_list_meetings',
+      name: 'Zoom List Meetings',
+      description: 'List Zoom meetings',
+    },
+    zoom_list_account_recordings: {
+      id: 'zoom_list_account_recordings',
+      name: 'Zoom List Account Recordings',
+      description: 'List all account recordings',
     },
     google_sheets_write: {
       id: 'google_sheets_write',
@@ -85,12 +100,20 @@ vi.mock('@/tools/params', () => ({
   createUserToolSchema: mockCreateUserToolSchema,
 }))
 
+vi.mock('@/lib/workspaces/is-admin-workspace', () => ({
+  isAdminWorkspace: mockIsAdminWorkspace,
+  isAdminWorkspaceOnlyTool: (toolId: string) =>
+    toolId === 'zoom_list_account_recordings' ||
+    toolId === 'zoom_get_account_recordings_with_transcript',
+}))
+
 import { buildIntegrationToolSchemas } from './payload'
 
 describe('buildIntegrationToolSchemas', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCreateUserToolSchema.mockReturnValue({ type: 'object', properties: {} })
+    mockIsAdminWorkspace.mockReturnValue(false)
   })
 
   it('appends the email footer prompt for free users', async () => {
@@ -100,7 +123,7 @@ describe('buildIntegrationToolSchemas', () => {
     const gmailTool = toolSchemas.find((tool) => tool.name === 'gmail_send')
 
     expect(mockGetHighestPrioritySubscription).toHaveBeenCalledWith('user-free')
-    expect(gmailTool?.description).toContain('sent with sim ai')
+    expect(gmailTool?.description).toContain('sent with Arena ai')
   })
 
   it('does not append the email footer prompt for paid users', async () => {
@@ -134,6 +157,27 @@ describe('buildIntegrationToolSchemas', () => {
 
     expect(gmailTool?.executeLocally).toBe(false)
     expect(runTool?.executeLocally).toBe(true)
+  })
+
+  it('omits admin-only tools for non-admin workspaces', async () => {
+    mockGetHighestPrioritySubscription.mockResolvedValue({ plan: 'pro', status: 'active' })
+    mockIsAdminWorkspace.mockReturnValue(false)
+
+    const toolSchemas = await buildIntegrationToolSchemas('user-1', undefined, undefined, 'ws-normal')
+    const names = toolSchemas.map((tool) => tool.name)
+
+    expect(names).toContain('zoom_list_meetings')
+    expect(names).not.toContain('zoom_list_account_recordings')
+  })
+
+  it('includes admin-only tools for admin workspaces', async () => {
+    mockGetHighestPrioritySubscription.mockResolvedValue({ plan: 'pro', status: 'active' })
+    mockIsAdminWorkspace.mockReturnValue(true)
+
+    const toolSchemas = await buildIntegrationToolSchemas('user-1', undefined, undefined, 'ws-admin-1')
+    const names = toolSchemas.map((tool) => tool.name)
+
+    expect(names).toContain('zoom_list_account_recordings')
   })
 
   it('uses copilot-facing file schemas for integration tools', async () => {

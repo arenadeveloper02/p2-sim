@@ -6,6 +6,10 @@ import { getToolEntry } from '@/lib/copilot/tool-executor/router'
 import { getCopilotToolDescription } from '@/lib/copilot/tools/descriptions'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { createMcpToolId } from '@/lib/mcp/utils'
+import {
+  isAdminWorkspace,
+  isAdminWorkspaceOnlyTool,
+} from '@/lib/workspaces/is-admin-workspace'
 import { trackChatUpload } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { tools } from '@/tools/registry'
 import { getLatestVersionTools, stripVersionSuffix } from '@/tools/utils'
@@ -62,8 +66,10 @@ interface BuildIntegrationToolSchemasOptions {
  *
  * When `workspaceId` is provided the user's workspace permission config is
  * loaded once and used to skip any tool whose owning block is not in the
- * workspace's `allowedIntegrations` allowlist. The resulting list is cached
- * per `(userId, workspaceId, surface)` key so copilot turns reuse the filter.
+ * workspace's `allowedIntegrations` allowlist. Tools listed in
+ * `ADMIN_WORKSPACE_ONLY_TOOL_IDS` are omitted unless the workspace is configured
+ * as an admin workspace. The resulting list is cached per
+ * `(userId, workspaceId, surface)` key so copilot turns reuse the filter.
  */
 export async function buildIntegrationToolSchemas(
   userId: string,
@@ -134,6 +140,9 @@ export async function buildIntegrationToolSchemas(
       for (const [toolId, toolConfig] of Object.entries(latestTools)) {
         try {
           const strippedName = stripVersionSuffix(toolId)
+          if (!isAdminWorkspace(workspaceId) && isAdminWorkspaceOnlyTool(strippedName)) {
+            continue
+          }
           if (allowedIntegrations && toolIdToBlockType) {
             const owningBlock = toolIdToBlockType.get(strippedName)
             if (owningBlock && !allowedIntegrations.has(owningBlock)) {

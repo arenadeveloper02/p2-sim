@@ -1,9 +1,12 @@
 import { createEnvMock } from '@sim/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  filterOAuthItemsForWorkspace,
   getAdminWorkspaceContext,
   getAdminWorkspaceIds,
   isAdminWorkspace,
+  isAdminWorkspaceOnlyOAuthProvider,
+  isAdminWorkspaceOnlyTool,
   parseAdminWorkspaceIds,
   resolveExecutionWorkspaceId,
   WORKSPACE_ID_CONDITION_KEY,
@@ -63,22 +66,44 @@ describe('isAdminWorkspace', () => {
   })
 })
 
-describe('resolveExecutionWorkspaceId', () => {
-  it('prefers workspace id from execution context', () => {
-    expect(
-      resolveExecutionWorkspaceId({
-        _context: { workspaceId: 'ws-from-context' },
-        [WORKSPACE_ID_CONDITION_KEY]: 'ws-from-condition',
-      })
-    ).toBe('ws-from-context')
+describe('isAdminWorkspaceOnlyOAuthProvider', () => {
+  it('identifies zoom-admin as admin-only', () => {
+    expect(isAdminWorkspaceOnlyOAuthProvider('zoom-admin')).toBe(true)
+    expect(isAdminWorkspaceOnlyOAuthProvider('zoom')).toBe(false)
+  })
+})
+
+describe('isAdminWorkspaceOnlyTool', () => {
+  it('identifies Zoom account recording tools as admin-only', () => {
+    expect(isAdminWorkspaceOnlyTool('zoom_list_account_recordings')).toBe(true)
+    expect(isAdminWorkspaceOnlyTool('zoom_get_account_recordings_with_transcript')).toBe(true)
+    expect(isAdminWorkspaceOnlyTool('zoom_list_account_recordings_v2')).toBe(true)
   })
 
-  it('falls back to condition-injected workspace id', () => {
-    expect(
-      resolveExecutionWorkspaceId({
-        [WORKSPACE_ID_CONDITION_KEY]: ' ws-admin-1 ',
-      })
-    ).toBe('ws-admin-1')
+  it('returns false for normal integration tools', () => {
+    expect(isAdminWorkspaceOnlyTool('zoom_list_meetings')).toBe(false)
+    expect(isAdminWorkspaceOnlyTool('gmail_send')).toBe(false)
+  })
+
+  it('returns false for missing or invalid tool ids', () => {
+    expect(isAdminWorkspaceOnlyTool('')).toBe(false)
+    expect(isAdminWorkspaceOnlyTool(null)).toBe(false)
+    expect(isAdminWorkspaceOnlyTool(undefined)).toBe(false)
+  })
+})
+
+describe('filterOAuthItemsForWorkspace', () => {
+  const items = [
+    { providerId: 'zoom', name: 'Zoom' },
+    { providerId: 'zoom-admin', name: 'Zoom (Admin)' },
+  ]
+
+  it('returns all items for admin workspaces', () => {
+    expect(filterOAuthItemsForWorkspace(items, 'ws-admin-1')).toEqual(items)
+  })
+
+  it('removes admin-only providers for non-admin workspaces', () => {
+    expect(filterOAuthItemsForWorkspace(items, 'ws-other')).toEqual([items[0]])
   })
 })
 
