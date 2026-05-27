@@ -13,7 +13,13 @@ const logger = createLogger('SubblocksHandlers')
 const DEBOUNCE_INTERVAL_MS = 25
 
 type PendingSubblock = {
-  latest: { blockId: string; subblockId: string; value: any; timestamp: number }
+  latest: {
+    blockId: string
+    subblockId: string
+    value: any
+    subblockType?: string
+    timestamp: number
+  }
   timeout: NodeJS.Timeout
   // Map operationId -> socketId to emit confirmations/failures to correct clients
   opToSocket: Map<string, string>
@@ -46,6 +52,7 @@ export function setupSubblocksHandlers(socket: AuthenticatedSocket, roomManager:
       blockId,
       subblockId,
       value,
+      subblockType,
       timestamp,
       operationId,
     } = data
@@ -159,7 +166,7 @@ export function setupSubblocksHandlers(socket: AuthenticatedSocket, roomManager:
       const existing = pendingSubblockUpdates.get(debouncedKey)
       if (existing) {
         clearTimeout(existing.timeout)
-        existing.latest = { blockId, subblockId, value, timestamp }
+        existing.latest = { blockId, subblockId, value, subblockType, timestamp }
         if (operationId) existing.opToSocket.set(operationId, socket.id)
         existing.timeout = setTimeout(async () => {
           await flushSubblockUpdate(workflowId, existing, roomManager)
@@ -176,7 +183,7 @@ export function setupSubblocksHandlers(socket: AuthenticatedSocket, roomManager:
           }
         }, DEBOUNCE_INTERVAL_MS)
         pendingSubblockUpdates.set(debouncedKey, {
-          latest: { blockId, subblockId, value, timestamp },
+          latest: { blockId, subblockId, value, subblockType, timestamp },
           timeout,
           opToSocket,
         })
@@ -209,7 +216,7 @@ async function flushSubblockUpdate(
   pending: PendingSubblock,
   roomManager: IRoomManager
 ) {
-  const { blockId, subblockId, value, timestamp } = pending.latest
+  const { blockId, subblockId, value, subblockType, timestamp } = pending.latest
   const io = roomManager.io
 
   try {
@@ -274,10 +281,25 @@ async function flushSubblockUpdate(
       }
 
       const subBlocks = (block.subBlocks as any) || {}
+      const resolvedSubblockType =
+        typeof subblockType === 'string' && subblockType.trim().length > 0
+          ? subblockType
+          : typeof subBlocks[subblockId]?.type === 'string' &&
+              subBlocks[subblockId].type !== 'unknown'
+            ? subBlocks[subblockId].type
+            : 'unknown'
+
       if (!subBlocks[subblockId]) {
-        subBlocks[subblockId] = { id: subblockId, type: 'unknown', value }
+        subBlocks[subblockId] = { id: subblockId, type: resolvedSubblockType, value }
       } else {
-        subBlocks[subblockId] = { ...subBlocks[subblockId], value }
+        subBlocks[subblockId] = {
+          ...subBlocks[subblockId],
+          type:
+            subBlocks[subblockId].type === 'unknown'
+              ? resolvedSubblockType
+              : subBlocks[subblockId].type,
+          value,
+        }
       }
 
       await tx
