@@ -55,20 +55,6 @@ function getZoomOperationOptions(): Array<{ label: string; id: string }> {
   )
 }
 
-function assertZoomAdminAccountOperationAllowed(
-  params: Record<string, unknown>,
-  operation: string
-): void {
-  if (!(ZOOM_ADMIN_ACCOUNT_OPERATIONS as readonly string[]).includes(operation)) {
-    return
-  }
-  if (!isAdminWorkspace(resolveWorkspaceIdForAdminCheck(params))) {
-    throw new Error(
-      'This operation is only available in admin workspaces. Connect a Zoom admin account to use account-level recordings.'
-    )
-  }
-}
-
 function hasZoomAuth(values: Record<string, unknown> | undefined): boolean {
   if (!values) return false
   return (
@@ -578,7 +564,6 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     config: {
       tool: (params) => {
         const operation = params.operation || 'zoom_create_meeting'
-        assertZoomAdminAccountOperationAllowed(params as Record<string, unknown>, operation)
         return operation
       },
       params: (params) => {
@@ -589,8 +574,6 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
         }
 
         const operation = params.operation || 'zoom_create_meeting'
-        assertZoomAdminAccountOperationAllowed(params as Record<string, unknown>, operation)
-
         const baseParams: Record<string, unknown> = {
           credential,
         }
