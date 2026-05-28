@@ -50,8 +50,9 @@ function hasAllowedEmailStartingWithAtSymbol(
   userEmailDomain: string
 ): boolean {
   const list = Array.isArray(allowedEmails) ? allowedEmails : []
+  const commonEmailDomains = ['@gmail.com', '@yahoo.com', '@hotmail.com', '@outlook.com']
   return list.some(
-    (entry) => typeof entry === 'string' && entry.length > 0 && entry.startsWith(userEmailDomain)
+    (entry) => typeof entry === 'string' && entry.length > 0 && entry.startsWith(userEmailDomain) && !commonEmailDomains.includes(userEmailDomain)
   )
 }
 
