@@ -10,21 +10,92 @@ permissions:
   id-token: write
 
 jobs:
-  build-amd64:
-    name: Build AMD64
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+  resolve-ghcr-tag:
+    name: Resolve GHCR Tag
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Compute next GHCR tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          TAG="$(bash scripts/ci/ghcr-next-branch-tag.sh "${{ github.ref_name }}")"
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Computed GHCR tag: ${TAG}"
+
+  build-ghcr-branch:
+    name: Build GHCR Branch Images
+    needs: [resolve-ghcr-tag]
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - dockerfile: ./docker/app.Dockerfile
-            ghcr_image: ghcr.io/simstudioai/simstudio
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-simstudio
+          - dockerfile: ./docker/db.Dockerfile
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-migrations
+          - dockerfile: ./docker/realtime.Dockerfile
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-realtime
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate tags
+        id: meta
+        run: |
+          IMAGE_TAG="${{ needs.resolve-ghcr-tag.outputs.image_tag }}"
+          GHCR_IMAGE="${{ matrix.ghcr_image }}"
+          echo "tags=${GHCR_IMAGE}:${IMAGE_TAG},${GHCR_IMAGE}:${IMAGE_TAG}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push images
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          provenance: false
+          sbom: false
+
+  build-amd64:
+    name: Build AMD64
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: ./docker/app.Dockerfile
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-simstudio
             ecr_repo_secret: ECR_APP
           - dockerfile: ./docker/db.Dockerfile
-            ghcr_image: ghcr.io/simstudioai/migrations
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-migrations
             ecr_repo_secret: ECR_MIGRATIONS
           - dockerfile: ./docker/realtime.Dockerfile
-            ghcr_image: ghcr.io/simstudioai/realtime
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-realtime
             ecr_repo_secret: ECR_REALTIME
     outputs:
       registry: ${{ steps.login-ecr.outputs.registry }}
@@ -36,8 +107,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ github.ref == 'refs/heads/main' && secrets.AWS_ROLE_TO_ASSUME || github.ref == 'refs/heads/dev' && secrets.DEV_AWS_ROLE_TO_ASSUME || secrets.STAGING_AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ github.ref == 'refs/heads/main' && secrets.AWS_REGION || github.ref == 'refs/heads/dev' && secrets.DEV_AWS_REGION || secrets.STAGING_AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -50,7 +121,6 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GHCR
-        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -58,7 +128,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: useblacksmith/setup-docker-builder@v1
+        uses: docker/setup-buildx-action@v3
 
       - name: Generate tags
         id: meta
@@ -66,31 +136,13 @@ jobs:
           ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
           ECR_REPO="${{ secrets[matrix.ecr_repo_secret] }}"
           GHCR_IMAGE="${{ matrix.ghcr_image }}"
-
-          # ECR tags (always build for ECR)
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            ECR_TAG="latest"
-          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
-            ECR_TAG="dev"
-          else
-            ECR_TAG="staging"
-          fi
-          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${ECR_TAG}"
-
-          # Build tags list
-          TAGS="${ECR_IMAGE}"
-
-          # Add GHCR tags only for main branch
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            GHCR_AMD64="${GHCR_IMAGE}:latest-amd64"
-            GHCR_SHA="${GHCR_IMAGE}:${{ github.sha }}-amd64"
-            TAGS="${TAGS},$GHCR_AMD64,$GHCR_SHA"
-          fi
-
-          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:latest"
+          GHCR_AMD64="${GHCR_IMAGE}:latest-amd64"
+          GHCR_SHA="${GHCR_IMAGE}:${{ github.sha }}-amd64"
+          echo "tags=${ECR_IMAGE},${GHCR_AMD64},${GHCR_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push images
-        uses: useblacksmith/build-push-action@v2
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -102,18 +154,18 @@ jobs:
 
   build-ghcr-arm64:
     name: Build ARM64 (GHCR Only)
-    runs-on: blacksmith-8vcpu-ubuntu-2404-arm
+    runs-on: ubuntu-24.04-arm
     if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
         include:
           - dockerfile: ./docker/app.Dockerfile
-            image: ghcr.io/simstudioai/simstudio
+            image: ghcr.io/${{ github.repository_owner }}/p2-sim-simstudio
           - dockerfile: ./docker/db.Dockerfile
-            image: ghcr.io/simstudioai/migrations
+            image: ghcr.io/${{ github.repository_owner }}/p2-sim-migrations
           - dockerfile: ./docker/realtime.Dockerfile
-            image: ghcr.io/simstudioai/realtime
+            image: ghcr.io/${{ github.repository_owner }}/p2-sim-realtime
 
     steps:
       - name: Checkout code
@@ -127,16 +179,16 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: useblacksmith/setup-docker-builder@v1
+        uses: docker/setup-buildx-action@v3
 
       - name: Generate ARM64 tags
         id: meta
         run: |
           IMAGE="${{ matrix.image }}"
-          echo "tags=${IMAGE}:latest-arm64,${IMAGE}:${{ github.sha }}-arm64" >> $GITHUB_OUTPUT
+          echo "tags=${IMAGE}:latest-arm64,${IMAGE}:${{ github.sha }}-arm64" >> "$GITHUB_OUTPUT"
 
       - name: Build and push ARM64 to GHCR
-        uses: useblacksmith/build-push-action@v2
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -148,15 +200,15 @@ jobs:
 
   create-ghcr-manifests:
     name: Create GHCR Manifests
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     needs: [build-amd64, build-ghcr-arm64]
     if: github.ref == 'refs/heads/main'
     strategy:
       matrix:
         include:
-          - image: ghcr.io/simstudioai/simstudio
-          - image: ghcr.io/simstudioai/migrations
-          - image: ghcr.io/simstudioai/realtime
+          - image: ghcr.io/${{ github.repository_owner }}/p2-sim-simstudio
+          - image: ghcr.io/${{ github.repository_owner }}/p2-sim-migrations
+          - image: ghcr.io/${{ github.repository_owner }}/p2-sim-realtime
 
     steps:
       - name: Login to GHCR
@@ -170,13 +222,11 @@ jobs:
         run: |
           IMAGE_BASE="${{ matrix.image }}"
 
-          # Create latest manifest
           docker manifest create "${IMAGE_BASE}:latest" \
             "${IMAGE_BASE}:latest-amd64" \
             "${IMAGE_BASE}:latest-arm64"
           docker manifest push "${IMAGE_BASE}:latest"
 
-          # Create SHA manifest
           docker manifest create "${IMAGE_BASE}:${{ github.sha }}" \
             "${IMAGE_BASE}:${{ github.sha }}-amd64" \
             "${IMAGE_BASE}:${{ github.sha }}-arm64"

@@ -1,8 +1,6 @@
 services:
   simstudio:
-    build:
-      context: .
-      dockerfile: docker/app.Dockerfile
+    image: ghcr.io/arenadeveloper02/p2-sim-simstudio:${IMAGE_TAG:-dev}
     restart: unless-stopped
     ports:
       - '3000:3000'
@@ -56,9 +54,7 @@ services:
       start_period: 10s
 
   realtime:
-    build:
-      context: .
-      dockerfile: docker/realtime.Dockerfile
+    image: ghcr.io/arenadeveloper02/p2-sim-realtime:${IMAGE_TAG:-dev}
     restart: unless-stopped
     ports:
       - '3002:3002'
@@ -85,7 +81,7 @@ services:
       start_period: 10s
 
   migrations:
-    image: ghcr.io/simstudioai/migrations:latest
+    image: ghcr.io/arenadeveloper02/p2-sim-migrations:${IMAGE_TAG:-dev}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
     depends_on:
