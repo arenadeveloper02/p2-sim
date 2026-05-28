@@ -23,8 +23,10 @@ import {
   isSocketWorkflowVisible,
   resolveSocketWorkflowTarget,
 } from '@/app/workspace/providers/socket-join-target'
+import { getBlock } from '@/blocks'
 import { useOperationQueueStore } from '@/stores/operation-queue/store'
 import { useWorkflowRegistry as useWorkflowRegistryStore } from '@/stores/workflows/registry/store'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('SocketContext')
 
@@ -886,11 +888,27 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
         })
         return
       }
+
+      const block = useWorkflowStore.getState().blocks?.[blockId]
+      const existingSubblock = block?.subBlocks?.[subblockId]
+      const configuredSubblock = block?.type
+        ? getBlock(block.type)?.subBlocks?.find((subBlock) => subBlock.id === subblockId)
+        : null
+      const existingSubblockType =
+        typeof (existingSubblock as { type?: unknown } | undefined)?.type === 'string'
+          ? (existingSubblock as { type?: string }).type
+          : undefined
+      const subblockType =
+        existingSubblockType && existingSubblockType !== 'unknown'
+          ? existingSubblockType
+          : configuredSubblock?.type
+
       socket.emit('subblock-update', {
         workflowId,
         blockId,
         subblockId,
         value,
+        subblockType,
         timestamp: Date.now(),
         operationId,
       })

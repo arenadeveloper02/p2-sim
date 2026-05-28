@@ -12,6 +12,11 @@ import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
+import {
+  toPersistedChatAttachment,
+  updateExecutionHistoryData,
+} from '@/lib/chat/history-persistence'
 import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -45,6 +50,68 @@ const departmentLabelMap: Record<string, string> = agentDepartments.reduce(
   },
   {} as Record<string, string>
 )
+
+function isRenderableImageUrlString(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) return false
+
+  return (
+    (trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://') ||
+      trimmed.startsWith('/api/files/serve/')) &&
+    (/\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(trimmed) ||
+      trimmed.includes('agent-generated-images') ||
+      trimmed.includes('/api/files/serve/'))
+  )
+}
+
+function stripImageOnlyStructuredText(content: string): string {
+  const trimmed = content.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  const parseImageUrlArray = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value.filter(
+          (item): item is string => typeof item === 'string' && isRenderableImageUrlString(item)
+        )
+      : []
+
+  if (trimmed.startsWith('[')) {
+    try {
+      if (parseImageUrlArray(JSON.parse(trimmed)).length > 0) {
+        return ''
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  if (trimmed.startsWith('```')) {
+    const fencedMatch = trimmed.match(/^```(?:json|javascript|js)?\s*([\s\S]*?)\s*```$/i)
+    if (fencedMatch?.[1]) {
+      try {
+        if (parseImageUrlArray(JSON.parse(fencedMatch[1])).length > 0) {
+          return ''
+        }
+      } catch {
+        // fall through
+      }
+    }
+  }
+
+  const nonEmptyLines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  if (nonEmptyLines.length > 0 && nonEmptyLines.every((line) => isRenderableImageUrlString(line))) {
+    return ''
+  }
+
+  return content
+}
 interface ChatConfigSource {
   id: string
   title: string
@@ -65,13 +132,18 @@ function toChatConfigResponse(deployment: ChatConfigSource) {
   }
 }
 
-const chatFileSchema = z.object({
-  name: z.string().min(1, 'File name is required'),
-  type: z.string().min(1, 'File type is required'),
-  size: z.number().positive('File size must be positive'),
-  data: z.string().min(1, 'File data is required'),
-  lastModified: z.number().optional(),
-})
+const chatFileSchema = z
+  .object({
+    name: z.string().min(1, 'File name is required'),
+    type: z.string().min(1, 'File type is required'),
+    size: z.number().positive('File size must be positive'),
+    data: z.string().optional(),
+    url: z.string().optional(),
+    lastModified: z.number().optional(),
+  })
+  .refine((file) => Boolean(file.data?.trim() || file.url?.trim()), {
+    message: 'File data or url is required',
+  })
 
 const chatPostBodySchema = z.object({
   input: z.string().optional(),
@@ -569,6 +641,9 @@ export const POST = withRouteHandler(
 
             if (uploadedFiles.length > 0) {
               workflowInput.files = uploadedFiles
+              await updateExecutionHistoryData(executionId, {
+                userAttachments: uploadedFiles.map(toPersistedChatAttachment),
+              })
               logger.info(`[${requestId}] Successfully processed ${uploadedFiles.length} files`)
             }
           } catch (fileError: any) {
@@ -805,6 +880,20 @@ export const POST = withRouteHandler(
                         controller.enqueue(encoder.encode(`data: ${knowledgeResultsEvent}\n\n`))
                       }
 
+                      let generatedImages: ReturnType<typeof extractGeneratedImagesFromData> = []
+                      if (
+                        deployment.outputConfigs &&
+                        Array.isArray(deployment.outputConfigs) &&
+                        finalData.output
+                      ) {
+                        for (const config of deployment.outputConfigs) {
+                          const blockOutputs = finalData.output[config.blockId]
+                          if (!blockOutputs) continue
+                          const value = getOutputValue(blockOutputs, config.path)
+                          generatedImages = extractGeneratedImagesFromData(value, generatedImages)
+                        }
+                      }
+
                       /** Minimal refs for history: one per chunk (document name + chunk index + chunk link). */
                       const knowledgeRefs =
                         knowledgeResultsPayload.length > 0
@@ -839,9 +928,9 @@ export const POST = withRouteHandler(
                             })()
                           : []
 
-                      // Format final output based on outputConfigs (exclude raw "results" for knowledge block)
                       let finalChatOutput = accumulatedContent.trim()
 
+                      // Format final output based on outputConfigs (exclude raw "results" for knowledge block)
                       if (
                         deployment.outputConfigs &&
                         Array.isArray(deployment.outputConfigs) &&
@@ -849,6 +938,9 @@ export const POST = withRouteHandler(
                       ) {
                         const formatValue = (value: any): string | null => {
                           if (value === null || value === undefined) {
+                            return null
+                          }
+                          if (extractGeneratedImagesFromData(value).length > 0) {
                             return null
                           }
                           if (typeof value === 'string') {
@@ -902,28 +994,35 @@ export const POST = withRouteHandler(
                         }
                       }
 
-                      // Update workflowExecutionLogs with final output and optional knowledgeRefs (for history)
-                      if (finalChatOutput) {
+                      if (generatedImages.length > 0) {
+                        finalChatOutput = stripImageOnlyStructuredText(finalChatOutput)
+                        const imageUrls = generatedImages.map((image) => image.url).filter(Boolean)
+                        if (imageUrls.length > 0) {
+                          finalChatOutput = finalChatOutput
+                            ? `${finalChatOutput}\n\n${imageUrls.join('\n')}`
+                            : imageUrls.join('\n')
+                        }
+                      }
+
+                      if (
+                        finalChatOutput ||
+                        knowledgeRefs.length > 0 ||
+                        generatedImages.length > 0
+                      ) {
+                        // Update workflowExecutionLogs with final output and optional knowledgeRefs (for history)
                         try {
-                          const updatePayload: { finalChatOutput: string; executionData?: object } =
-                            {
-                              finalChatOutput,
-                            }
-                          if (knowledgeRefs.length > 0) {
-                            const [row] = await db
-                              .select({ executionData: workflowExecutionLogs.executionData })
-                              .from(workflowExecutionLogs)
+                          if (finalChatOutput) {
+                            await db
+                              .update(workflowExecutionLogs)
+                              .set({ finalChatOutput })
                               .where(eq(workflowExecutionLogs.executionId, executionId))
-                            const existing = (row?.executionData as object) ?? {}
-                            updatePayload.executionData = {
-                              ...existing,
-                              knowledgeRefs,
-                            }
                           }
-                          await db
-                            .update(workflowExecutionLogs)
-                            .set(updatePayload)
-                            .where(eq(workflowExecutionLogs.executionId, executionId))
+                          if (knowledgeRefs.length > 0 || generatedImages.length > 0) {
+                            await updateExecutionHistoryData(executionId, {
+                              knowledgeRefs,
+                              generatedImages,
+                            })
+                          }
                           logger.debug(
                             `[${requestId}] Updated finalChatOutput for execution ${executionId}`
                           )
@@ -938,7 +1037,7 @@ export const POST = withRouteHandler(
 
                     // Pass through the original data
                     controller.enqueue(encoder.encode(`${line}\n\n`))
-                  } catch (parseError) {
+                  } catch {
                     // If parsing fails, just pass through the original line
                     controller.enqueue(encoder.encode(`${line}\n\n`))
                   }

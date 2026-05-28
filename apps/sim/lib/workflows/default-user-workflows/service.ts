@@ -1,30 +1,89 @@
 import { db } from '@sim/db'
-import { credential, credentialMember, defaultUserWorkflows, workflow } from '@sim/db/schema'
+import {
+  credential,
+  credentialMember,
+  defaultUserWorkflows,
+  user,
+  workflow,
+  workflowFolder,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import {
+  type ChatOutputConfigInput,
+  DEFAULT_CHAT_AUTH_TYPE,
+  DEFAULT_CHAT_DEPARTMENT,
+  DEFAULT_CHAT_WELCOME_MESSAGE,
+  resolveChatOutputConfigs,
+} from '@/lib/workflows/default-user-workflows/chat-deploy-import'
+import {
   type PostgresConnectionConfig,
   populatePostgresBlocks,
 } from '@/lib/workflows/default-user-workflows/postgres'
-import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
-import { performFullDeploy } from '@/lib/workflows/orchestration'
+import { performChatDeploy, performFullDeploy } from '@/lib/workflows/orchestration'
 import {
   loadWorkflowFromNormalizedTables,
   saveWorkflowToNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
-import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
-import { deduplicateWorkflowName } from '@/lib/workflows/utils'
+import { createFolderRecord, deduplicateWorkflowName } from '@/lib/workflows/utils'
+import { regenerateWorkflowIds } from '@/stores/workflows/utils'
+import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('DefaultUserWorkflowsService')
 
 const DEFAULT_WORKFLOW_COLOR = '#3972F6'
 
+const SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME = 'System Workflows'
+
+/**
+ * Returns the workspace folder used for admin-provisioned default workflows.
+ * Reuses an existing root-level folder with the system name when present.
+ */
+async function getOrCreateSystemDefaultWorkflowFolder(params: {
+  workspaceId: string
+  userId: string
+}): Promise<string> {
+  const [existing] = await db
+    .select({ id: workflowFolder.id })
+    .from(workflowFolder)
+    .where(
+      and(
+        eq(workflowFolder.workspaceId, params.workspaceId),
+        eq(workflowFolder.name, SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME),
+        isNull(workflowFolder.parentId),
+        isNull(workflowFolder.archivedAt)
+      )
+    )
+    .orderBy(asc(workflowFolder.createdAt))
+    .limit(1)
+
+  if (existing) {
+    return existing.id
+  }
+
+  const { folderId } = await createFolderRecord({
+    userId: params.userId,
+    workspaceId: params.workspaceId,
+    name: SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME,
+    parentId: null,
+  })
+
+  logger.info('Created system default workflows folder', {
+    folderId,
+    workspaceId: params.workspaceId,
+    userId: params.userId,
+  })
+
+  return folderId
+}
+
 const PROVIDER_BY_TOOL_TYPE: Record<string, string> = {
   gmail: 'google-email',
   gmail_v2: 'google-email',
   google_calendar: 'google-calendar',
+  google_calendar_v2: 'google-calendar',
   google_drive: 'google-drive',
   slack: 'slack',
 } as const
@@ -39,6 +98,10 @@ const PROVIDER_BY_TOOL_ID_PREFIX: Array<{ prefix: string; providerId: string }> 
 export interface DefaultWorkflowSourceInput {
   sourceWorkflowId: string
   nameOverride?: string
+  /** When false, import provisions the workflow but deploy skips chat (workflow deploy only). */
+  deployAsChat: boolean
+  /** Per-workflow chat output selections from `chat.outputConfigs` in the import body. */
+  chatOutputConfigs?: ChatOutputConfigInput[]
 }
 
 export interface CredentialPopulationSummary {
@@ -66,6 +129,9 @@ export interface ProvisionDefaultUserWorkflowResult {
 export interface SyncDefaultWorkflowsParams {
   sourceWorkflowId: string
   deploy?: boolean
+  /** When true (default), deploy via chat (create or update). When false, workflow deploy only. */
+  deployAsChat: boolean
+  chatOutputConfigs?: ChatOutputConfigInput[]
   requestId: string
   request: NextRequest
   postgresConnection?: PostgresConnectionConfig
@@ -76,6 +142,9 @@ export interface SyncDefaultWorkflowUserResult {
   userWorkflowId: string
   updated: boolean
   deployed: boolean
+  chatDeployed?: boolean
+  chatId?: string
+  chatUrl?: string
   postgresBlocksPopulated?: number
   version?: number
   deployedAt?: string
@@ -234,28 +303,30 @@ async function buildWorkflowDataFromSource(input: DefaultWorkflowSourceInput) {
     throw new Error(`Source workflow has no normalized data: ${input.sourceWorkflowId}`)
   }
 
-  const sourceState = {
-    blocks: normalizedData.blocks,
-    edges: normalizedData.edges,
-    loops: normalizedData.loops,
-    parallels: normalizedData.parallels,
-    metadata: {
-      name: input.nameOverride || sourceWorkflow.name,
-      description: sourceWorkflow.description ?? undefined,
-      color: sourceWorkflow.color,
-    },
-    variables:
-      sourceWorkflow.variables && isRecord(sourceWorkflow.variables)
-        ? sourceWorkflow.variables
-        : undefined,
-  }
+  const rawWorkflowData = JSON.parse(
+    JSON.stringify({
+      blocks: normalizedData.blocks,
+      edges: normalizedData.edges,
+      loops: normalizedData.loops,
+      parallels: normalizedData.parallels,
+      metadata: {
+        name: input.nameOverride || sourceWorkflow.name,
+        description: sourceWorkflow.description ?? undefined,
+        color: sourceWorkflow.color,
+      },
+      variables:
+        sourceWorkflow.variables && isRecord(sourceWorkflow.variables)
+          ? sourceWorkflow.variables
+          : undefined,
+    })
+  )
 
-  const exportData = sanitizeForExport(sourceState)
-  const { data: workflowData, errors } = parseWorkflowJson(JSON.stringify(exportData))
-
-  if (!workflowData || errors.length > 0) {
-    throw new Error(`Failed to parse source workflow: ${errors.join(', ')}`)
-  }
+  // `workflow_blocks.id` is a global primary key; regenerate block/edge IDs so syncing a
+  // shared template into multiple user workflows never collides on existing block IDs.
+  const { idMap: _idMap, ...workflowData } = regenerateWorkflowIds(
+    rawWorkflowData as WorkflowState,
+    { clearTriggerRuntimeValues: false }
+  )
 
   const workflowName = input.nameOverride || sourceWorkflow.name
 
@@ -291,7 +362,7 @@ async function applyWorkflowStateToTarget(params: {
   credentialPopulation: CredentialPopulationSummary
   postgresBlocksPopulated: number
   sourceWorkflow: typeof workflow.$inferSelect
-  workflowData: NonNullable<Awaited<ReturnType<typeof parseWorkflowJson>>['data']>
+  workflowData: WorkflowState
 }> {
   const { sourceWorkflow, workflowData, workflowName } = await buildWorkflowDataFromSource(
     params.input
@@ -395,6 +466,8 @@ async function createDefaultUserWorkflow(params: {
   input: DefaultWorkflowSourceInput
   workspaceId: string
   userId: string
+  systemFolderId: string
+  mappingId?: string
   credentialsByProvider: Map<string, string>
   postgresConnection?: PostgresConnectionConfig
 }): Promise<ProvisionDefaultUserWorkflowResult> {
@@ -409,13 +482,17 @@ async function createDefaultUserWorkflow(params: {
 
   const workflowId = generateId()
   const now = new Date()
-  const dedupedName = await deduplicateWorkflowName(workflowName, params.workspaceId, null)
+  const dedupedName = await deduplicateWorkflowName(
+    workflowName,
+    params.workspaceId,
+    params.systemFolderId
+  )
 
   await db.insert(workflow).values({
     id: workflowId,
     userId: params.userId,
     workspaceId: params.workspaceId,
-    folderId: null,
+    folderId: params.systemFolderId,
     name: dedupedName,
     description: sourceWorkflow.description || 'Imported via Admin API',
     color: sourceWorkflow.color || DEFAULT_WORKFLOW_COLOR,
@@ -435,6 +512,7 @@ async function createDefaultUserWorkflow(params: {
   }
 
   await upsertDefaultUserMapping({
+    ...(params.mappingId ? { id: params.mappingId } : {}),
     userId: params.userId,
     sourceWorkflowId: params.input.sourceWorkflowId,
     userWorkflowId: workflowId,
@@ -492,7 +570,11 @@ export async function provisionOrRefreshDefaultUserWorkflow(
   })
 
   if (!existingMapping) {
-    return createDefaultUserWorkflow(params)
+    const systemFolderId = await getOrCreateSystemDefaultWorkflowFolder({
+      workspaceId: params.workspaceId,
+      userId: params.userId,
+    })
+    return createDefaultUserWorkflow({ ...params, systemFolderId })
   }
 
   const [existingWorkflow] = await db
@@ -502,58 +584,15 @@ export async function provisionOrRefreshDefaultUserWorkflow(
     .limit(1)
 
   if (!existingWorkflow) {
-    const { sourceWorkflow, workflowData, workflowName } = await buildWorkflowDataFromSource(
-      params.input
-    )
-    const { credentialPopulation, postgresBlocksPopulated } = enrichWorkflowDataForProvision({
-      workflowData,
-      credentialsByProvider: params.credentialsByProvider,
-      postgresConnection: params.postgresConnection,
-    })
-    const workflowId = generateId()
-    const now = new Date()
-    const dedupedName = await deduplicateWorkflowName(workflowName, params.workspaceId, null)
-
-    await db.insert(workflow).values({
-      id: workflowId,
-      userId: params.userId,
+    const systemFolderId = await getOrCreateSystemDefaultWorkflowFolder({
       workspaceId: params.workspaceId,
-      folderId: null,
-      name: dedupedName,
-      description: sourceWorkflow.description || 'Imported via Admin API',
-      color: sourceWorkflow.color || DEFAULT_WORKFLOW_COLOR,
-      lastSynced: now,
-      createdAt: now,
-      updatedAt: now,
-      isDeployed: false,
-      runCount: 0,
-      variables: workflowData.variables ?? sourceWorkflow.variables ?? {},
-      defaultAgent: true,
-    })
-
-    const saveResult = await saveWorkflowToNormalizedTables(workflowId, workflowData)
-    if (!saveResult.success) {
-      await db.delete(workflow).where(eq(workflow.id, workflowId))
-      throw new Error(`Failed to save workflow state: ${saveResult.error}`)
-    }
-
-    await upsertDefaultUserMapping({
-      id: existingMapping.id,
       userId: params.userId,
-      sourceWorkflowId: params.input.sourceWorkflowId,
-      userWorkflowId: workflowId,
-      userWorkspaceId: params.workspaceId,
-      lastSyncedAt: now,
     })
-
-    return {
-      workflowId,
-      name: dedupedName,
-      created: true,
-      refreshed: false,
-      credentialPopulation,
-      postgresBlocksPopulated,
-    }
+    return createDefaultUserWorkflow({
+      ...params,
+      systemFolderId,
+      mappingId: existingMapping.id,
+    })
   }
 
   const now = new Date()
@@ -633,7 +672,7 @@ export async function syncDefaultWorkflowsForSource(
 
       const refreshed = await applyWorkflowStateToTarget({
         targetWorkflowId: mapping.userWorkflowId,
-        input: { sourceWorkflowId: params.sourceWorkflowId },
+        input: { sourceWorkflowId: params.sourceWorkflowId, deployAsChat: true },
         credentialsByProvider,
         postgresConnection: params.postgresConnection,
       })
@@ -645,16 +684,118 @@ export async function syncDefaultWorkflowsForSource(
       let warnings: string[] | undefined
 
       if (params.deploy !== false) {
-        const deployResult = await performFullDeploy({
-          workflowId: mapping.userWorkflowId,
-          userId: mapping.userId,
+        const deployOptions = {
           workflowName: refreshed.name,
           requestId: params.requestId,
           request: params.request,
-          actorId: 'admin-api',
+          actorId: 'admin-api' as const,
+        }
+
+        if (!params.deployAsChat) {
+          const deployResult = await performFullDeploy({
+            workflowId: mapping.userWorkflowId,
+            userId: mapping.userId,
+            ...deployOptions,
+          })
+
+          if (!deployResult.success) {
+            await upsertDefaultUserMapping({
+              id: mapping.id,
+              userId: mapping.userId,
+              sourceWorkflowId: params.sourceWorkflowId,
+              userWorkflowId: mapping.userWorkflowId,
+              userWorkspaceId: mapping.userWorkspaceId,
+              lastSyncedAt: now,
+            })
+
+            results.push({
+              userId: mapping.userId,
+              userWorkflowId: mapping.userWorkflowId,
+              updated: true,
+              deployed: false,
+              chatDeployed: false,
+              postgresBlocksPopulated: refreshed.postgresBlocksPopulated,
+              error: deployResult.error || 'Failed to deploy workflow',
+              warnings: deployResult.warnings,
+            })
+            continue
+          }
+
+          deployed = true
+          version = deployResult.version
+          deployedAt = deployResult.deployedAt?.toISOString()
+          warnings = deployResult.warnings
+
+          await upsertDefaultUserMapping({
+            id: mapping.id,
+            userId: mapping.userId,
+            sourceWorkflowId: params.sourceWorkflowId,
+            userWorkflowId: mapping.userWorkflowId,
+            userWorkspaceId: mapping.userWorkspaceId,
+            lastSyncedAt: now,
+            lastDeployedVersion: deployResult.version,
+          })
+
+          results.push({
+            userId: mapping.userId,
+            userWorkflowId: mapping.userWorkflowId,
+            updated: true,
+            deployed: true,
+            chatDeployed: false,
+            postgresBlocksPopulated: refreshed.postgresBlocksPopulated,
+            version,
+            deployedAt,
+            warnings,
+          })
+          continue
+        }
+
+        const [targetUser] = await db
+          .select({ email: user.email })
+          .from(user)
+          .where(eq(user.id, mapping.userId))
+          .limit(1)
+
+        if (!targetUser?.email) {
+          results.push({
+            userId: mapping.userId,
+            userWorkflowId: mapping.userWorkflowId,
+            updated: true,
+            deployed: false,
+            chatDeployed: false,
+            postgresBlocksPopulated: refreshed.postgresBlocksPopulated,
+            error: 'User email not found for chat deploy',
+          })
+          continue
+        }
+
+        const [workflowRecord] = await db
+          .select({ description: workflow.description })
+          .from(workflow)
+          .where(eq(workflow.id, mapping.userWorkflowId))
+          .limit(1)
+
+        const outputConfigs = await resolveChatOutputConfigs(
+          mapping.userWorkflowId,
+          params.chatOutputConfigs ?? []
+        )
+
+        const chatDeployResult = await performChatDeploy({
+          workflowId: mapping.userWorkflowId,
+          userId: mapping.userId,
+          identifier: mapping.userWorkflowId,
+          title: refreshed.name,
+          description: workflowRecord?.description ?? '',
+          department: DEFAULT_CHAT_DEPARTMENT,
+          customizations: { welcomeMessage: DEFAULT_CHAT_WELCOME_MESSAGE },
+          authType: DEFAULT_CHAT_AUTH_TYPE,
+          allowedEmails: [targetUser.email],
+          outputConfigs,
+          workspaceId: targetWorkflow.workspaceId,
+          deployOptions,
         })
 
-        if (!deployResult.success) {
+        if (!chatDeployResult.success) {
           await upsertDefaultUserMapping({
             id: mapping.id,
             userId: mapping.userId,
@@ -669,16 +810,16 @@ export async function syncDefaultWorkflowsForSource(
             userWorkflowId: mapping.userWorkflowId,
             updated: true,
             deployed: false,
+            chatDeployed: false,
             postgresBlocksPopulated: refreshed.postgresBlocksPopulated,
-            error: deployResult.error || 'Failed to deploy workflow',
+            error: chatDeployResult.error || 'Failed to deploy chat',
           })
           continue
         }
 
         deployed = true
-        version = deployResult.version
-        deployedAt = deployResult.deployedAt?.toISOString()
-        warnings = deployResult.warnings
+        version = chatDeployResult.version
+        deployedAt = chatDeployResult.deployedAt?.toISOString()
 
         await upsertDefaultUserMapping({
           id: mapping.id,
@@ -687,18 +828,31 @@ export async function syncDefaultWorkflowsForSource(
           userWorkflowId: mapping.userWorkflowId,
           userWorkspaceId: mapping.userWorkspaceId,
           lastSyncedAt: now,
-          lastDeployedVersion: deployResult.version,
+          lastDeployedVersion: chatDeployResult.version,
         })
-      } else {
-        await upsertDefaultUserMapping({
-          id: mapping.id,
+
+        results.push({
           userId: mapping.userId,
-          sourceWorkflowId: params.sourceWorkflowId,
           userWorkflowId: mapping.userWorkflowId,
-          userWorkspaceId: mapping.userWorkspaceId,
-          lastSyncedAt: now,
+          updated: true,
+          deployed: true,
+          chatDeployed: true,
+          chatId: chatDeployResult.chatId,
+          chatUrl: chatDeployResult.chatUrl,
+          postgresBlocksPopulated: refreshed.postgresBlocksPopulated,
+          version,
+          deployedAt,
         })
+        continue
       }
+      await upsertDefaultUserMapping({
+        id: mapping.id,
+        userId: mapping.userId,
+        sourceWorkflowId: params.sourceWorkflowId,
+        userWorkflowId: mapping.userWorkflowId,
+        userWorkspaceId: mapping.userWorkspaceId,
+        lastSyncedAt: now,
+      })
 
       results.push({
         userId: mapping.userId,
