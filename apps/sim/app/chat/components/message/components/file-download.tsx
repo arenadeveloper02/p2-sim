@@ -6,7 +6,7 @@ import { sleep } from '@sim/utils/helpers'
 import { ArrowDown, Download, Loader2, Music } from 'lucide-react'
 import { Button } from '@/components/emcn'
 import { DefaultFileIcon, getDocumentIcon } from '@/components/icons/document-icons'
-import type { ChatFile } from '@/app/chat/components/message/message'
+import type { AssistantChatFile as ChatFile } from '@/lib/chat/assistant-assets'
 
 const logger = createLogger('ChatFileDownload')
 

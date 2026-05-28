@@ -39,6 +39,10 @@ export const ArenaBlock: BlockConfig = {
           id: 'arena_comments_task_number',
         },
         {
+          label: 'Fetch tasks (client, project, assignee, state name)',
+          id: 'arena_fetch_searched_tasks',
+        },
+        {
           label: 'Search Task',
           id: 'arena_search_task',
         },
@@ -217,6 +221,56 @@ export const ArenaBlock: BlockConfig = {
       condition: {
         field: 'operation',
         value: ['arena_create_sub_task_fields'],
+      },
+    },
+
+    // Fetch searched tasks — free-text client, project, assignee, state
+    {
+      id: 'fetch-searched-client-name',
+      title: 'Client Name',
+      type: 'short-input',
+      required: false,
+      placeholder: 'Enter client name or use <function.result.client_name>',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_fetch_searched_tasks'],
+      },
+    },
+    {
+      id: 'fetch-searched-project-name',
+      title: 'Project Name',
+      type: 'short-input',
+      required: false,
+      placeholder: 'Enter project name or use <function.result.project_name>',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_fetch_searched_tasks'],
+      },
+    },
+    {
+      id: 'fetch-searched-assignee-name',
+      title: 'Assignee Name',
+      type: 'short-input',
+      required: false,
+      placeholder: 'Enter assignee name or use <function.result.assignee_name>',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_fetch_searched_tasks'],
+      },
+    },
+    {
+      id: 'fetch-searched-state',
+      title: 'State',
+      type: 'short-input',
+      required: false,
+      placeholder: 'Enter state name or use <function.result.state>',
+      dependsOn: ['operation'],
+      condition: {
+        field: 'operation',
+        value: ['arena_fetch_searched_tasks'],
       },
     },
 
@@ -542,6 +596,7 @@ export const ArenaBlock: BlockConfig = {
       'arena_create_task_fields',
       'arena_create_sub_task',
       'arena_create_sub_task_fields',
+      'arena_fetch_searched_tasks',
       'arena_search_task',
       'arena_search_task_simple',
       'arena_save_summary',
@@ -563,6 +618,8 @@ export const ArenaBlock: BlockConfig = {
             return 'arena_create_sub_task'
           case 'arena_create_sub_task_fields':
             return 'arena_create_sub_task_fields'
+          case 'arena_fetch_searched_tasks':
+            return 'arena_fetch_searched_tasks'
           case 'arena_search_task':
             return 'arena_search_task'
           case 'arena_search_task_simple':

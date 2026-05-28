@@ -92,15 +92,6 @@ export const imageTool: ToolConfig = {
     try {
       const data = await response.json()
 
-      const sanitizedData = JSON.parse(JSON.stringify(data))
-      if (sanitizedData.data && Array.isArray(sanitizedData.data)) {
-        sanitizedData.data.forEach((item: { b64_json?: string }) => {
-          if (item.b64_json) {
-            item.b64_json = `[base64 data truncated, length: ${item.b64_json.length}]`
-          }
-        })
-      }
-
       const modelName = params?.model || 'dall-e-3'
       let imageUrl: string | null = null
       let base64Image: string | null = null
@@ -110,7 +101,10 @@ export const imageTool: ToolConfig = {
       } else if (data.data?.[0]?.b64_json) {
         base64Image = data.data[0].b64_json
       } else {
-        logger.error('No image data found in API response:', data)
+        logger.error('No image data found in OpenAI image response', {
+          topLevelKeys: data && typeof data === 'object' ? Object.keys(data) : [],
+          dataLength: Array.isArray(data?.data) ? data.data.length : 0,
+        })
         throw new Error('No image data found in response')
       }
 
@@ -257,6 +251,7 @@ export const imageTool: ToolConfig = {
         output: {
           content: finalContent,
           image: finalImage,
+          images: finalImage ? [finalImage] : [],
           metadata: {
             model: modelName,
             stored: !!finalImageUrl,
@@ -276,6 +271,11 @@ export const imageTool: ToolConfig = {
     image: {
       type: 'file',
       description: 'Generated image (URL in S3/local storage or base64)',
+    },
+    images: {
+      type: 'array',
+      description: 'Generated images (URLs in S3/local storage or base64)',
+      items: { type: 'file', description: 'Generated image' },
     },
     metadata: {
       type: 'json',
