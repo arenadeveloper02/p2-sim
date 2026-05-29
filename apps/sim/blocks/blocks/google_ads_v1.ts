@@ -100,8 +100,8 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       id: 'managerCustomerId',
       title: 'Manager Customer ID',
       type: 'short-input',
-      placeholder: 'Manager account ID (optional)',
-      mode: 'advanced',
+      placeholder: 'Manager account ID',
+      required: true,
       condition: googleAdsV1NonAdminOnlyCondition,
     },
     {
