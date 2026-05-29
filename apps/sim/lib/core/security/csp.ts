@@ -100,6 +100,7 @@ const STATIC_IMG_SRC = [
   'https://*.blob.core.windows.net',
   'https://github.com/*',
   'https://cursor.com',
+  'https://quickchart.io',
   'https://collector.onedollarstats.com',
   ...(isHosted ? ['https://www.googletagmanager.com', 'https://www.google-analytics.com'] : []),
 ] as const
