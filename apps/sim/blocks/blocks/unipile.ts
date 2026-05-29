@@ -2,6 +2,10 @@ import { UnipileIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
+import {
+  isAdminWorkspace,
+  resolveWorkspaceIdForAdminCheck,
+} from '@/lib/workspaces/is-admin-workspace'
 import { UNIPILE_LINKEDIN_PROFILE_SECTIONS } from '@/tools/unipile/linkedin_profile_query'
 import { buildLinkedinSearchBodyFromForm } from '@/tools/unipile/linkedin_search_form'
 import { getLinkedinSearchParameterTypeDropdownOptions } from '@/tools/unipile/linkedin_search_parameter_types'
@@ -21,6 +25,55 @@ function unipileParseMentionIsCompanyCell(raw: string): boolean | undefined {
 }
 
 type UnipileCommentMentionRow = { name: string; profile_id: string; is_company?: boolean }
+type UnipileAccountOption = { id: string; label: string }
+
+const UNIPILE_COND_NEVER = '__unipile_cond_never__'
+
+let unipileAccountOptionsCache: UnipileAccountOption[] | null = null
+let unipileAccountOptionsRequest: Promise<UnipileAccountOption[]> | null = null
+
+/** Show deployment account picker (admin workspaces only). */
+function unipileAdminOnlyCondition(values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
+  if (isAdmin) {
+    return { field: 'operation', value: UNIPILE_COND_NEVER, not: true as const }
+  }
+  return { field: 'operation', value: UNIPILE_COND_NEVER }
+}
+
+/** Show OAuth / manual credential fields (non-admin workspaces only). */
+function unipileNonAdminOnlyCondition(values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
+  if (isAdmin) {
+    return { field: 'operation', value: UNIPILE_COND_NEVER }
+  }
+  return { field: 'operation', value: UNIPILE_COND_NEVER, not: true as const }
+}
+
+async function fetchUnipileAccountOptions(): Promise<UnipileAccountOption[]> {
+  if (unipileAccountOptionsCache) {
+    return unipileAccountOptionsCache
+  }
+  if (!unipileAccountOptionsRequest) {
+    unipileAccountOptionsRequest = (async () => {
+      const response = await fetch('/api/unipile/accounts')
+      const data = (await response.json()) as {
+        success?: boolean
+        error?: string
+        items?: UnipileAccountOption[]
+      }
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to fetch Unipile accounts')
+      }
+      const items = Array.isArray(data.items) ? data.items : []
+      unipileAccountOptionsCache = items
+      return items
+    })().finally(() => {
+      unipileAccountOptionsRequest = null
+    })
+  }
+  return unipileAccountOptionsRequest
+}
 
 /** Credential id or legacy raw Unipile account id from block params (resolved at execution). */
 function unipileAccountIdFromParams(params: Record<string, unknown>): string {
@@ -174,13 +227,37 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
   docsLink: 'https://developer.unipile.com/reference/',
   authMode: AuthMode.OAuth,
   longDescription:
-    'Connect your LinkedIn account via Unipile hosted authentication, then run operations. Uses `UNIPILE_API_KEY` from the deployment environment (admin workspaces may supply a block-level key). Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
+    'Admin workspaces pick a LinkedIn account from deployment-connected Unipile accounts (`GET /api/unipile/accounts`). Other workspaces connect LinkedIn via Unipile hosted authentication. Uses `UNIPILE_API_KEY` from the deployment environment. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
   category: 'tools',
   integrationType: IntegrationType.Communication,
   tags: ['messaging', 'sales-engagement'],
   bgColor: '#0F2736',
   icon: UnipileIcon,
   subBlocks: [
+    {
+      id: 'account_id',
+      title: 'Unipile Account',
+      type: 'dropdown',
+      options: [],
+      placeholder: 'Select a connected account',
+      required: true,
+      condition: unipileAdminOnlyCondition,
+      description:
+        'Accounts returned from your deployment workspace (`GET /api/unipile/accounts`).',
+      fetchOptions: async () => fetchUnipileAccountOptions(),
+      fetchOptionById: async (_blockId: string, optionId: string) => {
+        try {
+          const options = unipileAccountOptionsCache ?? (await fetchUnipileAccountOptions())
+          if (options.length === 0) {
+            return null
+          }
+          const match = options.find((item) => item.id === optionId)
+          return match ?? null
+        } catch {
+          return null
+        }
+      },
+    },
     {
       id: 'credential',
       title: 'LinkedIn Account',
@@ -190,6 +267,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       mode: 'basic',
       placeholder: 'Connect or select LinkedIn account',
       required: true,
+      condition: unipileNonAdminOnlyCondition,
       description:
         'Connect LinkedIn through Unipile (redirects to Unipile, then back to this page). You can add multiple accounts.',
     },
@@ -201,6 +279,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       mode: 'advanced',
       placeholder: 'Enter credential ID',
       required: true,
+      condition: unipileNonAdminOnlyCondition,
     },
     {
       id: 'operation',
@@ -516,7 +595,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
       type: 'short-input',
       placeholder: 'Comma-separated Unipile account ids (overrides picker if set)',
       description:
-        'Optional `account_id` query: one id or comma-separated list. If empty, uses the connected LinkedIn account above.',
+        'Optional `account_id` query: one id or comma-separated list. If empty, uses the Unipile Account picker (admin) or connected LinkedIn account (OAuth).',
       dependsOn: ['operation'],
       condition: { field: 'operation', value: 'list_all_chats' },
       mode: 'advanced',
