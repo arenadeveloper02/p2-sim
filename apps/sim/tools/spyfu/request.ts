@@ -1,6 +1,5 @@
 import { createLogger } from '@sim/logger'
 import { env } from '@/lib/core/config/env'
-import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import {
   getSpyfuOperationDefinition,
   SPYFU_BASE_URL,
@@ -24,17 +23,13 @@ interface PreparedSpyfuRequest {
   endpointPath: string
 }
 
-function resolveCredentials(params: SpyfuRequestParams): { userId: string; password: string } {
-  const isAdmin = isAdminWorkspace(params._context?.workspaceId)
-
-  const userId = (isAdmin ? env.SPYFU_API_USER_ID : params.userId)?.trim()
-  const password = (isAdmin ? env.SPYFU_API_PASSWORD : params.password)?.trim()
+function resolveCredentials(): { userId: string; password: string } {
+  const userId = env.SPYFU_API_USER_ID?.trim()
+  const password = env.SPYFU_API_PASSWORD?.trim()
 
   if (!userId || !password) {
     throw new Error(
-      isAdmin
-        ? 'SpyFu API credentials are missing. Set SPYFU_API_USER_ID and SPYFU_API_PASSWORD.'
-        : 'SpyFu API credentials are missing. Provide userId and password in the SpyFu block.'
+      'SpyFu API credentials are missing. Set SPYFU_API_USER_ID and SPYFU_API_PASSWORD.'
     )
   }
 
@@ -98,7 +93,7 @@ function prepareRequest(params: SpyfuRequestParams): PreparedSpyfuRequest {
 
   validateRequiredParams(params.operationId, params)
 
-  const credentials = resolveCredentials(params)
+  const credentials = resolveCredentials()
 
   const operation = getSpyfuOperationDefinition(params.operationId)
   if (!operation) {
@@ -189,18 +184,6 @@ export const spyfuRequestTool: ToolConfig<SpyfuRequestParams, SpyfuResponse> = {
       description:
         'SpyFu country code (US, UK, DE, etc.) appended as `countryCode` query parameter.',
     },
-    userId: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'SpyFu API user ID for Basic authentication.',
-    },
-    password: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'SpyFu API password for Basic authentication.',
-    },
   },
   outputs: {
     data: {
@@ -241,7 +224,6 @@ export const spyfuRequestTool: ToolConfig<SpyfuRequestParams, SpyfuResponse> = {
     },
   },
   transformResponse: async (response: Response, params?: SpyfuRequestParams) => {
-    console.log('transformResponse', response, params)
     const prepared = prepareRequest(params ?? {})
 
     const headers: Record<string, string> = {}

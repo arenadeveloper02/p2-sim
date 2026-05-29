@@ -10,8 +10,6 @@ export interface SpyfuRequestParams {
   query?: string
   includeDomainsCsv?: string
   isIntersection?: boolean
-  userId?: string
-  password?: string
   _context?: WorkflowToolExecutionContext
 }
 
