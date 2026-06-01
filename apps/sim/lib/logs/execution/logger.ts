@@ -115,6 +115,18 @@ export class ExecutionLogger implements IExecutionLoggerService {
       ...(existingExecutionData?.lastCompletedBlock
         ? { lastCompletedBlock: existingExecutionData.lastCompletedBlock }
         : {}),
+      ...(Array.isArray(existingExecutionData?.userAttachments) &&
+      existingExecutionData.userAttachments.length > 0
+        ? { userAttachments: existingExecutionData.userAttachments }
+        : {}),
+      ...(Array.isArray(existingExecutionData?.generatedImages) &&
+      existingExecutionData.generatedImages.length > 0
+        ? { generatedImages: existingExecutionData.generatedImages }
+        : {}),
+      ...(Array.isArray(existingExecutionData?.knowledgeRefs) &&
+      existingExecutionData.knowledgeRefs.length > 0
+        ? { knowledgeRefs: existingExecutionData.knowledgeRefs }
+        : {}),
       ...(completionFailure ? { completionFailure } : {}),
       ...(finalizationPath ? { finalizationPath } : {}),
       hasTraceSpans: traceSpanCount > 0,

@@ -63,6 +63,125 @@ type MessageSegment =
 const SUBAGENT_KEYS = new Set(Object.keys(SUBAGENT_LABELS))
 
 /**
+ * Returns true when `line` matches a GFM separator row like `|---|---|`.
+ */
+function isGfmSeparatorRow(line: string): boolean {
+  const cells = line
+    .split('|')
+    .map((cell) => cell.trim())
+    .filter((cell) => cell.length > 0)
+  if (cells.length < 2) return false
+  return cells.every((cell) => {
+    for (const char of cell) {
+      if (!(char === '-' || char === ':' || char === ' ' || char === '\t')) {
+        return false
+      }
+    }
+    return true
+  })
+}
+
+function isDashColonOnlyCell(cell: string): boolean {
+  if (cell.length < 2) return false
+  for (const char of cell) {
+    if (char !== '-' && char !== ':') return false
+  }
+  return true
+}
+
+/**
+ * Detects collapsed tables where separator cells appear inline between pipes.
+ */
+function hasInlineGfmSeparator(content: string): boolean {
+  let separatorRun = 0
+  for (const segment of content.split('|')) {
+    const trimmed = segment.trim()
+    if (isDashColonOnlyCell(trimmed)) {
+      separatorRun++
+      if (separatorRun >= 2) return true
+    } else if (trimmed.length > 0) {
+      separatorRun = 0
+    }
+  }
+  return false
+}
+
+/**
+ * Returns true if content appears to contain a markdown table.
+ */
+function isLikelyMarkdownTable(content: string): boolean {
+  const lines = content.trim().split('\n')
+  for (const line of lines) {
+    if (isGfmSeparatorRow(line)) return true
+  }
+  return hasInlineGfmSeparator(content)
+}
+
+/**
+ * Splits prose that is glued to the start of a table row.
+ */
+function splitProsePrefixFromTableRow(line: string): string {
+  const firstPipe = line.indexOf('|')
+  if (firstPipe <= 0) return line
+  const prefix = line.slice(0, firstPipe).trim()
+  const tablePart = line.slice(firstPipe)
+  const pipeCount = (tablePart.match(/\|/g) ?? []).length
+  if (!prefix || pipeCount < 2) return line
+  if (isGfmSeparatorRow(line) || isGfmSeparatorRow(tablePart)) return line
+  return `${prefix}\n${tablePart}`
+}
+
+function splitCollapsedTableRows(content: string): string {
+  let result = ''
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === '|' && content[i + 1] === '|') {
+      const next = content[i + 2]
+      if (
+        next !== undefined &&
+        next !== '|' &&
+        next !== ' ' &&
+        next !== '\t' &&
+        next !== '\n' &&
+        next !== '\r'
+      ) {
+        result += '|\n|'
+        i += 1
+        continue
+      }
+    }
+    result += content[i]
+  }
+  return result
+}
+
+function splitGluedHeaderAndSeparatorOnLine(line: string): string {
+  for (let pos = 0; pos < line.length - 1; pos++) {
+    if (line[pos] !== '|' || line[pos + 1] !== '|') continue
+    const sepCandidate = line.slice(pos + 1)
+    const newlineIndex = sepCandidate.indexOf('\n')
+    const sepLine = newlineIndex === -1 ? sepCandidate : sepCandidate.slice(0, newlineIndex)
+    if (!isGfmSeparatorRow(sepLine)) continue
+    const rest = newlineIndex === -1 ? '' : sepCandidate.slice(newlineIndex)
+    return `${line.slice(0, pos + 1)}\n${sepLine}${rest}`
+  }
+  return line
+}
+
+/**
+ * Expands collapsed pipe-delimited markdown tables for stable rendering.
+ */
+function prepareChatMarkdownForRender(content: string): string {
+  if (!isLikelyMarkdownTable(content)) return content
+
+  const normalized = splitCollapsedTableRows(content)
+    .split('\n')
+    .map((line) => splitGluedHeaderAndSeparatorOnLine(splitProsePrefixFromTableRow(line)))
+    .join('\n')
+
+  return normalized
+}
+
+/**
  * Maps subagent names to the Mothership tool that dispatches them when the
  * tool name differs from the subagent name (e.g. `workspace_file` → `file`).
  * When a `subagent` block arrives, any trailing dispatch tool in the previous
@@ -461,7 +580,7 @@ export function MessageContent({
             return (
               <ChatContent
                 key={`text-${i}`}
-                content={segment.content}
+                content={prepareChatMarkdownForRender(segment.content)}
                 isStreaming={isStreaming}
                 onOptionSelect={onOptionSelect}
                 onWorkspaceResourceSelect={onWorkspaceResourceSelect}

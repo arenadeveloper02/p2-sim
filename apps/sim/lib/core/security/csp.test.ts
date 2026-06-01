@@ -341,4 +341,8 @@ describe('buildTimeCSPDirectives', () => {
     expect(buildTimeCSPDirectives['img-src']).toContain('data:')
     expect(buildTimeCSPDirectives['img-src']).toContain('blob:')
   })
+
+  it('should allow QuickChart chart image previews', () => {
+    expect(buildTimeCSPDirectives['img-src']).toContain('https://quickchart.io')
+  })
 })
