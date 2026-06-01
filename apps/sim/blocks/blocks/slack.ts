@@ -1707,8 +1707,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
               console.log(`[Slack Block] No cursor value, not setting baseParams.cursor`)
             }
 
-            baseParams.autoPaginate = autoPaginate
-            baseParams.includeThreads = includeThreads
+            const effectiveAutoPaginate = autoPaginate ?? true
+            const effectiveIncludeThreads = includeThreads ?? true
+            baseParams.autoPaginate = effectiveAutoPaginate
+            baseParams.includeThreads = effectiveIncludeThreads
 
             // Set maxThreads - default to 10 if includeThreads is true and maxThreads is not set
             if (maxThreads) {
@@ -1720,7 +1722,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
               ) {
                 baseParams.maxThreads = parsedMaxThreads
               }
-            } else if (includeThreads) {
+            } else if (effectiveIncludeThreads) {
               // Default maxThreads to 10 when includeThreads is true but maxThreads is not specified
               baseParams.maxThreads = 10
             }
@@ -1733,7 +1735,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
               ) {
                 baseParams.maxRepliesPerThread = parsedMaxReplies
               }
-            } else if (includeThreads) {
+            } else if (effectiveIncludeThreads) {
               // Default maxRepliesPerThread to 100 when includeThreads is true but maxRepliesPerThread is not specified
               baseParams.maxRepliesPerThread = 100
             }
