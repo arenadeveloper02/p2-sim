@@ -20,7 +20,6 @@ import {
   AshbyIcon,
   AthenaIcon,
   AttioIcon,
-  AzureDevOpsIcon,
   AzureIcon,
   BoxCompanyIcon,
   BrainIcon,
@@ -53,6 +52,7 @@ import {
   ElasticsearchIcon,
   ElevenLabsIcon,
   EmailBisonIcon,
+  EnrichmentIcon,
   EnrichSoIcon,
   EvernoteIcon,
   ExaAIIcon,
@@ -151,6 +151,7 @@ import {
   QdrantIcon,
   QuiverIcon,
   RailwayIcon,
+  RB2BIcon,
   RDSIcon,
   RedditIcon,
   RedisIcon,
@@ -208,6 +209,7 @@ import {
   ZendeskIcon,
   ZepIcon,
   ZoomIcon,
+  ZoomInfoIcon,
 } from '@/components/icons'
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
@@ -229,7 +231,7 @@ export const blockTypeToIconMap: Record<string, IconComponent> = {
   ashby: AshbyIcon,
   athena: AthenaIcon,
   attio: AttioIcon,
-  azure_devops: AzureDevOpsIcon,
+  azure_devops: AzureIcon,
   box: BoxCompanyIcon,
   brandfetch: BrandfetchIcon,
   brightdata: BrightDataIcon,
@@ -260,6 +262,7 @@ export const blockTypeToIconMap: Record<string, IconComponent> = {
   elevenlabs: ElevenLabsIcon,
   emailbison: EmailBisonIcon,
   enrich: EnrichSoIcon,
+  enrichment: EnrichmentIcon,
   evernote: EvernoteIcon,
   exa: ExaAIIcon,
   extend_v2: ExtendIcon,
@@ -359,6 +362,7 @@ export const blockTypeToIconMap: Record<string, IconComponent> = {
   qdrant: QdrantIcon,
   quiver: QuiverIcon,
   railway: RailwayIcon,
+  rb2b: RB2BIcon,
   rds: RDSIcon,
   reddit: RedditIcon,
   redis: RedisIcon,
@@ -418,4 +422,5 @@ export const blockTypeToIconMap: Record<string, IconComponent> = {
   zendesk: ZendeskIcon,
   zep: ZepIcon,
   zoom: ZoomIcon,
+  zoominfo: ZoomInfoIcon,
 }

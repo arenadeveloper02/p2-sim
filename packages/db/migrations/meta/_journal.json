@@ -1506,6 +1506,48 @@
       "when": 1779902345831,
       "tag": "0215_flowery_hellcat",
       "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1779926079020,
+      "tag": "0216_colorful_cobalt_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1779993983917,
+      "tag": "0217_lovely_iron_fist",
+      "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1779996122972,
+      "tag": "0218_chubby_zzzax",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1780079220753,
+      "tag": "0219_amused_leo",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1780081787541,
+      "tag": "0220_early_hellion",
+      "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1780111474238,
+      "tag": "0221_secret_hannibal_king",
+      "breakpoints": true
     }
   ]
 }
