@@ -30,10 +30,6 @@ export function isNonEmpty(value: unknown): boolean {
   return value !== undefined && value !== null && value !== ''
 }
 
-// ============================================================================
-// Tag/Value Parsing Utilities
-// ============================================================================
-
 interface Option {
   label: string
   value: string
@@ -112,7 +108,7 @@ interface SubBlockConfig {
 
 type ToolInputBlockConfig = Pick<AppBlockConfig, 'type' | 'subBlocks' | 'tools'>
 
-interface SchemaProperty {
+export interface SchemaProperty {
   type: string
   description: string
   items?: Record<string, any>

@@ -30,6 +30,8 @@ export const env = createEnv({
     INTERNAL_USER_DOMAINS:                 z.string().optional(),                  // Comma-separated internal employee email domains (e.g. "thearena.ai"); used for isClientUser email fallback
     ADMIN_WORKSPACE_IDS:                   z.array(z.string()).optional(),         // Workspace IDs treated as admin workspaces (JSON array or comma-separated; used by isAdminWorkspace)
     BLOCKED_SIGNUP_DOMAINS:                z.string().optional(),                  // Comma-separated list of email domains blocked from signing up (e.g., "gmail.com,yahoo.com")
+    SIGNUP_MX_VALIDATION_ENABLED:          z.boolean().optional(),                 // Opt-in: validate the email's MX backend at signup (blocks no-MX domains and denylisted shared spam backends). Off by default; enable on hosted/abuse-targeted deployments.
+    BLOCKED_EMAIL_MX_HOSTS:                z.string().optional(),                  // Comma-separated MX-host substrings blocked from signing up; matched against the domain's resolved MX backend to catch throwaway domains that share a mail backend. No defaults — operators supply their own list. Only used when SIGNUP_MX_VALIDATION_ENABLED is set.
     TRUSTED_ORIGINS:                       z.string().optional(),                  // Comma-separated additional origins to trust for auth (e.g., "https://app.example.com,https://www.example.com"). Merged into Better Auth trustedOrigins.
     TURNSTILE_SECRET_KEY:                  z.string().min(1).optional(),           // Cloudflare Turnstile secret key for captcha verification
     SIGNUP_EMAIL_VALIDATION_ENABLED:       z.boolean().optional(),                 // Enable disposable email blocking via better-auth-harmony (55K+ domains)
@@ -146,6 +148,8 @@ export const env = createEnv({
     LITELLM_BASE_URL:                      z.string().url().optional(),            // LiteLLM proxy base URL (OpenAI-compatible)
     LITELLM_API_KEY:                       z.string().optional(),                  // Optional bearer token for LiteLLM
     FIREWORKS_API_KEY:                     z.string().optional(),                  // Optional Fireworks AI API key for model listing
+    TOGETHER_API_KEY:                      z.string().optional(),                  // Optional Together AI API key for model listing and inference
+    BASETEN_API_KEY:                       z.string().optional(),                  // Optional Baseten API key for model listing and inference
     COHERE_API_KEY:                        z.string().min(1).optional(),           // Cohere API key for reranker (rerank-v4.0-pro, rerank-v4.0-fast, rerank-v3.5)
     COHERE_API_KEY_1:                      z.string().min(1).optional(),           // Primary Cohere API key for rotation
     COHERE_API_KEY_2:                      z.string().min(1).optional(),           // Additional Cohere API key for load balancing

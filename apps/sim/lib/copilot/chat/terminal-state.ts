@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
-import { copilotChats } from '@sim/db/schema'
-import { and, eq, sql } from 'drizzle-orm'
+import { copilotChats, copilotMessages } from '@sim/db/schema'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import type { PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import { CopilotChatFinalizeOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
@@ -53,17 +54,14 @@ export async function finalizeAssistantTurn({
           : eq(copilotChats.id, chatId)
         const [row] = await tx
           .select({
-            messages: copilotChats.messages,
             conversationId: copilotChats.conversationId,
             workspaceId: copilotChats.workspaceId,
+            model: copilotChats.model,
           })
           .from(copilotChats)
           .where(where)
           .for('update')
           .limit(1)
-
-        const messages: Record<string, unknown>[] = Array.isArray(row?.messages) ? row.messages : []
-        span.setAttribute(TraceAttr.ChatExistingMessageCount, messages.length)
 
         if (!row) {
           return {
@@ -74,6 +72,8 @@ export async function finalizeAssistantTurn({
             outcome: CopilotChatFinalizeOutcome.StaleUserMessage,
           }
         }
+
+        const chatModel = row.model ?? null
 
         const markerMatches = row.conversationId === userMessageId
         const markerAlreadyCleared = row.conversationId === null
@@ -89,13 +89,20 @@ export async function finalizeAssistantTurn({
           }
         }
 
-        const userIdx = messages.findIndex((message) => message.id === userMessageId)
-        const alreadyHasResponse =
-          userIdx >= 0 &&
-          userIdx + 1 < messages.length &&
-          (messages[userIdx + 1] as Record<string, unknown>)?.role === 'assistant'
-        const canAppendAssistant =
-          userIdx >= 0 && userIdx === messages.length - 1 && !alreadyHasResponse
+        // Append only when the user message is still the last row: anything
+        // after it means the turn already has a response (dedup under the lock).
+        const [lastMessage] = await tx
+          .select({ messageId: copilotMessages.messageId, role: copilotMessages.role })
+          .from(copilotMessages)
+          .where(and(eq(copilotMessages.chatId, chatId), isNull(copilotMessages.deletedAt)))
+          .orderBy(
+            sql`${copilotMessages.seq} desc nulls last`,
+            desc(copilotMessages.createdAt),
+            desc(copilotMessages.id)
+          )
+          .limit(1)
+        const canAppendAssistant = lastMessage?.messageId === userMessageId
+        const alreadyHasResponse = lastMessage?.role === 'assistant'
 
         const updateWhere = userId
           ? and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId))
@@ -106,13 +113,13 @@ export async function finalizeAssistantTurn({
         }
 
         if (assistantMessage && canAppendAssistant) {
-          await tx
-            .update(copilotChats)
-            .set({
-              ...baseUpdate,
-              messages: sql`${copilotChats.messages} || ${JSON.stringify([assistantMessage])}::jsonb`,
-            })
-            .where(updateWhere)
+          await tx.update(copilotChats).set(baseUpdate).where(updateWhere)
+          await appendCopilotChatMessages(
+            chatId,
+            [assistantMessage],
+            { streamId: userMessageId, chatModel },
+            tx
+          )
           return {
             found: true,
             updated: true,
@@ -130,9 +137,7 @@ export async function finalizeAssistantTurn({
             appendedAssistant: false,
             workspaceId: row.workspaceId,
             outcome: assistantMessage
-              ? alreadyHasResponse
-                ? CopilotChatFinalizeOutcome.AssistantAlreadyPersisted
-                : CopilotChatFinalizeOutcome.StaleUserMessage
+              ? CopilotChatFinalizeOutcome.AssistantAlreadyPersisted
               : CopilotChatFinalizeOutcome.ClearedStreamMarkerOnly,
           }
         }

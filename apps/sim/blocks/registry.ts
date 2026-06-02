@@ -52,6 +52,7 @@ import { ElasticsearchBlock } from '@/blocks/blocks/elasticsearch'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
 import { EmailBisonBlock } from '@/blocks/blocks/emailbison'
 import { EnrichBlock } from '@/blocks/blocks/enrich'
+import { EnrichmentBlock } from '@/blocks/blocks/enrichment'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { EvernoteBlock } from '@/blocks/blocks/evernote'
 import { ExaBlock } from '@/blocks/blocks/exa'
@@ -122,6 +123,7 @@ import { LemlistBlock } from '@/blocks/blocks/lemlist'
 import { LinearBlock, LinearV2Block } from '@/blocks/blocks/linear'
 import { LinkedInBlock } from '@/blocks/blocks/linkedin'
 import { LinkupBlock } from '@/blocks/blocks/linkup'
+import { LinqBlock } from '@/blocks/blocks/linq'
 import { LogsBlock } from '@/blocks/blocks/logs'
 import { LoopsBlock } from '@/blocks/blocks/loops'
 import { LumaBlock } from '@/blocks/blocks/luma'
@@ -171,6 +173,7 @@ import { PulseBlock, PulseV2Block } from '@/blocks/blocks/pulse'
 import { QdrantBlock } from '@/blocks/blocks/qdrant'
 import { QuiverBlock } from '@/blocks/blocks/quiver'
 import { RailwayBlock } from '@/blocks/blocks/railway'
+import { RB2BBlock } from '@/blocks/blocks/rb2b'
 import { RDSBlock } from '@/blocks/blocks/rds'
 import { RedditBlock } from '@/blocks/blocks/reddit'
 import { RedisBlock } from '@/blocks/blocks/redis'
@@ -252,6 +255,7 @@ import { YouTubeBlock } from '@/blocks/blocks/youtube'
 import { ZendeskBlock } from '@/blocks/blocks/zendesk'
 import { ZepBlock } from '@/blocks/blocks/zep'
 import { ZoomBlock } from '@/blocks/blocks/zoom'
+import { ZoomInfoBlock } from '@/blocks/blocks/zoominfo'
 import type { BlockConfig } from '@/blocks/types'
 
 // Registry of all available blocks, alphabetically sorted
@@ -313,6 +317,7 @@ export const registry: Record<string, BlockConfig> = {
   elevenlabs: ElevenLabsBlock,
   fathom: FathomBlock,
   enrich: EnrichBlock,
+  enrichment: EnrichmentBlock,
   evaluator: EvaluatorBlock,
   evernote: EvernoteBlock,
   exa: ExaBlock,
@@ -398,6 +403,7 @@ export const registry: Record<string, BlockConfig> = {
   linkedin: LinkedInBlock,
   linkup: LinkupBlock,
   presentation: PresentationBlock,
+  linq: LinqBlock,
   logs: LogsBlock,
   loops: LoopsBlock,
   luma: LumaBlock,
@@ -447,6 +453,7 @@ export const registry: Record<string, BlockConfig> = {
   qdrant: QdrantBlock,
   quiver: QuiverBlock,
   railway: RailwayBlock,
+  rb2b: RB2BBlock,
   rds: RDSBlock,
   reddit: RedditBlock,
   redis: RedisBlock,
@@ -532,6 +539,7 @@ export const registry: Record<string, BlockConfig> = {
   zendesk: ZendeskBlock,
   zep: ZepBlock,
   zoom: ZoomBlock,
+  zoominfo: ZoomInfoBlock,
 }
 
 export const getBlock = (type: string): BlockConfig | undefined => {

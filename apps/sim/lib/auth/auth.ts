@@ -9,11 +9,11 @@ import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { APIError, createAuthMiddleware } from 'better-auth/api'
 import { nextCookies } from 'better-auth/next-js'
 import {
   admin,
   captcha,
-  createAuthMiddleware,
   customSession,
   emailOTP,
   genericOAuth,
@@ -78,6 +78,7 @@ import {
   isOrganizationsEnabled,
   isRegistrationDisabled,
   isSignupEmailValidationEnabled,
+  isSignupMxValidationEnabled,
 } from '@/lib/core/config/feature-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { getBaseUrl, isLocalhostUrl, parseOriginList } from '@/lib/core/utils/urls'
@@ -85,6 +86,7 @@ import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
+import { validateSignupEmailMx } from '@/lib/messaging/email/validation.server'
 import { scheduleLifecycleEmail } from '@/lib/messaging/lifecycle'
 import { captureServerEvent, getPostHogClient } from '@/lib/posthog/server'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
@@ -144,8 +146,28 @@ function getMicrosoftUserInfoFromIdToken(tokens: { accessToken?: string }, provi
 }
 
 const blockedSignupDomains = env.BLOCKED_SIGNUP_DOMAINS
-  ? new Set(env.BLOCKED_SIGNUP_DOMAINS.split(',').map((d) => d.trim().toLowerCase()))
+  ? Array.from(
+      new Set(
+        env.BLOCKED_SIGNUP_DOMAINS.split(',')
+          .map((d) => d.trim().toLowerCase())
+          .filter(Boolean)
+      )
+    )
   : null
+
+export function isEmailInDenylist(
+  email: string | undefined | null,
+  denylist: readonly string[] | null
+): boolean {
+  if (!denylist || denylist.length === 0 || !email) return false
+  const domain = email.split('@')[1]?.toLowerCase()
+  if (!domain) return false
+  return denylist.some((entry) => domain === entry || domain.endsWith(`.${entry}`))
+}
+
+function isSignupEmailBlocked(email: string | undefined | null): boolean {
+  return isEmailInDenylist(email, blockedSignupDomains)
+}
 
 const additionalTrustedOrigins = parseOriginList(env.TRUSTED_ORIGINS, (value) =>
   logger.warn('Ignoring invalid entry in TRUSTED_ORIGINS', { value })
@@ -255,7 +277,7 @@ export const auth = betterAuth({
     },
     expiresIn: 30 * 24 * 60 * 60, // 30 days (how long a session can last overall)
     updateAge: 24 * 60 * 60, // 24 hours (how often to refresh the expiry)
-    freshAge: 60 * 60, // 1 hour (or set to 0 to disable completely)
+    freshAge: 0,
   },
   user: {
     deleteUser: {
@@ -285,11 +307,8 @@ export const auth = betterAuth({
     user: {
       create: {
         before: async (user) => {
-          if (blockedSignupDomains) {
-            const emailDomain = user.email?.split('@')[1]?.toLowerCase()
-            if (emailDomain && blockedSignupDomains.has(emailDomain)) {
-              throw new Error('Sign-ups from this email domain are not allowed.')
-            }
+          if (isSignupEmailBlocked(user.email)) {
+            throw new Error('Sign-ups from this email domain are not allowed.')
           }
           return { data: user }
         },
@@ -686,6 +705,7 @@ export const auth = betterAuth({
     accountLinking: {
       enabled: true,
       allowDifferentEmails: true,
+      requireLocalEmailVerified: false,
       trustedProviders: [
         'google',
         'github',
@@ -767,7 +787,7 @@ export const auth = betterAuth({
   },
   emailVerification: {
     autoSignInAfterVerification: true,
-    onEmailVerification: async (user) => {
+    afterEmailVerification: async (user) => {
       if (isHosted && user.email) {
         try {
           const html = await renderWelcomeEmail(user.name || undefined)
@@ -782,11 +802,11 @@ export const auth = betterAuth({
             emailType: 'transactional',
           })
 
-          logger.info('[emailVerification.onEmailVerification] Welcome email sent', {
+          logger.info('[emailVerification.afterEmailVerification] Welcome email sent', {
             userId: user.id,
           })
         } catch (error) {
-          logger.error('[emailVerification.onEmailVerification] Failed to send welcome email', {
+          logger.error('[emailVerification.afterEmailVerification] Failed to send welcome email', {
             userId: user.id,
             error,
           })
@@ -800,7 +820,7 @@ export const auth = betterAuth({
           })
         } catch (error) {
           logger.error(
-            '[emailVerification.onEmailVerification] Failed to schedule onboarding followup email',
+            '[emailVerification.afterEmailVerification] Failed to schedule onboarding followup email',
             { userId: user.id, error }
           )
         }
@@ -810,8 +830,6 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: isEmailVerificationEnabled,
-    throwOnMissingCredentials: true,
-    throwOnInvalidCredentials: true,
     sendResetPassword: async ({ user, url, token }, request) => {
       const username = user.name || ''
 
@@ -845,12 +863,16 @@ export const auth = betterAuth({
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
       if (ctx.path.startsWith('/sign-up') && isRegistrationDisabled)
-        throw new Error('Registration is disabled, please contact your admin.')
+        throw new APIError('FORBIDDEN', {
+          message: 'Registration is disabled, please contact your admin.',
+        })
 
       if (!isEmailPasswordEnabled) {
         const emailPasswordPaths = ['/sign-in/email', '/sign-up/email', '/email-otp']
         if (emailPasswordPaths.some((path) => ctx.path.startsWith(path)))
-          throw new Error('Email/password authentication is disabled. Please use SSO to sign in.')
+          throw new APIError('FORBIDDEN', {
+            message: 'Email/password authentication is disabled. Please use SSO to sign in.',
+          })
       }
 
       if (
@@ -878,18 +900,25 @@ export const auth = betterAuth({
           }
 
           if (!isAllowed) {
-            throw new Error('Access restricted. Please contact your administrator.')
+            throw new APIError('FORBIDDEN', {
+              message: 'Access restricted. Please contact your administrator.',
+            })
           }
         }
       }
 
-      if (ctx.path.startsWith('/sign-up') && blockedSignupDomains) {
-        const requestEmail = ctx.body?.email?.toLowerCase()
-        if (requestEmail) {
-          const emailDomain = requestEmail.split('@')[1]
-          if (emailDomain && blockedSignupDomains.has(emailDomain)) {
-            throw new Error('Sign-ups from this email domain are not allowed.')
-          }
+      if (ctx.path.startsWith('/sign-up') && isSignupEmailBlocked(ctx.body?.email)) {
+        throw new APIError('FORBIDDEN', {
+          message: 'Sign-ups from this email domain are not allowed.',
+        })
+      }
+
+      if (isSignupMxValidationEnabled && ctx.path.startsWith('/sign-up/email') && ctx.body?.email) {
+        const mxCheck = await validateSignupEmailMx(ctx.body.email)
+        if (!mxCheck.allowed) {
+          throw new APIError('FORBIDDEN', {
+            message: 'Sign-ups from this email domain are not allowed.',
+          })
         }
       }
 
@@ -919,7 +948,6 @@ export const auth = betterAuth({
     }),
   },
   plugins: [
-    nextCookies(),
     ...(isSignupEmailValidationEnabled ? [emailHarmony()] : []),
     ...(env.TURNSTILE_SECRET_KEY
       ? [
@@ -950,18 +978,14 @@ export const auth = betterAuth({
       } as Record<string, unknown>,
     }),
     oneTimeToken({
-      expiresIn: 24 * 60 * 60, // 24 hours - Socket.IO handles connection persistence with heartbeats
+      expiresIn: 24 * 60, // 24 hours in minutes (better-auth's expiresIn unit)
     }),
     customSession(async ({ user, session }) => ({
       user,
       session,
     })),
     emailOTP({
-      sendVerificationOTP: async (data: {
-        email: string
-        otp: string
-        type: 'sign-in' | 'email-verification' | 'forget-password'
-      }) => {
+      sendVerificationOTP: async (data) => {
         if (!isEmailVerificationEnabled) {
           logger.info('Skipping email verification')
           return
@@ -1022,7 +1046,6 @@ export const auth = betterAuth({
     }),
     genericOAuth({
       config: [
-        // Google providers
         {
           providerId: 'google-email',
           clientId: env.GOOGLE_CLIENT_ID as string,
@@ -1798,7 +1821,6 @@ export const auth = betterAuth({
           },
         },
 
-        // HubSpot provider
         {
           providerId: 'hubspot',
           clientId: env.HUBSPOT_CLIENT_ID as string,
@@ -1872,7 +1894,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Salesforce provider
         {
           providerId: 'salesforce',
           clientId: env.SALESFORCE_CLIENT_ID as string,
@@ -1922,7 +1943,6 @@ export const auth = betterAuth({
           },
         },
 
-        // X provider
         {
           providerId: 'x',
           clientId: env.X_CLIENT_ID as string,
@@ -1982,7 +2002,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Confluence provider
         {
           providerId: 'confluence',
           clientId: env.CONFLUENCE_CLIENT_ID as string,
@@ -2034,7 +2053,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Jira provider
         {
           providerId: 'jira',
           clientId: env.JIRA_CLIENT_ID as string,
@@ -2086,7 +2104,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Airtable provider
         {
           providerId: 'airtable',
           clientId: env.AIRTABLE_CLIENT_ID as string,
@@ -2136,7 +2153,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Notion provider
         {
           providerId: 'notion',
           clientId: env.NOTION_CLIENT_ID as string,
@@ -2186,7 +2202,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Monday.com provider
         {
           providerId: 'monday',
           clientId: env.MONDAY_CLIENT_ID as string,
@@ -2239,7 +2254,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Reddit provider
         {
           providerId: 'reddit',
           clientId: env.REDDIT_CLIENT_ID as string,
@@ -2568,7 +2582,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Slack provider
         {
           providerId: 'slack',
           clientId: env.SLACK_CLIENT_ID as string,
@@ -2639,14 +2652,34 @@ export const auth = betterAuth({
               const teamName = data.team || 'Slack Workspace'
               const userId = data.user_id || 'unknown'
 
-              const uniqueId = `slack-bot-${Date.now()}`
+              /**
+               * Tag the accountId with the installing user's Slack id (from the OAuth
+               * v2 `authed_user.id`, preserved on `tokens.raw`) behind a `usr_` marker.
+               * The channels selector uses it to scope private-channel visibility to
+               * the installer's own Slack membership, per Slack Marketplace rules. The
+               * marker disambiguates it from a legacy bot id (same `U.../B...` shape);
+               * absent it, we keep the legacy format and today's behavior.
+               */
+              const authedUser = tokens.raw?.authed_user as { id?: string } | undefined
+              const installerUserId = authedUser?.id
+              const userSegment = installerUserId
+                ? `usr_${installerUserId}`
+                : data.user_id || data.bot_id || 'bot'
 
-              logger.info('Slack credential identifier', { teamId, userId, uniqueId, teamName })
+              const uniqueId = `${teamId}-${userSegment}`
+
+              logger.info('Slack credential identifier', {
+                teamId,
+                userSegment,
+                uniqueId,
+                teamName,
+                hasInstallerId: !!installerUserId,
+              })
 
               return {
                 id: `${uniqueId}-${generateId()}`,
                 name: teamName,
-                email: `${teamId}-${userId}@slack.bot`,
+                email: `${uniqueId}@slack.bot`,
                 emailVerified: false,
                 createdAt: new Date(),
                 updatedAt: new Date(),
@@ -2658,7 +2691,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Webflow provider
         {
           providerId: 'webflow',
           clientId: env.WEBFLOW_CLIENT_ID as string,
@@ -2800,7 +2832,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Zoom provider
         {
           providerId: 'zoom',
           clientId: env.ZOOM_CLIENT_ID as string,
@@ -2958,7 +2989,6 @@ export const auth = betterAuth({
           },
         },
 
-        // WordPress.com provider
         {
           providerId: 'wordpress',
           clientId: env.WORDPRESS_CLIENT_ID as string,
@@ -3146,32 +3176,9 @@ export const auth = betterAuth({
               authorizeReference: async ({ user, referenceId, action }) => {
                 return await authorizeSubscriptionReference(user.id, referenceId, action)
               },
-              getCheckoutSessionParams: async ({ plan, subscription }) => {
-                if (isTeam(plan.name)) {
-                  return {
-                    params: {
-                      allow_promotion_codes: true,
-                      line_items: [
-                        {
-                          price: plan.priceId,
-                          quantity: subscription?.seats || 1,
-                          adjustable_quantity: {
-                            enabled: true,
-                            minimum: 1,
-                            maximum: 50,
-                          },
-                        },
-                      ],
-                    },
-                  }
-                }
-
-                return {
-                  params: {
-                    allow_promotion_codes: true,
-                  },
-                }
-              },
+              getCheckoutSessionParams: async () => ({
+                params: { allow_promotion_codes: true },
+              }),
               onSubscriptionComplete: async ({
                 stripeSubscription,
                 subscription,
@@ -3465,9 +3472,10 @@ export const auth = betterAuth({
           organization({
             allowUserToCreateOrganization: async () => false,
             disableOrganizationDeletion: true,
-            organizationCreation: {
-              afterCreate: async ({ organization, user }) => {
-                logger.info('[organizationCreation.afterCreate] Organization created', {
+            requireEmailVerificationOnInvitation: isEmailVerificationEnabled,
+            organizationHooks: {
+              afterCreateOrganization: async ({ organization, user }) => {
+                logger.info('[organizationHooks.afterCreateOrganization] Organization created', {
                   organizationId: organization.id,
                   creatorId: user.id,
                 })
@@ -3476,13 +3484,8 @@ export const auth = betterAuth({
           }),
         ]
       : []),
+    nextCookies(),
   ],
-  pages: {
-    signIn: '/login',
-    signUp: '/signup',
-    error: '/error',
-    verify: '/verify',
-  },
 })
 
 async function getSessionImpl() {
@@ -3498,6 +3501,3 @@ async function getSessionImpl() {
 }
 
 export const getSession = cache(getSessionImpl)
-
-export const signIn = auth.api.signInEmail
-export const signUp = auth.api.signUpEmail

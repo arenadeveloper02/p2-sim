@@ -4,11 +4,14 @@ import { useQuery } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
   getBaseProviderModelsContract,
+  getBasetenProviderModelsContract,
   getFireworksProviderModelsContract,
   getLitellmProviderModelsContract,
+  getOllamaCloudProviderModelsContract,
   getOllamaProviderModelsContract,
   getOpenRouterProviderModelsContract,
   getSambanovaProviderModelsContract,
+  getTogetherProviderModelsContract,
   getVllmProviderModelsContract,
   type ProviderModelsResponse,
 } from '@/lib/api/contracts/providers'
@@ -54,6 +57,11 @@ async function requestProviderModels(
       return requestJson(getBaseProviderModelsContract, { signal })
     case 'ollama':
       return requestJson(getOllamaProviderModelsContract, { signal })
+    case 'ollama-cloud':
+      return requestJson(getOllamaCloudProviderModelsContract, {
+        query: { workspaceId },
+        signal,
+      })
     case 'vllm':
       return requestJson(getVllmProviderModelsContract, { signal })
     case 'litellm':
@@ -64,6 +72,16 @@ async function requestProviderModels(
       return requestJson(getSambanovaProviderModelsContract, { signal })
     case 'fireworks':
       return requestJson(getFireworksProviderModelsContract, {
+        query: { workspaceId },
+        signal,
+      })
+    case 'together':
+      return requestJson(getTogetherProviderModelsContract, {
+        query: { workspaceId },
+        signal,
+      })
+    case 'baseten':
+      return requestJson(getBasetenProviderModelsContract, {
         query: { workspaceId },
         signal,
       })

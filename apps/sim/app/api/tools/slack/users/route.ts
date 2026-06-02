@@ -12,6 +12,9 @@ export const dynamic = 'force-dynamic'
 
 const logger = createLogger('SlackUsersAPI')
 
+const SLACK_PAGE_LIMIT = 200
+const SLACK_MAX_USER_PAGES = 10
+
 interface SlackUser {
   id: string
   name: string
@@ -22,6 +25,11 @@ interface SlackUser {
   }
   is_bot: boolean
   deleted: boolean
+}
+
+interface SlackUsersResult {
+  members: SlackUser[]
+  truncated: boolean
 }
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
@@ -90,6 +98,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
 
     const data = await fetchSlackUsers(accessToken)
+    if (data.truncated) {
+      logger.warn('users.list hit pagination cap; user list may be incomplete')
+    }
 
     const users = (data.members || [])
       .filter((user: SlackUser) => !user.deleted && !user.is_bot)
@@ -141,14 +152,19 @@ async function fetchSlackUser(accessToken: string, userId: string) {
   return data
 }
 
-async function fetchSlackUsers(accessToken: string) {
-  const allMembers: SlackUser[] = []
+/**
+ * Lists Slack workspace members, following `response_metadata.next_cursor` so
+ * the full set is returned. Bounded by `SLACK_MAX_USER_PAGES`; sets `truncated`
+ * rather than silently dropping members when the cap is hit.
+ */
+async function fetchSlackUsers(accessToken: string): Promise<SlackUsersResult> {
+  const members: SlackUser[] = []
   let cursor: string | undefined
-  const limit = 200
+  let truncated = false
 
-  do {
+  for (let page = 0; page < SLACK_MAX_USER_PAGES; page++) {
     const url = new URL('https://slack.com/api/users.list')
-    url.searchParams.append('limit', String(limit))
+    url.searchParams.append('limit', String(SLACK_PAGE_LIMIT))
     if (cursor) {
       url.searchParams.append('cursor', cursor)
     }
@@ -171,27 +187,18 @@ async function fetchSlackUsers(accessToken: string) {
       throw new Error(data.error || 'Failed to fetch users')
     }
 
-    // Accumulate members from this page
-    if (data.members && Array.isArray(data.members)) {
-      allMembers.push(...data.members)
+    if (Array.isArray(data.members)) {
+      members.push(...data.members)
     }
 
-    // Check if there are more pages
-    cursor = data.response_metadata?.next_cursor
-    if (cursor && cursor.trim() === '') {
-      cursor = undefined
+    cursor = data.response_metadata?.next_cursor?.trim() || undefined
+    if (!cursor) {
+      return { members, truncated }
     }
-
-    logger.info(`Fetched ${data.members?.length || 0} users (total so far: ${allMembers.length})`, {
-      hasMore: !!cursor,
-    })
-  } while (cursor)
-
-  logger.info(`Completed fetching all Slack users: ${allMembers.length} total`)
-
-  // Return data in the same format as before, but with all members
-  return {
-    ok: true,
-    members: allMembers,
+    if (page === SLACK_MAX_USER_PAGES - 1) {
+      truncated = true
+    }
   }
+
+  return { members, truncated }
 }
