@@ -5,11 +5,12 @@ import {
   resolveNanoBananaReferences,
 } from '@/lib/image-generation/nano-banana-inputs'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
-import { createVersionedToolSelector, normalizeFileInput } from '@/blocks/utils'
-import { parseOptionalBooleanInput } from '@/blocks/utils'
+import {
+  createVersionedToolSelector,
+  normalizeFileInput,
+  parseOptionalBooleanInput,
+} from '@/blocks/utils'
 import type { ImageGenerationResponse } from '@/tools/image/types'
-import type { DalleResponse } from '@/tools/openai/types'
-
 
 function normalizeReferenceFiles(input: unknown): unknown[] {
   const normalizedFiles = normalizeFileInput(input)
@@ -21,7 +22,6 @@ function normalizeReferenceFiles(input: unknown): unknown[] {
   }
   return []
 }
-
 
 const OPENAI_GPT_IMAGE_MODELS = [
   { label: 'GPT Image 1.5', id: 'gpt-image-1.5' },

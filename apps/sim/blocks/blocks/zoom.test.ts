@@ -32,8 +32,12 @@ describe('ZoomBlock', () => {
 
   it('shows a single Zoom credential input with personal and admin connect paths', () => {
     const credential = ZoomBlock.subBlocks.find((subBlock) => subBlock.id === 'credential')
-    const manualCredential = ZoomBlock.subBlocks.find((subBlock) => subBlock.id === 'manualCredential')
-    const adminCredential = ZoomBlock.subBlocks.find((subBlock) => subBlock.id === 'credentialAdmin')
+    const manualCredential = ZoomBlock.subBlocks.find(
+      (subBlock) => subBlock.id === 'manualCredential'
+    )
+    const adminCredential = ZoomBlock.subBlocks.find(
+      (subBlock) => subBlock.id === 'credentialAdmin'
+    )
     const adminManualCredential = ZoomBlock.subBlocks.find(
       (subBlock) => subBlock.id === 'manualCredentialAdmin'
     )

@@ -157,7 +157,6 @@ function resolveExistingStoredFile(
   }
 }
 
-
 function isRecoverableStreamRecoveryError(
   error: unknown
 ): error is SSEEventHandlerError | SSEStreamInterruptedError {

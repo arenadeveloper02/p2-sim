@@ -8,8 +8,6 @@ import {
   isAdminWorkspaceOnlyOAuthProvider,
   isAdminWorkspaceOnlyTool,
   parseAdminWorkspaceIds,
-  resolveExecutionWorkspaceId,
-  WORKSPACE_ID_CONDITION_KEY,
 } from './is-admin-workspace'
 
 vi.mock('@/lib/core/config/env', () =>

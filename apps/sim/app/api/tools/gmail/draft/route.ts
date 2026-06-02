@@ -8,7 +8,6 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileForDelivery } from '@/lib/uploads/utils/file-utils.server'
-import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { assertToolFileAccess } from '@/app/api/files/authorization'
 import {
   base64UrlEncode,

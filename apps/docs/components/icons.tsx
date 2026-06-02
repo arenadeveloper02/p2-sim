@@ -4777,7 +4777,7 @@ export const SambaNovaIcon: React.FC<{ className?: string }> = ({ className }) =
         priority={false}
       />
     </div>
-     )
+  )
 }
 
 export function LitellmIcon(props: SVGProps<SVGSVGElement>) {

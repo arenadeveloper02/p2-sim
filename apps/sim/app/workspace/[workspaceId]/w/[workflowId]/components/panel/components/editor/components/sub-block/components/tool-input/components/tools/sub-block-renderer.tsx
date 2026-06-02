@@ -112,7 +112,11 @@ function syncToolParamValueToSyntheticStore(params: {
       subBlock,
       existing
     )
-    if (toolEmpty && typeof normalizedExisting === 'string' && normalizedExisting.trim().length > 0) {
+    if (
+      toolEmpty &&
+      typeof normalizedExisting === 'string' &&
+      normalizedExisting.trim().length > 0
+    ) {
       if (normalizedExisting === syncedValue) return
       setSyncedValue(normalizedExisting)
       onParamChange(params.toolIndex, effectiveParamId, normalizedExisting)

@@ -171,8 +171,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
               ? fileData.mimeType
               : undefined
 
-        requestedMimeType =
-          validatedData.mimeType ?? rawFileMimeType ?? 'application/octet-stream'
+        requestedMimeType = validatedData.mimeType ?? rawFileMimeType ?? 'application/octet-stream'
 
         // Prefer user-entered fileName when provided; fall back to file's own name
         finalFileName = validatedData.fileName || fileData.name || 'file'

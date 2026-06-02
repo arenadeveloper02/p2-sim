@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { mergeSubblockStateWithValues } from '@sim/workflow-persistence/subblocks'
 import {
   Button,
   ButtonGroup,
@@ -23,9 +22,9 @@ import type { WorkflowDeploymentVersionResponse } from '@/lib/workflows/persiste
 import type { DeployReadiness } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/use-deploy-readiness'
 import { Preview, PreviewWorkflow } from '@/app/workspace/[workspaceId]/w/components/preview'
 import { useDeploymentVersionState, useRevertToVersion } from '@/hooks/queries/workflows'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 import { Versions } from './components'
 

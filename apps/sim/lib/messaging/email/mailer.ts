@@ -1,9 +1,6 @@
 import { createLogger } from '@sim/logger'
-import { Resend } from 'resend'
-import { env } from '@/lib/core/config/env'
-import { generateUnsubscribeToken, isUnsubscribed } from '@/lib/messaging/email/unsubscribe'
-import { getFromEmailAddress, hasEmailHeaderControlChars } from '@/lib/messaging/email/utils'
 import { getErrorMessage } from '@sim/utils/errors'
+import { env } from '@/lib/core/config/env'
 import { processEmailData, shouldSkipForUnsubscribe } from '@/lib/messaging/email/prepare'
 import { activeProviders } from '@/lib/messaging/email/providers'
 import type {
@@ -39,8 +36,6 @@ const MOCK_EMAIL_RESULT: SendEmailResult = {
   message: 'Email logging successful (no email service configured)',
   data: { id: 'mock-email-id' },
 }
-
-
 
 // AWS SES runtime placeholder and credentials detection (we initialize lazily)
 let sesClient: any | null = null

@@ -6,12 +6,9 @@ import { isPaid } from '@/lib/billing/plan-helpers'
 import { getToolEntry } from '@/lib/copilot/tool-executor/router'
 import { getCopilotToolDescription } from '@/lib/copilot/tools/descriptions'
 import { isHosted } from '@/lib/core/config/feature-flags'
-import {
-  isAdminWorkspace,
-  isAdminWorkspaceOnlyTool,
-} from '@/lib/workspaces/is-admin-workspace'
 import { buildMothershipToolsForRequest } from '@/lib/mothership/settings/runtime'
 import { trackChatUpload } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { isAdminWorkspace, isAdminWorkspaceOnlyTool } from '@/lib/workspaces/is-admin-workspace'
 import { tools } from '@/tools/registry'
 import { getLatestVersionTools, stripVersionSuffix } from '@/tools/utils'
 

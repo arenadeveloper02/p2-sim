@@ -105,11 +105,15 @@ describe.concurrent('Blocks Module', () => {
     it('should expose a single dynamic Nano Banana reference input', () => {
       const block = getBlock('image_generator')
       const imageCountSubBlock = block?.subBlocks.find((subBlock) => subBlock.id === 'imageCount')
-      const referenceImagesSubBlock = block?.subBlocks.find((subBlock) => subBlock.id === 'inputImage')
+      const referenceImagesSubBlock = block?.subBlocks.find(
+        (subBlock) => subBlock.id === 'inputImage'
+      )
       const referenceImageUrlsSubBlock = block?.subBlocks.find(
         (subBlock) => subBlock.id === 'inputImageUrl'
       )
-      const legacyFusionImagesSubBlock = block?.subBlocks.find((subBlock) => subBlock.id === 'inputImages')
+      const legacyFusionImagesSubBlock = block?.subBlocks.find(
+        (subBlock) => subBlock.id === 'inputImages'
+      )
 
       expect(imageCountSubBlock).toBeUndefined()
       expect(referenceImagesSubBlock).toMatchObject({
@@ -165,7 +169,9 @@ describe.concurrent('Blocks Module', () => {
       })
       expect(Array.isArray((params as Record<string, unknown>)?.inputImages)).toBe(true)
       expect((params as Record<string, unknown>)?.inputImage).toBeUndefined()
-      expect(((params as Record<string, unknown>)?.inputImages as unknown[] | undefined)?.length).toBe(3)
+      expect(
+        ((params as Record<string, unknown>)?.inputImages as unknown[] | undefined)?.length
+      ).toBe(3)
     })
   })
   describe('File block', () => {

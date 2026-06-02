@@ -426,10 +426,7 @@ async function performCoalescedRefresh({
           }
 
           if (targetTable === 'account_tokens') {
-            await db
-              .update(accountTokens)
-              .set(updateData)
-              .where(eq(accountTokens.id, accountId))
+            await db.update(accountTokens).set(updateData).where(eq(accountTokens.id, accountId))
           } else {
             await db.update(account).set(updateData).where(eq(account.id, accountId))
           }

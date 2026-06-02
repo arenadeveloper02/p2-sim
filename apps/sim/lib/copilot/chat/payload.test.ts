@@ -4,15 +4,12 @@
 import { featureFlagsMock, workflowsUtilsMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const {
-  mockCreateUserToolSchema,
-  mockGetHighestPrioritySubscription,
-  mockIsAdminWorkspace,
-} = vi.hoisted(() => ({
-  mockCreateUserToolSchema: vi.fn(() => ({ type: 'object', properties: {} })),
-  mockGetHighestPrioritySubscription: vi.fn(),
-  mockIsAdminWorkspace: vi.fn(() => false),
-}))
+const { mockCreateUserToolSchema, mockGetHighestPrioritySubscription, mockIsAdminWorkspace } =
+  vi.hoisted(() => ({
+    mockCreateUserToolSchema: vi.fn(() => ({ type: 'object', properties: {} })),
+    mockGetHighestPrioritySubscription: vi.fn(),
+    mockIsAdminWorkspace: vi.fn(() => false),
+  }))
 
 vi.mock('@/lib/billing/core/subscription', () => ({
   getHighestPrioritySubscription: mockGetHighestPrioritySubscription,
@@ -164,7 +161,12 @@ describe('buildIntegrationToolSchemas', () => {
     mockGetHighestPrioritySubscription.mockResolvedValue({ plan: 'pro', status: 'active' })
     mockIsAdminWorkspace.mockReturnValue(false)
 
-    const toolSchemas = await buildIntegrationToolSchemas('user-1', undefined, undefined, 'ws-normal')
+    const toolSchemas = await buildIntegrationToolSchemas(
+      'user-1',
+      undefined,
+      undefined,
+      'ws-normal'
+    )
     const names = toolSchemas.map((tool) => tool.name)
 
     expect(names).toContain('zoom_list_meetings')
@@ -175,7 +177,12 @@ describe('buildIntegrationToolSchemas', () => {
     mockGetHighestPrioritySubscription.mockResolvedValue({ plan: 'pro', status: 'active' })
     mockIsAdminWorkspace.mockReturnValue(true)
 
-    const toolSchemas = await buildIntegrationToolSchemas('user-1', undefined, undefined, 'ws-admin-1')
+    const toolSchemas = await buildIntegrationToolSchemas(
+      'user-1',
+      undefined,
+      undefined,
+      'ws-admin-1'
+    )
     const names = toolSchemas.map((tool) => tool.name)
 
     expect(names).toContain('zoom_list_account_recordings')

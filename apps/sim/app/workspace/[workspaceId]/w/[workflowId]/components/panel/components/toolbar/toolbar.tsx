@@ -115,20 +115,24 @@ const ToolbarItem = memo(function ToolbarItem({
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      handleKeyboardActivation(event, () => {
-        onClick(item.type, isTriggerCapable)
-        selectTriggerEvent({
-          'Element Name': item?.name ?? '',
-          'Element Type': isTrigger ? 'Trigger' : 'Block',
-          Source: searchQuery?.trim()
-            ? "Workflow's Search"
-            : isTrigger
-              ? "Trigger's List"
-              : "Block's List",
-        })
-      }, {
-        stopPropagation: true,
-      })
+      handleKeyboardActivation(
+        event,
+        () => {
+          onClick(item.type, isTriggerCapable)
+          selectTriggerEvent({
+            'Element Name': item?.name ?? '',
+            'Element Type': isTrigger ? 'Trigger' : 'Block',
+            Source: searchQuery?.trim()
+              ? "Workflow's Search"
+              : isTrigger
+                ? "Trigger's List"
+                : "Block's List",
+          })
+        },
+        {
+          stopPropagation: true,
+        }
+      )
     },
     [item.type, isTriggerCapable, onClick]
   )

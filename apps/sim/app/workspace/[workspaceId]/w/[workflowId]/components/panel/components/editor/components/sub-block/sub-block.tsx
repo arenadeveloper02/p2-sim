@@ -58,6 +58,7 @@ import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/c
 import { MentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useWebhookManagement } from '@/hooks/use-webhook-management'
+import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { ArenaAssigneeSelector } from './components/arena/arena-assignee-selector'
 import { ArenaClientsSelector } from './components/arena/arena-clients-selector'
@@ -69,7 +70,6 @@ import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-s
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { SlackClientSelector } from './components/slack-client-selector'
-import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 
 const SLACK_OVERRIDES: SelectorOverrides = {
   transformContext: (context, deps) => {

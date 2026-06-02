@@ -127,7 +127,10 @@ describe('OAuth Credentials API Route', () => {
     workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValueOnce({
       allowed: true,
       status: 200,
-      workflow: { id: 'bc526c7d-d3c7-4523-9c64-e2ea24d570d7', workspaceId: '16ae48f8-b760-4f08-981c-6becbb19f3c8' },
+      workflow: {
+        id: 'bc526c7d-d3c7-4523-9c64-e2ea24d570d7',
+        workspaceId: '16ae48f8-b760-4f08-981c-6becbb19f3c8',
+      },
       workspacePermission: 'write',
     })
     permissionsMockFns.mockCheckWorkspaceAccess.mockResolvedValueOnce({
@@ -165,10 +168,9 @@ describe('OAuth Credentials API Route', () => {
 
     expect(response.status).toBe(200)
     expect(data.credentials).toHaveLength(2)
-    expect(data.credentials.map((credential: { provider: string }) => credential.provider)).toEqual([
-      'zoom',
-      'zoom-admin',
-    ])
+    expect(data.credentials.map((credential: { provider: string }) => credential.provider)).toEqual(
+      ['zoom', 'zoom-admin']
+    )
     expect(mockInArray).toHaveBeenCalledWith(expect.anything(), ['zoom', 'zoom-admin'])
   })
 })

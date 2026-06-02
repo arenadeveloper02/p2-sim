@@ -1,6 +1,6 @@
 export { ChatMessageAttachments } from './chat-message-attachments'
+export { EmbedHtmlContent } from './embed-html-content'
 export { MothershipChat } from './mothership-chat/mothership-chat'
 export { MothershipView } from './mothership-view'
 export { TemplatePrompts } from './template-prompts'
 export { UserInput } from './user-input'
-export { EmbedHtmlContent } from './embed-html-content'

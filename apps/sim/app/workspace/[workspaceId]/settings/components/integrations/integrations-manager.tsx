@@ -2,8 +2,8 @@
 
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import Cookies from 'js-cookie'
 import { getErrorMessage } from '@sim/utils/errors'
+import Cookies from 'js-cookie'
 import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
 import Image from 'next/image'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
@@ -39,12 +39,12 @@ import {
 import { getCanonicalScopesForProvider, getServiceConfigByProviderId } from '@/lib/oauth'
 import { ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID } from '@/lib/oauth/types'
 import { getScopeDescription } from '@/lib/oauth/utils'
-import { filterOAuthItemsForWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { getUserColor } from '@/lib/workspaces/colors'
-import { useBrandConfig } from '@/ee/whitelabeling'
+import { filterOAuthItemsForWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { AtlassianServiceAccountForm } from '@/app/workspace/[workspaceId]/settings/components/integrations/atlassian-service-account-form'
 import { CredentialSkeleton } from '@/app/workspace/[workspaceId]/settings/components/integrations/credential-skeleton'
 import { ServiceAccountForm } from '@/app/workspace/[workspaceId]/settings/components/integrations/service-account-form'
+import { useBrandConfig } from '@/ee/whitelabeling'
 import {
   useCreateCredentialDraft,
   useCreateWorkspaceCredential,
@@ -229,8 +229,7 @@ export function IntegrationsManager() {
   const removeMember = useRemoveWorkspaceCredentialMember()
 
   const oauthServiceNameByProviderId = useMemo(
-    () =>
-      new Map(workspaceOAuthConnections.map((service) => [service.providerId, service.name])),
+    () => new Map(workspaceOAuthConnections.map((service) => [service.providerId, service.name])),
     [workspaceOAuthConnections]
   )
   const resolveProviderLabel = (providerId?: string | null): string => {

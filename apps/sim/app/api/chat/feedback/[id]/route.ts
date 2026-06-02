@@ -1,10 +1,10 @@
 import { db } from '@sim/db'
 import { chatPromptFeedback, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { v4 as uuidv4 } from 'uuid'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       // Otherwise, create a new feedback record
-      const id = uuidv4()
+      const id = generateId()
 
       await db.insert(chatPromptFeedback).values({
         id,

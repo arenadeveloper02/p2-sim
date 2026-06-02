@@ -400,7 +400,6 @@ async function buildMinimalResult(
   for (const descriptor of getSelectedOutputDescriptors(selectedOutputs)) {
     const { blockId, path } = descriptor
 
-
     if (streamedSelectedOutputKeys.has(descriptor.key)) {
       continue
     }

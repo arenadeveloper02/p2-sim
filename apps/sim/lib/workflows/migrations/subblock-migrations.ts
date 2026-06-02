@@ -231,9 +231,7 @@ export function backfillCanonicalModes(blocks: Record<string, BlockState>): {
       ) {
         const basicValue = group.basicId ? values[group.basicId] : undefined
         const hasBasicValue =
-          basicValue !== null &&
-          basicValue !== undefined &&
-          String(basicValue).trim().length > 0
+          basicValue !== null && basicValue !== undefined && String(basicValue).trim().length > 0
         const hasAdvancedValue = group.advancedIds.some((advancedId) => {
           const value = values[advancedId]
           return value !== null && value !== undefined && String(value).trim().length > 0

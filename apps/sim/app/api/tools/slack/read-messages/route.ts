@@ -246,7 +246,6 @@ async function fetchThreadReplies(
   }
 }
 
-
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 

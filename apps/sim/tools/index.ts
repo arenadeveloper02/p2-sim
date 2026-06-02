@@ -7,6 +7,7 @@ import { getBYOKKey } from '@/lib/api-key/byok'
 import { generateInternalToken } from '@/lib/auth/internal'
 import { isHosted } from '@/lib/core/config/feature-flags'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
+import { getHostedKeyRateLimiter } from '@/lib/core/rate-limiter'
 import {
   secureFetchWithPinnedIP,
   validateUrlWithDNS,
@@ -51,8 +52,6 @@ import {
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
 import * as toolsUtilsServer from '@/tools/utils.server'
-import { getHostedKeyRateLimiter } from '@/lib/core/rate-limiter'
-
 
 const logger = createLogger('Tools')
 
@@ -1769,9 +1768,9 @@ async function executeToolRequest(
       headersRecord[key] = value
     })
 
-    let contentType = ''
-    let hasTransformResponse = false
-    let prefersTextTransform = false
+    const contentType = ''
+    const hasTransformResponse = false
+    const prefersTextTransform = false
 
     const retryConfig = getRetryConfig(tool.request.retry, params, requestParams.method)
     const maxAttempts = retryConfig ? 1 + retryConfig.maxRetries : 1

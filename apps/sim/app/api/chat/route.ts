@@ -1,8 +1,8 @@
 import { db } from '@sim/db'
 import { chat, workflowQueries } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { generateId } from '@sim/utils/id'
 import { getErrorMessage } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { createChatContract } from '@/lib/api/contracts/chats'
@@ -153,13 +153,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return createErrorResponse(result.error || 'Failed to deploy chat', 500)
     }
     const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
-      if (goldenQueries.length > 0 || customizations?.goldenQueries) {
-        await replaceWorkflowQueries({
-          workflowId,
-          userId: session.user.id,
-          queries: goldenQueries,
-        })
-      }
+    if (goldenQueries.length > 0 || customizations?.goldenQueries) {
+      await replaceWorkflowQueries({
+        workflowId,
+        userId: session.user.id,
+        queries: goldenQueries,
+      })
+    }
 
     return createSuccessResponse({
       id: result.chatId,

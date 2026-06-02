@@ -1013,11 +1013,6 @@ import {
 } from '@/tools/gong'
 import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import {
-  googleImagenV2Tool,
-  googleNanoBananaV2Tool,
-  openAIImageV2Tool,
-} from '@/tools/image_generation'
-import {
   googleAdsAdPerformanceTool,
   googleAdsCampaignPerformanceTool,
   googleAdsListAdGroupsTool,
@@ -1163,9 +1158,9 @@ import {
 import {
   googleSlidesAddImageTool,
   googleSlidesAddSlideTool,
-  googleSlidesCreateFromTemplateTool,
   googleSlidesBatchUpdateTool,
   googleSlidesCopyPresentationTool,
+  googleSlidesCreateFromTemplateTool,
   googleSlidesCreateLineTool,
   googleSlidesCreateParagraphBulletsTool,
   googleSlidesCreateShapeTool,
@@ -1423,6 +1418,11 @@ import {
   identityCenterListPermissionSetsTool,
 } from '@/tools/identity_center'
 import { imageGenerateTool } from '@/tools/image'
+import {
+  googleImagenV2Tool,
+  googleNanoBananaV2Tool,
+  openAIImageV2Tool,
+} from '@/tools/image_generation'
 import {
   incidentioActionsListTool,
   incidentioActionsShowTool,

@@ -61,9 +61,7 @@ export function getAdminWorkspaceIds(): string[] {
 /**
  * Resolves workspace ID during block tool param transforms (execution context or condition injection).
  */
-export function resolveExecutionWorkspaceId(
-  params?: Record<string, unknown>
-): string | undefined {
+export function resolveExecutionWorkspaceId(params?: Record<string, unknown>): string | undefined {
   const context = params?._context as { workspaceId?: string } | undefined
   if (typeof context?.workspaceId === 'string') {
     const fromContext = context.workspaceId.trim()

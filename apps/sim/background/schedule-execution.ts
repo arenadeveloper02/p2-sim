@@ -48,12 +48,10 @@ import {
   validateCronExpression,
 } from '@/lib/workflows/schedules/utils'
 import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
-import { REFERENCE } from '@/executor/constants'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata } from '@/executor/execution/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
 import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
-import { createEnvVarPattern } from '@/executor/utils/reference-validation'
 import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
 
 const logger = createLogger('ScheduleExecution')

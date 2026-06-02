@@ -400,7 +400,7 @@ export function DeployModal({
     } catch (error: unknown) {
       if (!isWorkflowStillActive(targetWorkflowId)) return
       logger.error('Error undeploying workflow:', { error })
-    }finally{
+    } finally {
       undeployDeployedWorkflowCTAEvent({
         'Workspace Name': workspaceName,
         'Workspace ID': workflowWorkspaceId || '',

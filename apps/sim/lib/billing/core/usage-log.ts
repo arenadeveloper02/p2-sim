@@ -32,8 +32,7 @@ function parsePositiveNumber(raw: unknown): number | null {
 
 /** Reads USAGE_LOG_COST_MULTIPLIER from process.env (reliable in Next.js server). */
 export function getUsageLogCostMultiplier(): number {
-  const raw =
-    process.env.USAGE_LOG_COST_MULTIPLIER ?? process.env.COST_MULTIPLIER ?? undefined
+  const raw = process.env.USAGE_LOG_COST_MULTIPLIER ?? process.env.COST_MULTIPLIER ?? undefined
   return parsePositiveNumber(raw) ?? 1
 }
 
@@ -251,23 +250,6 @@ async function resolveBillingContext(
     return { billingEntity, billingPeriod }
   }
 
-  const { userId, workspaceId, workflowId, executionId, additionalStats } = params
-  const entries = scaleUsageLogCosts(params.entries, {
-    userId,
-    workspaceId,
-    workflowId,
-    executionId,
-  })
-
-  const validEntries = entries.filter((e) => e.cost > 0)
-  const totalCost = validEntries.reduce((sum, e) => sum + e.cost, 0)
-
-  if (
-    validEntries.length === 0 &&
-    (!additionalStats || Object.keys(additionalStats).length === 0)
-  ) {
-    return
-  }
   const subscription = await getHighestPrioritySubscription(userId)
   const derived = deriveBillingContext(userId, subscription)
   return {

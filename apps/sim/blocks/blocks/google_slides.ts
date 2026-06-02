@@ -2665,8 +2665,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_delete_paragraph_bullets'
           case 'replace_all_shapes_with_image':
             return 'google_slides_replace_all_shapes_with_image'
-          case 'replace_image':
-            return 'google_slides_replace_image'
           case 'update_image_properties':
             return 'google_slides_update_image_properties'
           case 'update_shape_properties':

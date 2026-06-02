@@ -1092,9 +1092,7 @@ function AuthSelector({
 
     const sessionEmail = session.user.email.toLowerCase().trim()
     const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
-    const normalizedInvalidEmails = invalidEmailItems.map((item) =>
-      item.value.toLowerCase().trim()
-    )
+    const normalizedInvalidEmails = invalidEmailItems.map((item) => item.value.toLowerCase().trim())
     const normalizedEmailItems = emailItems.map((item) => item.value.toLowerCase().trim())
 
     const alreadyInList =

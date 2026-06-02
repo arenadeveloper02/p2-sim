@@ -109,10 +109,7 @@ export function ToolCredentialSelector({
     workflowId: effectiveWorkflowId,
   })
 
-  const credentials = useMemo(
-    () => rawCredentials,
-    [rawCredentials]
-  )
+  const credentials = useMemo(() => rawCredentials, [rawCredentials])
 
   const selectedCredential = useMemo(
     () => rawCredentials.find((cred) => cred.id === selectedId),

@@ -3,10 +3,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { Zap } from 'lucide-react'
-import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
-import { History, Plus } from 'lucide-react'
+import { History, Plus, Zap } from 'lucide-react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
@@ -76,13 +75,13 @@ import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]
 import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
 import { getWorkflowLockToggleIds } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import { useDeleteWorkflow, useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
-import { useDeploymentInfo } from '@/hooks/queries/deployments'
 import { useCopilotChatSelection } from '@/hooks/queries/copilot-chat-selection'
 import {
   type CopilotChatListItem,
   copilotChatsKeys,
   useCopilotChats,
 } from '@/hooks/queries/copilot-chats'
+import { useDeploymentInfo } from '@/hooks/queries/deployments'
 import { useFolderMap } from '@/hooks/queries/folders'
 import { isWorkflowEffectivelyLocked } from '@/hooks/queries/utils/folder-tree'
 import { useDuplicateWorkflowMutation, useWorkflowMap } from '@/hooks/queries/workflows'

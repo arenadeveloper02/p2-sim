@@ -174,7 +174,7 @@ const MARKDOWN_COMPONENTS = {
       return (
         <a
           href={href}
-          className='not-prose block my-4'
+          className='not-prose my-4 block'
           target='_blank'
           rel='noopener noreferrer'
           aria-label={imageAlt}

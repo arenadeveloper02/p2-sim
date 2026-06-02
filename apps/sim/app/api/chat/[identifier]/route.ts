@@ -10,14 +10,14 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { deployedChatPostContract, goldenQueriesSchema } from '@/lib/api/contracts/chats'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
 import {
   toPersistedChatAttachment,
   updateExecutionHistoryData,
 } from '@/lib/chat/history-persistence'
-import { deployedChatPostContract, goldenQueriesSchema } from '@/lib/api/contracts/chats'
-import { parseRequest } from '@/lib/api/server'
 import { validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -124,7 +124,6 @@ interface ChatConfigSource {
   userWorkspaceIds?: unknown
 }
 
-
 function toChatConfigResponse(deployment: ChatConfigSource) {
   return {
     id: deployment.id,
@@ -137,7 +136,6 @@ function toChatConfigResponse(deployment: ChatConfigSource) {
     userWorkspaceIds: deployment.userWorkspaceIds,
   }
 }
-
 
 const sanitizeGoldenQueries = (queries?: Array<{ id?: string; query: string }>) => {
   if (!Array.isArray(queries)) return []

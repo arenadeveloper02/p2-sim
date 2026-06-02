@@ -446,8 +446,7 @@ export class ExecutionEngine {
       return
     }
 
-    const loopId =
-      node.metadata.subflowType === 'loop' ? node.metadata.subflowId : undefined
+    const loopId = node.metadata.subflowType === 'loop' ? node.metadata.subflowId : undefined
 
     if (this.stoppedEarlyFlag && this.responseOutputLocked) {
       // Workflow already ended via Response block. Skip state persistence (setBlockOutput),
@@ -620,8 +619,6 @@ export class ExecutionEngine {
     // For Response blocks inside loops, process outgoing edges normally
     // Response blocks should have edges to sentinel end (they're terminal nodes)
     const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false)
-
-
 
     // If this is a terminal block inside a loop, ensure the loop's sentinel end gets triggered
     // Terminal blocks (Response blocks or blocks with no outgoing edges) indicate iteration completion

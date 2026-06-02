@@ -27,6 +27,7 @@ import { getActiveWorkflowSearchHighlight } from '@/app/workspace/[workspaceId]/
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
+import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 import {
   getLinkedinProfileSectionComboboxOptions,
   getLinkedinProfileSectionLabel,
@@ -35,7 +36,6 @@ import {
   getLinkedinSearchFilterComboboxOptions,
   getLinkedinSearchFilterLabel,
 } from '@/tools/unipile/linkedin_search_form'
-import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 
 interface Field {
   id: string

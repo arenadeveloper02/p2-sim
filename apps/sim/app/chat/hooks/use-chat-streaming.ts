@@ -3,12 +3,12 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import {
   type AssistantChatFile as ChatFile,
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
+import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import type { ChatMessage } from '@/app/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
 import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
@@ -495,7 +495,9 @@ export function useChatStreaming() {
                           liked: null,
                           files: extractedFiles.length > 0 ? extractedFiles : undefined,
                           generatedImages:
-                            resolvedGeneratedImages.length > 0 ? resolvedGeneratedImages : undefined,
+                            resolvedGeneratedImages.length > 0
+                              ? resolvedGeneratedImages
+                              : undefined,
                           knowledgeResults: pendingKnowledgeResults,
                         }
                       : msg

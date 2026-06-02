@@ -4,8 +4,8 @@ import {
   getAllOAuthServices,
   getCanonicalScopesForProvider,
   getMissingRequiredScopes,
-  getRequiredScopesForCredential,
   getProviderIdFromServiceId,
+  getRequiredScopesForCredential,
   getScopesForService,
   getServiceByProviderAndId,
   getServiceConfigByProviderId,
@@ -607,10 +607,9 @@ describe('getScopesForService', () => {
 
 describe('getRequiredScopesForCredential', () => {
   it.concurrent('uses zoom-admin canonical scopes when credential provider is zoom-admin', () => {
-    const scopes = getRequiredScopesForCredential(
-      { provider: 'zoom-admin' },
-      ['meeting:write:meeting']
-    )
+    const scopes = getRequiredScopesForCredential({ provider: 'zoom-admin' }, [
+      'meeting:write:meeting',
+    ])
 
     expect(scopes).toContain('cloud_recording:read:list_account_recordings:admin')
     expect(scopes).not.toContain('meeting:write:meeting')

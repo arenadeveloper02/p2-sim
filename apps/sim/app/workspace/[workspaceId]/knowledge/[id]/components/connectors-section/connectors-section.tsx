@@ -346,7 +346,9 @@ function ConnectorCard({
   })
 
   useCredentialRefreshTriggers(refetchCredentials, providerId ?? '', workspaceId)
-  const selectedCredential = credentials?.find((credential) => credential.id === connector.credentialId)
+  const selectedCredential = credentials?.find(
+    (credential) => credential.id === connector.credentialId
+  )
   const selectedCredentialProvider = selectedCredential?.provider ?? providerId
   const reauthorizeServiceId = selectedCredential?.provider ?? serviceId
   const reauthorizeRequiredScopes = selectedCredentialProvider

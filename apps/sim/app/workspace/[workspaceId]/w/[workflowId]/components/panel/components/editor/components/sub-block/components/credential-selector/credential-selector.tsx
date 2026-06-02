@@ -144,10 +144,7 @@ export function CredentialSelector({
     [rawCredentials, isTriggerMode]
   )
 
-  const credentials = useMemo(
-    () => selectionPool,
-    [selectionPool]
-  )
+  const credentials = useMemo(() => selectionPool, [selectionPool])
 
   const selectedCredential = useMemo(
     () => selectionPool.find((cred) => cred.id === selectedId),
@@ -382,7 +379,7 @@ export function CredentialSelector({
   const reauthorizeProvider = selectedCredentialProvider
   const reauthorizeServiceId = selectedCredential?.provider ?? serviceId
   const reauthorizeRequiredScopes = getCanonicalScopesForProvider(reauthorizeProvider)
-  
+
   const workflowSearchHighlight = getWorkflowSearchLabelHighlight({
     activeSearchTarget,
     subBlockId: subBlock.id,

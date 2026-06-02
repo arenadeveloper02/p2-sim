@@ -8,11 +8,11 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
-import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
 import {
   compileDocumentIfNeeded,
   getWorkspaceIdForCompile,
 } from '@/lib/uploads/utils/compile-document'
+import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
 import { canAccessAgentGeneratedImageViaDeployedChat } from '@/app/api/chat/utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
 import {

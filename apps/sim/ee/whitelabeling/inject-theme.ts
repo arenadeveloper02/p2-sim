@@ -78,10 +78,9 @@ export function generateThemeCSS(): string {
     cssVars.push(`--brand-link-hover: ${accentHoverColor};`)
     cssVars.push(`--brand-accent-hover: ${accentHoverColor};`)
   }
-  
+
   if (process.env.NEXT_PUBLIC_CUSTOM_CSS_URL) {
     cssVars.push('--brand-agent: var(--brand);')
-    
   }
 
   if (process.env.NEXT_PUBLIC_BRAND_BACKGROUND_COLOR) {

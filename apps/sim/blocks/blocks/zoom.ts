@@ -1,11 +1,11 @@
 import { ZoomIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
+import type { SubBlockCondition } from '@/lib/workflows/subblocks/visibility'
 import {
   ADMIN_WORKSPACE_ONLY_TOOL_IDS,
   isAdminWorkspace,
   resolveWorkspaceIdForAdminCheck,
 } from '@/lib/workspaces/is-admin-workspace'
-import type { SubBlockCondition } from '@/lib/workflows/subblocks/visibility'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { ZoomResponse } from '@/tools/zoom/types'
@@ -167,7 +167,6 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       type: 'short-input',
       canonicalParamId: 'meetingId',
       placeholder: 'Enter meeting ID',
-      dependsOn: ['credential'],
       mode: 'advanced',
       required: true,
       dependsOn: ['credential', 'manualCredential'],

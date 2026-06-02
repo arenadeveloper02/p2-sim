@@ -133,7 +133,7 @@ export function SelectorCombobox({
     [setStoreValue, onOptionChange, readOnly, disabled]
   )
 
-  const showClearButton = clearable &&Boolean(activeValue) && !disabled && !readOnly
+  const showClearButton = clearable && Boolean(activeValue) && !disabled && !readOnly
   const displayValue = allowSearch ? inputValue : selectedLabel
   const workflowSearchHighlight = getWorkflowSearchLabelHighlight({
     activeSearchTarget,

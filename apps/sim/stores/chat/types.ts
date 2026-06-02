@@ -1,5 +1,5 @@
-import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
+import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 
 /**
  * Position interface for floating chat

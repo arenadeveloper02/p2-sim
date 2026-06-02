@@ -581,7 +581,9 @@ export function buildMimeMessage(params: BuildMimeMessageParams): string {
     for (const attachment of attachments) {
       messageParts.push(`--${mixedBoundary}`)
       messageParts.push(`Content-Type: ${formatAttachmentContentType(attachment.mimeType)}`)
-      messageParts.push(`Content-Disposition: attachment; ${encodeAttachmentFilename(attachment.filename)}`)
+      messageParts.push(
+        `Content-Disposition: attachment; ${encodeAttachmentFilename(attachment.filename)}`
+      )
       messageParts.push('Content-Transfer-Encoding: base64')
       messageParts.push('')
       messageParts.push(wrapBase64Lines(attachment.content.toString('base64')))

@@ -32,7 +32,7 @@ import { recordUsage } from '@/lib/billing/core/record-usage-wrapper'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
 import { env, envNumber } from '@/lib/core/config/env'
-import { getCostMultiplier, isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
+import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
 import { processDocument } from '@/lib/knowledge/documents/document-processor'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
 import { getEmbeddingModelInfo } from '@/lib/knowledge/embedding-models'
@@ -97,7 +97,7 @@ async function assertKnowledgeBaseFileUrlsOwnership(
     ...new Set(
       fileUrls
         .map((url) => getKnowledgeBaseStorageKey(url))
-        .filter((key): key is string => key !== null && key.startsWith('kb/'))
+        .filter((key): key is string => key?.startsWith('kb/'))
     ),
   ]
   if (keys.length === 0) {
@@ -769,12 +769,7 @@ export async function processDocumentAsync(
 
     if (!embeddingIsBYOK && totalEmbeddingTokens > 0 && billingUserId) {
       try {
-        const { total: cost } = calculateCost(
-          embeddingPricingId,
-          totalEmbeddingTokens,
-          0,
-          false
-        )
+        const { total: cost } = calculateCost(embeddingPricingId, totalEmbeddingTokens, 0, false)
         if (cost > 0) {
           await recordUsage({
             userId: billingUserId,
@@ -1972,7 +1967,7 @@ export async function deleteDocumentStorageFiles(
     ...new Set(
       entries
         .map((entry) => entry.storageKey)
-        .filter((key): key is string => key !== null && key.startsWith('kb/'))
+        .filter((key): key is string => key?.startsWith('kb/'))
     ),
   ]
   const ownerByKey = new Map<string, string | null>()

@@ -329,7 +329,7 @@ export class VariableResolver {
           ? raw
           : this.resolveTemplate(ctx, currentNodeId, value, loopScope, block, options)
       }
-      return this.resolveTemplate(ctx, currentNodeId, value, loopScope, block,options)
+      return this.resolveTemplate(ctx, currentNodeId, value, loopScope, block, options)
     }
     return value
   }

@@ -440,19 +440,6 @@ export const ExaBlock: BlockConfig<ExaResponse> = {
     type: { type: 'string', description: 'Search type' },
     includeDomains: { type: 'string', description: 'Include domains filter' },
     excludeDomains: { type: 'string', description: 'Exclude domains filter' },
-    startCrawlDate: {
-      type: 'string',
-      description: 'ISO 8601 crawl lower bound (Exa startCrawlDate)',
-    },
-    endCrawlDate: { type: 'string', description: 'ISO 8601 crawl upper bound (Exa endCrawlDate)' },
-    startPublishedDate: {
-      type: 'string',
-      description: 'ISO 8601 published-date lower bound (Exa startPublishedDate)',
-    },
-    endPublishedDate: {
-      type: 'string',
-      description: 'ISO 8601 published-date upper bound (Exa endPublishedDate)',
-    },
     category: { type: 'string', description: 'Category filter' },
     text: { type: 'boolean', description: 'Include text content' },
     highlights: { type: 'boolean', description: 'Include highlights' },

@@ -875,7 +875,7 @@ export class LoggingSession {
           chatId,
           initialInput,
           deploymentVersionId,
-          workflowState
+          workflowState,
         } = params
         this.trigger = createTriggerObject(this.triggerType, triggerData)
         this.correlation = triggerData?.correlation

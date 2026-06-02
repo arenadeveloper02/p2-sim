@@ -698,7 +698,7 @@ async function authorizeFileAccess(
 
 //   return {}
 // }
- /* Guard helper for tool routes that download user files from storage.
+/* Guard helper for tool routes that download user files from storage.
  *
  * Validates that `key` is a non-empty string, that `userId` is present, and
  * that the authenticated user owns the file. Returns a 404 `NextResponse` on

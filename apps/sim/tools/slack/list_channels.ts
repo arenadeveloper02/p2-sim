@@ -70,13 +70,6 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
         type: 'string',
         required: false,
         visibility: 'user-or-llm',
-        description:
-          'Pagination cursor from a previous response (`output.cursor`) to fetch the next page',
-      },
-      cursor: {
-        type: 'string',
-        required: false,
-        visibility: 'user-or-llm',
         description: 'Pagination cursor from a previous response.next_cursor',
       },
     },

@@ -185,30 +185,29 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
       )
     },
 
-  inlineCode: ({ children }: { children?: React.ReactNode }) => (
-    <code className='rounded bg-gray-200 px-1 py-0.5 font-mono text-gray-800 text-inherit dark:bg-gray-700 dark:text-gray-200'>
-      {children}
-    </code>
-  ),
+    inlineCode: ({ children }: { children?: React.ReactNode }) => (
+      <code className='rounded bg-gray-200 px-1 py-0.5 font-mono text-gray-800 text-inherit dark:bg-gray-700 dark:text-gray-200'>
+        {children}
+      </code>
+    ),
 
-  blockquote: ({ children }: React.HTMLAttributes<HTMLQuoteElement>) => (
-    <blockquote className='my-4 break-words border-[var(--divider)] border-l-2 pl-4 font-sans text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
-      {children}
-    </blockquote>
-  ),
+    blockquote: ({ children }: React.HTMLAttributes<HTMLQuoteElement>) => (
+      <blockquote className='my-4 break-words border-[var(--divider)] border-l-2 pl-4 font-sans text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
+        {children}
+      </blockquote>
+    ),
 
-  hr: () => <hr className='my-8 border-gray-500/[.07] border-t dark:border-gray-400/[.07]' />,
+    hr: () => <hr className='my-8 border-gray-500/[.07] border-t dark:border-gray-400/[.07]' />,
 
-  a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <LinkWithPreview href={href || '#'} {...props}>
-      {children}
-    </LinkWithPreview>
-  ),
+    a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+      <LinkWithPreview href={href || '#'} {...props}>
+        {children}
+      </LinkWithPreview>
+    ),
 
-  table: ({ children }: React.TableHTMLAttributes<HTMLTableElement>) => (
-    <div className='my-4 w-full overflow-x-auto'>
-      <table className='min-w-full table-auto border border-gray-300 font-sans text-sm dark:border-gray-700'>
-        
+    table: ({ children }: React.TableHTMLAttributes<HTMLTableElement>) => (
+      <div className='my-4 w-full overflow-x-auto'>
+        <table className='min-w-full table-auto border border-gray-300 font-sans text-sm dark:border-gray-700'>
           {children}
         </table>
       </div>

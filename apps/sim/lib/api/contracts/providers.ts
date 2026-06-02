@@ -36,7 +36,6 @@ export const basetenProviderModelsQuerySchema = z.object({
   workspaceId: z.string().min(1).optional(),
 })
 
-
 export const openRouterUpstreamResponseSchema = z.object({
   data: z
     .array(

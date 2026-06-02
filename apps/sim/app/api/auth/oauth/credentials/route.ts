@@ -20,7 +20,6 @@ export const dynamic = 'force-dynamic'
 
 const logger = createLogger('OAuthCredentialsAPI')
 
-
 function getProviderIdsForQuery(providerId: string): string[] {
   if (providerId === 'zoom') {
     return ['zoom', 'zoom-admin']

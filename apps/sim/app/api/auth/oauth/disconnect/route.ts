@@ -9,12 +9,12 @@ import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { deleteCredential } from '@/lib/credentials/deletion'
 import { UnipileDeleteAccountError } from '@/lib/unipile/delete-account'
 import {
   listAccountsToDisconnect,
   unlinkUnipileAccountsFromProvider,
 } from '@/lib/unipile/disconnect-accounts'
-import { deleteCredential } from '@/lib/credentials/deletion'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 
 export const dynamic = 'force-dynamic'
@@ -68,7 +68,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     })
 
     await unlinkUnipileAccountsFromProvider(accountsToRemove)
-
 
     // Delete credentials before their accounts so deleteCredential can clear
     // stored references first. Otherwise FK CASCADE would orphan them silently.

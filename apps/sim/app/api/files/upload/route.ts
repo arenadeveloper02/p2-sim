@@ -28,11 +28,11 @@ import {
   validateFileType,
 } from '@/lib/uploads/utils/validation'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { createErrorResponse, InvalidRequestError } from '@/app/api/files/utils'
 import {
   IMAGE_FUSION_ALLOWED_EXTENSIONS,
   validateImageFusionFileExtension,
 } from '@/app/api/files/validators/image-fusion'
-import { createErrorResponse, InvalidRequestError } from '@/app/api/files/utils'
 
 const ALLOWED_EXTENSIONS = new Set<string>(SUPPORTED_ATTACHMENT_EXTENSIONS)
 const MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
@@ -102,7 +102,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
     const formFields = formFieldsResult.data
-    const { workflowId, executionId, workspaceId, context: contextParam, uploadContext } = formFields
+    const {
+      workflowId,
+      executionId,
+      workspaceId,
+      context: contextParam,
+      uploadContext,
+    } = formFields
 
     // Context must be explicitly provided
     if (!contextParam) {

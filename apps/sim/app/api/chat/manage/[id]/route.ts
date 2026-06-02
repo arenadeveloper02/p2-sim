@@ -22,7 +22,6 @@ export const maxDuration = 120
 
 const logger = createLogger('ChatDetailAPI')
 
-
 const sanitizeGoldenQueries = (queries?: string[]) => {
   if (!Array.isArray(queries)) return []
   return queries.map((query) => query.trim()).filter((query) => query.length > 0)
@@ -200,10 +199,10 @@ export const PATCH = withRouteHandler(
       if (description !== undefined) updateData.description = description
       // if (customizations) updateData.customizations = customizations
       const goldenQueries = sanitizeGoldenQueries(customizations?.goldenQueries)
-        if (customizations) {
-          const { goldenQueries: _goldenQueries, ...restCustomizations } = customizations
-          updateData.customizations = restCustomizations
-        }
+      if (customizations) {
+        const { goldenQueries: _goldenQueries, ...restCustomizations } = customizations
+        updateData.customizations = restCustomizations
+      }
 
       if (department !== undefined) updateData.department = department
 

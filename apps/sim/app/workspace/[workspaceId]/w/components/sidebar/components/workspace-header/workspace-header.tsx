@@ -208,7 +208,7 @@ function WorkspaceHeaderImpl({
   //   ? null
   //   : (activeWorkspaceFull?.inviteDisabledReason ?? null)
   const inviteButtonDisabled = !inviteMembersEnabled && !inviteUpgradeRequired
-  const inviteDisabledReason = false;
+  const inviteDisabledReason = false
 
   const handleInviteClick = useCallback(() => {
     // if (isInvitationsDisabled) return
@@ -689,22 +689,24 @@ function WorkspaceHeaderImpl({
                     </div>
                   </DropdownMenuGroup>
 
-                  {isPlatformAdmin && <div className='mt-1 flex flex-col gap-0.5'>
-                    <button
-                      type='button'
-                      className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-hover)] disabled:pointer-events-none disabled:opacity-50'
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setIsWorkspaceMenuOpen(false)
-                        setIsCreateModalOpen(true)
-                      }}
-                      disabled={isCreatingWorkspace || !canCreateWorkspace}
-                      title={createWorkspaceDisabledReason ?? undefined}
-                    >
-                      <Plus className='size-[14px] shrink-0 text-[var(--text-icon)]' />
-                      Create new workspace
-                    </button>
-                  </div>}
+                  {isPlatformAdmin && (
+                    <div className='mt-1 flex flex-col gap-0.5'>
+                      <button
+                        type='button'
+                        className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-hover)] disabled:pointer-events-none disabled:opacity-50'
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setIsWorkspaceMenuOpen(false)
+                          setIsCreateModalOpen(true)
+                        }}
+                        disabled={isCreatingWorkspace || !canCreateWorkspace}
+                        title={createWorkspaceDisabledReason ?? undefined}
+                      >
+                        <Plus className='size-[14px] shrink-0 text-[var(--text-icon)]' />
+                        Create new workspace
+                      </button>
+                    </div>
+                  )}
 
                   {!isInvitationsDisabled && (
                     <>

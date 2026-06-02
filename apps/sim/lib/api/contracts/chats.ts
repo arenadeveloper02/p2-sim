@@ -141,17 +141,18 @@ export const goldenQueriesSchema = z.object({
   deleteMode: z.enum(['hard', 'soft']).optional(),
 })
 
-export const deployedChatFileSchema = z.object({
-  name: z.string().min(1, 'File name is required'),
-  type: z.string().min(1, 'File type is required'),
-  size: z.number().positive('File size must be positive'),
-  data: z.string().min(1, 'File data is required'),
-  url: z.string().optional(),
-  lastModified: z.number().optional(),
-})
-.refine((file) => Boolean(file.data?.trim() || file.url?.trim()), {
-  message: 'File data or url is required',
-})
+export const deployedChatFileSchema = z
+  .object({
+    name: z.string().min(1, 'File name is required'),
+    type: z.string().min(1, 'File type is required'),
+    size: z.number().positive('File size must be positive'),
+    data: z.string().min(1, 'File data is required'),
+    url: z.string().optional(),
+    lastModified: z.number().optional(),
+  })
+  .refine((file) => Boolean(file.data?.trim() || file.url?.trim()), {
+    message: 'File data or url is required',
+  })
 
 export const deployedChatPostBodySchema = z.object({
   input: z.string().optional(),
