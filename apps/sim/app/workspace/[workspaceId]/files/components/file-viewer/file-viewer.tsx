@@ -5,6 +5,7 @@ import {
   type ReactElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -1366,6 +1367,7 @@ function shouldSuppressStreamingDocumentError(message: string): boolean {
     lower.includes('unexpected end') ||
     lower.includes('unexpected eof') ||
     lower.includes('invalid or unexpected token') ||
+    lower.includes('is not defined') ||
     lower.includes('end of central directory') ||
     lower.includes('corrupted zip') ||
     lower.includes('end of data reached')
@@ -1419,6 +1421,13 @@ const DocxPreview = memo(function DocxPreview({
       containerRef.current.innerHTML = ''
     }
   }, [file.id, file.key])
+
+  /** Clear streaming failures before paint so the static preview container can mount. */
+  useLayoutEffect(() => {
+    if (streamingContent === undefined) {
+      setRenderError(null)
+    }
+  }, [streamingContent])
 
   useEffect(() => {
     if (!containerRef.current || !fileData || streamingContent !== undefined) return
@@ -1533,11 +1542,11 @@ const DocxPreview = memo(function DocxPreview({
   }, [streamingContent, workspaceId])
 
   const error =
-    hasRenderedPreview && streamingContent !== undefined
-      ? null
-      : streamingContent !== undefined
-        ? renderError
-        : resolvePreviewError(fetchError, renderError)
+    streamingContent !== undefined
+      ? hasRenderedPreview
+        ? null
+        : renderError
+      : resolvePreviewError(fetchError, renderError)
   if (error) return <PreviewError label='document' error={error} />
   const showSkeleton =
     !hasRenderedPreview &&
@@ -1674,6 +1683,12 @@ function PptxPreview({
       message.includes('SyntaxError: Unexpected end of input')
     )
   }
+
+  useLayoutEffect(() => {
+    if (streamingContent === undefined) {
+      setRenderError(null)
+    }
+  }, [streamingContent])
 
   // Streaming preview: only re-triggers when the streaming source code or
   // workspace changes. Isolated from fileData/dataUpdatedAt so that file-list
