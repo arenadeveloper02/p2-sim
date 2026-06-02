@@ -47,6 +47,7 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Create Shape', id: 'create_shape' },
         { label: 'Insert Text', id: 'insert_text' },
         { label: 'Get Template Schema', id: 'get_template_schema' },
+        { label: 'Get Presentation Icons', id: 'get_presentation_icons' },
       ],
       value: () => 'read',
     },
@@ -851,6 +852,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       'google_slides_create_shape',
       'google_slides_insert_text',
       'google_slides_get_template_schema',
+      'google_slides_get_presentation_icons',
       'google_slides_create_from_template',
     ],
     config: {
@@ -896,6 +898,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_insert_text'
           case 'get_template_schema':
             return 'google_slides_get_template_schema'
+          case 'get_presentation_icons':
+            return 'google_slides_get_presentation_icons'
           default:
             throw new Error(`Invalid Google Slides operation: ${params.operation}`)
         }
@@ -1270,6 +1274,14 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       type: 'json',
       description: 'Full presentation template schema (slides, blocks, shapeIds)',
     },
+    // Get presentation icons operation
+    icons: {
+      type: 'json',
+      description: 'Presentation icon catalog entries (id, label, category, tags, pngUrl)',
+    },
+    count: { type: 'number', description: 'Number of icons returned' },
+    baseUrl: { type: 'string', description: 'Base URL for presentation icon assets' },
+    version: { type: 'string', description: 'Icon library version' },
     // Create from template operation
     slidesCreated: { type: 'number', description: 'Number of slides created' },
   },

@@ -8,6 +8,7 @@ import { deleteObjectTool } from '@/tools/google_slides/delete_object'
 import { duplicateTool } from '@/tools/google_slides/duplicate'
 import { duplicateObjectTool } from '@/tools/google_slides/duplicate_object'
 import { getPageTool } from '@/tools/google_slides/get_page'
+import { getPresentationIconsTool } from '@/tools/google_slides/get_presentation_icons'
 import { getTemplateSchemaTool } from '@/tools/google_slides/get_template_schema'
 import { getThumbnailTool } from '@/tools/google_slides/get_thumbnail'
 import { insertTextTool } from '@/tools/google_slides/insert_text'
@@ -32,6 +33,7 @@ export const googleSlidesAddSlideTool = addSlideTool
 export const googleSlidesGetThumbnailTool = getThumbnailTool
 export const googleSlidesAddImageTool = addImageTool
 export const googleSlidesGetPageTool = getPageTool
+export const googleSlidesGetPresentationIconsTool = getPresentationIconsTool
 export const googleSlidesGetTemplateSchemaTool = getTemplateSchemaTool
 export const googleSlidesDeleteObjectTool = deleteObjectTool
 export const googleSlidesDuplicateObjectTool = duplicateObjectTool
