@@ -109,6 +109,7 @@ const STATIC_CONNECT_SRC = [
   'https://api.github.com',
   'https://github.com/*',
   'https://challenges.cloudflare.com',
+  'https://quickchart.io',
   ...(isReactGrabEnabled ? ['https://www.react-grab.com'] : []),
   ...(isDev ? ['ws://localhost:4722'] : []),
   ...(isHosted

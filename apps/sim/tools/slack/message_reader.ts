@@ -83,12 +83,14 @@ export const slackMessageReaderTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description: 'Automatically fetch all pages (max 10 pages, 1000 messages)',
+      default: true,
     },
     includeThreads: {
       type: 'boolean',
       required: false,
       visibility: 'user-or-llm',
       description: 'Include thread replies for messages that have threads',
+      default: true,
     },
     maxThreads: {
       type: 'number',
@@ -120,8 +122,8 @@ export const slackMessageReaderTool: ToolConfig<
         oldest: params.oldest,
         latest: params.latest,
         cursor: params.cursor,
-        autoPaginate: params.autoPaginate,
-        includeThreads: params.includeThreads,
+        autoPaginate: params.autoPaginate ?? true,
+        includeThreads: params.includeThreads ?? true,
         maxThreads: params.maxThreads,
         maxRepliesPerThread: params.maxRepliesPerThread,
       }

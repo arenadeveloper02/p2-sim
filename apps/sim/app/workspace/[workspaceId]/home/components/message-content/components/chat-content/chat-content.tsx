@@ -159,6 +159,36 @@ const MARKDOWN_COMPONENTS = {
     )
   },
   a({ children, href }: { children?: React.ReactNode; href?: string }) {
+    const isQuickChartUrl = (() => {
+      if (!href) return false
+      try {
+        const parsed = new URL(href)
+        return parsed.hostname === 'quickchart.io' && parsed.pathname.startsWith('/chart')
+      } catch {
+        return false
+      }
+    })()
+
+    if (isQuickChartUrl && href) {
+      const imageAlt = extractTextContent(children) || 'Chart preview'
+      return (
+        <a
+          href={href}
+          className='not-prose block my-4'
+          target='_blank'
+          rel='noopener noreferrer'
+          aria-label={imageAlt}
+        >
+          <img
+            src={href}
+            alt={imageAlt}
+            className='h-auto max-w-full rounded-md border border-[var(--divider)] bg-white'
+            loading='lazy'
+          />
+        </a>
+      )
+    }
+
     if (href?.startsWith('#wsres-')) {
       return (
         <a
