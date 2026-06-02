@@ -2,19 +2,21 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import type { RawMessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages'
 import type { Logger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import type { StreamingExecution } from '@/executor/types'
+import { getErrorMessage, toError } from '@sim/utils/errors'
+import type { BlockTokens, IterationToolCall, StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import {
   checkForForcedToolUsage,
   createReadableStreamFromAnthropicStream,
 } from '@/providers/anthropic/utils'
+import { buildAnthropicMessageContent } from '@/providers/attachments'
 import {
   getMaxOutputTokensForModel,
   getThinkingCapability,
   supportsNativeStructuredOutputs,
   supportsTemperature,
 } from '@/providers/models'
+import { enrichLastModelSegment } from '@/providers/trace-enrichment'
 import type { ProviderRequest, ProviderResponse, TimeSegment } from '@/providers/types'
 import { ProviderError } from '@/providers/types'
 import {
@@ -228,9 +230,11 @@ export async function executeAnthropicProviderRequest(
           ],
         })
       } else {
+        const content = buildAnthropicMessageContent(msg.content, msg.files, config.providerId)
         messages.push({
           role: msg.role === 'assistant' ? 'assistant' : 'user',
-          content: msg.content ? [{ type: 'text', text: msg.content }] : [],
+          // double-cast-allowed: shared attachment builder returns Anthropic-compatible content blocks but avoids importing SDK-only union types
+          content: content as unknown as Anthropic.Messages.ContentBlockParam[],
         })
       }
     })
@@ -446,7 +450,7 @@ export async function executeAnthropicProviderRequest(
             timeSegments: [
               {
                 type: 'model',
-                name: 'Streaming response',
+                name: request.model,
                 startTime: providerStartTime,
                 endTime: Date.now(),
                 duration: Date.now() - providerStartTime,
@@ -516,7 +520,7 @@ export async function executeAnthropicProviderRequest(
       const timeSegments: TimeSegment[] = [
         {
           type: 'model',
-          name: 'Initial response',
+          name: request.model,
           startTime: initialCallTime,
           endTime: initialCallTime + firstResponseTime,
           duration: firstResponseTime,
@@ -546,6 +550,11 @@ export async function executeAnthropicProviderRequest(
           }
 
           const toolUses = currentResponse.content.filter((item) => item.type === 'tool_use')
+
+          enrichLastModelSegmentFromAnthropicResponse(timeSegments, currentResponse, textContent, {
+            model: request.model,
+          })
+
           if (!toolUses || toolUses.length === 0) {
             break
           }
@@ -562,7 +571,9 @@ export async function executeAnthropicProviderRequest(
               if (!tool) return null
 
               const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-              const result = await executeTool(toolName, executionParams)
+              const result = await executeTool(toolName, executionParams, {
+                signal: request.abortSignal,
+              })
               const toolCallEndTime = Date.now()
 
               return {
@@ -587,7 +598,7 @@ export async function executeAnthropicProviderRequest(
                 result: {
                   success: false,
                   output: undefined,
-                  error: error instanceof Error ? error.message : 'Tool execution failed',
+                  error: getErrorMessage(error, 'Tool execution failed'),
                 },
                 startTime: toolCallStartTime,
                 endTime: toolCallEndTime,
@@ -622,6 +633,7 @@ export async function executeAnthropicProviderRequest(
               startTime: startTime,
               endTime: endTime,
               duration: duration,
+              toolCallId: toolUse.id,
             })
 
             let resultContent: unknown
@@ -751,7 +763,7 @@ export async function executeAnthropicProviderRequest(
 
           timeSegments.push({
             type: 'model',
-            name: `Model response (iteration ${iterationCount + 1})`,
+            name: request.model,
             startTime: nextModelStartTime,
             endTime: nextModelEndTime,
             duration: thisModelTime,
@@ -767,6 +779,16 @@ export async function executeAnthropicProviderRequest(
           }
 
           iterationCount++
+        }
+
+        if (iterationCount === MAX_TOOL_ITERATIONS) {
+          const trailingText = currentResponse.content
+            .filter((item) => item.type === 'text')
+            .map((item) => item.text)
+            .join('\n')
+          enrichLastModelSegmentFromAnthropicResponse(timeSegments, currentResponse, trailingText, {
+            model: request.model,
+          })
         }
       } catch (error) {
         logger.error(`Error in ${providerLabel} request:`, { error })
@@ -930,7 +952,7 @@ export async function executeAnthropicProviderRequest(
     const timeSegments: TimeSegment[] = [
       {
         type: 'model',
-        name: 'Initial response',
+        name: request.model,
         startTime: initialCallTime,
         endTime: initialCallTime + firstResponseTime,
         duration: firstResponseTime,
@@ -960,6 +982,11 @@ export async function executeAnthropicProviderRequest(
         }
 
         const toolUses = currentResponse.content.filter((item) => item.type === 'tool_use')
+
+        enrichLastModelSegmentFromAnthropicResponse(timeSegments, currentResponse, textContent, {
+          model: request.model,
+        })
+
         if (!toolUses || toolUses.length === 0) {
           break
         }
@@ -978,7 +1005,10 @@ export async function executeAnthropicProviderRequest(
             if (!tool) return null
 
             const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-            const result = await executeTool(toolName, executionParams, true)
+            const result = await executeTool(toolName, executionParams, {
+              skipPostProcess: true,
+              signal: request.abortSignal,
+            })
             const toolCallEndTime = Date.now()
 
             return {
@@ -1003,7 +1033,7 @@ export async function executeAnthropicProviderRequest(
               result: {
                 success: false,
                 output: undefined,
-                error: error instanceof Error ? error.message : 'Tool execution failed',
+                error: getErrorMessage(error, 'Tool execution failed'),
               },
               startTime: toolCallStartTime,
               endTime: toolCallEndTime,
@@ -1038,6 +1068,7 @@ export async function executeAnthropicProviderRequest(
             startTime: startTime,
             endTime: endTime,
             duration: duration,
+            toolCallId: toolUseId,
           })
 
           let resultContent: unknown
@@ -1165,7 +1196,7 @@ export async function executeAnthropicProviderRequest(
 
         timeSegments.push({
           type: 'model',
-          name: `Model response (iteration ${iterationCount + 1})`,
+          name: request.model,
           startTime: nextModelStartTime,
           endTime: nextModelEndTime,
           duration: thisModelTime,
@@ -1190,6 +1221,16 @@ export async function executeAnthropicProviderRequest(
         }
 
         iterationCount++
+      }
+
+      if (iterationCount === MAX_TOOL_ITERATIONS) {
+        const trailingText = currentResponse.content
+          .filter((item) => item.type === 'text')
+          .map((item) => item.text)
+          .join('\n')
+        enrichLastModelSegmentFromAnthropicResponse(timeSegments, currentResponse, trailingText, {
+          model: request.model,
+        })
       }
     } catch (error) {
       logger.error(`Error in ${providerLabel} request:`, { error })
@@ -1334,5 +1375,89 @@ export async function executeAnthropicProviderRequest(
       endTime: providerEndTimeISO,
       duration: totalDuration,
     })
+  }
+}
+
+/**
+ * Enriches the last model segment with content from an Anthropic `Message`:
+ * assistant text, thinking/redacted_thinking blocks, tool_use calls (with IDs),
+ * stop_reason, and per-iteration tokens.
+ */
+function enrichLastModelSegmentFromAnthropicResponse(
+  timeSegments: TimeSegment[],
+  response: Anthropic.Messages.Message,
+  textContent: string,
+  extras?: {
+    model?: string
+    ttft?: number
+    errorType?: string
+    errorMessage?: string
+  }
+): void {
+  const thinkingBlocks = response.content.filter(
+    (item): item is Anthropic.Messages.ThinkingBlock | Anthropic.Messages.RedactedThinkingBlock =>
+      item.type === 'thinking' || item.type === 'redacted_thinking'
+  )
+  const thinkingContent = thinkingBlocks
+    .map((b) => (b.type === 'thinking' ? b.thinking : '[redacted]'))
+    .join('\n\n')
+
+  const toolUseBlocks = response.content.filter(
+    (item): item is Anthropic.Messages.ToolUseBlock => item.type === 'tool_use'
+  )
+  const toolCalls: IterationToolCall[] = toolUseBlocks.map((t) => ({
+    id: t.id,
+    name: t.name,
+    arguments:
+      t.input && typeof t.input === 'object' && !Array.isArray(t.input)
+        ? (t.input as Record<string, unknown>)
+        : {},
+  }))
+
+  const segmentTokens = response.usage ? buildAnthropicSegmentTokens(response.usage) : undefined
+
+  let cost: { input: number; output: number; total: number } | undefined
+  if (
+    extras?.model &&
+    segmentTokens &&
+    typeof segmentTokens.input === 'number' &&
+    typeof segmentTokens.output === 'number'
+  ) {
+    const useCached = (segmentTokens.cacheRead ?? 0) > 0
+    const full = calculateCost(extras.model, segmentTokens.input, segmentTokens.output, useCached)
+    cost = { input: full.input, output: full.output, total: full.total }
+  }
+
+  enrichLastModelSegment(timeSegments, {
+    assistantContent: textContent || undefined,
+    thinkingContent: thinkingContent || undefined,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    finishReason: response.stop_reason ?? undefined,
+    tokens: segmentTokens,
+    cost,
+    provider: 'anthropic',
+    ttft: extras?.ttft,
+    errorType: extras?.errorType,
+    errorMessage: extras?.errorMessage,
+  })
+}
+
+/**
+ * Builds a segment token breakdown from Anthropic usage data, surfacing prompt
+ * cache reads/writes separately and producing a corrected `total` that includes
+ * cache_creation tokens (which Anthropic bills as input tokens but omits from
+ * `input_tokens`).
+ */
+function buildAnthropicSegmentTokens(usage: Anthropic.Messages.Message['usage']): BlockTokens {
+  const input = usage.input_tokens ?? 0
+  const output = usage.output_tokens ?? 0
+  const cacheRead = usage.cache_read_input_tokens ?? 0
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0
+  return {
+    input,
+    output,
+    total: input + output + cacheRead + cacheWrite,
+    ...(cacheRead > 0 && { cacheRead }),
+    ...(cacheWrite > 0 && { cacheWrite }),
   }
 }

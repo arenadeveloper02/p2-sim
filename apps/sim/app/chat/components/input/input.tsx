@@ -8,6 +8,7 @@ import { ArrowUp, Mic, Paperclip, X } from 'lucide-react'
 import { Badge, Tooltip } from '@/components/emcn'
 import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 import { cn } from '@/lib/core/utils/cn'
+import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
@@ -187,6 +188,10 @@ export const ChatInput: React.FC<{
     [handleSubmit]
   )
 
+  const focusTextarea = useCallback(() => {
+    textareaRef.current?.focus()
+  }, [])
+
   const handleContainerClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button')) return
     textareaRef.current?.focus()
@@ -229,7 +234,7 @@ export const ChatInput: React.FC<{
           {uploadErrors.length > 0 && (
             <div className='mb-3 flex flex-col gap-2'>
               {uploadErrors.map((error, idx) => (
-                <Badge key={idx} variant='red' size='lg' dot className='max-w-full'>
+                <Badge key={`${error}-${idx}`} variant='red' size='lg' dot className='max-w-full'>
                   {error}
                 </Badge>
               ))}
@@ -238,7 +243,13 @@ export const ChatInput: React.FC<{
 
           {/* Input container */}
           <div
+            role='group'
+            aria-label='Chat message input'
             onClick={handleContainerClick}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return
+              handleKeyboardActivation(event, focusTextarea)
+            }}
             className={cn(
               'relative z-10 cursor-text rounded-[20px] border border-[var(--border-1)] bg-white px-2.5 py-2',
               isDragOver && 'border-purple-500'
@@ -304,7 +315,7 @@ export const ChatInput: React.FC<{
                 {attachedFiles.map((file) => (
                   <Tooltip.Root key={file.id}>
                     <Tooltip.Trigger asChild>
-                      <div className='group relative h-[56px] w-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--landing-bg)]'>
+                      <div className='group relative size-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--landing-bg)]'>
                         {file.dataUrl ? (
                           <img
                             src={file.dataUrl}
@@ -313,7 +324,7 @@ export const ChatInput: React.FC<{
                           />
                         ) : (
                           <div className='flex h-full w-full flex-col items-center justify-center gap-0.5 text-[var(--landing-text-muted)]'>
-                            <Paperclip className='h-[18px] w-[18px]' />
+                            <Paperclip className='size-[18px]' />
                             <span className='max-w-[48px] truncate px-[2px] text-[9px]'>
                               {file.name.split('.').pop()}
                             </span>
@@ -325,9 +336,9 @@ export const ChatInput: React.FC<{
                             e.stopPropagation()
                             handleRemoveFile(file.id)
                           }}
-                          className='absolute top-[2px] right-[2px] flex h-[16px] w-[16px] items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100'
+                          className='absolute top-[2px] right-[2px] flex size-[16px] items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100'
                         >
-                          <X className='h-[10px] w-[10px] text-white' />
+                          <X className='size-[10px] text-white' />
                         </button>
                       </div>
                     </Tooltip.Trigger>
@@ -347,7 +358,7 @@ export const ChatInput: React.FC<{
               onKeyDown={handleKeyDown}
               placeholder={isDragOver ? 'Drop files here...' : 'Enter a message...'}
               rows={1}
-              className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent px-1 py-1 text-[15px] leading-[24px] caret-black outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--landing-text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
+              className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent p-1 text-[15px] text-[var(--landing-text)] leading-[24px] caret-[var(--landing-text)] outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--landing-text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
             />
 
             {/* Bottom row */}
@@ -360,9 +371,9 @@ export const ChatInput: React.FC<{
                       type='button'
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isStreaming || attachedFiles.length >= 15}
-                      className='flex h-[28px] w-[28px] items-center justify-center rounded-full text-[var(--landing-text-muted)] transition-colors hover:bg-[#F7F7F7] disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-[#303030]'
+                      className='flex size-[28px] items-center justify-center rounded-full text-[var(--landing-text-muted)] transition-colors hover:bg-[#F7F7F7] disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-[#303030]'
                     >
-                      <Paperclip className='h-[16px] w-[16px]' strokeWidth={2} />
+                      <Paperclip className='size-[16px]' strokeWidth={2} />
                     </button>
                   </Tooltip.Trigger>
                   <Tooltip.Content side='top'>
@@ -393,9 +404,9 @@ export const ChatInput: React.FC<{
                         type='button'
                         onClick={onVoiceStart}
                         disabled={isStreaming}
-                        className='flex h-[28px] w-[28px] items-center justify-center rounded-full text-[var(--landing-text-muted)] transition-colors hover:bg-[#F7F7F7] disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-[#303030]'
+                        className='flex size-[28px] items-center justify-center rounded-full text-[var(--landing-text-muted)] transition-colors hover:bg-[#F7F7F7] disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-[#303030]'
                       >
-                        <Mic className='h-[16px] w-[16px]' strokeWidth={2} />
+                        <Mic className='size-[16px]' strokeWidth={2} />
                       </button>
                     </Tooltip.Trigger>
                     <Tooltip.Content side='top'>
@@ -408,11 +419,11 @@ export const ChatInput: React.FC<{
                   <button
                     type='button'
                     onClick={onStopStreaming}
-                    className='flex h-[28px] w-[28px] items-center justify-center rounded-full border-0 bg-[#383838] p-0 transition-colors hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
+                    className='flex size-[28px] items-center justify-center rounded-full border-0 bg-[#383838] p-0 transition-colors hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
                     title='Stop generation'
                   >
                     <svg
-                      className='block h-[14px] w-[14px] fill-white dark:fill-black'
+                      className='block size-[14px] fill-white dark:fill-black'
                       viewBox='0 0 24 24'
                       xmlns='http://www.w3.org/2000/svg'
                     >
@@ -432,7 +443,7 @@ export const ChatInput: React.FC<{
                     )}
                   >
                     <ArrowUp
-                      className='block h-[16px] w-[16px] text-white dark:text-black'
+                      className='block size-[16px] text-white dark:text-black'
                       strokeWidth={2.25}
                     />
                   </button>

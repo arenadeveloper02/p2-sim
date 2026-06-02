@@ -73,6 +73,12 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
         description:
           'Pagination cursor from a previous response (`output.cursor`) to fetch the next page',
       },
+      cursor: {
+        type: 'string',
+        required: false,
+        visibility: 'user-or-llm',
+        description: 'Pagination cursor from a previous response.next_cursor',
+      },
     },
 
     request: {
@@ -102,11 +108,9 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
         const limit = params.limit ? Math.min(Number(params.limit), 200) : 200
         url.searchParams.append('limit', String(limit))
 
-        if (typeof params.cursor === 'string') {
-          const c = params.cursor.trim()
-          if (c) {
-            url.searchParams.append('cursor', c)
-          }
+        const cursor = params.cursor?.trim()
+        if (cursor) {
+          url.searchParams.append('cursor', cursor)
         }
 
         return url.toString()
@@ -170,7 +174,7 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
           ids,
           names,
           count: channels.length,
-          cursor,
+          nextCursor: cursor,
         },
       }
     },
@@ -198,11 +202,10 @@ export const slackListChannelsTool: ToolConfig<SlackListChannelsParams, SlackLis
         type: 'number',
         description: 'Total number of channels returned',
       },
-      cursor: {
+      nextCursor: {
         type: 'string',
+        description: 'Cursor for the next page; null if no more pages',
         optional: true,
-        description:
-          'Cursor for the next page (`response_metadata.next_cursor`); absent or null when there are no more results',
       },
     },
   }

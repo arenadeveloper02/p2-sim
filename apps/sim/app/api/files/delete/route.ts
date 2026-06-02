@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { fileDeleteContract } from '@/lib/api/contracts/storage-transfer'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import type { StorageContext } from '@/lib/uploads/config'
@@ -10,7 +12,6 @@ import { extractStorageKey, inferContextFromKey } from '@/lib/uploads/utils/file
 import { verifyFileAccess } from '@/app/api/files/authorization'
 import {
   createErrorResponse,
-  createOptionsResponse,
   createSuccessResponse,
   extractFilename,
   FileNotFoundError,
@@ -36,8 +37,21 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
 
     const userId = authResult.userId
-    const requestData = await request.json()
-    const { filePath, context } = requestData
+
+    const parsed = await parseRequest(
+      fileDeleteContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) =>
+          createErrorResponse(
+            new InvalidRequestError(getValidationErrorMessage(error, 'Invalid request data'))
+          ),
+      }
+    )
+    if (!parsed.success) return parsed.response
+
+    const { filePath, context } = parsed.data.body
 
     logger.info('File delete request received:', { filePath, context, userId })
 
@@ -104,10 +118,3 @@ function extractStorageKeyFromPath(filePath: string): string {
 
   return extractFilename(filePath)
 }
-
-/**
- * Handle CORS preflight requests
- */
-export const OPTIONS = withRouteHandler(async () => {
-  return createOptionsResponse()
-})

@@ -68,11 +68,9 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
       const limit = params.limit ? Math.min(Number(params.limit), 200) : 100
       url.searchParams.append('limit', String(limit))
 
-      if (typeof params.cursor === 'string') {
-        const c = params.cursor.trim()
-        if (c) {
-          url.searchParams.append('cursor', c)
-        }
+      const cursor = params.cursor?.trim()
+      if (cursor) {
+        url.searchParams.append('cursor', cursor)
       }
 
       return url.toString()
@@ -181,7 +179,7 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
         ids,
         names,
         count: users.length,
-        cursor,
+        nextCursor: cursor,
       },
     }
   },
@@ -209,11 +207,10 @@ export const slackListUsersTool: ToolConfig<SlackListUsersParams, SlackListUsers
       type: 'number',
       description: 'Total number of users returned',
     },
-    cursor: {
+    nextCursor: {
       type: 'string',
+      description: 'Cursor for the next page; null if no more pages',
       optional: true,
-      description:
-        'Cursor for the next page (`response_metadata.next_cursor`); absent or null when there are no more results',
     },
   },
 }

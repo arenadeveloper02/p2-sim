@@ -1,10 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeftRight, Loader2 } from 'lucide-react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
+import { ArrowLeftRight } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Button } from '@/components/emcn'
+import { Button, Loader } from '@/components/emcn'
+import { requestJson } from '@/lib/api/client/request'
+import { oauthAuthorizeParamsContract } from '@/lib/api/contracts/oauth-connections'
 import { signOut, useSession } from '@/lib/auth/auth-client'
 import { AUTH_SUBMIT_BTN } from '@/app/(auth)/components/auth-button-classes'
 
@@ -23,6 +25,14 @@ interface ClientInfo {
 }
 
 export default function OAuthConsentPage() {
+  return (
+    <Suspense fallback={null}>
+      <OAuthConsentInner />
+    </Suspense>
+  )
+}
+
+function OAuthConsentInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { data: session } = useSession()
@@ -44,6 +54,7 @@ export default function OAuthConsentPage() {
       return
     }
 
+    // boundary-raw-fetch: better-auth catch-all OAuth client lookup, no app-level contract
     fetch(`/api/auth/oauth2/client/${encodeURIComponent(clientId)}`, { credentials: 'include' })
       .then(async (res) => {
         if (!res.ok) return
@@ -65,6 +76,7 @@ export default function OAuthConsentPage() {
 
       setSubmitting(true)
       try {
+        // boundary-raw-fetch: better-auth catch-all OAuth consent submission, no app-level contract
         const res = await fetch('/api/auth/oauth2/consent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -100,15 +112,15 @@ export default function OAuthConsentPage() {
   const handleSwitchAccount = useCallback(async () => {
     if (!consentCode) return
 
-    const res = await fetch(`/api/auth/oauth2/authorize-params?consent_code=${consentCode}`, {
-      credentials: 'include',
-    })
-    if (!res.ok) {
+    const params = await requestJson(oauthAuthorizeParamsContract, {
+      query: { consent_code: consentCode },
+    }).catch(() => null)
+
+    if (!params) {
       setError('Unable to switch accounts. Please re-initiate the connection.')
       return
     }
 
-    const params = (await res.json()) as Record<string, string | null>
     const authorizeUrl = new URL('/api/auth/oauth2/authorize', window.location.origin)
     for (const [key, value] of Object.entries(params)) {
       if (value) authorizeUrl.searchParams.set(key, value)
@@ -131,7 +143,7 @@ export default function OAuthConsentPage() {
             Authorize Application
           </h1>
           <p className='font-[430] font-season text-[color-mix(in_srgb,var(--landing-text-subtle)_60%,transparent)] text-lg leading-[125%] tracking-[0.02em]'>
-            Loading application details...
+            Loading application details…
           </p>
         </div>
       </div>
@@ -172,11 +184,11 @@ export default function OAuthConsentPage() {
             className='rounded-[10px]'
           />
         ) : (
-          <div className='flex h-12 w-12 items-center justify-center rounded-[10px] bg-[var(--landing-bg-elevated)] font-medium text-[var(--landing-text-muted)] text-lg'>
+          <div className='flex size-12 items-center justify-center rounded-[10px] bg-[var(--landing-bg-elevated)] font-medium text-[var(--landing-text-muted)] text-lg'>
             {(clientName ?? '?').charAt(0).toUpperCase()}
           </div>
         )}
-        <ArrowLeftRight className='h-5 w-5 text-[var(--landing-text-muted)]' />
+        <ArrowLeftRight className='size-5 text-[var(--landing-text-muted)]' />
         <Image
           src='/new/logo/colorized-bg.svg'
           alt='Sim'
@@ -208,7 +220,7 @@ export default function OAuthConsentPage() {
               unoptimized
             />
           ) : (
-            <div className='flex h-8 w-8 items-center justify-center rounded-full bg-[var(--landing-bg-elevated)] font-medium text-[var(--landing-text-muted)] text-small'>
+            <div className='flex size-8 items-center justify-center rounded-full bg-[var(--landing-bg-elevated)] font-medium text-[var(--landing-text-muted)] text-small'>
               {(session.user.name ?? session.user.email ?? '?').charAt(0).toUpperCase()}
             </div>
           )}
@@ -266,8 +278,8 @@ export default function OAuthConsentPage() {
         >
           {submitting ? (
             <span className='flex items-center gap-2'>
-              <Loader2 className='h-4 w-4 animate-spin' />
-              Authorizing...
+              <Loader className='size-4' animate />
+              Authorizing…
             </span>
           ) : (
             'Allow'

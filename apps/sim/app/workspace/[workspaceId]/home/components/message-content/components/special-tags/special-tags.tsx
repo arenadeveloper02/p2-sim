@@ -1,8 +1,14 @@
 'use client'
 
-import { createElement, useEffect, useMemo, useState } from 'react'
+import { createElement, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { ArrowRight, ChevronDown, Expandable, ExpandableContent } from '@/components/emcn'
+import {
+  ArrowRight,
+  ChevronDown,
+  Expandable,
+  ExpandableContent,
+  SecretReveal,
+} from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { OAUTH_PROVIDERS } from '@/lib/oauth/oauth'
 import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
@@ -15,7 +21,7 @@ import { useTablesList } from '@/hooks/queries/tables'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 
-export interface OptionsItemData {
+interface OptionsItemData {
   title: string
   description: string
 }
@@ -47,9 +53,10 @@ export const CREDENTIAL_TAG_TYPES = [
 export type CredentialTagType = (typeof CREDENTIAL_TAG_TYPES)[number]
 
 export interface CredentialTagData {
-  value: string
+  value?: string
   type: CredentialTagType
   provider?: string
+  redacted?: boolean
 }
 
 export interface MothershipErrorTagData {
@@ -140,12 +147,15 @@ function isUsageUpgradeTagData(value: unknown): value is UsageUpgradeTagData {
 
 function isCredentialTagData(value: unknown): value is CredentialTagData {
   if (!isRecord(value)) return false
-  return (
-    typeof value.value === 'string' &&
-    typeof value.type === 'string' &&
-    (CREDENTIAL_TAG_TYPES as readonly string[]).includes(value.type) &&
-    (value.provider === undefined || typeof value.provider === 'string')
-  )
+  if (
+    typeof value.type !== 'string' ||
+    !(CREDENTIAL_TAG_TYPES as readonly string[]).includes(value.type)
+  ) {
+    return false
+  }
+  if (value.provider !== undefined && typeof value.provider !== 'string') return false
+  if (value.redacted === true) return value.value === undefined || typeof value.value === 'string'
+  return typeof value.value === 'string'
 }
 
 function isMothershipErrorTagData(value: unknown): value is MothershipErrorTagData {
@@ -382,7 +392,7 @@ export function SpecialTags({
 export function PendingTagIndicator() {
   return (
     <div className='flex animate-stream-fade-in items-center gap-2 py-2'>
-      <div className='grid h-[16px] w-[16px] grid-cols-2 gap-[1.5px]'>
+      <div className='grid size-[16px] grid-cols-2 gap-[1.5px]'>
         {THINKING_BLOCKS.map((block, i) => (
           <div
             key={i}
@@ -403,14 +413,10 @@ interface OptionsDisplayProps {
 
 function OptionsDisplay({ data, onSelect }: OptionsDisplayProps) {
   const disabled = !onSelect
-  const [expanded, setExpanded] = useState(!disabled)
+  const [collapsedByUser, setCollapsedByUser] = useState(false)
+  // When interactive (not disabled), always expanded. When disabled, the user can toggle.
+  const expanded = !disabled || !collapsedByUser
   const entries = Object.entries(data)
-
-  useEffect(() => {
-    if (!disabled) {
-      setExpanded(true)
-    }
-  }, [disabled])
 
   if (entries.length === 0) return null
 
@@ -419,7 +425,7 @@ function OptionsDisplay({ data, onSelect }: OptionsDisplayProps) {
       {disabled ? (
         <button
           type='button'
-          onClick={() => setExpanded((prev) => !prev)}
+          onClick={() => setCollapsedByUser((prev) => !prev)}
           aria-expanded={expanded}
           className='flex items-center gap-2'
         >
@@ -452,11 +458,11 @@ function OptionsDisplay({ data, onSelect }: OptionsDisplayProps) {
                     i > 0 && 'border-t'
                   )}
                 >
-                  <div className='flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center'>
+                  <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
                     <span className='font-base text-[var(--text-icon)] text-sm'>{i + 1}</span>
                   </div>
                   <span className='flex-1 font-base text-[var(--text-body)] text-sm'>{title}</span>
-                  <ArrowRight className='h-[16px] w-[16px] shrink-0 text-[var(--text-icon)]' />
+                  <ArrowRight className='size-[16px] shrink-0 text-[var(--text-icon)]' />
                 </button>
               )
             })}
@@ -527,19 +533,19 @@ export function WorkspaceResourceDisplay({
     }
   }, [data.id, data.type, files, knowledgeBases, tables, workflows])
 
-  const context = useMemo(() => toChatMessageContext(data, resource.title), [data, resource.title])
+  const context = toChatMessageContext(data, resource.title)
 
-  const workflowColor = useMemo(() => {
-    if (data.type !== 'workflow') return null
-    return workflows.find((workflow) => workflow.id === data.id)?.color ?? null
-  }, [data.id, data.type, workflows])
+  const workflowColor =
+    data.type === 'workflow'
+      ? (workflows.find((workflow) => workflow.id === data.id)?.color ?? null)
+      : null
 
   const mentionContent = (
     <>
       <ContextMentionIcon
         context={context}
         workflowColor={workflowColor}
-        className='relative top-0.5 h-[12px] w-[12px] flex-shrink-0 text-[var(--text-icon)]'
+        className='relative top-0.5 size-[12px] flex-shrink-0 text-[var(--text-icon)]'
       />
       {resource.title}
     </>
@@ -599,24 +605,30 @@ const LockIcon = (props: { className?: string }) => (
 )
 
 function CredentialDisplay({ data }: { data: CredentialTagData }) {
-  if (data.type !== 'link' || !data.provider) return null
+  if (data.type === 'link') {
+    if (!data.provider) return null
+    const Icon = getCredentialIcon(data.provider) ?? LockIcon
+    return (
+      <a
+        href={data.value}
+        target='_blank'
+        rel='noopener noreferrer'
+        className='flex items-center gap-2 rounded-lg border border-[var(--divider)] px-3 py-2.5 transition-colors hover-hover:bg-[var(--surface-5)]'
+      >
+        {createElement(Icon, { className: 'h-[16px] w-[16px] shrink-0' })}
+        <span className='flex-1 font-base text-[var(--text-body)] text-sm'>
+          Connect {data.provider}
+        </span>
+        <ArrowRight className='size-[16px] shrink-0 text-[var(--text-icon)]' />
+      </a>
+    )
+  }
 
-  const Icon = getCredentialIcon(data.provider) ?? LockIcon
+  if (data.type === 'sim_key') {
+    return <SecretReveal value={data.value} redacted={data.redacted || !data.value} />
+  }
 
-  return (
-    <a
-      href={data.value}
-      target='_blank'
-      rel='noopener noreferrer'
-      className='flex items-center gap-2 rounded-lg border border-[var(--divider)] px-3 py-2.5 transition-colors hover-hover:bg-[var(--surface-5)]'
-    >
-      {createElement(Icon, { className: 'h-[16px] w-[16px] shrink-0' })}
-      <span className='flex-1 font-base text-[var(--text-body)] text-sm'>
-        Connect {data.provider}
-      </span>
-      <ArrowRight className='h-[16px] w-[16px] shrink-0 text-[var(--text-icon)]' />
-    </a>
-  )
+  return null
 }
 
 function MothershipErrorDisplay({ data }: { data: MothershipErrorTagData }) {
@@ -638,7 +650,7 @@ function UsageUpgradeDisplay({ data }: { data: UsageUpgradeTagData }) {
     <div className='rounded-xl border border-amber-300/40 bg-amber-50/50 px-4 py-3 dark:border-amber-500/20 dark:bg-amber-950/20'>
       <div className='flex items-center gap-2'>
         <svg
-          className='h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400'
+          className='size-4 shrink-0 text-amber-600 dark:text-amber-400'
           viewBox='0 0 16 16'
           fill='none'
           xmlns='http://www.w3.org/2000/svg'
@@ -664,7 +676,7 @@ function UsageUpgradeDisplay({ data }: { data: UsageUpgradeTagData }) {
         className='mt-2 inline-flex items-center gap-1 font-[500] text-amber-700 text-small underline decoration-dashed underline-offset-2 transition-colors hover-hover:text-amber-900 dark:text-amber-300 dark:hover-hover:text-amber-200'
       >
         {buttonLabel}
-        <ArrowRight className='h-3 w-3' />
+        <ArrowRight className='size-3' />
       </a>
     </div>
   )

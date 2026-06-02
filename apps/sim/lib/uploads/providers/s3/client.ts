@@ -3,14 +3,21 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { env } from '@/lib/core/config/env'
+import {
+  assertKnownSizeWithinLimit,
+  readNodeStreamToBufferWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { S3_CONFIG, S3_KB_CONFIG } from '@/lib/uploads/config'
 import type {
   S3Config,
@@ -208,7 +215,17 @@ export async function downloadFromS3(key: string): Promise<Buffer>
  */
 export async function downloadFromS3(key: string, customConfig: S3Config): Promise<Buffer>
 
-export async function downloadFromS3(key: string, customConfig?: S3Config): Promise<Buffer> {
+export async function downloadFromS3(
+  key: string,
+  customConfig: S3Config,
+  maxBytes: number
+): Promise<Buffer>
+
+export async function downloadFromS3(
+  key: string,
+  customConfig?: S3Config,
+  maxBytes?: number
+): Promise<Buffer> {
   const config = customConfig || { bucket: S3_CONFIG.bucket, region: S3_CONFIG.region }
 
   const command = new GetObjectCommand({
@@ -221,14 +238,50 @@ export async function downloadFromS3(key: string, customConfig?: S3Config): Prom
       ? getS3ClientForRegion(config.region)
       : getS3Client()
   const response = await s3Client.send(command)
-  const stream = response.Body as any
+  if (maxBytes !== undefined && response.ContentLength !== undefined) {
+    try {
+      assertKnownSizeWithinLimit(response.ContentLength, maxBytes, 'storage download')
+    } catch (error) {
+      const body = response.Body as { destroy?: (error?: Error) => void } | undefined
+      body?.destroy?.(error instanceof Error ? error : undefined)
+      throw error
+    }
+  }
 
-  return new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = []
-    stream.on('data', (chunk: Buffer) => chunks.push(chunk))
-    stream.on('end', () => resolve(Buffer.concat(chunks)))
-    stream.on('error', reject)
+  const stream = response.Body as NodeJS.ReadableStream
+  return readNodeStreamToBufferWithLimit(stream, {
+    maxBytes: maxBytes ?? Number.MAX_SAFE_INTEGER,
+    label: 'storage download',
   })
+}
+
+/**
+ * Check whether an object exists in S3 (and return its size when it does).
+ * Returns null when the object is missing.
+ */
+export async function headS3Object(
+  key: string,
+  customConfig?: S3Config
+): Promise<{ size: number; contentType?: string } | null> {
+  const config = customConfig || { bucket: S3_CONFIG.bucket, region: S3_CONFIG.region }
+
+  try {
+    const response = await getS3Client().send(
+      new HeadObjectCommand({ Bucket: config.bucket, Key: key })
+    )
+    return {
+      size: response.ContentLength ?? 0,
+      contentType: response.ContentType,
+    }
+  } catch (error) {
+    const code = (error as { name?: string; $metadata?: { httpStatusCode?: number } } | null)?.name
+    const status = (error as { $metadata?: { httpStatusCode?: number } } | null)?.$metadata
+      ?.httpStatusCode
+    if (code === 'NotFound' || code === 'NoSuchKey' || status === 404) {
+      return null
+    }
+    throw error
+  }
 }
 
 /**
@@ -259,19 +312,65 @@ export async function deleteFromS3(key: string, customConfig?: S3Config): Promis
   )
 }
 
+/** S3 `DeleteObjects` hard cap. */
+const S3_DELETE_OBJECTS_MAX_KEYS = 1000
+
+/**
+ * Multi-object delete. One HTTP call per 1000 keys; each key still counts
+ * against the per-prefix DELETE rate limit (3500/sec).
+ */
+export async function deleteManyFromS3(
+  keys: string[],
+  customConfig?: S3Config
+): Promise<{ failed: Array<{ key: string; error: string }> }> {
+  const failed: Array<{ key: string; error: string }> = []
+  if (keys.length === 0) return { failed }
+
+  const config = customConfig || { bucket: S3_CONFIG.bucket, region: S3_CONFIG.region }
+  const s3Client = getS3Client()
+
+  for (let i = 0; i < keys.length; i += S3_DELETE_OBJECTS_MAX_KEYS) {
+    const chunk = keys.slice(i, i + S3_DELETE_OBJECTS_MAX_KEYS)
+    try {
+      const response = await s3Client.send(
+        new DeleteObjectsCommand({
+          Bucket: config.bucket,
+          Delete: {
+            Objects: chunk.map((Key) => ({ Key })),
+            Quiet: true,
+          },
+        })
+      )
+      for (const error of response.Errors ?? []) {
+        if (error.Key) {
+          failed.push({
+            key: error.Key,
+            error: error.Message ?? error.Code ?? 'unknown',
+          })
+        }
+      }
+    } catch (error) {
+      const message = getErrorMessage(error)
+      for (const Key of chunk) failed.push({ key: Key, error: message })
+    }
+  }
+
+  return { failed }
+}
+
 /**
  * Initiate a multipart upload for S3
  */
 export async function initiateS3MultipartUpload(
   options: S3MultipartUploadInit
 ): Promise<{ uploadId: string; key: string }> {
-  const { fileName, contentType, customConfig } = options
+  const { fileName, contentType, customConfig, customKey, purpose } = options
 
   const config = customConfig || { bucket: S3_KB_CONFIG.bucket, region: S3_KB_CONFIG.region }
   const s3Client = getS3Client()
 
   const safeFileName = sanitizeFileName(fileName)
-  const uniqueKey = `kb/${generateId()}-${safeFileName}`
+  const uniqueKey = customKey || `kb/${generateId()}-${safeFileName}`
 
   const command = new CreateMultipartUploadCommand({
     Bucket: config.bucket,
@@ -280,7 +379,7 @@ export async function initiateS3MultipartUpload(
     Metadata: {
       originalName: sanitizeFilenameForMetadata(fileName),
       uploadedAt: new Date().toISOString(),
-      purpose: 'knowledge-base',
+      purpose: purpose || 'knowledge-base',
     },
   })
 

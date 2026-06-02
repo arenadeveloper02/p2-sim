@@ -63,7 +63,7 @@ interface ThreadRecord {
 
 interface AudioStreamingOptions {
   voiceId: string
-  chatId?: string
+  chatId: string
   onError: (error: Error) => void
 }
 
@@ -106,7 +106,7 @@ function fileToBase64(file: File): Promise<string> {
 function createAudioStreamHandler(
   streamTextToAudio: (text: string, options: AudioStreamingOptions) => Promise<void>,
   voiceId: string,
-  chatId?: string
+  chatId: string
 ) {
   return async (text: string) => {
     try {
@@ -343,9 +343,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setUserHasScrolled(false)
 
       isUserScrollingRef.current = true
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         isUserScrollingRef.current = false
       }, 1000)
+      return () => clearTimeout(timeoutId)
     }
   }, [isStreamingResponse])
 
@@ -570,6 +571,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         files: payload.files ? `${payload.files.length} files` : undefined,
       })
 
+      // boundary-raw-fetch: deployed chat endpoint returns an SSE stream consumed by handleStreamedResponse via response.body.getReader()
       const response = await fetch(`/api/chat/${identifier}`, {
         method: 'POST',
         headers: {
@@ -596,13 +598,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       }
 
       const shouldPlayAudio = isVoiceInput || isVoiceFirstMode
-      const audioHandler = shouldPlayAudio
-        ? createAudioStreamHandler(
-            streamTextToAudio,
-            DEFAULT_VOICE_SETTINGS.voiceId,
-            chatConfig?.id
-          )
-        : undefined
+      const audioHandler =
+        shouldPlayAudio && chatConfig?.id
+          ? createAudioStreamHandler(
+              streamTextToAudio,
+              DEFAULT_VOICE_SETTINGS.voiceId,
+              chatConfig.id
+            )
+          : undefined
 
       logger.info('Starting to handle streamed response:', { shouldPlayAudio })
       setIsConversationFinished(true)

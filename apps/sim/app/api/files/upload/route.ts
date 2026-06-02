@@ -1,41 +1,41 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { sanitizeFileName } from '@/executor/constants'
 import '@/lib/uploads/core/setup.server'
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
+import {
+  uploadFilesFormFieldsSchema,
+  uploadFilesFormFilesSchema,
+} from '@/lib/api/contracts/storage-transfer'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import {
+  assertKnownSizeWithinLimit,
+  isPayloadSizeLimitError,
+  readFileToBufferWithLimit,
+  readFormDataWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import type { StorageContext } from '@/lib/uploads/config'
 import { generateWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
-import { isImageFileType } from '@/lib/uploads/utils/file-utils'
+import { MAX_WORKSPACE_FORMDATA_FILE_SIZE } from '@/lib/uploads/shared/types'
+import { isImageFileType, resolveFileType } from '@/lib/uploads/utils/file-utils'
 import {
-  SUPPORTED_AUDIO_EXTENSIONS,
-  SUPPORTED_CODE_EXTENSIONS,
-  SUPPORTED_DOCUMENT_EXTENSIONS,
-  SUPPORTED_VIDEO_EXTENSIONS,
+  SUPPORTED_ATTACHMENT_EXTENSIONS,
+  SUPPORTED_IMAGE_EXTENSIONS,
   validateFileType,
 } from '@/lib/uploads/utils/validation'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import {
-  createErrorResponse,
-  createOptionsResponse,
-  InvalidRequestError,
-} from '@/app/api/files/utils'
-import {
   IMAGE_FUSION_ALLOWED_EXTENSIONS,
   validateImageFusionFileExtension,
 } from '@/app/api/files/validators/image-fusion'
+import { createErrorResponse, InvalidRequestError } from '@/app/api/files/utils'
 
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] as const
-
-const ALLOWED_EXTENSIONS = new Set<string>([
-  ...SUPPORTED_DOCUMENT_EXTENSIONS,
-  ...SUPPORTED_CODE_EXTENSIONS,
-  ...IMAGE_EXTENSIONS,
-  ...SUPPORTED_AUDIO_EXTENSIONS,
-  ...SUPPORTED_VIDEO_EXTENSIONS,
-])
+const ALLOWED_EXTENSIONS = new Set<string>(SUPPORTED_ATTACHMENT_EXTENSIONS)
+const MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
 
 function validateFileExtension(filename: string): boolean {
   const extension = filename.split('.').pop()?.toLowerCase()
@@ -75,20 +75,34 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const formData = await request.formData()
+    const formData = await readFormDataWithLimit(request, {
+      maxBytes: MAX_WORKSPACE_FORMDATA_FILE_SIZE + MAX_MULTIPART_OVERHEAD_BYTES,
+      label: 'multipart upload body',
+    })
 
     const rawFiles = formData.getAll('file')
-    const files = rawFiles.filter((f): f is File => f instanceof File)
-
-    if (files.length === 0) {
+    const filesResult = uploadFilesFormFilesSchema.safeParse(rawFiles)
+    if (!filesResult.success) {
       throw new InvalidRequestError('No files provided')
     }
+    const files = filesResult.data
+    const totalFileSize = files.reduce((total, file) => total + file.size, 0)
+    assertKnownSizeWithinLimit(totalFileSize, MAX_WORKSPACE_FORMDATA_FILE_SIZE, 'uploaded files')
 
-    const workflowId = formData.get('workflowId') as string | null
-    const executionId = formData.get('executionId') as string | null
-    const workspaceId = formData.get('workspaceId') as string | null
-    const contextParam = formData.get('context') as string | null
-    const uploadContext = formData.get('uploadContext') as string | null
+    const formFieldsResult = uploadFilesFormFieldsSchema.safeParse({
+      workflowId: formData.get('workflowId'),
+      executionId: formData.get('executionId'),
+      workspaceId: formData.get('workspaceId'),
+      context: formData.get('context'),
+      uploadContext: formData.get('uploadContext'),
+    })
+    if (!formFieldsResult.success) {
+      throw new InvalidRequestError(
+        getValidationErrorMessage(formFieldsResult.error, 'Invalid upload form data')
+      )
+    }
+    const formFields = formFieldsResult.data
+    const { workflowId, executionId, workspaceId, context: contextParam, uploadContext } = formFields
 
     // Context must be explicitly provided
     if (!contextParam) {
@@ -125,8 +139,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
-      const bytes = await file.arrayBuffer()
-      const buffer = Buffer.from(bytes)
+      const buffer = await readFileToBufferWithLimit(file, {
+        maxBytes: MAX_WORKSPACE_FORMDATA_FILE_SIZE,
+        label: 'uploaded file',
+      })
 
       // Handle execution context
       if (context === 'execution') {
@@ -250,8 +266,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           uploadResults.push(userFile)
           continue
         } catch (workspaceError) {
-          const errorMessage =
-            workspaceError instanceof Error ? workspaceError.message : 'Upload failed'
+          const errorMessage = getErrorMessage(workspaceError, 'Upload failed')
           const isDuplicate = errorMessage.includes('already exists')
           const isStorageLimitError =
             errorMessage.includes('Storage limit exceeded') ||
@@ -327,10 +342,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         context === 'profile-pictures' ||
         context === 'workspace-logos'
       ) {
-        if (context !== 'copilot' && !isImageFileType(file.type)) {
-          throw new InvalidRequestError(
-            `Only image files (JPEG, PNG, GIF, WebP, SVG) are allowed for ${context} uploads`
+        if (context !== 'copilot') {
+          const mimeType = file.type
+          const isGenericMime = !mimeType || mimeType === 'application/octet-stream'
+          const extension = originalName.split('.').pop()?.toLowerCase() ?? ''
+          const extensionIsImage = (SUPPORTED_IMAGE_EXTENSIONS as readonly string[]).includes(
+            extension
           )
+          const isImage = isGenericMime ? extensionIsImage : isImageFileType(mimeType)
+          if (!isImage) {
+            throw new InvalidRequestError(`Only image files are allowed for ${context} uploads`)
+          }
         }
 
         if (context === 'workspace-logos') {
@@ -366,6 +388,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         logger.info(`Uploading ${context} file: ${originalName}`)
 
+        const resolvedContentType = resolveFileType({ type: file.type, name: originalName })
+
         const timestamp = Date.now()
         const safeFileName = sanitizeFileName(originalName)
         const storageKey = `${context}/${timestamp}-${safeFileName}`
@@ -384,7 +408,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const fileInfo = await storageService.uploadFile({
           file: buffer,
           fileName: storageKey,
-          contentType: file.type,
+          contentType: resolvedContentType,
           context,
           preserveKey: true,
           customKey: storageKey,
@@ -401,7 +425,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             key: fileInfo.key,
             name: originalName,
             size: buffer.length,
-            type: file.type,
+            type: resolvedContentType,
           },
           directUploadSupported: false,
         }
@@ -422,7 +446,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
               fileName: originalName,
               fileKey: fileInfo.key,
               fileSize: buffer.length,
-              fileType: file.type,
+              fileType: resolvedContentType,
             },
             request,
           })
@@ -450,10 +474,15 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json({ files: uploadResults })
   } catch (error) {
     logger.error('Error in file upload:', error)
+    if (isPayloadSizeLimitError(error)) {
+      return NextResponse.json(
+        {
+          error: 'PayloadSizeLimitError',
+          message: `File exceeds the server upload limit of ${Math.round(error.maxBytes / (1024 * 1024))}MB. Use direct upload for larger workspace files.`,
+        },
+        { status: 413 }
+      )
+    }
     return createErrorResponse(error instanceof Error ? error : new Error('File upload failed'))
   }
-})
-
-export const OPTIONS = withRouteHandler(async () => {
-  return createOptionsResponse()
 })

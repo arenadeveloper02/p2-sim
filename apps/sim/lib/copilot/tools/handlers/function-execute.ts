@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { getTableById, queryRows } from '@/lib/table/service'
 import {
-  downloadWorkspaceFile,
+  fetchWorkspaceFileBuffer,
   findWorkspaceFileRecord,
   getSandboxWorkspaceFilePath,
   listWorkspaceFiles,
@@ -44,7 +44,7 @@ async function resolveInputFiles(
         logger.warn('Total input size limit reached')
         break
       }
-      const buffer = await downloadWorkspaceFile(record)
+      const buffer = await fetchWorkspaceFileBuffer(record)
       totalSize += buffer.length
       const isText = /^text\/|application\/json|application\/xml|application\/csv/.test(
         record.type || ''
@@ -62,11 +62,11 @@ async function resolveInputFiles(
     for (const tableId of inputTables) {
       if (typeof tableId !== 'string') continue
       const table = await getTableById(tableId)
-      if (!table) {
+      if (!table || table.workspaceId !== workspaceId) {
         logger.warn('Input table not found', { tableId })
         continue
       }
-      const rows = await queryRows(tableId, workspaceId, {}, 'copilot-fn-exec')
+      const rows = await queryRows(table, {}, 'copilot-fn-exec')
       if (!rows.rows?.length) continue
 
       const allKeys = new Set<string>()
@@ -143,5 +143,5 @@ export async function executeFunctionExecute(
     enforceCredentialAccess: true,
   }
 
-  return executeAppTool('function_execute', enrichedParams, false)
+  return executeAppTool('function_execute', enrichedParams)
 }

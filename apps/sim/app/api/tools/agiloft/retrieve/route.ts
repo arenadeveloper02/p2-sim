@@ -1,26 +1,22 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { agiloftRetrieveContract } from '@/lib/api/contracts/tools/agiloft'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
-import { validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
+import { secureFetchWithPinnedIP } from '@/lib/core/security/input-validation.server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { agiloftLogin, agiloftLogout, buildRetrieveAttachmentUrl } from '@/tools/agiloft/utils'
+import { buildRetrieveAttachmentUrl } from '@/tools/agiloft/utils'
+import {
+  agiloftLoginPinned,
+  agiloftLogoutPinned,
+  resolveAgiloftInstance,
+} from '@/tools/agiloft/utils.server'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('AgiloftRetrieveAPI')
-
-const AgiloftRetrieveSchema = z.object({
-  instanceUrl: z.string().min(1, 'Instance URL is required'),
-  knowledgeBase: z.string().min(1, 'Knowledge base is required'),
-  login: z.string().min(1, 'Login is required'),
-  password: z.string().min(1, 'Password is required'),
-  table: z.string().min(1, 'Table is required'),
-  recordId: z.string().min(1, 'Record ID is required'),
-  fieldName: z.string().min(1, 'Field name is required'),
-  position: z.string().min(1, 'Position is required'),
-})
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
@@ -36,21 +32,38 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    const body = await request.json()
-    const data = AgiloftRetrieveSchema.parse(body)
+    const parsed = await parseRequest(
+      agiloftRetrieveContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid request data`, { errors: error.issues })
+          return NextResponse.json(
+            {
+              success: false,
+              error: getValidationErrorMessage(error, 'Invalid request data'),
+              details: error.issues,
+            },
+            { status: 400 }
+          )
+        },
+      }
+    )
+    if (!parsed.success) return parsed.response
+    const data = parsed.data.body
 
-    const urlValidation = await validateUrlWithDNS(data.instanceUrl, 'instanceUrl')
-    if (!urlValidation.isValid) {
+    let resolvedIP: string
+    try {
+      resolvedIP = await resolveAgiloftInstance(data.instanceUrl)
+    } catch (error) {
       logger.warn(`[${requestId}] SSRF attempt blocked for Agiloft instance URL`, {
         instanceUrl: data.instanceUrl,
       })
-      return NextResponse.json(
-        { success: false, error: urlValidation.error || 'Invalid instance URL' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: toError(error).message }, { status: 400 })
     }
 
-    const token = await agiloftLogin(data)
+    const token = await agiloftLoginPinned(data, resolvedIP)
     const base = data.instanceUrl.replace(/\/$/, '')
 
     try {
@@ -62,7 +75,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         position: data.position,
       })
 
-      const agiloftResponse = await fetch(url, {
+      const agiloftResponse = await secureFetchWithPinnedIP(url, resolvedIP, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -114,22 +127,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         },
       })
     } finally {
-      await agiloftLogout(data.instanceUrl, data.knowledgeBase, token)
+      await agiloftLogoutPinned(data.instanceUrl, data.knowledgeBase, token, resolvedIP)
     }
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid request data`, { errors: error.errors })
-      return NextResponse.json(
-        { success: false, error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      )
-    }
-
     logger.error(`[${requestId}] Error retrieving Agiloft attachment:`, error)
 
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: toError(error).message }, { status: 500 })
   }
 })

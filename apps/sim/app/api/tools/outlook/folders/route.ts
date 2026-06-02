@@ -1,14 +1,13 @@
-import { db } from '@sim/db'
-import { account } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { eq } from 'drizzle-orm'
-import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { type NextRequest, NextResponse } from 'next/server'
+import { outlookFoldersSelectorContract } from '@/lib/api/contracts/selectors/microsoft'
+import { parseRequest } from '@/lib/api/server'
+import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { validateAlphanumericId } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { refreshAccessTokenIfNeeded, resolveOAuthAccountId } from '@/app/api/auth/oauth/utils'
+import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,16 +20,11 @@ interface OutlookFolder {
   unreadItemCount?: number
 }
 
-export const GET = withRouteHandler(async (request: Request) => {
+export const GET = withRouteHandler(async (request: NextRequest) => {
   try {
-    const session = await getSession()
-    const { searchParams } = new URL(request.url)
-    const credentialId = searchParams.get('credentialId')
-
-    if (!credentialId) {
-      logger.error('Missing credentialId in request')
-      return NextResponse.json({ error: 'Credential ID is required' }, { status: 400 })
-    }
+    const parsed = await parseRequest(outlookFoldersSelectorContract, request, {})
+    if (!parsed.success) return parsed.response
+    const { credentialId } = parsed.data.query
 
     const credentialIdValidation = validateAlphanumericId(credentialId, 'credentialId')
     if (!credentialIdValidation.isValid) {
@@ -39,49 +33,29 @@ export const GET = withRouteHandler(async (request: Request) => {
     }
 
     try {
-      const sessionUserId = session?.user?.id || ''
-
-      if (!sessionUserId) {
-        logger.error('No user ID found in session')
-        return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-      }
-
-      const resolved = await resolveOAuthAccountId(credentialId)
-      if (!resolved) {
-        return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
-      }
-
-      if (resolved.workspaceId) {
-        const { getUserEntityPermissions } = await import('@/lib/workspaces/permissions/utils')
-        const perm = await getUserEntityPermissions(
-          session!.user!.id,
-          'workspace',
-          resolved.workspaceId
+      const credAccess = await authorizeCredentialUse(request, {
+        credentialId,
+        requireWorkflowIdForInternal: false,
+      })
+      if (!credAccess.ok || !credAccess.credentialOwnerUserId) {
+        logger.warn('Credential access denied', { error: credAccess.error })
+        return NextResponse.json(
+          { error: credAccess.error || 'Authentication required' },
+          { status: 401 }
         )
-        if (perm === null) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-        }
       }
-
-      const creds = await db
-        .select()
-        .from(account)
-        .where(eq(account.id, resolved.accountId))
-        .limit(1)
-      if (!creds.length) {
-        logger.warn('Credential not found', { credentialId })
-        return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
-      }
-      const credentialOwnerUserId = creds[0].userId
 
       const accessToken = await refreshAccessTokenIfNeeded(
-        resolved.accountId,
-        credentialOwnerUserId,
+        credentialId,
+        credAccess.credentialOwnerUserId,
         generateRequestId()
       )
 
       if (!accessToken) {
-        logger.error('Failed to get access token', { credentialId, userId: credentialOwnerUserId })
+        logger.error('Failed to get access token', {
+          credentialId,
+          userId: credAccess.credentialOwnerUserId,
+        })
         return NextResponse.json(
           {
             error: 'Could not retrieve access token',

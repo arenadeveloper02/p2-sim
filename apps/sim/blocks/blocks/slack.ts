@@ -49,6 +49,10 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Get User Presence', id: 'get_user_presence' },
         { label: 'Edit Canvas', id: 'edit_canvas' },
         { label: 'Create Channel Canvas', id: 'create_channel_canvas' },
+        { label: 'Get Canvas Info', id: 'get_canvas' },
+        { label: 'List Canvases', id: 'list_canvases' },
+        { label: 'Lookup Canvas Sections', id: 'lookup_canvas_sections' },
+        { label: 'Delete Canvas', id: 'delete_canvas' },
         { label: 'Create Conversation', id: 'create_conversation' },
         { label: 'Invite to Conversation', id: 'invite_to_conversation' },
         { label: 'Open View', id: 'open_view' },
@@ -131,6 +135,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             'search_all',
             'get_user_presence',
             'edit_canvas',
+            'get_canvas',
+            'lookup_canvas_sections',
+            'delete_canvas',
             'create_conversation',
             'open_view',
             'update_view',
@@ -145,7 +152,11 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           },
         }
       },
-      required: true,
+      required: {
+        field: 'operation',
+        value: 'list_canvases',
+        not: true,
+      },
     },
     {
       id: 'manualChannel',
@@ -153,6 +164,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'channel',
       placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: (values?: Record<string, unknown>) => {
         const op = values?.operation as string
@@ -170,6 +182,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             'search_all',
             'get_user_presence',
             'edit_canvas',
+            'get_canvas',
+            'lookup_canvas_sections',
+            'delete_canvas',
             'create_conversation',
             'open_view',
             'update_view',
@@ -184,7 +199,11 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           },
         }
       },
-      required: true,
+      required: {
+        field: 'operation',
+        value: 'list_canvases',
+        not: true,
+      },
     },
     {
       id: 'dmUserId',
@@ -208,6 +227,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'dmUserId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'destinationType',
@@ -237,6 +257,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'ephemeralUser',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -659,17 +680,17 @@ Do not include any explanations, markdown formatting, or other text outside the 
         value: 'list_users',
       },
     },
-    {
-      id: 'listUsersCursor',
-      title: 'Cursor',
-      type: 'short-input',
-      placeholder: 'Pagination cursor from previous List Users response',
-      description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
-      condition: {
-        field: 'operation',
-        value: 'list_users',
-      },
-    },
+    // {
+    //   id: 'listUsersCursor',
+    //   title: 'Cursor',
+    //   type: 'short-input',
+    //   placeholder: 'Pagination cursor from previous List Users response',
+    //   description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'list_users',
+    //   },
+    // },
     {
       id: 'listUsersAutoPaginate',
       title: 'Auto Paginate',
@@ -685,6 +706,18 @@ Do not include any explanations, markdown formatting, or other text outside the 
         field: 'operation',
         value: 'list_users',
       },
+    },
+    // Pagination cursor (shared across list_channels, list_members, list_users)
+    {
+      id: 'paginationCursor',
+      title: 'Pagination Cursor',
+      type: 'short-input',
+      placeholder: 'next_cursor from a previous response',
+      condition: {
+        field: 'operation',
+        value: ['list_channels', 'list_members', 'list_users'],
+      },
+      mode: 'advanced',
     },
     // Get User specific fields
     {
@@ -709,6 +742,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'short-input',
       canonicalParamId: 'userId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1037,6 +1071,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       canonicalParamId: 'presenceUserId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1138,6 +1173,121 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         field: 'operation',
         value: 'create_channel_canvas',
       },
+    },
+    // Get Canvas specific fields
+    {
+      id: 'getCanvasId',
+      title: 'Canvas ID',
+      type: 'short-input',
+      placeholder: 'Enter canvas ID (e.g., F1234ABCD)',
+      condition: {
+        field: 'operation',
+        value: 'get_canvas',
+      },
+      required: true,
+    },
+    // List Canvases specific fields
+    {
+      id: 'canvasListCount',
+      title: 'Canvas Limit',
+      type: 'short-input',
+      placeholder: '100',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListPage',
+      title: 'Page',
+      type: 'short-input',
+      placeholder: '1',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListUser',
+      title: 'User ID',
+      type: 'short-input',
+      placeholder: 'Optional creator filter (e.g., U1234567890)',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListTsFrom',
+      title: 'Created After',
+      type: 'short-input',
+      placeholder: 'Unix timestamp (e.g., 123456789)',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListTsTo',
+      title: 'Created Before',
+      type: 'short-input',
+      placeholder: 'Unix timestamp (e.g., 123456789)',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListTeamId',
+      title: 'Team ID',
+      type: 'short-input',
+      placeholder: 'Encoded team ID (org tokens only)',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    // Lookup Canvas Sections specific fields
+    {
+      id: 'lookupCanvasId',
+      title: 'Canvas ID',
+      type: 'short-input',
+      placeholder: 'Enter canvas ID (e.g., F1234ABCD)',
+      condition: {
+        field: 'operation',
+        value: 'lookup_canvas_sections',
+      },
+      required: true,
+    },
+    {
+      id: 'sectionCriteria',
+      title: 'Section Criteria',
+      type: 'code',
+      language: 'json',
+      placeholder: '{"section_types":["h1"],"contains_text":"Roadmap"}',
+      condition: {
+        field: 'operation',
+        value: 'lookup_canvas_sections',
+      },
+      required: true,
+    },
+    // Delete Canvas specific fields
+    {
+      id: 'deleteCanvasId',
+      title: 'Canvas ID',
+      type: 'short-input',
+      placeholder: 'Enter canvas ID (e.g., F1234ABCD)',
+      condition: {
+        field: 'operation',
+        value: 'delete_canvas',
+      },
+      required: true,
     },
     // Create Conversation specific fields
     {
@@ -1282,6 +1432,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       canonicalParamId: 'publishUserId',
       placeholder: 'Enter Slack user ID (e.g., U0BPQUNTA)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1379,6 +1530,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
       'slack_get_user_presence',
       'slack_edit_canvas',
       'slack_create_channel_canvas',
+      'slack_get_canvas',
+      'slack_list_canvases',
+      'slack_lookup_canvas_sections',
+      'slack_delete_canvas',
       'slack_create_conversation',
       'slack_invite_to_conversation',
       'slack_open_view',
@@ -1434,6 +1589,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
             return 'slack_edit_canvas'
           case 'create_channel_canvas':
             return 'slack_create_channel_canvas'
+          case 'get_canvas':
+            return 'slack_get_canvas'
+          case 'list_canvases':
+            return 'slack_list_canvases'
+          case 'lookup_canvas_sections':
+            return 'slack_lookup_canvas_sections'
+          case 'delete_canvas':
+            return 'slack_delete_canvas'
           case 'create_conversation':
             return 'slack_create_conversation'
           case 'invite_to_conversation':
@@ -1493,7 +1656,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
           listMembersCursor,
           includeDeleted,
           userLimit,
-          listUsersCursor,
+          // listUsersCursor,
           userId,
           clientId,
           channelId,
@@ -1516,6 +1679,16 @@ Do not include any explanations, markdown formatting, or other text outside the 
           canvasTitle,
           channelCanvasTitle,
           channelCanvasContent,
+          getCanvasId,
+          canvasListCount,
+          canvasListPage,
+          canvasListUser,
+          canvasListTsFrom,
+          canvasListTsTo,
+          canvasListTeamId,
+          lookupCanvasId,
+          sectionCriteria,
+          deleteCanvasId,
           conversationName,
           isPrivate,
           teamId,
@@ -1528,6 +1701,9 @@ Do not include any explanations, markdown formatting, or other text outside the 
           viewHash,
           publishUserId,
           viewPayload,
+          fileId,
+          fileName,
+          paginationCursor,
           ...rest
         } = params
 
@@ -1774,23 +1950,17 @@ Do not include any explanations, markdown formatting, or other text outside the 
               baseParams.includeGroupDMs = includeGroupDMs === 'true'
             }
             baseParams.excludeArchived = true
-            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 200
-            if (operation === 'get_user_channels' && getUserChannelsCursor?.trim()) {
-              baseParams.cursor = getUserChannelsCursor.trim()
-            }
-            if (operation === 'list_channels' && listChannelsCursor?.trim()) {
-              baseParams.cursor = listChannelsCursor.trim()
-            }
-            if (operation === 'get_user_channels') {
-              baseParams.autoPaginate = true
+            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 100
+            if (paginationCursor) {
+              baseParams.cursor = String(paginationCursor).trim()
             }
             break
           }
 
           case 'list_members': {
             baseParams.limit = memberLimit ? Number.parseInt(memberLimit, 10) : 100
-            if (listMembersCursor?.trim()) {
-              baseParams.cursor = listMembersCursor.trim()
+            if (paginationCursor) {
+              baseParams.cursor = String(paginationCursor).trim()
             }
             break
           }
@@ -1798,9 +1968,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
           case 'list_users': {
             baseParams.includeDeleted = includeDeleted === 'true'
             baseParams.limit = userLimit ? Number.parseInt(userLimit, 10) : 100
-            baseParams.autoPaginate = true
-            if (listUsersCursor?.trim()) {
-              baseParams.cursor = listUsersCursor.trim()
+            if (paginationCursor) {
+              baseParams.cursor = String(paginationCursor).trim()
             }
             break
           }
@@ -1814,8 +1983,6 @@ Do not include any explanations, markdown formatting, or other text outside the 
             break
 
           case 'download': {
-            const fileId = (rest as any).fileId
-            const fileName = (rest as any).fileName
             baseParams.fileId = fileId
             if (fileName) {
               baseParams.fileName = fileName
@@ -1942,6 +2109,46 @@ Do not include any explanations, markdown formatting, or other text outside the 
             }
             break
 
+          case 'get_canvas':
+            baseParams.canvasId = getCanvasId
+            break
+
+          case 'list_canvases':
+            if (canvasListCount) {
+              const parsedCount = Number.parseInt(canvasListCount, 10)
+              if (!Number.isNaN(parsedCount) && parsedCount > 0) {
+                baseParams.count = parsedCount
+              }
+            }
+            if (canvasListPage) {
+              const parsedPage = Number.parseInt(canvasListPage, 10)
+              if (!Number.isNaN(parsedPage) && parsedPage > 0) {
+                baseParams.page = parsedPage
+              }
+            }
+            if (canvasListUser) {
+              baseParams.user = String(canvasListUser).trim()
+            }
+            if (canvasListTsFrom) {
+              baseParams.tsFrom = String(canvasListTsFrom).trim()
+            }
+            if (canvasListTsTo) {
+              baseParams.tsTo = String(canvasListTsTo).trim()
+            }
+            if (canvasListTeamId) {
+              baseParams.teamId = String(canvasListTeamId).trim()
+            }
+            break
+
+          case 'lookup_canvas_sections':
+            baseParams.canvasId = lookupCanvasId
+            baseParams.criteria = sectionCriteria
+            break
+
+          case 'delete_canvas':
+            baseParams.canvasId = deleteCanvasId
+            break
+
           case 'create_conversation':
             baseParams.name = conversationName
             baseParams.isPrivate = isPrivate === 'true'
@@ -1965,18 +2172,24 @@ Do not include any explanations, markdown formatting, or other text outside the 
             baseParams.view = viewPayload
             break
 
-          case 'update_view':
-            if (viewId) {
-              baseParams.viewId = viewId
+          case 'update_view': {
+            const trimmedViewId = viewId ? String(viewId).trim() : ''
+            const trimmedExternalId = viewExternalId ? String(viewExternalId).trim() : ''
+            if (!trimmedViewId && !trimmedExternalId) {
+              throw new Error('update_view requires either View ID or External ID')
             }
-            if (viewExternalId) {
-              baseParams.externalId = viewExternalId
+            if (trimmedViewId) {
+              baseParams.viewId = trimmedViewId
+            }
+            if (trimmedExternalId) {
+              baseParams.externalId = trimmedExternalId
             }
             if (viewHash) {
               baseParams.hash = viewHash
             }
             baseParams.view = viewPayload
             break
+          }
 
           case 'push_view':
             baseParams.triggerId = viewTriggerId
@@ -2089,9 +2302,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     // List Users inputs
     includeDeleted: { type: 'string', description: 'Include deactivated users (true/false)' },
     userLimit: { type: 'string', description: 'Maximum number of users to return' },
-    listUsersCursor: {
+    // Shared pagination input
+    paginationCursor: {
       type: 'string',
-      description: 'Optional pagination cursor for List Users (users.list)',
+      description: 'Pagination cursor (next_cursor) for list_channels/list_members/list_users',
     },
     // Ephemeral message inputs
     ephemeralUser: { type: 'string', description: 'User ID who will see the ephemeral message' },
@@ -2123,6 +2337,23 @@ Do not include any explanations, markdown formatting, or other text outside the 
     // Create Channel Canvas inputs
     channelCanvasTitle: { type: 'string', description: 'Title for channel canvas' },
     channelCanvasContent: { type: 'string', description: 'Content for channel canvas' },
+    // Canvas management inputs
+    getCanvasId: { type: 'string', description: 'Canvas ID to retrieve' },
+    canvasListCount: { type: 'string', description: 'Maximum number of canvases to return' },
+    canvasListPage: { type: 'string', description: 'Canvas list page number' },
+    canvasListUser: { type: 'string', description: 'Optional canvas creator user filter' },
+    canvasListTsFrom: {
+      type: 'string',
+      description: 'Filter canvases created after this timestamp',
+    },
+    canvasListTsTo: {
+      type: 'string',
+      description: 'Filter canvases created before this timestamp',
+    },
+    canvasListTeamId: { type: 'string', description: 'Encoded team ID for org tokens' },
+    lookupCanvasId: { type: 'string', description: 'Canvas ID to search for sections' },
+    sectionCriteria: { type: 'json', description: 'Canvas section lookup criteria' },
+    deleteCanvasId: { type: 'string', description: 'Canvas ID to delete' },
     // Create Conversation inputs
     conversationName: { type: 'string', description: 'Name for the new channel' },
     isPrivate: { type: 'string', description: 'Create as private channel (true/false)' },
@@ -2173,20 +2404,32 @@ Do not include any explanations, markdown formatting, or other text outside the 
     // slack_canvas outputs
     canvas_id: { type: 'string', description: 'Canvas identifier for created canvases' },
     title: { type: 'string', description: 'Canvas title' },
+    canvas: {
+      type: 'json',
+      description: 'Canvas file metadata returned by Slack',
+    },
+    canvases: {
+      type: 'json',
+      description: 'Array of canvas file objects returned by Slack',
+    },
+    paging: {
+      type: 'json',
+      description: 'Pagination information for listed canvases',
+    },
+    sections: {
+      type: 'json',
+      description: 'Canvas section IDs returned by Slack section lookup',
+    },
+    ok: {
+      type: 'boolean',
+      description: 'Whether Slack completed the canvas operation successfully',
+    },
 
     // slack_message_reader outputs (read operation)
     messages: {
       type: 'json',
       description:
         'Array of message objects with comprehensive properties: text, user, timestamp, reactions, threads, files, attachments, blocks, stars, pins, and edit history',
-      condition: {
-        field: 'operation',
-        value: 'read',
-      },
-    },
-    nextCursor: {
-      type: 'string',
-      description: 'Pagination cursor for next page of results',
       condition: {
         field: 'operation',
         value: 'read',
@@ -2245,14 +2488,9 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'number',
       description: 'Total number of items returned (channels, members, or users)',
     },
-    cursor: {
+    nextCursor: {
       type: 'string',
-      description:
-        'Pagination cursor for the next page (Slack response_metadata.next_cursor) for List Channels, Get User Channels, List Members, List Users, or Get Thread; null or empty when there are no more results',
-      condition: {
-        field: 'operation',
-        value: ['list_channels', 'get_user_channels', 'list_members', 'list_users', 'get_thread'],
-      },
+      description: 'Cursor for the next page (null when there are no more pages)',
     },
 
     // slack_list_members outputs (list_members operation)

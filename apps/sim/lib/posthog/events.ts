@@ -88,6 +88,7 @@ export interface PostHogEventMap {
   workspace_member_invited: {
     workspace_id: string
     invitee_role: string
+    membership_intent?: string
   }
 
   workspace_member_removed: {
@@ -288,6 +289,20 @@ export interface PostHogEventMap {
     file_type: string
   }
 
+  file_deleted: {
+    workspace_id: string
+  }
+
+  file_renamed: {
+    workspace_id: string
+  }
+
+  file_moved: {
+    workspace_id: string
+    file_count: number
+    folder_count: number
+  }
+
   api_key_created: {
     workspace_id: string
     key_name: string
@@ -405,13 +420,27 @@ export interface PostHogEventMap {
     workspace_id: string
   }
 
+  task_forked: {
+    workspace_id: string
+    source_chat_id: string
+  }
+
   task_marked_unread: {
+    workspace_id: string
+  }
+
+  task_pinned: {
+    workspace_id: string
+  }
+
+  task_unpinned: {
     workspace_id: string
   }
 
   task_generation_aborted: {
     workspace_id: string
     view: 'mothership' | 'copilot'
+    request_id?: string
   }
 
   task_message_sent: {
@@ -419,6 +448,14 @@ export interface PostHogEventMap {
     has_attachments: boolean
     has_contexts: boolean
     is_new_task: boolean
+  }
+
+  /** Pairs with `task_message_sent` via `request_id` for correlation with server-side logs. */
+  task_request_started: {
+    workspace_id: string
+    view: 'mothership' | 'copilot'
+    request_id: string
+    user_message_id: string
   }
 
   tour_started: {
@@ -475,6 +512,22 @@ export interface PostHogEventMap {
 
   folder_deleted: {
     workspace_id: string
+  }
+
+  folder_renamed: {
+    workspace_id: string
+  }
+
+  folder_moved: {
+    workspace_id: string
+    file_count: number
+    folder_count: number
+  }
+
+  file_bulk_deleted: {
+    workspace_id: string
+    file_count: number
+    folder_count: number
   }
 
   folder_restored: {

@@ -1,7 +1,13 @@
+import type { Logger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { htmlToText } from 'html-to-text'
 import { pollingIdempotency } from '@/lib/core/idempotency/service'
 import { fetchWithRetry } from '@/lib/knowledge/documents/utils'
-import type { PollingProviderHandler, PollWebhookContext } from '@/lib/webhooks/polling/types'
+import {
+  getProviderConfig,
+  type PollingProviderHandler,
+  type PollWebhookContext,
+} from '@/lib/webhooks/polling/types'
 import {
   markWebhookFailed,
   markWebhookSuccess,
@@ -55,14 +61,14 @@ interface OutlookEmail {
   parentFolderId: string
 }
 
-export interface OutlookAttachment {
+interface OutlookAttachment {
   name: string
   data: Buffer
   contentType: string
   size: number
 }
 
-export interface SimplifiedOutlookEmail {
+interface SimplifiedOutlookEmail {
   id: string
   conversationId: string
   subject: string
@@ -80,7 +86,7 @@ export interface SimplifiedOutlookEmail {
   threadId: string
 }
 
-export interface OutlookWebhookPayload {
+interface OutlookWebhookPayload {
   email: SimplifiedOutlookEmail
   timestamp: string
   rawEmail?: OutlookEmail
@@ -112,7 +118,7 @@ export const outlookPollingHandler: PollingProviderHandler = {
       logger.info(`[${requestId}] Processing Outlook webhook: ${webhookId}`)
 
       const accessToken = await resolveOAuthCredential(webhookData, 'outlook', requestId, logger)
-      const config = webhookData.providerConfig as unknown as OutlookWebhookConfig
+      const config = getProviderConfig<OutlookWebhookConfig>(webhookData.providerConfig)
       const now = new Date()
 
       const { emails } = await fetchNewOutlookEmails(accessToken, config, requestId, logger)
@@ -177,7 +183,7 @@ async function fetchNewOutlookEmails(
   accessToken: string,
   config: OutlookWebhookConfig,
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ) {
   try {
     const apiUrl = 'https://graph.microsoft.com/v1.0/me/messages'
@@ -266,7 +272,7 @@ async function fetchNewOutlookEmails(
 
     return { emails: filteredEmails }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorMessage = getErrorMessage(error, 'Unknown error')
     logger.error(`[${requestId}] Error fetching new Outlook emails:`, errorMessage)
     throw error
   }
@@ -290,7 +296,7 @@ async function resolveWellKnownFolderId(
   accessToken: string,
   folderName: string,
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ): Promise<string | null> {
   try {
     const response = await fetchWithRetry(
@@ -321,7 +327,7 @@ async function resolveWellKnownFolderIds(
   accessToken: string,
   folderIds: string[],
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ): Promise<Map<string, string>> {
   const resolvedIds = new Map<string, string>()
   const wellKnownFolders = folderIds.filter(isWellKnownFolderName)
@@ -377,7 +383,7 @@ async function processOutlookEmails(
   config: OutlookWebhookConfig,
   accessToken: string,
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ) {
   let processedCount = 0
   let failedCount = 0
@@ -483,7 +489,7 @@ async function downloadOutlookAttachments(
   accessToken: string,
   messageId: string,
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ): Promise<OutlookAttachment[]> {
   const attachments: OutlookAttachment[] = []
 
@@ -537,11 +543,7 @@ async function downloadOutlookAttachments(
   return attachments
 }
 
-async function markOutlookEmailAsRead(
-  accessToken: string,
-  messageId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
-) {
+async function markOutlookEmailAsRead(accessToken: string, messageId: string, logger: Logger) {
   try {
     const response = await fetchWithRetry(
       `https://graph.microsoft.com/v1.0/me/messages/${messageId}`,

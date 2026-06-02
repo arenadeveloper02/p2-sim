@@ -9,7 +9,9 @@ import {
   WORKFLOW_OPERATIONS,
 } from '@sim/realtime-protocol/constants'
 import { WorkflowOperationSchema } from '@sim/realtime-protocol/schemas'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { assertWorkflowMutable, WorkflowLockedError } from '@sim/workflow-authz'
 import { ZodError } from 'zod'
 import { persistWorkflowOperation } from '@/database/operations'
 import type { AuthenticatedSocket } from '@/middleware/auth'
@@ -139,6 +141,24 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         }
       }
 
+      try {
+        await assertWorkflowMutable(workflowId)
+      } catch (error) {
+        if (error instanceof WorkflowLockedError) {
+          emitOperationError(
+            {
+              type: 'WORKFLOW_LOCKED',
+              message: error.message,
+              operation,
+              target,
+            },
+            { error: error.message, retryable: false }
+          )
+          return
+        }
+        throw error
+      }
+
       // Broadcast first for position updates to minimize latency, then persist
       // For other operations, persist first for consistency
       if (isPositionUpdate) {
@@ -186,7 +206,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
           if (operationId) {
             socket.emit('operation-failed', {
               operationId,
-              error: error instanceof Error ? error.message : 'Database persistence failed',
+              error: getErrorMessage(error, 'Database persistence failed'),
               retryable: true,
             })
           }
@@ -228,7 +248,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
           if (operationId) {
             socket.emit('operation-failed', {
               operationId,
-              error: error instanceof Error ? error.message : 'Database persistence failed',
+              error: getErrorMessage(error, 'Database persistence failed'),
               retryable: true,
             })
           }
@@ -568,7 +588,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         })
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      const errorMessage = getErrorMessage(error, 'Unknown error occurred')
 
       if (operationId) {
         socket.emit('operation-failed', {
@@ -582,11 +602,11 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         socket.emit('operation-error', {
           type: 'VALIDATION_ERROR',
           message: 'Invalid operation data',
-          errors: error.errors,
+          errors: error.issues,
           operation: data.operation,
           target: data.target,
         })
-        logger.warn(`Validation error for operation from ${session.userId}:`, error.errors)
+        logger.warn(`Validation error for operation from ${session.userId}:`, error.issues)
       } else if (error instanceof Error) {
         if (error.message.includes('not found')) {
           socket.emit('operation-error', {

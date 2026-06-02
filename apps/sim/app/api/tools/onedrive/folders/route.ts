@@ -1,19 +1,17 @@
-import { db } from '@sim/db'
-import { account } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { onedriveFoldersQuerySchema } from '@/lib/api/contracts/selectors/microsoft'
+import { getValidationErrorMessage } from '@/lib/api/server'
+import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { validateMicrosoftGraphId } from '@/lib/core/security/input-validation'
-import { refreshAccessTokenIfNeeded, resolveOAuthAccountId } from '@/app/api/auth/oauth/utils'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
+import type { MicrosoftGraphDriveItem } from '@/tools/onedrive/types'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('OneDriveFoldersAPI')
-
-import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import type { MicrosoftGraphDriveItem } from '@/tools/onedrive/types'
 
 /**
  * Get folders from Microsoft OneDrive
@@ -22,18 +20,22 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateId().slice(0, 8)
 
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
-    const credentialId = searchParams.get('credentialId')
-    const query = searchParams.get('query') || ''
-
-    if (!credentialId) {
-      return NextResponse.json({ error: 'Credential ID is required' }, { status: 400 })
+    const validation = onedriveFoldersQuerySchema.safeParse({
+      credentialId: searchParams.get('credentialId') ?? '',
+      query: searchParams.get('query') ?? undefined,
+    })
+    if (!validation.success) {
+      logger.warn(`[${requestId}] Invalid folders request data`, {
+        errors: validation.error.issues,
+      })
+      return NextResponse.json(
+        { error: getValidationErrorMessage(validation.error, 'Invalid request') },
+        { status: 400 }
+      )
     }
+    const { credentialId } = validation.data
+    const query = validation.data.query ?? ''
 
     const credentialIdValidation = validateMicrosoftGraphId(credentialId, 'credentialId')
     if (!credentialIdValidation.isValid) {
@@ -41,37 +43,17 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: credentialIdValidation.error }, { status: 400 })
     }
 
-    const resolved = await resolveOAuthAccountId(credentialId)
-    if (!resolved) {
-      return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
+    const authz = await authorizeCredentialUse(request, {
+      credentialId,
+      requireWorkflowIdForInternal: false,
+    })
+    if (!authz.ok || !authz.credentialOwnerUserId || !authz.resolvedCredentialId) {
+      return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
     }
-
-    if (resolved.workspaceId) {
-      const { getUserEntityPermissions } = await import('@/lib/workspaces/permissions/utils')
-      const perm = await getUserEntityPermissions(
-        session.user.id,
-        'workspace',
-        resolved.workspaceId
-      )
-      if (perm === null) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
-    }
-
-    const credentials = await db
-      .select()
-      .from(account)
-      .where(eq(account.id, resolved.accountId))
-      .limit(1)
-    if (!credentials.length) {
-      return NextResponse.json({ error: 'Credential not found' }, { status: 404 })
-    }
-
-    const accountRow = credentials[0]
 
     const accessToken = await refreshAccessTokenIfNeeded(
-      resolved.accountId,
-      accountRow.userId,
+      credentialId,
+      authz.credentialOwnerUserId,
       requestId
     )
     if (!accessToken) {

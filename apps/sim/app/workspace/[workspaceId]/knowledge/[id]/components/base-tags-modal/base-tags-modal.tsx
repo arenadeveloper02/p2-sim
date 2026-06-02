@@ -11,11 +11,15 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Trash,
 } from '@/components/emcn'
+import { requestJson } from '@/lib/api/client/request'
+import { getTagUsageContract, type TagUsageData } from '@/lib/api/contracts/knowledge'
 import { cn } from '@/lib/core/utils/cn'
+import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { SUPPORTED_FIELD_TYPES, TAG_SLOT_CONFIG } from '@/lib/knowledge/constants'
 import { addTagsforKBEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
@@ -34,13 +38,6 @@ const FIELD_TYPE_LABELS: Record<string, string> = {
   boolean: 'Boolean',
 }
 
-interface TagUsageData {
-  tagName: string
-  tagSlot: string
-  documentCount: number
-  documents: Array<{ id: string; name: string; tagValue: string }>
-}
-
 interface DocumentListProps {
   documents: Array<{ id: string; name: string; tagValue: string }>
   totalCount: number
@@ -57,7 +54,7 @@ function DocumentList({ documents, totalCount }: DocumentListProps) {
           const DocumentIcon = getDocumentIcon('', doc.name)
           return (
             <div key={doc.id} className='flex items-center gap-2 border-b p-2 last:border-b-0'>
-              <DocumentIcon className='h-4 w-4 flex-shrink-0 text-[var(--text-muted)]' />
+              <DocumentIcon className='size-4 flex-shrink-0 text-[var(--text-muted)]' />
               <span className='min-w-0 max-w-[120px] truncate text-[var(--text-primary)] text-caption'>
                 {doc.name}
               </span>
@@ -114,11 +111,9 @@ export function BaseTagsModal({
     if (!knowledgeBaseId) return
 
     try {
-      const response = await fetch(`/api/knowledge/${knowledgeBaseId}/tag-usage`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch tag usage')
-      }
-      const result = await response.json()
+      const result = await requestJson(getTagUsageContract, {
+        params: { id: knowledgeBaseId },
+      })
       if (result.success) {
         setTagUsageData(result.data)
       }
@@ -280,6 +275,9 @@ export function BaseTagsModal({
               <span>Tags</span>
             </div>
           </ModalHeader>
+          <ModalDescription className='sr-only'>
+            Manage tag definitions for this knowledge base
+          </ModalDescription>
 
           <ModalBody>
             <div className='min-h-0 flex-1 overflow-y-auto'>
@@ -304,8 +302,14 @@ export function BaseTagsModal({
                   return (
                     <div
                       key={tag.id}
+                      role='button'
+                      tabIndex={0}
                       className='flex cursor-pointer items-center gap-2 rounded-sm border p-2 hover-hover:bg-[var(--surface-2)]'
                       onClick={() => handleViewDocuments(tag)}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return
+                        handleKeyboardActivation(event, () => handleViewDocuments(tag))
+                      }}
                     >
                       <span className='min-w-0 truncate text-[var(--text-primary)] text-caption'>
                         {tag.displayName}
@@ -324,9 +328,9 @@ export function BaseTagsModal({
                             e.stopPropagation()
                             handleDeleteTagClick(tag)
                           }}
-                          className='h-4 w-4 p-0 text-[var(--text-muted)] hover-hover:text-[var(--text-error)]'
+                          className='size-4 p-0 text-[var(--text-muted)] hover-hover:text-[var(--text-error)]'
                         >
-                          <Trash className='h-3 w-3' />
+                          <Trash className='size-3' />
                         </Button>
                       </div>
                     </div>
@@ -428,14 +432,14 @@ export function BaseTagsModal({
           <ModalHeader>Delete Tag</ModalHeader>
           <ModalBody>
             <div className='space-y-2'>
-              <p className='text-[var(--text-secondary)]'>
+              <ModalDescription className='text-[var(--text-secondary)]'>
                 Are you sure you want to delete the "{selectedTag?.displayName}" tag?{' '}
                 <span className='text-[var(--text-error)]'>
                   This will remove this tag from {selectedTagUsage?.documentCount || 0} document
                   {selectedTagUsage?.documentCount !== 1 ? 's' : ''}.
                 </span>{' '}
                 This action cannot be undone.
-              </p>
+              </ModalDescription>
 
               {selectedTagUsage && selectedTagUsage.documentCount > 0 && (
                 <div className='flex flex-col gap-2'>
@@ -473,11 +477,11 @@ export function BaseTagsModal({
           <ModalHeader>Documents using "{selectedTag?.displayName}"</ModalHeader>
           <ModalBody>
             <div className='space-y-2'>
-              <p className='text-[var(--text-secondary)]'>
+              <ModalDescription className='text-[var(--text-secondary)]'>
                 {selectedTagUsage?.documentCount || 0} document
                 {selectedTagUsage?.documentCount !== 1 ? 's are' : ' is'} currently using this tag
                 definition.
-              </p>
+              </ModalDescription>
 
               {selectedTagUsage?.documentCount === 0 ? (
                 <div className='rounded-md border p-4 text-center'>

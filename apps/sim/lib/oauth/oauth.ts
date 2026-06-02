@@ -429,6 +429,23 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'x',
   },
+  atlassian: {
+    name: 'Atlassian',
+    icon: JiraIcon,
+    services: {
+      'atlassian-service-account': {
+        name: 'Atlassian Service Account',
+        description:
+          'Authenticate as an Atlassian service account using a scoped API token from admin.atlassian.com.',
+        providerId: 'atlassian-service-account',
+        icon: JiraIcon,
+        baseProviderIcon: JiraIcon,
+        scopes: [],
+        authType: 'service_account',
+      },
+    },
+    defaultService: 'atlassian-service-account',
+  },
   confluence: {
     name: 'Confluence',
     icon: ConfluenceIcon,
@@ -439,11 +456,11 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'confluence',
         icon: ConfluenceIcon,
         baseProviderIcon: ConfluenceIcon,
+        serviceAccountProviderId: 'atlassian-service-account',
         scopes: [
           'read:confluence-content.all',
           'read:confluence-space.summary',
           'read:space:confluence',
-          'read:space-details:confluence',
           'write:confluence-content',
           'write:confluence-space',
           'write:confluence-file',
@@ -453,7 +470,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'write:comment:confluence',
           'delete:comment:confluence',
           'delete:attachment:confluence',
-          'read:content:confluence',
           'delete:page:confluence',
           'read:label:confluence',
           'write:label:confluence',
@@ -462,18 +478,19 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'search:confluence',
           'read:me',
           'offline_access',
+          'read:hierarchical-content:confluence',
+          'read:content.metadata:confluence',
+          'read:user:confluence',
+          'read:confluence-user',
+          'read:task:confluence',
+          'write:task:confluence',
+          'write:space:confluence',
+          'delete:space:confluence',
           'read:blogpost:confluence',
           'write:blogpost:confluence',
           'delete:blogpost:confluence',
           'read:content.property:confluence',
           'write:content.property:confluence',
-          'read:hierarchical-content:confluence',
-          'read:content.metadata:confluence',
-          'read:user:confluence',
-          'read:task:confluence',
-          'write:task:confluence',
-          'write:space:confluence',
-          'delete:space:confluence',
           'read:space.property:confluence',
           'write:space.property:confluence',
           'read:space.permission:confluence',
@@ -492,46 +509,19 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'jira',
         icon: JiraIcon,
         baseProviderIcon: JiraIcon,
+        serviceAccountProviderId: 'atlassian-service-account',
         scopes: [
           'read:jira-user',
           'read:jira-work',
           'write:jira-work',
-          'write:issue:jira',
-          'read:project:jira',
-          'read:issue-type:jira',
           'read:me',
           'offline_access',
-          'read:issue-meta:jira',
-          'read:issue-security-level:jira',
           'read:issue.vote:jira',
-          'read:issue.changelog:jira',
-          'read:avatar:jira',
-          'read:issue:jira',
-          'read:status:jira',
-          'read:user:jira',
-          'read:field-configuration:jira',
-          'read:issue-details:jira',
-          'read:issue-event:jira',
           'delete:issue:jira',
-          'write:comment:jira',
-          'read:comment:jira',
           'delete:comment:jira',
-          'read:attachment:jira',
-          'write:attachment:jira',
           'delete:attachment:jira',
-          'write:issue-worklog:jira',
-          'read:issue-worklog:jira',
           'delete:issue-worklog:jira',
-          'write:issue-link:jira',
           'delete:issue-link:jira',
-          'manage:jira-webhook',
-          'read:webhook:jira',
-          'write:webhook:jira',
-          'delete:webhook:jira',
-          'read:issue.property:jira',
-          'read:comment.property:jira',
-          'read:jql:jira',
-          'read:field:jira',
           // Jira Service Management scopes
           'read:servicedesk:jira-service-management',
           'read:requesttype:jira-service-management',
@@ -539,20 +529,12 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'write:request:jira-service-management',
           'read:request.comment:jira-service-management',
           'write:request.comment:jira-service-management',
-          'read:customer:jira-service-management',
-          'write:customer:jira-service-management',
           'read:servicedesk.customer:jira-service-management',
           'write:servicedesk.customer:jira-service-management',
           'read:organization:jira-service-management',
           'write:organization:jira-service-management',
           'read:servicedesk.organization:jira-service-management',
           'write:servicedesk.organization:jira-service-management',
-          'read:organization.user:jira-service-management',
-          'write:organization.user:jira-service-management',
-          'read:organization.property:jira-service-management',
-          'write:organization.property:jira-service-management',
-          'read:organization.profile:jira-service-management',
-          'write:organization.profile:jira-service-management',
           'read:queue:jira-service-management',
           'read:request.sla:jira-service-management',
           'read:request.status:jira-service-management',
@@ -561,6 +543,9 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'write:request.participant:jira-service-management',
           'read:request.approval:jira-service-management',
           'write:request.approval:jira-service-management',
+          'read:form:jira-service-management',
+          'write:form:jira-service-management',
+          'delete:form:jira-service-management',
         ],
       },
     },
@@ -706,7 +691,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     services: {
       slack: {
         name: 'Slack',
-        description: 'Send messages using a bot for Slack.',
+        description: 'Use Slack messaging, files, reactions, views, and canvases.',
         providerId: 'slack',
         icon: SlackIcon,
         baseProviderIcon: SlackIcon,
@@ -728,6 +713,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           // TODO: Add 'users:read.email' once Slack app review is approved
           'files:write',
           'files:read',
+          'canvases:read',
           'canvases:write',
           'reactions:write',
         ],
@@ -1362,6 +1348,7 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientId,
         clientSecret,
         useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
       }
     }
     case 'linear': {
@@ -1584,7 +1571,7 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientId,
         clientSecret,
         useBasicAuth: true,
-        supportsRefreshTokenRotation: false,
+        supportsRefreshTokenRotation: true,
       }
     }
     case 'zoom-admin': {
@@ -1686,13 +1673,6 @@ function buildAuthRequest(
   return { headers, bodyParams, useJsonBody: config.useJsonBody }
 }
 
-/**
- * Refresh an OAuth token
- * This is a server-side utility function to refresh OAuth tokens
- * @param providerId The provider ID (e.g., 'google-drive')
- * @param refreshToken The refresh token to use
- * @returns Object containing the new access token and expiration time in seconds, or null if refresh failed
- */
 function getBaseProviderForService(providerId: string): string {
   if (providerId in OAUTH_PROVIDERS) {
     return providerId
@@ -1709,11 +1689,34 @@ function getBaseProviderForService(providerId: string): string {
   throw new Error(`Unknown OAuth provider: ${providerId}`)
 }
 
+export interface RefreshTokenSuccess {
+  ok: true
+  accessToken: string
+  expiresIn: number
+  refreshToken: string
+}
+
+export interface RefreshTokenFailure {
+  ok: false
+  errorCode?: string
+  message?: string
+}
+
+export type RefreshTokenResult = RefreshTokenSuccess | RefreshTokenFailure
+
+function extractErrorCode(value: unknown): string | undefined {
+  if (value && typeof value === 'object' && 'error' in value) {
+    const code = (value as { error: unknown }).error
+    if (typeof code === 'string') return code
+  }
+  return undefined
+}
+
 export async function refreshOAuthToken(
   providerId: string,
   refreshToken: string,
   alias?: string
-): Promise<{ accessToken: string; expiresIn: number; refreshToken: string } | null> {
+): Promise<RefreshTokenResult> {
   try {
     const provider =
       providerId === 'zoom-admin' ? 'zoom-admin' : getBaseProviderForService(providerId)
@@ -1734,7 +1737,7 @@ export async function refreshOAuthToken(
 
     if (!response.ok) {
       const errorText = await response.text()
-      let errorData = errorText
+      let errorData: unknown = errorText
 
       try {
         errorData = JSON.parse(errorText)
@@ -1754,10 +1757,33 @@ export async function refreshOAuthToken(
         hasRefreshToken: !!refreshToken,
         refreshTokenPrefix: refreshToken ? `${refreshToken.substring(0, 10)}...` : 'none',
       })
-      throw new Error(`Failed to refresh token: ${response.status} ${errorText}`)
+      return {
+        ok: false,
+        errorCode: extractErrorCode(errorData),
+        message: `Failed to refresh token: ${response.status} ${errorText}`,
+      }
     }
 
     const data = await response.json()
+
+    if (data && typeof data === 'object' && data.ok === false) {
+      logger.error('Token refresh failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: data.error,
+        parsedError: data,
+        providerId,
+        tokenEndpoint: config.tokenEndpoint,
+        hasClientId: !!config.clientId,
+        hasClientSecret: !!config.clientSecret,
+        hasRefreshToken: !!refreshToken,
+      })
+      return {
+        ok: false,
+        errorCode: typeof data.error === 'string' ? data.error : undefined,
+        message: `Failed to refresh token: ${data.error ?? 'unknown'}`,
+      }
+    }
 
     const accessToken = data.access_token
 
@@ -1770,8 +1796,8 @@ export async function refreshOAuthToken(
     const expiresIn = data.expires_in || data.expiresIn || 3600
 
     if (!accessToken) {
-      logger.warn('No access token found in refresh response', data)
-      return null
+      logger.warn('No access token found in refresh response', { providerId, response: data })
+      return { ok: false, message: 'No access token in refresh response' }
     }
 
     logger.info('Token refreshed successfully with expiration', {
@@ -1781,14 +1807,14 @@ export async function refreshOAuthToken(
     })
 
     return {
+      ok: true,
       accessToken,
       expiresIn,
       refreshToken: newRefreshToken || refreshToken, // Return new refresh token if available
     }
   } catch (error) {
-    logger.error('Error refreshing token:', {
-      error: toError(error).message,
-    })
-    return null
+    const message = toError(error).message
+    logger.error('Error refreshing token:', { error: message })
+    return { ok: false, message }
   }
 }

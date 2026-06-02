@@ -5,6 +5,7 @@ import { AuthMode, IntegrationType } from '@/blocks/types'
 import {
   getAgentModelOptions,
   getProviderCredentialSubBlocks,
+  normalizeFileInput,
   RESPONSE_FORMAT_WAND_CONFIG,
 } from '@/blocks/utils'
 import {
@@ -81,7 +82,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
   category: 'blocks',
   integrationType: IntegrationType.AI,
   tags: ['llm', 'agentic', 'automation'],
-  bgColor: 'var(--brand)',
+  bgColor: 'var(--brand-agent)',
   icon: AgentIcon,
   subBlocks: [
     {
@@ -134,6 +135,26 @@ Return ONLY the JSON array.`,
       defaultValue: 'gpt-4o',
       searchable: true,
       options: getAgentModelOptions,
+      commandSearchable: true,  
+    },
+    {
+      id: 'attachmentFiles',
+      title: 'Files',
+      type: 'file-upload',
+      canonicalParamId: 'files',
+      placeholder: 'Upload files for the agent',
+      multiple: true,
+      mode: 'basic',
+      required: false,
+    },
+    {
+      id: 'files',
+      title: 'Files',
+      type: 'short-input',
+      canonicalParamId: 'files',
+      placeholder: 'Reference files from previous blocks',
+      mode: 'advanced',
+      required: false,
     },
     {
       id: 'reasoningEffort',
@@ -336,6 +357,7 @@ Return ONLY the JSON array.`,
         value: 'none',
         not: true,
       },
+      dependsOn: ['memoryType'],
     },
     {
       id: 'slidingWindowSize',
@@ -348,6 +370,7 @@ Return ONLY the JSON array.`,
         field: 'memoryType',
         value: 'sliding_window',
       },
+      dependsOn: ['memoryType'],
     },
     {
       id: 'slidingWindowTokens',
@@ -360,6 +383,7 @@ Return ONLY the JSON array.`,
         field: 'memoryType',
         value: 'sliding_window_tokens',
       },
+      dependsOn: ['memoryType'],
     },
     {
       id: 'temperature',
@@ -469,6 +493,8 @@ Return ONLY the JSON array.`,
             tools: undefined,
           }
         }
+        const normalizedFiles = normalizeFileInput(params.files)
+        const baseParams = normalizedFiles ? { ...params, files: normalizedFiles } : params
 
         // If tools array is provided, handle tool usage control
         if (params.tools && Array.isArray(params.tools)) {
@@ -504,9 +530,9 @@ Return ONLY the JSON array.`,
             logger.info('Filtered out tools set to none', { tools: filteredOutTools.join(', ') })
           }
 
-          return { ...params, tools: transformedTools }
+          return { ...baseParams, tools: transformedTools }
         }
-        return params
+        return baseParams
       },
     },
   },
@@ -516,6 +542,7 @@ Return ONLY the JSON array.`,
       description:
         'Array of message objects with role and content: [{ role: "system", content: "..." }, { role: "user", content: "..." }]',
     },
+    files: { type: 'array', description: 'Files to include with the latest user message' },
     memoryType: {
       type: 'string',
       description:

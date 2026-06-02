@@ -3,18 +3,14 @@ import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { renameCopilotChatContract } from '@/lib/api/contracts/copilot'
+import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-import { getAccessibleCopilotChat } from '@/lib/copilot/chat/lifecycle'
+import { getAccessibleCopilotChatAuth } from '@/lib/copilot/chat/lifecycle'
 import { taskPubSub } from '@/lib/copilot/tasks'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('RenameChatAPI')
-
-const RenameChatSchema = z.object({
-  chatId: z.string().min(1),
-  title: z.string().min(1).max(200),
-})
 
 export const PATCH = withRouteHandler(async (request: NextRequest) => {
   try {
@@ -23,10 +19,18 @@ export const PATCH = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { chatId, title } = RenameChatSchema.parse(body)
+    const parsed = await parseRequest(
+      renameCopilotChatContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => validationErrorResponse(error, 'Invalid request data'),
+      }
+    )
+    if (!parsed.success) return parsed.response
+    const { chatId, title } = parsed.data.body
 
-    const chat = await getAccessibleCopilotChat(chatId, session.user.id)
+    const chat = await getAccessibleCopilotChatAuth(chatId, session.user.id)
     if (!chat) {
       return NextResponse.json({ success: false, error: 'Chat not found' }, { status: 404 })
     }
@@ -54,12 +58,6 @@ export const PATCH = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      )
-    }
     logger.error('Error renaming chat:', error)
     return NextResponse.json({ success: false, error: 'Failed to rename chat' }, { status: 500 })
   }

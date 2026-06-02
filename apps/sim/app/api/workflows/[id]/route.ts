@@ -1,27 +1,26 @@
 import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, eq, isNull, ne } from 'drizzle-orm'
+import {
+  assertFolderMutable,
+  assertWorkflowMutable,
+  authorizeWorkflowByWorkspacePermission,
+  FolderLockedError,
+  WorkflowLockedError,
+} from '@sim/workflow-authz'
+import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { updateWorkflowContract } from '@/lib/api/contracts/workflows'
+import { parseRequest } from '@/lib/api/server'
 import { AuthType, checkHybridAuth, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { performDeleteWorkflow } from '@/lib/workflows/orchestration'
+import { performDeleteWorkflow, performUpdateWorkflow } from '@/lib/workflows/orchestration'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { getWorkflowById } from '@/lib/workflows/utils'
 
 const logger = createLogger('WorkflowByIdAPI')
-
-const UpdateWorkflowSchema = z.object({
-  name: z.string().min(1, 'Name is required').optional(),
-  description: z.string().optional(),
-  color: z.string().optional(),
-  folderId: z.string().nullable().optional(),
-  sortOrder: z.number().int().min(0).optional(),
-})
 
 /**
  * GET /api/workflows/[id]
@@ -86,25 +85,47 @@ export const GET = withRouteHandler(
         }
       }
 
-      const normalizedData = await loadWorkflowFromNormalizedTables(workflowId)
+      const snapshot = await db.transaction(async (tx) => {
+        await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`)
+        const [normalizedData, [workflowRecord]] = await Promise.all([
+          loadWorkflowFromNormalizedTables(workflowId, tx),
+          tx.select().from(workflow).where(eq(workflow.id, workflowId)).limit(1),
+        ])
+        return { normalizedData, workflowRecord }
+      })
+      const responseWorkflowData = snapshot.workflowRecord ?? workflowData
 
-      if (normalizedData) {
+      // Stamp `workflowId` from the path param on each variable so the
+      // global client-side variables store can filter by workflow without
+      // requiring persisted variables to carry a redundant `workflowId`.
+      // The persisted blob may or may not include `workflowId` depending on
+      // when the variable was last written; the path param is authoritative.
+      const persistedVariables =
+        (responseWorkflowData.variables as Record<string, Record<string, unknown>>) || {}
+      const stampedVariables: Record<string, Record<string, unknown>> = {}
+      for (const [variableId, variable] of Object.entries(persistedVariables)) {
+        if (variable && typeof variable === 'object') {
+          stampedVariables[variableId] = { ...variable, workflowId }
+        }
+      }
+
+      if (snapshot.normalizedData) {
         const finalWorkflowData = {
-          ...workflowData,
+          ...responseWorkflowData,
           state: {
-            blocks: normalizedData.blocks,
-            edges: normalizedData.edges,
-            loops: normalizedData.loops,
-            parallels: normalizedData.parallels,
+            blocks: snapshot.normalizedData.blocks,
+            edges: snapshot.normalizedData.edges,
+            loops: snapshot.normalizedData.loops,
+            parallels: snapshot.normalizedData.parallels,
             lastSaved: Date.now(),
-            isDeployed: workflowData.isDeployed || false,
-            deployedAt: workflowData.deployedAt,
+            isDeployed: responseWorkflowData.isDeployed || false,
+            deployedAt: responseWorkflowData.deployedAt,
             metadata: {
-              name: workflowData.name,
-              description: workflowData.description,
+              name: responseWorkflowData.name,
+              description: responseWorkflowData.description,
             },
           },
-          variables: workflowData.variables || {},
+          variables: stampedVariables,
         }
 
         logger.info(`[${requestId}] Loaded workflow ${workflowId} from normalized tables`)
@@ -115,21 +136,21 @@ export const GET = withRouteHandler(
       }
 
       const emptyWorkflowData = {
-        ...workflowData,
+        ...responseWorkflowData,
         state: {
           blocks: {},
           edges: [],
           loops: {},
           parallels: {},
           lastSaved: Date.now(),
-          isDeployed: workflowData.isDeployed || false,
-          deployedAt: workflowData.deployedAt,
+          isDeployed: responseWorkflowData.isDeployed || false,
+          deployedAt: responseWorkflowData.deployedAt,
           metadata: {
-            name: workflowData.name,
-            description: workflowData.description,
+            name: responseWorkflowData.name,
+            description: responseWorkflowData.description,
           },
         },
-        variables: workflowData.variables || {},
+        variables: stampedVariables,
       }
 
       return NextResponse.json({ data: emptyWorkflowData }, { status: 200 })
@@ -183,6 +204,8 @@ export const DELETE = withRouteHandler(
           { status: authorization.status || 403 }
         )
       }
+
+      await assertWorkflowMutable(workflowId)
 
       const { searchParams } = new URL(request.url)
       const checkTemplates = searchParams.get('check-templates') === 'true'
@@ -238,6 +261,10 @@ export const DELETE = withRouteHandler(
 
       return NextResponse.json({ success: true }, { status: 200 })
     } catch (error: any) {
+      if (error instanceof WorkflowLockedError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+
       const elapsed = Date.now() - startTime
       logger.error(`[${requestId}] Error deleting workflow ${workflowId} after ${elapsed}ms`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -250,10 +277,10 @@ export const DELETE = withRouteHandler(
  * Update workflow metadata (name, description, color, folderId)
  */
 export const PUT = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
     const startTime = Date.now()
-    const { id: workflowId } = await params
+    const { id: workflowId } = await context.params
 
     try {
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
@@ -264,8 +291,9 @@ export const PUT = withRouteHandler(
 
       const userId = auth.userId
 
-      const body = await request.json()
-      const updates = UpdateWorkflowSchema.parse(body)
+      const parsed = await parseRequest(updateWorkflowContract, request, context)
+      if (!parsed.success) return parsed.response
+      const updates = parsed.data.body
 
       // Fetch the workflow to check ownership/access
       const authorization = await authorizeWorkflowByWorkspacePermission({
@@ -292,78 +320,57 @@ export const PUT = withRouteHandler(
         )
       }
 
-      const updateData: Record<string, unknown> = { updatedAt: new Date() }
-      if (updates.name !== undefined) updateData.name = updates.name
-      if (updates.description !== undefined) updateData.description = updates.description
-      if (updates.color !== undefined) updateData.color = updates.color
-      if (updates.folderId !== undefined) updateData.folderId = updates.folderId
-      if (updates.sortOrder !== undefined) updateData.sortOrder = updates.sortOrder
-
-      if (updates.name !== undefined || updates.folderId !== undefined) {
-        const targetName = updates.name ?? workflowData.name
-        const targetFolderId =
-          updates.folderId !== undefined ? updates.folderId : workflowData.folderId
-
-        if (!workflowData.workspaceId) {
-          logger.error(`[${requestId}] Workflow ${workflowId} has no workspaceId`)
-          return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-        }
-
-        const conditions = [
-          eq(workflow.workspaceId, workflowData.workspaceId),
-          isNull(workflow.archivedAt),
-          eq(workflow.name, targetName),
-          ne(workflow.id, workflowId),
-        ]
-
-        if (targetFolderId) {
-          conditions.push(eq(workflow.folderId, targetFolderId))
-        } else {
-          conditions.push(isNull(workflow.folderId))
-        }
-
-        const [duplicate] = await db
-          .select({ id: workflow.id })
-          .from(workflow)
-          .where(and(...conditions))
-          .limit(1)
-
-        if (duplicate) {
-          logger.warn(
-            `[${requestId}] Duplicate workflow name "${targetName}" in folder ${targetFolderId ?? 'root'}`
-          )
-          return NextResponse.json(
-            { error: `A workflow named "${targetName}" already exists in this folder` },
-            { status: 409 }
-          )
-        }
-      }
-
-      // Update the workflow
-      const [updatedWorkflow] = await db
-        .update(workflow)
-        .set(updateData)
-        .where(eq(workflow.id, workflowId))
-        .returning()
-
-      const elapsed = Date.now() - startTime
-      logger.info(`[${requestId}] Successfully updated workflow ${workflowId} in ${elapsed}ms`, {
-        updates: updateData,
-      })
-
-      return NextResponse.json({ workflow: updatedWorkflow }, { status: 200 })
-    } catch (error: any) {
-      const elapsed = Date.now() - startTime
-      if (error instanceof z.ZodError) {
-        logger.warn(`[${requestId}] Invalid workflow update data for ${workflowId}`, {
-          errors: error.errors,
-        })
+      if (updates.locked !== undefined && authorization.workspacePermission !== 'admin') {
+        logger.warn(
+          `[${requestId}] User ${userId} denied permission to lock workflow ${workflowId}`
+        )
         return NextResponse.json(
-          { error: 'Invalid request data', details: error.errors },
-          { status: 400 }
+          { error: 'Admin access required to lock workflows' },
+          { status: 403 }
         )
       }
 
+      const hasNonLockUpdate = Object.keys(updates).some((key) => key !== 'locked')
+      if (hasNonLockUpdate) {
+        await assertWorkflowMutable(workflowId)
+      }
+      if (updates.folderId !== undefined) {
+        await assertFolderMutable(updates.folderId)
+      }
+
+      if (!workflowData.workspaceId) {
+        logger.error(`[${requestId}] Workflow ${workflowId} has no workspaceId`)
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+      }
+
+      const result = await performUpdateWorkflow({
+        workflowId,
+        userId,
+        workspaceId: workflowData.workspaceId,
+        currentName: workflowData.name,
+        currentFolderId: workflowData.folderId,
+        ...updates,
+        requestId,
+      })
+
+      if (!result.success || !result.workflow) {
+        const status =
+          result.errorCode === 'not_found' ? 404 : result.errorCode === 'conflict' ? 409 : 500
+        return NextResponse.json({ error: result.error }, { status })
+      }
+
+      const elapsed = Date.now() - startTime
+      logger.info(`[${requestId}] Successfully updated workflow ${workflowId} in ${elapsed}ms`, {
+        updates,
+      })
+
+      return NextResponse.json({ workflow: result.workflow }, { status: 200 })
+    } catch (error: any) {
+      if (error instanceof WorkflowLockedError || error instanceof FolderLockedError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+
+      const elapsed = Date.now() - startTime
       logger.error(`[${requestId}] Error updating workflow ${workflowId} after ${elapsed}ms`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }

@@ -1,4 +1,4 @@
-export type ProviderName = 'ollama' | 'vllm' | 'openrouter' | 'base' | 'sambanova' | 'fireworks'
+export type ProviderName = 'ollama' | 'vllm' | 'openrouter' | 'base' | 'litellm' | 'sambanova' | 'fireworks'
 
 export interface OpenRouterModelInfo {
   id: string
@@ -11,7 +11,7 @@ export interface OpenRouterModelInfo {
   }
 }
 
-export interface ProviderState {
+interface ProviderState {
   models: string[]
   isLoading: boolean
 }

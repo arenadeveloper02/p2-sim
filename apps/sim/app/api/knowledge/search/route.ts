@@ -16,7 +16,7 @@ import type { StructuredFilter } from '@/lib/knowledge/types'
 import { estimateTokenCount } from '@/lib/tokenization/estimators'
 import {
   generateSearchEmbedding,
-  getDocumentNamesByIds,
+  getDocumentMetadataByIds,
   getQueryStrategy,
   handleTagAndVectorSearch,
   handleTagOnlySearch,
@@ -424,7 +424,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       // Fetch document names for the results
       const documentIds = results.map((result) => result.documentId)
-      const documentNameMap = await getDocumentNamesByIds(documentIds)
+      const documentNameMap = await getDocumentMetadataByIds(documentIds)
 
       // Fetch workspaceId per knowledge base for "View in Knowledge Base" links (only for users with workspace access)
       const kbIds = [...new Set(results.map((r) => r.knowledgeBaseId))]

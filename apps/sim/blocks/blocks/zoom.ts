@@ -167,6 +167,7 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       type: 'short-input',
       canonicalParamId: 'meetingId',
       placeholder: 'Enter meeting ID',
+      dependsOn: ['credential'],
       mode: 'advanced',
       required: true,
       dependsOn: ['credential', 'manualCredential'],

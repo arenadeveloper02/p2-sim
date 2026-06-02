@@ -8,6 +8,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Button, Library } from '@/components/emcn'
 import { AgentIcon } from '@/components/icons'
 import { cn } from '@/lib/core/utils/cn'
+import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { usePreventZoom } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { useBrandConfig } from '@/ee/whitelabeling'
 import { useSearchModalStore } from '@/stores/modals/search/store'
@@ -208,8 +209,13 @@ export function CommandList() {
           return (
             <div
               key={command.label}
+              role='button'
+              tabIndex={0}
               className='group flex cursor-pointer items-center justify-between gap-[60px]'
               onClick={() => handleCommandClick(command.label)}
+              onKeyDown={(event) =>
+                handleKeyboardActivation(event, () => handleCommandClick(command.label))
+              }
             >
               {/* Left side: Icon and Label */}
               <div className='flex items-center gap-[8px]'>
@@ -221,7 +227,7 @@ export function CommandList() {
                     <AgentIcon className='h-[9px] w-[9px] text-white' />
                   </div>
                 ) : (
-                  <Icon className='h-[14px] w-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
+                  <Icon className='size-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
                 )}
                 <span className='font-medium text-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'>
                   {command.label}
@@ -236,13 +242,13 @@ export function CommandList() {
                 >
                   <span>⌘</span>
                 </Button>
-                {shortcuts.map((key, index) => (
+                {shortcuts.map((shortcut) => (
                   <Button
-                    key={index}
+                    key={shortcut}
                     className='group-hover:-translate-y-0.5 w-[26px] py-[3px] text-caption hover-hover:translate-y-0 hover-hover:text-[var(--text-tertiary)] hover-hover:shadow-kbd-sm group-hover:text-[var(--text-primary)] group-hover:shadow-kbd'
                     variant='3d'
                   >
-                    {key}
+                    {shortcut}
                   </Button>
                 ))}
               </div>

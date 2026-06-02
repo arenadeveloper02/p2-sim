@@ -75,11 +75,11 @@ function apportionCredits(
   return result
 }
 
-function RoleBadge({ role }: { role: string }) {
-  const variant = role === 'owner' ? 'blue-secondary' : 'gray-secondary'
+function RoleBadge({ memberRole }: { memberRole: string }) {
+  const variant = memberRole === 'owner' ? 'blue-secondary' : 'gray-secondary'
   return (
     <Badge variant={variant} size='sm'>
-      {role.charAt(0).toUpperCase() + role.slice(1)}
+      {memberRole.charAt(0).toUpperCase() + memberRole.slice(1)}
     </Badge>
   )
 }
@@ -99,7 +99,7 @@ function MemberIdentity({
 }) {
   return (
     <div className='flex items-center gap-3'>
-      <Avatar className='h-9 w-9 shrink-0'>
+      <Avatar className='size-9 shrink-0'>
         {image && <AvatarImage src={image} alt={name} />}
         <AvatarFallback
           style={{ background: getUserColor(userId || email) }}
@@ -124,11 +124,11 @@ function ChevronCell({ expanded, onClick }: { expanded: boolean; onClick: () => 
     <button
       type='button'
       onClick={onClick}
-      className='flex h-7 w-7 items-center justify-center rounded-[4px] text-[var(--text-muted)] transition-colors hover-hover:bg-[var(--surface-4)] hover-hover:text-[var(--text-primary)]'
+      className='flex size-7 items-center justify-center rounded-[4px] text-[var(--text-muted)] transition-colors hover-hover:bg-[var(--surface-4)] hover-hover:text-[var(--text-primary)]'
       aria-label={expanded ? 'Collapse' : 'Expand'}
       aria-expanded={expanded}
     >
-      {expanded ? <ChevronDown className='h-4 w-4' /> : <ChevronRight className='h-4 w-4' />}
+      {expanded ? <ChevronDown className='size-4' /> : <ChevronRight className='size-4' />}
     </button>
   )
 }
@@ -137,11 +137,11 @@ function RosterRowSkeleton() {
   return (
     <TableRow>
       <TableCell className='w-[36px]'>
-        <Skeleton className='h-7 w-7 rounded-[4px]' />
+        <Skeleton className='size-7 rounded-[4px]' />
       </TableCell>
       <TableCell>
         <div className='flex items-center gap-3'>
-          <Skeleton className='h-9 w-9 rounded-full' />
+          <Skeleton className='size-9 rounded-full' />
           <div className='flex flex-col gap-1.5'>
             <Skeleton className='h-3.5 w-28' />
             <Skeleton className='h-3 w-36' />
@@ -470,7 +470,7 @@ export function OrganizationRoster({
   return (
     <div className='flex flex-col gap-3'>
       <div className='relative'>
-        <Search className='-translate-y-1/2 absolute top-1/2 left-3 h-4 w-4 text-[var(--text-muted)]' />
+        <Search className='-translate-y-1/2 absolute top-1/2 left-3 size-4 text-[var(--text-muted)]' />
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -521,6 +521,7 @@ export function OrganizationRoster({
                 const rowKey = `member-${m.memberId}`
                 const expanded = expandedRows.has(rowKey)
                 const isSelf = m.email === currentUserEmail
+                const isExternal = m.role === 'external'
                 const credits = memberCredits[m.userId] ?? 0
                 const canRemove = isAdminOrOwner && m.role !== 'owner' && !isSelf
                 const canTransferAndLeave = isSelf && m.role === 'owner' && !!onTransferOwnership
@@ -545,8 +546,11 @@ export function OrganizationRoster({
                         </button>
                       </TableCell>
                       <TableCell>
-                        {m.role === 'owner' || !canEditRoles || m.userId === currentUserId ? (
-                          <RoleBadge role={m.role} />
+                        {m.role === 'owner' ||
+                        isExternal ||
+                        !canEditRoles ||
+                        m.userId === currentUserId ? (
+                          <RoleBadge memberRole={m.role} />
                         ) : (
                           <OrgRoleSelector
                             value={(m.role === 'admin' ? 'admin' : 'member') as OrgRole}
@@ -630,6 +634,7 @@ export function OrganizationRoster({
               {filteredInvitations.map((inv) => {
                 const rowKey = `invite-${inv.id}`
                 const expanded = expandedRows.has(rowKey)
+                const isExternal = inv.membershipIntent === 'external'
                 const isResending = resendingIds.has(inv.id)
                 const isCancelling = cancellingIds.has(inv.id)
                 const cooldown = resendCooldowns[inv.id] ?? 0
@@ -660,7 +665,9 @@ export function OrganizationRoster({
                         </button>
                       </TableCell>
                       <TableCell>
-                        {isAdminOrOwner ? (
+                        {isExternal ? (
+                          <RoleBadge memberRole='external' />
+                        ) : isAdminOrOwner ? (
                           <OrgRoleSelector
                             value={(inv.role === 'admin' ? 'admin' : 'member') as OrgRole}
                             onChange={(next) =>
@@ -677,7 +684,7 @@ export function OrganizationRoster({
                             disabled={updateInvitation.isPending}
                           />
                         ) : (
-                          <RoleBadge role={inv.role} />
+                          <RoleBadge memberRole={inv.role} />
                         )}
                       </TableCell>
                       <TableCell className='text-right'>

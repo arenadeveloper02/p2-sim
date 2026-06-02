@@ -4,7 +4,8 @@ import { getSession } from '@/lib/auth'
 import { AppBanner } from '@/app/workspace/[workspaceId]/app-banner'
 import { NavTour } from '@/app/workspace/[workspaceId]/components/product-tour'
 import { WorkspaceChrome } from '@/app/workspace/[workspaceId]/components/workspace-chrome'
-import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/impersonation-banner'
+import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/components/impersonation-banner'
+import { redirect } from 'next/navigation'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { ProviderModelsLoader } from '@/app/workspace/[workspaceId]/providers/provider-models-loader'
 import { SettingsLoader } from '@/app/workspace/[workspaceId]/providers/settings-loader'
@@ -24,8 +25,11 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
 
 async function WorkspaceLayoutInner({ children }: { children: React.ReactNode }) {
   const session = await getSession()
+  if (!session?.user) {
+    redirect('/login')
+  }
   // The organization plugin is conditionally spread so TS can't infer activeOrganizationId on the base session type.
-  const orgId = (session?.session as { activeOrganizationId?: string } | null)?.activeOrganizationId
+  const orgId = (session.session as { activeOrganizationId?: string } | null)?.activeOrganizationId
   const initialOrgSettings = orgId ? await getOrgWhitelabelSettings(orgId) : null
 
   return (

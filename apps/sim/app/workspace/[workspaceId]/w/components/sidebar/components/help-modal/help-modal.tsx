@@ -16,6 +16,7 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Textarea,
@@ -44,7 +45,7 @@ const formSchema = z.object({
   subject: z.string().min(1, 'Subject is required'),
   message: z.string().min(1, 'Message is required'),
   type: z.enum(['bug', 'feedback', 'feature_request', 'other'], {
-    required_error: 'Please select a request type',
+    error: 'Please select a request type',
   }),
 })
 
@@ -108,6 +109,7 @@ async function submitHelpRequest({ data, images, workflowId, workspaceId }: Subm
     formData.append(`image_${index}`, image)
   })
 
+  // boundary-raw-fetch: multipart/form-data submission with image attachments, requestJson only supports JSON bodies
   const response = await fetch('/api/help', {
     method: 'POST',
     body: formData,
@@ -307,6 +309,9 @@ export function HelpModal({ open, onOpenChange, workflowId, workspaceId }: HelpM
 
         <form onSubmit={handleSubmit(onSubmit)} className='flex min-h-0 flex-1 flex-col'>
           <ModalBody>
+            <ModalDescription className='sr-only'>
+              Submit a help or support request
+            </ModalDescription>
             <div ref={scrollContainerRef} className='min-h-0 flex-1 overflow-y-auto'>
               <div className='space-y-3'>
                 <div className='flex flex-col gap-2'>
@@ -408,7 +413,7 @@ export function HelpModal({ open, onOpenChange, workflowId, workspaceId }: HelpM
                               className='absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100'
                               onClick={() => removeImage(index)}
                             >
-                              <X className='h-[18px] w-[18px] text-white' />
+                              <X className='size-[18px] text-white' />
                             </button>
                           </div>
                           <div className='truncate p-1.5 text-caption'>{image.name}</div>

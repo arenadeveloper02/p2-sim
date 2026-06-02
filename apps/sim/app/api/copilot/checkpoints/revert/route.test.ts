@@ -36,6 +36,7 @@ vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
 
 vi.mock('@/lib/copilot/chat/lifecycle', () => ({
   getAccessibleCopilotChat: mockGetAccessibleCopilotChat,
+  getAccessibleCopilotChatAuth: mockGetAccessibleCopilotChat,
 }))
 
 vi.mock('@sim/db', () => ({
@@ -137,7 +138,7 @@ describe('Copilot Checkpoints Revert API Route', () => {
       expect(responseData).toEqual({ error: 'Unauthorized' })
     })
 
-    it('should return 500 for invalid request body - missing checkpointId', async () => {
+    it('should return 400 for invalid request body - missing checkpointId', async () => {
       setAuthenticated()
 
       const req = new NextRequest('http://localhost:3000/api/copilot/checkpoints/revert', {
@@ -148,12 +149,12 @@ describe('Copilot Checkpoints Revert API Route', () => {
 
       const response = await POST(req)
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(400)
       const responseData = await response.json()
-      expect(responseData.error).toBe('Failed to revert to checkpoint')
+      expect(typeof responseData.error).toBe('string')
     })
 
-    it('should return 500 for empty checkpointId', async () => {
+    it('should return 400 for empty checkpointId', async () => {
       setAuthenticated()
 
       const req = new NextRequest('http://localhost:3000/api/copilot/checkpoints/revert', {
@@ -164,9 +165,9 @@ describe('Copilot Checkpoints Revert API Route', () => {
 
       const response = await POST(req)
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(400)
       const responseData = await response.json()
-      expect(responseData.error).toBe('Failed to revert to checkpoint')
+      expect(typeof responseData.error).toBe('string')
     })
 
     it('should return 404 when checkpoint is not found', async () => {

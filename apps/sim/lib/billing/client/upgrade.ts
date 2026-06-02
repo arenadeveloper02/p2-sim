@@ -1,6 +1,11 @@
 import { useCallback } from 'react'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
+import { ApiClientError } from '@/lib/api/client/errors'
+import { requestJson } from '@/lib/api/client/request'
+import { listCreatorOrganizationsContract } from '@/lib/api/contracts/creator-profile'
+import { subscriptionTransferContract } from '@/lib/api/contracts/user'
 import { client, useSession, useSubscription } from '@/lib/auth/auth-client'
 import { buildPlanName, getDisplayPlanName, isPaid } from '@/lib/billing/plan-helpers'
 import { hasPaidSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
@@ -53,15 +58,17 @@ export function useSubscriptionUpgrade() {
 
       if (targetPlan === 'team') {
         try {
-          const orgsResponse = await fetch('/api/organizations')
-          if (!orgsResponse.ok) {
-            await orgsResponse.text().catch(() => {})
-            throw new Error('Failed to check organization status')
+          let orgsData
+          try {
+            orgsData = await requestJson(listCreatorOrganizationsContract, {})
+          } catch (err) {
+            if (err instanceof ApiClientError) {
+              throw new Error('Failed to check organization status')
+            }
+            throw err
           }
-
-          const orgsData = await orgsResponse.json()
           const existingOrg = orgsData.organizations?.find(
-            (org: any) => org.role === 'owner' || org.role === 'admin'
+            (org) => org.role === 'owner' || org.role === 'admin'
           )
 
           if (existingOrg) {
@@ -97,7 +104,7 @@ export function useSubscriptionUpgrade() {
             } catch (error) {
               logger.warn('Failed to set organization as active, proceeding with upgrade', {
                 organizationId: referenceId,
-                error: error instanceof Error ? error.message : 'Unknown error',
+                error: getErrorMessage(error, 'Unknown error'),
               })
             }
           } else if (orgsData.isMemberOfAnyOrg) {
@@ -148,26 +155,25 @@ export function useSubscriptionUpgrade() {
               organizationId: referenceId,
             })
 
-            const transferResponse = await fetch(
-              `/api/users/me/subscription/${currentSubscriptionId}/transfer`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ organizationId: referenceId }),
-              }
-            )
-
-            if (!transferResponse.ok) {
-              const text = await transferResponse.text()
-              logger.error('Failed to transfer subscription to organization', {
-                subscriptionId: currentSubscriptionId,
-                organizationId: referenceId,
-                error: text,
+            try {
+              await requestJson(subscriptionTransferContract, {
+                params: { id: currentSubscriptionId },
+                body: { organizationId: referenceId },
               })
-            } else {
               logger.info('Successfully transferred subscription to organization', {
                 subscriptionId: currentSubscriptionId,
                 organizationId: referenceId,
+              })
+            } catch (transferError) {
+              logger.error('Failed to transfer subscription to organization', {
+                subscriptionId: currentSubscriptionId,
+                organizationId: referenceId,
+                error:
+                  transferError instanceof ApiClientError
+                    ? (transferError.rawBody ?? transferError.message)
+                    : transferError instanceof Error
+                      ? transferError.message
+                      : 'Unknown error',
               })
             }
           } catch (error) {
@@ -197,7 +203,7 @@ export function useSubscriptionUpgrade() {
         }
 
         throw new Error(
-          `Failed to upgrade subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
+          `Failed to upgrade subscription: ${getErrorMessage(error, 'Unknown error')}`
         )
       }
     },

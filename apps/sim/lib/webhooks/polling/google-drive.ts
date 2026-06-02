@@ -1,5 +1,11 @@
+import type { Logger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { pollingIdempotency } from '@/lib/core/idempotency/service'
-import type { PollingProviderHandler, PollWebhookContext } from '@/lib/webhooks/polling/types'
+import {
+  getProviderConfig,
+  type PollingProviderHandler,
+  type PollWebhookContext,
+} from '@/lib/webhooks/polling/types'
 import {
   markWebhookFailed,
   markWebhookSuccess,
@@ -50,7 +56,7 @@ interface DriveFileMetadata {
   trashed?: boolean
 }
 
-export interface GoogleDriveWebhookPayload {
+interface GoogleDriveWebhookPayload {
   file: DriveFileMetadata | { id: string }
   eventType: 'created' | 'modified' | 'deleted'
   timestamp: string
@@ -87,7 +93,7 @@ export const googleDrivePollingHandler: PollingProviderHandler = {
         logger
       )
 
-      const config = webhookData.providerConfig as unknown as GoogleDriveWebhookConfig
+      const config = getProviderConfig<GoogleDriveWebhookConfig>(webhookData.providerConfig)
 
       // First poll (or re-seed after 410): seed page token, preserve any existing known file IDs.
       if (!config.pageToken) {
@@ -208,7 +214,7 @@ async function getStartPageToken(
   accessToken: string,
   config: GoogleDriveWebhookConfig,
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ): Promise<string> {
   const params = new URLSearchParams()
   if (config.includeSharedDrives) {
@@ -241,7 +247,7 @@ async function fetchChanges(
   accessToken: string,
   config: GoogleDriveWebhookConfig,
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ): Promise<{ changes: DriveChangeEntry[]; newStartPageToken: string }> {
   const allChanges: DriveChangeEntry[] = []
   let currentPageToken = config.pageToken!
@@ -356,7 +362,7 @@ async function processChanges(
   webhookData: PollWebhookContext['webhookData'],
   workflowData: PollWebhookContext['workflowData'],
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ): Promise<{ processedCount: number; failedCount: number; newKnownFileIds: string[] }> {
   let processedCount = 0
   let failedCount = 0
@@ -419,7 +425,7 @@ async function processChanges(
       )
       processedCount++
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const errorMessage = getErrorMessage(error, 'Unknown error')
       logger.error(
         `[${requestId}] Error processing change for file ${change.fileId}:`,
         errorMessage

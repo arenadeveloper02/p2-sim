@@ -1,5 +1,5 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import {
   CallToolRequestSchema,
   type CallToolResult,
@@ -18,6 +18,7 @@ import { generateId } from '@sim/utils/id'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { mcpRequestBodySchema, mcpToolCallParamsSchema } from '@/lib/api/contracts/mcp'
 import { validateOAuthAccessToken } from '@/lib/auth/oauth-token'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { generateWorkspaceContext } from '@/lib/copilot/chat/workspace-context'
@@ -26,6 +27,7 @@ import { createRequestId } from '@/lib/copilot/request/http'
 import { runHeadlessCopilotLifecycle } from '@/lib/copilot/request/lifecycle/headless'
 import { orchestrateSubagentStream } from '@/lib/copilot/request/subagent'
 import { ensureHandlersRegistered, executeTool } from '@/lib/copilot/tool-executor'
+import { ensureWorkspaceAccess } from '@/lib/copilot/tools/handlers/access'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { DIRECT_TOOL_DEFS, SUBAGENT_TOOL_DEFS } from '@/lib/copilot/tools/mcp/definitions'
 import { env } from '@/lib/core/config/env'
@@ -166,16 +168,6 @@ function createError(id: RequestId, code: ErrorCode | number, message: string): 
   }
 }
 
-function normalizeRequestHeaders(request: NextRequest): HeaderMap {
-  const headers: HeaderMap = {}
-
-  request.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value
-  })
-
-  return headers
-}
-
 function readHeader(headers: HeaderMap | undefined, name: string): string | undefined {
   if (!headers) return undefined
   const value = headers[name.toLowerCase()]
@@ -183,190 +175,6 @@ function readHeader(headers: HeaderMap | undefined, name: string): string | unde
     return value[0]
   }
   return value
-}
-
-class NextResponseCapture {
-  private _status = 200
-  private _headers = new Headers()
-  private _controller: ReadableStreamDefaultController<Uint8Array> | null = null
-  private _pendingChunks: Uint8Array[] = []
-  private _closeHandlers: Array<() => void> = []
-  private _errorHandlers: Array<(error: Error) => void> = []
-  private _headersWritten = false
-  private _ended = false
-  private _headersPromise: Promise<void>
-  private _resolveHeaders: (() => void) | null = null
-  private _endedPromise: Promise<void>
-  private _resolveEnded: (() => void) | null = null
-  readonly readable: ReadableStream<Uint8Array>
-
-  constructor() {
-    this._headersPromise = new Promise<void>((resolve) => {
-      this._resolveHeaders = resolve
-    })
-
-    this._endedPromise = new Promise<void>((resolve) => {
-      this._resolveEnded = resolve
-    })
-
-    this.readable = new ReadableStream<Uint8Array>({
-      start: (controller) => {
-        this._controller = controller
-        if (this._pendingChunks.length > 0) {
-          for (const chunk of this._pendingChunks) {
-            controller.enqueue(chunk)
-          }
-          this._pendingChunks = []
-        }
-      },
-      cancel: () => {
-        this._ended = true
-        this._resolveEnded?.()
-        this.triggerCloseHandlers()
-      },
-    })
-  }
-
-  private markHeadersWritten(): void {
-    if (this._headersWritten) return
-    this._headersWritten = true
-    this._resolveHeaders?.()
-  }
-
-  private triggerCloseHandlers(): void {
-    for (const handler of this._closeHandlers) {
-      try {
-        handler()
-      } catch (error) {
-        this.triggerErrorHandlers(toError(error))
-      }
-    }
-  }
-
-  private triggerErrorHandlers(error: Error): void {
-    for (const errorHandler of this._errorHandlers) {
-      errorHandler(error)
-    }
-  }
-
-  private normalizeChunk(chunk: unknown): Uint8Array | null {
-    if (typeof chunk === 'string') {
-      return new TextEncoder().encode(chunk)
-    }
-
-    if (chunk instanceof Uint8Array) {
-      return chunk
-    }
-
-    if (chunk === undefined || chunk === null) {
-      return null
-    }
-
-    return new TextEncoder().encode(String(chunk))
-  }
-
-  writeHead(status: number, headers?: Record<string, string | number | string[]>): this {
-    this._status = status
-
-    if (headers) {
-      Object.entries(headers).forEach(([key, value]) => {
-        if (Array.isArray(value)) {
-          this._headers.set(key, value.join(', '))
-        } else {
-          this._headers.set(key, String(value))
-        }
-      })
-    }
-
-    this.markHeadersWritten()
-    return this
-  }
-
-  flushHeaders(): this {
-    this.markHeadersWritten()
-    return this
-  }
-
-  write(chunk: unknown): boolean {
-    const normalized = this.normalizeChunk(chunk)
-    if (!normalized) return true
-
-    this.markHeadersWritten()
-
-    if (this._controller) {
-      try {
-        this._controller.enqueue(normalized)
-      } catch (error) {
-        this.triggerErrorHandlers(toError(error))
-      }
-    } else {
-      this._pendingChunks.push(normalized)
-    }
-
-    return true
-  }
-
-  end(chunk?: unknown): this {
-    if (chunk !== undefined) this.write(chunk)
-    this.markHeadersWritten()
-    if (this._ended) return this
-
-    this._ended = true
-    this._resolveEnded?.()
-
-    if (this._controller) {
-      try {
-        this._controller.close()
-      } catch (error) {
-        this.triggerErrorHandlers(toError(error))
-      }
-    }
-
-    this.triggerCloseHandlers()
-
-    return this
-  }
-
-  async waitForHeaders(timeoutMs = 30000): Promise<void> {
-    if (this._headersWritten) return
-
-    await Promise.race([
-      this._headersPromise,
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, timeoutMs)
-      }),
-    ])
-  }
-
-  async waitForEnd(timeoutMs = 30000): Promise<void> {
-    if (this._ended) return
-
-    await Promise.race([
-      this._endedPromise,
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, timeoutMs)
-      }),
-    ])
-  }
-
-  on(event: 'close' | 'error', handler: (() => void) | ((error: Error) => void)): this {
-    if (event === 'close') {
-      this._closeHandlers.push(handler as () => void)
-    }
-
-    if (event === 'error') {
-      this._errorHandlers.push(handler as (error: Error) => void)
-    }
-
-    return this
-  }
-
-  toNextResponse(): NextResponse {
-    return new NextResponse(this.readable, {
-      status: this._status,
-      headers: this._headers,
-    })
-  }
 }
 
 function buildMcpServer(abortSignal?: AbortSignal): Server {
@@ -476,12 +284,11 @@ function buildMcpServer(abortSignal?: AbortSignal): Server {
       }
     }
 
-    const params = request.params as
-      | { name?: string; arguments?: Record<string, unknown> }
-      | undefined
-    if (!params?.name) {
+    const paramsValidation = mcpToolCallParamsSchema.safeParse(request.params)
+    if (!paramsValidation.success) {
       throw new McpError(ErrorCode.InvalidParams, 'Tool name required')
     }
+    const params = paramsValidation.data
 
     const result = await handleToolsCall(
       {
@@ -503,29 +310,17 @@ function buildMcpServer(abortSignal?: AbortSignal): Server {
 async function handleMcpRequestWithSdk(
   request: NextRequest,
   parsedBody: unknown
-): Promise<NextResponse> {
+): Promise<Response> {
   const server = buildMcpServer(request.signal)
-  const transport = new StreamableHTTPServerTransport({
+  const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
   })
 
-  const responseCapture = new NextResponseCapture()
-  const requestAdapter = {
-    method: request.method,
-    headers: normalizeRequestHeaders(request),
-  }
-
   await server.connect(transport)
 
   try {
-    await transport.handleRequest(requestAdapter as any, responseCapture as any, parsedBody)
-    await responseCapture.waitForHeaders()
-    // Must exceed the longest possible tool execution.
-    // Using ORCHESTRATION_TIMEOUT_MS + 60 s buffer so the orchestrator can
-    // finish or time-out on its own before the transport is torn down.
-    await responseCapture.waitForEnd(ORCHESTRATION_TIMEOUT_MS + 60_000)
-    return responseCapture.toNextResponse()
+    return await transport.handleRequest(request, { parsedBody })
   } finally {
     await server.close().catch(() => {})
     await transport.close().catch(() => {})
@@ -565,26 +360,30 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       })
     }
 
-    return await handleMcpRequestWithSdk(request, parsedBody)
+    const bodyValidation = mcpRequestBodySchema.safeParse(parsedBody)
+    if (!bodyValidation.success) {
+      return NextResponse.json(
+        createError(0, ErrorCode.InvalidRequest, 'Invalid JSON-RPC message'),
+        {
+          status: 400,
+        }
+      )
+    }
+
+    return await handleMcpRequestWithSdk(request, bodyValidation.data)
   } catch (error) {
+    if (request.signal.aborted || (error as Error)?.name === 'AbortError') {
+      return NextResponse.json(
+        createError(0, ErrorCode.ConnectionClosed, 'Client cancelled request'),
+        { status: 499 }
+      )
+    }
+
     logger.error('Error handling MCP request', { error })
     return NextResponse.json(createError(0, ErrorCode.InternalError, 'Internal error'), {
       status: 500,
     })
   }
-})
-
-export const OPTIONS = withRouteHandler(async () => {
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, DELETE',
-      'Access-Control-Allow-Headers':
-        'Content-Type, Authorization, X-API-Key, X-Requested-With, Accept',
-      'Access-Control-Max-Age': '86400',
-    },
-  })
 })
 
 export const DELETE = withRouteHandler(async (request: NextRequest) => {
@@ -634,10 +433,36 @@ async function handleDirectToolCall(
   userId: string
 ): Promise<CallToolResult> {
   try {
+    const rawWorkflowId = (args.workflowId as string) || ''
+    let resolvedWorkspaceId: string | undefined
+    if (rawWorkflowId) {
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId: rawWorkflowId,
+        userId,
+        action: 'read',
+      })
+      if (!authorization.allowed) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                { success: false, error: 'Workflow not found or access denied' },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        }
+      }
+      resolvedWorkspaceId = authorization.workflow?.workspaceId || undefined
+    }
     const execContext = await prepareExecutionContext(
       userId,
-      (args.workflowId as string) || '',
-      (args.chatId as string) || undefined
+      rawWorkflowId,
+      (args.chatId as string) || undefined,
+      { workspaceId: resolvedWorkspaceId }
     )
 
     const toolCall = {
@@ -831,12 +656,46 @@ async function handleSubagentToolCall(
       context.plan = args.plan
     }
 
+    // Authorize user-supplied workflowId / workspaceId before forwarding downstream
+    const rawWorkflowId = args.workflowId as string | undefined
+    const rawWorkspaceId = args.workspaceId as string | undefined
+    let resolvedWorkflowId: string | undefined
+    let resolvedWorkspaceId: string | undefined
+
+    if (rawWorkflowId) {
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId: rawWorkflowId,
+        userId,
+        action: 'read',
+      })
+      if (!authorization.allowed) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                { success: false, error: 'Workflow not found or access denied' },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        }
+      }
+      resolvedWorkflowId = rawWorkflowId
+      resolvedWorkspaceId = authorization.workflow?.workspaceId || undefined
+    } else if (rawWorkspaceId) {
+      await ensureWorkspaceAccess(rawWorkspaceId, userId, 'read')
+      resolvedWorkspaceId = rawWorkspaceId
+    }
+
     const result = await orchestrateSubagentStream(
       toolDef.agentId,
       {
         message: requestText,
-        workflowId: args.workflowId,
-        workspaceId: args.workspaceId,
+        workflowId: resolvedWorkflowId,
+        workspaceId: resolvedWorkspaceId,
         context,
         model: DEFAULT_COPILOT_MODEL,
         headless: true,
@@ -844,8 +703,8 @@ async function handleSubagentToolCall(
       },
       {
         userId,
-        workflowId: args.workflowId as string | undefined,
-        workspaceId: args.workspaceId as string | undefined,
+        workflowId: resolvedWorkflowId,
+        workspaceId: resolvedWorkspaceId,
         simRequestId,
         abortSignal,
       }

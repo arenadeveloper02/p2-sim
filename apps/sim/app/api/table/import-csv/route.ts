@@ -2,8 +2,15 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { type NextRequest, NextResponse } from 'next/server'
+import { csvExtensionSchema, csvImportFormSchema } from '@/lib/api/contracts/tables'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
+import {
+  isPayloadSizeLimitError,
+  readFileToBufferWithLimit,
+  readFormDataWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   batchInsertRows,
@@ -16,12 +23,14 @@ import {
   inferSchemaFromCsv,
   parseCsvBuffer,
   sanitizeName,
+  TABLE_LIMITS,
   type TableSchema,
 } from '@/lib/table'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { normalizeColumn } from '@/app/api/table/utils'
 
 const logger = createLogger('TableImportCSV')
+const MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
@@ -32,26 +41,25 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    const formData = await request.formData()
-    const file = formData.get('file')
-    const workspaceId = formData.get('workspaceId') as string | null
+    const formData = await readFormDataWithLimit(request, {
+      maxBytes: CSV_MAX_FILE_SIZE_BYTES + MAX_MULTIPART_OVERHEAD_BYTES,
+      label: 'CSV import body',
+    })
+    const validation = csvImportFormSchema.safeParse({
+      file: formData.get('file'),
+      workspaceId: formData.get('workspaceId'),
+    })
 
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json({ error: 'CSV file is required' }, { status: 400 })
-    }
-
-    if (file.size > CSV_MAX_FILE_SIZE_BYTES) {
+    if (!validation.success) {
+      const message = getValidationErrorMessage(validation.error)
+      const isSizeLimit = message.includes('File exceeds maximum allowed size')
       return NextResponse.json(
-        {
-          error: `File exceeds maximum allowed size of ${CSV_MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB`,
-        },
-        { status: 400 }
+        { error: isSizeLimit ? 'CSV import file exceeds maximum size' : message },
+        { status: isSizeLimit ? 413 : 400 }
       )
     }
 
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 })
-    }
+    const { file, workspaceId } = validation.data
 
     const permission = await getUserEntityPermissions(authResult.userId, 'workspace', workspaceId)
     if (permission !== 'write' && permission !== 'admin') {
@@ -59,16 +67,26 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
 
     const ext = file.name.split('.').pop()?.toLowerCase()
-    if (ext !== 'csv' && ext !== 'tsv') {
-      return NextResponse.json({ error: 'Only CSV and TSV files are supported' }, { status: 400 })
+    const extensionValidation = csvExtensionSchema.safeParse(ext)
+    if (!extensionValidation.success) {
+      return NextResponse.json(
+        { error: getValidationErrorMessage(extensionValidation.error) },
+        { status: 400 }
+      )
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const delimiter = ext === 'tsv' ? '\t' : ','
+    const buffer = await readFileToBufferWithLimit(file, {
+      maxBytes: CSV_MAX_FILE_SIZE_BYTES,
+      label: 'CSV import file',
+    })
+    const delimiter = extensionValidation.data === 'tsv' ? '\t' : ','
     const { headers, rows } = await parseCsvBuffer(buffer, delimiter)
 
     const { columns, headerToColumn } = inferSchemaFromCsv(headers, rows)
-    const tableName = sanitizeName(file.name.replace(/\.[^.]+$/, ''), 'imported_table')
+    const tableName = sanitizeName(file.name.replace(/\.[^.]+$/, ''), 'imported_table').slice(
+      0,
+      TABLE_LIMITS.MAX_TABLE_NAME_LENGTH
+    )
     const planLimits = await getWorkspaceTableLimits(workspaceId)
 
     const normalizedSchema: TableSchema = {
@@ -129,16 +147,21 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     const message = toError(error).message
     logger.error(`[${requestId}] CSV import failed:`, error)
 
+    const isSizeLimitError =
+      isPayloadSizeLimitError(error) || message.includes('CSV import file exceeds maximum size')
     const isClientError =
       message.includes('maximum table limit') ||
       message.includes('CSV file has no') ||
       message.includes('Invalid table name') ||
       message.includes('Invalid schema') ||
-      message.includes('already exists')
+      message.includes('already exists') ||
+      isSizeLimitError
 
     return NextResponse.json(
       { error: isClientError ? message : 'Failed to import CSV' },
-      { status: isClientError ? 400 : 500 }
+      {
+        status: isSizeLimitError ? 413 : isClientError ? 400 : 500,
+      }
     )
   }
 })

@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { Info } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
@@ -12,12 +13,15 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Skeleton,
   Switch,
   Tooltip,
 } from '@/components/emcn'
+import { requestJson } from '@/lib/api/client/request'
+import { billingSwitchPlanContract } from '@/lib/api/contracts/subscription'
 import { useSession, useSubscription } from '@/lib/auth/auth-client'
 import { USAGE_THRESHOLDS } from '@/lib/billing/client/consts'
 import { useSubscriptionUpgrade } from '@/lib/billing/client/upgrade'
@@ -137,7 +141,7 @@ function SubscriptionSkeleton() {
                 <ul className='flex flex-1 flex-col gap-3.5'>
                   {[...Array(5)].map((_, j) => (
                     <li key={j} className='flex items-center gap-2'>
-                      <Skeleton className='h-[12px] w-[12px] flex-shrink-0 rounded-sm' />
+                      <Skeleton className='size-[12px] flex-shrink-0 rounded-sm' />
                       <Skeleton className='h-[12px] w-[120px] rounded-sm' />
                     </li>
                   ))}
@@ -221,9 +225,9 @@ function CreditPlanCard({
 
       {features && features.length > 0 && (
         <ul className='flex flex-col gap-2.5 border-[var(--border-1)] border-t bg-[var(--surface-4)] px-3.5 py-3'>
-          {features.map((feature, idx) => (
-            <li key={idx} className='flex items-center gap-2'>
-              <feature.icon className='h-[13px] w-[13px] flex-shrink-0 text-[var(--text-muted)]' />
+          {features.map((feature) => (
+            <li key={feature.text} className='flex items-center gap-2'>
+              <feature.icon className='size-[13px] flex-shrink-0 text-[var(--text-muted)]' />
               <span className='text-[var(--text-secondary)] text-caption'>{feature.text}</span>
             </li>
           ))}
@@ -238,7 +242,7 @@ function CreditPlanCard({
         </div>
       )}
 
-      <div className='flex min-h-[60px] items-center border-[var(--border-1)] border-t bg-[var(--surface-4)] px-3.5 py-3.5'>
+      <div className='flex min-h-[60px] items-center border-[var(--border-1)] border-t bg-[var(--surface-4)] p-3.5'>
         {isCurrentPlan ? (
           <Button onClick={onManagePlan} className='h-[32px] w-full' variant='default'>
             {isCancelledAtPeriodEnd ? 'Restore Subscription' : 'Manage plan'}
@@ -500,7 +504,7 @@ export function Subscription() {
           ...(seats ? { seats } : {}),
         })
       } catch (error) {
-        alert(error instanceof Error ? error.message : 'Unknown error occurred')
+        alert(getErrorMessage(error, 'Unknown error occurred'))
       }
     },
     [handleUpgrade, isAnnual]
@@ -559,13 +563,9 @@ export function Subscription() {
           'Interval switching is not available on legacy plans. Please upgrade first.'
         )
       }
-      const res = await fetch('/api/billing/switch-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetPlanName: subscription.plan, interval }),
+      await requestJson(billingSwitchPlanContract, {
+        body: { targetPlanName: subscription.plan, interval },
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || 'Failed to switch interval')
       await refetchSubscription()
     },
     [refetchSubscription, subscription.plan, isLegacyPlan]
@@ -614,7 +614,7 @@ export function Subscription() {
           }
           limit={
             subscription.isOrgScoped
-              ? organizationBillingData?.data?.totalUsageLimit
+              ? (organizationBillingData?.data?.totalUsageLimit ?? usage.limit)
               : !subscription.isFree &&
                   (permissions.canEditUsageLimit || permissions.showTeamMemberView)
                 ? usage.current
@@ -740,9 +740,7 @@ export function Subscription() {
                               handleSwitchInterval(isAnnual ? 'year' : 'month')
                                 .then(() => setManagePlanModalOpen(false))
                                 .catch((e) =>
-                                  alert(
-                                    e instanceof Error ? e.message : 'Failed to switch interval'
-                                  )
+                                  alert(getErrorMessage(e, 'Failed to switch interval'))
                                 )
                           : () => doUpgrade('pro', PRO_TIER.credits)
                     }
@@ -777,25 +775,21 @@ export function Subscription() {
                       : isOnMaxTier && wantsIntervalSwitch
                         ? () =>
                             handleSwitchInterval(isAnnual ? 'year' : 'month').catch((e) =>
-                              alert(e instanceof Error ? e.message : 'Failed to switch interval')
+                              alert(getErrorMessage(e, 'Failed to switch interval'))
                             )
                         : subscription.isPaid
                           ? async () => {
                               const planType = subscription.isTeam ? 'team' : 'pro'
                               try {
-                                const res = await fetch('/api/billing/switch-plan', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
+                                await requestJson(billingSwitchPlanContract, {
+                                  body: {
                                     targetPlanName: `${planType}_${MAX_TIER.credits}`,
                                     interval: isAnnual ? 'year' : 'month',
-                                  }),
+                                  },
                                 })
-                                const data = await res.json()
-                                if (!res.ok) throw new Error(data?.error || 'Failed to upgrade')
                                 await refetchSubscription()
                               } catch (e) {
-                                alert(e instanceof Error ? e.message : 'Failed to upgrade')
+                                alert(getErrorMessage(e, 'Failed to upgrade'))
                               }
                             }
                           : () => doUpgrade('pro', MAX_TIER.credits)
@@ -865,17 +859,13 @@ export function Subscription() {
           const planType = subscription.isTeam ? 'team' : 'pro'
           const targetPlanName = `${planType}_${targetTier.credits}`
           try {
-            const res = await fetch('/api/billing/switch-plan', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ targetPlanName }),
+            await requestJson(billingSwitchPlanContract, {
+              body: { targetPlanName },
             })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data?.error || 'Failed to switch plan')
             await refetchSubscription()
             setManagePlanModalOpen(false)
           } catch (e) {
-            alert(e instanceof Error ? e.message : 'Failed to switch plan')
+            alert(getErrorMessage(e, 'Failed to switch plan'))
           }
         }}
         onUpgradeToCurrentTier={async () => {
@@ -886,17 +876,13 @@ export function Subscription() {
           const planType = subscription.isTeam ? 'team' : 'pro'
           const targetPlanName = `${planType}_${currentTier.credits}`
           try {
-            const res = await fetch('/api/billing/switch-plan', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ targetPlanName }),
+            await requestJson(billingSwitchPlanContract, {
+              body: { targetPlanName },
             })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data?.error || 'Failed to migrate plan')
             await refetchSubscription()
             setManagePlanModalOpen(false)
           } catch (e) {
-            alert(e instanceof Error ? e.message : 'Failed to migrate plan')
+            alert(getErrorMessage(e, 'Failed to migrate plan'))
           }
         }}
         onGetForTeam={() => {
@@ -928,7 +914,7 @@ export function Subscription() {
             await betterAuthSubscription.cancel({ returnUrl, referenceId })
           } catch (e) {
             logger.error('Failed to cancel subscription', { error: e })
-            alert(e instanceof Error ? e.message : 'Failed to cancel subscription')
+            alert(getErrorMessage(e, 'Failed to cancel subscription'))
           }
         }}
         onRestore={async () => {
@@ -950,7 +936,7 @@ export function Subscription() {
             setManagePlanModalOpen(false)
           } catch (e) {
             logger.error('Failed to restore subscription', { error: e })
-            alert(e instanceof Error ? e.message : 'Failed to restore subscription')
+            alert(getErrorMessage(e, 'Failed to restore subscription'))
           }
         }}
       />
@@ -1084,7 +1070,7 @@ export function Subscription() {
                 <Label htmlFor='billed-account'>Billed Account</Label>
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
-                    <Info className='h-[12px] w-[12px] text-[var(--text-secondary)]' />
+                    <Info className='size-[12px] text-[var(--text-secondary)]' />
                   </Tooltip.Trigger>
                   <Tooltip.Content>
                     <span>Usage from this workspace will be billed to this account</span>
@@ -1139,12 +1125,15 @@ function TeamPlanModal({ open, onOpenChange, isAnnual, onConfirm }: TeamPlanModa
   const [selectedTier, setSelectedTier] = useState<number>(PRO_TIER.credits)
   const [selectedSeats, setSelectedSeats] = useState(1)
 
-  useEffect(() => {
+  // Reset selections each time the modal opens.
+  const prevOpenRef = useRef(open)
+  if (prevOpenRef.current !== open) {
+    prevOpenRef.current = open
     if (open) {
       setSelectedTier(PRO_TIER.credits)
       setSelectedSeats(1)
     }
-  }, [open])
+  }
 
   const tier = CREDIT_TIERS.find((t) => t.credits === selectedTier) ?? PRO_TIER
   const monthlyCostPerSeat = tier.dollars
@@ -1162,9 +1151,9 @@ function TeamPlanModal({ open, onOpenChange, isAnnual, onConfirm }: TeamPlanModa
       <ModalContent size='sm'>
         <ModalHeader>Get For Team</ModalHeader>
         <ModalBody>
-          <p className='text-[var(--text-secondary)]'>
+          <ModalDescription className='text-[var(--text-secondary)]'>
             Choose a plan and number of seats for your team. Credits are pooled across all members.
-          </p>
+          </ModalDescription>
 
           {/* Plan toggle */}
           <div className='mt-4 flex flex-col gap-1'>
@@ -1297,9 +1286,12 @@ function ManagePlanModal({
   const [isSwitching, setIsSwitching] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  // Clear the error each time the modal opens.
+  const prevOpenRef = useRef(open)
+  if (prevOpenRef.current !== open) {
+    prevOpenRef.current = open
     if (open) setError(null)
-  }, [open])
+  }
 
   const isOnMax = currentPlanCredits === MAX_TIER.credits || (isLegacyPlan && isTeamPlan)
   const currentTier = isOnMax ? MAX_TIER : PRO_TIER
@@ -1317,7 +1309,7 @@ function ManagePlanModal({
     try {
       await onSwitchInterval(targetInterval)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to switch interval')
+      setError(getErrorMessage(e, 'Failed to switch interval'))
     } finally {
       setIsSwitching(false)
     }
@@ -1372,7 +1364,7 @@ function ManagePlanModal({
           Manage {currentTier.name} Plan{isTeamPlan ? ' (Team)' : ''}
         </ModalHeader>
         <ModalBody>
-          <p className='text-[var(--text-secondary)]'>
+          <ModalDescription className='text-[var(--text-secondary)]'>
             You're on the{' '}
             <span className='font-medium text-[var(--text-primary)]'>{currentTier.name}</span> plan
             {isTeamPlan ? ' for your team' : ''}, billed{' '}
@@ -1380,7 +1372,7 @@ function ManagePlanModal({
               ? `$${currentPlanDollars}/mo${perUnit}`
               : `$${actualAnnualTotal}/yr${perUnit} ($${actualDiscountedMonthly}/mo${perUnit})`}
             .
-          </p>
+          </ModalDescription>
 
           {isLegacyPlan && (
             <Badge variant='amber' size='lg' dot className='mt-2'>

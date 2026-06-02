@@ -224,7 +224,7 @@ export function handlePreDeploymentVerification(
   return null
 }
 
-export async function findWebhookAndWorkflow(
+async function findWebhookAndWorkflow(
   options: WebhookProcessorOptions
 ): Promise<{ webhook: any; workflow: any } | null> {
   if (options.webhookId) {
@@ -640,6 +640,7 @@ export interface PolledWebhookEventResult {
   success: boolean
   error?: string
   statusCode?: number
+  executionId?: string
 }
 
 type PolledWebhookRecord = typeof webhook.$inferSelect
@@ -793,7 +794,7 @@ export async function processPolledWebhookEvent(
       })()
     }
 
-    return { success: true }
+    return { success: true, executionId }
   } catch (error: unknown) {
     logger.error(`[${requestId}] Failed to process polled webhook event:`, error)
     return { success: false, error: 'Internal server error', statusCode: 500 }

@@ -12,6 +12,7 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Skeleton,
@@ -53,7 +54,9 @@ export function TransferOwnershipDialog({
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
 
   const candidates = useMemo(() => {
-    const others = members.filter((m) => m.userId !== currentUserId && m.role !== 'owner')
+    const others = members.filter(
+      (m) => m.userId !== currentUserId && m.role !== 'owner' && m.role !== 'external'
+    )
     others.sort((a, b) => {
       if (a.role === 'admin' && b.role !== 'admin') return -1
       if (a.role !== 'admin' && b.role === 'admin') return 1
@@ -66,7 +69,9 @@ export function TransferOwnershipDialog({
     )
   }, [members, currentUserId, search])
 
-  const hasCandidates = members.some((m) => m.userId !== currentUserId && m.role !== 'owner')
+  const hasCandidates = members.some(
+    (m) => m.userId !== currentUserId && m.role !== 'owner' && m.role !== 'external'
+  )
 
   const handleClose = (next: boolean) => {
     if (!next) {
@@ -86,6 +91,9 @@ export function TransferOwnershipDialog({
       <ModalContent size='md'>
         <ModalHeader>Leave organization</ModalHeader>
         <ModalBody>
+          <ModalDescription className='sr-only'>
+            Transfer ownership to another member before leaving the organization.
+          </ModalDescription>
           {isLoadingMembers ? (
             <div className='space-y-3'>
               <Skeleton className='h-4 w-3/4' />
@@ -162,7 +170,7 @@ export function TransferOwnershipDialog({
                                 : 'hover-hover:bg-[var(--surface-hover)]'
                             )}
                           >
-                            <Avatar className='h-8 w-8 shrink-0'>
+                            <Avatar className='size-8 shrink-0'>
                               {m.image && <AvatarImage src={m.image} alt={m.name} />}
                               <AvatarFallback
                                 style={{ background: getUserColor(m.userId || m.email) }}

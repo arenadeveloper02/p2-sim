@@ -1,5 +1,6 @@
 import { db, workflowSchedule } from '@sim/db'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { DbOrTx } from '@/lib/db/types'
@@ -28,7 +29,7 @@ export interface ScheduleDeployResult {
 export async function createSchedulesForDeploy(
   workflowId: string,
   blocks: Record<string, BlockState>,
-  _tx: DbOrTx,
+  dbCtx: DbOrTx,
   deploymentVersionId?: string
 ): Promise<ScheduleDeployResult> {
   const scheduleBlocks = findScheduleBlocks(blocks)
@@ -72,7 +73,7 @@ export async function createSchedulesForDeploy(
   } | null = null
 
   try {
-    await db.transaction(async (tx) => {
+    const writeSchedules = async (tx: DbOrTx) => {
       const currentBlockIds = new Set(validatedBlocks.map((b) => b.blockId))
 
       /**
@@ -136,6 +137,7 @@ export async function createSchedulesForDeploy(
           timezone,
           status: 'active' as const,
           failedCount: 0,
+          infraRetryCount: 0,
         }
 
         if (primaryRow) {
@@ -183,12 +185,18 @@ export async function createSchedulesForDeploy(
           lastScheduleInfo = { scheduleId, cronExpression, nextRunAt, timezone }
         }
       }
-    })
+    }
+
+    if (dbCtx === db || !hasScheduleWriteMethods(dbCtx)) {
+      await db.transaction(writeSchedules)
+    } else {
+      await writeSchedules(dbCtx)
+    }
   } catch (error) {
     logger.error(`Failed to create schedules for workflow ${workflowId}`, error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to create schedules',
+      error: getErrorMessage(error, 'Failed to create schedules'),
     }
   }
 
@@ -196,6 +204,15 @@ export async function createSchedulesForDeploy(
     success: true,
     ...(lastScheduleInfo ?? {}),
   }
+}
+
+function hasScheduleWriteMethods(value: DbOrTx): boolean {
+  const candidate = value as Partial<Pick<DbOrTx, 'select' | 'insert' | 'delete'>>
+  return (
+    typeof candidate.select === 'function' &&
+    typeof candidate.insert === 'function' &&
+    typeof candidate.delete === 'function'
+  )
 }
 
 /**
@@ -226,7 +243,7 @@ export async function deleteSchedulesForWorkflow(
   )
 }
 
-export async function cleanupDeploymentVersion(params: {
+async function cleanupDeploymentVersion(params: {
   workflowId: string
   workflow: Record<string, unknown>
   requestId: string
@@ -236,6 +253,7 @@ export async function cleanupDeploymentVersion(params: {
    * Only deletes DB records.
    */
   skipExternalCleanup?: boolean
+  strictExternalCleanup?: boolean
 }): Promise<void> {
   const {
     workflowId,
@@ -243,13 +261,15 @@ export async function cleanupDeploymentVersion(params: {
     requestId,
     deploymentVersionId,
     skipExternalCleanup = false,
+    strictExternalCleanup = false,
   } = params
   await cleanupWebhooksForWorkflow(
     workflowId,
     workflow,
     requestId,
     deploymentVersionId,
-    skipExternalCleanup
+    skipExternalCleanup,
+    strictExternalCleanup
   )
   await deleteSchedulesForWorkflow(workflowId, db, deploymentVersionId)
 }

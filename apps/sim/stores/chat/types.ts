@@ -45,7 +45,7 @@ export interface OutputConfig {
 /**
  * Chat dimensions interface
  */
-export interface ChatDimensions {
+interface ChatDimensions {
   width: number
   height: number
 }

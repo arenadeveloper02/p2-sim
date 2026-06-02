@@ -2,7 +2,7 @@ import { db } from '@sim/db'
 import { workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import { executionLogger } from '@/lib/logs/execution/logger'
 import {
@@ -29,6 +29,7 @@ type TriggerData = Record<string, unknown> & {
 
 function buildStartedMarkerPersistenceQuery(params: {
   executionId: string
+  workflowId: string
   marker: ExecutionLastStartedBlock
 }) {
   const markerJson = JSON.stringify(params.marker)
@@ -41,6 +42,7 @@ function buildStartedMarkerPersistenceQuery(params: {
       true
     )
     WHERE execution_id = ${params.executionId}
+      AND workflow_id = ${params.workflowId}
       AND COALESCE(
         jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastStartedBlock', 'startedAt'),
         ''
@@ -49,6 +51,7 @@ function buildStartedMarkerPersistenceQuery(params: {
 
 function buildCompletedMarkerPersistenceQuery(params: {
   executionId: string
+  workflowId: string
   marker: ExecutionLastCompletedBlock
 }) {
   const markerJson = JSON.stringify(params.marker)
@@ -61,6 +64,7 @@ function buildCompletedMarkerPersistenceQuery(params: {
       true
     )
     WHERE execution_id = ${params.executionId}
+      AND workflow_id = ${params.workflowId}
       AND COALESCE(
         jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastCompletedBlock', 'endedAt'),
         ''
@@ -82,6 +86,7 @@ export interface SessionStartParams {
   conversationId?: string
   initialInput?: string
   deploymentVersionId?: string // ID of the deployment version used (null for manual/editor executions)
+  workflowState?: WorkflowState
 }
 
 export interface SessionCompleteParams {
@@ -211,6 +216,7 @@ export class LoggingSession {
       await db.execute(
         buildStartedMarkerPersistenceQuery({
           executionId: this.executionId,
+          workflowId: this.workflowId,
           marker,
         })
       )
@@ -226,6 +232,7 @@ export class LoggingSession {
       await db.execute(
         buildCompletedMarkerPersistenceQuery({
           executionId: this.executionId,
+          workflowId: this.workflowId,
           marker,
         })
       )
@@ -277,6 +284,7 @@ export class LoggingSession {
     finalOutput: Record<string, unknown>
     traceSpans: TraceSpan[]
     workflowInput?: unknown
+    finalChatOutput?: string
     executionState?: SerializableExecutionState
     finalizationPath: ExecutionFinalizationPath
     completionFailure?: string
@@ -291,6 +299,7 @@ export class LoggingSession {
       finalOutput: params.finalOutput,
       traceSpans: params.traceSpans,
       workflowInput: params.workflowInput,
+      finalChatOutput: params.finalChatOutput,
       executionState: params.executionState,
       finalizationPath: params.finalizationPath,
       completionFailure: params.completionFailure,
@@ -306,6 +315,46 @@ export class LoggingSession {
     blockType: string,
     output: any
   ): Promise<void> {
+    // Accumulate cost synchronously before any await so that fire-and-forget
+    // callers still capture the full cost even if DB writes are not awaited.
+    const blockOutput = output?.output
+    if (
+      blockOutput?.cost &&
+      typeof blockOutput.cost.total === 'number' &&
+      blockOutput.cost.total > 0
+    ) {
+      const { cost, tokens, model } = blockOutput
+
+      this.accumulatedCost.total += cost.total || 0
+      this.accumulatedCost.input += cost.input || 0
+      this.accumulatedCost.output += cost.output || 0
+
+      if (tokens) {
+        this.accumulatedCost.tokens.input += tokens.input || 0
+        this.accumulatedCost.tokens.output += tokens.output || 0
+        this.accumulatedCost.tokens.total += tokens.total || 0
+      }
+
+      if (model) {
+        if (!this.accumulatedCost.models[model]) {
+          this.accumulatedCost.models[model] = {
+            input: 0,
+            output: 0,
+            total: 0,
+            tokens: { input: 0, output: 0, total: 0 },
+          }
+        }
+        this.accumulatedCost.models[model].input += cost.input || 0
+        this.accumulatedCost.models[model].output += cost.output || 0
+        this.accumulatedCost.models[model].total += cost.total || 0
+        if (tokens) {
+          this.accumulatedCost.models[model].tokens.input += tokens.input || 0
+          this.accumulatedCost.models[model].tokens.output += tokens.output || 0
+          this.accumulatedCost.models[model].tokens.total += tokens.total || 0
+        }
+      }
+    }
+
     await this.trackProgressWrite(
       this.persistLastCompletedBlock({
         blockId,
@@ -316,47 +365,13 @@ export class LoggingSession {
       })
     )
 
-    const blockOutput = output?.output
     if (
-      !blockOutput?.cost ||
-      typeof blockOutput.cost.total !== 'number' ||
-      blockOutput.cost.total <= 0
+      blockOutput?.cost &&
+      typeof blockOutput.cost.total === 'number' &&
+      blockOutput.cost.total > 0
     ) {
-      return
+      void this.trackProgressWrite(this.flushAccumulatedCost())
     }
-
-    const { cost, tokens, model } = blockOutput
-
-    this.accumulatedCost.total += cost.total || 0
-    this.accumulatedCost.input += cost.input || 0
-    this.accumulatedCost.output += cost.output || 0
-
-    if (tokens) {
-      this.accumulatedCost.tokens.input += tokens.input || 0
-      this.accumulatedCost.tokens.output += tokens.output || 0
-      this.accumulatedCost.tokens.total += tokens.total || 0
-    }
-
-    if (model) {
-      if (!this.accumulatedCost.models[model]) {
-        this.accumulatedCost.models[model] = {
-          input: 0,
-          output: 0,
-          total: 0,
-          tokens: { input: 0, output: 0, total: 0 },
-        }
-      }
-      this.accumulatedCost.models[model].input += cost.input || 0
-      this.accumulatedCost.models[model].output += cost.output || 0
-      this.accumulatedCost.models[model].total += cost.total || 0
-      if (tokens) {
-        this.accumulatedCost.models[model].tokens.input += tokens.input || 0
-        this.accumulatedCost.models[model].tokens.output += tokens.output || 0
-        this.accumulatedCost.models[model].tokens.total += tokens.total || 0
-      }
-    }
-
-    void this.trackProgressWrite(this.flushAccumulatedCost())
   }
 
   private async flushAccumulatedCost(): Promise<void> {
@@ -372,7 +387,12 @@ export class LoggingSession {
             models: this.accumulatedCost.models,
           },
         })
-        .where(eq(workflowExecutionLogs.executionId, this.executionId))
+        .where(
+          and(
+            eq(workflowExecutionLogs.workflowId, this.workflowId),
+            eq(workflowExecutionLogs.executionId, this.executionId)
+          )
+        )
 
       this.costFlushed = true
     } catch (error) {
@@ -387,7 +407,12 @@ export class LoggingSession {
       const [existing] = await db
         .select({ cost: workflowExecutionLogs.cost })
         .from(workflowExecutionLogs)
-        .where(eq(workflowExecutionLogs.executionId, this.executionId))
+        .where(
+          and(
+            eq(workflowExecutionLogs.workflowId, this.workflowId),
+            eq(workflowExecutionLogs.executionId, this.executionId)
+          )
+        )
         .limit(1)
 
       if (existing?.cost) {
@@ -423,6 +448,7 @@ export class LoggingSession {
       conversationId,
       initialInput,
       deploymentVersionId,
+      workflowState,
     } = params
 
     try {
@@ -435,11 +461,11 @@ export class LoggingSession {
         workspaceId,
         variables
       )
-      // Use deployed state if deploymentVersionId is provided (non-manual execution)
-      // Otherwise fall back to loading from normalized tables (manual/draft execution)
-      this.workflowState = deploymentVersionId
-        ? await loadDeployedWorkflowStateForLogging(this.workflowId)
-        : await loadWorkflowStateForExecution(this.workflowId)
+      this.workflowState =
+        workflowState ??
+        (deploymentVersionId
+          ? await loadDeployedWorkflowStateForLogging(this.workflowId)
+          : await loadWorkflowStateForExecution(this.workflowId))
 
       // Store chat metadata for later use
       this.chatMetadata = {
@@ -506,7 +532,7 @@ export class LoggingSession {
         finalOutput: finalOutput || {},
         traceSpans: traceSpans || [],
         workflowInput,
-        isResume: this.isResume,
+        // isResume: this.isResume,
         finalChatOutput,
         executionState,
         finalizationPath: 'completed',
@@ -577,6 +603,23 @@ export class LoggingSession {
     this.completing = true
 
     try {
+      const currentLog = await db
+        .select({ status: workflowExecutionLogs.status })
+        .from(workflowExecutionLogs)
+        .where(
+          and(
+            eq(workflowExecutionLogs.workflowId, this.workflowId),
+            eq(workflowExecutionLogs.executionId, this.executionId)
+          )
+        )
+        .limit(1)
+        .then((rows) => rows[0])
+
+      if (currentLog?.status === 'cancelled') {
+        this.completed = true
+        return
+      }
+
       const { endedAt, totalDurationMs, error, traceSpans, skipCost } = params
 
       const endTime = endedAt ? new Date(endedAt) : new Date()
@@ -701,6 +744,23 @@ export class LoggingSession {
       const endTime = endedAt ? new Date(endedAt) : new Date()
       const durationMs = typeof totalDurationMs === 'number' ? totalDurationMs : 0
 
+      const currentLog = await db
+        .select({ status: workflowExecutionLogs.status })
+        .from(workflowExecutionLogs)
+        .where(
+          and(
+            eq(workflowExecutionLogs.workflowId, this.workflowId),
+            eq(workflowExecutionLogs.executionId, this.executionId)
+          )
+        )
+        .limit(1)
+        .then((rows) => rows[0])
+
+      if (currentLog?.status === 'cancelled') {
+        this.completed = true
+        return
+      }
+
       const costSummary = traceSpans?.length
         ? calculateCostSummary(traceSpans)
         : {
@@ -787,6 +847,23 @@ export class LoggingSession {
 
       const endTime = endedAt ? new Date(endedAt) : new Date()
       const durationMs = typeof totalDurationMs === 'number' ? totalDurationMs : 0
+
+      const currentLog = await db
+        .select({ status: workflowExecutionLogs.status })
+        .from(workflowExecutionLogs)
+        .where(
+          and(
+            eq(workflowExecutionLogs.workflowId, this.workflowId),
+            eq(workflowExecutionLogs.executionId, this.executionId)
+          )
+        )
+        .limit(1)
+        .then((rows) => rows[0])
+
+      if (currentLog?.status === 'cancelled') {
+        this.completed = true
+        return
+      }
 
       const costSummary = traceSpans?.length
         ? calculateCostSummary(traceSpans)
@@ -957,6 +1034,7 @@ export class LoggingSession {
           chatId,
           initialInput,
           deploymentVersionId,
+          workflowState
         } = params
         this.trigger = createTriggerObject(this.triggerType, triggerData)
         this.correlation = triggerData?.correlation
@@ -967,13 +1045,13 @@ export class LoggingSession {
           workspaceId,
           variables
         )
-        // Minimal workflow state when normalized/deployed data is unavailable
-        this.workflowState = {
+        const fallbackWorkflowState: WorkflowState = workflowState ?? {
           blocks: {},
           edges: [],
           loops: {},
           parallels: {},
-        } as unknown as WorkflowState
+        }
+        this.workflowState = fallbackWorkflowState
 
         await executionLogger.startWorkflowExecution({
           workflowId: this.workflowId,
@@ -1186,6 +1264,8 @@ export class LoggingSession {
         totalDurationMs: params?.totalDurationMs,
         errorMessage: 'Execution skipped by intent analyzer',
         isError: false,
+        finalizationPath: 'fallback_completed',
+        finalOutput: { skipped: true },
         status: 'skipped',
       })
     }
@@ -1193,13 +1273,19 @@ export class LoggingSession {
 
   async markAsFailed(errorMessage?: string): Promise<void> {
     await this.waitForCompletion()
-    await LoggingSession.markExecutionAsFailed(this.executionId, errorMessage, this.requestId)
+    await LoggingSession.markExecutionAsFailed(
+      this.executionId,
+      errorMessage,
+      this.requestId,
+      this.workflowId
+    )
   }
 
   static async markExecutionAsFailed(
     executionId: string,
-    errorMessage?: string,
-    requestId?: string
+    errorMessage: string | undefined,
+    requestId: string | undefined,
+    workflowId: string
   ): Promise<void> {
     try {
       const message = errorMessage || 'Run failed'
@@ -1222,7 +1308,12 @@ export class LoggingSession {
             to_jsonb('force_failed'::text)
           )`,
         })
-        .where(eq(workflowExecutionLogs.executionId, executionId))
+        .where(
+          and(
+            eq(workflowExecutionLogs.executionId, executionId),
+            eq(workflowExecutionLogs.workflowId, workflowId)
+          )
+        )
 
       logger.info(`[${requestId || 'unknown'}] Marked execution ${executionId} as failed`)
     } catch (error) {

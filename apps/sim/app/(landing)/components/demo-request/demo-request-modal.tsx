@@ -8,18 +8,22 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   ModalTrigger,
   Textarea,
 } from '@/components/emcn'
 import { Check } from '@/components/emcn/icons'
-import { captureClientEvent } from '@/lib/posthog/client'
+import { requestJson } from '@/lib/api/client/request'
 import {
   DEMO_REQUEST_COMPANY_SIZE_OPTIONS,
   type DemoRequestPayload,
   demoRequestSchema,
-} from '@/app/(landing)/components/demo-request/consts'
+  submitDemoRequestContract,
+} from '@/lib/api/contracts/demo-requests'
+import { flattenFieldErrors } from '@/lib/api/contracts/primitives'
+import { captureClientEvent } from '@/lib/posthog/client'
 import { LandingField } from '@/app/(landing)/components/forms/landing-field'
 
 interface DemoRequestModalProps {
@@ -55,22 +59,7 @@ const LANDING_INPUT =
   'h-[32px] rounded-[5px] border border-[var(--border-1)] bg-[var(--surface-5)] px-2.5 font-[430] font-season text-[13.5px] text-[var(--text-primary)] transition-colors placeholder:text-[var(--text-muted)] outline-none'
 
 async function submitDemoRequest(payload: DemoRequestPayload) {
-  const response = await fetch('/api/demo-requests', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-
-  const result = (await response.json().catch(() => null)) as {
-    error?: string
-    message?: string
-  } | null
-
-  if (!response.ok) {
-    throw new Error(result?.error || 'Failed to submit demo request')
-  }
-
-  return result
+  return requestJson(submitDemoRequestContract, { body: payload })
 }
 
 export function DemoRequestModal({ children, theme = 'dark' }: DemoRequestModalProps) {
@@ -129,15 +118,7 @@ export function DemoRequestModal({ children, theme = 'dark' }: DemoRequestModalP
     })
 
     if (!parsed.success) {
-      const fieldErrors = parsed.error.flatten().fieldErrors
-      setErrors({
-        firstName: fieldErrors.firstName?.[0],
-        lastName: fieldErrors.lastName?.[0],
-        companyEmail: fieldErrors.companyEmail?.[0],
-        phoneNumber: fieldErrors.phoneNumber?.[0],
-        companySize: fieldErrors.companySize?.[0],
-        details: fieldErrors.details?.[0],
-      })
+      setErrors(flattenFieldErrors<DemoRequestField>(parsed.error))
       return
     }
 
@@ -172,6 +153,9 @@ export function DemoRequestModal({ children, theme = 'dark' }: DemoRequestModalP
             }
           >
             <ModalBody>
+              <ModalDescription className='sr-only'>
+                Fill out this form to request a demo and talk to the sales team
+              </ModalDescription>
               <div className='space-y-3'>
                 <div className='grid gap-3 sm:grid-cols-2'>
                   <LandingField htmlFor='firstName' label='First name' error={errors.firstName}>
@@ -271,8 +255,8 @@ export function DemoRequestModal({ children, theme = 'dark' }: DemoRequestModalP
           {submitSuccess ? (
             <div className='absolute inset-0 flex items-center justify-center px-8 pb-10 sm:px-12 sm:pb-14'>
               <div className='flex max-w-md flex-col items-center justify-center text-center'>
-                <div className='flex h-20 w-20 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text-primary)]'>
-                  <Check className='h-10 w-10' />
+                <div className='flex size-20 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text-primary)]'>
+                  <Check className='size-10' />
                 </div>
                 <h2 className='mt-8 font-[430] font-season text-[34px] text-[var(--text-primary)] leading-[1.1] tracking-[-0.03em]'>
                   {SUBMIT_SUCCESS_MESSAGE}

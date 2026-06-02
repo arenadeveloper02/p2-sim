@@ -1,6 +1,8 @@
 'use client'
 
 import { memo, useEffect, useRef, useState } from 'react'
+import { GitBranch } from 'lucide-react'
+import { useParams, useRouter } from 'next/navigation'
 import {
   Button,
   Check,
@@ -8,14 +10,19 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Textarea,
   ThumbsDown,
   ThumbsUp,
   Tooltip,
+  toast,
 } from '@/components/emcn'
+import { cn } from '@/lib/core/utils/cn'
 import { useSubmitCopilotFeedback } from '@/hooks/queries/copilot-feedback'
+import { useForkTask } from '@/hooks/queries/tasks'
+import { useFolderStore } from '@/stores/folders/store'
 
 const SPECIAL_TAGS = 'thinking|options|usage_upgrade|credential|mothership-error|file'
 
@@ -48,6 +55,7 @@ interface MessageActionsProps {
   chatId?: string
   userQuery?: string
   requestId?: string
+  messageId?: string
 }
 
 export const MessageActions = memo(function MessageActions({
@@ -55,7 +63,10 @@ export const MessageActions = memo(function MessageActions({
   chatId,
   userQuery,
   requestId,
+  messageId,
 }: MessageActionsProps) {
+  const router = useRouter()
+  const params = useParams<{ workspaceId: string }>()
   const [copied, setCopied] = useState(false)
   const [copiedRequestId, setCopiedRequestId] = useState(false)
   const [pendingFeedback, setPendingFeedback] = useState<'up' | 'down' | null>(null)
@@ -63,6 +74,7 @@ export const MessageActions = memo(function MessageActions({
   const resetTimeoutRef = useRef<number | null>(null)
   const requestIdTimeoutRef = useRef<number | null>(null)
   const submitFeedback = useSubmitCopilotFeedback()
+  const forkTask = useForkTask(params.workspaceId)
 
   useEffect(() => {
     return () => {
@@ -140,9 +152,21 @@ export const MessageActions = memo(function MessageActions({
     }
   }
 
+  const handleFork = async () => {
+    if (!chatId || !messageId || forkTask.isPending) return
+    try {
+      const result = await forkTask.mutateAsync({ chatId, upToMessageId: messageId })
+      useFolderStore.getState().clearTaskSelection()
+      router.push(`/workspace/${params.workspaceId}/task/${result.id}`)
+    } catch {
+      toast.error('Failed to fork chat')
+    }
+  }
+
   const hasContent = Boolean(content)
   const canSubmitFeedback = Boolean(chatId && userQuery)
-  if (!hasContent && !canSubmitFeedback) return null
+  const canFork = false
+  if (!hasContent && !canSubmitFeedback && !canFork) return null
 
   return (
     <>
@@ -194,12 +218,31 @@ export const MessageActions = memo(function MessageActions({
             </Tooltip.Root>
           </>
         )}
+        {canFork && (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <button
+                type='button'
+                aria-label='Fork from here'
+                onClick={handleFork}
+                disabled={forkTask.isPending}
+                className={cn(BUTTON_CLASS, forkTask.isPending && 'cursor-not-allowed opacity-50')}
+              >
+                <GitBranch className={ICON_CLASS} />
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>Fork from here</Tooltip.Content>
+          </Tooltip.Root>
+        )}
       </div>
 
       <Modal open={pendingFeedback !== null} onOpenChange={handleModalClose}>
         <ModalContent size='sm'>
           <ModalHeader>Give feedback</ModalHeader>
           <ModalBody>
+            <ModalDescription className='sr-only'>
+              Submit feedback about this response
+            </ModalDescription>
             <div className='flex flex-col gap-2'>
               <div className='flex items-start justify-between gap-2'>
                 <p className='font-medium text-[var(--text-secondary)] text-sm'>
@@ -212,12 +255,12 @@ export const MessageActions = memo(function MessageActions({
                         type='button'
                         aria-label='Copy request ID'
                         onClick={copyRequestId}
-                        className='flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover-hover:bg-[var(--surface-hover)] focus-visible:outline-none'
+                        className='flex size-[22px] shrink-0 items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover-hover:bg-[var(--surface-hover)] focus-visible:outline-none'
                       >
                         {copiedRequestId ? (
-                          <Check className='h-[14px] w-[14px]' />
+                          <Check className='size-[14px]' />
                         ) : (
-                          <Copy className='h-[14px] w-[14px]' />
+                          <Copy className='size-[14px]' />
                         )}
                       </button>
                     </Tooltip.Trigger>
@@ -244,7 +287,7 @@ export const MessageActions = memo(function MessageActions({
               Cancel
             </Button>
             <Button variant='primary' onClick={handleSubmitFeedback}>
-              Submit
+              Submit feedback
             </Button>
           </ModalFooter>
         </ModalContent>

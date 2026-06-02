@@ -1,7 +1,10 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
 import { type NextRequest, NextResponse } from 'next/server'
+import { sttToolContract } from '@/lib/api/contracts/tools/media/stt'
+import { getValidationErrorMessage, parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { extractAudioFromVideo, isVideoFile } from '@/lib/audio/extractor'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
@@ -15,37 +18,14 @@ import {
   downloadFileFromStorage,
   resolveInternalFileUrl,
 } from '@/lib/uploads/utils/file-utils.server'
-import type { UserFile } from '@/executor/types'
+import { assertToolFileAccess } from '@/app/api/files/authorization'
 import type { TranscriptSegment } from '@/tools/stt/types'
 
 const logger = createLogger('SttProxyAPI')
+const ELEVENLABS_STT_MODEL = 'scribe_v2'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // 5 minutes for large files
-
-interface SttRequestBody {
-  provider: 'whisper' | 'deepgram' | 'elevenlabs' | 'assemblyai' | 'gemini'
-  apiKey: string
-  model?: string
-  audioFile?: UserFile | UserFile[]
-  audioFileReference?: UserFile | UserFile[]
-  audioUrl?: string
-  language?: string
-  timestamps?: 'none' | 'sentence' | 'word'
-  diarization?: boolean
-  translateToEnglish?: boolean
-  // Whisper-specific options
-  prompt?: string
-  temperature?: number
-  // AssemblyAI-specific options
-  sentiment?: boolean
-  entityDetection?: boolean
-  piiRedaction?: boolean
-  summarization?: boolean
-  workspaceId?: string
-  workflowId?: string
-  executionId?: string
-}
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateId()
@@ -53,12 +33,29 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
   try {
     const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
-    if (!authResult.success) {
+    if (!authResult.success || !authResult.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const userId = authResult.userId
-    const body: SttRequestBody = await request.json()
+
+    const parsed = await parseRequest(
+      sttToolContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid STT request:`, error.issues)
+          return validationErrorResponse(
+            error,
+            getValidationErrorMessage(error, 'Invalid request data')
+          )
+        },
+      }
+    )
+    if (!parsed.success) return parsed.response
+
+    const body = parsed.data.body
     const {
       provider,
       apiKey,
@@ -73,13 +70,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       summarization,
     } = body
 
-    if (!provider || !apiKey) {
-      return NextResponse.json(
-        { error: 'Missing required fields: provider and apiKey' },
-        { status: 400 }
-      )
-    }
-
     let audioBuffer: Buffer
     let audioFileName: string
     let audioMimeType: string
@@ -91,6 +81,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       const file = Array.isArray(body.audioFile) ? body.audioFile[0] : body.audioFile
       logger.info(`[${requestId}] Processing uploaded file: ${file.name}`)
 
+      const deniedAudio = await assertToolFileAccess(file.key, userId, requestId, logger)
+      if (deniedAudio) return deniedAudio
       audioBuffer = await downloadFileFromStorage(file, requestId, logger)
       audioFileName = file.name
       // file.type may be missing if the file came from a block that doesn't preserve it
@@ -109,6 +101,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         : body.audioFileReference
       logger.info(`[${requestId}] Processing referenced file: ${file.name}`)
 
+      const deniedRef = await assertToolFileAccess(file.key, userId, requestId, logger)
+      if (deniedRef) return deniedRef
       audioBuffer = await downloadFileFromStorage(file, requestId, logger)
       audioFileName = file.name
 
@@ -183,7 +177,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         logger.error(`[${requestId}] Video extraction failed:`, error)
         return NextResponse.json(
           {
-            error: `Failed to extract audio from video: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            error: `Failed to extract audio from video: ${getErrorMessage(error, 'Unknown error')}`,
           },
           { status: 500 }
         )
@@ -235,13 +229,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         duration = result.duration
         confidence = result.confidence
       } else if (provider === 'elevenlabs') {
-        const result = await transcribeWithElevenLabs(
-          audioBuffer,
-          apiKey,
-          language,
-          timestamps,
-          model
-        )
+        const result = await transcribeWithElevenLabs(audioBuffer, apiKey, language, timestamps)
         transcript = result.transcript
         segments = result.segments
         detectedLanguage = result.language
@@ -286,7 +274,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       }
     } catch (error) {
       logger.error(`[${requestId}] Transcription failed:`, error)
-      const errorMessage = error instanceof Error ? error.message : 'Transcription failed'
+      const errorMessage = getErrorMessage(error, 'Transcription failed')
       return NextResponse.json({ error: errorMessage }, { status: 500 })
     }
 
@@ -304,7 +292,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json(response)
   } catch (error) {
     logger.error(`[${requestId}] STT proxy error:`, error)
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorMessage = getErrorMessage(error, 'Unknown error')
     return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 })
@@ -483,8 +471,7 @@ async function transcribeWithElevenLabs(
   audioBuffer: Buffer,
   apiKey: string,
   language?: string,
-  timestamps?: 'none' | 'sentence' | 'word',
-  model?: string
+  timestamps?: 'none' | 'sentence' | 'word'
 ): Promise<{
   transcript: string
   segments?: TranscriptSegment[]
@@ -494,7 +481,7 @@ async function transcribeWithElevenLabs(
   const formData = new FormData()
   const blob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/mpeg' })
   formData.append('file', blob, 'audio.mp3')
-  formData.append('model_id', model || 'scribe_v1')
+  formData.append('model_id', ELEVENLABS_STT_MODEL)
 
   if (language && language !== 'auto') {
     formData.append('language_code', language)

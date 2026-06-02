@@ -13,9 +13,12 @@
 import { db } from '@sim/db'
 import { auditLog, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { v1GetAuditLogContract } from '@/lib/api/contracts/v1/audit-logs'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { validateEnterpriseAuditAccess } from '@/app/api/v1/audit-logs/auth'
 import { formatAuditLogEntry } from '@/app/api/v1/audit-logs/format'
@@ -27,7 +30,7 @@ const logger = createLogger('V1AuditLogDetailAPI')
 export const revalidate = 0
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateId().slice(0, 8)
 
     try {
@@ -37,7 +40,13 @@ export const GET = withRouteHandler(
       }
 
       const userId = rateLimit.userId!
-      const { id } = await params
+      const parsed = await parseRequest(v1GetAuditLogContract, request, context, {
+        validationErrorResponse: () =>
+          NextResponse.json({ error: 'Invalid audit log ID' }, { status: 400 }),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
 
       const authResult = await validateEnterpriseAuditAccess(userId)
       if (!authResult.success) {
@@ -74,7 +83,7 @@ export const GET = withRouteHandler(
 
       return NextResponse.json(response.body, { headers: response.headers })
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
+      const message = getErrorMessage(error, 'Unknown error')
       logger.error(`[${requestId}] Audit log detail fetch error`, { error: message })
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }

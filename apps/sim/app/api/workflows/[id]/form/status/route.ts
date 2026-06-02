@@ -1,9 +1,12 @@
 import { db } from '@sim/db'
 import { form } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { getFormStatusContract } from '@/lib/api/contracts/forms'
+import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
@@ -11,14 +14,16 @@ import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/
 const logger = createLogger('FormStatusAPI')
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
         return createErrorResponse('Unauthorized', 401)
       }
 
-      const { id: workflowId } = await params
+      const parsed = await parseRequest(getFormStatusContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { id: workflowId } = parsed.data.params
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
         userId: auth.userId,
@@ -53,9 +58,9 @@ export const GET = withRouteHandler(
         isDeployed: true,
         form: formResult[0],
       })
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error fetching form status:', error)
-      return createErrorResponse(error.message || 'Failed to fetch form status', 500)
+      return createErrorResponse(getErrorMessage(error, 'Failed to fetch form status'), 500)
     }
   }
 )

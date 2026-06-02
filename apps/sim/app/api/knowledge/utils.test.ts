@@ -22,6 +22,10 @@ vi.mock('@/lib/knowledge/documents/utils', () => ({
   retryWithExponentialBackoff: (fn: any) => fn(),
 }))
 
+vi.mock('@/lib/workspaces/utils', () => ({
+  getWorkspaceBilledAccountUserId: vi.fn().mockResolvedValue('user1'),
+}))
+
 vi.mock('@/lib/knowledge/documents/document-processor', () => ({
   processDocument: vi.fn().mockResolvedValue({
     chunks: [
@@ -110,6 +114,32 @@ vi.mock('@sim/db', async () => {
 
               return Promise.resolve([])
             },
+          }
+        },
+        innerJoin() {
+          // document × knowledge_base context JOIN — return the first kb and
+          // doc row merged (covers processDocumentAsync's prefetch).
+          return {
+            leftJoin: () => ({
+              where: () => ({
+                limit: (n: number) =>
+                  Promise.resolve(
+                    kbRows.length > 0 && docRows.length > 0
+                      ? [
+                          { ...kbRows[0], ...docRows[0], billedAccountUserId: 'billing-user-1' },
+                        ].slice(0, n)
+                      : []
+                  ),
+              }),
+            }),
+            where: () => ({
+              limit: (n: number) =>
+                Promise.resolve(
+                  kbRows.length > 0 && docRows.length > 0
+                    ? [{ ...kbRows[0], ...docRows[0] }].slice(0, n)
+                    : []
+                ),
+            }),
           }
         },
       }
@@ -211,7 +241,8 @@ describe('Knowledge Utils', () => {
       kbRows.push({
         id: 'kb1',
         userId: 'user1',
-        workspaceId: null,
+        workspaceId: 'workspace1',
+        embeddingModel: 'text-embedding-3-small',
         chunkingConfig: { maxSize: 1024, minSize: 1, overlap: 200 },
       })
       docRows.push({ id: 'doc1', knowledgeBaseId: 'kb1' })
@@ -370,7 +401,7 @@ describe('Knowledge Utils', () => {
       Object.keys(env).forEach((key) => delete (env as any)[key])
 
       await expect(generateEmbeddings(['test text'])).rejects.toThrow(
-        'Either OPENAI_API_KEY or Azure OpenAI configuration (AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT) must be configured'
+        'OPENAI_API_KEY is not configured'
       )
     })
   })

@@ -9,6 +9,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { randomInt } from '@sim/utils/random'
 import { and, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { decryptApiKey } from '@/lib/api-key/crypto'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
@@ -57,22 +58,30 @@ type DocOp =
   | { type: 'add'; extDoc: ExternalDocument }
   | { type: 'update'; existingId: string; extDoc: ExternalDocument }
 
-async function isConnectorDeleted(connectorId: string): Promise<boolean> {
+/** Single-roundtrip liveness check used between batches. */
+async function checkSyncLiveness(
+  connectorId: string,
+  knowledgeBaseId: string
+): Promise<{ connectorDeleted: boolean; knowledgeBaseDeleted: boolean }> {
   const rows = await db
-    .select({ archivedAt: knowledgeConnector.archivedAt, deletedAt: knowledgeConnector.deletedAt })
+    .select({
+      connectorArchivedAt: knowledgeConnector.archivedAt,
+      connectorDeletedAt: knowledgeConnector.deletedAt,
+      kbDeletedAt: knowledgeBase.deletedAt,
+    })
     .from(knowledgeConnector)
-    .where(eq(knowledgeConnector.id, connectorId))
+    .innerJoin(knowledgeBase, eq(knowledgeBase.id, knowledgeConnector.knowledgeBaseId))
+    .where(and(eq(knowledgeConnector.id, connectorId), eq(knowledgeBase.id, knowledgeBaseId)))
     .limit(1)
-  return rows.length === 0 || rows[0].archivedAt !== null || rows[0].deletedAt !== null
-}
 
-async function isKnowledgeBaseDeleted(knowledgeBaseId: string): Promise<boolean> {
-  const rows = await db
-    .select({ deletedAt: knowledgeBase.deletedAt })
-    .from(knowledgeBase)
-    .where(eq(knowledgeBase.id, knowledgeBaseId))
-    .limit(1)
-  return rows.length === 0 || rows[0].deletedAt !== null
+  if (rows.length === 0) {
+    return { connectorDeleted: true, knowledgeBaseDeleted: true }
+  }
+  const row = rows[0]
+  return {
+    connectorDeleted: row.connectorArchivedAt !== null || row.connectorDeletedAt !== null,
+    knowledgeBaseDeleted: row.kbDeletedAt !== null,
+  }
 }
 
 async function isKnowledgeBaseActiveInTx(
@@ -93,7 +102,7 @@ async function isKnowledgeBaseActiveInTx(
 function calculateNextSyncTime(syncIntervalMinutes: number): Date | null {
   if (syncIntervalMinutes <= 0) return null
   const now = Date.now()
-  const jitterMs = Math.floor(Math.random() * Math.min(syncIntervalMinutes * 6_000, 300_000))
+  const jitterMs = randomInt(0, Math.min(syncIntervalMinutes * 6_000, 300_000))
   return new Date(now + syncIntervalMinutes * 60_000 + jitterMs)
 }
 
@@ -156,8 +165,11 @@ export async function dispatchSync(
     const connectorRows = await db
       .select({
         knowledgeBaseId: knowledgeConnector.knowledgeBaseId,
+        connectorArchivedAt: knowledgeConnector.archivedAt,
+        connectorDeletedAt: knowledgeConnector.deletedAt,
         workspaceId: knowledgeBase.workspaceId,
         userId: knowledgeBase.userId,
+        kbDeletedAt: knowledgeBase.deletedAt,
       })
       .from(knowledgeConnector)
       .innerJoin(knowledgeBase, eq(knowledgeBase.id, knowledgeConnector.knowledgeBaseId))
@@ -165,10 +177,39 @@ export async function dispatchSync(
       .limit(1)
 
     const row = connectorRows[0]
+    if (!row) {
+      logger.warn(`Skipping sync dispatch: connector not found`, { connectorId, requestId })
+      return
+    }
+    if (row.kbDeletedAt) {
+      logger.warn(`Skipping sync dispatch: knowledge base is deleted`, {
+        connectorId,
+        knowledgeBaseId: row.knowledgeBaseId,
+        requestId,
+      })
+      await db
+        .update(knowledgeConnector)
+        .set({
+          status: 'error',
+          nextSyncAt: null,
+          lastSyncError: 'Knowledge base deleted',
+          updatedAt: new Date(),
+        })
+        .where(eq(knowledgeConnector.id, connectorId))
+      return
+    }
+    if (row.connectorArchivedAt || row.connectorDeletedAt) {
+      logger.warn(`Skipping sync dispatch: connector is archived or deleted`, {
+        connectorId,
+        requestId,
+      })
+      return
+    }
+
     const tags = [`connectorId:${connectorId}`]
-    if (row?.knowledgeBaseId) tags.push(`knowledgeBaseId:${row.knowledgeBaseId}`)
-    if (row?.workspaceId) tags.push(`workspaceId:${row.workspaceId}`)
-    if (row?.userId) tags.push(`userId:${row.userId}`)
+    if (row.knowledgeBaseId) tags.push(`knowledgeBaseId:${row.knowledgeBaseId}`)
+    if (row.workspaceId) tags.push(`workspaceId:${row.workspaceId}`)
+    if (row.userId) tags.push(`userId:${row.userId}`)
 
     await knowledgeConnectorSync.trigger(
       {
@@ -261,7 +302,8 @@ export async function executeSync(
     .limit(1)
 
   if (connectorRows.length === 0) {
-    throw new Error(`Connector not found: ${connectorId}`)
+    logger.warn(`Skipping sync: connector ${connectorId} not found, archived, or deleted`)
+    return { ...result, error: 'connector_unavailable' }
   }
 
   const connector = connectorRows[0]
@@ -278,7 +320,19 @@ export async function executeSync(
     .limit(1)
 
   if (kbRows.length === 0) {
-    throw new Error(`Knowledge base not found: ${connector.knowledgeBaseId}`)
+    logger.warn(
+      `Skipping sync: knowledge base ${connector.knowledgeBaseId} is deleted (connector ${connectorId})`
+    )
+    await db
+      .update(knowledgeConnector)
+      .set({
+        status: 'error',
+        nextSyncAt: null,
+        lastSyncError: 'Knowledge base deleted',
+        updatedAt: new Date(),
+      })
+      .where(eq(knowledgeConnector.id, connectorId))
+    return { ...result, error: 'knowledge_base_deleted' }
   }
 
   const userId = kbRows[0].userId
@@ -456,10 +510,11 @@ export async function executeSync(
     }
 
     for (let i = 0; i < pendingOps.length; i += SYNC_BATCH_SIZE) {
-      if (await isConnectorDeleted(connectorId)) {
+      const liveness = await checkSyncLiveness(connectorId, connector.knowledgeBaseId)
+      if (liveness.connectorDeleted) {
         throw new ConnectorDeletedException(connectorId)
       }
-      if (await isKnowledgeBaseDeleted(connector.knowledgeBaseId)) {
+      if (liveness.knowledgeBaseDeleted) {
         throw new Error(`Knowledge base ${connector.knowledgeBaseId} was deleted during sync`)
       }
 
@@ -596,11 +651,12 @@ export async function executeSync(
       }
     }
 
-    // Check if connector was deleted before retrying stuck documents
-    if (await isConnectorDeleted(connectorId)) {
+    // Check if connector/KB were deleted before retrying stuck documents
+    const postBatchLiveness = await checkSyncLiveness(connectorId, connector.knowledgeBaseId)
+    if (postBatchLiveness.connectorDeleted) {
       throw new ConnectorDeletedException(connectorId)
     }
-    if (await isKnowledgeBaseDeleted(connector.knowledgeBaseId)) {
+    if (postBatchLiveness.knowledgeBaseDeleted) {
       throw new Error(`Knowledge base ${connector.knowledgeBaseId} was deleted during sync`)
     }
 
@@ -835,9 +891,6 @@ async function addDocument(
   extDoc: ExternalDocument,
   sourceConfig?: Record<string, unknown>
 ): Promise<DocumentData> {
-  if (await isKnowledgeBaseDeleted(knowledgeBaseId)) {
-    throw new Error(`Knowledge base ${knowledgeBaseId} is deleted`)
-  }
   const documentId = generateId()
   const contentBuffer = Buffer.from(extDoc.content, 'utf-8')
   const safeTitle = sanitizeStorageTitle(extDoc.title)
@@ -917,9 +970,6 @@ async function updateDocument(
   extDoc: ExternalDocument,
   sourceConfig?: Record<string, unknown>
 ): Promise<DocumentData> {
-  if (await isKnowledgeBaseDeleted(knowledgeBaseId)) {
-    throw new Error(`Knowledge base ${knowledgeBaseId} is deleted`)
-  }
   // Fetch old file URL before uploading replacement
   const existingRows = await db
     .select({ fileUrl: document.fileUrl })

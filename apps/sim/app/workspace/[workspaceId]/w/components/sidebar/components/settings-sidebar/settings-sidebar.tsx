@@ -9,6 +9,7 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Skeleton,
@@ -104,9 +105,7 @@ export function SettingsSidebar({
   const isSSOProviderOwner = useMemo(() => {
     if (isHosted) return null
     if (!userId || isLoadingSSO) return null
-    return (
-      ssoProvidersData?.providers?.some((p: { userId?: string }) => p.userId === userId) || false
-    )
+    return ssoProvidersData?.providers?.some((p) => p.userId === userId) || false
   }, [userId, ssoProvidersData?.providers, isLoadingSSO])
 
   const navigationItems = useMemo(() => {
@@ -214,7 +213,7 @@ export function SettingsSidebar({
           break
         case 'secrets':
           prefetchWorkspaceCredentials(queryClient, workspaceId)
-          void import('@/app/workspace/[workspaceId]/settings/components/credentials/credentials')
+          void import('@/app/workspace/[workspaceId]/settings/components/secrets/secrets')
           break
         case 'subscription':
           prefetchSubscriptionData(queryClient)
@@ -260,8 +259,8 @@ export function SettingsSidebar({
             onClick={handleBack}
             className='group mx-0.5 flex h-[30px] items-center gap-2 rounded-lg px-2 text-sm hover-hover:bg-[var(--surface-hover)]'
           >
-            <div className='flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center text-[var(--text-icon)]'>
-              <ChevronDown className='h-[10px] w-[10px] rotate-90' />
+            <div className='flex size-[16px] flex-shrink-0 items-center justify-center text-[var(--text-icon)]'>
+              <ChevronDown className='size-[10px] rotate-90' />
             </div>
             <span className='truncate font-base text-[var(--text-body)]'>Back</span>
           </button>
@@ -288,7 +287,7 @@ export function SettingsSidebar({
                 <div className='flex flex-col gap-0.5 px-2'>
                   {Array.from({ length: count }, (_, j) => (
                     <div key={j} className='mx-0.5 flex h-[30px] items-center gap-2 px-2'>
-                      <Skeleton className='h-[16px] w-[16px] flex-shrink-0 rounded-sm' />
+                      <Skeleton className='size-[16px] flex-shrink-0 rounded-sm' />
                       <Skeleton className='sidebar-collapse-hide h-[14px] w-full rounded-sm' />
                     </div>
                   ))}
@@ -316,7 +315,7 @@ export function SettingsSidebar({
                       )
                       const content = (
                         <>
-                          <Icon className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+                          <Icon className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
                           <span className='min-w-0 truncate font-base text-[var(--text-body)]'>
                             {item.label}
                           </span>
@@ -377,9 +376,9 @@ export function SettingsSidebar({
         <ModalContent size='sm'>
           <ModalHeader>Unsaved Changes</ModalHeader>
           <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
+            <ModalDescription className='text-[var(--text-secondary)]'>
               You have unsaved changes. Are you sure you want to discard them?
-            </p>
+            </ModalDescription>
           </ModalBody>
           <ModalFooter>
             <Button variant='default' onClick={handleCancelDiscard}>

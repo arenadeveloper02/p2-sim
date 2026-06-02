@@ -1,10 +1,11 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { account, credentialSet, credentialSetMember } from '@sim/db/schema'
+import { account, credential, credentialSet, credentialSetMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, like, or } from 'drizzle-orm'
+import { and, eq, inArray, like, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { disconnectOAuthContract } from '@/lib/api/contracts/oauth-connections'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -13,17 +14,12 @@ import {
   listAccountsToDisconnect,
   unlinkUnipileAccountsFromProvider,
 } from '@/lib/unipile/disconnect-accounts'
+import { deleteCredential } from '@/lib/credentials/deletion'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('OAuthDisconnectAPI')
-
-const disconnectSchema = z.object({
-  provider: z.string({ required_error: 'Provider is required' }).min(1, 'Provider is required'),
-  providerId: z.string().optional(),
-  accountId: z.string().optional(),
-})
 
 /**
  * Disconnect an OAuth provider for the current user
@@ -39,26 +35,23 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
 
-    const rawBody = await request.json()
-    const parseResult = disconnectSchema.safeParse(rawBody)
-
-    if (!parseResult.success) {
-      const firstError = parseResult.error.errors[0]
-      const errorMessage = firstError?.message || 'Validation failed'
-
-      logger.warn(`[${requestId}] Invalid disconnect request`, {
-        errors: parseResult.error.errors,
-      })
-
-      return NextResponse.json(
-        {
-          error: errorMessage,
+    const parsed = await parseRequest(
+      disconnectOAuthContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid disconnect request`, { errors: error.issues })
+          return NextResponse.json(
+            { error: getValidationErrorMessage(error, 'Validation failed') },
+            { status: 400 }
+          )
         },
-        { status: 400 }
-      )
-    }
+      }
+    )
+    if (!parsed.success) return parsed.response
 
-    const { provider, providerId, accountId } = parseResult.data
+    const { provider, providerId, accountId } = parsed.data.body
     const userId = session.user.id
 
     logger.info(`[${requestId}] Processing OAuth disconnect request`, {
@@ -76,21 +69,40 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     await unlinkUnipileAccountsFromProvider(accountsToRemove)
 
-    if (accountId) {
-      await db.delete(account).where(and(eq(account.userId, userId), eq(account.id, accountId)))
-    } else if (providerId) {
-      await db
-        .delete(account)
-        .where(and(eq(account.userId, userId), eq(account.providerId, providerId)))
-    } else {
-      await db
-        .delete(account)
-        .where(
-          and(
-            eq(account.userId, userId),
+
+    // Delete credentials before their accounts so deleteCredential can clear
+    // stored references first. Otherwise FK CASCADE would orphan them silently.
+    const accountFilter = accountId
+      ? and(eq(account.userId, session.user.id), eq(account.id, accountId))
+      : providerId
+        ? and(eq(account.userId, session.user.id), eq(account.providerId, providerId))
+        : and(
+            eq(account.userId, session.user.id),
             or(eq(account.providerId, provider), like(account.providerId, `${provider}-%`))
           )
-        )
+
+    const targetAccounts = await db.select({ id: account.id }).from(account).where(accountFilter)
+
+    const targetAccountIds = targetAccounts.map((a) => a.id)
+
+    if (targetAccountIds.length > 0) {
+      const credentialsToDelete = await db
+        .select({ id: credential.id })
+        .from(credential)
+        .where(inArray(credential.accountId, targetAccountIds))
+
+      for (const cred of credentialsToDelete) {
+        await deleteCredential({
+          credentialId: cred.id,
+          actorId: session.user.id,
+          actorName: session.user.name,
+          actorEmail: session.user.email,
+          reason: 'oauth_disconnect',
+          request,
+        })
+      }
+
+      await db.delete(account).where(inArray(account.id, targetAccountIds))
     }
 
     const userMemberships = await db

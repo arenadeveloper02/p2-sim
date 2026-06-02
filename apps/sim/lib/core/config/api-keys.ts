@@ -10,10 +10,12 @@ export function getRotatingApiKey(provider: string): string {
   if (
     provider !== 'openai' &&
     provider !== 'anthropic' &&
-    provider !== 'google' &&
     provider !== 'vertex' &&
     provider !== 'xai' &&
-    provider !== 'sambanova'
+    provider !== 'sambanova' &&
+    provider !== 'google' &&
+    provider !== 'gemini' &&
+    provider !== 'cohere'
   ) {
     throw new Error(`No rotation implemented for provider: ${provider}`)
   }
@@ -35,13 +37,20 @@ export function getRotatingApiKey(provider: string): string {
     if (env.SAMBANOVA_API_KEY_1) keys.push(env.SAMBANOVA_API_KEY_1)
     if (env.SAMBANOVA_API_KEY_2) keys.push(env.SAMBANOVA_API_KEY_2)
     if (env.SAMBANOVA_API_KEY_3) keys.push(env.SAMBANOVA_API_KEY_3)
-  } else if (provider === 'google' || provider === 'vertex') {
-    if (env.GEMINI_API_KEY) keys.push(env.GEMINI_API_KEY)
   } else if (provider === 'xai') {
     if (env.XAI_API_KEY) keys.push(env.XAI_API_KEY)
     if (env.XAI_API_KEY_1) keys.push(env.XAI_API_KEY_1)
     if (env.XAI_API_KEY_2) keys.push(env.XAI_API_KEY_2)
     if (env.XAI_API_KEY_3) keys.push(env.XAI_API_KEY_3)
+  } else if (provider === 'gemini' || provider === 'google' || provider === 'vertex') {
+    if (env.GEMINI_API_KEY) keys.push(env.GEMINI_API_KEY)
+    if (env.GEMINI_API_KEY_1) keys.push(env.GEMINI_API_KEY_1)
+    if (env.GEMINI_API_KEY_2) keys.push(env.GEMINI_API_KEY_2)
+    if (env.GEMINI_API_KEY_3) keys.push(env.GEMINI_API_KEY_3)
+  } else if (provider === 'cohere') {
+    if (env.COHERE_API_KEY_1) keys.push(env.COHERE_API_KEY_1)
+    if (env.COHERE_API_KEY_2) keys.push(env.COHERE_API_KEY_2)
+    if (env.COHERE_API_KEY_3) keys.push(env.COHERE_API_KEY_3)
   }
 
   if (keys.length === 0) {

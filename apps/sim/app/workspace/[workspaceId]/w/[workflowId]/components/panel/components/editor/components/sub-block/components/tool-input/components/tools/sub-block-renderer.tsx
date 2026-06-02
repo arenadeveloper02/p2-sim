@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { SubBlock } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block'
 import type { SubBlockConfig as BlockSubBlockConfig } from '@/blocks/types'
+import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
@@ -20,6 +21,7 @@ interface ToolSubBlockRendererProps {
     disabled?: boolean
     onToggle?: () => void
   }
+  activeSearchTarget?: ActiveSearchTarget | null
 }
 
 /**
@@ -65,6 +67,7 @@ export function ToolSubBlockRenderer({
   onParamChange,
   disabled,
   canonicalToggle,
+  activeSearchTarget,
 }: ToolSubBlockRendererProps) {
   // Use real subBlock id so canonical pairs (shared effectiveParamId) do not share one store cell.
   const syntheticId = `${subBlockId}-tool-${toolIndex}-${subBlock.id}`
@@ -213,6 +216,7 @@ export function ToolSubBlockRenderer({
       disabled={disabled}
       canonicalToggle={canonicalToggle}
       dependencyContext={toolParams}
+      activeSearchTarget={activeSearchTarget}
     />
   )
 }

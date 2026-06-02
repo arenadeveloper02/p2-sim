@@ -1,6 +1,6 @@
 import { GoogleGenAI, type Part } from '@google/genai'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { GenerateImage } from '@/lib/copilot/generated/tool-catalog-v1'
 import {
   assertServerToolNotAborted,
@@ -10,7 +10,7 @@ import {
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { getServePathPrefix } from '@/lib/uploads'
 import {
-  downloadWorkspaceFile,
+  fetchWorkspaceFileBuffer,
   getWorkspaceFile,
   updateWorkspaceFileContent,
   uploadWorkspaceFile,
@@ -94,7 +94,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
             const fileRecord = await getWorkspaceFile(workspaceId, fileId)
             if (fileRecord) {
               referenceRecords.push({ id: fileRecord.id, name: fileRecord.name })
-              const buffer = await downloadWorkspaceFile(fileRecord)
+              const buffer = await fetchWorkspaceFileBuffer(fileRecord)
               const base64 = buffer.toString('base64')
               const mime = fileRecord.type || 'image/png'
               parts.push({
@@ -243,7 +243,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
         _serviceCost: { service: 'nano_banana_2', cost: NANO_BANANA_IMAGE_COST_USD },
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error'
+      const msg = getErrorMessage(error, 'Unknown error')
       logger.error('Image generation failed', { error: msg })
       return { success: false, message: `Failed to generate image: ${msg}` }
     }

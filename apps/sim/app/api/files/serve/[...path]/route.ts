@@ -2,6 +2,7 @@ import { readFile } from 'fs/promises'
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { fileServeParamsSchema, fileServeQuerySchema } from '@/lib/api/contracts/storage-transfer'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
@@ -33,7 +34,11 @@ function stripStorageKeyPrefix(segment: string): string {
 export const GET = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) => {
     try {
-      const { path } = await params
+      const paramsResult = fileServeParamsSchema.safeParse(await params)
+      if (!paramsResult.success) {
+        throw new FileNotFoundError('No file path provided')
+      }
+      const { path } = paramsResult.data
 
       if (!path || path.length === 0) {
         throw new FileNotFoundError('No file path provided')
@@ -183,7 +188,10 @@ export const GET = withRouteHandler(
         return await handleLocalFilePublic(fullPath)
       }
 
-      const raw = request.nextUrl.searchParams.get('raw') === '1'
+      const query = fileServeQuerySchema.parse({
+        raw: request.nextUrl.searchParams.get('raw'),
+      })
+      const raw = query.raw === '1'
 
       const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
 

@@ -1,10 +1,9 @@
 'use client'
 
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
-import { Skeleton } from '@/components/emcn'
+import { Loader, Skeleton } from '@/components/emcn'
 import { formatLatency } from '@/app/workspace/[workspaceId]/logs/utils'
 import type { DashboardStatsResponse, WorkflowStats } from '@/hooks/queries/logs'
 import { useWorkflows } from '@/hooks/queries/workflows'
@@ -64,7 +63,7 @@ function WorkflowRowSkeleton() {
   return (
     <div className='flex h-[44px] items-center gap-4 px-6'>
       <div className='flex w-[160px] flex-shrink-0 items-center gap-2 pr-2'>
-        <Skeleton className='h-[10px] w-[10px] flex-shrink-0 rounded-[3px]' />
+        <Skeleton className='size-[10px] flex-shrink-0 rounded-[3px]' />
         <Skeleton className='h-[16px] flex-1' />
       </div>
       <div className='flex-1'>
@@ -500,7 +499,7 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
                 />
               ) : (
                 <div className='flex h-[166px] items-center justify-center'>
-                  <Loader2 className='h-[16px] w-[16px] animate-spin text-[var(--text-secondary)]' />
+                  <Loader className='size-[16px] text-[var(--text-secondary)]' animate />
                 </div>
               )}
             </div>
@@ -527,7 +526,7 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
                 />
               ) : (
                 <div className='flex h-[166px] items-center justify-center'>
-                  <Loader2 className='h-[16px] w-[16px] animate-spin text-[var(--text-secondary)]' />
+                  <Loader className='size-[16px] text-[var(--text-secondary)]' animate />
                 </div>
               )}
             </div>
@@ -554,7 +553,7 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
                 />
               ) : (
                 <div className='flex h-[166px] items-center justify-center'>
-                  <Loader2 className='h-[16px] w-[16px] animate-spin text-[var(--text-secondary)]' />
+                  <Loader className='size-[16px] text-[var(--text-secondary)]' animate />
                 </div>
               )}
             </div>

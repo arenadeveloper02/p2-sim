@@ -15,7 +15,7 @@ import { tools as toolsRegistry } from '@/tools/registry'
 import { getTrigger, isTriggerValid } from '@/triggers'
 import { SYSTEM_SUBBLOCK_IDS } from '@/triggers/constants'
 
-export interface CopilotSubblockMetadata {
+interface CopilotSubblockMetadata {
   id: string
   type: string
   title?: string
@@ -60,7 +60,7 @@ export interface CopilotSubblockMetadata {
   value?: string // 'function' if it's a function, undefined otherwise
 }
 
-export interface CopilotToolMetadata {
+interface CopilotToolMetadata {
   id: string
   name: string
   description?: string
@@ -68,13 +68,13 @@ export interface CopilotToolMetadata {
   outputs?: any
 }
 
-export interface CopilotTriggerMetadata {
+interface CopilotTriggerMetadata {
   id: string
   outputs?: any
   configFields?: any
 }
 
-export interface CopilotBlockMetadata {
+interface CopilotBlockMetadata {
   id: string
   name: string
   description: string
@@ -102,7 +102,7 @@ export interface CopilotBlockMetadata {
 }
 
 const GetBlocksMetadataInputSchema = z.object({ blockIds: z.array(z.string()).min(1) })
-const GetBlocksMetadataResultSchema = z.object({ metadata: z.record(z.any()) })
+const GetBlocksMetadataResultSchema = z.object({ metadata: z.record(z.string(), z.any()) })
 
 export const getBlocksMetadataServerTool: BaseServerTool<
   z.infer<typeof GetBlocksMetadataInputSchema>,
@@ -768,6 +768,7 @@ function callOptionsWithFallback(
       base: { models: staticModels.map((m) => m.id) },
       ollama: { models: [] },
       vllm: { models: [] },
+      litellm: { models: [] },
       openrouter: { models: [] },
       fireworks: { models: [] },
     },

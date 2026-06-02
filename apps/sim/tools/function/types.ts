@@ -3,8 +3,14 @@ import type { ToolResponse } from '@/tools/types'
 
 export interface CodeExecutionInput {
   code: Array<{ content: string; id: string }> | string
+  /** Original user-authored code used for error display after execution-time reference resolution. */
+  sourceCode?: string
   language?: CodeLanguage
   useLocalVM?: boolean
+  /**
+   * Workflow Function blocks pass milliseconds. Copilot/Mothership tool calls pass seconds
+   * and are converted at the request boundary.
+   */
   timeout?: number
   memoryLimit?: number
   outputPath?: string
@@ -17,10 +23,18 @@ export interface CodeExecutionInput {
   blockData?: Record<string, unknown>
   blockNameMapping?: Record<string, string>
   blockOutputSchemas?: Record<string, Record<string, unknown>>
+  /** Pre-resolved block output variables from the executor, injected as VM globals. */
+  contextVariables?: Record<string, unknown>
   _context?: {
     workflowId?: string
+    executionId?: string
+    largeValueExecutionIds?: string[]
+    largeValueKeys?: string[]
+    fileKeys?: string[]
+    allowLargeValueWorkflowScope?: boolean
     userId?: string
     workspaceId?: string
+    copilotToolExecution?: boolean
   }
   isCustomTool?: boolean
   _sandboxFiles?: Array<{ path: string; content: string }>

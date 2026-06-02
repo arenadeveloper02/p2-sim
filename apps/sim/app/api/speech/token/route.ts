@@ -1,8 +1,10 @@
 import { db } from '@sim/db'
 import { chat } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { speechTokenBodySchema } from '@/lib/api/contracts/media/speech'
 import { getSession } from '@/lib/auth'
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { recordUsage } from '@/lib/billing/core/record-usage-wrapper'
@@ -73,8 +75,10 @@ async function validateChatAuth(
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
-    const body = await request.json().catch(() => ({}))
-    const chatId = body?.chatId as string | undefined
+    const rawBody = await request.json().catch(() => ({}))
+    const body = speechTokenBodySchema.safeParse(rawBody)
+    const chatId =
+      body.success && typeof body.data.chatId === 'string' ? body.data.chatId : undefined
 
     let billingUserId: string | undefined
 
@@ -168,7 +172,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json({ token: data.token })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to generate speech token'
+    const message = getErrorMessage(error, 'Failed to generate speech token')
     logger.error('Speech token error:', error)
     return NextResponse.json({ error: message }, { status: 500 })
   }

@@ -112,8 +112,7 @@ export class GenericBlockHandler implements BlockHandler {
             enforceCredentialAccess: ctx.enforceCredentialAccess,
           },
         },
-        false,
-        ctx
+        { executionContext: ctx }
       )
 
       logger.info('GenericHandler: executeTool returned', {

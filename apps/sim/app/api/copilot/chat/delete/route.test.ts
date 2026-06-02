@@ -7,14 +7,16 @@ import { authMockFns, dbChainMock, dbChainMockFns } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetAccessibleCopilotChat } = vi.hoisted(() => ({
+const { mockGetAccessibleCopilotChat, mockGetAccessibleCopilotChatAuth } = vi.hoisted(() => ({
   mockGetAccessibleCopilotChat: vi.fn(),
+  mockGetAccessibleCopilotChatAuth: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => dbChainMock)
 
 vi.mock('@/lib/copilot/chat/lifecycle', () => ({
   getAccessibleCopilotChat: mockGetAccessibleCopilotChat,
+  getAccessibleCopilotChatAuth: mockGetAccessibleCopilotChatAuth,
 }))
 
 vi.mock('@/lib/copilot/tasks', () => ({
@@ -39,6 +41,7 @@ describe('Copilot Chat Delete API Route', () => {
 
     dbChainMockFns.returning.mockResolvedValue([{ workspaceId: 'ws-1' }])
     mockGetAccessibleCopilotChat.mockResolvedValue({ id: 'chat-123', userId: 'user-123' })
+    mockGetAccessibleCopilotChatAuth.mockResolvedValue({ id: 'chat-123', userId: 'user-123' })
   })
 
   afterEach(() => {
@@ -77,19 +80,19 @@ describe('Copilot Chat Delete API Route', () => {
       expect(dbChainMockFns.where).toHaveBeenCalled()
     })
 
-    it('should return 500 for invalid request body - missing chatId', async () => {
+    it('should return 400 for invalid request body - missing chatId', async () => {
       authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-123' } })
 
       const req = createMockRequest('DELETE', {})
 
       const response = await DELETE(req)
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(400)
       const responseData = await response.json()
-      expect(responseData.error).toBe('Failed to delete chat')
+      expect(responseData.error).toBe('Validation error')
     })
 
-    it('should return 500 for invalid request body - chatId is not a string', async () => {
+    it('should return 400 for invalid request body - chatId is not a string', async () => {
       authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-123' } })
 
       const req = createMockRequest('DELETE', {
@@ -98,9 +101,9 @@ describe('Copilot Chat Delete API Route', () => {
 
       const response = await DELETE(req)
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(400)
       const responseData = await response.json()
-      expect(responseData.error).toBe('Failed to delete chat')
+      expect(responseData.error).toBe('Validation error')
     })
 
     it('should handle database errors gracefully', async () => {
@@ -140,7 +143,7 @@ describe('Copilot Chat Delete API Route', () => {
     it('should delete chat even if it does not exist (idempotent)', async () => {
       authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-123' } })
 
-      mockGetAccessibleCopilotChat.mockResolvedValueOnce(null)
+      mockGetAccessibleCopilotChatAuth.mockResolvedValueOnce(null)
 
       const req = createMockRequest('DELETE', {
         chatId: 'non-existent-chat',

@@ -9,6 +9,8 @@ import { hmacSha256Hex } from '@sim/security/hmac'
 import { toError } from '@sim/utils/errors'
 import { formatDuration } from '@sim/utils/formatting'
 import { generateId } from '@sim/utils/id'
+import { randomFloat } from '@sim/utils/random'
+import { truncate } from '@sim/utils/string'
 import { getActiveWorkflowContext } from '@sim/workflow-authz'
 import { task } from '@trigger.dev/sdk'
 import { and, eq, isNull, lte, or, sql } from 'drizzle-orm'
@@ -34,7 +36,7 @@ const logger = createLogger('WorkspaceNotificationDelivery')
 const MAX_ATTEMPTS = 5
 const RETRY_DELAYS = [5 * 1000, 15 * 1000, 60 * 1000, 3 * 60 * 1000, 10 * 60 * 1000]
 function getRetryDelayWithJitter(baseDelay: number): number {
-  const jitter = Math.random() * 0.1 * baseDelay
+  const jitter = randomFloat() * 0.1 * baseDelay
   return Math.floor(baseDelay + jitter)
 }
 
@@ -396,7 +398,7 @@ async function deliverSlack(
 
   if (payload.data.finalOutput) {
     const outputStr = JSON.stringify(payload.data.finalOutput, null, 2)
-    const truncated = outputStr.length > 2900 ? `${outputStr.slice(0, 2900)}...` : outputStr
+    const truncated = truncate(outputStr, 2900)
     blocks.push({
       type: 'section',
       text: {
@@ -494,6 +496,77 @@ export type NotificationDeliveryResult =
   | { status: 'success' | 'skipped' | 'failed' }
   | { status: 'retry'; retryDelayMs: number }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function formatLogDate(value: Date | string | null | undefined, fallback = ''): string {
+  if (value instanceof Date) {
+    return value.toISOString()
+  }
+  return typeof value === 'string' ? value : fallback
+}
+
+function normalizeLogCost(value: unknown): WorkflowExecutionLog['cost'] {
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  const tokens = isRecord(value.tokens)
+    ? {
+        input: typeof value.tokens.input === 'number' ? value.tokens.input : undefined,
+        output: typeof value.tokens.output === 'number' ? value.tokens.output : undefined,
+        total: typeof value.tokens.total === 'number' ? value.tokens.total : undefined,
+      }
+    : undefined
+
+  return {
+    input: typeof value.input === 'number' ? value.input : undefined,
+    output: typeof value.output === 'number' ? value.output : undefined,
+    total: typeof value.total === 'number' ? value.total : undefined,
+    tokens,
+  }
+}
+
+function normalizeLogFiles(value: unknown): WorkflowExecutionLog['files'] {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  return value.filter(
+    (file): file is NonNullable<WorkflowExecutionLog['files']>[number] =>
+      isRecord(file) &&
+      typeof file.id === 'string' &&
+      typeof file.name === 'string' &&
+      typeof file.size === 'number' &&
+      typeof file.type === 'string' &&
+      typeof file.url === 'string' &&
+      typeof file.key === 'string'
+  )
+}
+
+function normalizeWorkflowExecutionLog(
+  row: typeof workflowExecutionLogs.$inferSelect
+): WorkflowExecutionLog {
+  const startedAt = formatLogDate(row.startedAt)
+
+  return {
+    id: row.id,
+    workflowId: row.workflowId,
+    executionId: row.executionId,
+    stateSnapshotId: row.stateSnapshotId,
+    level: row.level === 'error' ? 'error' : 'info',
+    trigger: row.trigger,
+    startedAt,
+    endedAt: formatLogDate(row.endedAt, startedAt),
+    totalDurationMs: row.totalDurationMs ?? 0,
+    files: normalizeLogFiles(row.files),
+    executionData: isRecord(row.executionData) ? row.executionData : {},
+    cost: normalizeLogCost(row.cost),
+    createdAt: formatLogDate(row.createdAt, startedAt),
+  }
+}
+
 async function buildRetryLog(params: NotificationDeliveryParams): Promise<WorkflowExecutionLog> {
   const conditions = [eq(workflowExecutionLogs.executionId, params.log.executionId)]
   if (params.log.workflowId) {
@@ -507,7 +580,7 @@ async function buildRetryLog(params: NotificationDeliveryParams): Promise<Workfl
     .limit(1)
 
   if (storedLog) {
-    return storedLog as unknown as WorkflowExecutionLog
+    return normalizeWorkflowExecutionLog(storedLog)
   }
 
   const now = new Date().toISOString()

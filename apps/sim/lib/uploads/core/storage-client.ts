@@ -6,7 +6,7 @@ export type { StorageConfig } from '@/lib/uploads/shared/types'
 /**
  * Get the current storage provider name
  */
-export function getStorageProvider(): 's3' | 'local' {
+export function getStorageProvider(): 's3' | 'local' | 'blob' {
   if (USE_S3_STORAGE) return 's3'
   return 'local'
 }

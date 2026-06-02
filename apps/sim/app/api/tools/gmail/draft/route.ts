@@ -1,12 +1,15 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { gmailDraftContract } from '@/lib/api/contracts/tools/google'
+import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { RawFileInputArraySchema } from '@/lib/uploads/utils/file-schemas'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileForDelivery } from '@/lib/uploads/utils/file-utils.server'
+import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { assertToolFileAccess } from '@/app/api/files/authorization'
 import {
   base64UrlEncode,
   buildMimeMessage,
@@ -20,26 +23,13 @@ const logger = createLogger('GmailDraftAPI')
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me'
 
-const GmailDraftSchema = z.object({
-  accessToken: z.string().min(1, 'Access token is required'),
-  to: z.string().min(1, 'Recipient email is required'),
-  subject: z.string().optional().nullable(),
-  body: z.string().min(1, 'Email body is required'),
-  contentType: z.enum(['text', 'html']).optional().nullable(),
-  threadId: z.string().optional().nullable(),
-  replyToMessageId: z.string().optional().nullable(),
-  cc: z.string().optional().nullable(),
-  bcc: z.string().optional().nullable(),
-  attachments: RawFileInputArraySchema.optional().nullable(),
-})
-
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
   try {
     const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
 
-    if (!authResult.success) {
+    if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthorized Gmail draft attempt: ${authResult.error}`)
       return NextResponse.json(
         {
@@ -50,12 +40,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
+    const userId = authResult.userId
     logger.info(`[${requestId}] Authenticated Gmail draft request via ${authResult.authType}`, {
-      userId: authResult.userId,
+      userId,
     })
 
-    const body = await request.json()
-    const validatedData = GmailDraftSchema.parse(body)
+    const parsed = await parseRequest(gmailDraftContract, request, {})
+    if (!parsed.success) return parsed.response
+    const validatedData = parsed.data.body
 
     logger.info(`[${requestId}] Creating Gmail draft`, {
       to: validatedData.to,
@@ -99,7 +91,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         const ownerKey = authResult.userId ? `user:${authResult.userId}` : undefined
 
-        const attachmentBuffers = await Promise.all(
+        const accessResults = await Promise.all(
+          attachments.map((file) => assertToolFileAccess(file.key, userId, requestId, logger))
+        )
+        const denied = accessResults.find((r) => r !== null)
+        if (denied) return denied
+
+        const buffers = await Promise.all(
           attachments.map(async (file) => {
             try {
               logger.info(
@@ -124,10 +122,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
                 mimeType: contentType || file.type || 'application/octet-stream',
                 content: buffer,
               }
+              // return await downloadFileFromStorage(file, requestId, logger)
             } catch (error) {
               logger.error(`[${requestId}] Failed to download attachment ${file.name}:`, error)
               throw new Error(
-                `Failed to download attachment "${file.name}": ${error instanceof Error ? error.message : 'Unknown error'}`
+                `Failed to download attachment "${file.name}": ${getErrorMessage(error, 'Unknown error')}`
               )
             }
           })
@@ -142,7 +141,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           contentType: validatedData.contentType || 'text',
           inReplyTo: originalMessageId,
           references: originalReferences,
-          attachments: attachmentBuffers,
+          attachments: buffers,
         })
 
         logger.info(`[${requestId}] Built MIME message for draft (${mimeMessage.length} bytes)`)
@@ -211,24 +210,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       },
     })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid request data`, { errors: error.errors })
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid request data',
-          details: error.errors,
-        },
-        { status: 400 }
-      )
-    }
-
     logger.error(`[${requestId}] Error creating Gmail draft:`, error)
 
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
+        error: getErrorMessage(error, 'Internal server error'),
       },
       { status: 500 }
     )

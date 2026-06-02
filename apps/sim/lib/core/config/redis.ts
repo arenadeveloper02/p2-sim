@@ -1,12 +1,59 @@
 import { createRequire } from 'node:module'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import type Redis from 'ioredis'
+import { randomFloat } from '@sim/utils/random'
+import Redis, { type RedisOptions } from 'ioredis'
 import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('Redis')
 
 const redisUrl = env.REDIS_URL
+
+/**
+ * When REDIS_URL targets a bare IP over `rediss://` (e.g. trigger.dev's
+ * PrivateLink VPCE IP), default TLS hostname verification fails — the cert
+ * is issued for the ElastiCache DNS name, not the IP. Override SNI with
+ * REDIS_TLS_SERVERNAME (set to the DNS the cert was issued for).
+ *
+ * For DNS hosts: no override needed, default verification works.
+ */
+function resolveRedisTlsOptions(url: string | undefined): { servername: string } | undefined {
+  if (!url) return undefined
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return undefined
+  }
+  if (parsed.protocol !== 'rediss:') return undefined
+  const hostIsIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(parsed.hostname)
+  if (!hostIsIp) return undefined
+  if (!env.REDIS_TLS_SERVERNAME) {
+    throw new Error(
+      'REDIS_TLS_SERVERNAME must be set when REDIS_URL targets an IP over rediss://. ' +
+        'TLS cert hostname verification cannot match an IP — set REDIS_TLS_SERVERNAME ' +
+        'to the DNS name the cert was issued for (the ElastiCache primary endpoint).'
+    )
+  }
+  return { servername: env.REDIS_TLS_SERVERNAME }
+}
+
+/**
+ * Shared connection defaults — keepAlive, connectTimeout, enableOfflineQueue,
+ * and TLS SNI when REDIS_URL targets an IP. Every Redis client we open should
+ * spread this; callers add their own retry / timeout policy on top.
+ */
+export function getRedisConnectionDefaults(
+  url: string | undefined
+): Pick<RedisOptions, 'keepAlive' | 'connectTimeout' | 'enableOfflineQueue' | 'tls'> {
+  const tls = resolveRedisTlsOptions(url)
+  return {
+    keepAlive: 1000,
+    connectTimeout: 10000,
+    enableOfflineQueue: true,
+    ...(tls ? { tls } : {}),
+  }
+}
 
 let globalRedisClient: Redis | null = null
 let pingFailures = 0
@@ -49,6 +96,14 @@ function startPingHealthCheck(redis: Redis): void {
           consecutiveFailures: pingFailures,
         })
         pingFailures = 0
+        // Drop the cached client and stop this health check before disconnecting,
+        // so the next getRedisClient() builds a fresh client and a fresh PING loop.
+        // Listeners may call getRedisClient() and must observe the cleared global.
+        globalRedisClient = null
+        if (pingInterval) {
+          clearInterval(pingInterval)
+          pingInterval = null
+        }
         for (const cb of reconnectListeners) {
           try {
             cb()
@@ -80,6 +135,9 @@ export function getRedisClient(): Redis | null {
   if (!redisUrl) return null
   if (globalRedisClient) return globalRedisClient
 
+  // Outside the try/catch so config errors aren't silently swallowed.
+  const defaults = getRedisConnectionDefaults(redisUrl)
+
   try {
     if (!redisConstructor) {
       const nodeRequire = createRequire(import.meta.url)
@@ -95,12 +153,10 @@ export function getRedisClient(): Redis | null {
 
     logger.info('Initializing Redis client')
 
-    globalRedisClient = new redisConstructor(redisUrl, {
-      keepAlive: 1000,
-      connectTimeout: 10000,
+    globalRedisClient = new Redis(redisUrl, {
+      ...defaults,
       commandTimeout: 5000,
       maxRetriesPerRequest: 5,
-      enableOfflineQueue: true,
 
       retryStrategy: (times: number) => {
         if (times > 10) {
@@ -108,7 +164,7 @@ export function getRedisClient(): Redis | null {
           return 30000
         }
         const base = Math.min(1000 * 2 ** (times - 1), 10000)
-        const jitter = Math.random() * base * 0.3
+        const jitter = randomFloat() * base * 0.3
         const delay = Math.round(base + jitter)
         logger.warn('Redis reconnecting', { attempt: times, nextRetryMs: delay })
         return delay
@@ -151,6 +207,21 @@ end
 `
 
 /**
+ * Lua script for safe lock TTL extension.
+ * Only refreshes the expiry if the value matches (ownership verification),
+ * so a stale heartbeat from a prior owner cannot extend a lock currently
+ * held by someone else after a TTL eviction.
+ * Returns 1 if the TTL was extended, 0 if not (value mismatch or key gone).
+ */
+const EXTEND_LOCK_SCRIPT = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("expire", KEYS[1], ARGV[2])
+else
+  return 0
+end
+`
+
+/**
  * Acquire a distributed lock using Redis SET NX.
  * Returns true if lock acquired, false if already held.
  *
@@ -186,6 +257,29 @@ export async function releaseLock(lockKey: string, value: string): Promise<boole
   }
 
   const result = await redis.eval(RELEASE_LOCK_SCRIPT, 1, lockKey, value)
+  return result === 1
+}
+
+/**
+ * Extend the TTL of a distributed lock if still owned by the caller.
+ * Returns true if the caller still owns the lock and the TTL was refreshed,
+ * false if the lock has been taken over by another owner or has expired.
+ *
+ * When Redis is not available, returns true (no-op) to match the behavior
+ * of `acquireLock` / `releaseLock`: single-replica deployments without
+ * Redis never held a real lock, so heartbeat success is implicit.
+ */
+export async function extendLock(
+  lockKey: string,
+  value: string,
+  expirySeconds: number
+): Promise<boolean> {
+  const redis = getRedisClient()
+  if (!redis) {
+    return true
+  }
+
+  const result = await redis.eval(EXTEND_LOCK_SCRIPT, 1, lockKey, value, expirySeconds)
   return result === 1
 }
 

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { Button, Tooltip } from '@/components/emcn'
 import { workflowDeployCTAEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -9,6 +8,7 @@ import { DeployModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/compon
 import {
   useChangeDetection,
   useDeployment,
+  useDeployReadiness,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks'
 import { useCurrentWorkflow } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-current-workflow'
 import { useDeployedWorkflowState, useDeploymentInfo } from '@/hooks/queries/deployments'
@@ -20,9 +20,15 @@ interface DeployProps {
   activeWorkflowId: string | null
   userPermissions: WorkspaceUserPermissions
   className?: string
+  disabled?: boolean
 }
 
-export function Deploy({ activeWorkflowId, userPermissions, className }: DeployProps) {
+export function Deploy({
+  activeWorkflowId,
+  userPermissions,
+  className,
+  disabled = false,
+}: DeployProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -45,29 +51,43 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
     isFetching: isFetchingDeployedState,
   } = useDeployedWorkflowState(activeWorkflowId, { enabled: isDeployedStateEnabled })
   const deployedState = isDeployedStateEnabled ? (deployedStateData ?? null) : null
+  const deployReadiness = useDeployReadiness(activeWorkflowId)
 
-  const { changeDetected } = useChangeDetection({
+  const { changeDetected, isChangeDetectionSettling } = useChangeDetection({
     workflowId: activeWorkflowId,
     deployedState,
     isLoadingDeployedState: isLoadingDeployedState || isFetchingDeployedState,
   })
+  const isDeploymentSettling = isChangeDetectionSettling || deployReadiness.isSyncing
 
   const { isDeploying, handleDeployClick } = useDeployment({
     workflowId: activeWorkflowId,
     isDeployed,
+    deployReadiness,
   })
 
   const isEmpty = !hasBlocks()
   const canDeploy = userPermissions.canAdmin
-  const isDisabled = isDeploying || !canDeploy || isEmpty
+  const isDisabled =
+    disabled ||
+    isDeploying ||
+    !canDeploy ||
+    isEmpty ||
+    (!isDeployed && deployReadiness.isBlocked && !deployReadiness.isSyncing)
 
   const onDeployClick = async () => {
-    if (!canDeploy || !activeWorkflowId) return
+    if (disabled || !canDeploy || !activeWorkflowId) return
     workflowDeployCTAEvent({
       'Workspace Name': workspaceName,
       'Workspace ID': workspaceId,
       CTA: changeDetected ? 'Update' : isDeployed ? 'Active' : 'Deploy',
     })
+
+    if (isDeploymentSettling) {
+      setIsModalOpen(true)
+      return
+    }
+
     const result = await handleDeployClick()
     if (result.shouldOpenModal) {
       setIsModalOpen(true)
@@ -81,8 +101,17 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
     if (!canDeploy) {
       return 'Admin permissions required'
     }
+    if (disabled) {
+      return 'Workflow is locked'
+    }
     if (isDeploying) {
       return 'Deploying...'
+    }
+    if (isChangeDetectionSettling) {
+      return 'Syncing deployment state...'
+    }
+    if (deployReadiness.isBlocked && !isDeployed) {
+      return deployReadiness.tooltip
     }
     if (changeDetected) {
       return 'Update deployment'
@@ -91,6 +120,16 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
       return 'Active deployment'
     }
     return 'Deploy workflow'
+  }
+
+  const getButtonLabel = () => {
+    if (changeDetected) {
+      return 'Update'
+    }
+    if (isDeployed) {
+      return 'Live'
+    }
+    return 'Deploy'
   }
 
   return (
@@ -106,8 +145,7 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
               onClick={onDeployClick}
               disabled={isRegistryLoading || isDisabled}
             >
-              {isDeploying && <Loader2 className='h-[13px] w-[13px] animate-spin' />}
-              {changeDetected ? 'Update' : isDeployed ? 'Live' : 'Deploy'}
+              {getButtonLabel()}
             </Button>
           </span>
         </Tooltip.Trigger>
@@ -121,7 +159,9 @@ export function Deploy({ activeWorkflowId, userPermissions, className }: DeployP
         isDeployed={isDeployed}
         needsRedeployment={changeDetected}
         deployedState={deployedState}
-        isLoadingDeployedState={isLoadingDeployedState}
+        isLoadingDeployedState={isLoadingDeployedState || isFetchingDeployedState}
+        deployReadiness={deployReadiness}
+        isDeploymentSettling={isDeploymentSettling}
       />
     </>
   )

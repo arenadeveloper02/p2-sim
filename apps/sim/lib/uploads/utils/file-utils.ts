@@ -4,7 +4,7 @@ import { ACCEPTED_FILE_TYPES, SUPPORTED_DOCUMENT_EXTENSIONS } from '@/lib/upload
 import { isUuid } from '@/executor/constants'
 import type { UserFile } from '@/executor/types'
 
-export interface FileAttachment {
+interface FileAttachment {
   id: string
   key: string
   filename: string
@@ -33,6 +33,13 @@ export const MIME_TYPE_MAPPING: Record<string, 'image' | 'document' | 'audio' | 
   'image/gif': 'image',
   'image/webp': 'image',
   'image/svg+xml': 'image', // SVG upload is allowed; createFileContent handles it separately for Claude API
+  'image/bmp': 'image',
+  'image/tiff': 'image',
+  'image/heic': 'image',
+  'image/heif': 'image',
+  'image/avif': 'image',
+  'image/x-icon': 'image',
+  'image/vnd.microsoft.icon': 'image',
 
   // Documents
   'application/pdf': 'document',
@@ -140,6 +147,16 @@ export function bufferToBase64(buffer: Buffer): string {
  * Create message content from file data
  */
 export function createFileContent(fileBuffer: Buffer, mimeType: string): MessageContent | null {
+  return createFileContentFromBase64(bufferToBase64(fileBuffer), mimeType)
+}
+
+/**
+ * Create message content from base64-encoded file data.
+ */
+export function createFileContentFromBase64(
+  base64: string,
+  mimeType: string
+): MessageContent | null {
   // SVG is XML text — Claude only supports raster image formats (JPEG, PNG, GIF, WebP),
   // so send SVGs as an XML document instead
   if (mimeType.toLowerCase() === 'image/svg+xml') {
@@ -148,7 +165,7 @@ export function createFileContent(fileBuffer: Buffer, mimeType: string): Message
       source: {
         type: 'base64',
         media_type: 'text/xml',
-        data: bufferToBase64(fileBuffer),
+        data: base64,
       },
     }
   }
@@ -158,15 +175,27 @@ export function createFileContent(fileBuffer: Buffer, mimeType: string): Message
     return null
   }
 
+  if (contentType === 'image' && !MODEL_SUPPORTED_IMAGE_MIME_TYPES.has(mimeType.toLowerCase())) {
+    return null
+  }
+
   return {
     type: contentType,
     source: {
       type: 'base64',
       media_type: mimeType,
-      data: bufferToBase64(fileBuffer),
+      data: base64,
     },
   }
 }
+
+export const MODEL_SUPPORTED_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+])
 
 /**
  * Extract file extension from filename
@@ -184,6 +213,13 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   gif: 'image/gif',
   webp: 'image/webp',
   svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  avif: 'image/avif',
+  ico: 'image/x-icon',
 
   // Documents
   pdf: 'application/pdf',
@@ -272,13 +308,63 @@ export function getMimeTypeFromExtension(extension: string): string {
 }
 
 /**
- * Resolve a reliable MIME type from a file, falling back to extension
- * when the browser reports empty or generic `application/octet-stream`
+ * Resolve a reliable MIME type from a file, falling back to the extension map
+ * when the browser reports an empty type. By default treats
+ * `application/octet-stream` as "unknown" and falls back to the extension —
+ * pass `{ preserveOctetStream: true }` for direct PUT uploads where the
+ * browser-supplied content-type must match the presigned handshake exactly.
  */
-export function resolveFileType(file: { type: string; name: string }): string {
-  return file.type && file.type !== 'application/octet-stream'
-    ? file.type
-    : getMimeTypeFromExtension(getFileExtension(file.name))
+export function resolveFileType(
+  file: { type: string; name: string },
+  options?: { preserveOctetStream?: boolean }
+): string {
+  const browserType = file.type?.trim()
+  if (browserType) {
+    if (options?.preserveOctetStream || browserType !== 'application/octet-stream') {
+      return browserType
+    }
+  }
+  return getMimeTypeFromExtension(getFileExtension(file.name))
+}
+
+/**
+ * Upload `Content-Type` for direct PUT — preserves the browser's reported type
+ * verbatim (including `application/octet-stream`) so it matches the presigned
+ * URL's signed Content-Type header.
+ */
+export function getFileContentType(file: File): string {
+  return resolveFileType(file, { preserveOctetStream: true })
+}
+
+/**
+ * Whether `error` is a DOM `AbortError` (XHR `abort()`, fetch `signal.aborted`,
+ * etc). Used in upload retry loops so aborts short-circuit instead of retrying.
+ */
+export function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    String((error as { name?: unknown }).name) === 'AbortError'
+  )
+}
+
+/**
+ * Heuristic: whether `error` is a transient network/connection failure that's
+ * worth retrying (vs. a deterministic 4xx/auth/validation error). Sniffs the
+ * message because browsers and servers report these without standardized codes.
+ */
+export function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('network') ||
+    message.includes('fetch') ||
+    message.includes('connection') ||
+    message.includes('timeout') ||
+    message.includes('timed out') ||
+    message.includes('econnreset')
+  )
 }
 
 const MIME_TO_EXTENSION: Record<string, string> = {
@@ -289,6 +375,13 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   'image/gif': 'gif',
   'image/webp': 'webp',
   'image/svg+xml': 'svg',
+  'image/bmp': 'bmp',
+  'image/tiff': 'tiff',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+  'image/avif': 'avif',
+  'image/x-icon': 'ico',
+  'image/vnd.microsoft.icon': 'ico',
 
   // Documents
   'application/pdf': 'pdf',
@@ -795,25 +888,4 @@ export function getViewerUrl(fileKey: string, workspaceId?: string): string | nu
   }
 
   return `/workspace/${resolvedWorkspaceId}/files/${fileKey}`
-}
-
-/**
- * Downloads a workspace file to the user's device via the serve API.
- * Fetches the file as a blob and triggers a browser download.
- */
-export async function downloadWorkspaceFile(file: { key: string; name: string }): Promise<void> {
-  const serveUrl = `/api/files/serve/${encodeURIComponent(file.key)}?context=workspace&t=${Date.now()}`
-  const response = await fetch(serveUrl, { cache: 'no-store' })
-  if (!response.ok) {
-    throw new Error(`Failed to download file: ${response.statusText}`)
-  }
-  const blob = await response.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = file.name
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
 }

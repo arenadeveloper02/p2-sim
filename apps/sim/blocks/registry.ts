@@ -1,6 +1,7 @@
 import { A2ABlock } from '@/blocks/blocks/a2a'
 import { AgentBlock } from '@/blocks/blocks/agent'
 import { AgentMailBlock } from '@/blocks/blocks/agentmail'
+import { AgentPhoneBlock } from '@/blocks/blocks/agentphone'
 import { AgiloftBlock } from '@/blocks/blocks/agiloft'
 import { AhrefsBlock } from '@/blocks/blocks/ahrefs'
 import { AirtableBlock } from '@/blocks/blocks/airtable'
@@ -17,6 +18,7 @@ import { AsanaBlock } from '@/blocks/blocks/asana'
 import { AshbyBlock } from '@/blocks/blocks/ashby'
 import { AthenaBlock } from '@/blocks/blocks/athena'
 import { AttioBlock } from '@/blocks/blocks/attio'
+import { AzureDevOpsBlock } from '@/blocks/blocks/azure_devops'
 import { BoxBlock } from '@/blocks/blocks/box'
 import { BrandfetchBlock } from '@/blocks/blocks/brandfetch'
 import { BrightDataBlock } from '@/blocks/blocks/brightdata'
@@ -48,6 +50,7 @@ import { DuckDuckGoBlock } from '@/blocks/blocks/duckduckgo'
 import { DynamoDBBlock } from '@/blocks/blocks/dynamodb'
 import { ElasticsearchBlock } from '@/blocks/blocks/elasticsearch'
 import { ElevenLabsBlock } from '@/blocks/blocks/elevenlabs'
+import { EmailBisonBlock } from '@/blocks/blocks/emailbison'
 import { EnrichBlock } from '@/blocks/blocks/enrich'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { EvernoteBlock } from '@/blocks/blocks/evernote'
@@ -56,7 +59,8 @@ import { ExtendBlock, ExtendV2Block } from '@/blocks/blocks/extend'
 import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
 import { FathomBlock } from '@/blocks/blocks/fathom'
 import { FigmaBlock } from '@/blocks/blocks/figma'
-import { FileBlock, FileV2Block, FileV3Block } from '@/blocks/blocks/file'
+import { FileBlock, FileV2Block, FileV3Block, FileV4Block } from '@/blocks/blocks/file'
+import { FindymailBlock } from '@/blocks/blocks/findymail'
 import { FirecrawlBlock } from '@/blocks/blocks/firecrawl'
 import { FirefliesBlock, FirefliesV2Block } from '@/blocks/blocks/fireflies'
 import { FunctionBlock } from '@/blocks/blocks/function'
@@ -99,11 +103,12 @@ import { HunterBlock } from '@/blocks/blocks/hunter'
 import { IAMBlock } from '@/blocks/blocks/iam'
 import { IdentityCenterBlock } from '@/blocks/blocks/identity_center'
 import { ImageFusionBlock } from '@/blocks/blocks/image_fusion'
-import { ImageGeneratorBlock } from '@/blocks/blocks/image_generator'
+import { ImageGeneratorBlock, ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
 import { ImapBlock } from '@/blocks/blocks/imap'
 import { IncidentioBlock } from '@/blocks/blocks/incidentio'
 import { InfisicalBlock } from '@/blocks/blocks/infisical'
 import { InputTriggerBlock } from '@/blocks/blocks/input_trigger'
+import { InstantlyBlock } from '@/blocks/blocks/instantly'
 import { IntercomBlock, IntercomV2Block } from '@/blocks/blocks/intercom'
 import { JinaBlock } from '@/blocks/blocks/jina'
 import { JiraBlock } from '@/blocks/blocks/jira'
@@ -117,6 +122,7 @@ import { LemlistBlock } from '@/blocks/blocks/lemlist'
 import { LinearBlock, LinearV2Block } from '@/blocks/blocks/linear'
 import { LinkedInBlock } from '@/blocks/blocks/linkedin'
 import { LinkupBlock } from '@/blocks/blocks/linkup'
+import { LogsBlock } from '@/blocks/blocks/logs'
 import { LoopsBlock } from '@/blocks/blocks/loops'
 import { LumaBlock } from '@/blocks/blocks/luma'
 import { MailchimpBlock } from '@/blocks/blocks/mailchimp'
@@ -140,6 +146,7 @@ import { MongoDBBlock } from '@/blocks/blocks/mongodb'
 import { MothershipBlock } from '@/blocks/blocks/mothership'
 import { MySQLBlock } from '@/blocks/blocks/mysql'
 import { Neo4jBlock } from '@/blocks/blocks/neo4j'
+import { NewRelicBlock } from '@/blocks/blocks/new_relic'
 import { NoteBlock } from '@/blocks/blocks/note'
 import { NotionBlock, NotionV2Block } from '@/blocks/blocks/notion'
 import { ObsidianBlock } from '@/blocks/blocks/obsidian'
@@ -150,6 +157,7 @@ import { OpenAIBlock } from '@/blocks/blocks/openai'
 import { OutlookBlock } from '@/blocks/blocks/outlook'
 import { PagerDutyBlock } from '@/blocks/blocks/pagerduty'
 import { ParallelBlock } from '@/blocks/blocks/parallel'
+import { PeopleDataLabsBlock } from '@/blocks/blocks/peopledatalabs'
 import { PerplexityBlock } from '@/blocks/blocks/perplexity'
 import { PineconeBlock } from '@/blocks/blocks/pinecone'
 import { PipedriveBlock } from '@/blocks/blocks/pipedrive'
@@ -158,9 +166,11 @@ import { PostgreSQLBlock } from '@/blocks/blocks/postgresql'
 import { PostHogBlock } from '@/blocks/blocks/posthog'
 import { PresentationBlock } from '@/blocks/blocks/presentation'
 import { ProfoundBlock } from '@/blocks/blocks/profound'
+import { ProspeoBlock } from '@/blocks/blocks/prospeo'
 import { PulseBlock, PulseV2Block } from '@/blocks/blocks/pulse'
 import { QdrantBlock } from '@/blocks/blocks/qdrant'
 import { QuiverBlock } from '@/blocks/blocks/quiver'
+import { RailwayBlock } from '@/blocks/blocks/railway'
 import { RDSBlock } from '@/blocks/blocks/rds'
 import { RedditBlock } from '@/blocks/blocks/reddit'
 import { RedisBlock } from '@/blocks/blocks/redis'
@@ -174,6 +184,8 @@ import { RouterBlock, RouterV2Block } from '@/blocks/blocks/router'
 import { RssBlock } from '@/blocks/blocks/rss'
 import { S3Block } from '@/blocks/blocks/s3'
 import { SalesforceBlock } from '@/blocks/blocks/salesforce'
+import { SapConcurBlock } from '@/blocks/blocks/sap_concur'
+import { SapS4HanaBlock } from '@/blocks/blocks/sap_s4hana'
 import { ScheduleBlock } from '@/blocks/blocks/schedule'
 import { SearchBlock } from '@/blocks/blocks/search'
 import { SecretsManagerBlock } from '@/blocks/blocks/secrets_manager'
@@ -184,7 +196,7 @@ import { SerperBlock } from '@/blocks/blocks/serper'
 import { ServiceNowBlock } from '@/blocks/blocks/servicenow'
 import { SESBlock } from '@/blocks/blocks/ses'
 import { SftpBlock } from '@/blocks/blocks/sftp'
-import { SharepointBlock } from '@/blocks/blocks/sharepoint'
+import { SharepointBlock, SharepointV2Block } from '@/blocks/blocks/sharepoint'
 import { ShopifyBlock } from '@/blocks/blocks/shopify'
 import { SimilarwebBlock } from '@/blocks/blocks/similarweb'
 import { SixtyfourBlock } from '@/blocks/blocks/sixtyfour'
@@ -218,7 +230,11 @@ import { UnipileBlock } from '@/blocks/blocks/unipile'
 import { UpstashBlock } from '@/blocks/blocks/upstash'
 import { VariablesBlock } from '@/blocks/blocks/variables'
 import { VercelBlock } from '@/blocks/blocks/vercel'
-import { VideoGeneratorBlock, VideoGeneratorV2Block } from '@/blocks/blocks/video_generator'
+import {
+  VideoGeneratorBlock,
+  VideoGeneratorV2Block,
+  VideoGeneratorV3Block,
+} from '@/blocks/blocks/video_generator'
 import { VisionBlock, VisionV2Block } from '@/blocks/blocks/vision'
 import { WaitBlock } from '@/blocks/blocks/wait'
 import { WealthboxBlock } from '@/blocks/blocks/wealthbox'
@@ -226,6 +242,7 @@ import { WebflowBlock } from '@/blocks/blocks/webflow'
 import { WebhookRequestBlock } from '@/blocks/blocks/webhook_request'
 import { WhatsAppBlock } from '@/blocks/blocks/whatsapp'
 import { WikipediaBlock } from '@/blocks/blocks/wikipedia'
+import { WizaBlock } from '@/blocks/blocks/wiza'
 import { WordPressBlock } from '@/blocks/blocks/wordpress'
 import { WorkdayBlock } from '@/blocks/blocks/workday'
 import { WorkflowBlock } from '@/blocks/blocks/workflow'
@@ -243,6 +260,7 @@ export const registry: Record<string, BlockConfig> = {
   agent: AgentBlock,
   arena: ArenaBlock,
   agentmail: AgentMailBlock,
+  agentphone: AgentPhoneBlock,
   agiloft: AgiloftBlock,
   ahrefs: AhrefsBlock,
   airtable: AirtableBlock,
@@ -258,6 +276,7 @@ export const registry: Record<string, BlockConfig> = {
   ashby: AshbyBlock,
   athena: AthenaBlock,
   attio: AttioBlock,
+  azure_devops: AzureDevOpsBlock,
   box: BoxBlock,
   brandfetch: BrandfetchBlock,
   brightdata: BrightDataBlock,
@@ -289,6 +308,7 @@ export const registry: Record<string, BlockConfig> = {
   dub: DubBlock,
   duckduckgo: DuckDuckGoBlock,
   dynamodb: DynamoDBBlock,
+  emailbison: EmailBisonBlock,
   elasticsearch: ElasticsearchBlock,
   elevenlabs: ElevenLabsBlock,
   fathom: FathomBlock,
@@ -303,6 +323,8 @@ export const registry: Record<string, BlockConfig> = {
   figma: FigmaBlock,
   file_v2: FileV2Block,
   file_v3: FileV3Block,
+  file_v4: FileV4Block,
+  findymail: FindymailBlock,
   firecrawl: FirecrawlBlock,
   fireflies: FirefliesBlock,
   fireflies_v2: FirefliesV2Block,
@@ -353,10 +375,12 @@ export const registry: Record<string, BlockConfig> = {
   iam: IAMBlock,
   identity_center: IdentityCenterBlock,
   image_generator: ImageGeneratorBlock,
+  image_generator_v2: ImageGeneratorV2Block,
   imap: ImapBlock,
   incidentio: IncidentioBlock,
   infisical: InfisicalBlock,
   input_trigger: InputTriggerBlock,
+  instantly: InstantlyBlock,
   intercom: IntercomBlock,
   intercom_v2: IntercomV2Block,
   jina: JinaBlock,
@@ -374,6 +398,7 @@ export const registry: Record<string, BlockConfig> = {
   linkedin: LinkedInBlock,
   linkup: LinkupBlock,
   presentation: PresentationBlock,
+  logs: LogsBlock,
   loops: LoopsBlock,
   luma: LumaBlock,
   mailchimp: MailchimpBlock,
@@ -396,6 +421,7 @@ export const registry: Record<string, BlockConfig> = {
   mothership: MothershipBlock,
   mysql: MySQLBlock,
   neo4j: Neo4jBlock,
+  new_relic: NewRelicBlock,
   note: NoteBlock,
   notion: NotionBlock,
   notion_v2: NotionV2Block,
@@ -407,10 +433,12 @@ export const registry: Record<string, BlockConfig> = {
   outlook: OutlookBlock,
   pagerduty: PagerDutyBlock,
   parallel_ai: ParallelBlock,
+  peopledatalabs: PeopleDataLabsBlock,
   perplexity: PerplexityBlock,
   pinecone: PineconeBlock,
   pipedrive: PipedriveBlock,
   profound: ProfoundBlock,
+  prospeo: ProspeoBlock,
   polymarket: PolymarketBlock,
   postgresql: PostgreSQLBlock,
   posthog: PostHogBlock,
@@ -418,6 +446,7 @@ export const registry: Record<string, BlockConfig> = {
   pulse_v2: PulseV2Block,
   qdrant: QdrantBlock,
   quiver: QuiverBlock,
+  railway: RailwayBlock,
   rds: RDSBlock,
   reddit: RedditBlock,
   redis: RedisBlock,
@@ -434,6 +463,8 @@ export const registry: Record<string, BlockConfig> = {
   s3: S3Block,
   salesforce: SalesforceBlock,
   semrush: SemrushBlock,
+  sap_concur: SapConcurBlock,
+  sap_s4hana: SapS4HanaBlock,
   schedule: ScheduleBlock,
   search: SearchBlock,
   sendgrid: SendGridBlock,
@@ -442,6 +473,7 @@ export const registry: Record<string, BlockConfig> = {
   servicenow: ServiceNowBlock,
   sftp: SftpBlock,
   sharepoint: SharepointBlock,
+  sharepoint_v2: SharepointV2Block,
   shopify: ShopifyBlock,
   similarweb: SimilarwebBlock,
   sixtyfour: SixtyfourBlock,
@@ -481,6 +513,7 @@ export const registry: Record<string, BlockConfig> = {
   variables: VariablesBlock,
   video_generator: VideoGeneratorBlock,
   video_generator_v2: VideoGeneratorV2Block,
+  video_generator_v3: VideoGeneratorV3Block,
   vision: VisionBlock,
   vision_v2: VisionV2Block,
   wait: WaitBlock,
@@ -489,6 +522,7 @@ export const registry: Record<string, BlockConfig> = {
   webhook_request: WebhookRequestBlock,
   whatsapp: WhatsAppBlock,
   wikipedia: WikipediaBlock,
+  wiza: WizaBlock,
   wordpress: WordPressBlock,
   workday: WorkdayBlock,
   workflow: WorkflowBlock,

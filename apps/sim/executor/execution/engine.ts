@@ -1,6 +1,10 @@
 import { createLogger, type Logger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { isExecutionCancelled, isRedisCancellationEnabled } from '@/lib/execution/cancellation'
+import {
+  getCancellationChannel,
+  isExecutionCancelled,
+  isRedisCancellationEnabled,
+} from '@/lib/execution/cancellation'
 import { BlockType, EDGE } from '@/executor/constants'
 import type { DAG } from '@/executor/dag/builder'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
@@ -32,12 +36,10 @@ export class ExecutionEngine {
   private errorFlag = false
   private stoppedEarlyFlag = false
   private executionError: Error | null = null
+  private abortPromise!: Promise<void>
+  private abortResolve!: () => void
+  private cancellationUnsubscribe: (() => void) | null = null
   private skippedFlag = false // Track if workflow was skipped
-  private lastCancellationCheck = 0
-  private readonly useRedisCancellation: boolean
-  private readonly CANCELLATION_CHECK_INTERVAL_MS = 500
-  private abortPromise: Promise<void> | null = null
-  private abortResolve: (() => void) | null = null
   private execLogger: Logger
 
   constructor(
@@ -47,7 +49,6 @@ export class ExecutionEngine {
     private nodeOrchestrator: NodeExecutionOrchestrator
   ) {
     this.allowResumeTriggers = this.context.metadata.resumeFromSnapshot === true
-    this.useRedisCancellation = isRedisCancellationEnabled() && !!this.context.executionId
     this.execLogger = logger.withMetadata({
       workflowId: this.context.workflowId,
       workspaceId: this.context.workspaceId,
@@ -56,76 +57,64 @@ export class ExecutionEngine {
       requestId: this.context.metadata.requestId,
     })
     this.initializeAbortHandler()
+    this.subscribeToCancellationChannel()
   }
 
-  /**
-   * Sets up a single abort promise that can be reused throughout execution.
-   * This avoids creating multiple event listeners and potential memory leaks.
-   */
+  private subscribeToCancellationChannel(): void {
+    if (!this.context.executionId) return
+    const executionId = this.context.executionId
+    this.cancellationUnsubscribe = getCancellationChannel().subscribe((event) => {
+      if (event.executionId !== executionId) return
+      this.execLogger.info('Execution cancelled via pub/sub', { executionId })
+      this.signalCancelled()
+    })
+  }
+
   private initializeAbortHandler(): void {
-    if (!this.context.abortSignal) return
-
-    if (this.context.abortSignal.aborted) {
-      this.cancelledFlag = true
-      this.abortPromise = Promise.resolve()
-      return
-    }
-
     this.abortPromise = new Promise<void>((resolve) => {
       this.abortResolve = resolve
     })
 
-    this.context.abortSignal.addEventListener(
-      'abort',
-      () => {
-        this.cancelledFlag = true
-        this.abortResolve?.()
-      },
-      { once: true }
-    )
+    if (!this.context.abortSignal) return
+
+    if (this.context.abortSignal.aborted) {
+      this.signalCancelled()
+      return
+    }
+
+    this.context.abortSignal.addEventListener('abort', () => this.signalCancelled(), { once: true })
   }
 
-  private async checkCancellation(): Promise<boolean> {
-    if (this.cancelledFlag) {
-      return true
+  private signalCancelled(): void {
+    if (this.cancelledFlag) return
+    this.cancelledFlag = true
+    this.abortResolve()
+  }
+
+  private checkCancellation(): boolean {
+    return this.cancelledFlag
+  }
+
+  /** Catches cancellations published before this engine subscribed (e.g. resume from snapshot). */
+  private async checkCancellationBackstop(): Promise<void> {
+    if (!this.context.executionId || !isRedisCancellationEnabled()) return
+    const cancelled = await isExecutionCancelled(this.context.executionId)
+    if (cancelled) {
+      this.execLogger.info('Execution already cancelled at engine start (Redis backstop)', {
+        executionId: this.context.executionId,
+      })
+      this.signalCancelled()
     }
-
-    if (this.useRedisCancellation) {
-      const now = Date.now()
-      if (now - this.lastCancellationCheck < this.CANCELLATION_CHECK_INTERVAL_MS) {
-        return false
-      }
-      this.lastCancellationCheck = now
-
-      const cancelled = await isExecutionCancelled(this.context.executionId!)
-      if (cancelled) {
-        this.cancelledFlag = true
-        this.execLogger.info('Execution cancelled via Redis', {
-          executionId: this.context.executionId,
-        })
-      }
-      return cancelled
-    }
-
-    if (this.context.abortSignal?.aborted) {
-      this.cancelledFlag = true
-      return true
-    }
-
-    return false
   }
 
   async run(triggerBlockId?: string): Promise<ExecutionResult> {
     const startTime = performance.now()
     try {
       this.initializeQueue(triggerBlockId)
-      logger.info('Engine: queue initialized', {
-        queueLength: this.readyQueue.length,
-        workflowId: this.context.workflowId,
-      })
+      await this.checkCancellationBackstop()
 
       while (this.hasWork()) {
-        if ((await this.checkCancellation()) || this.errorFlag || this.stoppedEarlyFlag) {
+        if (this.checkCancellation() || this.errorFlag || this.stoppedEarlyFlag) {
           break
         }
         await this.processQueue()
@@ -206,6 +195,15 @@ export class ExecutionEngine {
         attachExecutionResult(error, executionResult)
       }
       throw error
+    } finally {
+      this.cleanup()
+    }
+  }
+
+  private cleanup(): void {
+    if (this.cancellationUnsubscribe) {
+      this.cancellationUnsubscribe()
+      this.cancellationUnsubscribe = null
     }
   }
 
@@ -250,30 +248,15 @@ export class ExecutionEngine {
 
   private async waitForAnyExecution(): Promise<void> {
     if (this.executing.size > 0) {
-      const abortPromise = this.getAbortPromise()
-      if (abortPromise) {
-        await Promise.race([...this.executing, abortPromise])
-      } else {
-        await Promise.race(this.executing)
-      }
+      await Promise.race([...this.executing, this.abortPromise])
     }
   }
 
   private async waitForAllExecutions(): Promise<void> {
-    const abortPromise = this.getAbortPromise()
-    if (abortPromise) {
-      await Promise.race([Promise.all(this.executing), abortPromise])
-    } else {
-      await Promise.all(this.executing)
+    await Promise.race([Promise.all(this.executing), this.abortPromise])
+    if (this.executing.size > 0) {
+      await Promise.allSettled(this.executing)
     }
-  }
-
-  /**
-   * Returns the cached abort promise. This is safe to call multiple times
-   * as it reuses the same promise instance created during initialization.
-   */
-  private getAbortPromise(): Promise<void> | null {
-    return this.abortPromise
   }
 
   private async withQueueLock<T>(fn: () => Promise<T> | T): Promise<T> {
@@ -315,6 +298,9 @@ export class ExecutionEngine {
         if (targetNode) {
           const hadEdge = targetNode.incomingEdges.has(edge.source)
           targetNode.incomingEdges.delete(edge.source)
+          if (hadEdge) {
+            this.edgeManager.markNodeWithActivatedEdge(targetNode.id)
+          }
 
           if (this.edgeManager.isNodeReady(targetNode)) {
             this.execLogger.info('Node became ready after edge removal', { nodeId: targetNode.id })
@@ -351,6 +337,11 @@ export class ExecutionEngine {
       return
     }
 
+    if (this.context.metadata.resumeFromSnapshot === true) {
+      this.execLogger.info('Resume snapshot has no downstream work to queue')
+      return
+    }
+
     if (triggerBlockId) {
       this.addToQueue(triggerBlockId)
       return
@@ -370,7 +361,7 @@ export class ExecutionEngine {
 
   private async processQueue(): Promise<void> {
     while (this.readyQueue.length > 0) {
-      if ((await this.checkCancellation()) || this.errorFlag || this.skippedFlag) {
+      if (this.checkCancellation() || this.errorFlag || this.skippedFlag) {
         break
       }
       const nodeId = this.dequeue()
@@ -455,6 +446,9 @@ export class ExecutionEngine {
       return
     }
 
+    const loopId =
+      node.metadata.subflowType === 'loop' ? node.metadata.subflowId : undefined
+
     if (this.stoppedEarlyFlag && this.responseOutputLocked) {
       // Workflow already ended via Response block. Skip state persistence (setBlockOutput),
       // parallel/loop scope tracking, and edge propagation — no downstream blocks will run.
@@ -506,6 +500,8 @@ export class ExecutionEngine {
     }
 
     if (output._pauseMetadata) {
+      await this.nodeOrchestrator.handleNodeCompletion(this.context, nodeId, output)
+
       const pauseMetadata = output._pauseMetadata
       this.pausedBlocks.set(pauseMetadata.contextId, pauseMetadata)
       this.context.metadata.status = 'paused'
@@ -535,7 +531,7 @@ export class ExecutionEngine {
     // Check if this is a terminal block (Response blocks or blocks with no outgoing edges)
     // Terminal blocks outside loops should stop the workflow, but inside loops they should allow continuation
     const blockType = node.block.metadata?.id
-    const isInsideLoop = !!node.metadata.loopId
+    const isInsideLoop = !!loopId
     const isTerminalBlock = isResponseBlock || node.outgoingEdges.size === 0
 
     if (isResponseBlock && !isInsideLoop) {
@@ -556,8 +552,9 @@ export class ExecutionEngine {
     if (this.context.stopAfterBlockId === nodeId) {
       // For loop/parallel sentinels, only stop if the subflow has fully exited (all iterations done)
       // shouldContinue: true means more iterations, shouldExit: true means loop is done
-      const shouldContinueLoop = output.shouldContinue === true
-      if (!shouldContinueLoop) {
+      const shouldContinue =
+        output.shouldContinue === true || output.selectedRoute === EDGE.PARALLEL_CONTINUE
+      if (!shouldContinue) {
         this.execLogger.info('Stopping execution after target block', { nodeId })
         this.stoppedEarlyFlag = true
         return
@@ -570,11 +567,10 @@ export class ExecutionEngine {
     if (
       node.metadata.isSentinel &&
       node.metadata.sentinelType === 'start' &&
-      node.metadata.loopId &&
+      loopId &&
       output?.shouldExit === true &&
       output?.selectedRoute === EDGE.LOOP_EXIT
     ) {
-      const loopId = node.metadata.loopId
       const sentinelEndId = buildSentinelEndId(loopId)
       const sentinelEndNode = this.dag.nodes.get(sentinelEndId)
 
@@ -625,27 +621,12 @@ export class ExecutionEngine {
     // Response blocks should have edges to sentinel end (they're terminal nodes)
     const readyNodes = this.edgeManager.processOutgoingEdges(node, output, false)
 
-    this.execLogger.info('Processing outgoing edges', {
-      nodeId,
-      outgoingEdgesCount: node.outgoingEdges.size,
-      outgoingEdges: Array.from(node.outgoingEdges.entries()).map(([id, e]) => ({
-        id,
-        target: e.target,
-        sourceHandle: e.sourceHandle,
-      })),
-      output,
-      readyNodesCount: readyNodes.length,
-      isResponseBlock,
-      isInsideLoop,
-    })
 
-    this.addMultipleToQueue(readyNodes)
 
     // If this is a terminal block inside a loop, ensure the loop's sentinel end gets triggered
     // Terminal blocks (Response blocks or blocks with no outgoing edges) indicate iteration completion
     // When they complete, the iteration is done and loop should continue
     if (isTerminalBlock && isInsideLoop) {
-      const loopId = node.metadata.loopId
       if (loopId) {
         const sentinelEndId = buildSentinelEndId(loopId)
         const sentinelEndNode = this.dag.nodes.get(sentinelEndId)
@@ -685,12 +666,7 @@ export class ExecutionEngine {
       }
     }
 
-    if (this.context.pendingDynamicNodes && this.context.pendingDynamicNodes.length > 0) {
-      const dynamicNodes = this.context.pendingDynamicNodes
-      this.context.pendingDynamicNodes = []
-      this.execLogger.info('Adding dynamically expanded parallel nodes', { dynamicNodes })
-      this.addMultipleToQueue(dynamicNodes)
-    }
+    this.addMultipleToQueue(readyNodes)
   }
 
   private buildPausedResult(startTime: number): ExecutionResult {
@@ -699,7 +675,7 @@ export class ExecutionEngine {
     this.context.metadata.duration = endTime - startTime
     this.context.metadata.status = 'paused'
 
-    const snapshotSeed = serializePauseSnapshot(this.context, [], this.dag)
+    const snapshotSeed = serializePauseSnapshot(this.context, [], this.dag, this.edgeManager)
     const pausePoints: PausePoint[] = Array.from(this.pausedBlocks.values()).map((pause) => ({
       contextId: pause.contextId,
       blockId: pause.blockId,
@@ -710,6 +686,8 @@ export class ExecutionEngine {
       parallelScope: pause.parallelScope,
       loopScope: pause.loopScope,
       resumeLinks: pause.resumeLinks,
+      pauseKind: pause.pauseKind,
+      resumeAt: pause.resumeAt,
     }))
 
     return {
@@ -866,7 +844,8 @@ export class ExecutionEngine {
   }): SerializableExecutionState | undefined {
     try {
       const serializedSnapshot =
-        snapshotSeed?.snapshot ?? serializePauseSnapshot(this.context, [], this.dag).snapshot
+        snapshotSeed?.snapshot ??
+        serializePauseSnapshot(this.context, [], this.dag, this.edgeManager).snapshot
       const parsedSnapshot = JSON.parse(serializedSnapshot) as {
         state?: SerializableExecutionState
       }

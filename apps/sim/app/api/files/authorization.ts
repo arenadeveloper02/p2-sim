@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { document, knowledgeBase, workspaceFile } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull, like, or } from 'drizzle-orm'
+import { NextResponse } from 'next/server'
 import { getFileMetadata } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { S3_CHAT_CONFIG } from '@/lib/uploads/config'
@@ -13,7 +14,15 @@ import { isUuid } from '@/executor/constants'
 
 const logger = createLogger('FileAuthorization')
 
-export interface AuthorizationResult {
+/** Thrown by utility functions when file access is denied, so route handlers can return 404. */
+export class FileAccessDeniedError extends Error {
+  constructor() {
+    super('File not found')
+    this.name = 'FileAccessDeniedError'
+  }
+}
+
+interface AuthorizationResult {
   granted: boolean
   reason: string
   workspaceId?: string
@@ -24,7 +33,7 @@ export interface AuthorizationResult {
  * @param key Storage key to lookup
  * @returns Workspace file info or null if not found
  */
-export async function lookupWorkspaceFileByKey(
+async function lookupWorkspaceFileByKey(
   key: string,
   options?: { includeDeleted?: boolean }
 ): Promise<{ workspaceId: string; uploadedBy: string } | null> {
@@ -107,10 +116,14 @@ export async function verifyFileAccess(
   cloudKey: string,
   userId: string,
   customConfig?: StorageConfig,
-  context?: StorageContext,
+  context?: StorageContext | 'general',
   isLocal?: boolean
 ): Promise<boolean> {
   try {
+    if (context === 'general') {
+      return await verifyRegularFileAccess(cloudKey, userId, customConfig, isLocal)
+    }
+
     // Infer context from key if not explicitly provided
     const inferredContext = context || inferContextFromKey(cloudKey)
 
@@ -547,7 +560,7 @@ async function verifyRegularFileAccess(
 /**
  * Unified authorization function that returns structured result
  */
-export async function authorizeFileAccess(
+async function authorizeFileAccess(
   key: string,
   userId: string,
   context?: StorageContext,
@@ -607,6 +620,30 @@ export async function authorizeFileAccess(
 
 //   return {}
 // }
+ /* Guard helper for tool routes that download user files from storage.
+ *
+ * Validates that `key` is a non-empty string, that `userId` is present, and
+ * that the authenticated user owns the file. Returns a 404 `NextResponse` on
+ * any failure so callers can `return` it immediately; returns `null` when
+ * access is granted.
+ */
+export async function assertToolFileAccess(
+  key: unknown,
+  userId: string,
+  requestId: string,
+  routeLogger: ReturnType<typeof createLogger>
+): Promise<NextResponse | null> {
+  if (typeof key !== 'string' || key.length === 0) {
+    routeLogger.warn(`[${requestId}] File access check rejected: missing key`)
+    return NextResponse.json({ success: false, error: 'File not found' }, { status: 404 })
+  }
+  const hasAccess = await verifyFileAccess(key, userId)
+  if (!hasAccess) {
+    routeLogger.warn(`[${requestId}] File access denied for user`, { userId, key })
+    return NextResponse.json({ success: false, error: 'File not found' }, { status: 404 })
+  }
+  return null
+}
 
 /**
  * Get chat storage configuration based on current storage provider

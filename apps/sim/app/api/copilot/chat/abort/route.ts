@@ -1,7 +1,9 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
+import { copilotChatAbortBodySchema } from '@/lib/api/contracts/copilot'
+import { validationErrorResponse } from '@/lib/api/server'
 import { getLatestRunForStream } from '@/lib/copilot/async-runs/repository'
-import { SIM_AGENT_API_URL } from '@/lib/copilot/constants'
 import { CopilotAbortOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
@@ -9,6 +11,7 @@ import { fetchGo } from '@/lib/copilot/request/go/fetch'
 import { authenticateCopilotRequestSessionOnly } from '@/lib/copilot/request/http'
 import { withCopilotSpan, withIncomingGoSpan } from '@/lib/copilot/request/otel'
 import { abortActiveStream, waitForPendingChatStream } from '@/lib/copilot/request/session'
+import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
 import { env } from '@/lib/core/config/env'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
@@ -34,12 +37,17 @@ export const POST = withRouteHandler((request: NextRequest) =>
 
       const body = await request.json().catch((err) => {
         logger.warn('Abort request body parse failed; continuing with empty object', {
-          error: err instanceof Error ? err.message : String(err),
+          error: getErrorMessage(err),
         })
         return {}
       })
-      const streamId = typeof body.streamId === 'string' ? body.streamId : ''
-      let chatId = typeof body.chatId === 'string' ? body.chatId : ''
+      const validation = copilotChatAbortBodySchema.safeParse(body)
+      if (!validation.success) {
+        rootSpan.setAttribute(TraceAttr.CopilotAbortOutcome, CopilotAbortOutcome.MissingStreamId)
+        return validationErrorResponse(validation.error, 'Invalid request body')
+      }
+      const { streamId, chatId: parsedChatId } = validation.data
+      let chatId = parsedChatId
 
       if (!streamId) {
         rootSpan.setAttribute(TraceAttr.CopilotAbortOutcome, CopilotAbortOutcome.MissingStreamId)
@@ -54,7 +62,7 @@ export const POST = withRouteHandler((request: NextRequest) =>
         const run = await getLatestRunForStream(streamId, authenticatedUserId).catch((err) => {
           logger.warn('getLatestRunForStream failed while resolving chatId for abort', {
             streamId,
-            error: err instanceof Error ? err.message : String(err),
+            error: getErrorMessage(err),
           })
           return null
         })
@@ -78,12 +86,14 @@ export const POST = withRouteHandler((request: NextRequest) =>
         if (env.COPILOT_API_KEY) {
           headers['x-api-key'] = env.COPILOT_API_KEY
         }
+        Object.assign(headers, getMothershipSourceEnvHeaders())
         const controller = new AbortController()
         const timeout = setTimeout(
           () => controller.abort('timeout:go_explicit_abort_fetch'),
           GO_EXPLICIT_ABORT_TIMEOUT_MS
         )
-        const response = await fetchGo(`${SIM_AGENT_API_URL}/api/streams/explicit-abort`, {
+        const mothershipBaseURL = await getMothershipBaseURL({ userId: authenticatedUserId })
+        const response = await fetchGo(`${mothershipBaseURL}/api/streams/explicit-abort`, {
           method: 'POST',
           headers,
           signal: controller.signal,
@@ -106,7 +116,7 @@ export const POST = withRouteHandler((request: NextRequest) =>
       } catch (err) {
         logger.warn('Explicit abort marker request failed after local abort', {
           streamId,
-          error: err instanceof Error ? err.message : String(err),
+          error: getErrorMessage(err),
         })
       }
       rootSpan.setAttribute(TraceAttr.CopilotAbortGoMarkerOk, goAbortOk)

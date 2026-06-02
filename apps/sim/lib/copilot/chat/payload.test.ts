@@ -107,11 +107,12 @@ vi.mock('@/lib/workspaces/is-admin-workspace', () => ({
     toolId === 'zoom_get_account_recordings_with_transcript',
 }))
 
-import { buildIntegrationToolSchemas } from './payload'
+import { buildIntegrationToolSchemas, clearIntegrationToolSchemaCacheForTests } from './payload'
 
 describe('buildIntegrationToolSchemas', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clearIntegrationToolSchemaCacheForTests()
     mockCreateUserToolSchema.mockReturnValue({ type: 'object', properties: {} })
     mockIsAdminWorkspace.mockReturnValue(false)
   })
@@ -207,5 +208,17 @@ describe('buildIntegrationToolSchemas', () => {
       expect.objectContaining({ id: 'google_sheets_write_v2' }),
       { surface: 'copilot' }
     )
+  })
+
+  it('briefly reuses built schemas for the same user and surface', async () => {
+    mockGetHighestPrioritySubscription.mockResolvedValue({ plan: 'pro', status: 'active' })
+
+    const first = await buildIntegrationToolSchemas('user-cache')
+    first[0].input_schema.mutated = true
+    const second = await buildIntegrationToolSchemas('user-cache')
+
+    expect(mockGetHighestPrioritySubscription).toHaveBeenCalledTimes(1)
+    expect(mockCreateUserToolSchema).toHaveBeenCalledTimes(5)
+    expect(second[0].input_schema).not.toHaveProperty('mutated')
   })
 })

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
 import { Badge, Skeleton } from '@/components/emcn'
+import { requestJson } from '@/lib/api/client/request'
+import { createBillingPortalContract } from '@/lib/api/contracts'
 import { USAGE_PILL_COLORS, USAGE_THRESHOLDS } from '@/lib/billing/client/consts'
 import { useSubscriptionUpgrade } from '@/lib/billing/client/upgrade'
 import {
@@ -13,6 +15,7 @@ import {
   getUsage,
 } from '@/lib/billing/client/utils'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
+import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import { useSocket } from '@/app/workspace/providers/socket-provider'
 import { subscriptionKeys, useSubscriptionData } from '@/hooks/queries/subscription'
@@ -226,12 +229,15 @@ export function UsageIndicator({ onClick }: UsageIndicatorProps) {
   } = useContextMenu()
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
     const handleOperationConfirmed = () => {
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: subscriptionKeys.all })
-      }, 1000)
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: subscriptionKeys.users() })
+      }, 5000)
     }
     onOperationConfirmed(handleOperationConfirmed)
+    return () => clearTimeout(timeoutId)
   }, [onOperationConfirmed, queryClient])
 
   const usage = getUsage(subscriptionData?.data)
@@ -426,7 +432,7 @@ export function UsageIndicator({ onClick }: UsageIndicatorProps) {
     )
   }
 
-  const handleClick = async () => {
+  const handleBillingAction = async () => {
     try {
       if (onClick) {
         onClick()
@@ -444,18 +450,12 @@ export function UsageIndicator({ onClick }: UsageIndicatorProps) {
           const context = isOrgScoped ? 'organization' : 'user'
           const organizationId = subscriptionData?.data?.organization?.id
 
-          const response = await fetch('/api/billing/portal', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ context, organizationId }),
+          const { url } = await requestJson(createBillingPortalContract, {
+            body: { context, organizationId },
           })
-
-          if (response.ok) {
-            const { url } = await response.json()
-            window.open(url, '_blank')
-            logger.info('Opened billing portal for blocked account', { context, organizationId })
-            return
-          }
+          window.open(url, '_blank')
+          logger.info('Opened billing portal for blocked account', { context, organizationId })
+          return
         } catch (portalError) {
           logger.warn('Failed to open billing portal, falling back to settings', {
             error: portalError,
@@ -485,8 +485,11 @@ export function UsageIndicator({ onClick }: UsageIndicatorProps) {
   return (
     <>
       <div
+        role='button'
+        tabIndex={0}
         className='group flex flex-shrink-0 cursor-pointer flex-col gap-2 border-t px-[13.5px] pt-2 pb-2.5'
-        onClick={handleClick}
+        onClick={handleBillingAction}
+        onKeyDown={(event) => handleKeyboardActivation(event, handleBillingAction)}
         onContextMenu={handleContextMenuWithCheck}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}

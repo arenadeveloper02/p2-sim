@@ -16,6 +16,7 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Plus,
@@ -27,6 +28,7 @@ import { getDisplayPlanName, isFree } from '@/lib/billing/plan-helpers'
 import { env } from '@/lib/core/config/env'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { cn } from '@/lib/core/utils/cn'
+import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
@@ -68,14 +70,6 @@ interface WorkspaceHeaderProps {
   onDeleteWorkspace: (workspaceId: string) => Promise<void>
   /** Whether workspace deletion is in progress */
   isDeletingWorkspace: boolean
-  /** Callback to duplicate the workspace */
-  onDuplicateWorkspace: (workspaceId: string, workspaceName: string) => Promise<void>
-  /** Callback to export the workspace */
-  onExportWorkspace: (workspaceId: string, workspaceName: string) => Promise<void>
-  /** Callback to import workspace */
-  onImportWorkspace: () => void
-  /** Whether workspace import is in progress */
-  isImportingWorkspace: boolean
   /** Callback to change the workspace color */
   onColorChange?: (workspaceId: string, color: string) => Promise<void>
   /** Callback to upload a workspace logo */
@@ -109,10 +103,6 @@ function WorkspaceHeaderImpl({
   onRenameWorkspace,
   onDeleteWorkspace,
   isDeletingWorkspace,
-  onDuplicateWorkspace,
-  onExportWorkspace,
-  onImportWorkspace,
-  isImportingWorkspace,
   onColorChange,
   onUploadLogo,
   onRemoveLogo,
@@ -321,25 +311,6 @@ function WorkspaceHeaderImpl({
   }
 
   /**
-   * Handles duplicate action from context menu
-   */
-  const handleDuplicateAction = async () => {
-    if (!capturedWorkspaceRef.current) return
-
-    await onDuplicateWorkspace(capturedWorkspaceRef.current.id, capturedWorkspaceRef.current.name)
-    setIsWorkspaceMenuOpen(false)
-  }
-
-  /**
-   * Handles export action from context menu
-   */
-  const handleExportAction = async () => {
-    if (!capturedWorkspaceRef.current) return
-
-    await onExportWorkspace(capturedWorkspaceRef.current.id, capturedWorkspaceRef.current.name)
-  }
-
-  /**
    * Handles delete action from context menu
    */
   const handleDeleteAction = () => {
@@ -451,11 +422,11 @@ function WorkspaceHeaderImpl({
                     <img
                       src={activeWorkspaceFull.logoUrl}
                       alt={activeWorkspaceFull.name || 'Workspace logo'}
-                      className='h-[20px] w-[20px] flex-shrink-0 rounded-sm object-cover'
+                      className='size-[20px] flex-shrink-0 rounded-sm object-cover'
                     />
                   ) : (
                     <div
-                      className='flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center rounded-sm font-medium text-caption text-white leading-none'
+                      className='flex size-[20px] flex-shrink-0 items-center justify-center rounded-sm font-medium text-caption text-white leading-none'
                       style={{
                         backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)',
                       }}
@@ -464,7 +435,7 @@ function WorkspaceHeaderImpl({
                     </div>
                   )
                 ) : (
-                  <Skeleton className='h-[20px] w-[20px] flex-shrink-0 rounded-sm' />
+                  <Skeleton className='size-[20px] flex-shrink-0 rounded-sm' />
                 )}
                 {!isCollapsed && (
                   <>
@@ -497,21 +468,21 @@ function WorkspaceHeaderImpl({
             >
               {isWorkspacesLoading ? (
                 <div className='px-2 py-[5px] font-medium text-[var(--text-secondary)] text-caption'>
-                  Loading workspaces...
+                  Loading workspaces…
                 </div>
               ) : (
                 <>
-                  <div className='flex items-center gap-2 px-0.5 py-0.5'>
+                  <div className='flex items-center gap-2 p-0.5'>
                     {activeWorkspaceFull ? (
                       activeWorkspaceFull.logoUrl ? (
                         <img
                           src={activeWorkspaceFull.logoUrl}
                           alt={activeWorkspaceFull.name || 'Workspace logo'}
-                          className='h-[32px] w-[32px] flex-shrink-0 rounded-md object-cover'
+                          className='size-[32px] flex-shrink-0 rounded-md object-cover'
                         />
                       ) : (
                         <div
-                          className='flex h-[32px] w-[32px] flex-shrink-0 items-center justify-center rounded-md font-medium text-caption text-white'
+                          className='flex size-[32px] flex-shrink-0 items-center justify-center rounded-md font-medium text-caption text-white'
                           style={{
                             backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)',
                           }}
@@ -520,7 +491,7 @@ function WorkspaceHeaderImpl({
                         </div>
                       )
                     ) : (
-                      <Skeleton className='h-[32px] w-[32px] flex-shrink-0 rounded-md' />
+                      <Skeleton className='size-[32px] flex-shrink-0 rounded-md' />
                     )}
                     <div className='flex min-w-0 flex-1 flex-col'>
                       <span className='truncate font-medium text-[var(--text-primary)] text-small'>
@@ -552,7 +523,7 @@ function WorkspaceHeaderImpl({
                   {workspaces.length > WORKSPACE_SEARCH_THRESHOLD && (
                     <div className='mt-1 flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-transparent px-2 py-1 transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover-hover:border-[var(--border-1)] dark:hover-hover:bg-[var(--surface-5)]'>
                       <Search
-                        className='h-[12px] w-[12px] flex-shrink-0 text-[var(--text-tertiary)]'
+                        className='size-[12px] flex-shrink-0 text-[var(--text-tertiary)]'
                         strokeWidth={2}
                       />
                       <Input
@@ -655,6 +626,8 @@ function WorkspaceHeaderImpl({
                             </div>
                           ) : (
                             <div
+                              role='group'
+                              aria-label={workspace.name}
                               className={cn(
                                 'group flex cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors',
                                 workspace.id !== workspaceId &&
@@ -683,6 +656,10 @@ function WorkspaceHeaderImpl({
                                 }
                               }}
                               onContextMenu={(e) => handleContextMenu(e, workspace)}
+                              onKeyDown={(event) => {
+                                if (event.target !== event.currentTarget) return
+                                handleKeyboardActivation(event, () => onWorkspaceSwitch(workspace))
+                              }}
                             >
                               <span className='min-w-0 flex-1 truncate'>{workspace.name}</span>
                               <button
@@ -702,7 +679,7 @@ function WorkspaceHeaderImpl({
                                   menuOpenWorkspaceId === workspace.id && 'opacity-100'
                                 )}
                               >
-                                <MoreHorizontal className='h-[14px] w-[14px] text-[var(--text-tertiary)]' />
+                                <MoreHorizontal className='size-[14px] text-[var(--text-tertiary)]' />
                               </button>
                             </div>
                           )}
@@ -711,24 +688,22 @@ function WorkspaceHeaderImpl({
                     </div>
                   </DropdownMenuGroup>
 
-                  {isPlatformAdmin && (
-                    <div className='mt-1 flex flex-col gap-0.5'>
-                      <button
-                        type='button'
-                        className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-hover)] disabled:pointer-events-none disabled:opacity-50'
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setIsWorkspaceMenuOpen(false)
-                          setIsCreateModalOpen(true)
-                        }}
-                        // disabled={isCreatingWorkspace || !canCreateWorkspace}
-                        title={createWorkspaceDisabledReason ?? undefined}
-                      >
-                        <Plus className='h-[14px] w-[14px] shrink-0 text-[var(--text-icon)]' />
-                        Create new workspace
-                      </button>
-                    </div>
-                  )}
+                  {isPlatformAdmin && <div className='mt-1 flex flex-col gap-0.5'>
+                    <button
+                      type='button'
+                      className='flex w-full cursor-pointer select-none items-center gap-2 rounded-[5px] px-2 py-[5px] font-medium text-[var(--text-body)] text-caption outline-none transition-colors hover-hover:bg-[var(--surface-hover)] disabled:pointer-events-none disabled:opacity-50'
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setIsWorkspaceMenuOpen(false)
+                        setIsCreateModalOpen(true)
+                      }}
+                      disabled={isCreatingWorkspace || !canCreateWorkspace}
+                      title={createWorkspaceDisabledReason ?? undefined}
+                    >
+                      <Plus className='size-[14px] shrink-0 text-[var(--text-icon)]' />
+                      Create new workspace
+                    </button>
+                  </div>}
 
                   {!isInvitationsDisabled && (
                     <>
@@ -743,7 +718,7 @@ function WorkspaceHeaderImpl({
                         disabled={inviteButtonDisabled}
                         title={inviteDisabledReason ?? undefined}
                       >
-                        <UserPlus className='h-[14px] w-[14px] shrink-0 text-[var(--text-icon)]' />
+                        <UserPlus className='size-[14px] shrink-0 text-[var(--text-icon)]' />
                         Invite members
                       </button>
                     </>
@@ -768,18 +743,18 @@ function WorkspaceHeaderImpl({
                 <img
                   src={activeWorkspaceFull.logoUrl}
                   alt={activeWorkspaceFull.name || 'Workspace logo'}
-                  className='h-[20px] w-[20px] flex-shrink-0 rounded-sm object-cover'
+                  className='size-[20px] flex-shrink-0 rounded-sm object-cover'
                 />
               ) : (
                 <div
-                  className='flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center rounded-sm font-medium text-caption text-white leading-none'
+                  className='flex size-[20px] flex-shrink-0 items-center justify-center rounded-sm font-medium text-caption text-white leading-none'
                   style={{ backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)' }}
                 >
                   {workspaceInitial}
                 </div>
               )
             ) : (
-              <Skeleton className='h-[20px] w-[20px] flex-shrink-0 rounded-sm' />
+              <Skeleton className='size-[20px] flex-shrink-0 rounded-sm' />
             )}
             {!isCollapsed && (
               <>
@@ -796,7 +771,6 @@ function WorkspaceHeaderImpl({
       {/* Context Menu */}
       {(() => {
         const capturedPermissions = capturedWorkspaceRef.current?.permissions
-        const contextCanEdit = capturedPermissions === 'admin' || capturedPermissions === 'write'
         const contextCanAdmin = capturedPermissions === 'admin'
         const capturedWorkspace = workspaces.find((w) => w.id === capturedWorkspaceRef.current?.id)
         const isOwner = capturedWorkspace && sessionUserId === capturedWorkspace.ownerId
@@ -808,8 +782,6 @@ function WorkspaceHeaderImpl({
             menuRef={contextMenuRef}
             onClose={closeContextMenu}
             onRename={handleRenameAction}
-            onDuplicate={handleDuplicateAction}
-            onExport={handleExportAction}
             onDelete={handleDeleteAction}
             onLeave={handleLeaveAction}
             onColorChange={onColorChange ? handleColorChangeAction : undefined}
@@ -817,15 +789,11 @@ function WorkspaceHeaderImpl({
             onRemoveLogo={onRemoveLogo ? handleRemoveLogoAction : undefined}
             currentColor={capturedWorkspace?.color}
             showRename={true}
-            showDuplicate={true}
-            showExport={true}
             showColorChange={!!onColorChange}
             showUploadLogo={!!onUploadLogo}
             showRemoveLogo={!!onRemoveLogo && !!capturedWorkspace?.logoUrl}
             showLeave={!isOwner && !!onLeaveWorkspace}
             disableRename={!contextCanAdmin}
-            disableDuplicate={!contextCanEdit}
-            disableExport={!contextCanAdmin}
             disableDelete={!contextCanAdmin || workspaces.length <= 1}
             disableColorChange={!contextCanAdmin}
             disableUploadLogo={!contextCanAdmin}
@@ -867,12 +835,12 @@ function WorkspaceHeaderImpl({
         <ModalContent size='sm'>
           <ModalHeader>Leave Workspace</ModalHeader>
           <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
+            <ModalDescription className='text-[var(--text-secondary)]'>
               Are you sure you want to leave{' '}
               <span className='font-base text-[var(--text-primary)]'>{leaveTarget?.name}</span>? You
               will lose access to all workflows and data in this workspace. This action cannot be
               undone.
-            </p>
+            </ModalDescription>
           </ModalBody>
           <ModalFooter>
             <Button

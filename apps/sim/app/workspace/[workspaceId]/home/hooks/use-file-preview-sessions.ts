@@ -18,11 +18,22 @@ export const INITIAL_FILE_PREVIEW_SESSIONS_STATE: FilePreviewSessionsState = {
   sessions: {},
 }
 
+export function hasRenderableFilePreviewContent(session: FilePreviewSession): boolean {
+  return session.previewText.length > 0 || session.previewVersion > 0
+}
+
 export function shouldReplaceSession(
   current: FilePreviewSession | undefined,
   next: FilePreviewSession
 ): boolean {
   if (!current) return true
+  if (
+    current.status === 'complete' &&
+    next.status !== 'complete' &&
+    next.previewVersion <= current.previewVersion
+  ) {
+    return false
+  }
   if (next.previewVersion !== current.previewVersion) {
     return next.previewVersion > current.previewVersion
   }
@@ -79,9 +90,10 @@ export function reduceFilePreviewSessions(
         }
       }
 
+      const successor = pickActiveSessionId(nextSessions, state.activeSessionId)
       return {
         sessions: nextSessions,
-        activeSessionId: pickActiveSessionId(nextSessions, state.activeSessionId),
+        activeSessionId: successor ?? state.activeSessionId,
       }
     }
 
@@ -95,15 +107,22 @@ export function reduceFilePreviewSessions(
         [action.session.id]: action.session,
       }
 
-      return {
-        sessions: nextSessions,
-        activeSessionId:
-          action.activate === false
-            ? pickActiveSessionId(nextSessions, state.activeSessionId)
-            : action.session.status === 'complete'
-              ? pickActiveSessionId(nextSessions, state.activeSessionId)
-              : action.session.id,
+      let nextActiveSessionId: string | null
+      if (action.activate === false || action.session.status === 'complete') {
+        const successor = pickActiveSessionId(nextSessions, state.activeSessionId)
+        nextActiveSessionId = successor ?? state.activeSessionId
+      } else {
+        // Don't switch to a new session until it has renderable content — keeps the viewer mounted.
+        const currentActive = state.activeSessionId ? nextSessions[state.activeSessionId] : null
+        const currentHasContent = currentActive
+          ? hasRenderableFilePreviewContent(currentActive)
+          : false
+        const incomingHasContent = hasRenderableFilePreviewContent(action.session)
+        nextActiveSessionId =
+          currentHasContent && !incomingHasContent ? state.activeSessionId : action.session.id
       }
+
+      return { sessions: nextSessions, activeSessionId: nextActiveSessionId }
     }
 
     case 'complete': {
@@ -116,12 +135,16 @@ export function reduceFilePreviewSessions(
         [action.session.id]: action.session,
       }
 
+      if (state.activeSessionId !== action.session.id) {
+        return { sessions: nextSessions, activeSessionId: state.activeSessionId }
+      }
+
+      const successor = pickActiveSessionId(nextSessions, null)
       return {
         sessions: nextSessions,
-        activeSessionId:
-          state.activeSessionId === action.session.id
-            ? pickActiveSessionId(nextSessions, null)
-            : state.activeSessionId,
+        // Linger on this session until a successor upserts. Without it, streamingContent
+        // becomes undefined between tool calls, collapsing the viewer and clipping scrollTop.
+        activeSessionId: successor ?? action.session.id,
       }
     }
 

@@ -3,11 +3,11 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 import { createLogger } from '@sim/logger'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
-import { Input, Label } from '@/components/emcn'
+import { Input, Label, Loader } from '@/components/emcn'
 import { client, useSession } from '@/lib/auth/auth-client'
 import { getEnv, isFalsy, isTruthy } from '@/lib/core/config/env'
 import { validateCallbackUrl } from '@/lib/core/security/input-validation'
@@ -98,11 +98,7 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
   const [showEmailValidationError, setShowEmailValidationError] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const turnstileRef = useRef<TurnstileInstance>(null)
-  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | undefined>()
-
-  useEffect(() => {
-    setTurnstileSiteKey(getEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY'))
-  }, [])
+  const [turnstileSiteKey] = useState(() => getEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY'))
   const rawRedirectUrl = searchParams.get('redirect') || searchParams.get('callbackUrl') || ''
   const isValidRedirectUrl = rawRedirectUrl ? validateCallbackUrl(rawRedirectUrl) : false
   const invalidCallbackRef = useRef(false)
@@ -275,7 +271,7 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
             ...(token ? { 'x-captcha-response': token } : {}),
           },
           onError: (ctx) => {
-            logger.error('Signup error:', ctx.error)
+            logger.warn('Signup error:', ctx.error)
             const errorMessage: string[] = ['Failed to create account']
 
             let errorCode = 'unknown'
@@ -410,8 +406,8 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
                 >
                   <div className='overflow-hidden'>
                     <div className='mt-1 space-y-1 text-red-400 text-xs'>
-                      {nameErrors.map((error, index) => (
-                        <p key={index}>{error}</p>
+                      {nameErrors.map((error) => (
+                        <p key={error}>{error}</p>
                       ))}
                     </div>
                   </div>
@@ -455,7 +451,7 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
                   <div className='overflow-hidden'>
                     <div className='mt-1 space-y-1 text-red-400 text-xs'>
                       {showEmailValidationError && emailErrors.length > 0 ? (
-                        emailErrors.map((error, index) => <p key={index}>{error}</p>)
+                        emailErrors.map((error) => <p key={error}>{error}</p>)
                       ) : emailError && !showEmailValidationError ? (
                         <p>{emailError}</p>
                       ) : null}
@@ -507,8 +503,8 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
                 >
                   <div className='overflow-hidden'>
                     <div className='mt-1 space-y-1 text-red-400 text-xs'>
-                      {passwordErrors.map((error, index) => (
-                        <p key={index}>{error}</p>
+                      {passwordErrors.map((error) => (
+                        <p key={error}>{error}</p>
                       ))}
                     </div>
                   </div>
@@ -534,8 +530,8 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
           <button type='submit' disabled={isLoading} className={cn('!mt-6', AUTH_SUBMIT_BTN)}>
             {isLoading ? (
               <span className='flex items-center gap-2'>
-                <Loader2 className='h-4 w-4 animate-spin' />
-                Creating account...
+                <Loader className='size-4' animate />
+                Creating account…
               </span>
             ) : (
               'Create account'
@@ -632,9 +628,7 @@ export default function SignupPage({
   isProduction,
 }: SignupFormProps) {
   return (
-    <Suspense
-      fallback={<div className='flex h-screen items-center justify-center'>Loading...</div>}
-    >
+    <Suspense fallback={<div className='flex h-screen items-center justify-center'>Loading…</div>}>
       <SignupFormContent
         githubAvailable={githubAvailable}
         googleAvailable={googleAvailable}

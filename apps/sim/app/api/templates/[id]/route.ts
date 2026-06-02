@@ -4,9 +4,11 @@ import { templateCreators, templates, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { templateIdParamsSchema, updateTemplateContract } from '@/lib/api/contracts/templates'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-import { generateRequestId } from '@/lib/core/utils/request'
+import { RateLimiter } from '@/lib/core/rate-limiter'
+import { generateRequestId, getClientIp } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { canAccessTemplate } from '@/lib/templates/permissions'
 import {
@@ -17,12 +19,24 @@ import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('TemplateByIdAPI')
 
+const viewRateLimiter = new RateLimiter()
+
+/**
+ * Per-IP, per-template view-counter dedup bucket: one increment per 10 minutes.
+ * Prevents scripted inflation of `templates.views` from the public GET handler.
+ */
+const TEMPLATE_VIEW_DEDUP = {
+  maxTokens: 1,
+  refillRate: 1,
+  refillIntervalMs: 10 * 60_000,
+}
+
 export const revalidate = 0
 
 export const GET = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = await params
+    const { id } = templateIdParamsSchema.parse(await params)
 
     try {
       const session = await getSession()
@@ -62,21 +76,31 @@ export const GET = withRouteHandler(
         isStarred = starResult.length > 0
       }
 
-      const shouldIncrementView = template.status === 'approved'
+      let shouldIncrementView = template.status === 'approved'
 
       if (shouldIncrementView) {
-        try {
-          await db
-            .update(templates)
-            .set({
-              views: sql`${templates.views} + 1`,
-            })
-            .where(eq(templates.id, id))
-        } catch (viewError) {
-          logger.warn(
-            `[${requestId}] Failed to increment view count for template: ${id}`,
-            viewError
-          )
+        const viewer = session?.user?.id ?? `ip:${getClientIp(request)}`
+        const dedupKey = `template-view:${id}:${viewer}`
+        const { allowed } = await viewRateLimiter.checkRateLimitDirect(
+          dedupKey,
+          TEMPLATE_VIEW_DEDUP
+        )
+        if (!allowed) {
+          shouldIncrementView = false
+        } else {
+          try {
+            await db
+              .update(templates)
+              .set({
+                views: sql`${templates.views} + 1`,
+              })
+              .where(eq(templates.id, id))
+          } catch (viewError) {
+            logger.warn(
+              `[${requestId}] Failed to increment view count for template: ${id}`,
+              viewError
+            )
+          }
         }
       }
 
@@ -89,55 +113,38 @@ export const GET = withRouteHandler(
           isStarred,
         },
       })
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`[${requestId}] Error fetching template: ${id}`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
 )
 
-const updateTemplateSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  details: z
-    .object({
-      tagline: z.string().max(500, 'Tagline must be less than 500 characters').optional(),
-      about: z.string().optional(), // Markdown long description
-    })
-    .optional(),
-  creatorId: z.string().optional(), // Creator profile ID
-  tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed').optional(),
-  updateState: z.boolean().optional(), // Explicitly request state update from current workflow
-  status: z.enum(['approved', 'rejected', 'pending']).optional(), // Status change (super users only)
-})
-
 // PUT /api/templates/[id] - Update a template
 export const PUT = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = await params
 
     try {
       const session = await getSession()
       if (!session?.user?.id) {
-        logger.warn(`[${requestId}] Unauthorized template update attempt for ID: ${id}`)
+        logger.warn(`[${requestId}] Unauthorized template update attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const body = await request.json()
-      const validationResult = updateTemplateSchema.safeParse(body)
+      const parsed = await parseRequest(updateTemplateContract, request, context, {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid template data for update`, error)
+          return NextResponse.json(
+            { error: 'Invalid template data', details: error.issues },
+            { status: 400 }
+          )
+        },
+      })
+      if (!parsed.success) return parsed.response
 
-      if (!validationResult.success) {
-        logger.warn(
-          `[${requestId}] Invalid template data for update: ${id}`,
-          validationResult.error
-        )
-        return NextResponse.json(
-          { error: 'Invalid template data', details: validationResult.error.errors },
-          { status: 400 }
-        )
-      }
-
-      const { name, details, creatorId, tags, updateState, status } = validationResult.data
+      const { id } = parsed.data.params
+      const { name, details, creatorId, tags, updateState, status } = parsed.data.body
 
       const existingTemplate = await db
         .select()
@@ -192,7 +199,7 @@ export const PUT = withRouteHandler(
         }
       }
 
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         updatedAt: new Date(),
       }
 
@@ -270,8 +277,8 @@ export const PUT = withRouteHandler(
         description: `Updated template "${name ?? template.name}"`,
         metadata: {
           templateName: name ?? template.name,
-          updatedFields: Object.keys(validationResult.data).filter(
-            (k) => validationResult.data[k as keyof typeof validationResult.data] !== undefined
+          updatedFields: Object.keys(parsed.data.body).filter(
+            (k) => parsed.data.body[k as keyof typeof parsed.data.body] !== undefined
           ),
           statusChange: status !== undefined ? { from: template.status, to: status } : undefined,
           stateUpdated: updateState || false,
@@ -284,8 +291,8 @@ export const PUT = withRouteHandler(
         data: updatedTemplate[0],
         message: 'Template updated successfully',
       })
-    } catch (error: any) {
-      logger.error(`[${requestId}] Error updating template: ${id}`, error)
+    } catch (error) {
+      logger.error(`[${requestId}] Error updating template`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
@@ -295,7 +302,7 @@ export const PUT = withRouteHandler(
 export const DELETE = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id } = await params
+    const { id } = templateIdParamsSchema.parse(await params)
 
     try {
       const session = await getSession()
@@ -304,7 +311,17 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const existing = await db.select().from(templates).where(eq(templates.id, id)).limit(1)
+      const existing = await db
+        .select({
+          name: templates.name,
+          workflowId: templates.workflowId,
+          creatorId: templates.creatorId,
+          status: templates.status,
+          tags: templates.tags,
+        })
+        .from(templates)
+        .where(eq(templates.id, id))
+        .limit(1)
       if (existing.length === 0) {
         logger.warn(`[${requestId}] Template not found for delete: ${id}`)
         return NextResponse.json({ error: 'Template not found' }, { status: 404 })
@@ -353,7 +370,7 @@ export const DELETE = withRouteHandler(
       })
 
       return NextResponse.json({ success: true })
-    } catch (error: any) {
+    } catch (error) {
       logger.error(`[${requestId}] Error deleting template: ${id}`, error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }

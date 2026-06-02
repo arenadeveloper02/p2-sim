@@ -24,6 +24,13 @@ export const AuditAction = {
   CUSTOM_TOOL_UPDATED: 'custom_tool.updated',
   CUSTOM_TOOL_DELETED: 'custom_tool.deleted',
 
+  // Data Drains
+  DATA_DRAIN_CREATED: 'data_drain.created',
+  DATA_DRAIN_UPDATED: 'data_drain.updated',
+  DATA_DRAIN_DELETED: 'data_drain.deleted',
+  DATA_DRAIN_RAN: 'data_drain.ran',
+  DATA_DRAIN_TESTED: 'data_drain.tested',
+
   // Billing
   CREDIT_PURCHASED: 'credit.purchased',
 
@@ -56,10 +63,13 @@ export const AuditAction = {
   FILE_UPDATED: 'file.updated',
   FILE_DELETED: 'file.deleted',
   FILE_RESTORED: 'file.restored',
+  FILE_MOVED: 'file.moved',
 
   // Folders
   FOLDER_CREATED: 'folder.created',
+  FOLDER_UPDATED: 'folder.updated',
   FOLDER_DELETED: 'folder.deleted',
+  FOLDER_MOVED: 'folder.moved',
   FOLDER_DUPLICATED: 'folder.duplicated',
   FOLDER_RESTORED: 'folder.restored',
 
@@ -107,6 +117,7 @@ export const AuditAction = {
   CREDENTIAL_CREATED: 'credential.created',
   CREDENTIAL_UPDATED: 'credential.updated',
   CREDENTIAL_RENAMED: 'credential.renamed',
+  CREDENTIAL_RECONNECTED: 'credential.reconnected',
   CREDENTIAL_DELETED: 'credential.deleted',
 
   // Password
@@ -193,6 +204,7 @@ export const AuditResourceType = {
   CREDENTIAL: 'credential',
   CREDENTIAL_SET: 'credential_set',
   CUSTOM_TOOL: 'custom_tool',
+  DATA_DRAIN: 'data_drain',
   DOCUMENT: 'document',
   ENVIRONMENT: 'environment',
   FILE: 'file',

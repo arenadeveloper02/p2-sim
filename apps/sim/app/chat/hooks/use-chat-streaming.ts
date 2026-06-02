@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import {
   type AssistantChatFile as ChatFile,
   extractAssistantFilesFromData,
@@ -14,7 +15,46 @@ import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[w
 
 const logger = createLogger('UseChatStreaming')
 
-export interface VoiceSettings {
+function extractFilesFromData(
+  data: any,
+  files: ChatFile[] = [],
+  seenIds = new Set<string>()
+): ChatFile[] {
+  if (!data || typeof data !== 'object') {
+    return files
+  }
+
+  if (isUserFileWithMetadata(data)) {
+    if (!seenIds.has(data.id)) {
+      seenIds.add(data.id)
+      files.push({
+        id: data.id,
+        name: data.name,
+        url: data.url,
+        key: data.key,
+        size: data.size,
+        type: data.type,
+        context: data.context,
+      })
+    }
+    return files
+  }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      extractFilesFromData(item, files, seenIds)
+    }
+    return files
+  }
+
+  for (const value of Object.values(data)) {
+    extractFilesFromData(value, files, seenIds)
+  }
+
+  return files
+}
+
+interface VoiceSettings {
   isVoiceEnabled: boolean
   voiceId: string
   autoPlayResponses: boolean

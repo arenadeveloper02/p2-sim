@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { Eye, EyeOff, Search } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import {
@@ -10,6 +11,7 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
 } from '@/components/emcn'
@@ -21,11 +23,14 @@ import {
   FireworksIcon,
   GeminiIcon,
   GoogleIcon,
+  HunterIOIcon,
+  ImageIcon,
   JinaAIIcon,
   LinkupIcon,
   MistralIcon,
   OpenAIIcon,
   ParallelIcon,
+  PeopleDataLabsIcon,
   PerplexityIcon,
   SerperIcon,
 } from '@/components/icons'
@@ -82,6 +87,13 @@ const PROVIDERS: {
     icon: FireworksIcon,
     description: 'LLM calls',
     placeholder: 'Enter your Fireworks API key',
+  },
+  {
+    id: 'falai',
+    name: 'Fal.ai',
+    icon: ImageIcon,
+    description: 'Image and video generation',
+    placeholder: 'Enter your Fal.ai API key',
   },
   {
     id: 'firecrawl',
@@ -146,6 +158,20 @@ const PROVIDERS: {
     description: 'Brand assets, logos, colors, and company info',
     placeholder: 'Enter your Brandfetch API key',
   },
+  {
+    id: 'hunter',
+    name: 'Hunter',
+    icon: HunterIOIcon,
+    description: 'Email finder, verification, and domain search',
+    placeholder: 'Enter your Hunter.io API key',
+  },
+  {
+    id: 'peopledatalabs',
+    name: 'People Data Labs',
+    icon: PeopleDataLabsIcon,
+    description: 'Person and company enrichment, search, and identity',
+    placeholder: 'Enter your People Data Labs API key',
+  },
 ]
 
 export function BYOK() {
@@ -195,7 +221,7 @@ export function BYOK() {
       setApiKeyInput('')
       setShowApiKey(false)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save API key'
+      const message = getErrorMessage(err, 'Failed to save API key')
       setError(message)
       logger.error('Failed to save BYOK key', { error: err })
     }
@@ -228,7 +254,7 @@ export function BYOK() {
         <div className='flex items-center gap-2'>
           <div className='flex flex-1 items-center gap-2 rounded-lg border border-[var(--border)] bg-transparent px-2 py-1.5 transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover-hover:border-[var(--border-1)] dark:hover-hover:bg-[var(--surface-5)]'>
             <Search
-              className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
+              className='size-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
               strokeWidth={2}
             />
             <Input
@@ -261,8 +287,8 @@ export function BYOK() {
                 return (
                   <div key={provider.id} className='flex items-center justify-between gap-3'>
                     <div className='flex items-center gap-3'>
-                      <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--surface-6)]'>
-                        <Icon className='h-4 w-4' />
+                      <div className='flex size-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--surface-6)]'>
+                        <Icon className='size-4' />
                       </div>
                       <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
                         <span className='font-medium text-base'>{provider.name}</span>
@@ -323,10 +349,10 @@ export function BYOK() {
             )}
           </ModalHeader>
           <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
+            <ModalDescription className='text-[var(--text-secondary)]'>
               This key will be used for all {PROVIDERS.find((p) => p.id === editingProvider)?.name}{' '}
               requests in this workspace. Your key is encrypted and stored securely.
-            </p>
+            </ModalDescription>
 
             <div className='mt-4 flex flex-col gap-2'>
               <p className='font-medium text-[var(--text-secondary)] text-sm'>Enter your API key</p>
@@ -363,13 +389,13 @@ export function BYOK() {
                 />
                 <Button
                   variant='ghost'
-                  className='-translate-y-1/2 absolute top-1/2 right-[4px] h-[28px] w-[28px] p-0'
+                  className='-translate-y-1/2 absolute top-1/2 right-[4px] size-[28px] p-0'
                   onClick={() => setShowApiKey(!showApiKey)}
                 >
                   {showApiKey ? (
-                    <EyeOff className='h-[14px] w-[14px]' />
+                    <EyeOff className='size-[14px]' />
                   ) : (
-                    <Eye className='h-[14px] w-[14px]' />
+                    <Eye className='size-[14px]' />
                   )}
                 </Button>
               </div>
@@ -406,7 +432,7 @@ export function BYOK() {
         <ModalContent size='sm'>
           <ModalHeader>Delete API Key</ModalHeader>
           <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
+            <ModalDescription className='text-[var(--text-secondary)]'>
               Are you sure you want to delete the{' '}
               <span className='font-medium text-[var(--text-primary)]'>
                 {PROVIDERS.find((p) => p.id === deleteConfirmProvider)?.name}
@@ -416,7 +442,7 @@ export function BYOK() {
                 This workspace will revert to using platform hosted keys.
               </span>{' '}
               This action cannot be undone.
-            </p>
+            </ModalDescription>
           </ModalBody>
           <ModalFooter>
             <Button variant='default' onClick={() => setDeleteConfirmProvider(null)}>
