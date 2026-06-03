@@ -1732,7 +1732,9 @@ export async function refreshOAuthToken(
         ? 'zoom-admin'
         : providerId === 'google-ads'
           ? 'google-ads'
-          : getBaseProviderForService(providerId)
+          : providerId === 'facebook-ads'
+            ? 'facebook-ads'
+            : getBaseProviderForService(providerId)
 
     const config = getProviderAuthConfig(provider, alias)
 
