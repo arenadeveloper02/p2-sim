@@ -286,8 +286,30 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
     sections.push(`## Jobs (${data.jobs.length})\n${lines.join('\n')}`)
   }
 
+  sections.push(WORKSPACE_DOCUMENT_FILE_GUIDANCE)
+
   return sections.join('\n\n')
 }
+
+/**
+ * Injected into mothership workspace context so the agent uses built-in file tools
+ * for DOCX/PPTX/PDF instead of function_execute (Python docx/matplotlib, etc.).
+ */
+const WORKSPACE_DOCUMENT_FILE_GUIDANCE = `## Workspace documents (DOCX, PPTX, PDF)
+
+Do **not** use \`function_execute\` to create or edit Word, PowerPoint, or PDF workspace files (no Python \`python-docx\` / \`matplotlib\`, no shell, no \`require\` hacks) unless the user explicitly asks to run code in a sandbox.
+
+Use the built-in file tools instead:
+
+1. **create_file** — create the file (e.g. \`Report.docx\`, \`Deck.pptx\`, \`Brief.pdf\`).
+2. **workspace_file** — \`append\`, \`update\`, or \`patch\` with \`target.kind=file_id\`, the file id, and a short \`title\`. Wait for success before the next step.
+3. **edit_content** — write the body in the **next** turn only (never in parallel with workspace_file).
+
+For **.docx** / **.pptx** / **.pdf**, \`edit_content\` must be **docxjs / pptxgenjs / pdflibjs JavaScript** (e.g. \`addSection({ children: [...] })\` for DOCX), not Python.
+
+For plain \`.md\`, \`.txt\`, \`.json\`, \`.csv\`, \`.html\`, use the same three tools; \`edit_content\` is the raw text.
+
+Reserve **function_execute** for data processing, API calls, and tabular/JSON outputs — not for generating office documents in the workspace.`
 
 /**
  * Generate WORKSPACE.md content from actual database state.

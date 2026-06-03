@@ -20,6 +20,7 @@ export const SUPPORTED_DOCUMENT_EXTENSIONS = [
   'doc',
   'docx',
   'txt',
+  'vtt',
   'md',
   'xlsx',
   'xls',
@@ -130,6 +131,7 @@ export const SUPPORTED_MIME_TYPES: Record<SupportedDocumentExtension, string[]> 
     'application/octet-stream',
   ],
   txt: ['text/plain', 'text/x-plain', 'application/txt'],
+  vtt: ['text/vtt', 'application/octet-stream'],
   md: [
     'text/markdown',
     'text/x-markdown',

@@ -1,6 +1,23 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react'
+import Editor from 'react-simple-code-editor'
+import 'prismjs/components/prism-bash'
+import 'prismjs/components/prism-css'
+import 'prismjs/components/prism-markup'
+import 'prismjs/components/prism-sql'
+import 'prismjs/components/prism-typescript'
+import 'prismjs/components/prism-yaml'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import dynamic from 'next/dynamic'
