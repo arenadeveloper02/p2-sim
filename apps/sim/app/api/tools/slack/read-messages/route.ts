@@ -418,7 +418,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       logger.info(`[${requestId}] No cursor added to URL`)
     }
 
-    const autoPaginate = validatedData.autoPaginate || false
+    const autoPaginate = validatedData.autoPaginate ?? true
     const maxTotalMessages = 1000 // Safety limit: maximum 1000 messages
     const requestedTotalLimit = validatedData.limit ?? 10
     const effectiveTotalLimit = Math.min(requestedTotalLimit, maxTotalMessages)

@@ -214,10 +214,11 @@ function WorkspaceHeaderImpl({
     workspaceCreationPolicy?.canCreate === false ? workspaceCreationPolicy.reason : null
   const inviteMembersEnabled = activeWorkspaceFull?.inviteMembersEnabled ?? false
   const inviteUpgradeRequired = activeWorkspaceFull?.inviteUpgradeRequired ?? false
-  const inviteDisabledReason = inviteMembersEnabled
-    ? null
-    : (activeWorkspaceFull?.inviteDisabledReason ?? null)
+  // const inviteDisabledReason = inviteMembersEnabled
+  //   ? null
+  //   : (activeWorkspaceFull?.inviteDisabledReason ?? null)
   const inviteButtonDisabled = !inviteMembersEnabled && !inviteUpgradeRequired
+  const inviteDisabledReason = false;
 
   const handleInviteClick = useCallback(() => {
     // if (isInvitationsDisabled) return
