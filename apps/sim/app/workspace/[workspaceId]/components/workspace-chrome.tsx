@@ -12,6 +12,7 @@ interface WorkspaceChromeProps {
  */
 function isFullscreenWorkspaceRoute(pathname: string): boolean {
   return (
+    /^\/workspace\/[^/]+\/embed\/?$/.test(pathname) ||
     /^\/workspace\/[^/]+\/home\/embed\/?$/.test(pathname) ||
     /^\/workspace\/[^/]+\/task\/[^/]+\/embed\/?$/.test(pathname)
   )
