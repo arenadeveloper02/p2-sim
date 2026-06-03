@@ -51,6 +51,7 @@ const SPLIT_DEFAULT_PCT = 50
 const TEXT_EDITABLE_MIME_TYPES = new Set([
   'text/markdown',
   'text/plain',
+  'text/vtt',
   'application/json',
   'application/x-yaml',
   'text/csv',
@@ -71,6 +72,7 @@ const TEXT_EDITABLE_MIME_TYPES = new Set([
 const TEXT_EDITABLE_EXTENSIONS = new Set([
   'md',
   'txt',
+  'vtt',
   'json',
   'yaml',
   'yml',
