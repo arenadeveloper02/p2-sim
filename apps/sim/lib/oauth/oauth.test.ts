@@ -5,6 +5,8 @@ vi.mock('@/lib/core/config/env', () =>
   createEnvMock({
     GOOGLE_CLIENT_ID: 'google_client_id',
     GOOGLE_CLIENT_SECRET: 'google_client_secret',
+    GOOGLE_ADS_CLIENT_ID: 'google_ads_client_id',
+    GOOGLE_ADS_CLIENT_SECRET: 'google_ads_client_secret',
     GITHUB_CLIENT_ID: 'github_client_id',
     GITHUB_CLIENT_SECRET: 'github_client_secret',
     X_CLIENT_ID: 'x_client_id',
@@ -185,6 +187,11 @@ describe('OAuth Token Refresh', () => {
     const bodyCredentialProviders = [
       { name: 'Google', providerId: 'google', endpoint: 'https://oauth2.googleapis.com/token' },
       {
+        name: 'Google Ads',
+        providerId: 'google-ads',
+        endpoint: 'https://oauth2.googleapis.com/token',
+      },
+      {
         name: 'Microsoft',
         providerId: 'microsoft',
         endpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
@@ -277,9 +284,17 @@ describe('OAuth Token Refresh', () => {
           expect(bodyParams.get('refresh_token')).toBe(refreshToken)
 
           const expectedClientId =
-            providerId === 'outlook' ? 'microsoft_client_id' : `${providerId}_client_id`
+            providerId === 'outlook'
+              ? 'microsoft_client_id'
+              : providerId === 'google-ads'
+                ? 'google_ads_client_id'
+                : `${providerId}_client_id`
           const expectedClientSecret =
-            providerId === 'outlook' ? 'microsoft_client_secret' : `${providerId}_client_secret`
+            providerId === 'outlook'
+              ? 'microsoft_client_secret'
+              : providerId === 'google-ads'
+                ? 'google_ads_client_secret'
+                : `${providerId}_client_secret`
 
           expect(bodyParams.get('client_id')).toBe(expectedClientId)
           expect(bodyParams.get('client_secret')).toBe(expectedClientSecret)

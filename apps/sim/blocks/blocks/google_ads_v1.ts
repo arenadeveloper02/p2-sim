@@ -1,10 +1,12 @@
 import { GoogleIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import {
   isAdminWorkspace,
   resolveExecutionWorkspaceId,
   resolveWorkspaceIdForAdminCheck,
 } from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
+import { AuthMode } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
 
 const GOOGLE_ADS_V1_COND_NEVER = '__google_ads_v1_cond_never__'
@@ -33,7 +35,7 @@ function googleAdsV1AdminOnlyCondition(values?: Record<string, unknown>) {
   return { field: 'prompt', value: GOOGLE_ADS_V1_COND_NEVER }
 }
 
-/** Show explicit Google Ads API credential fields (non-admin workspaces only). */
+/** Show Google OAuth and per-user API fields (non-admin workspaces only). */
 function googleAdsV1NonAdminOnlyCondition(values?: Record<string, unknown>) {
   const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
   if (isAdmin) {
@@ -50,33 +52,30 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
     'Simplified Google Ads block that uses AI (Grok with GPT-4o fallback) to automatically generate GAQL queries from natural language prompts. Perfect for quick queries without complex configuration. Supports campaign performance, keyword analysis, search terms, and more.',
   docsLink: 'https://docs.sim.ai/tools/google-ads-v1',
   category: 'tools',
+  authMode: AuthMode.OAuth,
   bgColor: '#4285f4',
   icon: GoogleIcon,
   subBlocks: [
     {
-      id: 'clientId',
-      title: 'Client ID',
-      type: 'short-input',
-      placeholder: 'Google OAuth client ID',
+      id: 'credential',
+      title: 'Google Ads Account',
+      type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
+      serviceId: 'google-ads',
+      requiredScopes: getScopesForService('google-ads'),
+      placeholder: 'Connect Google Ads account',
       required: true,
       condition: googleAdsV1NonAdminOnlyCondition,
     },
     {
-      id: 'clientSecret',
-      title: 'Client Secret',
+      id: 'manualCredential',
+      title: 'Google Ads Account',
       type: 'short-input',
-      placeholder: 'Google OAuth client secret',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
-      password: true,
-      condition: googleAdsV1NonAdminOnlyCondition,
-    },
-    {
-      id: 'refreshToken',
-      title: 'Refresh Token',
-      type: 'short-input',
-      placeholder: 'Google OAuth refresh token',
-      required: true,
-      password: true,
       condition: googleAdsV1NonAdminOnlyCondition,
     },
     {
@@ -226,14 +225,15 @@ Generate a clear, specific prompt for what the user wants to query from Google A
           params as Record<string, unknown> | undefined
         )
         const accountId = resolveGoogleAdsV1AccountId(params as Record<string, unknown>)
+        const oauthCredential = (params.oauthCredential ??
+          params.credential ??
+          params.manualCredential) as string | undefined
 
         const result: Record<string, unknown> = {
           prompt: params.prompt,
           workspaceId,
           accounts: params.accounts ?? params.accountsAdvanced,
-          clientId: params.clientId,
-          clientSecret: params.clientSecret,
-          refreshToken: params.refreshToken,
+          oauthCredential,
           developerToken: params.developerToken,
           managerCustomerId: params.managerCustomerId,
           _context: params._context,
@@ -253,10 +253,8 @@ Generate a clear, specific prompt for what the user wants to query from Google A
       type: 'string',
       description: 'Natural language description of what data you want',
     },
-    accounts: { type: 'string', description: 'Selected Google Ads account' },
-    clientId: { type: 'string', description: 'Google OAuth client ID' },
-    clientSecret: { type: 'string', description: 'Google OAuth client secret' },
-    refreshToken: { type: 'string', description: 'Google OAuth refresh token' },
+    accounts: { type: 'string', description: 'Selected Google Ads account (admin workspaces)' },
+    oauthCredential: { type: 'string', description: 'Google Ads OAuth credential' },
     developerToken: { type: 'string', description: 'Google Ads API developer token' },
     accountId: { type: 'string', description: 'Google Ads account ID (numeric, no dashes)' },
     customerId: { type: 'string', description: 'Google Ads customer ID (numeric, no dashes)' },
