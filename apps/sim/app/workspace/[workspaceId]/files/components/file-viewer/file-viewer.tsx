@@ -1,17 +1,6 @@
 'use client'
 
-import {
-  memo,
-  type ReactElement,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useReducer,
-  useRef,
-  useState,
-} from 'react'
-import Editor from 'react-simple-code-editor'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import 'prismjs/components/prism-bash'
 import 'prismjs/components/prism-css'
 import 'prismjs/components/prism-markup'
