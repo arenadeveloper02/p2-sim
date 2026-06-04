@@ -116,7 +116,8 @@ export function evaluateWorkspaceInvitePolicy(
     if (workspaceState.organizationId === null) {
       return {
         allowed: false,
-        reason: UPGRADE_TO_INVITE_REASON,
+        // reason: UPGRADE_TO_INVITE_REASON,
+        reason: null,
         requiresSeat: false,
         organizationId: null,
         upgradeRequired: true,
@@ -135,7 +136,8 @@ export function evaluateWorkspaceInvitePolicy(
   if (workspaceState.workspaceMode === WORKSPACE_MODE.GRANDFATHERED_SHARED) {
     return {
       allowed: context.billedUserHasTeamOrEnterprise,
-      reason: context.billedUserHasTeamOrEnterprise ? null : UPGRADE_TO_INVITE_REASON,
+      // reason: context.billedUserHasTeamOrEnterprise ? null : UPGRADE_TO_INVITE_REASON,
+      reason: null,
       requiresSeat: false,
       organizationId: null,
       upgradeRequired: !context.billedUserHasTeamOrEnterprise,
@@ -144,7 +146,8 @@ export function evaluateWorkspaceInvitePolicy(
 
   return {
     allowed: false,
-    reason: UPGRADE_TO_INVITE_REASON,
+    // reason: UPGRADE_TO_INVITE_REASON,
+    reason: null,
     requiresSeat: false,
     organizationId: null,
     upgradeRequired: true,

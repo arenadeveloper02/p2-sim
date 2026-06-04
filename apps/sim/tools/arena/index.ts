@@ -11,6 +11,7 @@ import {
 import { getMeetings } from '@/tools/arena/get_meetings'
 import { getMyOverdueTasks } from '@/tools/arena/get_my_overdue_tasks'
 import { getMyTasks } from '@/tools/arena/get_my_tasks'
+import { getSearchedTasks } from '@/tools/arena/get_searched_tasks'
 import { getToken } from '@/tools/arena/get_token'
 import { projectSummary } from '@/tools/arena/project_summary'
 import { saveSummary } from '@/tools/arena/save_summary'
@@ -30,6 +31,7 @@ export const arenaAddComment = addComment
 export const arenaAddCommentTaskNumber = addCommentTaskNumber
 export const arenaGetMeetings = getMeetings
 export const arenaGetMyTasks = getMyTasks
+export const arenaFetchSearchedTasks = getSearchedTasks
 export const arenaGetMyOverdueTasks = getMyOverdueTasks
 export const arenaGetToken = getToken
 export const arenaProjectSummary = projectSummary
