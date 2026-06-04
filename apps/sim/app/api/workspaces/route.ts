@@ -140,11 +140,11 @@ export const GET = withRouteHandler(async (request: Request) => {
       const callerIsBilledUser = workspaceDetails.billedAccountUserId === session.user.id
 
       const canActOnUpgrade = invitePolicy.upgradeRequired && callerIsBilledUser
-      const inviteDisabledReason = invitePolicy.allowed
-        ? null
-        : callerIsBilledUser
-          ? (invitePolicy.reason ?? UPGRADE_TO_INVITE_REASON)
-          : CONTACT_OWNER_TO_UPGRADE_REASON
+      // const inviteDisabledReason = invitePolicy.allowed
+      //   ? null
+      //   : callerIsBilledUser
+      //     ? (invitePolicy.reason ?? UPGRADE_TO_INVITE_REASON)
+      //     : CONTACT_OWNER_TO_UPGRADE_REASON
 
       return {
         ...workspaceDetails,
@@ -156,7 +156,7 @@ export const GET = withRouteHandler(async (request: Request) => {
               : 'member',
         permissions: permissionType,
         inviteMembersEnabled: invitePolicy.allowed,
-        inviteDisabledReason,
+        inviteDisabledReason: null,
         inviteUpgradeRequired: canActOnUpgrade,
       }
     }
@@ -385,11 +385,11 @@ async function createWorkspace({
   })
   const callerIsBilledUser = billedAccountUserId === userId
   const canActOnUpgrade = invitePolicy.upgradeRequired && callerIsBilledUser
-  const inviteDisabledReason = invitePolicy.allowed
-    ? null
-    : callerIsBilledUser
-      ? (invitePolicy.reason ?? UPGRADE_TO_INVITE_REASON)
-      : CONTACT_OWNER_TO_UPGRADE_REASON
+  // const inviteDisabledReason = invitePolicy.allowed
+  //   ? null
+  //   : callerIsBilledUser
+  //     ? (invitePolicy.reason ?? UPGRADE_TO_INVITE_REASON)
+  //     : CONTACT_OWNER_TO_UPGRADE_REASON
 
   return {
     id: workspaceId,
@@ -405,7 +405,7 @@ async function createWorkspace({
     role: 'owner',
     permissions: 'admin',
     inviteMembersEnabled: invitePolicy.allowed,
-    inviteDisabledReason,
+    inviteDisabledReason: null,
     inviteUpgradeRequired: canActOnUpgrade,
   }
 }
