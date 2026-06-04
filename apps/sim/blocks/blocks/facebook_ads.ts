@@ -38,6 +38,24 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
           return []
         }
       },
+      fetchOptionById: async (_blockId: string, optionId: string) => {
+        try {
+          const response = await fetch('/api/facebook-ads/accounts')
+          const data = await response.json()
+
+          if (data?.success && data.accounts && data.accounts[optionId]) {
+            const account = data.accounts[optionId] as { id: string; name: string }
+            return {
+              id: optionId,
+              label: account.name,
+            }
+          }
+          return null
+        } catch (error) {
+          console.error('Failed to fetch Facebook Ads account by ID:', error)
+          return null
+        }
+      },
       placeholder: 'Select Facebook ad account...',
       required: true,
       mode: 'basic',

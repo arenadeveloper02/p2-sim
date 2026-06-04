@@ -38,9 +38,14 @@ export async function POST(request: NextRequest) {
       level,
     })
 
-    // Get account ID from database
+    // Get account ID from database (supports both key lookup and direct account_id lookup)
     const facebookAccounts = await getFacebookAdsAccounts()
-    const accountData = facebookAccounts[account as string]
+    let accountData: { id: string; name: string } | undefined = facebookAccounts[account as string]
+
+    // If not found by key, try to find by account_id
+    if (!accountData) {
+      accountData = Object.values(facebookAccounts).find((acc) => acc.id === account)
+    }
 
     if (!accountData) {
       return NextResponse.json(
