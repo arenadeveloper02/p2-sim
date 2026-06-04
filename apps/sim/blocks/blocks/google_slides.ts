@@ -43,7 +43,6 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Update Image Properties', id: 'update_image_properties' },
         { label: 'Add Slide', id: 'add_slide' },
         { label: 'Add Image', id: 'add_image' },
-        { label: 'Replace Image', id: 'replace_image' },
         { label: 'Get Thumbnail', id: 'get_thumbnail' },
         { label: 'Get Page', id: 'get_page' },
         { label: 'Delete Object', id: 'delete_object' },

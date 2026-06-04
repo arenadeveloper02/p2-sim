@@ -446,8 +446,14 @@ export default function Logs() {
 
   // Track search event when search query is applied (after debounce or enter)
   const prevSearchQueryRef = useRef<string>('')
+  const isSearchTrackingInitializedRef = useRef(false)
   useEffect(() => {
-    if (!isInitialized.current || debouncedSearchQuery === prevSearchQueryRef.current) return
+    if (!isSearchTrackingInitializedRef.current) {
+      isSearchTrackingInitializedRef.current = true
+      prevSearchQueryRef.current = debouncedSearchQuery
+      return
+    }
+    if (debouncedSearchQuery === prevSearchQueryRef.current) return
     if (!debouncedSearchQuery.trim() && !prevSearchQueryRef.current.trim()) return
 
     prevSearchQueryRef.current = debouncedSearchQuery
@@ -484,7 +490,7 @@ export default function Logs() {
           .filter(Boolean)
           .join(', ') || '',
     })
-  }, [debouncedSearchQuery, level, timeRange, triggers, workflowIds, workflows, isInitialized])
+  }, [debouncedSearchQuery, level, timeRange, triggers, workflowIds, workflows])
 
   const handleLogClick = useCallback((rowId: string) => {
     dispatch({ type: 'TOGGLE_LOG', logId: rowId })

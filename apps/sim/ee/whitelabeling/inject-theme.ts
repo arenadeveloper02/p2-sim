@@ -71,12 +71,12 @@ export function generateThemeCSS(): string {
 
   if (accentColor) {
     cssVars.push(`--brand-link: ${accentColor};`)
-    cssVars.push(`--brand-accent: ${accentColor};`)
+    // cssVars.push(`--brand-accent: ${accentColor};`)
   }
 
   if (accentHoverColor) {
     cssVars.push(`--brand-link-hover: ${accentHoverColor};`)
-    cssVars.push(`--brand-accent-hover: ${accentHoverColor};`)
+    // cssVars.push(`--brand-accent-hover: ${accentHoverColor};`)
   }
 
   if (process.env.NEXT_PUBLIC_CUSTOM_CSS_URL) {

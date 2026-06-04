@@ -1,7 +1,5 @@
 import { PackageSearchIcon } from '@/components/icons'
-import { DEFAULT_RERANKER_MODEL, SUPPORTED_RERANKER_MODELS } from '@/lib/knowledge/reranker-models'
 import type { BlockConfig } from '@/blocks/types'
-import { getCohereRerankerApiKeyCondition } from '@/blocks/utils'
 
 export const KnowledgeBlock: BlockConfig = {
   type: 'knowledge',
@@ -108,46 +106,47 @@ export const KnowledgeBlock: BlockConfig = {
       dependsOn: ['knowledgeBaseSelector'],
       condition: { field: 'operation', value: 'search' },
     },
-    {
-      id: 'rerankerEnabled',
-      title: 'Rerank Results',
-      type: 'switch',
-      condition: { field: 'operation', value: 'search' },
-    },
-    {
-      id: 'rerankerModel',
-      title: 'Rerank Model',
-      type: 'dropdown',
-      options: SUPPORTED_RERANKER_MODELS.map((id) => ({ label: id, id })),
-      value: () => DEFAULT_RERANKER_MODEL,
-      condition: {
-        field: 'operation',
-        value: 'search',
-        and: { field: 'rerankerEnabled', value: true },
-      },
-    },
-    {
-      id: 'rerankerInputCount',
-      title: 'Documents Sent to Reranker',
-      type: 'short-input',
-      placeholder: 'Auto (4× results, capped at 100)',
-      mode: 'advanced',
-      condition: {
-        field: 'operation',
-        value: 'search',
-        and: { field: 'rerankerEnabled', value: true },
-      },
-    },
-    {
-      id: 'apiKey',
-      title: 'Cohere API Key',
-      type: 'short-input',
-      placeholder: 'Enter your Cohere API key',
-      password: true,
-      connectionDroppable: false,
-      required: true,
-      condition: getCohereRerankerApiKeyCondition(),
-    },
+    //..........sim side reraking..................>
+    // {
+    //   id: 'rerankerEnabled',
+    //   title: 'Rerank Results',
+    //   type: 'switch',
+    //   condition: { field: 'operation', value: 'search' },
+    // },
+    // {
+    //   id: 'rerankerModel',
+    //   title: 'Rerank Model',
+    //   type: 'dropdown',
+    //   options: SUPPORTED_RERANKER_MODELS.map((id) => ({ label: id, id })),
+    //   value: () => DEFAULT_RERANKER_MODEL,
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'search',
+    //     and: { field: 'rerankerEnabled', value: true },
+    //   },
+    // },
+    // {
+    //   id: 'rerankerInputCount',
+    //   title: 'Documents Sent to Reranker',
+    //   type: 'short-input',
+    //   placeholder: 'Auto (4× results, capped at 100)',
+    //   mode: 'advanced',
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'search',
+    //     and: { field: 'rerankerEnabled', value: true },
+    //   },
+    // },
+    // {
+    //   id: 'apiKey',
+    //   title: 'Cohere API Key',
+    //   type: 'short-input',
+    //   placeholder: 'Enter your Cohere API key',
+    //   password: true,
+    //   connectionDroppable: false,
+    //   required: true,
+    //   condition: getCohereRerankerApiKeyCondition(),
+    // },
 
     // --- List Documents ---
     {

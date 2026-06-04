@@ -34,7 +34,6 @@ export const GoogleDriveBlock: BlockConfig<GoogleDriveResponse> = {
         { label: 'Create File', id: 'create_file' },
         { label: 'Upload File', id: 'upload' },
         { label: 'Download File', id: 'download' },
-        { label: 'Search Files', id: 'search' },
         { label: 'Copy File', id: 'copy' },
         { label: 'Move File', id: 'move' },
         { label: 'Update File', id: 'update' },
