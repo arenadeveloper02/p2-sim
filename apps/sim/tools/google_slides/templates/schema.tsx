@@ -48,7 +48,7 @@ export interface ListBlock extends BaseBlock {
 export interface ImageBlock extends BaseBlock {
   type: 'IMAGE'
   role: 'PRIMARY_VISUAL' | 'SUPPORTING_VISUAL'
-  source?: 'icon_library' | 'stock_photo' | 'generated'
+  source?: 'icon_library' | 'stock_photo' | 'generated' | 'p2_users'
   usage: string[]        // for icon_library: semantic hints for AI matching
   // for stock_photo/generated: visual style hints
   iconLibraryId?: string // filled by AI — matched icon id from IconLibrary

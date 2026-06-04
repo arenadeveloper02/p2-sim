@@ -48,6 +48,7 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Insert Text', id: 'insert_text' },
         { label: 'Get Template Schema', id: 'get_template_schema' },
         { label: 'Get Presentation Icons', id: 'get_presentation_icons' },
+        { label: 'Get P2 Team Members', id: 'get_p2_users' },
       ],
       value: () => 'read',
     },
@@ -830,6 +831,16 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       condition: { field: 'operation', value: 'get_template_schema' },
       required: true,
     },
+    // Get P2 Team Members operation
+    {
+      id: 'p2UsersFilter',
+      title: 'Filter',
+      type: 'short-input',
+      placeholder: 'Optional: filter by name or designation (e.g. "VP", "Board")',
+      canonicalParamId: 'filter',
+      condition: { field: 'operation', value: 'get_p2_users' },
+      required: false,
+    },
   ],
   tools: {
     access: [
@@ -854,6 +865,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       'google_slides_get_template_schema',
       'google_slides_get_presentation_icons',
       'google_slides_create_from_template',
+      'google_slides_get_p2_users',
     ],
     config: {
       tool: (params) => {
@@ -900,6 +912,8 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_get_template_schema'
           case 'get_presentation_icons':
             return 'google_slides_get_presentation_icons'
+          case 'get_p2_users':
+            return 'google_slides_get_p2_users'
           default:
             throw new Error(`Invalid Google Slides operation: ${params.operation}`)
         }
@@ -925,6 +939,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           templateSchemaTemplate,
           createFromTemplatePresentationName,
           createFromTemplateSchemaJson,
+          p2UsersFilter,
           ...rest
         } = params
 
@@ -992,6 +1007,11 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             ''
           ).trim()
           result.template = effectiveTemplate || undefined
+        }
+
+        if (params.operation === 'get_p2_users') {
+          const filter = ((params.p2UsersFilter as string) || '').trim()
+          if (filter) result.filter = filter
         }
 
         // Replace Text operation
