@@ -337,6 +337,11 @@ export const env = createEnv({
     // OAuth Integration Credentials - All optional, enables third-party integrations
     GOOGLE_CLIENT_ID:                      z.string().optional(),                  // Google OAuth client ID for Google services
     GOOGLE_CLIENT_SECRET:                  z.string().optional(),                  // Google OAuth client secret
+    GOOGLE_ADS_CLIENT_ID:                  z.string().optional(),                  // Google OAuth client ID for Google Ads user connections
+    GOOGLE_ADS_CLIENT_SECRET:              z.string().optional(),                  // Google OAuth client secret for Google Ads user connections
+    FB_CLIENT_ID:                          z.string().optional(),                  // Meta OAuth app ID for Facebook Ads user connections
+    FB_CLIENT_SECRET:                      z.string().optional(),                  // Meta OAuth app secret for Facebook Ads user connections
+    FB_ACCESS_TOKEN:                       z.string().optional(),                  // Server Facebook Marketing API token (admin workspaces)
     GITHUB_CLIENT_ID:                      z.string().optional(),                  // GitHub OAuth client ID for GitHub integration
     GITHUB_CLIENT_SECRET:                  z.string().optional(),                  // GitHub OAuth client secret
     DISABLE_GOOGLE_AUTH:                   z.boolean().optional(),                 // Disable Google OAuth login even when credentials are configured

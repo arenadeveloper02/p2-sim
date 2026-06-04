@@ -9,11 +9,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
-import {
-  makeGoogleAdsOAuthRequest,
-  makeGoogleAdsRequest,
-  refreshGoogleAdsAccessToken,
-} from '../../google-ads/query/google-ads-api'
+import { makeGoogleAdsOAuthRequest, makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
 import type { GoogleAdsV1Request } from './types'
@@ -55,20 +51,18 @@ function resolveAccountKey(accountInput: string): string {
 
 function hasUserProvidedGoogleAdsCredentials(body: GoogleAdsV1Request): boolean {
   return Boolean(
-    body.clientId?.trim() ||
-      body.clientSecret?.trim() ||
-      body.refreshToken?.trim() ||
+    body.accessToken?.trim() ||
       body.developerToken?.trim() ||
       resolveGoogleAdsCustomerId(body)
   )
 }
 
 function resolveUsesAdminCredentials(body: GoogleAdsV1Request): boolean {
+  if (body.workspaceId && isAdminWorkspace(body.workspaceId)) {
+    return true
+  }
   if (hasUserProvidedGoogleAdsCredentials(body)) {
     return false
-  }
-  if (body.workspaceId) {
-    return isAdminWorkspace(body.workspaceId)
   }
   return Boolean(body.accounts?.trim())
 }
@@ -77,7 +71,7 @@ function resolveUsesAdminCredentials(body: GoogleAdsV1Request): boolean {
  * POST /api/google-ads-v1/query
  *
  * Admin workspaces: env credentials (GOOGLE_ADS_* ) + account from GOOGLE_ADS_ACCOUNTS.
- * Non-admin workspaces: client ID, client secret, refresh token, developer token, and customer ID.
+ * Non-admin workspaces: Sim Google Ads OAuth access token, developer token, and customer ID.
  */
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
@@ -141,15 +135,11 @@ export async function POST(request: NextRequest) {
     } else {
       const customerId = resolveGoogleAdsCustomerId(body)
       const developerToken = body.developerToken?.trim()
-      const clientId = body.clientId?.trim()
-      const clientSecret = body.clientSecret?.trim()
-      const refreshToken = body.refreshToken?.trim()
+      const accessToken = body.accessToken?.trim()
 
-      if (!clientId || !clientSecret || !refreshToken || !developerToken || !customerId) {
+      if (!accessToken || !developerToken || !customerId) {
         const missingFields: string[] = []
-        if (!clientId) missingFields.push('Client ID')
-        if (!clientSecret) missingFields.push('Client Secret')
-        if (!refreshToken) missingFields.push('Refresh Token')
+        if (!accessToken) missingFields.push('Google Ads account (OAuth)')
         if (!developerToken) missingFields.push('Developer Token')
         if (!customerId) missingFields.push('Account ID')
         logger.warn(`[${requestId}] Missing Google Ads credentials in request body`, {
@@ -158,7 +148,7 @@ export async function POST(request: NextRequest) {
         })
         return NextResponse.json(
           {
-            error: `Missing required Google Ads fields: ${missingFields.join(', ')}. Fill them in the block and run again.`,
+            error: `Missing required Google Ads fields: ${missingFields.join(', ')}. Connect your Google Ads account, add your developer token and customer ID, then run again.`,
           },
           { status: 400 }
         )
@@ -166,9 +156,8 @@ export async function POST(request: NextRequest) {
 
       accountInfo = { id: customerId.replace(/-/g, ''), name: `Customer ${customerId}` }
       logger.info(
-        `[${requestId}] Executing with user-provided Google Ads credentials for customer ${accountInfo.id}`
+        `[${requestId}] Executing with OAuth Google Ads credentials for customer ${accountInfo.id}`
       )
-      const accessToken = await refreshGoogleAdsAccessToken(clientId, clientSecret, refreshToken)
       apiResult = await makeGoogleAdsOAuthRequest({
         customerId,
         gaqlQuery: queryResult.gaql_query,

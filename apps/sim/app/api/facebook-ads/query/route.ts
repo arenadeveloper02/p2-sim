@@ -13,11 +13,20 @@ import type { FacebookAdsRequest, FacebookAdsResponse } from './types'
 
 const logger = createLogger('FacebookAdsAPI')
 
+function hasUserProvidedFacebookAdsCredentials(body: FacebookAdsRequest): boolean {
+  return Boolean(
+    body.accessToken?.trim() || body.accountId?.trim() || body.adAccountId?.trim()
+  )
+}
+
 function resolveUsesAdminCredentials(body: FacebookAdsRequest): boolean {
-  if (body.workspaceId) {
-    return isAdminWorkspace(body.workspaceId)
+  if (body.workspaceId && isAdminWorkspace(body.workspaceId)) {
+    return true
   }
-  return Boolean(body.account && !body.fbClientId)
+  if (hasUserProvidedFacebookAdsCredentials(body)) {
+    return false
+  }
+  return Boolean(body.account?.trim())
 }
 
 function formatAdAccountId(raw: string): string {
@@ -91,17 +100,17 @@ export async function POST(request: NextRequest) {
     let resolvedAccessToken: string | undefined
 
     if (!useAdminCredentials) {
-      const fbClientId = body.fbClientId?.trim()
-      const fbClientSecret = body.fbClientSecret?.trim()
-      const fbAccessToken = body.fbAccessToken?.trim()
+      const accessToken = body.accessToken?.trim()
       const adAccountId = (body.accountId ?? body.adAccountId)?.trim()
 
-      if (!fbClientId || !fbClientSecret || !fbAccessToken || !adAccountId) {
+      if (!accessToken || !adAccountId) {
+        const missingFields: string[] = []
+        if (!accessToken) missingFields.push('Facebook Ads account (OAuth)')
+        if (!adAccountId) missingFields.push('Ad Account ID')
         return NextResponse.json(
           {
             success: false,
-            error:
-              'FB client ID, client secret, access token (with ads_read), and account ID are required for this workspace',
+            error: `Missing required Facebook Ads fields: ${missingFields.join(', ')}. Connect your Facebook Ads account, add your ad account ID, then run again.`,
             requestId,
             timestamp,
           },
@@ -109,7 +118,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      resolvedAccessToken = resolveFacebookAccessToken(fbAccessToken)
+      resolvedAccessToken = resolveFacebookAccessToken(accessToken)
     }
 
     const { accountId, accountName } = await resolveAccountForRequest(

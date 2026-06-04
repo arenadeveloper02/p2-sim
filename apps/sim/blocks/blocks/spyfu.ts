@@ -1,8 +1,4 @@
 import { SpyfuIcon } from '@/components/icons'
-import {
-  isAdminWorkspace,
-  resolveWorkspaceIdForAdminCheck,
-} from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
 import {
   SPYFU_DEFAULT_OPERATION_ID,
@@ -16,16 +12,6 @@ import {
   spyfuTermOperationIds,
 } from '@/tools/spyfu/operations'
 import type { SpyfuResponse } from '@/tools/spyfu/types'
-
-const SPYFU_COND_NEVER = '__spyfu_cond_never__'
-
-function spyfuAdminOnlyCondition(values?: Record<string, unknown>) {
-  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
-  if (isAdmin) {
-    return { field: 'operationId', value: SPYFU_COND_NEVER }
-  }
-  return { field: 'operationId', value: SPYFU_COND_NEVER, not: true as const }
-}
 
 export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
   type: 'spyfu',
@@ -177,25 +163,6 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
       value: () => 'US',
       description: 'Select the SpyFu country database.',
     },
-    {
-      id: 'userId',
-      title: 'User ID',
-      type: 'short-input',
-      required: true,
-      placeholder: 'SpyFu API user ID',
-      description: 'SpyFu API user ID for Basic authentication.',
-      condition: spyfuAdminOnlyCondition,
-    },
-    {
-      id: 'password',
-      title: 'Password',
-      type: 'short-input',
-      required: true,
-      password: true,
-      placeholder: 'SpyFu API password',
-      description: 'SpyFu API password for Basic authentication.',
-      condition: spyfuAdminOnlyCondition,
-    },
   ],
   tools: {
     access: ['spyfu_request'],
@@ -208,8 +175,6 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
         term: params.term,
         date: params.date,
         countryCode: params.countryCode,
-        userId: params.userId,
-        password: params.password,
       }),
     },
   },
@@ -226,8 +191,6 @@ export const SpyfuBlock: BlockConfig<SpyfuResponse> = {
       type: 'string',
       description: 'SpyFu country code appended to the query string.',
     },
-    userId: { type: 'string', description: 'SpyFu API user ID for Basic authentication.' },
-    password: { type: 'string', description: 'SpyFu API password for Basic authentication.' },
   },
   outputs: {
     data: { type: 'json', description: 'Raw payload returned by SpyFu.' },

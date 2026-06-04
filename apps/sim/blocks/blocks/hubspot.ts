@@ -1,6 +1,9 @@
 import { HubspotIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
+import {
+  isAdminWorkspace,
+  resolveWorkspaceIdForAdminCheck,
+} from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { HubSpotResponse } from '@/tools/hubspot/types'
@@ -17,15 +20,9 @@ const campaignInFlightRequests = new Map<string, Promise<Array<{ label: string; 
 
 const HUBSPOT_COND_NEVER = '__hubspot_cond_never__'
 
-function getWorkspaceIdFromClientPath(): string | undefined {
-  if (typeof window === 'undefined') return undefined
-  const match = window.location.pathname.match(/\/workspace\/([^/]+)/)
-  return match?.[1]
-}
-
 /** Show Accounts dropdown (admin workspaces only). */
-function hubspotAdminOnlyCondition(_values?: Record<string, unknown>) {
-  const isAdmin = isAdminWorkspace(getWorkspaceIdFromClientPath())
+function hubspotAdminOnlyCondition(values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
   if (isAdmin) {
     return { field: 'operation', value: HUBSPOT_COND_NEVER, not: true as const }
   }
@@ -33,8 +30,8 @@ function hubspotAdminOnlyCondition(_values?: Record<string, unknown>) {
 }
 
 /** Show OAuth / manual credential fields (non-admin workspaces only). */
-function hubspotNonAdminOnlyCondition(_values?: Record<string, unknown>) {
-  const isAdmin = isAdminWorkspace(getWorkspaceIdFromClientPath())
+function hubspotNonAdminOnlyCondition(values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
   if (isAdmin) {
     return { field: 'operation', value: HUBSPOT_COND_NEVER }
   }

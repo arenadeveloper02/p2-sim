@@ -1256,6 +1256,18 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         useBasicAuth: false,
       }
     }
+    case 'google-ads': {
+      const { clientId, clientSecret } = getCredentials(
+        env.GOOGLE_ADS_CLIENT_ID,
+        env.GOOGLE_ADS_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://oauth2.googleapis.com/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+      }
+    }
     case 'x': {
       const { clientId, clientSecret } = getCredentials(env.X_CLIENT_ID, env.X_CLIENT_SECRET)
       return {
@@ -1715,7 +1727,13 @@ export async function refreshOAuthToken(
 ): Promise<RefreshTokenResult> {
   try {
     const provider =
-      providerId === 'zoom-admin' ? 'zoom-admin' : getBaseProviderForService(providerId)
+      providerId === 'zoom-admin'
+        ? 'zoom-admin'
+        : providerId === 'google-ads'
+          ? 'google-ads'
+          : providerId === 'facebook-ads'
+            ? 'facebook-ads'
+            : getBaseProviderForService(providerId)
 
     const config = getProviderAuthConfig(provider, alias)
 

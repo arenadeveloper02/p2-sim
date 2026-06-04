@@ -21,9 +21,8 @@ interface GoogleAdsV1QueryParams {
   accounts?: string
   prompt: string
   workspaceId?: string
-  clientId?: string
-  clientSecret?: string
-  refreshToken?: string
+  oauthCredential?: string
+  accessToken?: string
   accountId?: string
   customerId?: string
   developerToken?: string
@@ -41,6 +40,11 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
   description:
     'Simplified Google Ads query tool that generates GAQL queries using AI (Grok with GPT-5 fallback). Just provide a natural language prompt and let AI handle the rest.',
   version: '1.0.0',
+
+  oauth: {
+    required: true,
+    provider: 'google-ads',
+  },
 
   params: {
     accounts: {
@@ -62,23 +66,17 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
       visibility: 'hidden',
       description: 'Workspace ID for admin vs user credential routing',
     },
-    clientId: {
+    oauthCredential: {
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'Google OAuth client ID (non-admin workspaces)',
+      description: 'Google Ads OAuth credential (non-admin workspaces)',
     },
-    clientSecret: {
+    accessToken: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Google OAuth client secret (non-admin workspaces)',
-    },
-    refreshToken: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Google OAuth refresh token (non-admin workspaces)',
+      visibility: 'hidden',
+      description: 'OAuth access token for the Google Ads API',
     },
     accountId: {
       type: 'string',
@@ -118,9 +116,7 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
         query: params.prompt,
         accounts: params.accounts,
         workspaceId: params.workspaceId ?? params._context?.workspaceId,
-        clientId: params.clientId,
-        clientSecret: params.clientSecret,
-        refreshToken: params.refreshToken,
+        accessToken: params.accessToken,
         accountId,
         customerId: accountId,
         developerToken: params.developerToken,

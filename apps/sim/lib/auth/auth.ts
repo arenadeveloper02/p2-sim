@@ -1267,8 +1267,8 @@ export const auth = betterAuth({
         },
         {
           providerId: 'google-ads',
-          clientId: env.GOOGLE_CLIENT_ID as string,
-          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          clientId: env.GOOGLE_ADS_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_ADS_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
           scopes: getCanonicalScopesForProvider('google-ads'),

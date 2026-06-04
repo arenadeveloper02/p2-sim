@@ -1,9 +1,12 @@
 import { MetaIcon } from '@/components/icons'
+import { getScopesForService } from '@/lib/oauth/utils'
 import {
   isAdminWorkspace,
+  resolveExecutionWorkspaceId,
   resolveWorkspaceIdForAdminCheck,
 } from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
+import { AuthMode } from '@/blocks/types'
 import type { FacebookAdsQueryResponse } from '@/tools/facebook_ads/index'
 
 const FACEBOOK_ADS_COND_NEVER = '__facebook_ads_cond_never__'
@@ -17,7 +20,7 @@ function facebookAdsAdminOnlyCondition(values?: Record<string, unknown>) {
   return { field: 'query', value: FACEBOOK_ADS_COND_NEVER }
 }
 
-/** Show explicit Facebook app credential fields (non-admin workspaces only). */
+/** Show Facebook OAuth and ad account ID fields (non-admin workspaces only). */
 function facebookAdsNonAdminOnlyCondition(values?: Record<string, unknown>) {
   const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
   if (isAdmin) {
@@ -34,38 +37,35 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
     'Connect to Facebook Ads API and query campaign performance, ad set metrics, and account insights using natural language. Supports all 22 Position2 Facebook ad accounts with AI-powered query parsing.',
   docsLink: 'https://docs.sim.ai/blocks/facebook-ads',
   category: 'tools',
+  authMode: AuthMode.OAuth,
   bgColor: '#1877F2',
   icon: MetaIcon,
   subBlocks: [
     {
-      id: 'fbClientId',
-      title: 'FB Client ID',
-      type: 'short-input',
-      placeholder: 'Enter your Facebook app client ID',
+      id: 'credential',
+      title: 'Facebook Ads Account',
+      type: 'oauth-input',
+      canonicalParamId: 'oauthCredential',
+      mode: 'basic',
+      serviceId: 'facebook-ads',
+      requiredScopes: getScopesForService('facebook-ads'),
+      placeholder: 'Connect Facebook Ads account',
       required: true,
       condition: facebookAdsNonAdminOnlyCondition,
     },
     {
-      id: 'fbClientSecret',
-      title: 'FB Client Secret',
+      id: 'manualCredential',
+      title: 'Facebook Ads Account',
       type: 'short-input',
-      placeholder: 'Enter your Facebook app client secret',
+      canonicalParamId: 'oauthCredential',
+      mode: 'advanced',
+      placeholder: 'Enter credential ID',
       required: true,
-      password: true,
-      condition: facebookAdsNonAdminOnlyCondition,
-    },
-    {
-      id: 'fbAccessToken',
-      title: 'FB Access Token',
-      type: 'short-input',
-      placeholder: 'User or system user token with ads_read permission',
-      required: true,
-      password: true,
       condition: facebookAdsNonAdminOnlyCondition,
     },
     {
       id: 'accountId',
-      title: 'Account ID',
+      title: 'Ad Account ID',
       type: 'short-input',
       canonicalParamId: 'adAccountId',
       placeholder: 'Ad account ID (e.g. act_123456789)',
@@ -126,14 +126,16 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
     config: {
       tool: () => 'facebook_ads_query',
       params: (params) => {
-        const workspaceId = resolveWorkspaceIdForAdminCheck(
+        const workspaceId = resolveExecutionWorkspaceId(
           params as Record<string, unknown> | undefined
         )
-        const isAdmin = isAdminWorkspace(workspaceId)
+        const oauthCredential = (params.oauthCredential ??
+          params.credential ??
+          params.manualCredential) as string | undefined
 
-        if (isAdmin) {
+        if (isAdminWorkspace(workspaceId)) {
           return {
-            account: params.account,
+            account: params.account ?? params.accountAdvanced,
             query: params.query,
             workspaceId,
             _context: params._context,
@@ -143,9 +145,7 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
         return {
           query: params.query,
           workspaceId,
-          fbClientId: params.fbClientId,
-          fbClientSecret: params.fbClientSecret,
-          fbAccessToken: params.fbAccessToken,
+          oauthCredential,
           adAccountId: params.accountId ?? params.adAccountId ?? params.account,
           _context: params._context,
         }
@@ -155,15 +155,13 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
   inputs: {
     account: {
       type: 'string',
-      description: 'Facebook ad account identifier',
+      description: 'Facebook ad account identifier (admin workspaces)',
     },
     query: {
       type: 'string',
       description: 'Natural language query from user chat',
     },
-    fbClientId: { type: 'string', description: 'Facebook app client ID' },
-    fbClientSecret: { type: 'string', description: 'Facebook app client secret' },
-    fbAccessToken: { type: 'string', description: 'Facebook Marketing API access token' },
+    oauthCredential: { type: 'string', description: 'Facebook Ads OAuth credential' },
     accountId: { type: 'string', description: 'Facebook ad account ID (act_...)' },
     adAccountId: { type: 'string', description: 'Facebook ad account ID (act_...)' },
   },

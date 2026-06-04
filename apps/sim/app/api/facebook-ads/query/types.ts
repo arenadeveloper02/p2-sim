@@ -16,10 +16,8 @@ export interface FacebookAdsRequest {
   /** Admin workspace: account key from channel accounts. */
   account?: string
   workspaceId?: string
-  fbClientId?: string
-  fbClientSecret?: string
-  /** Non-admin workspace: long-lived user or system user access token. */
-  fbAccessToken?: string
+  /** Non-admin workspace: OAuth access token from connected Facebook Ads account. */
+  accessToken?: string
   /** Non-admin workspace: ad account ID (act_123 or numeric). */
   accountId?: string
   adAccountId?: string
