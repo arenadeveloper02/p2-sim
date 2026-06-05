@@ -69,8 +69,12 @@ describe('extractGeneratedImagesFromData', () => {
     const absolute =
       'https://app.example.com/api/files/serve/agent-generated-images%2Fworkflow%2Fuser%2Fimage.png'
 
-    expect(normalizeImageUrlForCompare(relative)).toBe('agent-generated-images/workflow/user/image.png')
-    expect(normalizeImageUrlForCompare(absolute)).toBe('agent-generated-images/workflow/user/image.png')
+    expect(normalizeImageUrlForCompare(relative)).toBe(
+      'agent-generated-images/workflow/user/image.png'
+    )
+    expect(normalizeImageUrlForCompare(absolute)).toBe(
+      'agent-generated-images/workflow/user/image.png'
+    )
   })
 
   it('resolves selectable images from rendered URLs when metadata is missing', () => {

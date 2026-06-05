@@ -8,7 +8,6 @@ import { getUserOrganization } from '@/lib/billing/organizations/membership'
 import { isEnterprise, isMax, isPro, isTeam } from '@/lib/billing/plan-helpers'
 import { hasUsableSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
-import { UPGRADE_TO_INVITE_REASON } from '@/lib/workspaces/policy-constants'
 
 const logger = createLogger('WorkspacePolicy')
 

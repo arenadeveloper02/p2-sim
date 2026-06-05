@@ -218,7 +218,7 @@ function WorkspaceHeaderImpl({
   //   ? null
   //   : (activeWorkspaceFull?.inviteDisabledReason ?? null)
   const inviteButtonDisabled = !inviteMembersEnabled && !inviteUpgradeRequired
-  const inviteDisabledReason = false;
+  const inviteDisabledReason = false
 
   const handleInviteClick = useCallback(() => {
     // if (isInvitationsDisabled) return

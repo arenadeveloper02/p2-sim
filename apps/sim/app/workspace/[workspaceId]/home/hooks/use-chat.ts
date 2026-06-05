@@ -3339,7 +3339,13 @@ export function useChat(
 
         let effectiveWorkspaceId = workspaceId
         let resolvedWorkflowExecution:
-          | { workflowId: string; selectedOutputs: string[]; userApiKey: string }
+          | {
+              workflowId: string
+              selectedOutputs: string[]
+              userApiKey: string
+              workspaceName: string
+              workflowName: string
+            }
           | undefined
           | undefined
         if (effectiveIsEmbedPageRef.current) {
@@ -3369,6 +3375,8 @@ export function useChat(
                   workflowId: resolveData.workflowId,
                   selectedOutputs,
                   userApiKey: resolveData.userApiKey,
+                  workspaceName: resolveData.workspaceName,
+                  workflowName: resolveData.workflowName,
                 }
               }
             } else {
@@ -3424,6 +3432,8 @@ export function useChat(
                 conversationId: requestChatId ?? chatIdRef.current,
                 selectedOutputs: executionConfig?.selectedOutputs ?? [],
                 userApiKey: executionConfig?.userApiKey,
+                workspaceName: executionConfig?.workspaceName,
+                workflowName: executionConfig?.workflowName,
               }),
               signal: abortController.signal,
             })

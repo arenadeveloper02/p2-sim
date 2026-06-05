@@ -919,11 +919,6 @@ import {
 } from '@/tools/gong'
 import { searchTool as googleSearchTool, imagenTool, nanoBananaTool } from '@/tools/google'
 import {
-  googleImagenV2Tool,
-  googleNanoBananaV2Tool,
-  openAIImageV2Tool,
-} from '@/tools/image_generation'
-import {
   googleAdsAdPerformanceTool,
   googleAdsCampaignPerformanceTool,
   googleAdsListAdGroupsTool,
@@ -1291,6 +1286,11 @@ import {
   identityCenterListInstancesTool,
   identityCenterListPermissionSetsTool,
 } from '@/tools/identity_center'
+import {
+  googleImagenV2Tool,
+  googleNanoBananaV2Tool,
+  openAIImageV2Tool,
+} from '@/tools/image_generation'
 import {
   incidentioActionsListTool,
   incidentioActionsShowTool,

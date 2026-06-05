@@ -183,8 +183,7 @@ describe('Image Generation Wrapper API Route', () => {
     const request = new NextRequest('http://localhost:3000/api/tools/image-generation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:
-        '{"baseToolId":"google_nano_banana","params":{"model":"gemini-3-pro-image-preview","prompt":"Edit this","inputImage":"',
+      body: '{"baseToolId":"google_nano_banana","params":{"model":"gemini-3-pro-image-preview","prompt":"Edit this","inputImage":"',
     })
 
     const response = await POST(request)

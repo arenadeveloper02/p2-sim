@@ -103,7 +103,8 @@ export async function POST(req: NextRequest) {
         )
       : undefined
     const workflowName = typeof result?.workflowName === 'string' ? result.workflowName : undefined
-    const workspaceName = typeof result?.workspaceName === 'string' ? result.workspaceName : undefined
+    const workspaceName =
+      typeof result?.workspaceName === 'string' ? result.workspaceName : undefined
 
     const userApiKey = result?.apiKey
 
@@ -132,7 +133,7 @@ export async function POST(req: NextRequest) {
       ...(selectedOutputs && selectedOutputs.length > 0 ? { selectedOutputs } : {}),
       ...(userApiKey ? { userApiKey } : {}),
       ...(workflowName ? { workflowName } : {}),
-      ...(workspaceName ? { workspaceName } : {})
+      ...(workspaceName ? { workspaceName } : {}),
     })
   } catch (error) {
     const durationMs = Date.now() - startTime
