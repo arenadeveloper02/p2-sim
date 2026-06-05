@@ -29,6 +29,9 @@ sim-standalone.tar.gz
 # redis
 dump.rdb
 
+# AI-generated Next.js apps (Development block)
+/generated-apps/
+
 # misc
 .DS_Store
 *.pem

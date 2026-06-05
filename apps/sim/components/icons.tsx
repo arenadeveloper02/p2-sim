@@ -464,6 +464,31 @@ export function CodeIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function DevelopmentIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      viewBox='0 0 24 24'
+      fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+    >
+      <path
+        d='M8 6L4 10L8 14M16 6L20 10L16 14M14 4L10 20'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+      />
+      <path
+        d='M3 19H21'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+    </svg>
+  )
+}
+
 export function ChartBarIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg

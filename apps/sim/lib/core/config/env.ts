@@ -163,6 +163,7 @@ export const env = createEnv({
     BROWSERBASE_API_KEY:                   z.string().min(1).optional(),           // Browserbase API key for browser automation
     BROWSERBASE_PROJECT_ID:                z.string().min(1).optional(),           // Browserbase project ID
     GITHUB_TOKEN:                          z.string().optional(),                  // GitHub personal access token for API access
+    VERCEL_TOKEN:                          z.string().optional(),                  // Vercel access token for deployments
 
     // Admin API
     ADMIN_API_KEY:                         z.string().min(32).optional(),          // Admin API key for self-hosted GitOps access (generate with: openssl rand -hex 32)

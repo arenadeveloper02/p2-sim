@@ -1,0 +1,1081 @@
+import { existsSync } from 'fs'
+import { mkdir, rm, writeFile } from 'fs/promises'
+import { dirname, join, normalize, relative, resolve } from 'path'
+import Anthropic from '@anthropic-ai/sdk'
+import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
+import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
+import { env } from '@/lib/core/config/env'
+import { deployGeneratedAppToVercel } from '@/lib/development/deploy-generated-app-to-vercel'
+import {
+  GENERATED_APP_DEPENDENCY_GUIDANCE,
+  GENERATED_APP_IMPORT_GUIDANCE,
+  GENERATED_APP_STYLING_GUIDANCE,
+  GENERATED_APP_TYPESCRIPT_GUIDANCE,
+  PINNED_NEXT_VERSION,
+  PINNED_REACT_VERSION,
+  normalizeGeneratedAppFiles,
+} from '@/lib/development/normalize-generated-app-files'
+import { pushGeneratedAppToGitHub } from '@/lib/development/push-generated-app-to-github'
+/** Build validator disabled — re-enable when validateAndRepairUntilBuildPasses is restored. */
+// import { validateGeneratedAppBuild } from '@/lib/development/validate-generated-app-build'
+
+const logger = createLogger('NextjsAppGenerator')
+
+const GENERATED_APPS_DIR = 'generated-apps'
+const MODEL_ID = 'claude-sonnet-4-6'
+const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-11-13'
+/** Sonnet 4.6 supports large outputs; streaming is used above the SDK non-streaming cap. */
+const MAX_OUTPUT_TOKENS = 64_000
+/** Fewer files + one-shot generation keeps typical runs under a few minutes. */
+const MAX_GENERATED_FILES = 18
+const FILES_PER_BATCH = 10
+const MAX_LLM_CONTINUATION_TURNS = 1
+const MAX_OPTIONAL_PAGE_PATHS = 6
+
+const REQUIRED_APP_FILE_PATHS = [
+  'package.json',
+  'tsconfig.json',
+  'next.config.ts',
+  'postcss.config.mjs',
+  'tailwind.config.ts',
+  'app/layout.tsx',
+  'app/page.tsx',
+  'app/globals.css',
+  '.gitignore',
+  'README.md',
+  '.env.example',
+] as const
+/** Max LLM repair rounds after a failed build (disabled while build validator is off). */
+// const MAX_BUILD_REPAIR_ROUNDS = 6
+/** Max redeploy cycles when Vercel build fails after local build passed. */
+const MAX_VERCEL_REPAIR_ROUNDS = 4
+const MAX_BUILD_LOG_CHARS = 12_000
+
+const APP_SPEC_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    appName: { type: 'string' },
+    repoName: { type: 'string' },
+    description: { type: 'string' },
+    features: { type: 'array', items: { type: 'string' } },
+    files: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          content: { type: 'string' },
+        },
+        required: ['path', 'content'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['appName', 'repoName', 'description', 'features', 'files'],
+  additionalProperties: false,
+}
+
+const APP_MANIFEST_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    appName: { type: 'string' },
+    repoName: { type: 'string' },
+    description: { type: 'string' },
+    features: { type: 'array', items: { type: 'string' } },
+    filePaths: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['appName', 'repoName', 'description', 'features', 'filePaths'],
+  additionalProperties: false,
+}
+
+const FILE_BATCH_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    files: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          content: { type: 'string' },
+        },
+        required: ['path', 'content'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['files'],
+  additionalProperties: false,
+}
+
+interface LlmAppManifest {
+  appName: string
+  repoName: string
+  description: string
+  features: string[]
+  filePaths: string[]
+}
+
+/** Anthropic SDK requires streaming when max_tokens exceeds this limit. */
+const ANTHROPIC_NON_STREAMING_MAX_TOKENS = 21333
+
+export interface GenerateNextjsAppInput {
+  userInput: string
+  repoName?: string
+  validateBuild?: boolean
+  pushToGit?: boolean
+  githubToken?: string
+  githubOwner?: string
+  privateRepo?: boolean
+  deployToVercel?: boolean
+  vercelToken?: string
+  vercelTeamId?: string
+}
+
+export interface GeneratedAppFile {
+  path: string
+  content: string
+}
+
+export interface GenerateNextjsAppResult {
+  success: boolean
+  appName?: string
+  repoName?: string
+  description?: string
+  features?: string[]
+  outputPath?: string
+  absoluteOutputPath?: string
+  fileCount?: number
+  buildValidated?: boolean
+  buildOutput?: string
+  gitPushed?: boolean
+  githubHtmlUrl?: string
+  githubCloneUrl?: string
+  githubOwner?: string
+  githubRepoName?: string
+  gitPushError?: string
+  vercelDeployed?: boolean
+  vercelUrl?: string
+  vercelDeploymentUrl?: string
+  vercelProjectId?: string
+  vercelDeploymentId?: string
+  vercelInspectorUrl?: string
+  vercelDeployError?: string
+  error?: string
+}
+
+interface LlmAppSpec {
+  appName: string
+  repoName: string
+  description: string
+  features: string[]
+  files: GeneratedAppFile[]
+}
+
+/**
+ * Resolves the monorepo root by walking up from the current working directory.
+ * Prefers the directory that contains `bun.lock` (workspace root), not nested package roots like `apps/sim`.
+ */
+export function findMonorepoRoot(startDir: string = process.cwd()): string {
+  let dir = resolve(startDir)
+  let packageJsonFallback = dir
+
+  while (true) {
+    if (existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'turbo.json'))) {
+      return dir
+    }
+    if (existsSync(join(dir, 'package.json'))) {
+      packageJsonFallback = dir
+    }
+    const parent = dirname(dir)
+    if (parent === dir) {
+      break
+    }
+    dir = parent
+  }
+
+  return packageJsonFallback
+}
+
+/**
+ * Converts a display name into a safe repository folder name.
+ */
+export function slugifyRepoName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'generated-app'
+}
+
+/**
+ * Ensures a relative file path cannot escape the output directory.
+ */
+export function sanitizeRelativeFilePath(filePath: string): string | null {
+  const normalized = normalize(filePath.replace(/\\/g, '/'))
+  if (normalized.startsWith('..') || normalized.startsWith('/')) {
+    return null
+  }
+  return normalized
+}
+
+function extractJsonFromLlmText(text: string): string {
+  const trimmed = text.trim()
+
+  /** Structured outputs return raw JSON; do not scan for inner ``` (common in file contents). */
+  if (trimmed.startsWith('{')) {
+    return trimmed
+  }
+
+  const fencePrefix = /^```(?:json)?\s*\n?/i
+  if (fencePrefix.test(trimmed)) {
+    const withoutOpen = trimmed.replace(fencePrefix, '')
+    const closeIdx = withoutOpen.lastIndexOf('```')
+    if (closeIdx >= 0) {
+      const inner = withoutOpen.slice(0, closeIdx).trim()
+      if (inner.startsWith('{')) {
+        return inner
+      }
+    }
+  }
+
+  const firstBrace = trimmed.indexOf('{')
+  const lastBrace = trimmed.lastIndexOf('}')
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1)
+  }
+  return trimmed
+}
+
+type AnthropicMessageParams = Anthropic.Messages.MessageCreateParamsNonStreaming & {
+  output_config?: {
+    format?: { type: 'json_schema'; schema: Record<string, unknown> }
+  }
+}
+
+async function createAnthropicMessage(
+  anthropic: Anthropic,
+  params: AnthropicMessageParams
+): Promise<Anthropic.Messages.Message> {
+  if (params.max_tokens > ANTHROPIC_NON_STREAMING_MAX_TOKENS) {
+    const stream = anthropic.messages.stream(
+      params as Anthropic.Messages.MessageStreamParams
+    )
+    return stream.finalMessage()
+  }
+  return anthropic.messages.create(params)
+}
+
+function parseAppSpecJson(text: string): LlmAppSpec {
+  const jsonText = extractJsonFromLlmText(text)
+
+  try {
+    return JSON.parse(jsonText) as LlmAppSpec
+  } catch (error) {
+    const message = toError(error).message
+    if (!jsonText.trimStart().startsWith('{')) {
+      const preview = text.trim().slice(0, 120).replace(/\s+/g, ' ')
+      throw new Error(
+        `Model returned non-JSON (${preview}…). Try a simpler app description with fewer pages.`
+      )
+    }
+    throw new Error(
+      `Failed to parse generated app JSON (${message}). Try a simpler app description with fewer pages.`
+    )
+  }
+}
+
+function createDevelopmentAnthropicClient(apiKey: string): Anthropic {
+  return new Anthropic({
+    apiKey,
+    defaultHeaders: { 'anthropic-beta': STRUCTURED_OUTPUTS_BETA },
+  })
+}
+
+function truncateBuildLog(output: string): string {
+  if (output.length <= MAX_BUILD_LOG_CHARS) {
+    return output
+  }
+  return `${output.slice(-MAX_BUILD_LOG_CHARS)}\n…(truncated)`
+}
+
+function normalizeAppSpec(parsed: LlmAppSpec, repoNameHint?: string): LlmAppSpec {
+  if (!parsed.appName || !parsed.files?.length) {
+    throw new Error('LLM response missing required appName or files')
+  }
+
+  parsed.repoName = slugifyRepoName(parsed.repoName || repoNameHint || parsed.appName)
+  if (parsed.files.length > MAX_GENERATED_FILES) {
+    logger.warn('Truncating generated file list to max file count', {
+      requested: parsed.files.length,
+      max: MAX_GENERATED_FILES,
+    })
+    parsed.files = parsed.files.slice(0, MAX_GENERATED_FILES)
+  }
+
+  parsed.files = normalizeGeneratedAppFiles(parsed.files)
+
+  return parsed
+}
+
+function getAnthropicApiKey(): string {
+  const apiKey = env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    throw new Error(
+      'ANTHROPIC_API_KEY is not configured. Set it to enable Next.js app generation.'
+    )
+  }
+  return apiKey
+}
+
+function getMessageText(message: Anthropic.Messages.Message): string {
+  const textBlock = message.content.find((block) => block.type === 'text')
+  if (!textBlock || textBlock.type !== 'text') {
+    throw new Error('LLM did not return text content for app generation')
+  }
+  return textBlock.text
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+function mergeManifestFilePaths(manifestPaths: string[]): string[] {
+  const normalized = manifestPaths
+    .map((p) => p.replace(/\\/g, '/').trim())
+    .filter(Boolean)
+  const requiredSet = new Set<string>(REQUIRED_APP_FILE_PATHS)
+  const optional = normalized.filter((p) => !requiredSet.has(p)).slice(0, MAX_OPTIONAL_PAGE_PATHS)
+  return [...new Set([...REQUIRED_APP_FILE_PATHS, ...optional])].slice(0, MAX_GENERATED_FILES)
+}
+
+function isLikelyTruncationOrParseFailure(error: unknown): boolean {
+  const message = toError(error).message.toLowerCase()
+  return (
+    message.includes('truncat') ||
+    message.includes('max_tokens') ||
+    message.includes('parse') ||
+    message.includes('json') ||
+    message.includes('non-json')
+  )
+}
+
+async function requestStructuredLlm(
+  anthropic: Anthropic,
+  systemPrompt: string,
+  messages: Anthropic.Messages.MessageParam[],
+  schema: Record<string, unknown>
+): Promise<Anthropic.Messages.Message> {
+  return createAnthropicMessage(anthropic, {
+    model: MODEL_ID,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    temperature: 0.2,
+    system: systemPrompt,
+    messages,
+    output_config: {
+      format: {
+        type: 'json_schema',
+        schema: transformJSONSchema(schema),
+      },
+    },
+  })
+}
+
+/**
+ * Requests JSON from the model; on max_tokens, continues the same JSON across turns and merges text.
+ */
+async function requestStructuredJsonWithContinuations<T>(
+  anthropic: Anthropic,
+  systemPrompt: string,
+  initialUserPrompt: string,
+  schema: Record<string, unknown>,
+  parse: (text: string) => T
+): Promise<T> {
+  const messages: Anthropic.Messages.MessageParam[] = [
+    { role: 'user', content: initialUserPrompt },
+  ]
+  let accumulated = ''
+
+  for (let turn = 0; turn <= MAX_LLM_CONTINUATION_TURNS; turn++) {
+    const message = await requestStructuredLlm(anthropic, systemPrompt, messages, schema)
+    const text = getMessageText(message)
+
+    accumulated = turn === 0 ? text : `${accumulated}${text}`
+
+    if (message.stop_reason !== 'max_tokens') {
+      return parse(accumulated)
+    }
+
+    logger.warn('LLM response hit max_tokens; requesting continuation', { turn: turn + 1 })
+
+    messages.push({ role: 'assistant', content: text })
+    messages.push({
+      role: 'user',
+      content:
+        'Your previous JSON response was cut off. Continue from the exact cut-off point and output ONLY the remaining characters needed to complete the JSON object. Do not repeat content from the start.',
+    })
+  }
+
+  return parse(accumulated)
+}
+
+const SINGLE_SHOT_SYSTEM_PROMPT = `You are a senior full-stack engineer. Generate a focused Next.js ${PINNED_NEXT_VERSION} App Router app (React ${PINNED_REACT_VERSION}) in ONE response.
+
+Respond ONLY with JSON matching the provided schema. No markdown or code fences.
+
+Constraints:
+- At most ${MAX_GENERATED_FILES} files total — stay concise
+- Required: ${REQUIRED_APP_FILE_PATHS.join(', ')} plus only essential pages/components (max ${MAX_OPTIONAL_PAGE_PATHS} extra routes)
+- Reuse components; keep page files short; put shared styles in app/globals.css
+- app/ at project root only (not src/app/)
+- ${GENERATED_APP_DEPENDENCY_GUIDANCE}
+- ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
+- ${GENERATED_APP_STYLING_GUIDANCE}
+- ${GENERATED_APP_IMPORT_GUIDANCE}
+- Valid TypeScript, zero build errors, no secrets`
+
+const MANIFEST_SYSTEM_PROMPT = `You are a senior full-stack engineer planning a Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
+
+Respond ONLY with JSON matching the provided schema. List file paths only — do NOT include file contents.
+
+Constraints:
+- At most ${MAX_GENERATED_FILES} file paths
+- Include every required path: ${REQUIRED_APP_FILE_PATHS.join(', ')}
+- Add at most ${MAX_OPTIONAL_PAGE_PATHS} optional page/component paths
+- Use app/ at project root (not src/app/)
+- ${GENERATED_APP_DEPENDENCY_GUIDANCE}
+- ${GENERATED_APP_STYLING_GUIDANCE}
+- ${GENERATED_APP_IMPORT_GUIDANCE}
+- Never include secrets`
+
+const FILE_BATCH_SYSTEM_PROMPT = `You are a senior full-stack engineer writing files for a Next.js ${PINNED_NEXT_VERSION} App Router project.
+
+Respond ONLY with JSON matching the provided schema: a "files" array with path and content for each requested path.
+
+Constraints:
+- Return EVERY requested path with complete, valid file content
+- TypeScript strict, no any, no @ts-ignore
+- Keep individual files concise; share styles in app/globals.css
+- ${GENERATED_APP_DEPENDENCY_GUIDANCE}
+- ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
+- ${GENERATED_APP_STYLING_GUIDANCE}
+- ${GENERATED_APP_IMPORT_GUIDANCE}
+- Code must compile with zero errors when combined with other project files
+- Never include secrets`
+
+async function requestAppManifestFromLlm(
+  anthropic: Anthropic,
+  userInput: string,
+  repoNameHint?: string
+): Promise<LlmAppManifest> {
+  const userPrompt = repoNameHint
+    ? `User request:\n${userInput}\n\nPreferred repository folder name: ${repoNameHint}`
+    : `User request:\n${userInput}`
+
+  const manifest = await requestStructuredJsonWithContinuations(
+    anthropic,
+    MANIFEST_SYSTEM_PROMPT,
+    userPrompt,
+    APP_MANIFEST_JSON_SCHEMA,
+    (text) => JSON.parse(extractJsonFromLlmText(text)) as LlmAppManifest
+  )
+
+  if (!manifest.appName || !manifest.filePaths?.length) {
+    throw new Error('LLM manifest missing appName or filePaths')
+  }
+
+  manifest.repoName = slugifyRepoName(manifest.repoName || repoNameHint || manifest.appName)
+  manifest.filePaths = mergeManifestFilePaths(manifest.filePaths)
+
+  return manifest
+}
+
+async function requestFileBatchFromLlm(
+  anthropic: Anthropic,
+  options: {
+    paths: string[]
+    userInput: string
+    appName: string
+    description: string
+    existingPaths?: string[]
+  },
+  allowBatchRetry = true
+): Promise<GeneratedAppFile[]> {
+  const { paths, userInput, appName, description } = options
+
+  const existingPaths = options.existingPaths ?? []
+
+  const userPrompt = `App name: ${appName}
+Description: ${description}
+
+Original user request:
+${userInput}
+
+Generate complete contents for these paths only:
+${paths.map((p) => `- ${p}`).join('\n')}
+
+${
+  existingPaths.length > 0
+    ? `Already generated paths (you may import from @/ only if the target is in this list or in the batch above):\n${existingPaths.map((p) => `- ${p}`).join('\n')}`
+    : ''
+}`
+
+  const result = await requestStructuredJsonWithContinuations(
+    anthropic,
+    FILE_BATCH_SYSTEM_PROMPT,
+    userPrompt,
+    FILE_BATCH_JSON_SCHEMA,
+    (text) => JSON.parse(extractJsonFromLlmText(text)) as { files: GeneratedAppFile[] }
+  )
+
+  const byPath = new Map<string, GeneratedAppFile>()
+  for (const file of result.files ?? []) {
+    if (file.path && typeof file.content === 'string') {
+      byPath.set(file.path.replace(/\\/g, '/'), file)
+    }
+  }
+
+  const files: GeneratedAppFile[] = []
+  const missing: string[] = []
+
+  for (const path of paths) {
+    const file = byPath.get(path)
+    if (file) {
+      files.push(file)
+    } else {
+      missing.push(path)
+    }
+  }
+
+  if (missing.length === 0) {
+    return files
+  }
+
+  if (paths.length === 1) {
+    throw new Error(`Failed to generate file content for: ${missing.join(', ')}`)
+  }
+
+  if (!allowBatchRetry) {
+    throw new Error(`Failed to generate file content for: ${missing.join(', ')}`)
+  }
+
+  logger.warn('Batch missing files; retrying batch once', { missing })
+  const retryFiles = await requestFileBatchFromLlm(
+    anthropic,
+    { paths: missing, userInput, appName, description },
+    false
+  )
+  files.push(...retryFiles)
+
+  return files
+}
+
+async function requestSingleShotAppSpecFromLlm(
+  userInput: string,
+  repoNameHint?: string
+): Promise<LlmAppSpec> {
+  const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
+  const userPrompt = repoNameHint
+    ? `User request:\n${userInput}\n\nPreferred repository folder name: ${repoNameHint}`
+    : `User request:\n${userInput}`
+
+  logger.info('Generating app in a single LLM request')
+
+  const parsed = await requestStructuredJsonWithContinuations(
+    anthropic,
+    SINGLE_SHOT_SYSTEM_PROMPT,
+    userPrompt,
+    APP_SPEC_JSON_SCHEMA,
+    (text) => parseAppSpecJson(text)
+  )
+
+  return normalizeAppSpec(parsed, repoNameHint)
+}
+
+/**
+ * Fallback: manifest + parallel file batches when single-shot output is too large.
+ */
+async function requestBatchedAppSpecFromLlm(
+  userInput: string,
+  repoNameHint?: string
+): Promise<LlmAppSpec> {
+  const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
+  const manifest = await requestAppManifestFromLlm(anthropic, userInput, repoNameHint)
+
+  const pathBatches = chunkArray(manifest.filePaths, FILES_PER_BATCH)
+
+  logger.info('Generating app files in parallel batches', {
+    totalPaths: manifest.filePaths.length,
+    batches: pathBatches.length,
+  })
+
+  const allFiles: GeneratedAppFile[] = []
+
+  for (const paths of pathBatches) {
+    const batchFiles = await requestFileBatchFromLlm(anthropic, {
+      paths,
+      userInput,
+      appName: manifest.appName,
+      description: manifest.description,
+      existingPaths: [
+        ...manifest.filePaths,
+        ...allFiles.map((f) => f.path.replace(/\\/g, '/')),
+      ],
+    })
+    allFiles.push(...batchFiles)
+  }
+
+  return normalizeAppSpec(
+    {
+      appName: manifest.appName,
+      repoName: manifest.repoName,
+      description: manifest.description,
+      features: manifest.features,
+      files: allFiles,
+    },
+    repoNameHint
+  )
+}
+
+/** Full app JSON in one call (used for build repair). */
+async function requestFullAppSpecFromLlm(
+  systemPrompt: string,
+  userPrompt: string,
+  repoNameHint?: string
+): Promise<LlmAppSpec> {
+  const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
+
+  const parsed = await requestStructuredJsonWithContinuations(
+    anthropic,
+    systemPrompt,
+    userPrompt,
+    APP_SPEC_JSON_SCHEMA,
+    (text) => parseAppSpecJson(text)
+  )
+
+  return normalizeAppSpec(parsed, repoNameHint)
+}
+
+async function generateAppSpecWithLlm(
+  userInput: string,
+  repoNameHint?: string
+): Promise<LlmAppSpec> {
+  try {
+    return await requestSingleShotAppSpecFromLlm(userInput, repoNameHint)
+  } catch (error) {
+    if (!isLikelyTruncationOrParseFailure(error)) {
+      throw error
+    }
+    logger.warn('Single-shot app generation failed; using batched fallback', {
+      error: toError(error).message,
+    })
+    return requestBatchedAppSpecFromLlm(userInput, repoNameHint)
+  }
+}
+
+async function repairAppSpecWithLlm(
+  spec: LlmAppSpec,
+  buildLog: string,
+  userInput: string
+): Promise<LlmAppSpec> {
+  const repairSystemPrompt = `You are a senior full-stack engineer fixing a Next.js ${PINNED_NEXT_VERSION} App Router project that failed npm run build.
+
+Respond ONLY with JSON matching the provided schema. Return the full corrected file set.
+
+Fix ALL errors in the build log so npm install && npm run build succeed with ZERO TypeScript errors and ZERO Next.js compile errors.
+${GENERATED_APP_DEPENDENCY_GUIDANCE}
+${GENERATED_APP_TYPESCRIPT_GUIDANCE}
+${GENERATED_APP_STYLING_GUIDANCE}
+${GENERATED_APP_IMPORT_GUIDANCE}
+Keep the same app purpose and repo name unless a rename is required to fix the build.
+Prefer minimal, targeted file changes over rewriting unrelated files.
+Do not leave broken imports, invalid JSX, or conflicting app/ and src/app/ directories.`
+
+  const userPrompt = `Original request:\n${userInput}
+
+App name: ${spec.appName}
+Repository name: ${spec.repoName}
+
+Build log:
+${truncateBuildLog(buildLog)}
+
+Return corrected files that pass npm install && npm run build.`
+
+  return requestFullAppSpecFromLlm(repairSystemPrompt, userPrompt, spec.repoName)
+}
+
+async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Promise<number> {
+  let written = 0
+
+  for (const file of files) {
+    const safePath = sanitizeRelativeFilePath(file.path)
+    if (!safePath) {
+      logger.warn('Skipping unsafe generated file path', { path: file.path })
+      continue
+    }
+
+    const fullPath = join(outputDir, safePath)
+    await mkdir(dirname(fullPath), { recursive: true })
+    await writeFile(fullPath, file.content, 'utf-8')
+    written++
+  }
+
+  return written
+}
+
+/*
+interface BuildRepairResult {
+  spec: LlmAppSpec
+  buildValidated: boolean
+  buildOutput: string
+  repairRounds: number
+}
+
+// Runs npm install/build and repairs with the LLM until the build passes or rounds are exhausted.
+async function validateAndRepairUntilBuildPasses(
+  outputDir: string,
+  spec: LlmAppSpec,
+  userInput: string
+): Promise<BuildRepairResult> {
+  let currentSpec = spec
+  let buildOutput = ''
+  let repairRounds = 0
+
+  for (let round = 0; round <= MAX_BUILD_REPAIR_ROUNDS; round++) {
+    const buildResult = await validateGeneratedAppBuild(outputDir, currentSpec.files)
+    buildOutput = `[${buildResult.method}] ${buildResult.output}`
+
+    if (buildResult.validated) {
+      return {
+        spec: currentSpec,
+        buildValidated: true,
+        buildOutput,
+        repairRounds,
+      }
+    }
+
+    if (round >= MAX_BUILD_REPAIR_ROUNDS) {
+      break
+    }
+
+    repairRounds += 1
+    logger.warn('Generated app build failed, requesting LLM repair', {
+      round: repairRounds,
+      maxRounds: MAX_BUILD_REPAIR_ROUNDS,
+    })
+
+    currentSpec = await repairAppSpecWithLlm(currentSpec, buildResult.output, userInput)
+    await writeAppFiles(outputDir, currentSpec.files)
+
+    const nextCacheDir = join(outputDir, '.next')
+    if (existsSync(nextCacheDir)) {
+      await rm(nextCacheDir, { recursive: true, force: true })
+    }
+  }
+
+  return {
+    spec: currentSpec,
+    buildValidated: false,
+    buildOutput,
+    repairRounds,
+  }
+}
+*/
+
+/**
+ * Generates a production-ready Next.js app from user input and writes it under generated-apps/.
+ */
+export async function generateNextjsApp(
+  input: GenerateNextjsAppInput
+): Promise<GenerateNextjsAppResult> {
+  const userInput = input.userInput?.trim()
+  if (!userInput) {
+    return { success: false, error: 'userInput is required' }
+  }
+
+  try {
+    const generationStartedAt = Date.now()
+    let spec = await generateAppSpecWithLlm(userInput, input.repoName?.trim())
+    logger.info('LLM app generation finished', {
+      durationMs: Date.now() - generationStartedAt,
+      fileCount: spec.files.length,
+    })
+
+    const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
+    const monorepoRoot = findMonorepoRoot()
+    const outputDir = join(monorepoRoot, GENERATED_APPS_DIR, repoName)
+
+    await mkdir(outputDir, { recursive: true })
+    const fileCount = await writeAppFiles(outputDir, spec.files)
+
+    if (fileCount === 0) {
+      return { success: false, error: 'No valid files were written to the output directory' }
+    }
+
+    const buildValidated: boolean | undefined = undefined
+    const buildOutput: string | undefined = undefined
+    const outputPath = relative(monorepoRoot, outputDir)
+
+    /*
+    const shouldValidateBuild = input.validateBuild ?? true
+    if (shouldValidateBuild) {
+      const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput)
+      spec = buildRepair.spec
+      buildValidated = buildRepair.buildValidated
+      buildOutput = buildRepair.buildOutput
+
+      if (!buildValidated) {
+        return {
+          success: false,
+          error: `Build validation failed after ${buildRepair.repairRounds} repair round(s):\n${truncateBuildLog(buildOutput)}`,
+          appName: spec.appName,
+          repoName,
+          description: spec.description,
+          features: spec.features,
+          outputPath,
+          absoluteOutputPath: outputDir,
+          fileCount,
+          buildValidated: false,
+          buildOutput,
+        }
+      }
+    }
+    */
+
+    let gitPushed = false
+    let githubHtmlUrl: string | undefined
+    let githubCloneUrl: string | undefined
+    let githubOwner: string | undefined
+    let githubRepoName: string | undefined
+    let gitPushError: string | undefined
+
+    if (input.pushToGit === true) {
+      logger.info('Pushing generated app to GitHub', { repoName })
+      const githubToken =
+        input.githubToken?.trim() || env.GITHUB_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim()
+      if (!githubToken) {
+        gitPushError =
+          'Push to GitHub was enabled but no token was provided. Set a GitHub Token on the block or GITHUB_TOKEN in the environment.'
+      } else {
+        const pushResult = await pushGeneratedAppToGitHub({
+          outputDir,
+          repoName,
+          description: spec.description,
+          githubToken,
+          githubOwner: input.githubOwner?.trim(),
+          privateRepo: input.privateRepo === true,
+        })
+        gitPushed = pushResult.success
+        githubHtmlUrl = pushResult.htmlUrl
+        githubCloneUrl = pushResult.cloneUrl
+        githubOwner = pushResult.owner
+        githubRepoName = pushResult.repoName
+        gitPushError = pushResult.error
+      }
+    }
+
+    let vercelDeployed = false
+    let vercelUrl: string | undefined
+    let vercelDeploymentUrl: string | undefined
+    let vercelProjectId: string | undefined
+    let vercelDeploymentId: string | undefined
+    let vercelInspectorUrl: string | undefined
+    let vercelDeployError: string | undefined
+
+    const shouldDeployToVercel = input.deployToVercel === true
+
+    if (shouldDeployToVercel) {
+      logger.info('Deploying to Vercel (can take several minutes)', { repoName })
+      if (!gitPushed || !githubOwner || !githubRepoName) {
+        vercelDeployError =
+          'Vercel deploy requires a successful GitHub push. Enable Push to GitHub and provide a valid GitHub token.'
+      } else {
+        const vercelToken =
+          input.vercelToken?.trim() ||
+          env.VERCEL_TOKEN?.trim() ||
+          process.env.VERCEL_TOKEN?.trim() ||
+          process.env.VERCEL_ACCESS_TOKEN?.trim()
+        if (!vercelToken) {
+          vercelDeployError =
+            'Vercel deploy was enabled but no token was provided. Set a Vercel Token on the block or VERCEL_TOKEN in the environment.'
+        } else {
+          const deployResult = await deployGeneratedAppToVercel({
+            vercelToken,
+            projectName: repoName,
+            githubOwner,
+            githubRepoName,
+            vercelTeamId: input.vercelTeamId?.trim(),
+          })
+
+          /*
+          for (
+            let attempt = 0;
+            attempt < MAX_VERCEL_REPAIR_ROUNDS && !deployResult.success;
+            attempt++
+          ) {
+            logger.warn('Vercel deploy failed, repairing app and redeploying', {
+              attempt: attempt + 1,
+              maxAttempts: MAX_VERCEL_REPAIR_ROUNDS,
+            })
+            spec = await repairAppSpecWithLlm(
+              spec,
+              deployResult.error ?? 'Vercel build failed',
+              userInput
+            )
+            await writeAppFiles(outputDir, spec.files)
+
+            const rebuildRepair = await validateAndRepairUntilBuildPasses(
+              outputDir,
+              spec,
+              userInput
+            )
+            spec = rebuildRepair.spec
+            buildValidated = rebuildRepair.buildValidated
+            buildOutput = rebuildRepair.buildOutput
+            if (!buildValidated) {
+              vercelDeployError = `Local build still failing after ${rebuildRepair.repairRounds} repair round(s) following Vercel error:\n${truncateBuildLog(buildOutput)}`
+              break
+            }
+
+            const repushToken =
+              input.githubToken?.trim() ||
+              env.GITHUB_TOKEN?.trim() ||
+              process.env.GITHUB_TOKEN?.trim()
+            if (!repushToken) {
+              vercelDeployError = 'Cannot redeploy: GitHub token missing for push after repair'
+              break
+            }
+
+            const repushResult = await pushGeneratedAppToGitHub({
+              outputDir,
+              repoName,
+              description: spec.description,
+              githubToken: repushToken,
+              githubOwner: input.githubOwner?.trim() || githubOwner,
+              privateRepo: input.privateRepo === true,
+            })
+            if (!repushResult.success) {
+              vercelDeployError = repushResult.error ?? 'Git push failed after Vercel repair'
+              break
+            }
+
+            if (repushResult.owner) {
+              githubOwner = repushResult.owner
+            }
+            if (repushResult.repoName) {
+              githubRepoName = repushResult.repoName
+            }
+
+            deployResult = await deployGeneratedAppToVercel({
+              vercelToken,
+              projectName: repoName,
+              githubOwner,
+              githubRepoName,
+              vercelTeamId: input.vercelTeamId?.trim(),
+            })
+          }
+          */
+
+          vercelDeployed = deployResult.success
+          vercelUrl = deployResult.vercelUrl
+          vercelDeploymentUrl = deployResult.vercelDeploymentUrl
+          vercelProjectId = deployResult.vercelProjectId
+          vercelDeploymentId = deployResult.vercelDeploymentId
+          vercelInspectorUrl = deployResult.vercelInspectorUrl
+          vercelDeployError = deployResult.error
+        }
+      }
+
+      if (!vercelDeployed) {
+        return {
+          success: false,
+          error: vercelDeployError ?? 'Vercel deployment failed',
+          appName: spec.appName,
+          repoName,
+          description: spec.description,
+          features: spec.features,
+          outputPath,
+          absoluteOutputPath: outputDir,
+          fileCount,
+          buildValidated,
+          buildOutput,
+          gitPushed,
+          githubHtmlUrl,
+          githubCloneUrl,
+          githubOwner,
+          githubRepoName,
+          gitPushError,
+          vercelDeployed: false,
+          vercelDeployError,
+        }
+      }
+    }
+
+    let resolvedAbsoluteOutputPath: string | undefined = outputDir
+
+    const shouldRemoveLocal =
+      gitPushed && (!shouldDeployToVercel || vercelDeployed)
+
+    if (shouldRemoveLocal) {
+      try {
+        await rm(outputDir, { recursive: true, force: true })
+        resolvedAbsoluteOutputPath = undefined
+        logger.info('Removed local generated app folder after publish', { outputDir, repoName })
+      } catch (cleanupError) {
+        logger.warn('Failed to remove local generated app folder', {
+          outputDir,
+          error: toError(cleanupError).message,
+        })
+      }
+    }
+
+    logger.info('Next.js app generated', {
+      appName: spec.appName,
+      repoName,
+      outputDir,
+      fileCount,
+      buildValidated,
+      gitPushed,
+      githubHtmlUrl,
+      vercelDeployed,
+      vercelUrl,
+      localRemoved: shouldRemoveLocal && !resolvedAbsoluteOutputPath,
+    })
+
+    return {
+      success: true,
+      appName: spec.appName,
+      repoName,
+      description: spec.description,
+      features: spec.features,
+      outputPath,
+      absoluteOutputPath: resolvedAbsoluteOutputPath,
+      fileCount,
+      buildValidated,
+      buildOutput,
+      gitPushed,
+      githubHtmlUrl,
+      githubCloneUrl,
+      githubOwner,
+      githubRepoName,
+      gitPushError,
+      vercelDeployed,
+      vercelUrl,
+      vercelDeploymentUrl,
+      vercelProjectId,
+      vercelDeploymentId,
+      vercelInspectorUrl,
+      vercelDeployError,
+    }
+  } catch (error) {
+    const message = toError(error).message
+    logger.error('Next.js app generation failed', { error: message })
+    return { success: false, error: message }
+  }
+}

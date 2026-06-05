@@ -39,6 +39,7 @@ import { DagsterBlock } from '@/blocks/blocks/dagster'
 import { DatabricksBlock } from '@/blocks/blocks/databricks'
 import { DatadogBlock } from '@/blocks/blocks/datadog'
 import { DevinBlock } from '@/blocks/blocks/devin'
+import { DevelopmentBlock } from '@/blocks/blocks/development'
 import { DiscordBlock } from '@/blocks/blocks/discord'
 import { DocuSignBlock } from '@/blocks/blocks/docusign'
 import { DropboxBlock } from '@/blocks/blocks/dropbox'
@@ -282,6 +283,7 @@ export const registry: Record<string, BlockConfig> = {
   databricks: DatabricksBlock,
   datadog: DatadogBlock,
   devin: DevinBlock,
+  development: DevelopmentBlock,
   discord: DiscordBlock,
   docusign: DocuSignBlock,
   dropbox: DropboxBlock,

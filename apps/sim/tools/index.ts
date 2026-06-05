@@ -73,6 +73,29 @@ async function executeNanoBananaDirect(params: Record<string, any>): Promise<Too
   return toolResponse
 }
 
+async function executeDevelopmentGenerateAppDirect(
+  params: Record<string, any>
+): Promise<ToolResponse> {
+  const [{ generateNextjsApp }, { mapGenerateAppResultToToolResponse }] = await Promise.all([
+    import('@/lib/development/nextjs-app-generator'),
+    import('@/tools/development/map-generate-app-response'),
+  ])
+  return mapGenerateAppResultToToolResponse(
+    await generateNextjsApp({
+      userInput: params.userInput,
+      repoName: params.repoName,
+      validateBuild: params.validateBuild,
+      pushToGit: params.pushToGit,
+      githubToken: params.githubToken,
+      githubOwner: params.githubOwner,
+      privateRepo: params.privateRepo,
+      deployToVercel: params.deployToVercel,
+      vercelToken: params.vercelToken,
+      vercelTeamId: params.vercelTeamId,
+    })
+  )
+}
+
 function resolveToolScope(
   params: Record<string, unknown>,
   executionContext?: ExecutionContext
@@ -1096,7 +1119,11 @@ export async function executeTool(
 
     // Check for direct execution (no HTTP request needed)
     const directExecution =
-      normalizedToolId === 'google_nano_banana' ? executeNanoBananaDirect : tool.directExecution
+      normalizedToolId === 'google_nano_banana'
+        ? executeNanoBananaDirect
+        : normalizedToolId === 'development_generate_app'
+          ? executeDevelopmentGenerateAppDirect
+          : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)
@@ -1582,6 +1609,15 @@ async function executeToolRequest(
           } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') {
               throw new Error(`Request timed out after ${timeout}ms`)
+            }
+            if (
+              error instanceof TypeError &&
+              error.message === 'fetch failed' &&
+              timeout >= DEFAULT_EXECUTION_TIMEOUT_MS
+            ) {
+              throw new Error(
+                `Internal tool request failed (connection closed or timed out after ${timeout}ms). Long-running tools may need a workflow with a Development block or async execution mode.`
+              )
             }
             throw error
           } finally {
