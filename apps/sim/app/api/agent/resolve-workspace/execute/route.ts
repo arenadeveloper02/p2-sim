@@ -18,6 +18,8 @@ const ExecuteRequestSchema = z.object({
   input: z.string().min(1),
   conversationId: z.string().optional(),
   selectedOutputs: z.array(z.string()).default([]),
+  workflowName: z.string().optional(),
+  workspaceName: z.string().optional(),
 })
 
 export const runtime = 'nodejs'
@@ -667,6 +669,8 @@ export async function POST(req: NextRequest) {
               selectedOutputs: body.selectedOutputs,
               email: session.user.email,
               userId: session.user.id,
+              ...(body.workflowName ? { workflowName: body.workflowName } : {}),
+              ...(body.workspaceName ? { workspaceName: body.workspaceName } : {}),
             }),
           })
 
