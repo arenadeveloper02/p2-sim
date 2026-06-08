@@ -71,10 +71,18 @@ jobs:
 
       - name: Add swap
         run: |
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          SWAPFILE=/mnt/gh-actions-swap
+          if sudo swapon --show=NAME | awk -v file="$SWAPFILE" '$1 == file { found = 1 } END { exit !found }'; then
+            echo "$SWAPFILE is already active"
+            free -h
+            exit 0
+          fi
+          sudo swapoff "$SWAPFILE" 2>/dev/null || true
+          sudo rm -f "$SWAPFILE"
+          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=10240 status=none
+          sudo chmod 600 "$SWAPFILE"
+          sudo mkswap "$SWAPFILE"
+          sudo swapon "$SWAPFILE"
           free -h
 
       - name: Build and push images
@@ -153,10 +161,18 @@ jobs:
 
       - name: Add swap
         run: |
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          SWAPFILE=/mnt/gh-actions-swap
+          if sudo swapon --show=NAME | awk -v file="$SWAPFILE" '$1 == file { found = 1 } END { exit !found }'; then
+            echo "$SWAPFILE is already active"
+            free -h
+            exit 0
+          fi
+          sudo swapoff "$SWAPFILE" 2>/dev/null || true
+          sudo rm -f "$SWAPFILE"
+          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=10240 status=none
+          sudo chmod 600 "$SWAPFILE"
+          sudo mkswap "$SWAPFILE"
+          sudo swapon "$SWAPFILE"
           free -h
 
       - name: Build and push images
@@ -209,10 +225,18 @@ jobs:
 
       - name: Add swap
         run: |
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          SWAPFILE=/mnt/gh-actions-swap
+          if sudo swapon --show=NAME | awk -v file="$SWAPFILE" '$1 == file { found = 1 } END { exit !found }'; then
+            echo "$SWAPFILE is already active"
+            free -h
+            exit 0
+          fi
+          sudo swapoff "$SWAPFILE" 2>/dev/null || true
+          sudo rm -f "$SWAPFILE"
+          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=10240 status=none
+          sudo chmod 600 "$SWAPFILE"
+          sudo mkswap "$SWAPFILE"
+          sudo swapon "$SWAPFILE"
           free -h
 
       - name: Build and push ARM64 to GHCR
