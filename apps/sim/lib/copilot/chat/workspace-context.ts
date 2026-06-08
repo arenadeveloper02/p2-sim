@@ -120,20 +120,29 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
 
     const userPrefix = data.currentUserId ? `user:${data.currentUserId}:` : 'user:<userId>:'
     sections.push(
-      `## Memory scoping rules
-When you store or retrieve memories using \`user_memory\`, use these rules to decide the key prefix:
+      `## Memory — MANDATORY scoping rules (never skip these)
 
-- **Workspace-scoped** (tied to this workspace only): prefix the key with \`ws:${data.workspace.id}:\`
-  - Use for: workspace-specific credentials, team preferences, project context, entities belonging to this workspace
-  - Example: \`ws:${data.workspace.id}:slack_default_channel\`, \`ws:${data.workspace.id}:preferred_model\`
-- **User-scoped** (personal to the current user, isolated from other users): prefix the key with \`${userPrefix}\`
-  - Use for: personal preferences, cross-workspace defaults, user identity facts
-  - **Always** use this prefix for user-specific memories — never store or retrieve user memories without it
-  - Example: \`${userPrefix}preferred_language\`, \`${userPrefix}timezone\`
-  - When retrieving user memories, always include \`${userPrefix}\` in the query so you only see this user's memories
+> **CRITICAL**: Every \`user_memory\` call MUST use one of the two key prefixes below. A bare key with no prefix is FORBIDDEN. Violating this rule leaks one user's private data to other users.
 
-When searching workspace memories, always include the prefix \`ws:${data.workspace.id}:\` in the query to avoid leaking memories from other workspaces.
-When searching user memories, always include the prefix \`${userPrefix}\` in the query to avoid seeing another user's memories.`
+### Current session identity
+- **Current user ID**: \`${data.currentUserId ?? 'unknown'}\`
+- **Current workspace ID**: \`${data.workspace.id}\`
+
+### Key prefix rules
+
+| Scope | Prefix | When to use |
+|-------|--------|-------------|
+| User-scoped | \`${userPrefix}\` | Personal preferences, identity facts, cross-workspace defaults that belong ONLY to this user |
+| Workspace-scoped | \`ws:${data.workspace.id}:\` | Shared team settings, workspace credentials, project context visible to all workspace members |
+
+### Strict rules — follow every one, no exceptions
+
+1. **ALWAYS prefix user-scoped keys with \`${userPrefix}\`** — e.g. \`${userPrefix}home_state\`, \`${userPrefix}preferred_language\`, \`${userPrefix}timezone\`
+2. **ALWAYS prefix workspace-scoped keys with \`ws:${data.workspace.id}:\`** — e.g. \`ws:${data.workspace.id}:slack_channel\`
+3. **NEVER store or retrieve a key without one of these two prefixes.** A bare key like \`home_state\` or \`preferred_language\` is forbidden.
+4. **NEVER search without the prefix.** When searching user memories, pass \`${userPrefix}\` as the query prefix so results are restricted to this user only. When searching workspace memories, pass \`ws:${data.workspace.id}:\`.
+5. **NEVER read or modify a memory whose key does not start with \`${userPrefix}\` (for user memories) or \`ws:${data.workspace.id}:\` (for workspace memories).** If you find a key with a different user's prefix, ignore it completely — it belongs to another user.
+6. **Correct existing bare keys.** If you encounter a previously stored key that has no prefix, use the \`correct\` operation to re-key it with the proper prefix before using it.`
     )
   }
 
