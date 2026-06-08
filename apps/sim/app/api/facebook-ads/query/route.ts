@@ -14,9 +14,7 @@ import type { FacebookAdsRequest, FacebookAdsResponse } from './types'
 const logger = createLogger('FacebookAdsAPI')
 
 function hasUserProvidedFacebookAdsCredentials(body: FacebookAdsRequest): boolean {
-  return Boolean(
-    body.accessToken?.trim() || body.accountId?.trim() || body.adAccountId?.trim()
-  )
+  return Boolean(body.accessToken?.trim() || body.accountId?.trim() || body.adAccountId?.trim())
 }
 
 function resolveUsesAdminCredentials(body: FacebookAdsRequest): boolean {

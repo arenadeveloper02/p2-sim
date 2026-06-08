@@ -72,6 +72,7 @@ export const env = createEnv({
     ENTERPRISE_TIER_COST_LIMIT:            z.number().optional(),                  // Cost limit for enterprise tier users
     ENTERPRISE_STORAGE_LIMIT_GB:           z.number().optional().default(500),     // Default storage limit in GB for enterprise tier (can be overridden per org)
     BILLING_ENABLED:                       z.boolean().optional(),                 // Enable billing enforcement and usage tracking
+    TABLES_FRACTIONAL_ORDERING:            z.boolean().optional(),                 // Order table rows by fractional order_key (O(1) insert/delete) instead of integer position
 
     // Table feature limits (per plan). Apply when billing is disabled (free tier defaults) or for billed plans.
     FREE_TABLES_LIMIT:                     z.number().optional(),                  // Max user tables per workspace on free tier (default: 3)
@@ -248,8 +249,10 @@ export const env = createEnv({
     S3_AGENT_GENERATED_IMAGES_BUCKET_NAME: z.string().optional(),                  // S3 bucket for agent-generated images
     S3_AGENT_GENERATED_IMAGES_REGION:      z.string().optional(),                  // AWS region for agent-generated images bucket (defaults to AWS_REGION)
     S3_WORKSPACE_LOGOS_BUCKET_NAME:        z.string().optional(),                  // S3 bucket for workspace logos
+    S3_ENDPOINT:                           z.string().optional(),                  // Custom endpoint for S3-compatible storage (Cloudflare R2, MinIO, Backblaze B2). Leave unset for AWS S3
+    S3_FORCE_PATH_STYLE:                   z.string().optional(),                  // Force path-style addressing (MinIO/Ceph RGW). Defaults to false (AWS S3, R2). Coerced via envBoolean at the consumption site
 
-    // Cloud Storage - Azure Blob 
+    // Cloud Storage - Azure Blob
     AZURE_ACCOUNT_NAME:                    z.string().optional(),                  // Azure storage account name
     AZURE_ACCOUNT_KEY:                     z.string().optional(),                  // Azure storage account key
     AZURE_CONNECTION_STRING:               z.string().optional(),                  // Azure storage connection string
@@ -339,8 +342,6 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET:                  z.string().optional(),                  // Google OAuth client secret
     GOOGLE_ADS_CLIENT_ID:                  z.string().optional(),                  // Google OAuth client ID for Google Ads user connections
     GOOGLE_ADS_CLIENT_SECRET:              z.string().optional(),                  // Google OAuth client secret for Google Ads user connections
-    FB_CLIENT_ID:                          z.string().optional(),                  // Meta OAuth app ID for Facebook Ads user connections
-    FB_CLIENT_SECRET:                      z.string().optional(),                  // Meta OAuth app secret for Facebook Ads user connections
     FB_ACCESS_TOKEN:                       z.string().optional(),                  // Server Facebook Marketing API token (admin workspaces)
     GITHUB_CLIENT_ID:                      z.string().optional(),                  // GitHub OAuth client ID for GitHub integration
     GITHUB_CLIENT_SECRET:                  z.string().optional(),                  // GitHub OAuth client secret
@@ -450,6 +451,7 @@ export const env = createEnv({
     SSO_DOMAIN:                            z.string().optional(),                  // [REQUIRED] SSO email domain
     SSO_USER_EMAIL:                        z.string().optional(),                  // [REQUIRED] User email for SSO registration
     SSO_ORGANIZATION_ID:                   z.string().optional(),                  // Organization ID for SSO registration (optional)
+    SSO_TRUSTED_PROVIDER_IDS:              z.string().optional(),                  // Comma-separated SSO provider IDs to trust for automatic account linking when an existing account shares the same email. Use for IdPs that do not assert email_verified. Merged into Better Auth accountLinking.trustedProviders.
 
     // SSO Mapping Configuration (optional - sensible defaults provided)
     SSO_MAPPING_ID:                        z.string().optional(),                  // Custom ID claim mapping (default: sub for OIDC, nameidentifier for SAML)

@@ -38,24 +38,24 @@ describe('HubSpotBlock admin workspace auth fields', () => {
     mockIsAdminWorkspace.mockReturnValue(true)
     const workspaceId = 'ws-admin'
 
-    expect(
-      evaluateSubBlockCondition(accountsSubBlock.condition, baseValues, workspaceId)
-    ).toBe(true)
-    expect(
-      evaluateSubBlockCondition(credentialSubBlock.condition, baseValues, workspaceId)
-    ).toBe(false)
+    expect(evaluateSubBlockCondition(accountsSubBlock.condition, baseValues, workspaceId)).toBe(
+      true
+    )
+    expect(evaluateSubBlockCondition(credentialSubBlock.condition, baseValues, workspaceId)).toBe(
+      false
+    )
     expect(mockIsAdminWorkspace).toHaveBeenCalledWith(workspaceId)
   })
 
   it('hides Accounts and shows HubSpot Account OAuth outside admin workspaces', () => {
     const workspaceId = 'ws-normal'
 
-    expect(
-      evaluateSubBlockCondition(accountsSubBlock.condition, baseValues, workspaceId)
-    ).toBe(false)
-    expect(
-      evaluateSubBlockCondition(credentialSubBlock.condition, baseValues, workspaceId)
-    ).toBe(true)
+    expect(evaluateSubBlockCondition(accountsSubBlock.condition, baseValues, workspaceId)).toBe(
+      false
+    )
+    expect(evaluateSubBlockCondition(credentialSubBlock.condition, baseValues, workspaceId)).toBe(
+      true
+    )
     expect(mockIsAdminWorkspace).toHaveBeenCalledWith(workspaceId)
   })
 

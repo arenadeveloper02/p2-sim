@@ -9,7 +9,10 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
-import { makeGoogleAdsOAuthRequest, makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
+import {
+  makeGoogleAdsOAuthRequest,
+  makeGoogleAdsRequest,
+} from '../../google-ads/query/google-ads-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
 import type { GoogleAdsV1Request } from './types'
@@ -51,9 +54,7 @@ function resolveAccountKey(accountInput: string): string {
 
 function hasUserProvidedGoogleAdsCredentials(body: GoogleAdsV1Request): boolean {
   return Boolean(
-    body.accessToken?.trim() ||
-      body.developerToken?.trim() ||
-      resolveGoogleAdsCustomerId(body)
+    body.accessToken?.trim() || body.developerToken?.trim() || resolveGoogleAdsCustomerId(body)
   )
 }
 

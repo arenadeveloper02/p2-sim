@@ -1,11 +1,11 @@
 import { UnipileIcon } from '@/components/icons'
-import type { BlockConfig } from '@/blocks/types'
-import { AuthMode, IntegrationType } from '@/blocks/types'
-import { normalizeFileInput } from '@/blocks/utils'
 import {
   isAdminWorkspace,
   resolveWorkspaceIdForAdminCheck,
 } from '@/lib/workspaces/is-admin-workspace'
+import type { BlockConfig } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import { UNIPILE_LINKEDIN_PROFILE_SECTIONS } from '@/tools/unipile/linkedin_profile_query'
 import { buildLinkedinSearchBodyFromForm } from '@/tools/unipile/linkedin_search_form'
 import { getLinkedinSearchParameterTypeDropdownOptions } from '@/tools/unipile/linkedin_search_parameter_types'
