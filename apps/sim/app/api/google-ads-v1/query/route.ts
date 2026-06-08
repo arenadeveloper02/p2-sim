@@ -11,6 +11,7 @@ import { makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
 import type { GoogleAdsV1Request } from './types'
+import { getCachedResult, setCachedResult } from '@/lib/google-ads/cache'
 
 const logger = createLogger('GoogleAdsV1API')
 
@@ -109,6 +110,17 @@ export async function POST(request: NextRequest) {
       metrics: queryResult.metrics_used,
     })
 
+    // Extract date range for cache key
+    const dateRange = extractDateRange(queryResult.gaql_query)
+    const dateRangeKey = dateRange ? `${dateRange.startDate}_${dateRange.endDate}` : undefined
+
+    // Check cache
+    const cachedResult = await getCachedResult(query, accountInfo.id, dateRangeKey)
+    if (cachedResult) {
+      logger.info(`[${requestId}] Returning cached result`)
+      return NextResponse.json(cachedResult)
+    }
+
     // Execute the GAQL query against Google Ads API
     logger.info(`[${requestId}] Executing GAQL query against account ${accountInfo.id}`)
     const apiResult = await makeGoogleAdsRequest(accountInfo.id, queryResult.gaql_query)
@@ -123,9 +135,6 @@ export async function POST(request: NextRequest) {
     })
 
     const executionTime = Date.now() - startTime
-
-    // Extract date range from GAQL query
-    const dateRange = extractDateRange(queryResult.gaql_query)
 
     // Build response with pagination info
     const response = {
@@ -151,6 +160,9 @@ export async function POST(request: NextRequest) {
       totals: processedResults.totals,
       execution_time_ms: executionTime,
     }
+
+    // Cache the result
+    await setCachedResult(query, accountInfo.id, response, dateRangeKey)
 
     return NextResponse.json(response)
   } catch (error) {
