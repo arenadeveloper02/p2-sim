@@ -381,6 +381,7 @@ export class WorkspaceVFS {
       'WORKSPACE.md',
       buildWorkspaceMd({
         workspace: wsRow,
+        currentUserId: userId,
         members,
         workflows: wfSummary,
         knowledgeBases: kbSummary,

@@ -49,6 +49,8 @@ const PROVIDER_SERVICES: Record<string, string[]> = {
 
 export interface WorkspaceMdData {
   workspace: { id: string; name: string; ownerId: string } | null
+  /** The authenticated user making the request — used to scope user-level memories. */
+  currentUserId?: string
   members: Array<{ name: string; email: string; permissionType: string }>
   workflows: Array<{
     id: string
@@ -114,6 +116,24 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
   if (data.workspace) {
     sections.push(
       `## Workspace\n- **Name**: ${data.workspace.name}\n- **ID**: ${data.workspace.id}\n- **Owner**: ${data.workspace.ownerId}`
+    )
+
+    const userPrefix = data.currentUserId ? `user:${data.currentUserId}:` : 'user:<userId>:'
+    sections.push(
+      `## Memory scoping rules
+When you store or retrieve memories using \`user_memory\`, use these rules to decide the key prefix:
+
+- **Workspace-scoped** (tied to this workspace only): prefix the key with \`ws:${data.workspace.id}:\`
+  - Use for: workspace-specific credentials, team preferences, project context, entities belonging to this workspace
+  - Example: \`ws:${data.workspace.id}:slack_default_channel\`, \`ws:${data.workspace.id}:preferred_model\`
+- **User-scoped** (personal to the current user, isolated from other users): prefix the key with \`${userPrefix}\`
+  - Use for: personal preferences, cross-workspace defaults, user identity facts
+  - **Always** use this prefix for user-specific memories — never store or retrieve user memories without it
+  - Example: \`${userPrefix}preferred_language\`, \`${userPrefix}timezone\`
+  - When retrieving user memories, always include \`${userPrefix}\` in the query so you only see this user's memories
+
+When searching workspace memories, always include the prefix \`ws:${data.workspace.id}:\` in the query to avoid leaking memories from other workspaces.
+When searching user memories, always include the prefix \`${userPrefix}\` in the query to avoid seeing another user's memories.`
     )
   }
 
@@ -463,6 +483,7 @@ export async function generateWorkspaceContext(
 
     return buildWorkspaceMd({
       workspace: wsRow,
+      currentUserId: userId,
       members,
       workflows: workflows.map((wf) => ({
         ...wf,
