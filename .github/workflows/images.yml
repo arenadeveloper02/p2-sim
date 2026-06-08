@@ -69,6 +69,14 @@ jobs:
           GHCR_IMAGE="${{ matrix.ghcr_image }}"
           echo "tags=${GHCR_IMAGE}:${IMAGE_TAG},${GHCR_IMAGE}:${IMAGE_TAG}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
+      - name: Add swap
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Build and push images
         uses: docker/build-push-action@v6
         with:
@@ -143,6 +151,14 @@ jobs:
           GHCR_SHA="${GHCR_IMAGE}:${{ github.sha }}-amd64"
           echo "tags=${ECR_IMAGE},${GHCR_AMD64},${GHCR_SHA}" >> "$GITHUB_OUTPUT"
 
+      - name: Add swap
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Build and push images
         uses: docker/build-push-action@v6
         with:
@@ -190,6 +206,14 @@ jobs:
         run: |
           IMAGE="${{ matrix.image }}"
           echo "tags=${IMAGE}:latest-arm64,${IMAGE}:${{ github.sha }}-arm64" >> "$GITHUB_OUTPUT"
+
+      - name: Add swap
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
       - name: Build and push ARM64 to GHCR
         uses: docker/build-push-action@v6

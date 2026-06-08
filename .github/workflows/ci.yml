@@ -113,6 +113,14 @@ jobs:
           GHCR_IMAGE="${{ matrix.ghcr_image }}"
           echo "tags=${GHCR_IMAGE}:${IMAGE_TAG},${GHCR_IMAGE}:${IMAGE_TAG}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
+      - name: Add swap
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -180,6 +188,14 @@ jobs:
         run: |
           ECR_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ steps.ecr-repo.outputs.name }}:dev"
           echo "tags=${ECR_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Add swap
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -286,6 +302,14 @@ jobs:
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
+      - name: Add swap
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Build and push images
         uses: docker/build-push-action@v6
         with:
@@ -347,6 +371,14 @@ jobs:
           fi
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+
+      - name: Add swap
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
       - name: Build and push ARM64 to GHCR
         uses: docker/build-push-action@v6
