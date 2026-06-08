@@ -1,3 +1,4 @@
+import { formatBuildErrorsSummary } from '@/lib/development/format-generated-app-build-errors'
 import type { GenerateNextjsAppResult } from '@/lib/development/nextjs-app-generator'
 import type { DevelopmentGenerateAppResponse } from '@/tools/development/types'
 
@@ -11,12 +12,18 @@ export function mapGenerateAppResultToToolResponse(
     const wroteFiles =
       (data.fileCount ?? 0) > 0 && Boolean(data.outputPath || data.absoluteOutputPath)
     const pathHint = data.absoluteOutputPath ?? data.outputPath
+    const buildErrorSummary = data.buildOutput
+      ? formatBuildErrorsSummary(data.buildOutput)
+      : ''
+    const buildErrorsLabel = buildErrorSummary ? `\n\nBuild errors:\n${buildErrorSummary}` : ''
+    const vercelErrorLabel = data.vercelDeployError ? `\n\nVercel: ${data.vercelDeployError}` : ''
+    const baseError = data.error ?? 'Failed to generate Next.js app'
     return {
       success: false,
       output: {
         content: wroteFiles
-          ? `Wrote ${data.fileCount} files to ${pathHint}, but generation failed: ${data.error ?? 'Unknown error'}`
-          : (data.error ?? 'Failed to generate Next.js app'),
+          ? `Wrote ${data.fileCount} files to ${pathHint}, but generation failed: ${baseError}${buildErrorsLabel}${vercelErrorLabel}`
+          : `${baseError}${buildErrorsLabel}${vercelErrorLabel}`,
         appName: data.appName ?? null,
         repoName: data.repoName ?? null,
         description: data.description ?? null,
@@ -39,6 +46,10 @@ export function mapGenerateAppResultToToolResponse(
         vercelDeploymentId: data.vercelDeploymentId ?? null,
         vercelInspectorUrl: data.vercelInspectorUrl ?? null,
         vercelDeployError: data.vercelDeployError ?? null,
+        requiresDatabase: data.requiresDatabase ?? null,
+        databaseProvisioned: data.databaseProvisioned ?? null,
+        neonProjectId: data.neonProjectId ?? null,
+        databaseProvisionError: data.databaseProvisionError ?? null,
       },
       error: data.error,
     }
@@ -62,6 +73,13 @@ export function mapGenerateAppResultToToolResponse(
     : data.vercelDeployError
       ? ` Vercel deploy failed: ${data.vercelDeployError}`
       : ''
+  const databaseLabel = data.requiresDatabase
+    ? data.databaseProvisioned
+      ? ` Neon Postgres provisioned (${data.neonProjectId}).`
+      : data.databaseProvisionError
+        ? ` Database not provisioned: ${data.databaseProvisionError}`
+        : ' Database required but not provisioned.'
+    : ''
   const cleanupLabel =
     data.gitPushed && !data.absoluteOutputPath
       ? ' Local generated-apps copy removed after publish.'
@@ -70,7 +88,7 @@ export function mapGenerateAppResultToToolResponse(
   return {
     success: true,
     output: {
-      content: `Generated "${data.appName}" (${data.fileCount} files)${pathLabel}.${buildLabel}${gitLabel}${vercelLabel}${cleanupLabel}`,
+      content: `Generated "${data.appName}" (${data.fileCount} files)${pathLabel}.${buildLabel}${gitLabel}${vercelLabel}${databaseLabel}${cleanupLabel}`,
       appName: data.appName ?? null,
       repoName: data.repoName ?? null,
       description: data.description ?? null,
@@ -93,6 +111,10 @@ export function mapGenerateAppResultToToolResponse(
       vercelDeploymentId: data.vercelDeploymentId ?? null,
       vercelInspectorUrl: data.vercelInspectorUrl ?? null,
       vercelDeployError: data.vercelDeployError ?? null,
+      requiresDatabase: data.requiresDatabase ?? null,
+      databaseProvisioned: data.databaseProvisioned ?? null,
+      neonProjectId: data.neonProjectId ?? null,
+      databaseProvisionError: data.databaseProvisionError ?? null,
     },
   }
 }

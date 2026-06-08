@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
 import { sleep } from '@sim/utils/helpers'
 import { toError } from '@sim/utils/errors'
+import { provisionNeonDatabase } from '@/lib/development/provision-vercel-neon-database'
+import { logGeneratedAppValidationErrors } from '@/lib/development/format-generated-app-build-errors'
 
 const logger = createLogger('DeployGeneratedAppToVercel')
 
@@ -16,6 +18,44 @@ export interface DeployGeneratedAppToVercelInput {
   githubRepoName: string
   vercelTeamId?: string
   gitRef?: string
+  requiresDatabase?: boolean
+  neonIntegrationConfigurationId?: string
+  neonApiKey?: string
+  neonOrgId?: string
+}
+
+export interface PrepareVercelProjectInput {
+  vercelToken: string
+  projectName: string
+  githubOwner: string
+  githubRepoName: string
+  vercelTeamId?: string
+  requiresDatabase?: boolean
+  neonIntegrationConfigurationId?: string
+  neonApiKey?: string
+  neonOrgId?: string
+}
+
+export interface PrepareVercelProjectResult {
+  success: boolean
+  vercelProjectId?: string
+  vercelProjectName?: string
+  databaseProvisioned?: boolean
+  neonProjectId?: string
+  databaseProvisionError?: string
+  error?: string
+}
+
+export interface DeployPreparedVercelProjectInput {
+  vercelToken: string
+  vercelProjectId: string
+  vercelProjectName: string
+  githubOwner: string
+  githubRepoName: string
+  vercelTeamId?: string
+  gitRef?: string
+  databaseProvisioned?: boolean
+  neonProjectId?: string
 }
 
 export interface DeployGeneratedAppToVercelResult {
@@ -25,6 +65,9 @@ export interface DeployGeneratedAppToVercelResult {
   vercelProjectId?: string
   vercelDeploymentId?: string
   vercelInspectorUrl?: string
+  databaseProvisioned?: boolean
+  neonProjectId?: string
+  databaseProvisionError?: string
   error?: string
 }
 
@@ -309,6 +352,11 @@ async function waitForDeploymentReady(
     }
     if (state === 'ERROR' || state === 'CANCELED') {
       const buildLog = await fetchDeploymentBuildLog(token, deploymentId, teamId)
+      logGeneratedAppValidationErrors({
+        phase: 'vercel',
+        round: 0,
+        output: buildLog,
+      })
       throw new Error(formatDeploymentFailure(deployment, buildLog))
     }
 
@@ -319,11 +367,12 @@ async function waitForDeploymentReady(
 }
 
 /**
- * Links a GitHub repository to a Vercel project and deploys the default branch to production.
+ * Creates or reuses a Vercel project linked to GitHub and provisions Neon before any git push.
+ * DATABASE_URL must exist before Vercel auto-deploys on push.
  */
-export async function deployGeneratedAppToVercel(
-  input: DeployGeneratedAppToVercelInput
-): Promise<DeployGeneratedAppToVercelResult> {
+export async function prepareVercelProjectForDeploy(
+  input: PrepareVercelProjectInput
+): Promise<PrepareVercelProjectResult> {
   const token = input.vercelToken?.trim()
   if (!token) {
     return { success: false, error: 'Vercel token is required' }
@@ -336,16 +385,102 @@ export async function deployGeneratedAppToVercel(
   }
 
   const projectName = input.projectName.trim()
-  const gitRef = input.gitRef?.trim() || DEFAULT_GIT_REF
   const githubRepo = `${githubOwner}/${githubRepoName}`
 
   try {
-    logger.info('Creating or reusing Vercel project', { projectName, githubRepo })
+    logger.info('Creating or reusing Vercel project before git push', { projectName, githubRepo })
 
     let project = await createVercelProject(token, projectName, githubRepo, input.vercelTeamId)
 
     if (!project.link?.repoId) {
       const refreshed = await getVercelProjectByName(token, projectName, input.vercelTeamId)
+      if (refreshed) {
+        project = refreshed
+      }
+    }
+
+    let databaseProvisioned = false
+    let neonProjectId: string | undefined
+
+    if (input.requiresDatabase === true) {
+      const neonResult = await provisionNeonDatabase({
+        vercelToken: token,
+        vercelProjectId: project.id,
+        storeName: `${projectName}-db`,
+        vercelTeamId: input.vercelTeamId,
+        integrationConfigurationId: input.neonIntegrationConfigurationId,
+        neonApiKey: input.neonApiKey,
+        neonOrgId: input.neonOrgId,
+      })
+
+      if (!neonResult.success) {
+        const databaseProvisionError =
+          neonResult.error ?? 'Failed to provision Neon Postgres via Vercel'
+        return {
+          success: false,
+          error: databaseProvisionError,
+          vercelProjectId: project.id,
+          vercelProjectName: project.name,
+          databaseProvisioned: false,
+          databaseProvisionError,
+        }
+      }
+
+      databaseProvisioned = true
+      neonProjectId = neonResult.neonProjectId ?? neonResult.storeResourceId
+      logger.info('Neon Postgres linked to Vercel project via marketplace integration', {
+        projectId: project.id,
+        neonProjectId,
+        storeResourceId: neonResult.storeResourceId,
+      })
+    }
+
+    return {
+      success: true,
+      vercelProjectId: project.id,
+      vercelProjectName: project.name,
+      databaseProvisioned,
+      neonProjectId,
+    }
+  } catch (error) {
+    const message = toError(error).message
+    logger.error('Vercel project preparation failed', { error: message })
+    return { success: false, error: message }
+  }
+}
+
+/**
+ * Triggers a production deployment for a prepared Vercel project and waits until READY.
+ */
+export async function deployPreparedVercelProject(
+  input: DeployPreparedVercelProjectInput
+): Promise<DeployGeneratedAppToVercelResult> {
+  const token = input.vercelToken?.trim()
+  if (!token) {
+    return { success: false, error: 'Vercel token is required' }
+  }
+
+  const githubOwner = input.githubOwner?.trim()
+  const githubRepoName = input.githubRepoName?.trim()
+  if (!githubOwner || !githubRepoName) {
+    return { success: false, error: 'GitHub owner and repository name are required for Vercel deploy' }
+  }
+
+  const gitRef = input.gitRef?.trim() || DEFAULT_GIT_REF
+  const githubRepo = `${githubOwner}/${githubRepoName}`
+
+  try {
+    let project = await getVercelProjectByName(token, input.vercelProjectName, input.vercelTeamId)
+    if (!project) {
+      return {
+        success: false,
+        error: `Vercel project "${input.vercelProjectName}" was not found`,
+        vercelProjectId: input.vercelProjectId,
+      }
+    }
+
+    if (!project.link?.repoId) {
+      const refreshed = await getVercelProjectByName(token, input.vercelProjectName, input.vercelTeamId)
       if (refreshed) {
         project = refreshed
       }
@@ -384,10 +519,43 @@ export async function deployGeneratedAppToVercel(
       vercelProjectId: project.id,
       vercelDeploymentId: ready.id,
       vercelInspectorUrl: ready.inspectorUrl,
+      databaseProvisioned: input.databaseProvisioned,
+      neonProjectId: input.neonProjectId,
     }
   } catch (error) {
     const message = toError(error).message
     logger.error('Vercel deployment failed', { error: message })
-    return { success: false, error: message }
+    return { success: false, error: message, vercelProjectId: input.vercelProjectId }
   }
+}
+
+/**
+ * Links a GitHub repository to a Vercel project and deploys the default branch to production.
+ */
+export async function deployGeneratedAppToVercel(
+  input: DeployGeneratedAppToVercelInput
+): Promise<DeployGeneratedAppToVercelResult> {
+  const prepared = await prepareVercelProjectForDeploy(input)
+  if (!prepared.success || !prepared.vercelProjectId || !prepared.vercelProjectName) {
+    return {
+      success: false,
+      error: prepared.error,
+      vercelProjectId: prepared.vercelProjectId,
+      databaseProvisioned: prepared.databaseProvisioned,
+      neonProjectId: prepared.neonProjectId,
+      databaseProvisionError: prepared.databaseProvisionError,
+    }
+  }
+
+  return deployPreparedVercelProject({
+    vercelToken: input.vercelToken,
+    vercelProjectId: prepared.vercelProjectId,
+    vercelProjectName: prepared.vercelProjectName,
+    githubOwner: input.githubOwner,
+    githubRepoName: input.githubRepoName,
+    vercelTeamId: input.vercelTeamId,
+    gitRef: input.gitRef,
+    databaseProvisioned: prepared.databaseProvisioned,
+    neonProjectId: prepared.neonProjectId,
+  })
 }

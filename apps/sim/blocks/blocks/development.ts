@@ -8,13 +8,13 @@ export const DevelopmentBlock: BlockConfig<DevelopmentGenerateAppResponse> = {
   name: 'Development',
   description: 'Generate a production-ready Next.js app from your idea',
   longDescription:
-    'Full-stack automation block that generates a Next.js App Router app, validates the build, pushes to GitHub, deploys to Vercel from that repository, and returns the live deployment URL in block outputs.',
+    'Full-stack automation block that generates a Next.js App Router app, pushes to GitHub, deploys to Vercel from that repository, optionally provisions Neon Postgres + Prisma when persistence is needed, and returns the live deployment URL in block outputs.',
   bestPractices: `
   - Describe the app name, main features, pages, UI style, authentication needs, and API routes in User Input.
   - Set Repository Name to control the folder name under generated-apps/ (kebab-case).
-  - Build validation is temporarily disabled; generated files are written without local npm build/repair loops.
-  - Enable Push to GitHub with a personal access token (repo scope), then Deploy to Vercel to publish from that repo. The live URL appears in the vercelUrl output.
-  - Vercel requires the GitHub integration on your Vercel account so the API can link the repository.
+  - Generated apps are always pushed to GitHub and deployed to Vercel (requires DEVELOPMENT_GITHUB_TOKEN and DEVELOPMENT_VERCEL_TOKEN in .env).
+  - Optional .env: DEVELOPMENT_GITHUB_OWNER, DEVELOPMENT_VERCEL_TEAM_ID.
+  - For database apps: set DEVELOPMENT_NEON_API_KEY (personal key from Neon Account settings) to auto-create a Neon DB per app. Use a console-managed org — not Vercel-managed Neon.
   - Connect User Input from a Starter block or upstream Agent output for dynamic generation.
   `,
   docsLink: 'https://docs.sim.ai/blocks/development',
@@ -57,68 +57,10 @@ Return ONLY the specification text. No markdown wrappers.`,
       description: 'Folder name under generated-apps/. Defaults from the app name if empty.',
     },
     {
-      id: 'pushToGit',
-      title: 'Push to GitHub',
-      type: 'switch',
-      description:
-        'Create a new GitHub repository and push the generated app (requires GitHub Token or GITHUB_TOKEN env)',
-    },
-    {
-      id: 'githubToken',
-      title: 'GitHub Token',
-      type: 'short-input',
-      placeholder: 'ghp_... (repo scope)',
-      password: true,
-      description: 'Personal access token with repo scope. Falls back to GITHUB_TOKEN env if empty.',
-      condition: { field: 'pushToGit', value: true },
-    },
-    {
-      id: 'githubOwner',
-      title: 'GitHub Owner',
-      type: 'short-input',
-      placeholder: 'username or org (optional)',
-      description: 'GitHub user or organization for the new repo. Defaults to the token owner.',
-      condition: { field: 'pushToGit', value: true },
-    },
-    {
       id: 'privateRepo',
       title: 'Private Repository',
       type: 'switch',
       description: 'Create the GitHub repository as private',
-      condition: { field: 'pushToGit', value: true },
-    },
-    {
-      id: 'deployToVercel',
-      title: 'Deploy to Vercel',
-      type: 'switch',
-      description:
-        'Deploy the GitHub repository to Vercel production after push (requires Push to GitHub and Vercel token)',
-      condition: { field: 'pushToGit', value: true },
-    },
-    {
-      id: 'vercelToken',
-      title: 'Vercel Token',
-      type: 'short-input',
-      placeholder: 'vercel_...',
-      password: true,
-      description:
-        'Vercel access token. Falls back to VERCEL_TOKEN env if empty. Requires GitHub linked on Vercel.',
-      condition: { field: 'deployToVercel', value: true },
-    },
-    {
-      id: 'vercelTeamId',
-      title: 'Vercel Team ID',
-      type: 'short-input',
-      placeholder: 'team_... (optional)',
-      description: 'Vercel team ID when deploying to a team instead of your personal account',
-      condition: { field: 'deployToVercel', value: true },
-    },
-    {
-      id: 'validateBuild',
-      title: 'Validate Build',
-      type: 'switch',
-      description:
-        'Reserved for future use. Local npm build validation and LLM repair loops are currently disabled.',
     },
   ],
   tools: {
@@ -128,14 +70,7 @@ Return ONLY the specification text. No markdown wrappers.`,
       params: (params) => ({
         userInput: params.userInput,
         repoName: params.repoName,
-        validateBuild: false,
-        pushToGit: params.pushToGit === true,
-        githubToken: params.githubToken,
-        githubOwner: params.githubOwner,
         privateRepo: params.privateRepo === true,
-        deployToVercel: params.deployToVercel === true,
-        vercelToken: params.vercelToken,
-        vercelTeamId: params.vercelTeamId,
       }),
     },
   },
@@ -148,23 +83,7 @@ Return ONLY the specification text. No markdown wrappers.`,
       type: 'string',
       description: 'Repository folder name (kebab-case)',
     },
-    validateBuild: {
-      type: 'boolean',
-      description: 'Whether to validate npm install and build in E2B',
-    },
-    pushToGit: {
-      type: 'boolean',
-      description: 'Whether to create a GitHub repo and push the generated app',
-    },
-    githubToken: { type: 'string', description: 'GitHub personal access token' },
-    githubOwner: { type: 'string', description: 'GitHub user or org for the new repository' },
     privateRepo: { type: 'boolean', description: 'Whether the GitHub repository is private' },
-    deployToVercel: {
-      type: 'boolean',
-      description: 'Whether to deploy the GitHub repo to Vercel after push',
-    },
-    vercelToken: { type: 'string', description: 'Vercel access token' },
-    vercelTeamId: { type: 'string', description: 'Optional Vercel team ID' },
   },
   outputs: {
     content: { type: 'string', description: 'Summary of the generation result' },
@@ -243,6 +162,22 @@ Return ONLY the specification text. No markdown wrappers.`,
     vercelDeployError: {
       type: 'string',
       description: 'Error message if Vercel deployment was attempted but failed',
+    },
+    requiresDatabase: {
+      type: 'boolean',
+      description: 'Whether the generated app needs Neon Postgres persistence',
+    },
+    databaseProvisioned: {
+      type: 'boolean',
+      description: 'Whether Neon Postgres was provisioned and DATABASE_URL was set on Vercel',
+    },
+    neonProjectId: {
+      type: 'string',
+      description: 'Neon project ID when a database was provisioned',
+    },
+    databaseProvisionError: {
+      type: 'string',
+      description: 'Error message if database provisioning was required but failed',
     },
   },
 }

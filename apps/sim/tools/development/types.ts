@@ -3,14 +3,7 @@ import type { ToolResponse } from '@/tools/types'
 export interface DevelopmentGenerateAppParams {
   userInput: string
   repoName?: string
-  validateBuild?: boolean
-  pushToGit?: boolean
-  githubToken?: string
-  githubOwner?: string
   privateRepo?: boolean
-  deployToVercel?: boolean
-  vercelToken?: string
-  vercelTeamId?: string
 }
 
 export interface DevelopmentGenerateAppResponse extends ToolResponse {
@@ -38,5 +31,9 @@ export interface DevelopmentGenerateAppResponse extends ToolResponse {
     vercelDeploymentId: string | null
     vercelInspectorUrl: string | null
     vercelDeployError: string | null
+    requiresDatabase: boolean | null
+    databaseProvisioned: boolean | null
+    neonProjectId: string | null
+    databaseProvisionError: string | null
   }
 }

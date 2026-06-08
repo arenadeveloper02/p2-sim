@@ -6,19 +6,37 @@ import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { env } from '@/lib/core/config/env'
-import { deployGeneratedAppToVercel } from '@/lib/development/deploy-generated-app-to-vercel'
 import {
+  deployPreparedVercelProject,
+  prepareVercelProjectForDeploy,
+} from '@/lib/development/deploy-generated-app-to-vercel'
+import { resolveDevelopmentDeployEnv } from '@/lib/development/resolve-development-env'
+import {
+  GENERATED_APP_DATABASE_FILE_PATHS,
+  GENERATED_APP_DATABASE_GUIDANCE,
   GENERATED_APP_DEPENDENCY_GUIDANCE,
   GENERATED_APP_IMPORT_GUIDANCE,
+  GENERATED_APP_README_GUIDANCE,
   GENERATED_APP_STYLING_GUIDANCE,
   GENERATED_APP_TYPESCRIPT_GUIDANCE,
+  GENERATED_APP_VALIDATION_GUIDANCE,
   PINNED_NEXT_VERSION,
   PINNED_REACT_VERSION,
   normalizeGeneratedAppFiles,
 } from '@/lib/development/normalize-generated-app-files'
-import { pushGeneratedAppToGitHub } from '@/lib/development/push-generated-app-to-github'
-/** Build validator disabled — re-enable when validateAndRepairUntilBuildPasses is restored. */
-// import { validateGeneratedAppBuild } from '@/lib/development/validate-generated-app-build'
+import {
+  ensureGitHubRepository,
+  pushGeneratedAppToGitHub,
+} from '@/lib/development/push-generated-app-to-github'
+import {
+  formatBuildErrorsSummary,
+  logGeneratedAppValidationErrors,
+} from '@/lib/development/format-generated-app-build-errors'
+import { validateGeneratedAppTypecheck } from '@/lib/development/validate-generated-app-build'
+import {
+  formatStructureValidationIssues,
+  validateGeneratedAppStructure,
+} from '@/lib/development/validate-generated-app-structure'
 
 const logger = createLogger('NextjsAppGenerator')
 
@@ -46,8 +64,8 @@ const REQUIRED_APP_FILE_PATHS = [
   'README.md',
   '.env.example',
 ] as const
-/** Max LLM repair rounds after a failed build (disabled while build validator is off). */
-// const MAX_BUILD_REPAIR_ROUNDS = 6
+/** Max LLM repair rounds after a failed TypeScript check before deploy. */
+const MAX_BUILD_REPAIR_ROUNDS = 3
 /** Max redeploy cycles when Vercel build fails after local build passed. */
 const MAX_VERCEL_REPAIR_ROUNDS = 4
 const MAX_BUILD_LOG_CHARS = 12_000
@@ -59,6 +77,7 @@ const APP_SPEC_JSON_SCHEMA: Record<string, unknown> = {
     repoName: { type: 'string' },
     description: { type: 'string' },
     features: { type: 'array', items: { type: 'string' } },
+    requiresDatabase: { type: 'boolean' },
     files: {
       type: 'array',
       items: {
@@ -72,7 +91,7 @@ const APP_SPEC_JSON_SCHEMA: Record<string, unknown> = {
       },
     },
   },
-  required: ['appName', 'repoName', 'description', 'features', 'files'],
+  required: ['appName', 'repoName', 'description', 'features', 'requiresDatabase', 'files'],
   additionalProperties: false,
 }
 
@@ -83,9 +102,10 @@ const APP_MANIFEST_JSON_SCHEMA: Record<string, unknown> = {
     repoName: { type: 'string' },
     description: { type: 'string' },
     features: { type: 'array', items: { type: 'string' } },
+    requiresDatabase: { type: 'boolean' },
     filePaths: { type: 'array', items: { type: 'string' } },
   },
-  required: ['appName', 'repoName', 'description', 'features', 'filePaths'],
+  required: ['appName', 'repoName', 'description', 'features', 'requiresDatabase', 'filePaths'],
   additionalProperties: false,
 }
 
@@ -114,6 +134,7 @@ interface LlmAppManifest {
   repoName: string
   description: string
   features: string[]
+  requiresDatabase?: boolean
   filePaths: string[]
 }
 
@@ -123,14 +144,7 @@ const ANTHROPIC_NON_STREAMING_MAX_TOKENS = 21333
 export interface GenerateNextjsAppInput {
   userInput: string
   repoName?: string
-  validateBuild?: boolean
-  pushToGit?: boolean
-  githubToken?: string
-  githubOwner?: string
   privateRepo?: boolean
-  deployToVercel?: boolean
-  vercelToken?: string
-  vercelTeamId?: string
 }
 
 export interface GeneratedAppFile {
@@ -162,6 +176,10 @@ export interface GenerateNextjsAppResult {
   vercelDeploymentId?: string
   vercelInspectorUrl?: string
   vercelDeployError?: string
+  requiresDatabase?: boolean
+  databaseProvisioned?: boolean
+  neonProjectId?: string
+  databaseProvisionError?: string
   error?: string
 }
 
@@ -170,6 +188,7 @@ interface LlmAppSpec {
   repoName: string
   description: string
   features: string[]
+  requiresDatabase?: boolean
   files: GeneratedAppFile[]
 }
 
@@ -301,12 +320,28 @@ function truncateBuildLog(output: string): string {
   return `${output.slice(-MAX_BUILD_LOG_CHARS)}\n…(truncated)`
 }
 
+function resolveRequiresDatabase(spec: Pick<LlmAppSpec, 'requiresDatabase' | 'files'>): boolean {
+  if (spec.requiresDatabase === true) {
+    return true
+  }
+  if (spec.requiresDatabase === false) {
+    return false
+  }
+
+  return spec.files.some((file) => {
+    const path = file.path.replace(/\\/g, '/')
+    return path.startsWith('prisma/') || path === 'lib/prisma.ts'
+  })
+}
+
 function normalizeAppSpec(parsed: LlmAppSpec, repoNameHint?: string): LlmAppSpec {
   if (!parsed.appName || !parsed.files?.length) {
     throw new Error('LLM response missing required appName or files')
   }
 
   parsed.repoName = slugifyRepoName(parsed.repoName || repoNameHint || parsed.appName)
+  parsed.requiresDatabase = resolveRequiresDatabase(parsed)
+
   if (parsed.files.length > MAX_GENERATED_FILES) {
     logger.warn('Truncating generated file list to max file count', {
       requested: parsed.files.length,
@@ -315,7 +350,13 @@ function normalizeAppSpec(parsed: LlmAppSpec, repoNameHint?: string): LlmAppSpec
     parsed.files = parsed.files.slice(0, MAX_GENERATED_FILES)
   }
 
-  parsed.files = normalizeGeneratedAppFiles(parsed.files)
+  parsed.files = normalizeGeneratedAppFiles(parsed.files, {
+    requiresDatabase: parsed.requiresDatabase,
+    appName: parsed.appName,
+    description: parsed.description,
+    features: parsed.features,
+    repoName: parsed.repoName,
+  })
 
   return parsed
 }
@@ -346,13 +387,22 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   return chunks
 }
 
-function mergeManifestFilePaths(manifestPaths: string[]): string[] {
+function mergeManifestFilePaths(
+  manifestPaths: string[],
+  requiresDatabase = false
+): string[] {
   const normalized = manifestPaths
     .map((p) => p.replace(/\\/g, '/').trim())
     .filter(Boolean)
   const requiredSet = new Set<string>(REQUIRED_APP_FILE_PATHS)
+  if (requiresDatabase) {
+    for (const path of GENERATED_APP_DATABASE_FILE_PATHS) {
+      requiredSet.add(path)
+    }
+  }
   const optional = normalized.filter((p) => !requiredSet.has(p)).slice(0, MAX_OPTIONAL_PAGE_PATHS)
-  return [...new Set([...REQUIRED_APP_FILE_PATHS, ...optional])].slice(0, MAX_GENERATED_FILES)
+  const merged = [...new Set([...requiredSet, ...optional])]
+  return merged.slice(0, MAX_GENERATED_FILES)
 }
 
 function isLikelyTruncationOrParseFailure(error: unknown): boolean {
@@ -438,6 +488,9 @@ Constraints:
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_README_GUIDANCE}
+- ${GENERATED_APP_VALIDATION_GUIDANCE}
 - Valid TypeScript, zero build errors, no secrets`
 
 const MANIFEST_SYSTEM_PROMPT = `You are a senior full-stack engineer planning a Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
@@ -452,6 +505,9 @@ Constraints:
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_README_GUIDANCE}
+- ${GENERATED_APP_VALIDATION_GUIDANCE}
 - Never include secrets`
 
 const FILE_BATCH_SYSTEM_PROMPT = `You are a senior full-stack engineer writing files for a Next.js ${PINNED_NEXT_VERSION} App Router project.
@@ -466,6 +522,9 @@ Constraints:
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_README_GUIDANCE}
+- ${GENERATED_APP_VALIDATION_GUIDANCE}
 - Code must compile with zero errors when combined with other project files
 - Never include secrets`
 
@@ -491,7 +550,11 @@ async function requestAppManifestFromLlm(
   }
 
   manifest.repoName = slugifyRepoName(manifest.repoName || repoNameHint || manifest.appName)
-  manifest.filePaths = mergeManifestFilePaths(manifest.filePaths)
+  manifest.requiresDatabase = resolveRequiresDatabase({
+    requiresDatabase: manifest.requiresDatabase,
+    files: manifest.filePaths.map((path) => ({ path, content: '' })),
+  })
+  manifest.filePaths = mergeManifestFilePaths(manifest.filePaths, manifest.requiresDatabase)
 
   return manifest
 }
@@ -637,6 +700,7 @@ async function requestBatchedAppSpecFromLlm(
       repoName: manifest.repoName,
       description: manifest.description,
       features: manifest.features,
+      requiresDatabase: manifest.requiresDatabase,
       files: allFiles,
     },
     repoNameHint
@@ -684,15 +748,20 @@ async function repairAppSpecWithLlm(
   buildLog: string,
   userInput: string
 ): Promise<LlmAppSpec> {
-  const repairSystemPrompt = `You are a senior full-stack engineer fixing a Next.js ${PINNED_NEXT_VERSION} App Router project that failed npm run build.
+  const repairSystemPrompt = `You are a senior full-stack engineer fixing a Next.js ${PINNED_NEXT_VERSION} App Router project that failed TypeScript validation (tsc --noEmit).
 
 Respond ONLY with JSON matching the provided schema. Return the full corrected file set.
 
-Fix ALL errors in the build log so npm install && npm run build succeed with ZERO TypeScript errors and ZERO Next.js compile errors.
+Fix ALL errors in the build log so npm install && npx tsc --noEmit succeed with ZERO TypeScript errors.
+Fix ALL structure validation issues listed in the build log, including missing @/ imports, props interfaces, "use client" placement, Prisma usage, Tailwind config, and build scripts.
+Pay special attention to: missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
 ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 ${GENERATED_APP_STYLING_GUIDANCE}
 ${GENERATED_APP_IMPORT_GUIDANCE}
+${GENERATED_APP_DATABASE_GUIDANCE}
+${GENERATED_APP_README_GUIDANCE}
+${GENERATED_APP_VALIDATION_GUIDANCE}
 Keep the same app purpose and repo name unless a rename is required to fix the build.
 Prefer minimal, targeted file changes over rewriting unrelated files.
 Do not leave broken imports, invalid JSX, or conflicting app/ and src/app/ directories.`
@@ -705,7 +774,7 @@ Repository name: ${spec.repoName}
 Build log:
 ${truncateBuildLog(buildLog)}
 
-Return corrected files that pass npm install && npm run build.`
+Return corrected files that pass npm install && npx tsc --noEmit.`
 
   return requestFullAppSpecFromLlm(repairSystemPrompt, userPrompt, spec.repoName)
 }
@@ -729,7 +798,6 @@ async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Prom
   return written
 }
 
-/*
 interface BuildRepairResult {
   spec: LlmAppSpec
   buildValidated: boolean
@@ -737,8 +805,10 @@ interface BuildRepairResult {
   repairRounds: number
 }
 
-// Runs npm install/build and repairs with the LLM until the build passes or rounds are exhausted.
-async function validateAndRepairUntilBuildPasses(
+/**
+ * Runs structure validation, TypeScript validation, and repairs with the LLM until checks pass.
+ */
+async function validateAndRepairUntilTypecheckPasses(
   outputDir: string,
   spec: LlmAppSpec,
   userInput: string
@@ -748,7 +818,49 @@ async function validateAndRepairUntilBuildPasses(
   let repairRounds = 0
 
   for (let round = 0; round <= MAX_BUILD_REPAIR_ROUNDS; round++) {
-    const buildResult = await validateGeneratedAppBuild(outputDir, currentSpec.files)
+    currentSpec.files = normalizeGeneratedAppFiles(currentSpec.files, {
+      requiresDatabase: currentSpec.requiresDatabase === true,
+      appName: currentSpec.appName,
+      description: currentSpec.description,
+      features: currentSpec.features,
+      repoName: currentSpec.repoName,
+    })
+    await writeAppFiles(outputDir, currentSpec.files)
+
+    const structureResult = validateGeneratedAppStructure(currentSpec.files, {
+      requiresDatabase: currentSpec.requiresDatabase === true,
+    })
+
+    if (!structureResult.valid) {
+      buildOutput = `Structure validation failed:\n${formatStructureValidationIssues(structureResult.issues)}`
+      logGeneratedAppValidationErrors({
+        phase: 'structure',
+        round,
+        output: buildOutput,
+        issues: structureResult.issues,
+      })
+
+      if (round >= MAX_BUILD_REPAIR_ROUNDS) {
+        break
+      }
+
+      repairRounds += 1
+      logger.warn('Generated app structure validation failed, requesting LLM repair', {
+        round: repairRounds,
+        issueCount: structureResult.issues.length,
+      })
+
+      currentSpec = await repairAppSpecWithLlm(
+        currentSpec,
+        `${buildOutput}\n\nFix every structure issue above before TypeScript can pass.`,
+        userInput
+      )
+      continue
+    }
+
+    const buildResult = await validateGeneratedAppTypecheck(outputDir, currentSpec.files, {
+      requiresDatabase: currentSpec.requiresDatabase === true,
+    })
     buildOutput = `[${buildResult.method}] ${buildResult.output}`
 
     if (buildResult.validated) {
@@ -760,18 +872,23 @@ async function validateAndRepairUntilBuildPasses(
       }
     }
 
+    logGeneratedAppValidationErrors({
+      phase: 'typecheck',
+      round,
+      output: buildResult.output,
+    })
+
     if (round >= MAX_BUILD_REPAIR_ROUNDS) {
       break
     }
 
     repairRounds += 1
-    logger.warn('Generated app build failed, requesting LLM repair', {
+    logger.warn('Generated app TypeScript check failed, requesting LLM repair', {
       round: repairRounds,
       maxRounds: MAX_BUILD_REPAIR_ROUNDS,
     })
 
     currentSpec = await repairAppSpecWithLlm(currentSpec, buildResult.output, userInput)
-    await writeAppFiles(outputDir, currentSpec.files)
 
     const nextCacheDir = join(outputDir, '.next')
     if (existsSync(nextCacheDir)) {
@@ -786,7 +903,6 @@ async function validateAndRepairUntilBuildPasses(
     repairRounds,
   }
 }
-*/
 
 /**
  * Generates a production-ready Next.js app from user input and writes it under generated-apps/.
@@ -805,6 +921,7 @@ export async function generateNextjsApp(
     logger.info('LLM app generation finished', {
       durationMs: Date.now() - generationStartedAt,
       fileCount: spec.files.length,
+      requiresDatabase: spec.requiresDatabase,
     })
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
@@ -818,35 +935,32 @@ export async function generateNextjsApp(
       return { success: false, error: 'No valid files were written to the output directory' }
     }
 
-    const buildValidated: boolean | undefined = undefined
-    const buildOutput: string | undefined = undefined
+    let buildValidated: boolean | undefined
+    let buildOutput: string | undefined
     const outputPath = relative(monorepoRoot, outputDir)
 
-    /*
-    const shouldValidateBuild = input.validateBuild ?? true
-    if (shouldValidateBuild) {
-      const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput)
-      spec = buildRepair.spec
-      buildValidated = buildRepair.buildValidated
-      buildOutput = buildRepair.buildOutput
+    const buildRepair = await validateAndRepairUntilTypecheckPasses(outputDir, spec, userInput)
+    spec = buildRepair.spec
+    buildValidated = buildRepair.buildValidated
+    buildOutput = buildRepair.buildOutput
 
-      if (!buildValidated) {
-        return {
-          success: false,
-          error: `Build validation failed after ${buildRepair.repairRounds} repair round(s):\n${truncateBuildLog(buildOutput)}`,
-          appName: spec.appName,
-          repoName,
-          description: spec.description,
-          features: spec.features,
-          outputPath,
-          absoluteOutputPath: outputDir,
-          fileCount,
-          buildValidated: false,
-          buildOutput,
-        }
+    if (!buildValidated) {
+      const errorSummary = formatBuildErrorsSummary(buildOutput ?? '')
+
+      return {
+        success: false,
+        error: `App validation failed after ${buildRepair.repairRounds} repair round(s):\n${errorSummary || truncateBuildLog(buildOutput ?? '')}`,
+        appName: spec.appName,
+        repoName,
+        description: spec.description,
+        features: spec.features,
+        outputPath,
+        absoluteOutputPath: outputDir,
+        fileCount,
+        buildValidated: false,
+        buildOutput,
       }
     }
-    */
 
     let gitPushed = false
     let githubHtmlUrl: string | undefined
@@ -855,30 +969,15 @@ export async function generateNextjsApp(
     let githubRepoName: string | undefined
     let gitPushError: string | undefined
 
-    if (input.pushToGit === true) {
-      logger.info('Pushing generated app to GitHub', { repoName })
-      const githubToken =
-        input.githubToken?.trim() || env.GITHUB_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim()
-      if (!githubToken) {
-        gitPushError =
-          'Push to GitHub was enabled but no token was provided. Set a GitHub Token on the block or GITHUB_TOKEN in the environment.'
-      } else {
-        const pushResult = await pushGeneratedAppToGitHub({
-          outputDir,
-          repoName,
-          description: spec.description,
-          githubToken,
-          githubOwner: input.githubOwner?.trim(),
-          privateRepo: input.privateRepo === true,
-        })
-        gitPushed = pushResult.success
-        githubHtmlUrl = pushResult.htmlUrl
-        githubCloneUrl = pushResult.cloneUrl
-        githubOwner = pushResult.owner
-        githubRepoName = pushResult.repoName
-        gitPushError = pushResult.error
-      }
-    }
+    const {
+      githubToken,
+      githubOwner: githubOwnerHint,
+      vercelToken,
+      vercelTeamId,
+      neonIntegrationConfigurationId,
+      neonApiKey,
+      neonOrgId,
+    } = resolveDevelopmentDeployEnv()
 
     let vercelDeployed = false
     let vercelUrl: string | undefined
@@ -887,140 +986,131 @@ export async function generateNextjsApp(
     let vercelDeploymentId: string | undefined
     let vercelInspectorUrl: string | undefined
     let vercelDeployError: string | undefined
+    let databaseProvisioned: boolean | undefined
+    let neonProjectId: string | undefined
+    let databaseProvisionError: string | undefined
+    let preparedVercelProjectName: string | undefined
 
-    const shouldDeployToVercel = input.deployToVercel === true
+    if (!githubToken) {
+      gitPushError = 'DEVELOPMENT_GITHUB_TOKEN is not set in the environment.'
+    } else if (!vercelToken) {
+      vercelDeployError = 'DEVELOPMENT_VERCEL_TOKEN is not set in the environment.'
+    } else {
+      logger.info('Ensuring GitHub repository exists before Vercel setup', { repoName })
+      const repoResult = await ensureGitHubRepository({
+        repoName,
+        description: spec.description,
+        githubToken,
+        githubOwner: githubOwnerHint,
+        privateRepo: input.privateRepo === true,
+      })
 
-    if (shouldDeployToVercel) {
-      logger.info('Deploying to Vercel (can take several minutes)', { repoName })
-      if (!gitPushed || !githubOwner || !githubRepoName) {
-        vercelDeployError =
-          'Vercel deploy requires a successful GitHub push. Enable Push to GitHub and provide a valid GitHub token.'
+      if (!repoResult.success || !repoResult.owner || !repoResult.repoName) {
+        gitPushError = repoResult.error ?? 'Failed to create or resolve GitHub repository'
+        vercelDeployError = gitPushError
       } else {
-        const vercelToken =
-          input.vercelToken?.trim() ||
-          env.VERCEL_TOKEN?.trim() ||
-          process.env.VERCEL_TOKEN?.trim() ||
-          process.env.VERCEL_ACCESS_TOKEN?.trim()
-        if (!vercelToken) {
-          vercelDeployError =
-            'Vercel deploy was enabled but no token was provided. Set a Vercel Token on the block or VERCEL_TOKEN in the environment.'
-        } else {
-          const deployResult = await deployGeneratedAppToVercel({
-            vercelToken,
-            projectName: repoName,
-            githubOwner,
-            githubRepoName,
-            vercelTeamId: input.vercelTeamId?.trim(),
-          })
+        githubOwner = repoResult.owner
+        githubRepoName = repoResult.repoName
+        githubHtmlUrl = repoResult.htmlUrl
+        githubCloneUrl = repoResult.cloneUrl
 
-          /*
-          for (
-            let attempt = 0;
-            attempt < MAX_VERCEL_REPAIR_ROUNDS && !deployResult.success;
-            attempt++
-          ) {
-            logger.warn('Vercel deploy failed, repairing app and redeploying', {
-              attempt: attempt + 1,
-              maxAttempts: MAX_VERCEL_REPAIR_ROUNDS,
-            })
-            spec = await repairAppSpecWithLlm(
-              spec,
-              deployResult.error ?? 'Vercel build failed',
-              userInput
-            )
-            await writeAppFiles(outputDir, spec.files)
-
-            const rebuildRepair = await validateAndRepairUntilBuildPasses(
-              outputDir,
-              spec,
-              userInput
-            )
-            spec = rebuildRepair.spec
-            buildValidated = rebuildRepair.buildValidated
-            buildOutput = rebuildRepair.buildOutput
-            if (!buildValidated) {
-              vercelDeployError = `Local build still failing after ${rebuildRepair.repairRounds} repair round(s) following Vercel error:\n${truncateBuildLog(buildOutput)}`
-              break
-            }
-
-            const repushToken =
-              input.githubToken?.trim() ||
-              env.GITHUB_TOKEN?.trim() ||
-              process.env.GITHUB_TOKEN?.trim()
-            if (!repushToken) {
-              vercelDeployError = 'Cannot redeploy: GitHub token missing for push after repair'
-              break
-            }
-
-            const repushResult = await pushGeneratedAppToGitHub({
-              outputDir,
-              repoName,
-              description: spec.description,
-              githubToken: repushToken,
-              githubOwner: input.githubOwner?.trim() || githubOwner,
-              privateRepo: input.privateRepo === true,
-            })
-            if (!repushResult.success) {
-              vercelDeployError = repushResult.error ?? 'Git push failed after Vercel repair'
-              break
-            }
-
-            if (repushResult.owner) {
-              githubOwner = repushResult.owner
-            }
-            if (repushResult.repoName) {
-              githubRepoName = repushResult.repoName
-            }
-
-            deployResult = await deployGeneratedAppToVercel({
-              vercelToken,
-              projectName: repoName,
-              githubOwner,
-              githubRepoName,
-              vercelTeamId: input.vercelTeamId?.trim(),
-            })
-          }
-          */
-
-          vercelDeployed = deployResult.success
-          vercelUrl = deployResult.vercelUrl
-          vercelDeploymentUrl = deployResult.vercelDeploymentUrl
-          vercelProjectId = deployResult.vercelProjectId
-          vercelDeploymentId = deployResult.vercelDeploymentId
-          vercelInspectorUrl = deployResult.vercelInspectorUrl
-          vercelDeployError = deployResult.error
-        }
-      }
-
-      if (!vercelDeployed) {
-        return {
-          success: false,
-          error: vercelDeployError ?? 'Vercel deployment failed',
-          appName: spec.appName,
-          repoName,
-          description: spec.description,
-          features: spec.features,
-          outputPath,
-          absoluteOutputPath: outputDir,
-          fileCount,
-          buildValidated,
-          buildOutput,
-          gitPushed,
-          githubHtmlUrl,
-          githubCloneUrl,
+        logger.info('Preparing Vercel project and Neon before git push', { repoName })
+        const prepareResult = await prepareVercelProjectForDeploy({
+          vercelToken,
+          projectName: repoName,
           githubOwner,
           githubRepoName,
-          gitPushError,
-          vercelDeployed: false,
-          vercelDeployError,
+          vercelTeamId,
+          requiresDatabase: spec.requiresDatabase === true,
+          neonIntegrationConfigurationId,
+          neonApiKey,
+          neonOrgId,
+        })
+
+        vercelProjectId = prepareResult.vercelProjectId
+        preparedVercelProjectName = prepareResult.vercelProjectName
+        databaseProvisioned = prepareResult.databaseProvisioned
+        neonProjectId = prepareResult.neonProjectId
+        databaseProvisionError = prepareResult.databaseProvisionError
+
+        if (!prepareResult.success || !vercelProjectId || !preparedVercelProjectName) {
+          vercelDeployError = prepareResult.error ?? 'Failed to prepare Vercel project'
+        } else {
+          logger.info('Pushing generated app to GitHub', { repoName })
+          const pushResult = await pushGeneratedAppToGitHub({
+            outputDir,
+            repoName,
+            description: spec.description,
+            githubToken,
+            githubOwner,
+            privateRepo: input.privateRepo === true,
+          })
+          gitPushed = pushResult.success
+          githubHtmlUrl = pushResult.htmlUrl ?? githubHtmlUrl
+          githubCloneUrl = pushResult.cloneUrl ?? githubCloneUrl
+          githubOwner = pushResult.owner ?? githubOwner
+          githubRepoName = pushResult.repoName ?? githubRepoName
+          gitPushError = pushResult.error
+
+          if (!gitPushed || !githubOwner || !githubRepoName) {
+            vercelDeployError =
+              'Vercel deploy requires a successful GitHub push. Check DEVELOPMENT_GITHUB_TOKEN in .env and git push errors.'
+          } else {
+            logger.info('Deploying to Vercel (can take several minutes)', { repoName })
+            const deployResult = await deployPreparedVercelProject({
+              vercelToken,
+              vercelProjectId,
+              vercelProjectName: preparedVercelProjectName,
+              githubOwner,
+              githubRepoName,
+              vercelTeamId,
+              databaseProvisioned,
+              neonProjectId,
+            })
+
+            vercelDeployed = deployResult.success
+            vercelUrl = deployResult.vercelUrl
+            vercelDeploymentUrl = deployResult.vercelDeploymentUrl
+            vercelProjectId = deployResult.vercelProjectId ?? vercelProjectId
+            vercelDeploymentId = deployResult.vercelDeploymentId
+            vercelInspectorUrl = deployResult.vercelInspectorUrl
+            vercelDeployError = deployResult.error
+          }
         }
+      }
+    }
+
+    if (!vercelDeployed) {
+      return {
+        success: false,
+        error: vercelDeployError ?? 'Vercel deployment failed',
+        appName: spec.appName,
+        repoName,
+        description: spec.description,
+        features: spec.features,
+        outputPath,
+        absoluteOutputPath: outputDir,
+        fileCount,
+        buildValidated,
+        buildOutput,
+        gitPushed,
+        githubHtmlUrl,
+        githubCloneUrl,
+        githubOwner,
+        githubRepoName,
+        gitPushError,
+        vercelDeployed: false,
+        vercelDeployError,
+        requiresDatabase: spec.requiresDatabase,
+        databaseProvisioned,
+        neonProjectId,
+        databaseProvisionError,
       }
     }
 
     let resolvedAbsoluteOutputPath: string | undefined = outputDir
 
-    const shouldRemoveLocal =
-      gitPushed && (!shouldDeployToVercel || vercelDeployed)
+    const shouldRemoveLocal = gitPushed && vercelDeployed
 
     if (shouldRemoveLocal) {
       try {
@@ -1072,6 +1162,10 @@ export async function generateNextjsApp(
       vercelDeploymentId,
       vercelInspectorUrl,
       vercelDeployError,
+      requiresDatabase: spec.requiresDatabase,
+      databaseProvisioned,
+      neonProjectId,
+      databaseProvisionError,
     }
   } catch (error) {
     const message = toError(error).message

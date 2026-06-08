@@ -84,14 +84,7 @@ async function executeDevelopmentGenerateAppDirect(
     await generateNextjsApp({
       userInput: params.userInput,
       repoName: params.repoName,
-      validateBuild: params.validateBuild,
-      pushToGit: params.pushToGit,
-      githubToken: params.githubToken,
-      githubOwner: params.githubOwner,
       privateRepo: params.privateRepo,
-      deployToVercel: params.deployToVercel,
-      vercelToken: params.vercelToken,
-      vercelTeamId: params.vercelTeamId,
     })
   )
 }

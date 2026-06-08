@@ -12,7 +12,7 @@ export const developmentGenerateAppTool: ToolConfig<
   id: 'development_generate_app',
   name: 'Generate Next.js App',
   description:
-    'Generate a production-ready Next.js application from a description and write it to a repository folder inside the project',
+    'Generate a production-ready Next.js application, push to GitHub, and deploy to Vercel (credentials from .env)',
   version: '1.0.0',
 
   params: {
@@ -28,58 +28,12 @@ export const developmentGenerateAppTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Repository folder name (kebab-case). Derived from the app name if omitted',
     },
-    validateBuild: {
-      type: 'boolean',
-      required: false,
-      visibility: 'user-only',
-      description:
-        'Reserved for future use. Local build validation is currently disabled; files are generated in batches and written to disk.',
-      default: true,
-    },
-    pushToGit: {
-      type: 'boolean',
-      required: false,
-      visibility: 'user-only',
-      description: 'Create a new GitHub repository and push the generated app',
-      default: false,
-    },
-    githubToken: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'GitHub personal access token with repo scope',
-    },
-    githubOwner: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'GitHub user or organization for the new repo',
-    },
     privateRepo: {
       type: 'boolean',
       required: false,
       visibility: 'user-only',
       description: 'Create the GitHub repository as private',
       default: false,
-    },
-    deployToVercel: {
-      type: 'boolean',
-      required: false,
-      visibility: 'user-only',
-      description: 'Deploy the GitHub repository to Vercel production after push',
-      default: false,
-    },
-    vercelToken: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Vercel access token',
-    },
-    vercelTeamId: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Optional Vercel team ID',
     },
   },
 
@@ -92,14 +46,7 @@ export const developmentGenerateAppTool: ToolConfig<
     body: (params) => ({
       userInput: params.userInput,
       repoName: params.repoName,
-      validateBuild: params.validateBuild,
-      pushToGit: params.pushToGit,
-      githubToken: params.githubToken,
-      githubOwner: params.githubOwner,
       privateRepo: params.privateRepo,
-      deployToVercel: params.deployToVercel,
-      vercelToken: params.vercelToken,
-      vercelTeamId: params.vercelTeamId,
     }),
   },
 
@@ -203,6 +150,26 @@ export const developmentGenerateAppTool: ToolConfig<
     vercelDeployError: {
       type: 'string',
       description: 'Error message if Vercel deployment failed',
+      optional: true,
+    },
+    requiresDatabase: {
+      type: 'boolean',
+      description: 'Whether the generated app needs Neon Postgres persistence',
+      optional: true,
+    },
+    databaseProvisioned: {
+      type: 'boolean',
+      description: 'Whether Neon Postgres was provisioned and DATABASE_URL was set on Vercel',
+      optional: true,
+    },
+    neonProjectId: {
+      type: 'string',
+      description: 'Neon project ID when a database was provisioned',
+      optional: true,
+    },
+    databaseProvisionError: {
+      type: 'string',
+      description: 'Error message if database provisioning was required but failed',
       optional: true,
     },
   },

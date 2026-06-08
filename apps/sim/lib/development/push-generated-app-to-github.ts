@@ -167,7 +167,7 @@ async function initCommitAndPush(
     await runGit(outputDir, [
       'commit',
       '-m',
-      'Initial commit from Sim Development block',
+      'Initial commit',
     ])
   }
 
@@ -181,6 +181,57 @@ async function initCommitAndPush(
 
   await runGit(outputDir, ['remote', 'add', 'origin', remoteUrl])
   await runGit(outputDir, ['push', '-u', 'origin', defaultBranch])
+}
+
+/**
+ * Creates a GitHub repository (or reuses an existing one) without pushing code.
+ * Used to link Vercel before the first push so Neon env vars exist before auto-deploy.
+ */
+export async function ensureGitHubRepository(
+  input: Omit<PushGeneratedAppToGitHubInput, 'outputDir'>
+): Promise<PushGeneratedAppToGitHubResult> {
+  const token = input.githubToken?.trim()
+  if (!token) {
+    return { success: false, error: 'GitHub token is required to create a remote repository' }
+  }
+
+  const repoName = input.repoName.trim()
+  if (!repoName) {
+    return { success: false, error: 'Repository name is required' }
+  }
+
+  try {
+    const { data: user, status: userStatus } = await githubFetch<GitHubUserResponse>(
+      token,
+      '/user'
+    )
+    if (userStatus !== 200) {
+      return { success: false, error: 'Invalid GitHub token or insufficient API access' }
+    }
+
+    const owner = await resolveGitHubOwner(token, input.githubOwner)
+    const repo = await createGitHubRepository(
+      token,
+      owner,
+      repoName,
+      input.description,
+      input.privateRepo === true,
+      user.login
+    )
+
+    return {
+      success: true,
+      owner,
+      repoName: repo.name,
+      htmlUrl: repo.html_url,
+      cloneUrl: repo.clone_url,
+      defaultBranch: repo.default_branch || 'main',
+    }
+  } catch (error) {
+    const message = toError(error).message
+    logger.error('Failed to ensure GitHub repository exists', { error: message })
+    return { success: false, error: message }
+  }
 }
 
 /**

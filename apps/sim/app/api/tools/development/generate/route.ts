@@ -13,14 +13,7 @@ export const maxDuration = 600
 const RequestSchema = z.object({
   userInput: z.string().min(1, 'userInput is required'),
   repoName: z.string().optional(),
-  validateBuild: z.boolean().optional(),
-  pushToGit: z.boolean().optional(),
-  githubToken: z.string().optional(),
-  githubOwner: z.string().optional(),
   privateRepo: z.boolean().optional(),
-  deployToVercel: z.boolean().optional(),
-  vercelToken: z.string().optional(),
-  vercelTeamId: z.string().optional(),
 })
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
@@ -46,9 +39,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
   logger.info('Generating Next.js app', {
     repoName: parsed.data.repoName,
-    validateBuild: parsed.data.validateBuild,
-    pushToGit: parsed.data.pushToGit,
-    deployToVercel: parsed.data.deployToVercel,
+    privateRepo: parsed.data.privateRepo,
   })
 
   const result = await generateNextjsApp(parsed.data)
