@@ -286,8 +286,6 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
     sections.push(`## Jobs (${data.jobs.length})\n${lines.join('\n')}`)
   }
 
-  sections.push(WORKSPACE_DOCUMENT_FILE_GUIDANCE)
-
   return sections.join('\n\n')
 }
 
