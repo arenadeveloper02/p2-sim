@@ -4,6 +4,7 @@ import type { ToolConfig } from '@/tools/types'
 
 interface GetPresentationIconsParams {
   category?: string
+  color?: 'black' | 'white'
 }
 
 interface GetPresentationIconsResponse {
@@ -33,6 +34,12 @@ export const getPresentationIconsTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Optional category filter (e.g. marketing, technology, ai)',
     },
+    color: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Icon color variant to return: "black" or "white". When a slide block specifies iconLibraryColor, pass that value here to receive only matching icons.',
+    },
   },
 
   request: {
@@ -46,10 +53,15 @@ export const getPresentationIconsTool: ToolConfig<
   ): Promise<GetPresentationIconsResponse> => {
     const library = getPresentationIconLibrary()
     const categoryFilter = params.category?.trim().toLowerCase()
+    const colorFilter = params.color?.trim().toLowerCase() as 'black' | 'white' | undefined
 
-    const icons = categoryFilter
-      ? library.icons.filter((icon) => icon.category.toLowerCase() === categoryFilter)
-      : library.icons
+    let icons = library.icons
+    if (categoryFilter) {
+      icons = icons.filter((icon) => icon.category.toLowerCase() === categoryFilter)
+    }
+    if (colorFilter) {
+      icons = icons.filter((icon) => icon.color === colorFilter)
+    }
 
     return {
       success: true,
@@ -67,7 +79,7 @@ export const getPresentationIconsTool: ToolConfig<
     baseUrl: { type: 'string', description: 'Base URL for icon assets' },
     icons: {
       type: 'json',
-      description: 'Icon entries (id, label, category, tags, pngUrl, optional svgUrl)',
+      description: 'Icon entries (id, label, category, color, tags, pngUrl, optional svgUrl)',
     },
     count: { type: 'number', description: 'Number of icons returned' },
   },

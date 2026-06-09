@@ -52,6 +52,8 @@ export interface ImageBlock extends BaseBlock {
   usage: string[]        // for icon_library: semantic hints for AI matching
   // for stock_photo/generated: visual style hints
   iconLibraryId?: string // filled by AI — matched icon id from IconLibrary
+  /** When source is 'icon_library', constrains selection to icons of this color variant. */
+  iconLibraryColor?: IconColor
   width?: number
   height?: number
   replaceable: boolean
@@ -73,6 +75,8 @@ export interface SlideSchema {
   blocks: Block[]
 }
 
+export type IconColor = 'black' | 'white'
+
 export interface IconSchema {
   id: string
   label: string
@@ -80,6 +84,7 @@ export interface IconSchema {
   tags: string[]
   pngUrl: string
   svgUrl?: string
+  color: IconColor
 }
 
 export interface IconLibrary {
