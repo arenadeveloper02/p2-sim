@@ -17,8 +17,10 @@ export interface ChannelAccount {
 }
 
 interface ChannelAccountRow {
-  account_id: string
-  account_name: string
+  account_id?: string
+  account_name?: string
+  accountid?: string
+  accountname?: string
 }
 
 /**
@@ -67,10 +69,14 @@ function mapRowsToAccounts(rows: ChannelAccountRow[]): Record<string, ChannelAcc
   const accounts: Record<string, ChannelAccount> = {}
 
   for (const row of rows) {
-    const key = toAccountKey(String(row.account_name))
+    const accountName = String(row.account_name ?? row.accountname ?? '')
+    const accountId = String(row.account_id ?? row.accountid ?? '')
+    if (!accountName || !accountId) continue
+
+    const key = toAccountKey(accountName)
     accounts[key] = {
-      id: String(row.account_id),
-      name: String(row.account_name),
+      id: accountId,
+      name: accountName,
     }
   }
 
@@ -83,11 +89,13 @@ function mapRowsToAccounts(rows: ChannelAccountRow[]): Record<string, ChannelAcc
  *
  * @param type - Account type ('facebook', 'bing', 'google')
  * @param workspaceId - Current workspace ID used for access control
+ * @param userId - Optional user ID for server-side tool execution (when session cookies are unavailable)
  * @returns Accounts in the same format as legacy constants
  */
 export async function getChannelAccounts(
   type: 'facebook' | 'bing' | 'google',
-  workspaceId?: string
+  workspaceId?: string,
+  userId?: string
 ): Promise<Record<string, ChannelAccount>> {
   try {
     if (!workspaceId) {
@@ -105,30 +113,35 @@ export async function getChannelAccounts(
     }
 
     const session = await getSession()
-    const userId = session?.user?.id
-    if (!userId) {
+    const resolvedUserId = userId ?? session?.user?.id
+    if (!resolvedUserId) {
       logger.warn('No authenticated user for workspace-scoped channel accounts', { workspaceId })
       return {}
     }
 
     const mappedResult = await db.execute(sql`
-      SELECT ca.account_id, ca.account_name 
+      SELECT ca.account_id as account_id, ca.account_name as account_name
       FROM channel_accounts ca
       WHERE ca.account_type = ${type}
-        AND ca.account_id IN (
-          SELECT cam.sub_account_id
-          FROM client_analytics_account_mapping cam
-          WHERE cam.workspace_id_ref = ${workspaceId}
+        AND (
+          ca.account_id IN (
+            SELECT cam.sub_account_id
+            FROM client_analytics_account_mapping cam
+            WHERE cam.workspace_id_ref = ${workspaceId} and cam.sub_account_type = ${type}
+          )
+          OR ca.account_id IN (
+            SELECT DISTINCT sub_account_id
+            FROM client_analytics_account_mapping
+            WHERE workspace_id_ref IN (
+              SELECT w.id
+              FROM permissions p
+              INNER JOIN workspace w ON p.entity_id = w.id
+              WHERE p.user_id = ${resolvedUserId}
+                AND p.entity_type = 'workspace'
+                AND w.archived_at IS NULL
+            )
+          )
         )
-        or ca.account_id IN (
-          select distinct sub_account_id from client_analytics_account_mapping where workspace_id_ref IN (
-          SELECT w.id
-          FROM permissions p
-          INNER JOIN workspace w ON p.entity_id = w.id
-          WHERE p.user_id = ${userId}
-            AND p.entity_type = 'workspace'
-            AND w.archived_at IS NULL
-    ))
       ORDER BY ca.account_name
     `)
 
@@ -143,9 +156,10 @@ export async function getChannelAccounts(
  * Fetches Google Ads accounts from database for the current workspace.
  */
 export async function getGoogleAdsAccounts(
-  workspaceId?: string
+  workspaceId?: string,
+  userId?: string
 ): Promise<Record<string, ChannelAccount>> {
-  return getChannelAccounts('google', workspaceId)
+  return getChannelAccounts('google', workspaceId, userId)
 }
 
 /**

@@ -71,7 +71,9 @@ export async function POST(request: NextRequest) {
     const body: GoogleAdsV1Request = await request.json()
     logger.info(`[${requestId}] Request body received`, { body })
 
-    const { query, accounts, workspaceId } = body
+    const { query, accounts, workspaceId: bodyWorkspaceId } = body
+    const workspaceId = bodyWorkspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
+    const userId = request.nextUrl.searchParams.get('userId') ?? undefined
 
     // Validate query
     if (!query) {
@@ -79,7 +81,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No query provided' }, { status: 400 })
     }
 
-    const googleAdsAccounts = await getGoogleAdsAccounts(workspaceId)
+    const googleAdsAccounts = await getGoogleAdsAccounts(workspaceId, userId)
 
     // Resolve account input (supports both keys and numeric IDs)
     const resolvedAccountKey = resolveAccountKey(accounts, googleAdsAccounts)
