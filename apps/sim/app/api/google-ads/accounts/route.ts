@@ -9,7 +9,8 @@ import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const workspaceId = request.nextUrl.searchParams.get('workspaceId') ?? undefined
-    const accounts = await getGoogleAdsAccounts(workspaceId)
+    const userId = request.nextUrl.searchParams.get('userId') ?? undefined
+    const accounts = await getGoogleAdsAccounts(workspaceId, userId)
 
     return NextResponse.json({
       success: true,
