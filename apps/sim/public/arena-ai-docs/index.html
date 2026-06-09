@@ -1,0 +1,983 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arena AI — Onboarding Guide</title>
+    <meta name="description" content="Arena AI onboarding guide. Learn the core concepts, workspace resources, execution, deployment, blocks, integrations, and skills.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+                :root {
+                  --primary: #6C63FF;
+                  --primary-light: #5A52E0;
+                  --primary-dark: #4A42D4;
+                  --accent: #00B894;
+                  --accent-light: #00D4AA;
+                  --bg-dark: #FFFFFF;
+                  --bg-card: #F8F9FC;
+                  --bg-card-hover: #F0F2F7;
+                  --bg-sidebar: #F5F6FA;
+                  --text-primary: #1A1D2E;
+                  --text-secondary: #4A4F65;
+                  --text-muted: #8B90A5;
+                  --border: #E2E5F0;
+                  --border-light: #D1D5E4;
+                  --gradient-1: linear-gradient(135deg, #6C63FF 0%, #00B894 100%);
+                  --gradient-2: linear-gradient(135deg, #FFFFFF 0%, #F8F9FC 100%);
+                  --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+                  --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
+                  --shadow-lg: 0 8px 32px rgba(0,0,0,0.1);
+                  --radius: 12px;
+                  --radius-sm: 8px;
+                  --radius-lg: 16px;
+              }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.7;
+            font-size: 16px;
+            overflow-x: hidden;
+        }
+
+        /* ===== NAVIGATION ===== */
+        .nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 2rem; height: 64px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .nav-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+       .nav-logo {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.nav-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+        .nav-title { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
+        .nav-title span { color: var(--text-muted); font-weight: 400; margin-left: 8px; }
+        .nav-links { display: flex; gap: 2rem; list-style: none; }
+        .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; font-weight: 500; transition: color 0.2s; }
+        .nav-links a:hover, .nav-links a.active { color: var(--text-primary); }
+        .nav-cta {
+            background: var(--primary); color: white; padding: 8px 20px;
+            border-radius: var(--radius-sm); text-decoration: none;
+            font-weight: 600; font-size: 0.85rem; transition: background 0.2s, transform 0.2s;
+        }
+        .nav-cta:hover { background: var(--primary-light); transform: translateY(-1px); }
+
+        /* ===== LAYOUT ===== */
+        .layout { display: flex; min-height: 100vh; padding-top: 64px; }
+        .sidebar {
+            width: 260px; position: fixed; top: 64px; left: 0; bottom: 0;
+            background: var(--bg-sidebar); border-right: 1px solid var(--border);
+            padding: 2rem 1.5rem; overflow-y: auto;
+        }
+        .sidebar-section { margin-bottom: 2rem; }
+        .sidebar-label {
+            font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 1.2px; color: var(--text-muted); margin-bottom: 0.75rem;
+        }
+        .sidebar-nav { list-style: none; }
+        .sidebar-nav li a {
+            display: block; padding: 0.5rem 0.75rem;
+            color: var(--text-secondary); text-decoration: none;
+            font-size: 0.875rem; font-weight: 500;
+            border-radius: var(--radius-sm); transition: all 0.2s; margin-bottom: 2px;
+        }
+        .sidebar-nav li a:hover { color: var(--text-primary); background: var(--bg-card); }
+        .sidebar-nav li a.active { color: var(--primary); background: rgba(108, 99, 255, 0.08); }
+
+        /* ===== MAIN CONTENT ===== */
+        .main { margin-left: 260px; flex: 1; max-width: 900px; padding: 3rem 4rem; }
+
+        /* ===== HERO ===== */
+        .hero {
+            margin-bottom: 4rem; padding: 3rem;
+            background: var(--bg-card); border-radius: var(--radius-lg);
+            border: 1px solid var(--border); position: relative; overflow: hidden;
+        }
+        .hero::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--gradient-1); }
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(108, 99, 255, 0.1); border: 1px solid rgba(108, 99, 255, 0.2);
+            padding: 6px 14px; border-radius: 20px; font-size: 0.75rem;
+            font-weight: 600; color: var(--primary-light); margin-bottom: 1.5rem;
+        }
+        .hero h1 {
+            font-size: 2.5rem; font-weight: 800; line-height: 1.2; margin-bottom: 1rem;
+            background: linear-gradient(135deg, #1A1D2E 0%, #6C63FF 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .hero p { font-size: 1.1rem; color: var(--text-secondary); line-height: 1.8; max-width: 700px; }
+
+        /* ===== SECTIONS ===== */
+        .doc-section { margin-bottom: 4rem; scroll-margin-top: 80px; }
+        .doc-section h2 {
+            font-size: 1.75rem; font-weight: 700; margin-bottom: 1rem;
+            color: var(--text-primary); padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .doc-section h3 { font-size: 1.2rem; font-weight: 600; margin: 2rem 0 0.75rem; color: var(--text-primary); }
+        .doc-section p { color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.8; }
+        .doc-section ul, .doc-section ol { margin: 1rem 0 1.5rem 1.5rem; color: var(--text-secondary); }
+        .doc-section li { margin-bottom: 0.5rem; line-height: 1.7; }
+        .doc-section li strong { color: var(--text-primary); }
+        .doc-section a { color: var(--primary); text-decoration: none; }
+        .doc-section a:hover { text-decoration: underline; }
+
+        /* ===== TABLES ===== */
+        .doc-table {
+            width: 100%; border-collapse: collapse; margin: 1.5rem 0;
+            background: var(--bg-card); border-radius: var(--radius); overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        .doc-table th {
+            background: rgba(108, 99, 255, 0.05); padding: 1rem 1.25rem;
+            text-align: left; font-weight: 600; font-size: 0.85rem;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            color: var(--text-muted); border-bottom: 1px solid var(--border);
+        }
+        .doc-table td {
+            padding: 1rem 1.25rem; border-bottom: 1px solid var(--border);
+            color: var(--text-secondary); font-size: 0.9rem; vertical-align: top;
+        }
+        .doc-table tr:last-child td { border-bottom: none; }
+        .doc-table td strong { color: var(--primary); font-weight: 600; }
+
+        /* ===== CARDS ===== */
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; margin: 1.5rem 0; }
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 1.75rem; transition: all 0.2s;
+        }
+        .card:hover { border-color: var(--border-light); background: var(--bg-card-hover); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+        .card h4 { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem; }
+        .card p { font-size: 0.875rem; color: var(--text-muted); line-height: 1.6; margin: 0; }
+        .card-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; font-size: 1.2rem; }
+        .card-icon.purple { background: rgba(108, 99, 255, 0.1); }
+        .card-icon.green { background: rgba(0, 212, 170, 0.1); }
+        .card-icon.blue { background: rgba(59, 130, 246, 0.1); }
+        .card-icon.orange { background: rgba(249, 115, 22, 0.1); }
+        .card-icon.pink { background: rgba(236, 72, 153, 0.1); }
+        .card-icon.teal { background: rgba(20, 184, 166, 0.1); }
+
+        /* ===== CALLOUTS ===== */
+        .callout {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-left: 3px solid var(--primary); border-radius: var(--radius-sm);
+            padding: 1.25rem 1.5rem; margin: 1.5rem 0;
+        }
+        .callout.green { border-left-color: var(--accent); }
+        .callout.orange { border-left-color: #F97316; }
+        .callout p { margin: 0; font-size: 0.9rem; color: var(--text-secondary); }
+        .callout-title { font-weight: 600; color: var(--primary); margin-bottom: 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .callout.green .callout-title { color: var(--accent); }
+        .callout.orange .callout-title { color: #F97316; }
+
+        /* ===== STEPS ===== */
+        .steps { margin: 1.5rem 0; }
+        .step { display: flex; gap: 1.25rem; margin-bottom: 1rem; padding: 1.25rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+        .step-number { width: 32px; height: 32px; min-width: 32px; background: var(--gradient-1); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; color: white; }
+        .step-content h4 { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.25rem; }
+        .step-content p { font-size: 0.875rem; color: var(--text-muted); margin: 0; }
+
+        /* ===== BADGE / PILL ===== */
+        .badge {
+            display: inline-block; padding: 3px 10px; border-radius: 20px;
+            font-size: 0.75rem; font-weight: 600; margin-left: 8px; vertical-align: middle;
+        }
+        .badge-purple { background: rgba(108,99,255,0.1); color: var(--primary); border: 1px solid rgba(108,99,255,0.2); }
+        .badge-green { background: rgba(0,212,170,0.1); color: var(--accent); border: 1px solid rgba(0,212,170,0.2); }
+        .badge-orange { background: rgba(249,115,22,0.1); color: #F97316; border: 1px solid rgba(249,115,22,0.2); }
+
+        /* ===== CODE ===== */
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(108, 99, 255, 0.08);
+            padding: 2px 8px; border-radius: 4px;
+            font-size: 0.85em; color: var(--primary);
+        }
+        pre {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); padding: 1.25rem;
+            overflow-x: auto; margin: 1rem 0;
+        }
+        pre code { background: none; padding: 0; font-size: 0.85rem; color: var(--text-secondary); }
+
+        /* ===== FAQ ===== */
+        .faq-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 0.75rem; overflow: hidden; }
+        .faq-question {
+            padding: 1.25rem 1.5rem; font-weight: 600; color: var(--text-primary);
+            cursor: pointer; display: flex; justify-content: space-between;
+            align-items: center; transition: background 0.2s; font-size: 0.95rem;
+        }
+        .faq-question:hover { background: var(--bg-card-hover); }
+        .faq-question::after { content: '+'; font-size: 1.25rem; color: var(--text-muted); transition: transform 0.3s; }
+        .faq-item.open .faq-question::after { transform: rotate(45deg); }
+        .faq-answer {
+            padding: 0 1.5rem; max-height: 0; overflow: hidden;
+            transition: max-height 0.3s, padding 0.3s;
+            color: var(--text-secondary); font-size: 0.9rem; line-height: 1.7;
+        }
+        .faq-item.open .faq-answer { max-height: 400px; padding: 0 1.5rem 1.25rem; }
+
+        /* ===== DIVIDER ===== */
+        .section-divider { border: none; border-top: 1px solid var(--border); margin: 3rem 0; }
+
+        /* ===== FOOTER ===== */
+        .footer {
+            margin-left: 260px; border-top: 1px solid var(--border);
+            padding: 3rem 4rem; display: flex; justify-content: space-between;
+            align-items: center; color: var(--text-muted); font-size: 0.85rem;
+        }
+        .footer a { color: var(--text-secondary); text-decoration: none; transition: color 0.2s; }
+        .footer a:hover { color: var(--primary); }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 1024px) { .sidebar { display: none; } .main { margin-left: 0; padding: 2rem; } .footer { margin-left: 0; padding: 2rem; } }
+        @media (max-width: 768px) { .nav-links { display: none; } .hero h1 { font-size: 1.75rem; } .hero { padding: 2rem; } .main { padding: 1.5rem; } .card-grid { grid-template-columns: 1fr; } }
+
+        /* ===== SCROLL ===== */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #F5F6FA; }
+        ::-webkit-scrollbar-thumb { background: #C8CDD9; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #9BA0B5; }
+    </style>
+</head>
+<body>
+
+    <!-- Navigation -->
+    <nav class="nav">
+        <a href="#" class="nav-brand">
+            <div class="nav-logo">
+    <img src="https://arenav2image.s3.us-west-1.amazonaws.com/arena_svg_white.svg" alt="Arena AI Logo">
+</div>
+            <div class="nav-title">Arena AI <span>Onboarding</span></div>
+        </a>
+        <ul class="nav-links">
+            <li><a href="#introduction" class="active">Introduction</a></li>
+            <li><a href="#workspace-concepts">Workspace</a></li>
+            <!-- <li><a href="#running-workflows">Running</a></li> -->
+            <li><a href="#deployment">Deployment</a></li>
+            <li><a href="#blocks">Blocks</a></li>
+            <li><a href="#integrations">Integrations</a></li>
+        </ul>
+        <a href="https://app.thearena.ai" class="nav-cta" target="_blank">Open Arena AI →</a>
+    </nav>
+
+    <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <div class="sidebar-label">Getting Started</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#introduction" class="active">Introduction</a></li>
+                    <li><a href="#workspace-concepts">Workspace Concepts</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Core Resources</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#files">Files</a></li>
+                    <li><a href="#knowledge-bases">Knowledge Bases</a></li>
+                    <li><a href="#tasks">Tasks</a></li>
+                    <li><a href="#tables">Tables</a></li>
+                    <li><a href="#workflows">Workflows</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Running Workflows</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#test-vs-run">Test vs Run</a></li>
+                    <li><a href="#naming">Naming</a></li>
+                    <li><a href="#access">Access Control</a></li>
+                    <li><a href="#logging">Logging</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Deployment</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#deployment">Why Deploy</a></li>
+                    <li><a href="#api-deployment">API Deployment</a></li>
+                    <li><a href="#chat-deployment">Chat Deployment</a></li>
+                    <li><a href="#version-control">Version Control</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Building</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#blocks">Blocks</a></li>
+                    <li><a href="#integrations">Integrations</a></li>
+                    <li><a href="#skills">Skills</a></li>
+                    <li><a href="#copilot">Copilot</a></li>
+                </ul>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-label">Resources</div>
+                <ul class="sidebar-nav">
+                    <li><a href="#faq">FAQ</a></li>
+                    <li><a href="https://app.thearena.ai" target="_blank">Open Platform ↗</a></li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+
+            <!-- Hero -->
+            <section class="hero" id="introduction">
+                <div class="hero-badge">✦ Onboarding Guide</div>
+                <h1>Welcome to Arena AI</h1>
+                <p>Arena AI is the AI workflow platform where teams build, deploy, and automate with AI agents. This guide walks you through every core concept — from the building blocks of your workspace to running, testing, deploying, and extending your workflows.</p>
+            </section>
+
+            <!-- Workspace Concepts Overview -->
+            <section class="doc-section" id="workspace-concepts">
+                <h2>Your Workspace at a Glance</h2>
+                <p>Everything in Arena AI lives inside your <strong>Workspace</strong> — a shared environment where your team's workflows, data, files, and knowledge are stored and managed. Think of it as your team's AI operating system.</p>
+                <p>The five core resource types you'll work with every day are:</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <div class="card-icon purple">&#128196;</div>
+                        <h4>Files</h4>
+                        <p>Documents, presentations, CSVs, images — created or uploaded. Accessible to all workflows and Mothership.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon green">&#128218;</div>
+                        <h4>Knowledge Bases</h4>
+                        <p>Indexed collections of documents your AI agents can search and retrieve from at runtime.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon blue">&#128172;</div>
+                        <h4>Tasks</h4>
+                        <p>Scheduled or immediate actions Mothership runs on your behalf — recurring jobs, alerts, direct actions.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon orange">&#128202;</div>
+                        <h4>Tables</h4>
+                        <p>Structured workspace data — query, update, and export rows in plain language or from any workflow.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon pink">&#9889;</div>
+                        <h4>Workflows</h4>
+                        <p>Visual automation flows built from connected blocks. The core unit of automation in Arena AI.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- FILES -->
+            <section class="doc-section" id="files">
+                <h2>Files</h2>
+                <p>Files are documents, spreadsheets, presentations, images, code files, or any other content stored in your workspace. They are accessible from the sidebar, from any workflow, and from Mothership.</p>
+
+                <h3>What You Can Store</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Type</th><th>Examples</th><th>What You Can Do</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Documents</strong></td><td>Markdown, plain text, HTML</td><td>Write, edit, preview, reference in workflows</td></tr>
+                        <tr><td><strong>Spreadsheets</strong></td><td>CSV, TSV</td><td>Import into Tables, process in workflows</td></tr>
+                        <tr><td><strong>Presentations</strong></td><td>.pptx</td><td>Generate from Mothership, download</td></tr>
+                        <tr><td><strong>Images</strong></td><td>PNG, JPG, SVG</td><td>AI-generated or uploaded, embed anywhere</td></tr>
+                        <tr><td><strong>Code</strong></td><td>Python, JS, JSON</td><td>Write, execute logic, use as workflow inputs</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>How to Create or Upload</h3>
+                <p>Attach a file to any Mothership message or describe what you want and Mothership creates it. Files can also be generated by workflows and saved automatically.</p>
+                <ul>
+                    <li>"Write a technical spec for the auth system and save as a markdown file"</li>
+                    <li>"Create a CSV of our test accounts with columns for name, email, and plan"</li>
+                    <li>"Generate a pitch deck for the Q3 review — 8 slides"</li>
+                </ul>
+
+                <h3>File Viewer Modes</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Mode</th><th>What It Shows</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Editor</strong></td><td>Raw editable text</td></tr>
+                        <tr><td><strong>Preview</strong></td><td>Rendered output (markdown, HTML)</td></tr>
+                        <tr><td><strong>Split</strong></td><td>Editor and preview side by side</td></tr>
+                    </tbody>
+                </table>
+
+                <div class="callout green">
+                    <div class="callout-title">Tip</div>
+                    <p>Files uploaded or generated in Mothership are immediately available to any workflow in your workspace via the Files panel in the sidebar.</p>
+                </div>
+            </section>
+
+            <!-- KNOWLEDGE BASES -->
+            <section class="doc-section" id="knowledge-bases">
+                <h2>Knowledge Bases</h2>
+                <p>A Knowledge Base is an indexed collection of documents that your AI agents can search at runtime using semantic (meaning-based) search. Instead of hard-coding information into prompts, you store it in a Knowledge Base and your Agent blocks retrieve exactly what's relevant when they need it.</p>
+
+                <h3>What They're For</h3>
+                <ul>
+                    <li><strong>Product documentation</strong> — so agents can answer customer questions accurately</li>
+                    <li><strong>Support content</strong> — FAQs, troubleshooting guides, onboarding materials</li>
+                    <li><strong>Competitive intelligence</strong> — battle cards, market research, positioning docs</li>
+                    <li><strong>Internal policies</strong> — HR handbooks, runbooks, compliance documents</li>
+                </ul>
+
+                <h3>How to Build One</h3>
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h4>Create the Knowledge Base</h4>
+                            <p>Tell Mothership: "Create a knowledge base called 'Product Docs'" — or create it directly from the sidebar.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h4>Add Documents</h4>
+                            <p>Attach files, paste text, or point Mothership at a URL. It processes and indexes content automatically.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h4>Attach to a Workflow</h4>
+                            <p>Open any Agent block in your workflow and select the knowledge base. The agent will search it at runtime.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h4>Keep It Current with Connectors</h4>
+                            <p>Connect Notion, Google Drive, Slack, GitHub, Confluence, HubSpot, and 25+ more sources to sync automatically on a schedule.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="callout">
+                    <div class="callout-title">How It Works</div>
+                    <p>When an Agent block runs, it performs a semantic search across all attached knowledge bases and injects the most relevant content into its context window — no prompt engineering required.</p>
+                </div>
+            </section>
+
+            <!-- TASKS -->
+            <section class="doc-section" id="tasks">
+                <h2>Tasks (Automation &amp; Scheduled Jobs)</h2>
+                <p>Tasks are things Mothership does <em>for you</em> — either right now or on a recurring schedule. You don't need to build a full workflow for every one-off or repeating action. Just describe it and Mothership handles it.</p>
+
+                <h3>Direct Actions (Right Now)</h3>
+                <p>Mothership can take immediate actions using credentials connected to your workspace:</p>
+                <table class="doc-table">
+                    <thead><tr><th>What You Say</th><th>What Happens</th></tr></thead>
+                    <tbody>
+                        <tr><td>"Send a Slack message to #eng that the deploy finished"</td><td>Posts to Slack immediately</td></tr>
+                        <tr><td>"Email the Q3 report to jane@example.com"</td><td>Sends via connected Gmail</td></tr>
+                        <tr><td>"Create a GitHub issue: auth tokens not rotating on logout"</td><td>Opens the issue in the specified repo</td></tr>
+                        <tr><td>"Add a contact to HubSpot: Acme Corp, ceo@acme.com"</td><td>Creates the contact via HubSpot API</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Scheduled Jobs (Recurring)</h3>
+                <p>A scheduled job is a Mothership prompt that runs on a cron schedule. On each run, Mothership reads your current workspace and executes the task as if you'd just asked it.</p>
+                <ul>
+                    <li>"Every morning at 8am, check the leads table for new entries and post a summary to #sales in Slack"</li>
+                    <li>"Every Monday at 9am, pull last week's workflow run counts and write a report to the workspace"</li>
+                    <li>"On the first of every month, export the billing table to CSV and email it to finance@"</li>
+                </ul>
+
+
+
+                <div class="callout orange">
+                    <div class="callout-title">Managing Jobs</div>
+                    <p>You can pause, reschedule, or delete jobs at any time: "Pause the morning summary job" or "Change the sync job to run every 3 hours instead of 6."</p>
+                </div>
+            </section>
+
+            <!-- TABLES -->
+            <section class="doc-section" id="tables">
+                <h2>Tables</h2>
+                <p>Tables are structured data stores built into your workspace. Use them to persist leads, workflow outputs, errors, enrichment results — anything that needs to be queried, updated, and shared across workflows.</p>
+
+                <h3>Creating a Table</h3>
+                <p>Describe the schema to Mothership and it creates the table instantly:</p>
+                <ul>
+                    <li>"Create a leads table with columns for name, email, company, status, and created date"</li>
+                    <li>"Set up an errors table with: id (text), message (text), workflow (text), timestamp (date), resolved (boolean)"</li>
+                    <li>"Create a table that matches the structure of this CSV [attach file]"</li>
+                </ul>
+
+                <h3>Querying in Plain Language</h3>
+                <ul>
+                    <li>"How many rows in the leads table have status 'qualified'?"</li>
+                    <li>"Show me all records from the past 7 days where score is above 0.8"</li>
+                    <li>"What's the conversion rate from 'contacted' to 'meeting booked' this month?"</li>
+                </ul>
+
+                <h3>Using Tables in Workflows</h3>
+                <p>Tables are available to any workflow via the Table block. Reference a table by name — no additional configuration needed. Workflows can read rows, write new records, and update existing ones programmatically.</p>
+            </section>
+
+            <!-- WORKFLOWS -->
+            <section class="doc-section" id="workflows">
+                <h2>Workflows</h2>
+                <p>Workflows are the core automation unit in Arena AI. They are visual flows built from connected blocks — each block performs a specific task, and data flows between them automatically. A workflow can be as simple as "receive a webhook, call an AI model, send a Slack message" or as complex as a multi-branch, multi-agent pipeline with loops and condition routing.</p>
+
+                <h3>How to Create One</h3>
+                <p>Describe what the workflow should do to Mothership, or drag blocks onto the canvas manually in the workflow editor. Mothership builds the workflow and opens it in the resource panel in real time.</p>
+                <ul>
+                    <li>"Build a workflow that takes a URL, scrapes the page, summarizes it with Claude, and sends the summary to Slack"</li>
+                    <li>"Create a lead enrichment workflow that takes an email, looks up the company, and writes the enriched record to the leads table"</li>
+                </ul>
+
+                <h3>Key Workflow Concepts</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Concept</th><th>What It Means</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Trigger</strong></td><td>How the workflow starts — manual, API call, schedule, webhook, or chat message</td></tr>
+                        <tr><td><strong>Blocks</strong></td><td>The individual steps: AI agent, API call, condition check, loop, function, etc.</td></tr>
+                        <tr><td><strong>Connections</strong></td><td>Lines between blocks that define data flow and execution order</td></tr>
+                        <tr><td><strong>Variables</strong></td><td>Data passed between blocks using <code>{{block.output}}</code> syntax</td></tr>
+                        <tr><td><strong>Deployment</strong></td><td>Publishing your workflow so it can be called from outside the editor</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <hr class="section-divider">
+
+
+            <!-- TEST VS RUN -->
+            <section class="doc-section" id="test-vs-run">
+                <h2>Test vs. Run</h2>
+                <p>When you execute a workflow, there are two distinct modes. Understanding the difference is essential before you go to production.</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <div class="card-icon purple">&#128270;</div>
+                        <h4>Test <span class="badge badge-purple">Draft Mode</span></h4>
+                        <p>Running from the canvas editor. Uses your <strong>current draft state</strong>. Every change is live immediately. Use this while building to validate block outputs and debug logic before publishing.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon green">&#9654;</div>
+                        <h4>Run <span class="badge badge-green">Deployed Mode</span></h4>
+                        <p>Triggered via API, schedule, webhook, or chat. Always uses the <strong>active deployment snapshot</strong> — the version you last published. Canvas changes have no effect until you deploy.</p>
+                    </div>
+                </div>
+                <div class="callout">
+                    <div class="callout-title">The Golden Rule</div>
+                    <p>Test on the canvas. Deploy when it's ready. Any live trigger always runs the deployed snapshot, not your draft. Always click <strong>Deploy / Update</strong> after making changes.</p>
+                </div>
+                <h3>Execution Flow</h3>
+                <div class="steps">
+                    <div class="step"><div class="step-number">1</div><div class="step-content"><h4>Trigger fires</h4><p>Starts from its trigger block — Start, Webhook, Schedule, or Chat.</p></div></div>
+                    <div class="step"><div class="step-number">2</div><div class="step-content"><h4>Dependency analysis</h4><p>The engine maps block dependencies, identifies layers that can run in parallel.</p></div></div>
+                    <div class="step"><div class="step-number">3</div><div class="step-content"><h4>Concurrent execution</h4><p>Blocks with no mutual dependencies run simultaneously — no manual configuration needed.</p></div></div>
+                    <div class="step"><div class="step-number">4</div><div class="step-content"><h4>Data flows forward</h4><p>Each block's output is available downstream via <code>{{blockName.output}}</code> syntax.</p></div></div>
+                    <div class="step"><div class="step-number">5</div><div class="step-content"><h4>Response returned</h4><p>The first Response block that executes returns the result and ends the run.</p></div></div>
+                </div>
+            </section>
+
+            <!-- NAMING -->
+            <section class="doc-section" id="naming">
+                <h2>Naming Your Workflows</h2>
+                <p>Names matter more than you think. Mothership identifies workflows, tables, knowledge bases, and files <strong>by name</strong>. A well-named workflow is one Mothership can find and act on correctly — and one your team understands at a glance.</p>
+                <table class="doc-table">
+                    <thead><tr><th>Principle</th><th>Good Example</th><th>Avoid</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Descriptive</strong></td><td><code>lead-enrichment-pipeline</code></td><td><code>workflow-1</code>, <code>test</code></td></tr>
+                        <tr><td><strong>Action-oriented</strong></td><td><code>invoice-pdf-extractor</code></td><td><code>invoice-stuff</code></td></tr>
+                        <tr><td><strong>Team-readable</strong></td><td><code>weekly-sales-digest</code></td><td><code>wf-akshay-final2</code></td></tr>
+                        <tr><td><strong>Versioned when needed</strong></td><td><code>lead-scorer-v2</code></td><td><code>lead-scorer-copy-final2</code></td></tr>
+                        <tr><td><strong>Folder-organized</strong></td><td><em>Data Pipelines / invoice-extractor</em></td><td>Everything dumped at root</td></tr>
+                    </tbody>
+                </table>
+                <div class="callout green">
+                    <div class="callout-title">Mothership Uses Names Directly</div>
+                    <p>When you say "Run the invoice workflow" or "Deploy the lead scorer as an API", Mothership matches on the name. Vague or duplicate names cause ambiguity. Clear, unique names make every Mothership conversation faster and more reliable.</p>
+                </div>
+            </section>
+
+            <!-- ACCESS -->
+            <section class="doc-section" id="access">
+                <h2>Access Control</h2>
+                <p>Arena AI provides role-based access at the workspace level, the integration level, and the deployment level so you control who can build, run, and reach your workflows.</p>
+                <h3>Workspace Roles</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Role</th><th>Permissions</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Admin</strong></td><td>Full access — build, edit, deploy, manage integrations, invite members, manage billing</td></tr>
+                        <tr><td><strong>Member</strong></td><td>Build and run workflows, use connected integrations, access workspace resources</td></tr>
+                    </tbody>
+                </table>
+                <h3>Integration Access</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Role</th><th>What They Can Do</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Integration Admin</strong></td><td>View, edit, disconnect, reconnect, manage which members can use the credential</td></tr>
+                        <tr><td><strong>Integration Member</strong></td><td>Use the integration in their workflows (read-only access to the credential)</td></tr>
+                    </tbody>
+                </table>
+                <h3>Chat Deployment Access</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Mode</th><th>Who Can Access</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Public</strong></td><td>Anyone with the link — no authentication required</td></tr>
+                        <tr><td><strong>Password</strong></td><td>Users must enter a shared password before chatting</td></tr>
+                        <tr><td><strong>Email</strong></td><td>Only specific addresses or domains — verified via one-time OTP</td></tr>
+                        <tr><td><strong>SSO</strong></td><td>OIDC single sign-on (enterprise plans only)</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- LOGGING -->
+            <section class="doc-section" id="logging">
+                <h2>Logging &amp; Monitoring</h2>
+                <p>Every workflow run is logged automatically — manual, API, Chat, Schedule, or Webhook. You have full visibility into what happened, what data flowed where, and exactly why something succeeded or failed.</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <div class="card-icon purple">&#128187;</div>
+                        <h4>Real-Time Console</h4>
+                        <p>During manual runs in the editor, logs stream live on the right panel. See active block highlighting, outputs, timing, and error status for each step as it runs.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon blue">&#128203;</div>
+                        <h4>Logs Page</h4>
+                        <p>All runs across all triggers are logged centrally. Filter by time, status, trigger type, folder, or workflow. Use Live mode to watch executions in real time.</p>
+                    </div>
+                </div>
+                <h3>What Each Log Captures</h3>
+                <ul>
+                    <li><strong>Block inputs and outputs</strong> — exact data that entered and exited every block</li>
+                    <li><strong>Run timeline</strong> — start/end timestamps, total duration, per-block run times</li>
+                    <li><strong>Error details</strong> — which block failed, full error message</li>
+                    <li><strong>Cost breakdown</strong> — token counts and model costs per block</li>
+                    <li><strong>Workflow snapshot</strong> — frozen copy of the workflow at time of run for debugging</li>
+                </ul>
+                <div class="callout">
+                    <div class="callout-title">Security Note</div>
+                    <p>API keys and credentials are automatically redacted from log inputs. You can inspect block data safely without exposing sensitive values.</p>
+                </div>
+            </section>
+
+            <hr class="section-divider">
+
+
+            <!-- DEPLOYMENT -->
+            <section class="doc-section" id="deployment">
+                <h2>Why Deploy?</h2>
+                <p>When you build a workflow in the canvas editor, it exists as a <strong>draft</strong> — only you can run it manually from the editor. <strong>Deployment</strong> is the act of publishing it so it becomes accessible from the outside world: via an API endpoint, a shareable chat URL, a scheduled job, or a webhook.</p>
+                <div class="callout orange">
+                    <div class="callout-title">Draft vs. Deployed</div>
+                    <p>Think of the canvas as your scratch pad and a deployment as your production release. You can keep editing the draft freely — nothing changes for users or calling apps until you click <strong>Update</strong> to publish a new version.</p>
+                </div>
+                <h3>The Three Deployment Types</h3>
+                <div class="card-grid">
+                    <div class="card">
+                        <div class="card-icon purple">&#128279;</div>
+                        <h4>API Deployment</h4>
+                        <p>Exposes your workflow as a REST endpoint. Any application can call it with an API key. Supports synchronous, streaming, and async execution modes.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon green">&#128172;</div>
+                        <h4>Chat Deployment</h4>
+                        <p>Creates a hosted conversational interface at a shareable URL. Supports multi-turn conversations, file uploads, and voice. Embed as an iframe anywhere.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon blue">&#128295;</div>
+                        <h4>MCP Tool</h4>
+                        <p>Exposes your workflow as a tool on an MCP server. External agents — Cursor, Claude Desktop, VS Code — can call it directly as a tool.</p>
+                    </div>
+                </div>
+                <h3>How to Deploy</h3>
+                <div class="steps">
+                    <div class="step"><div class="step-number">1</div><div class="step-content"><h4>Open your workflow</h4><p>Navigate to the workflow in the canvas editor.</p></div></div>
+                    <div class="step"><div class="step-number">2</div><div class="step-content"><h4>Click Deploy</h4><p>The Deploy modal opens. The General tab shows current state and version history.</p></div></div>
+                    <div class="step"><div class="step-number">3</div><div class="step-content"><h4>Choose a deployment type</h4><p>Select API, Chat, or MCP from the tabs and configure the relevant settings.</p></div></div>
+                    <div class="step"><div class="step-number">4</div><div class="step-content"><h4>Publish</h4><p>Click <strong>Deploy</strong> (first time) or <strong>Update</strong> (subsequent releases). The workflow is now live.</p></div></div>
+                    <div class="step"><div class="step-number">5</div><div class="step-content"><h4>Update after changes</h4><p>When you modify the canvas, an "Update deployment" badge appears. Click Update to push the new version to production.</p></div></div>
+                </div>
+            </section>
+
+            <!-- API DEPLOYMENT -->
+            <section class="doc-section" id="api-deployment">
+                <h2>API Deployment</h2>
+                <p>Once deployed as an API, your workflow is available at a stable REST endpoint:</p>
+                <pre><code>POST https://agent.thearena.ai/api/workflows/{workflow-id}/execute</code></pre>
+                <h3>Authentication</h3>
+                <p>By default, API endpoints require an API key in the <code>x-api-key</code> header. Generate keys in <strong>Settings → API Keys</strong>.</p>
+                <pre><code>curl -X POST https://agent.thearena.ai/api/workflows/{workflow-id}/execute \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $ARENA_API_KEY" \
+  -d '{ "input": "Summarize this article" }'</code></pre>
+                <h3>Execution Modes</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Mode</th><th>When to Use</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Synchronous</strong></td><td>Default. Wait for the complete response. Best for short-running workflows.</td></tr>
+                        <tr><td><strong>Streaming</strong></td><td>Add <code>"stream": true</code> — receive token-by-token output as it's generated. Best for AI text responses.</td></tr>
+                        <tr><td><strong>Asynchronous</strong></td><td>Returns a run ID immediately. Poll for results separately. Best for long-running workflows.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- CHAT DEPLOYMENT -->
+            <section class="doc-section" id="chat-deployment">
+                <h2>Chat Deployment</h2>
+                <p>Chat deployment turns your workflow into a conversational interface at a shareable URL. Every message triggers a fresh execution with the full conversation history passed as context. Responses stream in real time.</p>
+                <h3>Configuration Fields</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Field</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>URL Slug</strong></td><td>Forms the public URL: <code>https://www.agent.thearena.ai/chat/your-slug</code></td></tr>
+                        <tr><td><strong>Title</strong></td><td>Display name shown in the chat header</td></tr>
+                        <tr><td><strong>Output</strong></td><td>Which block fields are returned as the chat response — usually <code>content</code> from the final Agent block</td></tr>
+                        <tr><td><strong>Welcome Message</strong></td><td>Greeting shown before the first user message</td></tr>
+                        <tr><td><strong>Access Control</strong></td><td>Public, Password, Email (OTP), or SSO</td></tr>
+                    </tbody>
+                </table>
+                <p>Share via direct link or embed in any website:</p>
+                <pre><code>&lt;iframe src="https://agent.thearena.ai/chat/your-slug"
+  width="100%" height="600" frameborder="0"&gt;&lt;/iframe&gt;</code></pre>
+            </section>
+
+            <!-- VERSION CONTROL -->
+            <section class="doc-section" id="version-control">
+                <h2>Version Control &amp; Rollbacks</h2>
+                <p>Every Deploy or Update creates a new entry in the version history table. You can name versions, add descriptions, and roll back instantly.</p>
+                <table class="doc-table">
+                    <thead><tr><th>Action</th><th>What It Does</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Rename</strong></td><td>Give a human-readable label, e.g. "v2 — added error handling"</td></tr>
+                        <tr><td><strong>Add description</strong></td><td>Attach notes about what changed in that deployment</td></tr>
+                        <tr><td><strong>Promote to live</strong></td><td>Make an older version the active one — instant rollback, no canvas changes</td></tr>
+                        <tr><td><strong>Load into editor</strong></td><td>Restore a previous version onto the canvas for editing and redeployment</td></tr>
+                    </tbody>
+                </table>
+                <div class="callout green">
+                    <div class="callout-title">Rollback in Seconds</div>
+                    <p>If a new deployment breaks something, find the last known-good version in the table and click <strong>Promote to live</strong>. All API, Chat, Schedule, and Webhook executions immediately switch to that version.</p>
+                </div>
+            </section>
+
+            <hr class="section-divider">
+
+
+            <!-- BLOCKS -->
+            <section class="doc-section" id="blocks">
+                <h2>Blocks</h2>
+                <p>Blocks are the building units of every workflow. Each block performs a specific, self-contained task. You connect them together and data flows automatically. Think of blocks as LEGO bricks — individually simple, combinable into any automation you can imagine.</p>
+                <h3>Block Categories</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Category</th><th>Block Types</th><th>What They Do</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Triggers</strong></td><td>Start, Webhook, Schedule, Chat</td><td>Every workflow starts with a trigger. Defines how the workflow begins — manually, on a schedule, from an HTTP event, or a chat message.</td></tr>
+                        <tr><td><strong>AI &amp; Processing</strong></td><td>Agent, Function, API</td><td>Agent blocks call AI models with tools and knowledge bases. Function blocks run custom JavaScript. API blocks call any external endpoint.</td></tr>
+                        <tr><td><strong>Control Flow</strong></td><td>Router, Condition, Loop, Parallel</td><td>Direct execution paths. Condition blocks branch on logic; Router blocks use AI; Loop blocks iterate; Parallel blocks run branches concurrently.</td></tr>
+                        <tr><td><strong>Data</strong></td><td>Table, Knowledge Base, Memory</td><td>Read and write workspace data. Semantic search from knowledge bases. Persist state across runs with Memory.</td></tr>
+                        <tr><td><strong>Output</strong></td><td>Response</td><td>Formats and returns the final result. The first Response block to execute ends the run and sends the reply.</td></tr>
+                        <tr><td><strong>Composition</strong></td><td>Workflow</td><td>Calls another workflow as a sub-flow. Always runs the deployed version of the child. Enables reusable, modular automation.</td></tr>
+                    </tbody>
+                </table>
+                <h3>How Data Flows Between Blocks</h3>
+                <p>Every block exposes its outputs as variables. Reference them downstream using double-curly syntax:</p>
+                <pre><code>{{agentBlock.content}}       // Agent block text output
+{{apiBlock.data.email}}      // Nested field from an API response
+{{loopBlock.currentItem}}    // Current item in a loop iteration</code></pre>
+                <div class="callout">
+                    <div class="callout-title">Best Practice</div>
+                    <p>Keep sub-workflows focused on one task. Small, single-purpose flows are easier to test, debug, and reuse across multiple parent workflows. Max nesting depth: 25 levels.</p>
+                </div>
+            </section>
+
+
+            <!-- INTEGRATIONS -->
+            <section class="doc-section" id="integrations">
+                <h2>Integrations</h2>
+                <p>Integrations are authenticated connections to third-party services — Gmail, Slack, GitHub, HubSpot, Notion, and hundreds more. Arena AI handles the OAuth flow, token storage, and automatic refresh. Connect once; select the account in any block that needs it.</p>
+                <h3>Connecting an Integration</h3>
+                <div class="steps">
+                    <div class="step"><div class="step-number">1</div><div class="step-content"><h4>Open Settings &rarr; Integrations</h4><p>Click <strong>+ Connect</strong> to open the connection modal.</p></div></div>
+                    <div class="step"><div class="step-number">2</div><div class="step-content"><h4>Select the service</h4><p>Search for or browse to the service you want to connect.</p></div></div>
+                    <div class="step"><div class="step-number">3</div><div class="step-content"><h4>Review permissions</h4><p>Review the OAuth scopes Arena AI will request from the provider.</p></div></div>
+                    <div class="step"><div class="step-number">4</div><div class="step-content"><h4>Authorize and name it</h4><p>Enter a display name (e.g. "Akshay's Gmail"), complete the OAuth flow. Done.</p></div></div>
+                </div>
+                <div class="callout orange">
+                    <div class="callout-title">Required Before Running</div>
+                    <p>If a block requires an integration and none is selected, the workflow will fail at that step. Always assign credentials before deploying or running live.</p>
+                </div>
+                <h3>Available Integration Categories</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Category</th><th>Services</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>AI Models</strong></td><td>OpenAI, Anthropic, Google Gemini, Groq, Cerebras, Mistral, DeepSeek, xAI, Ollama</td></tr>
+                        <tr><td><strong>Communication</strong></td><td>Gmail, Slack, Microsoft Teams, Telegram, WhatsApp, Outlook</td></tr>
+                        <tr><td><strong>Productivity</strong></td><td>Notion, Google Workspace, Airtable, Dropbox, OneDrive</td></tr>
+                        <tr><td><strong>Development</strong></td><td>GitHub, Jira, Linear, GitLab</td></tr>
+                        <tr><td><strong>Search &amp; Data</strong></td><td>Google Search, Perplexity, Firecrawl, Exa AI</td></tr>
+                        <tr><td><strong>Databases</strong></td><td>PostgreSQL, MySQL, Supabase, Pinecone, Qdrant</td></tr>
+                        <tr><td><strong>CRM &amp; Sales</strong></td><td>HubSpot, Salesforce, Pipedrive</td></tr>
+                    </tbody>
+                </table>
+                <p>For services not listed, use <strong>MCP (Model Context Protocol)</strong> to connect any external tool or API without writing custom integration code.</p>
+            </section>
+
+
+            <!-- SKILLS -->
+            <section class="doc-section" id="skills">
+                <h2>Skills</h2>
+                <p>Skills are reusable capability bundles you attach to Agent blocks. Instead of repeating the same instructions, tool configs, or knowledge base attachments across dozens of workflows, define a skill once and reference it everywhere it's needed.</p>
+                <h3>What a Skill Contains</h3>
+                <ul>
+                    <li><strong>Instructions</strong> — persona, tone, domain expertise, behavioral rules for the agent</li>
+                    <li><strong>Tools</strong> — pre-configured tool access (web search, code execution, integrations)</li>
+                    <li><strong>Knowledge Bases</strong> — which knowledge bases the agent searches at runtime</li>
+                    <li><strong>Model settings</strong> — default model, temperature, and generation parameters</li>
+                </ul>
+                <div class="card-grid">
+                    <div class="card">
+                        <div class="card-icon green">&#9889;</div>
+                        <h4>Reusability</h4>
+                        <p>Define once, use everywhere. Update a skill and every workflow using it immediately gets the improvement.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon blue">&#128221;</div>
+                        <h4>Consistency</h4>
+                        <p>All customer-facing agents behave with the same tone and access the same knowledge — enforced at the skill level.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon purple">&#127959;</div>
+                        <h4>Modularity</h4>
+                        <p>Build skills for specific functions — "Support Agent", "Researcher", "Data Analyst" — and mix them across workflows as needed.</p>
+                    </div>
+                </div>
+                <h3>Example Skills</h3>
+                <ul>
+                    <li><strong>Support Agent</strong> — Product Docs knowledge base attached, instructed to be concise and never speculate</li>
+                    <li><strong>Researcher</strong> — web search and Firecrawl tools, instructed to always cite sources</li>
+                    <li><strong>Data Analyst</strong> — code execution and leads table access, returns structured JSON</li>
+                    <li><strong>Outbound Writer</strong> — persuasive B2B copywriter persona with access to competitor battle cards</li>
+                </ul>
+            </section>
+
+            <!-- COPILOT -->
+            <section class="doc-section" id="copilot">
+                <h2>Copilot</h2>
+                <p>Copilot is your in-canvas AI assistant, scoped to the workflow you're currently building. It reads the full structure of your workflow, makes changes directly, and saves checkpoints so you can revert at any time.</p>
+                <div class="card-grid">
+                    <div class="card">
+                        <div class="card-icon purple">&#128172;</div>
+                        <h4>Ask Questions</h4>
+                        <p>Explain what any block does, debug a failed run, or ask how to implement a particular pattern. Copilot has full context of the open workflow.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon green">&#9999;</div>
+                        <h4>Build &amp; Edit</h4>
+                        <p>Switch to Agent mode to let Copilot propose and apply changes — add blocks, configure settings, wire variables — all with natural language.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon orange">&#128196;</div>
+                        <h4>Checkpoints</h4>
+                        <p>Every change saves a checkpoint. Hover over any Copilot message and click the checkpoints icon to revert to a previous state instantly.</p>
+                    </div>
+                </div>
+                <div class="callout">
+                    <div class="callout-title">Copilot vs. Mothership</div>
+                    <p><strong>Copilot</strong> is scoped to one workflow — it reads and edits that workflow's blocks and connections. <strong>Mothership</strong> has access to your entire workspace and can build workflows, manage tables, run research, schedule jobs, and take actions across integrations.</p>
+                </div>
+            </section>
+
+            <hr class="section-divider">
+
+
+            <!-- FAQ -->
+            <section class="doc-section" id="faq">
+                <h2>Frequently Asked Questions</h2>
+                <div class="faq-item">
+                    <div class="faq-question">What is the difference between a Workflow and a Task?</div>
+                    <div class="faq-answer">A Workflow is a visual automation flow built from connected blocks with a persistent structure you can version and deploy. A Task (scheduled job) is a recurring Mothership instruction that runs on a cron schedule and can call workflows, take direct actions, or run research. Tasks are conversational; workflows are structural.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">When should I use a Knowledge Base vs. a Table?</div>
+                    <div class="faq-answer">Use a Knowledge Base when you want agents to semantically search unstructured content — documents, PDFs, web pages. Use a Table when you need structured, queryable data — leads, metrics, records with defined columns. Tables are for storing workflow outputs; Knowledge Bases give agents access to reference material.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">I changed my workflow — why isn't the API returning new results?</div>
+                    <div class="faq-answer">API, Chat, Schedule, and Webhook executions always run the active deployment snapshot. After making canvas changes, click Update in the Deploy modal to publish a new version. Until then, all external calls use the previously deployed version.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">What is the difference between Test and Run?</div>
+                    <div class="faq-answer">Test (manual run from the editor) uses your current draft — canvas changes are reflected immediately. Run (triggered via API, chat, schedule, or webhook) always uses the deployed snapshot. This lets you safely edit and test without affecting production traffic.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">How do I deploy a workflow as a chatbot?</div>
+                    <div class="faq-answer">Open your workflow, click Deploy, go to the Chat tab. Set a URL slug, title, output field, welcome message, and access control (Public, Password, Email, or SSO). Click Launch Chat. Your chatbot is live at a shareable URL and can be embedded anywhere via iframe.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">Can I connect multiple accounts for the same service?</div>
+                    <div class="faq-answer">Yes. You can connect multiple accounts per service — for example, two separate Gmail accounts. Each block independently selects which account to use. Useful when different workflows need different identities or permissions.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">What happens if a deployment breaks production?</div>
+                    <div class="faq-answer">Open the Versions table in the Deploy modal, find the last known-good version, and click Promote to live. All API, Chat, Schedule, and Webhook executions immediately switch to that version. Your draft canvas is not affected.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">What is the difference between Copilot and Mothership?</div>
+                    <div class="faq-answer">Copilot is scoped to a single workflow — it reads and modifies that workflow's blocks and connections. Mothership has access to your entire workspace and can build multiple workflows, manage tables, run research, schedule jobs, connect integrations, and take immediate actions across services.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">How do I keep a Knowledge Base up to date automatically?</div>
+                    <div class="faq-answer">Set up a Connector from the knowledge base settings. Arena AI ships with 30+ connectors — Notion, Google Drive, Slack, GitHub, Confluence, HubSpot, Salesforce, and more. New content is added, changed content is re-processed, and deleted content is removed on every sync run.</div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">What are Skills and when should I use them?</div>
+                    <div class="faq-answer">Skills are reusable capability bundles — instructions, tools, knowledge bases, and model settings — attached to Agent blocks. Use them when a consistent agent persona or tool configuration should appear across multiple workflows. Define once, and all workflows using that skill get any update immediately.</div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div>© 2026 Arena AI by Position². All rights reserved.</div>
+        <div>
+            <a href="https://app.thearena.ai" target="_blank">Open Arena AI &#8599;</a>
+        </div>
+    </footer>
+
+    <script>
+        // FAQ Toggle
+        document.querySelectorAll('.faq-question').forEach(q => {
+            q.addEventListener('click', () => q.parentElement.classList.toggle('open'));
+        });
+
+        // Sidebar active highlight on scroll
+        const sections = document.querySelectorAll('.doc-section, .hero');
+        const sideLinks = document.querySelectorAll('.sidebar-nav a');
+        const topLinks = document.querySelectorAll('.nav-links a');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(s => {
+                if (scrollY >= s.offsetTop - 100) current = s.getAttribute('id');
+            });
+            [...sideLinks, ...topLinks].forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>
