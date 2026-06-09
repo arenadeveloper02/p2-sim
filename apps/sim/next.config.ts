@@ -464,6 +464,10 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
+        source: '/arena-ai-docs',
+        destination: '/arena-ai-docs/index.html',
+      },
+      {
         source: '/favicon.ico',
         destination: '/icon.svg',
       },
