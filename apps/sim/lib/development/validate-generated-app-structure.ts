@@ -256,6 +256,74 @@ function checkPrismaUsage(
   return issues
 }
 
+function toComponentNameFromPath(filePath: string): string {
+  const base = normalizePath(filePath).split('/').pop() ?? ''
+  return base.replace(/\.(tsx|ts|jsx|js)$/, '')
+}
+
+function isStubComponent(content: string, componentName: string): boolean {
+  const stripped = content.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim()
+
+  const stubPatterns = [
+    new RegExp(`return\\s*\\(\\s*<(?:div|main|section|span)[^>]*>\\s*${componentName}\\s*</(?:div|main|section|span)>\\s*\\)`, 'm'),
+    new RegExp(`return\\s*<(?:div|main|section|span)[^>]*>\\s*${componentName}\\s*</(?:div|main|section|span)>`, 'm'),
+    new RegExp(`return\\s*\\(\\s*['"\`]${componentName}['"\`]\\s*\\)`, 'm'),
+  ]
+
+  return stubPatterns.some((pattern) => pattern.test(stripped))
+}
+
+function checkStubComponents(files: GeneratedAppFile[]): string[] {
+  const issues: string[] = []
+
+  for (const file of files) {
+    const path = normalizePath(file.path)
+    if (!path.startsWith('components/') && !path.startsWith('app/')) continue
+    if (!path.endsWith('.tsx') && !path.endsWith('.jsx')) continue
+
+    const componentName = toComponentNameFromPath(path)
+    if (!componentName) continue
+
+    if (isStubComponent(file.content, componentName)) {
+      issues.push(
+        `${path}: component "${componentName}" is a stub that renders only its own name as text — replace with complete, functional UI code`
+      )
+    }
+  }
+
+  return issues
+}
+
+const LOCAL_STORAGE_WRITE_PATTERNS = [
+  /localStorage\.setItem\s*\(/,
+  /sessionStorage\.setItem\s*\(/,
+]
+
+function checkLocalStorageUsage(
+  files: GeneratedAppFile[],
+  requiresDatabase: boolean
+): string[] {
+  if (!requiresDatabase) return []
+
+  const issues: string[] = []
+
+  for (const file of files) {
+    const path = normalizePath(file.path)
+    if (!/\.(tsx|ts|jsx|js)$/.test(path)) continue
+
+    for (const pattern of LOCAL_STORAGE_WRITE_PATTERNS) {
+      if (pattern.test(file.content)) {
+        issues.push(
+          `${path}: uses localStorage/sessionStorage for data storage — replace with Prisma server actions or API routes since this app has requiresDatabase=true`
+        )
+        break
+      }
+    }
+  }
+
+  return issues
+}
+
 function checkTailwindConfig(files: GeneratedAppFile[]): string[] {
   const pathSet = new Set(files.map((file) => normalizePath(file.path)))
   if (TAILWIND_CONFIG_PATHS.some((path) => pathSet.has(path))) {
@@ -292,6 +360,8 @@ export function validateGeneratedAppStructure(
     ...checkMissingPropsInterfaces(files),
     ...checkUseClientPlacement(files),
     ...checkPrismaUsage(files, requiresDatabase),
+    ...checkLocalStorageUsage(files, requiresDatabase),
+    ...checkStubComponents(files),
     ...checkTailwindConfig(files),
     ...checkBuildScript(files),
   ]

@@ -45,11 +45,11 @@ const MODEL_ID = 'claude-sonnet-4-6'
 const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-11-13'
 /** Sonnet 4.6 supports large outputs; streaming is used above the SDK non-streaming cap. */
 const MAX_OUTPUT_TOKENS = 64_000
-/** Fewer files + one-shot generation keeps typical runs under a few minutes. */
-const MAX_GENERATED_FILES = 18
+/** More files allow complex multi-page apps without stub components. */
+const MAX_GENERATED_FILES = 30
 const FILES_PER_BATCH = 10
 const MAX_LLM_CONTINUATION_TURNS = 1
-const MAX_OPTIONAL_PAGE_PATHS = 6
+const MAX_OPTIONAL_PAGE_PATHS = 16
 
 const REQUIRED_APP_FILE_PATHS = [
   'package.json',
@@ -480,8 +480,9 @@ const SINGLE_SHOT_SYSTEM_PROMPT = `You are a senior full-stack engineer. Generat
 Respond ONLY with JSON matching the provided schema. No markdown or code fences.
 
 Constraints:
-- At most ${MAX_GENERATED_FILES} files total — stay concise
-- Required: ${REQUIRED_APP_FILE_PATHS.join(', ')} plus only essential pages/components (max ${MAX_OPTIONAL_PAGE_PATHS} extra routes)
+- At most ${MAX_GENERATED_FILES} files total — use as many as needed but no more
+- Required: ${REQUIRED_APP_FILE_PATHS.join(', ')} plus pages and components (max ${MAX_OPTIONAL_PAGE_PATHS} extra files)
+- Every component MUST contain complete, real, working UI code — NEVER a stub, placeholder, or a component that renders only its own name as text
 - Reuse components; keep page files short; put shared styles in app/globals.css
 - app/ at project root only (not src/app/)
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
@@ -491,6 +492,7 @@ Constraints:
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
+- NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
 - Valid TypeScript, zero build errors, no secrets`
 
 const MANIFEST_SYSTEM_PROMPT = `You are a senior full-stack engineer planning a Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
@@ -498,9 +500,9 @@ const MANIFEST_SYSTEM_PROMPT = `You are a senior full-stack engineer planning a 
 Respond ONLY with JSON matching the provided schema. List file paths only — do NOT include file contents.
 
 Constraints:
-- At most ${MAX_GENERATED_FILES} file paths
+- At most ${MAX_GENERATED_FILES} file paths — list EVERY file the app truly needs so no component is left as a stub
 - Include every required path: ${REQUIRED_APP_FILE_PATHS.join(', ')}
-- Add at most ${MAX_OPTIONAL_PAGE_PATHS} optional page/component paths
+- Add up to ${MAX_OPTIONAL_PAGE_PATHS} optional page/component paths — for multi-page apps, list all page routes and shared components
 - Use app/ at project root (not src/app/)
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
@@ -508,6 +510,7 @@ Constraints:
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
+- NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
 - Never include secrets`
 
 const FILE_BATCH_SYSTEM_PROMPT = `You are a senior full-stack engineer writing files for a Next.js ${PINNED_NEXT_VERSION} App Router project.
@@ -515,7 +518,8 @@ const FILE_BATCH_SYSTEM_PROMPT = `You are a senior full-stack engineer writing f
 Respond ONLY with JSON matching the provided schema: a "files" array with path and content for each requested path.
 
 Constraints:
-- Return EVERY requested path with complete, valid file content
+- Return EVERY requested path with complete, real, working file content — NEVER a stub or a component that renders only its own name as text
+- Every component file must render actual UI — buttons, inputs, text, layout — not placeholder content like "<div>ComponentName</div>"
 - TypeScript strict, no any, no @ts-ignore
 - Keep individual files concise; share styles in app/globals.css
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
@@ -525,6 +529,7 @@ Constraints:
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
+- NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
 - Code must compile with zero errors when combined with other project files
 - Never include secrets`
 
@@ -755,6 +760,7 @@ Respond ONLY with JSON matching the provided schema. Return the full corrected f
 Fix ALL errors in the build log so npm install && npx tsc --noEmit succeed with ZERO TypeScript errors.
 Fix ALL structure validation issues listed in the build log, including missing @/ imports, props interfaces, "use client" placement, Prisma usage, Tailwind config, and build scripts.
 Pay special attention to: missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
+If the build log flags localStorage/sessionStorage usage, replace every occurrence with Prisma server actions or API routes — NEVER store app data in localStorage.
 ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 ${GENERATED_APP_STYLING_GUIDANCE}

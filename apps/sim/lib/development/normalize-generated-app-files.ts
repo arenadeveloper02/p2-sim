@@ -44,6 +44,7 @@ export const GENERATED_APP_TYPESCRIPT_GUIDANCE = `TypeScript and Next.js structu
 - Share types between pages and Client components via exports from lib/actions.ts (e.g. export interface AnalyticsData)
 - lib/types.ts MUST export every type imported via @/lib/types across the app (e.g. TaskWithRelations, MemberData) — use consistent names everywhere
 - Name interactive Client components with a Client suffix (DashboardClient, AnalyticsClient) and add "use client" at the top
+- CRITICAL: Every named Client component MUST contain complete, real UI code — JSX with actual elements, logic, and state. NEVER write a stub like \`export default function DashboardClient() { return <div>DashboardClient</div> }\` — this renders as literal text and is a broken app
 - Use Next.js 16 App Router only: app/layout.tsx (root layout with html/body), app/page.tsx, app/globals.css, and app/<route>/page.tsx for pages
 - Do NOT mix app/ and src/app/ — use app/ at project root only; path alias "@/*" maps to "./*" in tsconfig paths
 - Default to Server Components; add "use client" only for hooks, browser APIs, or event handlers
@@ -61,6 +62,7 @@ export const GENERATED_APP_VALIDATION_GUIDANCE = `Pre-build validation requireme
 - No unused imports, missing exports, or duplicate default exports
 - Include Prisma files and dependencies only when requiresDatabase is true; static apps must not include prisma/ or @prisma/client
 - Include tailwind.config.ts and package.json scripts.build
+- NEVER use localStorage.setItem or sessionStorage.setItem to store app data — when requiresDatabase is true use Prisma server actions; when requiresDatabase is false keep state in-memory with useState only for UI interactions, never for cross-session persistence
 - Final code must pass: npm install && npm run build`
 
 export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and modules (critical for Vercel build):
@@ -81,6 +83,7 @@ export const GENERATED_APP_STYLING_GUIDANCE = `Fonts and CSS:
 export const GENERATED_APP_DATABASE_GUIDANCE = `Database (only when the app needs persistence):
 - Set requiresDatabase to true ONLY when the user needs saved data: auth, CRUD, admin panels, forms that persist submissions, blogs with stored posts, user accounts, dashboards with live records, etc.
 - Set requiresDatabase to false for marketing sites, landing pages, portfolios, and static content with no server-side persistence
+- NEVER use localStorage, sessionStorage, or in-memory state to store app data between page loads — if data must persist across sessions, set requiresDatabase to true and use Prisma server actions or API routes
 - When requiresDatabase is true, include:
   - prisma/schema.prisma with at least one model matching the app domain
   - lib/prisma.ts exporting a PrismaClient singleton (globalForPrisma pattern for dev hot reload)
