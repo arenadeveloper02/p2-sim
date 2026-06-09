@@ -10,6 +10,21 @@ permissions:
   id-token: write
 
 jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Check committed secrets
+        run: bun run check:secrets
+
   resolve-ghcr-tag:
     name: Resolve GHCR Tag
     if: github.ref != 'refs/heads/main'
@@ -35,7 +50,7 @@ jobs:
 
   build-ghcr-branch:
     name: Build GHCR Branch Images
-    needs: [resolve-ghcr-tag]
+    needs: [secret-scan, resolve-ghcr-tag]
     if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
@@ -100,6 +115,7 @@ jobs:
 
   build-amd64:
     name: Build AMD64
+    needs: [secret-scan]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
@@ -190,6 +206,7 @@ jobs:
 
   build-ghcr-arm64:
     name: Build ARM64 (GHCR Only)
+    needs: [secret-scan]
     runs-on: ubuntu-24.04-arm
     if: github.ref == 'refs/heads/main'
     strategy:

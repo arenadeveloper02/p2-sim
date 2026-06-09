@@ -14,8 +14,24 @@ permissions:
   contents: read
 
 jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Check committed secrets
+        run: bun run check:secrets
+
   test-build:
     name: Test and Build
+    needs: [secret-scan]
     if: >-
       github.event_name == 'pull_request' ||
       github.ref == 'refs/heads/main' ||
@@ -76,7 +92,7 @@ jobs:
   # Non-main branches: build all 3 images for GHCR with auto-increment tag
   build-ghcr-branch:
     name: Build GHCR Branch Images
-    needs: [resolve-ghcr-tag]
+    needs: [secret-scan, resolve-ghcr-tag]
     if: github.event_name == 'push' && github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -145,7 +161,7 @@ jobs:
   # Dev: build all 3 images for ECR only (no ARM64)
   build-dev:
     name: Build Dev ECR
-    needs: [detect-version]
+    needs: [secret-scan, detect-version]
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
@@ -229,7 +245,7 @@ jobs:
   # Main/staging: build AMD64 images and push to ECR + GHCR
   build-amd64:
     name: Build AMD64
-    needs: [test-build, detect-version]
+    needs: [secret-scan, test-build, detect-version]
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
@@ -350,7 +366,7 @@ jobs:
   # Build ARM64 images for GHCR (main branch only, runs in parallel)
   build-ghcr-arm64:
     name: Build ARM64 (GHCR Only)
-    needs: [detect-version]
+    needs: [secret-scan, detect-version]
     runs-on: ubuntu-24.04-arm
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:

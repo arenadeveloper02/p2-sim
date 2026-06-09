@@ -23,6 +23,8 @@
     "check": "turbo run format:check",
     "check:boundaries": "bun run scripts/check-monorepo-boundaries.ts",
     "check:realtime-prune": "bun run scripts/check-realtime-prune-graph.ts",
+    "check:credentials": "bun run scripts/check-committed-secrets.ts",
+    "check:secrets": "bun run scripts/check-committed-secrets.ts",
     "mship-contracts:generate": "bun run scripts/sync-mothership-stream-contract.ts",
     "mship-contracts:check": "bun run scripts/sync-mothership-stream-contract.ts --check",
     "mship-tools:generate": "bun run scripts/sync-tool-catalog.ts",
