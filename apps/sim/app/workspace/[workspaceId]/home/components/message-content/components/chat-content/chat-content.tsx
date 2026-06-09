@@ -260,6 +260,16 @@ const MARKDOWN_COMPONENTS = {
   },
 }
 
+/**
+ * Normalizes heading syntax to conform to CommonMark spec.
+ * Inserts a space after `#` characters when they are immediately followed by a
+ * non-space, non-`#` character (e.g. `##1)` → `## 1)`, `###Title` → `### Title`).
+ * This handles LLM output that omits the required space.
+ */
+function normalizeHeadings(text: string): string {
+  return text.replace(/^(#{1,6})([^ #\n])/gm, '$1 $2')
+}
+
 interface ChatContentProps {
   content: string
   isStreaming?: boolean
@@ -285,7 +295,11 @@ export function ChatContent({
     return () => window.removeEventListener('wsres-click', handler)
   }, [])
 
-  const parsed = useMemo(() => parseSpecialTags(content, isStreaming), [content, isStreaming])
+  const normalizedContent = useMemo(() => normalizeHeadings(content), [content])
+  const parsed = useMemo(
+    () => parseSpecialTags(normalizedContent, isStreaming),
+    [normalizedContent, isStreaming]
+  )
   const hasSpecialContent = parsed.hasPendingTag || parsed.segments.some((s) => s.type !== 'text')
 
   if (hasSpecialContent) {
@@ -360,7 +374,7 @@ export function ChatContent({
   return (
     <div className={cn(PROSE_CLASSES, '[&>:first-child]:mt-0 [&>:last-child]:mb-0')}>
       <Streamdown mode={isStreaming ? undefined : 'static'} components={MARKDOWN_COMPONENTS}>
-        {content}
+        {normalizedContent}
       </Streamdown>
     </div>
   )
