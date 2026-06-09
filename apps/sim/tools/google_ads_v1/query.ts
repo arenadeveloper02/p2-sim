@@ -6,6 +6,9 @@ const logger = createLogger('GoogleAdsV1Query')
 interface GoogleAdsV1QueryParams {
   accounts: string
   prompt: string
+  _context?: {
+    workspaceId?: string
+  }
 }
 
 // Google Ads accounts mapping (same as original)
@@ -85,6 +88,7 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, any> = {
     body: (params: GoogleAdsV1QueryParams) => ({
       query: params.prompt,
       accounts: params.accounts,
+      workspaceId: params._context?.workspaceId,
     }),
   },
 

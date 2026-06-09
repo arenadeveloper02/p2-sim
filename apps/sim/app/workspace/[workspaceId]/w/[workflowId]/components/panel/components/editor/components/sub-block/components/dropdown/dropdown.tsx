@@ -128,6 +128,7 @@ export const Dropdown = memo(function Dropdown({
   const [isLoadingOptions, setIsLoadingOptions] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [hydratedOption, setHydratedOption] = useState<{ label: string; id: string } | null>(null)
+  const [hasFetched, setHasFetched] = useState(false)
 
   const previousModeRef = useRef<string | null>(null)
   const previousDependencyValuesRef = useRef<string>('')
@@ -168,6 +169,7 @@ export const Dropdown = memo(function Dropdown({
       setFetchError(errorMessage)
       setFetchedOptions([])
     } finally {
+      setHasFetched(true)
       setIsLoadingOptions(false)
     }
   }, [fetchOptions, blockId, isPreview, disabled])
@@ -388,6 +390,7 @@ export const Dropdown = memo(function Dropdown({
         currentDependencyValuesStr !== previousDependencyValuesStr
       ) {
         setFetchedOptions([])
+        setHasFetched(false)
         setHydratedOption(null)
         // Clear the selected value when dependencies change (e.g., switching accounts)
         // This prevents stale values from the previous account from persisting
@@ -410,7 +413,7 @@ export const Dropdown = memo(function Dropdown({
       fetchOptions &&
       !isPreview &&
       !disabled &&
-      fetchedOptions.length === 0 &&
+      !hasFetched &&
       !isLoadingOptions &&
       !fetchError
     ) {
@@ -421,7 +424,7 @@ export const Dropdown = memo(function Dropdown({
     fetchOptions,
     isPreview,
     disabled,
-    fetchedOptions.length,
+    hasFetched,
     isLoadingOptions,
     fetchError,
     dependencyValues,

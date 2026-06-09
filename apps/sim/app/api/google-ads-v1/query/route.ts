@@ -6,7 +6,8 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
+import type { ChannelAccount } from '@/lib/channel-accounts'
+import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
 import { makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
@@ -18,14 +19,17 @@ const logger = createLogger('GoogleAdsV1API')
  * Resolves account input to account key (supports both keys and numeric IDs)
  * Updated: Added numeric ID support for better account resolution
  */
-function resolveAccountKey(accountInput: string): string {
+function resolveAccountKey(
+  accountInput: string,
+  googleAdsAccounts: Record<string, ChannelAccount>
+): string {
   // Try direct key match first (gentle_dental)
-  if (GOOGLE_ADS_ACCOUNTS[accountInput]) {
+  if (googleAdsAccounts[accountInput]) {
     return accountInput
   }
 
   // If not found, search by numeric ID
-  const foundAccount = Object.entries(GOOGLE_ADS_ACCOUNTS).find(
+  const foundAccount = Object.entries(googleAdsAccounts).find(
     ([key, account]) => account.id === accountInput
   )
 
@@ -67,7 +71,7 @@ export async function POST(request: NextRequest) {
     const body: GoogleAdsV1Request = await request.json()
     logger.info(`[${requestId}] Request body received`, { body })
 
-    const { query, accounts } = body
+    const { query, accounts, workspaceId } = body
 
     // Validate query
     if (!query) {
@@ -75,20 +79,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No query provided' }, { status: 400 })
     }
 
+    const googleAdsAccounts = await getGoogleAdsAccounts(workspaceId)
+
     // Resolve account input (supports both keys and numeric IDs)
-    const resolvedAccountKey = resolveAccountKey(accounts)
+    const resolvedAccountKey = resolveAccountKey(accounts, googleAdsAccounts)
 
     // Get account information
-    const accountInfo = GOOGLE_ADS_ACCOUNTS[resolvedAccountKey]
+    const accountInfo = googleAdsAccounts[resolvedAccountKey]
     if (!accountInfo) {
       logger.error(`[${requestId}] Invalid account key or ID`, {
         accounts,
         resolvedAccountKey,
-        availableAccounts: Object.keys(GOOGLE_ADS_ACCOUNTS),
+        availableAccounts: Object.keys(googleAdsAccounts),
       })
       return NextResponse.json(
         {
-          error: `Invalid account key or ID: ${accounts}. Available accounts: ${Object.keys(GOOGLE_ADS_ACCOUNTS).join(', ')}`,
+          error: `Invalid account key or ID: ${accounts}. Available accounts: ${Object.keys(googleAdsAccounts).join(', ')}`,
         },
         { status: 400 }
       )

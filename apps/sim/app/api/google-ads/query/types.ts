@@ -1,6 +1,7 @@
 export interface GoogleAdsRequest {
   query: string
   accounts: string
+  workspaceId?: string
   period_type?: string
   output_format?: string
   sort_by?: string

@@ -283,6 +283,7 @@ export const env = createEnv({
     PORT:                                  z.number().optional(),                  // Main application port
     INTERNAL_API_BASE_URL:                 z.string().optional(),                  // Optional internal base URL for server-side self-calls; must include protocol if set (e.g., http://sim-app.namespace.svc.cluster.local:3000)
     ALLOWED_ORIGINS:                       z.string().optional(),                  // CORS allowed origins
+    ANALYTICS_WORKSPACE_IDS:               z.string().optional(),                  // JSON array or comma-separated workspace IDs with access to shared channel accounts
     /** Comma-separated origins (e.g. http://localhost:3001) allowed as Better Auth OAuth `callbackURL` when Arena embeds Sim (`from=arena_v3` + `callbackURL` query). */
     ARENA_V3_OAUTH_CALLBACK_ORIGINS:       z.string().optional(),
 

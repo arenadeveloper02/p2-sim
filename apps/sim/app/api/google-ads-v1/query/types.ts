@@ -5,6 +5,7 @@
 export interface GoogleAdsV1Request {
   query: string
   accounts: string
+  workspaceId?: string
 }
 
 export interface GAQLResponse {
