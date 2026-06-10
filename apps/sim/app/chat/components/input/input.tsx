@@ -231,7 +231,7 @@ export const ChatInput: React.FC<{
 
   return (
     <Tooltip.Provider>
-      <div className='fixed right-0 bottom-0 left-0 ml-[118px] flex w-full items-center justify-center bg-gradient-to-t from-white to-transparent px-4 pb-4 text-black md:px-0 md:pb-4'>
+      <div className='fixed right-0 bottom-0 left-0 ml-[118px] flex w-full items-center justify-center bg-gradient-to-t from-[var(--bg)] to-transparent px-4 pb-4 md:px-0 md:pb-4'>
         <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
           {/* Error Messages */}
           {uploadErrors.length > 0 && (
@@ -254,7 +254,7 @@ export const ChatInput: React.FC<{
               handleKeyboardActivation(event, focusTextarea)
             }}
             className={cn(
-              'relative z-10 cursor-text rounded-2xl border border-[var(--border-1)] bg-white px-2.5 py-2',
+              'relative z-10 cursor-text rounded-2xl border border-[var(--border-1)] bg-[var(--landing-bg-elevated)] px-2.5 py-2',
               isDragOver && 'border-purple-500'
             )}
             onDragEnter={(e) => {
@@ -285,7 +285,7 @@ export const ChatInput: React.FC<{
                 {selectedGeneratedImages.map((image) => (
                   <Tooltip.Root key={image.id}>
                     <Tooltip.Trigger asChild>
-                      <div className='group relative h-[56px] w-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--landing-bg)]'>
+                      <div className='group relative h-[56px] w-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-5)] dark:bg-[var(--landing-bg)]'>
                         <img
                           src={image.url}
                           alt={image.name}
@@ -318,7 +318,7 @@ export const ChatInput: React.FC<{
                 {attachedFiles.map((file) => (
                   <Tooltip.Root key={file.id}>
                     <Tooltip.Trigger asChild>
-                      <div className='group relative size-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--landing-bg)]'>
+                      <div className='group relative size-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-5)] dark:bg-[var(--landing-bg)]'>
                         {file.dataUrl ? (
                           <img
                             src={file.dataUrl}
@@ -361,7 +361,7 @@ export const ChatInput: React.FC<{
               onKeyDown={handleKeyDown}
               placeholder={isDragOver ? 'Drop files here...' : 'Enter a message...'}
               rows={1}
-              className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent p-1 text-[15px] leading-[24px] outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--landing-text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
+              className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent p-1 text-[15px] text-[var(--landing-text)] leading-[24px] caret-[var(--landing-text)] outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--landing-text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
             />
 
             {/* Bottom row */}
@@ -374,7 +374,7 @@ export const ChatInput: React.FC<{
                       type='button'
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isStreaming || attachedFiles.length >= 15}
-                      className='flex size-[28px] items-center justify-center rounded-full text-[var(--landing-text-muted)] transition-colors hover:bg-[#F7F7F7] disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-[#303030]'
+                      className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
                     >
                       <Paperclip className='size-[16px]' strokeWidth={2} />
                     </button>
@@ -407,7 +407,7 @@ export const ChatInput: React.FC<{
                         type='button'
                         onClick={onVoiceStart}
                         disabled={isStreaming}
-                        className='flex size-[28px] items-center justify-center rounded-full text-[var(--landing-text-muted)] transition-colors hover:bg-[#F7F7F7] disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-[#303030]'
+                        className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
                       >
                         <Mic className='size-[16px]' strokeWidth={2} />
                       </button>
