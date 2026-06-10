@@ -1,7 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { GOOGLE_ADS_API_VERSION, POSITION2_MANAGER } from './constants'
 
-const logger = createLogger('GoogleAdsAPI')
 
 export interface GoogleAdsOAuthRequestOptions {
   customerId: string
@@ -9,6 +8,73 @@ export interface GoogleAdsOAuthRequestOptions {
   accessToken: string
   developerToken: string
   managerCustomerId?: string
+}
+import { toError } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
+
+const logger = createLogger('GoogleAdsAPI')
+
+const GOOGLE_ADS_RATE_LIMIT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000] as const
+
+/**
+ * Returns true when the Google Ads API response indicates a developer quota rate limit.
+ */
+function isGoogleAdsRateLimitError(status: number, errorText: string): boolean {
+  if (status !== 429) return false
+
+  try {
+    const data = JSON.parse(errorText) as {
+      error?: { status?: string; code?: number }
+    }
+    return data.error?.status === 'RESOURCE_EXHAUSTED' || data.error?.code === 429
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Executes a Google Ads search request with exponential backoff on RESOURCE_EXHAUSTED errors.
+ */
+async function fetchGoogleAdsSearchWithRetry(
+  adsApiUrl: string,
+  requestInit: RequestInit,
+  customerId: string
+): Promise<Response> {
+  const maxAttempts = GOOGLE_ADS_RATE_LIMIT_RETRY_DELAYS_MS.length + 1
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const adsResponse = await fetch(adsApiUrl, requestInit)
+
+    if (adsResponse.ok) {
+      return adsResponse
+    }
+
+    const errorText = await adsResponse.text()
+    const isLastAttempt = attempt === maxAttempts - 1
+    const shouldRetry = isGoogleAdsRateLimitError(adsResponse.status, errorText) && !isLastAttempt
+
+    if (!shouldRetry) {
+      logger.error('Google Ads API request failed', {
+        status: adsResponse.status,
+        error: errorText,
+        customerId,
+        managerCustomerId: POSITION2_MANAGER,
+        attempt: attempt + 1,
+      })
+      throw new Error(`Google Ads API request failed: ${adsResponse.status} - ${errorText}`)
+    }
+
+    const delayMs = GOOGLE_ADS_RATE_LIMIT_RETRY_DELAYS_MS[attempt]
+    logger.warn('Google Ads API rate limited, retrying', {
+      customerId,
+      attempt: attempt + 1,
+      maxAttempts,
+      delayMs,
+    })
+    await sleep(delayMs)
+  }
+
+  throw new Error('Google Ads API request failed after retries')
 }
 
 /**
@@ -185,27 +251,20 @@ export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string)
       managerCustomerId: POSITION2_MANAGER,
     })
 
-    const adsResponse = await fetch(adsApiUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'developer-token': developerToken,
-        'login-customer-id': POSITION2_MANAGER,
-        'Content-Type': 'application/json',
+    const adsResponse = await fetchGoogleAdsSearchWithRetry(
+      adsApiUrl,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'developer-token': developerToken,
+          'login-customer-id': POSITION2_MANAGER,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestPayload),
       },
-      body: JSON.stringify(requestPayload),
-    })
-
-    if (!adsResponse.ok) {
-      const errorText = await adsResponse.text()
-      logger.error('Google Ads API request failed', {
-        status: adsResponse.status,
-        error: errorText,
-        customerId: formattedCustomerId,
-        managerCustomerId: POSITION2_MANAGER,
-      })
-      throw new Error(`Google Ads API request failed: ${adsResponse.status} - ${errorText}`)
-    }
+      formattedCustomerId
+    )
 
     const adsData = await adsResponse.json()
     logger.info('Google Ads API request successful', {
@@ -231,7 +290,7 @@ export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string)
     return adsData
   } catch (error) {
     logger.error('Error in Google Ads API request', {
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: toError(error).message,
       accountId,
     })
     throw error

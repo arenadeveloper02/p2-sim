@@ -4,61 +4,178 @@
  */
 
 import { db } from '@sim/db'
-import { sql } from 'drizzle-orm'
+import { workspace } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
+import { eq, sql } from 'drizzle-orm'
+import { getSession } from '@/lib/auth'
+import { env } from '@/lib/core/config/env'
+import { WORKSPACE_MODE } from '@/lib/workspaces/policy'
+
+const logger = createLogger('ChannelAccounts')
 
 export interface ChannelAccount {
   id: string
   name: string
 }
 
+interface ChannelAccountRow {
+  account_id?: string
+  account_name?: string
+  accountid?: string
+  accountname?: string
+}
+
 /**
- * Fetches channel accounts from database by type
+ * Parses `ANALYTICS_WORKSPACE_IDS` from env as a JSON array or comma-separated list.
+ */
+function parseAnalyticsWorkspaceIds(): string[] {
+  const raw = env.ANALYTICS_WORKSPACE_IDS
+  if (!raw) return []
+
+  const trimmed = raw.trim()
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown
+      if (Array.isArray(parsed)) {
+        return parsed.filter((id): id is string => typeof id === 'string' && id.length > 0)
+      }
+    } catch {
+      logger.warn('Failed to parse ANALYTICS_WORKSPACE_IDS as JSON array')
+    }
+  }
+
+  return trimmed
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+}
+
+/**
+ * Returns whether the workspace has access to the full shared channel account catalog.
+ */
+export function isAnalyticsWorkspace(workspaceId?: string): boolean {
+  if (!workspaceId) return false
+  return parseAnalyticsWorkspaceIds().includes(workspaceId)
+}
+
+function toAccountKey(accountName: string): string {
+  return accountName
+    .toLowerCase()
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+}
+
+function mapRowsToAccounts(rows: ChannelAccountRow[]): Record<string, ChannelAccount> {
+  const accounts: Record<string, ChannelAccount> = {}
+
+  for (const row of rows) {
+    const accountName = String(row.account_name ?? row.accountname ?? '')
+    const accountId = String(row.account_id ?? row.accountid ?? '')
+    if (!accountName || !accountId) continue
+
+    const key = toAccountKey(accountName)
+    accounts[key] = {
+      id: accountId,
+      name: accountName,
+    }
+  }
+
+  return accounts
+}
+
+/**
+ * Fetches channel accounts from database by type.
+ * Analytics workspaces receive the full shared catalog; other workspaces receive none.
  *
  * @param type - Account type ('facebook', 'bing', 'google')
- * @returns Promise<Record<string, ChannelAccount>> - Accounts in same format as constants
+ * @param workspaceId - Current workspace ID used for access control
+ * @param userId - Optional user ID for server-side tool execution (when session cookies are unavailable)
+ * @returns Accounts in the same format as legacy constants
  */
 export async function getChannelAccounts(
-  type: 'facebook' | 'bing' | 'google'
+  type: 'facebook' | 'bing' | 'google',
+  workspaceId?: string,
+  userId?: string
 ): Promise<Record<string, ChannelAccount>> {
   try {
-    // Use raw SQL query since channel_accounts table doesn't exist in schema yet
-    const result = await db.execute(sql`
-      SELECT account_id, account_name 
-      FROM channel_accounts 
-      WHERE account_type = ${type} 
-      ORDER BY account_name
-    `)
-
-    // Convert to same format as constants (key: { id, name })
-    const accounts: Record<string, ChannelAccount> = {}
-
-    for (const row of result as any[]) {
-      // Create a friendly key from account_name (lowercase, replace spaces/special chars with underscore)
-      const key = String(row.account_name)
-        .toLowerCase()
-        .replace(/[^a-zA-Z0-9\s]/g, '') // Remove special chars except spaces
-        .replace(/\s+/g, '_') // Replace spaces with underscores
-        .replace(/_+/g, '_') // Replace multiple underscores with single
-        .replace(/^_|_$/g, '') // Remove leading/trailing underscores
-
-      accounts[key] = {
-        id: String(row.account_id),
-        name: String(row.account_name),
-      }
+    if (!workspaceId) {
+      return {}
     }
 
-    return accounts
+    if (isAnalyticsWorkspace(workspaceId)) {
+      const result = await db.execute(sql`
+        SELECT account_id, account_name 
+        FROM channel_accounts 
+        WHERE account_type = ${type} 
+        ORDER BY account_name
+      `)
+      return mapRowsToAccounts(result as unknown as ChannelAccountRow[])
+    }
+
+    const session = await getSession()
+    const resolvedUserId = userId ?? session?.user?.id
+    if (!resolvedUserId) {
+      logger.warn('No authenticated user for workspace-scoped channel accounts', { workspaceId })
+      return {}
+    }
+
+    const [currentWorkspace] = await db
+      .select({ workspaceMode: workspace.workspaceMode })
+      .from(workspace)
+      .where(eq(workspace.id, workspaceId))
+      .limit(1)
+
+    const isPersonalWorkspace = currentWorkspace?.workspaceMode === WORKSPACE_MODE.PERSONAL
+
+    const mappedResult = isPersonalWorkspace
+      ? await db.execute(sql`
+          SELECT ca.account_id as account_id, ca.account_name as account_name
+          FROM channel_accounts ca
+          WHERE ca.account_type = ${type}
+            AND ca.account_id IN (
+              SELECT DISTINCT sub_account_id
+              FROM client_analytics_account_mapping
+              WHERE workspace_id_ref IN (
+                SELECT w.id
+                FROM permissions p
+                INNER JOIN workspace w ON p.entity_id = w.id
+                WHERE p.user_id = ${resolvedUserId}
+                  AND p.entity_type = 'workspace'
+                  AND w.archived_at IS NULL
+              )
+            )
+          ORDER BY ca.account_name
+        `)
+      : await db.execute(sql`
+          SELECT ca.account_id as account_id, ca.account_name as account_name
+          FROM channel_accounts ca
+          WHERE ca.account_type = ${type}
+            AND ca.account_id IN (
+              SELECT cam.sub_account_id
+              FROM client_analytics_account_mapping cam
+              WHERE cam.workspace_id_ref = ${workspaceId}
+                AND cam.sub_account_type = ${type}
+            )
+          ORDER BY ca.account_name
+        `)
+
+    return mapRowsToAccounts(mappedResult as unknown as ChannelAccountRow[])
   } catch (error) {
-    console.error(`Error fetching ${type} accounts from database:`, error)
+    logger.error(`Error fetching ${type} accounts from database`, { error, workspaceId })
     return {}
   }
 }
 
 /**
- * Fetches Google Ads accounts from database
+ * Fetches Google Ads accounts from database for the current workspace.
  */
-export async function getGoogleAdsAccounts(): Promise<Record<string, ChannelAccount>> {
-  return getChannelAccounts('google')
+export async function getGoogleAdsAccounts(
+  workspaceId?: string,
+  userId?: string
+): Promise<Record<string, ChannelAccount>> {
+  return getChannelAccounts('google', workspaceId, userId)
 }
 
 /**

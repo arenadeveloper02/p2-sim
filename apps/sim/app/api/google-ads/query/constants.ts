@@ -1,8 +1,3 @@
-// Database-driven Google Ads accounts - fetched dynamically from database
-import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
-
-export const GOOGLE_ADS_ACCOUNTS = await getGoogleAdsAccounts()
-
 // Position2 Manager MCC for login
 export const POSITION2_MANAGER = '4455285084'
 

@@ -1,47 +1,34 @@
 import { GoogleIcon } from '@/components/icons'
-import { getScopesForService } from '@/lib/oauth/utils'
-import {
-  isAdminWorkspace,
-  resolveExecutionWorkspaceId,
-  resolveWorkspaceIdForAdminCheck,
-} from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
 
-const GOOGLE_ADS_V1_COND_NEVER = '__google_ads_v1_cond_never__'
+/** In-flight promise cache keyed by workspaceId — deduplicates concurrent fetchOptions + fetchOptionById calls */
+let _inflightFetch: { workspaceId: string; promise: Promise<Record<string, { id: string; name: string }>> } | null =
+  null
 
-/** Resolves account/customer ID from serialized params (supports legacy `customerId` key). */
-function resolveGoogleAdsV1AccountId(params: Record<string, unknown>): string | undefined {
-  for (const key of ['accountId', 'customerId'] as const) {
-    const value = params[key]
-    if (typeof value === 'string') {
-      const trimmed = value.trim()
-      if (trimmed) return trimmed
-    }
-    if (typeof value === 'number' && !Number.isNaN(value)) {
-      return String(value)
-    }
+async function fetchGoogleAdsAccounts(
+  workspaceId: string
+): Promise<Record<string, { id: string; name: string }>> {
+  if (_inflightFetch?.workspaceId === workspaceId) {
+    return _inflightFetch.promise
   }
-  return undefined
-}
 
-/** Show admin account dropdown fields (admin workspaces only). */
-function googleAdsV1AdminOnlyCondition(values?: Record<string, unknown>) {
-  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
-  if (isAdmin) {
-    return { field: 'prompt', value: GOOGLE_ADS_V1_COND_NEVER, not: true as const }
-  }
-  return { field: 'prompt', value: GOOGLE_ADS_V1_COND_NEVER }
-}
+  const promise = fetch(`/api/google-ads/accounts?workspaceId=${encodeURIComponent(workspaceId)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      _inflightFetch = null
+      if (data?.success && data.accounts && typeof data.accounts === 'object') {
+        return data.accounts as Record<string, { id: string; name: string }>
+      }
+      return {}
+    })
+    .catch(() => {
+      _inflightFetch = null
+      return {}
+    })
 
-/** Show Google OAuth and per-user API fields (non-admin workspaces only). */
-function googleAdsV1NonAdminOnlyCondition(values?: Record<string, unknown>) {
-  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
-  if (isAdmin) {
-    return { field: 'prompt', value: GOOGLE_ADS_V1_COND_NEVER }
-  }
-  return { field: 'prompt', value: GOOGLE_ADS_V1_COND_NEVER, not: true as const }
+  _inflightFetch = { workspaceId, promise }
+  return promise
 }
 
 export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
@@ -52,57 +39,10 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
     'Simplified Google Ads block that uses AI (Grok with GPT-4o fallback) to automatically generate GAQL queries from natural language prompts. Perfect for quick queries without complex configuration. Supports campaign performance, keyword analysis, search terms, and more.',
   docsLink: 'https://docs.sim.ai/tools/google-ads-v1',
   category: 'tools',
-  authMode: AuthMode.OAuth,
   bgColor: '#4285f4',
   icon: GoogleIcon,
   subBlocks: [
-    {
-      id: 'credential',
-      title: 'Google Ads Account',
-      type: 'oauth-input',
-      canonicalParamId: 'oauthCredential',
-      mode: 'basic',
-      serviceId: 'google-ads',
-      requiredScopes: getScopesForService('google-ads'),
-      placeholder: 'Connect Google Ads account',
-      required: true,
-      condition: googleAdsV1NonAdminOnlyCondition,
-    },
-    {
-      id: 'manualCredential',
-      title: 'Google Ads Account',
-      type: 'short-input',
-      canonicalParamId: 'oauthCredential',
-      mode: 'advanced',
-      placeholder: 'Enter credential ID',
-      required: true,
-      condition: googleAdsV1NonAdminOnlyCondition,
-    },
-    {
-      id: 'developerToken',
-      title: 'Developer Token',
-      type: 'short-input',
-      placeholder: 'Enter your Google Ads API developer token',
-      required: true,
-      password: true,
-      condition: googleAdsV1NonAdminOnlyCondition,
-    },
-    {
-      id: 'accountId',
-      title: 'Account ID',
-      type: 'short-input',
-      placeholder: 'Google Ads account / customer ID (no dashes)',
-      required: true,
-      condition: googleAdsV1NonAdminOnlyCondition,
-    },
-    {
-      id: 'managerCustomerId',
-      title: 'Manager Customer ID',
-      type: 'short-input',
-      placeholder: 'Manager account ID',
-      required: true,
-      condition: googleAdsV1NonAdminOnlyCondition,
-    },
+    // Google Ads Account (basic mode - dropdown)
     {
       id: 'accounts',
       title: 'Google Ads Account',
@@ -110,47 +50,41 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       options: [],
       fetchOptions: async () => {
         try {
-          const response = await fetch('/api/google-ads/accounts')
-          const data = await response.json()
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+          const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+          if (!workspaceId) return []
 
-          if (data?.success && data.accounts && typeof data.accounts === 'object') {
-            const accounts = data.accounts as Record<string, { id: string; name: string }>
-            const options = Object.entries(accounts).map(([key, account]) => ({
-              id: key,
-              label: account.name,
-              value: key,
-            }))
-            return Array.isArray(options) ? options : []
-          }
-          return []
+          const accounts = await fetchGoogleAdsAccounts(workspaceId)
+          return Object.entries(accounts).map(([key, account]) => ({
+            id: key,
+            label: account.name,
+            value: key,
+          }))
         } catch {
           return []
         }
       },
-      fetchOptionById: async (optionId: string) => {
+      fetchOptionById: async (_blockId: string, optionId: string) => {
         try {
-          const response = await fetch('/api/google-ads/accounts')
-          const data = await response.json()
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+          const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+          if (!workspaceId) return null
 
-          if (data.success && data.accounts[optionId]) {
-            const account = data.accounts[optionId] as { id: string; name: string }
-            return {
-              id: optionId,
-              label: account.name,
-              value: optionId,
-            }
-          }
-          return null
+          const accounts = await fetchGoogleAdsAccounts(workspaceId)
+          const account = accounts[optionId]
+          if (!account) return null
+
+          return { id: optionId, label: account.name }
         } catch {
           return null
         }
       },
-      placeholder: 'Select Google Ads account',
+      placeholder: 'Select account...',
       required: true,
       mode: 'basic',
       canonicalParamId: 'accounts',
-      condition: googleAdsV1AdminOnlyCondition,
     },
+    // Google Ads Account (advanced mode - text input)
     {
       id: 'accountsAdvanced',
       title: 'Google Ads Account',
@@ -159,7 +93,6 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       placeholder: 'Enter account key (e.g., ami, heartland)',
       required: true,
       mode: 'advanced',
-      condition: googleAdsV1AdminOnlyCondition,
     },
     {
       id: 'prompt',
@@ -220,32 +153,10 @@ Generate a clear, specific prompt for what the user wants to query from Google A
     access: ['google_ads_v1_query'],
     config: {
       tool: () => 'google_ads_v1_query',
-      params: (params) => {
-        const workspaceId = resolveExecutionWorkspaceId(
-          params as Record<string, unknown> | undefined
-        )
-        const accountId = resolveGoogleAdsV1AccountId(params as Record<string, unknown>)
-        const oauthCredential = (params.oauthCredential ??
-          params.credential ??
-          params.manualCredential) as string | undefined
-
-        const result: Record<string, unknown> = {
-          prompt: params.prompt,
-          workspaceId,
-          accounts: params.accounts ?? params.accountsAdvanced,
-          oauthCredential,
-          developerToken: params.developerToken,
-          managerCustomerId: params.managerCustomerId,
-          _context: params._context,
-        }
-
-        if (accountId) {
-          result.accountId = accountId
-          result.customerId = accountId
-        }
-
-        return result
-      },
+      params: (params) => ({
+        accounts: params.accounts,
+        prompt: params.prompt,
+      }),
     },
   },
   inputs: {
@@ -253,12 +164,7 @@ Generate a clear, specific prompt for what the user wants to query from Google A
       type: 'string',
       description: 'Natural language description of what data you want',
     },
-    accounts: { type: 'string', description: 'Selected Google Ads account (admin workspaces)' },
-    oauthCredential: { type: 'string', description: 'Google Ads OAuth credential' },
-    developerToken: { type: 'string', description: 'Google Ads API developer token' },
-    accountId: { type: 'string', description: 'Google Ads account ID (numeric, no dashes)' },
-    customerId: { type: 'string', description: 'Google Ads customer ID (numeric, no dashes)' },
-    managerCustomerId: { type: 'string', description: 'Manager account customer ID' },
+    accounts: { type: 'string', description: 'Selected Google Ads account' },
   },
   outputs: {
     success: { type: 'boolean', description: 'Whether the query succeeded' },

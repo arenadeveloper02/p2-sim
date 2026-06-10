@@ -4,33 +4,11 @@ import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('GoogleAdsV1Query')
 
-function resolveGoogleAdsAccountId(params: GoogleAdsV1QueryParams): string | undefined {
-  for (const value of [params.accountId, params.customerId]) {
-    if (typeof value === 'string') {
-      const trimmed = value.trim()
-      if (trimmed) return trimmed
-    }
-    if (typeof value === 'number' && !Number.isNaN(value)) {
-      return String(value)
-    }
-  }
-  return undefined
-}
-
 interface GoogleAdsV1QueryParams {
   accounts?: string
   prompt: string
-  workspaceId?: string
-  oauthCredential?: string
-  accessToken?: string
-  accountId?: string
-  customerId?: string
-  developerToken?: string
-  managerCustomerId?: string
   _context?: {
     workspaceId?: string
-    workflowId?: string
-    userId?: string
   }
 }
 
@@ -110,19 +88,11 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
     headers: () => ({
       'Content-Type': 'application/json',
     }),
-    body: (params: GoogleAdsV1QueryParams) => {
-      const accountId = resolveGoogleAdsAccountId(params)
-      return {
-        query: params.prompt,
-        accounts: params.accounts,
-        workspaceId: params.workspaceId ?? params._context?.workspaceId,
-        accessToken: params.accessToken,
-        accountId,
-        customerId: accountId,
-        developerToken: params.developerToken,
-        managerCustomerId: params.managerCustomerId,
-      }
-    },
+    body: (params: GoogleAdsV1QueryParams) => ({
+      query: params.prompt,
+      accounts: params.accounts,
+      workspaceId: params._context?.workspaceId,
+    }),
   },
 
   transformResponse: async (response: Response) => {

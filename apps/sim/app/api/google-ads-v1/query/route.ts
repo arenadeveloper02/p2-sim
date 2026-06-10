@@ -4,15 +4,11 @@
  */
 
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
-import { GOOGLE_ADS_ACCOUNTS } from '../../google-ads/query/constants'
-import {
-  makeGoogleAdsOAuthRequest,
-  makeGoogleAdsRequest,
-} from '../../google-ads/query/google-ads-api'
+import type { ChannelAccount } from '@/lib/channel-accounts'
+import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
+import { makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
 import type { GoogleAdsV1Request } from './types'
@@ -21,27 +17,20 @@ const logger = createLogger('GoogleAdsV1API')
 
 /**
  * Resolves account input to account key (supports both keys and numeric IDs)
+ * Updated: Added numeric ID support for better account resolution
  */
-function resolveGoogleAdsCustomerId(body: GoogleAdsV1Request): string | undefined {
-  for (const value of [body.accountId, body.customerId]) {
-    if (typeof value === 'string') {
-      const trimmed = value.trim()
-      if (trimmed) return trimmed
-    }
-    if (typeof value === 'number' && !Number.isNaN(value)) {
-      return String(value)
-    }
-  }
-  return undefined
-}
-
-function resolveAccountKey(accountInput: string): string {
-  if (GOOGLE_ADS_ACCOUNTS[accountInput]) {
+function resolveAccountKey(
+  accountInput: string,
+  googleAdsAccounts: Record<string, ChannelAccount>
+): string {
+  // Try direct key match first (gentle_dental)
+  if (googleAdsAccounts[accountInput]) {
     return accountInput
   }
 
-  const foundAccount = Object.entries(GOOGLE_ADS_ACCOUNTS).find(
-    ([, account]) => account.id === accountInput
+  // If not found, search by numeric ID
+  const foundAccount = Object.entries(googleAdsAccounts).find(
+    ([key, account]) => account.id === accountInput
   )
 
   if (foundAccount) {
@@ -49,30 +38,27 @@ function resolveAccountKey(accountInput: string): string {
     return foundAccount[0]
   }
 
+  // Return original if not found (will show error in validation)
   return accountInput
-}
-
-function hasUserProvidedGoogleAdsCredentials(body: GoogleAdsV1Request): boolean {
-  return Boolean(
-    body.accessToken?.trim() || body.developerToken?.trim() || resolveGoogleAdsCustomerId(body)
-  )
-}
-
-function resolveUsesAdminCredentials(body: GoogleAdsV1Request): boolean {
-  if (body.workspaceId && isAdminWorkspace(body.workspaceId)) {
-    return true
-  }
-  if (hasUserProvidedGoogleAdsCredentials(body)) {
-    return false
-  }
-  return Boolean(body.accounts?.trim())
 }
 
 /**
  * POST /api/google-ads-v1/query
  *
- * Admin workspaces: env credentials (GOOGLE_ADS_* ) + account from GOOGLE_ADS_ACCOUNTS.
- * Non-admin workspaces: Sim Google Ads OAuth access token, developer token, and customer ID.
+ * Handles Google Ads V1 query requests
+ *
+ * Request body:
+ * - query: Natural language query (e.g., "show campaign performance last 7 days")
+ * - accounts: Account key from GOOGLE_ADS_ACCOUNTS
+ *
+ * Response:
+ * - success: boolean
+ * - query: Original user query
+ * - account: Account information
+ * - gaql_query: Generated GAQL query
+ * - results: Processed result rows
+ * - totals: Aggregated metrics (if applicable)
+ * - execution_time_ms: Total execution time
  */
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
@@ -81,16 +67,47 @@ export async function POST(request: NextRequest) {
   try {
     logger.info(`[${requestId}] Google Ads V1 query request started`)
 
+    // Parse request body
     const body: GoogleAdsV1Request = await request.json()
-    const workspaceId =
-      body.workspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
-    const { query } = body
+    logger.info(`[${requestId}] Request body received`, { body })
 
+    const { query, accounts, workspaceId: bodyWorkspaceId } = body
+    const workspaceId = bodyWorkspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
+    const userId = request.nextUrl.searchParams.get('userId') ?? undefined
+
+    // Validate query
     if (!query) {
       logger.error(`[${requestId}] No query provided in request`)
       return NextResponse.json({ error: 'No query provided' }, { status: 400 })
     }
 
+    const googleAdsAccounts = await getGoogleAdsAccounts(workspaceId, userId)
+
+    // Resolve account input (supports both keys and numeric IDs)
+    const resolvedAccountKey = resolveAccountKey(accounts, googleAdsAccounts)
+
+    // Get account information
+    const accountInfo = googleAdsAccounts[resolvedAccountKey]
+    if (!accountInfo) {
+      logger.error(`[${requestId}] Invalid account key or ID`, {
+        accounts,
+        resolvedAccountKey,
+        availableAccounts: Object.keys(googleAdsAccounts),
+      })
+      return NextResponse.json(
+        {
+          error: `Invalid account key or ID: ${accounts}. Available accounts: ${Object.keys(googleAdsAccounts).join(', ')}`,
+        },
+        { status: 400 }
+      )
+    }
+
+    logger.info(`[${requestId}] Found account`, {
+      accountId: accountInfo.id,
+      accountName: accountInfo.name,
+    })
+
+    // Generate GAQL query using AI
     const queryResult = await generateGAQLQuery(query)
 
     logger.info(`[${requestId}] Generated GAQL query`, {
@@ -100,89 +117,28 @@ export async function POST(request: NextRequest) {
       metrics: queryResult.metrics_used,
     })
 
-    const useAdminCredentials = resolveUsesAdminCredentials({ ...body, workspaceId })
+    // Execute the GAQL query against Google Ads API
+    logger.info(`[${requestId}] Executing GAQL query against account ${accountInfo.id}`)
+    const apiResult = await makeGoogleAdsRequest(accountInfo.id, queryResult.gaql_query)
 
-    let accountInfo: { id: string; name: string }
-    let apiResult: unknown
-
-    if (useAdminCredentials) {
-      const accounts = body.accounts
-      if (!accounts?.trim()) {
-        return NextResponse.json(
-          { error: 'Google Ads account is required for admin workspace queries' },
-          { status: 400 }
-        )
-      }
-
-      const resolvedAccountKey = resolveAccountKey(accounts)
-      const resolved = GOOGLE_ADS_ACCOUNTS[resolvedAccountKey]
-      if (!resolved) {
-        logger.error(`[${requestId}] Invalid account key or ID`, {
-          accounts,
-          resolvedAccountKey,
-          availableAccounts: Object.keys(GOOGLE_ADS_ACCOUNTS),
-        })
-        return NextResponse.json(
-          {
-            error: `Invalid account key or ID: ${accounts}. Available accounts: ${Object.keys(GOOGLE_ADS_ACCOUNTS).join(', ')}`,
-          },
-          { status: 400 }
-        )
-      }
-
-      accountInfo = resolved
-      logger.info(`[${requestId}] Executing with env credentials for account ${accountInfo.id}`)
-      apiResult = await makeGoogleAdsRequest(accountInfo.id, queryResult.gaql_query)
-    } else {
-      const customerId = resolveGoogleAdsCustomerId(body)
-      const developerToken = body.developerToken?.trim()
-      const accessToken = body.accessToken?.trim()
-
-      if (!accessToken || !developerToken || !customerId) {
-        const missingFields: string[] = []
-        if (!accessToken) missingFields.push('Google Ads account (OAuth)')
-        if (!developerToken) missingFields.push('Developer Token')
-        if (!customerId) missingFields.push('Account ID')
-        logger.warn(`[${requestId}] Missing Google Ads credentials in request body`, {
-          missingFields,
-          hasWorkspaceId: Boolean(workspaceId),
-        })
-        return NextResponse.json(
-          {
-            error: `Missing required Google Ads fields: ${missingFields.join(', ')}. Connect your Google Ads account, add your developer token and customer ID, then run again.`,
-          },
-          { status: 400 }
-        )
-      }
-
-      accountInfo = { id: customerId.replace(/-/g, ''), name: `Customer ${customerId}` }
-      logger.info(
-        `[${requestId}] Executing with OAuth Google Ads credentials for customer ${accountInfo.id}`
-      )
-      apiResult = await makeGoogleAdsOAuthRequest({
-        customerId,
-        gaqlQuery: queryResult.gaql_query,
-        accessToken,
-        developerToken,
-        managerCustomerId: body.managerCustomerId,
-      })
-    }
-
+    // Process results
     const processedResults = processResults(apiResult, requestId, logger)
 
     logger.info(`[${requestId}] Query executed successfully`, {
       rowCount: processedResults.row_count,
       totalRows: processedResults.total_rows,
       hasTotals: !!processedResults.totals,
-      useAdminCredentials,
     })
 
     const executionTime = Date.now() - startTime
+
+    // Extract date range from GAQL query
     const dateRange = extractDateRange(queryResult.gaql_query)
 
-    return NextResponse.json({
+    // Build response with pagination info
+    const response = {
       success: true,
-      query,
+      query: query,
       account: {
         id: accountInfo.id,
         name: accountInfo.name,
@@ -202,10 +158,12 @@ export async function POST(request: NextRequest) {
       total_rows: processedResults.total_rows,
       totals: processedResults.totals,
       execution_time_ms: executionTime,
-    })
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     const executionTime = Date.now() - startTime
-    const errorMessage = toError(error).message
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
 
     logger.error(`[${requestId}] Google Ads V1 query failed`, {
       error: errorMessage,

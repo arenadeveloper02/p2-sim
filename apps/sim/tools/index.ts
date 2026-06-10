@@ -1738,6 +1738,10 @@ async function executeToolRequest(
       if (userId) {
         fullUrlObj.searchParams.set('userId', userId)
       }
+      const workspaceId = params._context?.workspaceId
+      if (workspaceId) {
+        fullUrlObj.searchParams.set('workspaceId', workspaceId)
+      }
     }
 
     const fullUrl = fullUrlObj.toString()
