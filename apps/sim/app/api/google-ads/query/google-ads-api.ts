@@ -1,16 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { GOOGLE_ADS_API_VERSION, POSITION2_MANAGER } from './constants'
-
-
-export interface GoogleAdsOAuthRequestOptions {
-  customerId: string
-  gaqlQuery: string
-  accessToken: string
-  developerToken: string
-  managerCustomerId?: string
-}
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
+import { POSITION2_MANAGER } from './constants'
 
 const logger = createLogger('GoogleAdsAPI')
 
@@ -78,91 +69,7 @@ async function fetchGoogleAdsSearchWithRetry(
 }
 
 /**
- * Exchanges Google OAuth client credentials + refresh token for a short-lived access token.
- */
-export async function refreshGoogleAdsAccessToken(
-  clientId: string,
-  clientSecret: string,
-  refreshToken: string
-): Promise<string> {
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token',
-    }),
-  })
-
-  if (!tokenResponse.ok) {
-    const errorText = await tokenResponse.text()
-    logger.error('Google Ads access token refresh failed', {
-      status: tokenResponse.status,
-      error: errorText,
-    })
-    throw new Error(
-      `Failed to refresh Google Ads access token: ${tokenResponse.status} - ${errorText}`
-    )
-  }
-
-  const tokenData = (await tokenResponse.json()) as { access_token?: string }
-  if (!tokenData.access_token) {
-    throw new Error('Google Ads token response did not include access_token')
-  }
-
-  return tokenData.access_token
-}
-
-/**
- * Executes a GAQL query using a bearer access token and developer token (non-admin workspaces).
- */
-export async function makeGoogleAdsOAuthRequest(
-  options: GoogleAdsOAuthRequestOptions
-): Promise<unknown> {
-  const formattedCustomerId = options.customerId.replace(/-/g, '')
-  const adsApiUrl = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${formattedCustomerId}/googleAds:search`
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${options.accessToken}`,
-    'developer-token': options.developerToken,
-    'Content-Type': 'application/json',
-  }
-
-  const managerId = options.managerCustomerId?.trim().replace(/-/g, '')
-  if (managerId) {
-    headers['login-customer-id'] = managerId
-  }
-
-  logger.info('Making Google Ads OAuth API request', {
-    customerId: formattedCustomerId,
-    hasManagerCustomerId: Boolean(managerId),
-  })
-
-  const adsResponse = await fetch(adsApiUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ query: options.gaqlQuery.trim() }),
-  })
-
-  if (!adsResponse.ok) {
-    const errorText = await adsResponse.text()
-    logger.error('Google Ads OAuth API request failed', {
-      status: adsResponse.status,
-      customerId: formattedCustomerId,
-      error: errorText,
-    })
-    throw new Error(`Google Ads API request failed: ${adsResponse.status} - ${errorText}`)
-  }
-
-  return adsResponse.json()
-}
-
-/**
- * Makes a request to the Google Ads API using GAQL query and server env credentials (admin workspaces).
+ * Makes a request to the Google Ads API using GAQL query
  */
 export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string): Promise<any> {
   logger.info('Making real Google Ads API request', { accountId, gaqlQuery })
@@ -238,7 +145,7 @@ export async function makeGoogleAdsRequest(accountId: string, gaqlQuery: string)
     const formattedCustomerId = accountId.replace(/-/g, '')
 
     // Make Google Ads API request
-    const adsApiUrl = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${formattedCustomerId}/googleAds:search`
+    const adsApiUrl = `https://googleads.googleapis.com/v22/customers/${formattedCustomerId}/googleAds:search`
 
     const requestPayload = {
       query: gaqlQuery.trim(),
