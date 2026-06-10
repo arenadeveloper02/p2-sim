@@ -255,7 +255,7 @@ export function General() {
   return (
     <div className='flex h-full flex-col bg-[var(--bg)]'>
       {/* Fixed header bar */}
-      <div className='flex flex-shrink-0 items-center justify-between bg-[var(--bg)] px-[16px] pt-[8.5px] pb-[8.5px]'>
+      {false &&<div className='flex flex-shrink-0 items-center justify-between bg-[var(--bg)] px-[16px] pt-[8.5px] pb-[8.5px]'>
         <div className='flex items-center'>
           {isHosted && (
             <Chip onClick={() => window.open('/?home', '_blank', 'noopener,noreferrer')}>
@@ -269,7 +269,7 @@ export function General() {
             <Chip onClick={() => setShowResetPasswordModal(true)}>Reset password</Chip>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Scrollable content */}
       <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
