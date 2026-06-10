@@ -3,8 +3,10 @@ import type { BlockConfig } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
 
 /** In-flight promise cache keyed by workspaceId — deduplicates concurrent fetchOptions + fetchOptionById calls */
-let _inflightFetch: { workspaceId: string; promise: Promise<Record<string, { id: string; name: string }>> } | null =
-  null
+let _inflightFetch: {
+  workspaceId: string
+  promise: Promise<Record<string, { id: string; name: string }>>
+} | null = null
 
 async function fetchGoogleAdsAccounts(
   workspaceId: string

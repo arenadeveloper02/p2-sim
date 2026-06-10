@@ -5,9 +5,9 @@
 
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { generateRequestId } from '@/lib/core/utils/request'
 import type { ChannelAccount } from '@/lib/channel-accounts'
 import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
+import { generateRequestId } from '@/lib/core/utils/request'
 import { makeGoogleAdsRequest } from '../../google-ads/query/google-ads-api'
 import { extractDateRange, generateGAQLQuery } from './query-generation'
 import { processResults } from './result-processing'
@@ -72,7 +72,8 @@ export async function POST(request: NextRequest) {
     logger.info(`[${requestId}] Request body received`, { body })
 
     const { query, accounts, workspaceId: bodyWorkspaceId } = body
-    const workspaceId = bodyWorkspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
+    const workspaceId =
+      bodyWorkspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
     const userId = request.nextUrl.searchParams.get('userId') ?? undefined
 
     // Validate query

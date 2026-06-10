@@ -1,9 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { generateRequestId } from '@/lib/core/utils/request'
-import { generateSmartGAQL } from './ai-query-generation'
 import type { ChannelAccount } from '@/lib/channel-accounts'
 import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
+import { generateRequestId } from '@/lib/core/utils/request'
+import { generateSmartGAQL } from './ai-query-generation'
 import { makeGoogleAdsRequest } from './google-ads-api'
 import {
   addComparisonToAccountResult,
@@ -18,7 +18,7 @@ const logger = createLogger('GoogleAdsAPI')
 /**
  * Resolves account input to account key (supports both keys and numeric IDs)
  */
-function  resolveAccountKey(
+function resolveAccountKey(
   accountInput: string,
   googleAdsAccounts: Record<string, ChannelAccount>
 ): string {
@@ -52,7 +52,8 @@ export async function POST(request: NextRequest) {
     logger.info(`[${requestId}] Request body received`, { body })
 
     const { query, accounts, workspaceId: bodyWorkspaceId } = body
-    const workspaceId = bodyWorkspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
+    const workspaceId =
+      bodyWorkspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
     const userId = request.nextUrl.searchParams.get('userId') ?? undefined
 
     if (!query) {
