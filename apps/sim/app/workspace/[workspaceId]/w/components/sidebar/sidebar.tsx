@@ -1231,6 +1231,11 @@ export const Sidebar = memo(function Sidebar() {
     captureEvent(posthog, 'docs_opened', { source: 'help_menu' })
   }, [posthog])
 
+  const handleOpenArenaDocs = useCallback(() => {
+    window.open('/arena-ai-docs', '_blank', 'noopener,noreferrer')
+    captureEvent(posthog, 'arena_docs_opened', { source: 'help_menu' })
+  }, [posthog])
+
   const handleTaskRenameBlur = useCallback(
     () => void taskFlyoutRename.saveRename(),
     [taskFlyoutRename.saveRename]
@@ -1404,7 +1409,7 @@ export const Sidebar = memo(function Sidebar() {
                       />
                     ) : brand.logoUrl ? (
                       <Image
-                        src={brand.logoUrlBlacktext}
+                        src={brand.logoUrlBlacktext || ''}
                         alt={brand.name}
                         width={34}
                         height={28}
@@ -1821,7 +1826,7 @@ export const Sidebar = memo(function Sidebar() {
                   )}
                 >
                   <DropdownMenu>
-                    {/* <SidebarTooltip label='Help' enabled={showCollapsedTooltips}>
+                    <SidebarTooltip label='Help' enabled={showCollapsedTooltips}>
                       <DropdownMenuTrigger asChild>
                         <button
                           type='button'
@@ -1834,16 +1839,20 @@ export const Sidebar = memo(function Sidebar() {
                           </span>
                         </button>
                       </DropdownMenuTrigger>
-                    </SidebarTooltip> */}
+                    </SidebarTooltip>
                     <DropdownMenuContent align='start' side='top' sideOffset={4}>
-                      <DropdownMenuItem onSelect={handleOpenDocs}>
+                      {/* <DropdownMenuItem onSelect={handleOpenDocs}>
+                        <BookOpen className='h-[14px] w-[14px]' />
+                        Docs
+                      </DropdownMenuItem> */}
+                      <DropdownMenuItem onSelect={handleOpenArenaDocs}>
                         <BookOpen className='h-[14px] w-[14px]' />
                         Docs
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
+                      {/* <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
                         <HelpCircle className='h-[14px] w-[14px]' />
                         Report an issue
-                      </DropdownMenuItem>
+                      </DropdownMenuItem> */}
                       <DropdownMenuItem onSelect={handleStartTour}>
                         <Compass className='h-[14px] w-[14px]' />
                         Take a tour

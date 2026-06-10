@@ -37,6 +37,7 @@ export const MIME_TYPE_MAPPING: Record<string, 'image' | 'document' | 'audio' | 
   // Documents
   'application/pdf': 'document',
   'text/plain': 'document',
+  'text/vtt': 'document',
   'text/csv': 'document',
   'application/json': 'document',
   'application/xml': 'document',
@@ -188,6 +189,7 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   // Documents
   pdf: 'application/pdf',
   txt: 'text/plain',
+  vtt: 'text/vtt',
   csv: 'text/csv',
   json: 'application/json',
   xml: 'application/xml',
@@ -293,6 +295,7 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   // Documents
   'application/pdf': 'pdf',
   'text/plain': 'txt',
+  'text/vtt': 'vtt',
   'text/csv': 'csv',
   'application/json': 'json',
   'application/xml': 'xml',
@@ -409,7 +412,7 @@ export function validateKnowledgeBaseFile(
     return null
   }
 
-  return `File "${file.name}" has an unsupported format. Please use PDF, DOC, DOCX, TXT, CSV, XLS, XLSX, MD, PPT, PPTX, HTML, JSON, JSONL, YAML, or YML files.`
+  return `File "${file.name}" has an unsupported format. Please use PDF, DOC, DOCX, TXT, VTT, CSV, XLS, XLSX, MD, PPT, PPTX, HTML, JSON, JSONL, YAML, or YML files.`
 }
 
 /**
@@ -463,11 +466,12 @@ export function inferContextFromKey(key: string): StorageContext {
   if (key.startsWith('workspace/')) return 'workspace'
   if (key.startsWith('profile-pictures/')) return 'profile-pictures'
   if (key.startsWith('og-images/')) return 'og-images'
+  if (key.startsWith('agent-generated-images/')) return 'agent-generated-images'
   if (key.startsWith('workspace-logos/')) return 'workspace-logos'
   if (key.startsWith('logs/')) return 'logs'
 
   throw new Error(
-    `File key must start with a context prefix (kb/, chat/, copilot/, execution/, workspace/, profile-pictures/, og-images/, workspace-logos/, or logs/). Got: ${key}`
+    `File key must start with a context prefix (kb/, chat/, copilot/, execution/, workspace/, profile-pictures/, og-images/, agent-generated-images/, workspace-logos/, or logs/). Got: ${key}`
   )
 }
 

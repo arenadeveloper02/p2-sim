@@ -6,7 +6,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { RawFileInputArraySchema } from '@/lib/uploads/utils/file-schemas'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
-import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { downloadFileForDelivery } from '@/lib/uploads/utils/file-utils.server'
 import {
   base64UrlEncode,
   buildMimeMessage,
@@ -97,6 +97,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           )
         }
 
+        const ownerKey = authResult.userId ? `user:${authResult.userId}` : undefined
+
         const attachmentBuffers = await Promise.all(
           attachments.map(async (file) => {
             try {
@@ -104,11 +106,22 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
                 `[${requestId}] Downloading attachment: ${file.name} (${file.size} bytes)`
               )
 
-              const buffer = await downloadFileFromStorage(file, requestId, logger)
+              const { buffer, contentType } = await downloadFileForDelivery(
+                file,
+                requestId,
+                logger,
+                { ownerKey, signal: request.signal }
+              )
+
+              if (buffer.length === 0) {
+                throw new Error(
+                  `Attachment "${file.name}" is empty. Save the file content before sending it.`
+                )
+              }
 
               return {
                 filename: file.name,
-                mimeType: file.type || 'application/octet-stream',
+                mimeType: contentType || file.type || 'application/octet-stream',
                 content: buffer,
               }
             } catch (error) {

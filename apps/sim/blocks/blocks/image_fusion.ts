@@ -131,6 +131,7 @@ export const ImageFusionBlock: BlockConfig<DalleResponse> = {
   outputs: {
     content: { type: 'string', description: 'Generation response' },
     image: { type: 'string', description: 'Generated image URL' },
+    images: { type: 'array', description: 'Generated image URLs' },
     metadata: { type: 'json', description: 'Generation metadata' },
   },
 }

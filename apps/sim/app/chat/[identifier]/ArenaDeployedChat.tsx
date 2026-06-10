@@ -2,11 +2,12 @@
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
-import { v4 as uuidv4 } from 'uuid'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
+import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
@@ -31,7 +32,6 @@ import {
 } from '@/app/chat/components'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
 import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
-import { AppBanner } from '@/app/workspace/[workspaceId]/app-banner'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { ArenaChatHeader } from '../components/header/arenaHeader'
 import { FeedbackView } from './FeedbackView'
@@ -54,6 +54,7 @@ interface ChatConfig {
   authType?: 'public' | 'password' | 'email' | 'sso'
   outputConfigs?: Array<{ blockId: string; path?: string }>
   inputFormat?: InputFormatField[]
+  /** Workspace IDs the current user can access; when set, "View in Knowledge Base" links are shown for KB refs in that workspace */
   userWorkspaceIds?: string[]
 }
 
@@ -72,6 +73,50 @@ interface AudioStreamingOptions {
 
 const DEFAULT_VOICE_SETTINGS = {
   voiceId: 'EXAVITQu4vr4xnSDxMaL', // Default ElevenLabs voice (Bella)
+}
+
+interface ChatFilePayload {
+  name: string
+  size: number
+  type: string
+  data?: string
+  url?: string
+}
+
+/**
+ * Builds the chat API file payload. Images already on this app are sent by URL so we do not
+ * re-embed multi-megabyte base64 blobs in the JSON body.
+ */
+async function buildChatFilePayload(file: {
+  name: string
+  size: number
+  type: string
+  file: File
+  dataUrl?: string
+  url?: string
+}): Promise<ChatFilePayload> {
+  const normalizedSize = file.size > 0 ? file.size : 1
+  const dataUrl = file.dataUrl?.trim() ?? ''
+  const directUrl = file.url?.trim() ?? ''
+  const serveUrl = [dataUrl, directUrl].find((value) => value.includes('/api/files/serve/'))
+  if (serveUrl) {
+    const url = serveUrl.startsWith('http')
+      ? serveUrl
+      : `${window.location.origin}${serveUrl.startsWith('/') ? serveUrl : `/${serveUrl}`}`
+    return {
+      name: file.name,
+      size: normalizedSize,
+      type: file.type,
+      url,
+    }
+  }
+
+  return {
+    name: file.name,
+    size: normalizedSize,
+    type: file.type,
+    data: dataUrl || (await fileToBase64(file.file)),
+  }
 }
 
 /**
@@ -208,6 +253,16 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setGoldenQueries(normalized)
   }, [chatConfig?.customizations?.goldenQueries])
 
+  const {
+    effectiveGeneratedImages,
+    selectedGeneratedImageIds,
+    selectedGeneratedImageIdsKey,
+    toggleGeneratedImageSelection,
+    removeSelectedGeneratedImage,
+    clearSelectedGeneratedImages,
+    materializeSelectedGeneratedImages,
+  } = useGeneratedImageReuse(messages)
+
   const scrollToMessage = useCallback(
     (messageId: string, scrollToShowOnlyMessage = false) => {
       const messageElement = document.querySelector(`[data-message-id="${messageId}"]`)
@@ -307,25 +362,33 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
             setMessages([
               ...initialMessages,
+              // Flatten and process logs as before
               ...data.logs.flatMap((log: any) => {
                 const messages = []
-                if (log.userInput) {
+                if (
+                  log.userInput ||
+                  (Array.isArray(log.attachments) && log.attachments.length > 0)
+                ) {
                   messages.push({
                     id: `${log.id}-user`,
-                    content: log.userInput,
+                    content: log.userInput || '',
                     type: 'user',
                     timestamp: new Date(log.startedAt),
+                    attachments: Array.isArray(log.attachments) ? log.attachments : undefined,
                   })
                 }
                 if (log.modelOutput) {
                   messages.push({
                     id: `${log.id}-assistant`,
-                    content: log.modelOutput,
+                    content: log.modelOutput || '',
                     type: 'assistant',
                     timestamp: new Date(log.endedAt || log.startedAt),
                     isStreaming: false,
                     executionId: log?.executionId || '',
                     liked: log.liked,
+                    generatedImages: Array.isArray(log.generatedImages)
+                      ? log.generatedImages
+                      : undefined,
                     knowledgeRefs: Array.isArray(log.knowledgeRefs) ? log.knowledgeRefs : undefined,
                   })
                 }
@@ -580,7 +643,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Fetch chat config on mount and generate new conversation ID
   useEffect(() => {
     fetchChatConfig()
-    setConversationId(uuidv4())
+    setConversationId(generateId())
 
     // getFormattedGitHubStars()
     //   .then((formattedStars) => {
@@ -619,51 +682,26 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   ) => {
     const messageToSend = messageParam ?? inputValue
     // Allow execution if forceExecution is true (form submission) or if there's input/files
-    if ((!messageToSend.trim() && (!files || files.length === 0) && !forceExecution) || isLoading)
+    if (
+      (!messageToSend.trim() &&
+        (!files || files.length === 0) &&
+        effectiveGeneratedImages.length === 0 &&
+        !forceExecution) ||
+      isLoading
+    )
       return
 
     logger.info('Sending message:', {
       messageToSend,
       isVoiceInput,
       conversationId,
-      filesCount: files?.length,
+      filesCount: (files?.length ?? 0) + effectiveGeneratedImages.length,
     })
 
     // Reset userHasScrolled when sending a new message
     setUserHasScrolled(false)
 
-    // Only add user message to chat if there's actual content or files
-    // When form is submitted with empty input, we don't add a user message
     let userMessageId: string | null = null
-    if (messageToSend.trim() || (files && files.length > 0)) {
-      const userMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        content: messageToSend || (files && files.length > 0 ? `Sent ${files.length} file(s)` : ''),
-        type: 'user',
-        timestamp: new Date(),
-        attachments: files?.map((file) => ({
-          id: file.id,
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          dataUrl: file.dataUrl || '',
-        })),
-      }
-      userMessageId = userMessage.id
-
-      // Add the user's message to the chat
-      setMessages((prev) => [...prev, userMessage])
-    }
-    setInputValue('')
-    setIsLoading(true)
-
-    // Scroll to show only the user's message and loading indicator (if message exists)
-    if (userMessageId) {
-      setTimeout(() => {
-        scrollToMessage(userMessageId!, true)
-      }, 100)
-    }
-
     // Create abort controller for request cancellation
     const abortController = new AbortController()
     const timeoutId = setTimeout(() => {
@@ -671,13 +709,56 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }, CHAT_REQUEST_TIMEOUT_MS)
 
     try {
+      const selectedImageFiles = await materializeSelectedGeneratedImages()
+      const combinedFiles = [
+        ...(files ?? []),
+        ...selectedImageFiles.map((image) => ({
+          id: image.id,
+          name: image.name,
+          size: image.size,
+          type: image.type,
+          file: image.file,
+          dataUrl: image.dataUrl,
+        })),
+      ]
+
+      if (messageToSend.trim() || combinedFiles.length > 0) {
+        // Add the user's message to the chat
+        const userMessage: ChatMessage = {
+          id: generateId(),
+          content: messageToSend,
+          type: 'user',
+          timestamp: new Date(),
+          attachments: combinedFiles.map((file) => ({
+            id: file.id,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataUrl: file.dataUrl || '',
+          })),
+        }
+        userMessageId = userMessage.id
+        setMessages((prev) => [...prev, userMessage])
+      }
+
+      setInputValue('')
+      clearSelectedGeneratedImages()
+      setIsLoading(true)
+
+      if (userMessageId) {
+        // Scroll to show only the user's message and loading indicator (if message exists)
+        setTimeout(() => {
+          scrollToMessage(userMessageId!, true)
+        }, 100)
+      }
+
       // Build complete workflow input with all Start Block fields
       // Use messageToSend directly (may be empty if form was submitted)
       // Pass overrideValues if provided (e.g., from form submission)
       const completeInput = buildCompleteWorkflowInput(
         messageToSend,
         conversationId,
-        files,
+        combinedFiles,
         overrideValues
       )
 
@@ -702,15 +783,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       }
 
       // Add files if present (convert to base64 for JSON transmission)
-      if (files && files.length > 0) {
-        payload.files = await Promise.all(
-          files.map(async (file) => ({
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            data: file.dataUrl || (await fileToBase64(file.file)),
-          }))
-        )
+      if (combinedFiles.length > 0) {
+        payload.files = await Promise.all(combinedFiles.map((file) => buildChatFilePayload(file)))
       }
 
       logger.info('API payload:', {
@@ -734,9 +808,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       clearTimeout(timeoutId)
 
       if (!response.ok) {
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({}))
         logger.error('API error response:', errorData)
-        throw new Error(errorData.error || 'Failed to get response')
+        const apiError =
+          typeof errorData.error === 'string'
+            ? errorData.error
+            : typeof errorData.message === 'string'
+              ? errorData.message
+              : 'Failed to get response'
+        throw new Error(apiError)
       }
 
       if (!response.body) {
@@ -772,7 +852,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         'Prompt Content': messageToSend,
         'Prompt Type': isVoiceInput ? `Voice` : `Text`,
         'Conversation ID': conversationId,
-        'Attachment Used': files && files.length > 0 ? 'True' : 'False',
+        'Attachment Used': combinedFiles.length > 0 ? 'True' : 'False',
       })
     } catch (error: any) {
       // Clear timeout in case of error
@@ -786,9 +866,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       logger.error('Error sending message:', error)
       setIsLoading(false)
+      const displayError =
+        error instanceof Error &&
+        (error.message.startsWith('Failed to load selected image') ||
+          error.message.startsWith('Invalid request body'))
+          ? error.message
+          : CHAT_ERROR_MESSAGES.GENERIC_ERROR
       const errorMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        content: CHAT_ERROR_MESSAGES.GENERIC_ERROR,
+        id: generateId(),
+        content: displayError,
         type: 'assistant',
         timestamp: new Date(),
       }
@@ -969,7 +1055,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         .join(', ')
 
       const inputMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         content: `Inputs received: ${formattedInputs}`,
         type: 'assistant',
         timestamp: new Date(),
@@ -1076,7 +1162,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               router.push(newUrl)
             } else {
               // No threads exist yet: generate a new UUID chatId for a fresh chat
-              const newId = uuidv4()
+              const newId = generateId()
               setCurrentChatId(newId)
               params.set('chatId', newId)
               const newUrl = `/chat/${workflowId}?${params.toString()}`
@@ -1085,7 +1171,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           }
         }
       } catch (err) {
-        console.error('Error fetching threads:', err)
+        logger.error('Error fetching threads:', err)
         setThreadsError(err instanceof Error ? err.message : 'Failed to fetch threads')
         setThreads([])
       } finally {
@@ -1162,7 +1248,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setShowFeedbackView(false)
     setFeedbackError(null)
     setShowScrollButton(false)
-    const id = uuidv4()
+    const id = generateId()
     setCurrentChatId(id)
     // Clear messages except initial messages (greeting + welcome)
     setMessages((prev) => {
@@ -1354,8 +1440,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Standard text-based chat interface
   return (
     <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-      <div className='shrink-0'>
-        <AppBanner />
+      {/* Header component */}
+      <div className='relative z-[60] shrink-0'>
         <ArenaChatHeader
           chatConfig={chatConfig}
           starCount={starCount}
@@ -1388,7 +1474,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         />
 
         {showFeedbackView ? (
-          <div className='absolute inset-0 left-[320px] z-40'>
+          <div className='absolute inset-0 left-[320px]'>
             <FeedbackView
               feedbackData={feedbackData}
               isLoading={isFeedbackLoading}
@@ -1404,6 +1490,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           </div>
         ) : (
           <div className='flex min-h-0 flex-1 flex-col'>
+            {/* Message Container component */}
             <ChatMessageContainer
               messages={messages}
               isLoading={isLoading}
@@ -1417,9 +1504,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               setMessages={setMessages}
               workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
               onAskInChat={(text) => setAskInChatText(text)}
+              onToggleGeneratedImage={toggleGeneratedImageSelection}
+              selectedGeneratedImageIds={selectedGeneratedImageIds}
+              selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
               onWelcomeQueryClick={handleWelcomeQueryClick}
             />
 
+            {/* Input area (free-standing at the bottom) */}
             <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
               <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
                 <ChatInput
@@ -1442,6 +1533,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                   isStreaming={isLoading || isStreamingResponse}
                   onStopStreaming={() => stopStreaming(setMessages)}
                   onVoiceStart={handleVoiceStart}
+                  selectedGeneratedImages={effectiveGeneratedImages}
+                  onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                 />
               </div>
             </div>

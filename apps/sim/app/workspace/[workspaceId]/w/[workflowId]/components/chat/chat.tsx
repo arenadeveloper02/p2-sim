@@ -27,6 +27,12 @@ import {
   Trash,
 } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
+import {
+  extractAssistantFilesFromData,
+  extractGeneratedImagesFromData,
+  isAssistantImageUrl,
+} from '@/lib/chat/assistant-assets'
+import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { cn } from '@/lib/core/utils/cn'
 import {
   extractBlockIdFromOutputId,
@@ -92,6 +98,7 @@ interface ChatFile {
   type: string
   size: number
   file: File
+  dataUrl?: string
 }
 
 /** Timeout for FileReader operations in milliseconds */
@@ -108,41 +115,43 @@ const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ChatMessag
       let previewUrl: string | undefined
       if (file.type.startsWith('image/')) {
         try {
-          previewUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            let settled = false
+          previewUrl =
+            file.dataUrl ||
+            (await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              let settled = false
 
-            const timeoutId = setTimeout(() => {
-              if (!settled) {
-                settled = true
-                reader.abort()
-                reject(new Error(`File read timed out after ${FILE_READ_TIMEOUT_MS}ms`))
-              }
-            }, FILE_READ_TIMEOUT_MS)
+              const timeoutId = setTimeout(() => {
+                if (!settled) {
+                  settled = true
+                  reader.abort()
+                  reject(new Error(`File read timed out after ${FILE_READ_TIMEOUT_MS}ms`))
+                }
+              }, FILE_READ_TIMEOUT_MS)
 
-            reader.onload = () => {
-              if (!settled) {
-                settled = true
-                clearTimeout(timeoutId)
-                resolve(reader.result as string)
+              reader.onload = () => {
+                if (!settled) {
+                  settled = true
+                  clearTimeout(timeoutId)
+                  resolve(reader.result as string)
+                }
               }
-            }
-            reader.onerror = () => {
-              if (!settled) {
-                settled = true
-                clearTimeout(timeoutId)
-                reject(reader.error)
+              reader.onerror = () => {
+                if (!settled) {
+                  settled = true
+                  clearTimeout(timeoutId)
+                  reject(reader.error)
+                }
               }
-            }
-            reader.onabort = () => {
-              if (!settled) {
-                settled = true
-                clearTimeout(timeoutId)
-                reject(new Error('File read aborted'))
+              reader.onabort = () => {
+                if (!settled) {
+                  settled = true
+                  clearTimeout(timeoutId)
+                  reject(new Error('File read aborted'))
+                }
               }
-            }
-            reader.readAsDataURL(file.file)
-          })
+              reader.readAsDataURL(file.file)
+            }))
         } catch (error) {
           logger.error('Error reading file as data URL:', error)
         }
@@ -203,6 +212,51 @@ const formatOutputContent = (output: unknown): string => {
     return `\`\`\`json\n${JSON.stringify(output, null, 2)}\n\`\`\``
   }
   return ''
+}
+
+const getImageUrlsFromOutput = (output: unknown): string[] => {
+  const extractedUrls = extractGeneratedImagesFromData(output).map((image) => image.url)
+  if (extractedUrls.length > 0) {
+    return extractedUrls
+  }
+
+  if (!output || typeof output !== 'object') {
+    return []
+  }
+
+  const outputRecord = output as Record<string, unknown>
+  const nestedOutput = outputRecord.output as Record<string, unknown> | undefined
+  const fallbackUrl =
+    nestedOutput?.image ??
+    outputRecord.image ??
+    (isAssistantImageUrl(outputRecord.content) ? outputRecord.content : null)
+
+  return typeof fallbackUrl === 'string' && isAssistantImageUrl(fallbackUrl) ? [fallbackUrl] : []
+}
+
+const getAssistantAssetSourcesFromResult = (
+  result: ExecutionResult & { output?: Record<string, Record<string, unknown>> },
+  selectedOutputs: string[],
+  streamedBlockIds?: Set<string>
+): unknown[] => {
+  if (selectedOutputs.length > 0 && Array.isArray(result.logs)) {
+    return selectedOutputs
+      .map((outputId) => extractOutputFromLogs(result.logs as BlockLog[], outputId))
+      .filter((output) => output !== undefined)
+  }
+
+  if (streamedBlockIds && streamedBlockIds.size > 0 && Array.isArray(result.logs)) {
+    return result.logs
+      .filter((log) => streamedBlockIds.has(log.blockId))
+      .map((log) => log.output)
+      .filter((output) => output !== undefined)
+  }
+
+  if (result.output && typeof result.output === 'object') {
+    return Object.values(result.output)
+  }
+
+  return []
 }
 
 /**
@@ -295,7 +349,6 @@ export function Chat() {
 
   const inputRef = useRef<HTMLInputElement>(null)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const abortControllerRef = useRef<AbortController | null>(null)
   const hasShownModalRef = useRef<boolean>(false)
   const hasCheckedModalRef = useRef<boolean>(false)
   const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
@@ -314,7 +367,6 @@ export function Chat() {
     handleDragLeave,
     handleDrop,
   } = useChatFileUpload()
-
   const filePreviewUrls = useRef<Map<string, string>>(new Map())
 
   const getFilePreviewUrl = useCallback((file: ChatFile): string | null => {
@@ -347,9 +399,6 @@ export function Chat() {
     }
   }, [chatFiles])
 
-  /**
-   * Resolves the unified start block for chat execution, if available.
-   */
   const startBlockCandidate = useMemo(() => {
     if (!activeWorkflowId) {
       return null
@@ -369,10 +418,6 @@ export function Chat() {
 
   const startBlockId = startBlockCandidate?.blockId ?? null
 
-  /**
-   * Reads the current input format for the unified start block from the subblock store,
-   * falling back to the workflow store if no explicit value is stored yet.
-   */
   const startBlockInputFormat = useSubBlockStore((state) => {
     if (!activeWorkflowId || !startBlockId) {
       return null
@@ -388,9 +433,6 @@ export function Chat() {
     return startBlock?.subBlocks?.inputFormat?.value ?? null
   })
 
-  /**
-   * Determines which reserved start inputs are missing from the input format.
-   */
   const missingStartReservedFields = useMemo(() => {
     if (!startBlockId) {
       return START_BLOCK_RESERVED_FIELDS
@@ -456,6 +498,16 @@ export function Chat() {
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
   }, [messages, activeWorkflowId])
 
+  const {
+    selectedGeneratedImages,
+    effectiveGeneratedImages,
+    selectedGeneratedImageIds,
+    toggleGeneratedImageSelection,
+    removeSelectedGeneratedImage,
+    clearSelectedGeneratedImages,
+    materializeSelectedGeneratedImages,
+  } = useGeneratedImageReuse(workflowMessages)
+
   const isStreaming = useMemo(() => {
     const lastMessage = workflowMessages[workflowMessages.length - 1]
     return Boolean(lastMessage?.isStreaming)
@@ -494,7 +546,7 @@ export function Chat() {
         setIsInputModalOpen(true)
       }
     }
-  }, [isChatOpen, workflowMessages.length])
+  }, [isChatOpen, workflowMessages.length, customFields.length])
 
   // Map chat messages to copilot message format (type -> role) for scroll hook
   const messagesForScrollHook = useMemo(() => {
@@ -519,6 +571,22 @@ export function Chat() {
       .filter((content): content is string => typeof content === 'string')
   }, [workflowMessages])
 
+  const handleToggleUserAttachmentImageSelection = useCallback(
+    (messageId: string, attachment: ChatMessageAttachment) => {
+      if (!attachment.previewUrl || !attachment.media_type.startsWith('image/')) {
+        return
+      }
+
+      toggleGeneratedImageSelection(messageId, {
+        id: attachment.id,
+        name: attachment.filename,
+        url: attachment.previewUrl,
+        type: attachment.media_type,
+      })
+    },
+    [toggleGeneratedImageSelection]
+  )
+
   useEffect(() => {
     if (!activeWorkflowId) {
       setPromptHistory([])
@@ -530,9 +598,6 @@ export function Chat() {
     setHistoryIndex(-1)
   }, [activeWorkflowId, userMessages])
 
-  /**
-   * Auto-scroll to bottom when messages load and chat is open
-   */
   useEffect(() => {
     if (workflowMessages.length > 0 && isChatOpen) {
       scrollToBottom()
@@ -545,10 +610,6 @@ export function Chat() {
     return selected && selected.length > 0 ? [...new Set(selected)] : []
   }, [selectedWorkflowOutputs, activeWorkflowId])
 
-  /**
-   * Focuses the input field with optional delay
-   * @param delay - Delay in milliseconds before focusing (default: 0)
-   */
   const focusInput = useCallback((delay = 0) => {
     timeoutRef.current && clearTimeout(timeoutRef.current)
 
@@ -572,13 +633,6 @@ export function Chat() {
     handleCancelExecution()
   }, [handleCancelExecution])
 
-  /**
-   * Processes streaming response from workflow execution
-   * Reads the stream chunk by chunk and updates the message content in real-time
-   * When the final event arrives, extracts any additional selected outputs (model, tokens, toolCalls)
-   * @param stream - ReadableStream containing the workflow execution response
-   * @param responseMessageId - ID of the message to update with streamed content
-   */
   const processStreamingResponse = useCallback(
     async (stream: ReadableStream, responseMessageId: string) => {
       const reader = stream.getReader()
@@ -589,6 +643,7 @@ export function Chat() {
       let receivedFinalEvent = false
       let finalEventData: ExecutionResult | null = null
       let chunkCount = 0
+      const streamedBlockIds = new Set<string>()
 
       const BATCH_MAX_MS = 50
       let pendingChunks = ''
@@ -641,16 +696,19 @@ export function Chat() {
                   if (trimmed && trimmed !== '[DONE]') {
                     try {
                       const json = JSON.parse(trimmed)
-                      const { event, data: eventData, chunk: contentChunk } = json
+                      const { event, data: eventData, chunk: contentChunk, blockId } = json
                       if (event === 'final' && eventData) {
                         receivedFinalEvent = true
                         finalEventData = eventData as ExecutionResult
                       } else if (contentChunk && typeof contentChunk === 'string') {
+                        if (typeof blockId === 'string') {
+                          streamedBlockIds.add(blockId)
+                        }
                         accumulatedContent += contentChunk
                         appendMessageContent(responseMessageId, contentChunk)
                         chunkCount++
                       }
-                    } catch (e) {
+                    } catch {
                       // Ignore parse errors
                     }
                   }
@@ -662,17 +720,20 @@ export function Chat() {
 
                 try {
                   const json = JSON.parse(data)
-                  const { event, data: eventData, chunk: contentChunk } = json
+                  const { event, data: eventData, chunk: contentChunk, blockId } = json
 
                   if (event === 'final' && eventData) {
                     receivedFinalEvent = true
                     finalEventData = eventData as ExecutionResult
                   } else if (contentChunk && typeof contentChunk === 'string') {
+                    if (typeof blockId === 'string') {
+                      streamedBlockIds.add(blockId)
+                    }
                     accumulatedContent += contentChunk
                     appendMessageContent(responseMessageId, contentChunk)
                     chunkCount++
                   }
-                } catch (e) {
+                } catch {
                   // Ignore parse errors for remaining buffer
                 }
               }
@@ -690,38 +751,21 @@ export function Chat() {
                   `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
                 )
               } else if (result.output) {
-                const isImageUrlString = (s: unknown): boolean =>
-                  typeof s === 'string' &&
-                  s.length > 0 &&
-                  (s.startsWith('http') || s.startsWith('/api/files/serve/')) &&
-                  (/\.(png|jpg|jpeg|gif|webp)(\?|%|$)/i.test(s.trim()) ||
-                    s.includes('agent-generated-images'))
-
-                const imageUrlFromOutput = (obj: unknown): string | null => {
-                  if (!obj || typeof obj !== 'object') return null
-                  const o = obj as Record<string, unknown>
-                  const url =
-                    (o.output as Record<string, unknown> | undefined)?.image ??
-                    o.image ??
-                    (isImageUrlString(o.content) ? o.content : null)
-                  if (
-                    typeof url === 'string' &&
-                    (url.startsWith('http') || url.startsWith('/api/files/serve/'))
-                  ) {
-                    return url
-                  }
-                  return null
-                }
-
-                for (const block of Object.values(result.output)) {
-                  const imageUrl = imageUrlFromOutput(block)
-                  if (imageUrl) {
-                    const blockObj = block as Record<string, unknown>
-                    const output = blockObj?.output as Record<string, unknown> | undefined
-                    const s3UploadFailed = output?.s3UploadFailed ?? blockObj?.s3UploadFailed
+                const assetSources = getAssistantAssetSourcesFromResult(
+                  result,
+                  selectedOutputs,
+                  streamedBlockIds
+                )
+                for (const source of assetSources) {
+                  const imageUrls = getImageUrlsFromOutput(source)
+                  if (imageUrls.length > 0) {
+                    const sourceObj = source as Record<string, unknown>
+                    const output = sourceObj.output as Record<string, unknown> | undefined
+                    const s3UploadFailed = output?.s3UploadFailed ?? sourceObj.s3UploadFailed
                     contentToSet = {
                       content: accumulatedContent || '',
-                      image: imageUrl,
+                      image: imageUrls[0] ?? '',
+                      images: imageUrls,
                       ...(s3UploadFailed === true && { s3UploadFailed: true }),
                     }
                     break
@@ -737,7 +781,28 @@ export function Chat() {
             })
 
             flushChunks()
-            finalizeMessageStream(responseMessageId, contentToSet)
+            const assetSources =
+              receivedFinalEvent && finalEventData
+                ? getAssistantAssetSourcesFromResult(
+                    finalEventData as ExecutionResult & {
+                      output?: Record<string, Record<string, unknown>>
+                    },
+                    selectedOutputs,
+                    streamedBlockIds
+                  )
+                : []
+            finalizeMessageStream(responseMessageId, contentToSet, {
+              files:
+                assetSources.length > 0 ? extractAssistantFilesFromData(assetSources) : undefined,
+              generatedImages: (() => {
+                const fromSources =
+                  assetSources.length > 0 ? extractGeneratedImagesFromData(assetSources) : []
+                if (fromSources.length > 0) {
+                  return fromSources
+                }
+                return contentToSet ? extractGeneratedImagesFromData(contentToSet) : undefined
+              })(),
+            })
             break
           }
 
@@ -780,8 +845,6 @@ export function Chat() {
                   Array.isArray(finalEventData.logs) &&
                   activeWorkflowId
                 ) {
-                  const additionalOutputs: string[] = []
-
                   if ('success' in finalEventData && !finalEventData.success) {
                     const errorMessage = finalEventData.error || 'Workflow execution failed'
                     flushChunks()
@@ -798,6 +861,9 @@ export function Chat() {
                 flushChunks()
                 finalizeMessageStream(responseMessageId)
               } else if (contentChunk) {
+                if (typeof blockId === 'string') {
+                  streamedBlockIds.add(blockId)
+                }
                 accumulatedContent += contentChunk
                 pendingChunks += contentChunk
                 scheduleFlush()
@@ -821,19 +887,13 @@ export function Chat() {
         }
         try {
           reader.releaseLock()
-        } catch (e) {
-          // Reader might already be released
-        }
+        } catch {}
         focusInput(100)
       }
     },
     [appendMessageContent, finalizeMessageStream, focusInput, selectedOutputs, activeWorkflowId]
   )
 
-  /**
-   * Handles workflow execution response
-   * @param result - The workflow execution result containing stream or logs
-   */
   const handleWorkflowResponse = useCallback(
     (result: unknown) => {
       if (!result || !activeWorkflowId) return
@@ -858,11 +918,19 @@ export function Chat() {
           .filter((output) => output !== undefined)
           .forEach((output) => {
             const content = formatOutputContent(output)
-            if (content) {
+            const files = extractAssistantFilesFromData(output)
+            const generatedImages = extractGeneratedImagesFromData(output)
+            if (content || files.length > 0 || generatedImages.length > 0) {
+              const imageUrls = generatedImages.map((image) => image.url)
               addMessage({
-                content,
+                content:
+                  imageUrls.length > 0
+                    ? { content, image: imageUrls[0] ?? '', images: imageUrls }
+                    : content || '',
                 workflowId: activeWorkflowId,
                 type: 'workflow',
+                ...(files.length > 0 ? { files } : {}),
+                ...(generatedImages.length > 0 ? { generatedImages } : {}),
               })
             }
           })
@@ -884,21 +952,18 @@ export function Chat() {
     [activeWorkflowId, selectedOutputs, addMessage, processStreamingResponse]
   )
 
-  /**
-   * Builds complete workflow input with all Start Block fields (including reserved ones)
-   * Reads values from Start Block inputFormat field values naturally, ensuring all fields
-   * are present with empty values when not provided
-   *
-   * @param userInput - The user's typed message (empty string when submitting form)
-   * @param conversationId - The conversation ID
-   * @param files - Optional array of uploaded files
-   * @param overrideValues - Optional values to override temporarily (e.g., from modal form submission before values are persisted)
-   */
   const buildCompleteWorkflowInput = useCallback(
     (
       userInput: string,
       conversationId: string,
-      files?: Array<{ name: string; size: number; type: string; file: File }>,
+      files?: Array<{
+        id?: string
+        name: string
+        size: number
+        type: string
+        file: File
+        dataUrl?: string
+      }>,
       overrideValues?: Record<string, unknown>
     ) => {
       const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
@@ -937,12 +1002,18 @@ export function Chat() {
   )
 
   /**
-   * Sends a chat message and executes the workflow
+   * Sends a chat message and executes the workflow.
    * Processes file attachments, adds the user message to the chat,
-   * and triggers workflow execution with the message as input
+   * and triggers workflow execution with the message as input.
    */
   const handleSendMessage = useCallback(async () => {
-    if ((!chatMessage.trim() && chatFiles.length === 0) || !activeWorkflowId || isExecuting) return
+    if (
+      (!chatMessage.trim() && chatFiles.length === 0 && effectiveGeneratedImages.length === 0) ||
+      !activeWorkflowId ||
+      isExecuting
+    ) {
+      return
+    }
 
     const sentMessage = chatMessage.trim()
 
@@ -966,33 +1037,41 @@ export function Chat() {
         'Workspace Name': workspaceName,
         'Workspace ID': workspaceId,
       })
-      // Process file attachments
-      const attachmentsWithData = await processFileAttachments(chatFiles)
+      const selectedImageFiles = await materializeSelectedGeneratedImages()
+      const combinedChatFiles = [
+        ...chatFiles,
+        ...selectedImageFiles.map((image) => ({
+          id: image.id,
+          name: image.name,
+          size: image.size,
+          type: image.type,
+          file: image.file,
+          dataUrl: image.dataUrl,
+        })),
+      ]
+      const attachmentsWithData = await processFileAttachments(combinedChatFiles)
 
-      const messageContent =
-        sentMessage || (chatFiles.length > 0 ? `Uploaded ${chatFiles.length} file(s)` : '')
       addMessage({
-        content: messageContent,
+        content: sentMessage,
         workflowId: activeWorkflowId,
         type: 'user',
         attachments: attachmentsWithData,
       })
 
-      // Prepare file array if present
       const fileArray =
-        chatFiles.length > 0
-          ? chatFiles.map((chatFile) => ({
+        combinedChatFiles.length > 0
+          ? combinedChatFiles.map((chatFile) => ({
               name: chatFile.name,
               size: chatFile.size,
               type: chatFile.type,
               file: chatFile.file,
+              id: chatFile.id,
+              dataUrl: chatFile.dataUrl,
             }))
           : undefined
 
-      // Build complete workflow input with all Start Block fields
       const workflowInput = buildCompleteWorkflowInput(sentMessage, conversationId, fileArray)
 
-      // Add upload error handler if files are present
       if (fileArray && fileArray.length > 0) {
         workflowInput.onUploadError = (message: string) => {
           logger.error('File upload error:', message)
@@ -1001,6 +1080,7 @@ export function Chat() {
 
       setChatMessage('')
       clearFiles()
+      clearSelectedGeneratedImages()
       clearErrors()
       focusInput(10)
 
@@ -1014,6 +1094,7 @@ export function Chat() {
   }, [
     chatMessage,
     chatFiles,
+    effectiveGeneratedImages,
     activeWorkflowId,
     isExecuting,
     promptHistory,
@@ -1025,30 +1106,25 @@ export function Chat() {
     clearFiles,
     clearErrors,
     buildCompleteWorkflowInput,
+    clearSelectedGeneratedImages,
+    materializeSelectedGeneratedImages,
+    workspaceName,
+    workspaceId,
   ])
 
-  /**
-   * Handles Start Block input modal submission
-   * Copies form values to Start Block inputFormat field values,
-   * stores them in state, and triggers workflow execution
-   */
   const handleStartBlockInputsSubmit = useCallback(
     async (values: Record<string, unknown>) => {
       if (!activeWorkflowId || isExecuting || !startBlockId) return
 
-      // Store the form values in local state
       setStartBlockInputs(values)
       setIsInputModalOpen(false)
 
-      // Update Start Block inputFormat field values with form values
-      // This ensures values persist and are used naturally in execution flow
       let updatedFields: InputFormatField[] = []
       try {
         const normalizedFields = normalizeInputFormatValue(startBlockInputFormat)
         updatedFields = normalizedFields.map((field) => {
           const fieldName = field.name?.trim()
           if (fieldName && fieldName in values) {
-            // Update the field's value with the form value
             return {
               ...field,
               value: values[fieldName] ?? '',
@@ -1057,13 +1133,11 @@ export function Chat() {
           return field
         })
 
-        // Update the Start Block's inputFormat with new values
         setSubBlockValue(startBlockId, 'inputFormat', updatedFields)
 
-        // Persist to server via operation queue
         const userId = session?.user?.id || 'unknown'
         addToQueue({
-          id: crypto.randomUUID(),
+          id: generateId(),
           operation: {
             operation: 'subblock-update',
             target: 'subblock',
@@ -1080,34 +1154,24 @@ export function Chat() {
         triggerWorkflowUpdate()
       } catch (error) {
         logger.error('Error updating Start Block inputFormat values:', error)
-        // Fallback: use original format if update failed
         updatedFields = normalizeInputFormatValue(startBlockInputFormat)
       }
 
-      // Build complete workflow input using the updated Start Block inputFormat field values
-      // This ensures execution flow naturally uses the persisted values
       const conversationId = getConversationId(activeWorkflowId)
-
-      // Build input from updated fields (read from field.value)
       const completeInput: Record<string, unknown> = {}
       for (const field of updatedFields) {
         const fieldName = field.name?.trim()
         if (fieldName) {
-          // Use the value from Start Block inputFormat field (persisted value)
           completeInput[fieldName] =
             field.value !== undefined && field.value !== null ? field.value : ''
         }
       }
 
-      // Override with actual values for reserved fields
       completeInput.input = ''
       completeInput.conversationId = conversationId
 
-      const workflowInput = completeInput
-
       try {
-        // Execute workflow immediately
-        const result = await handleRunWorkflow(workflowInput)
+        const result = await handleRunWorkflow(completeInput)
         handleWorkflowResponse(result)
       } catch (error) {
         logger.error('Error executing workflow from modal submit:', error)
@@ -1125,25 +1189,16 @@ export function Chat() {
       addToQueue,
       triggerWorkflowUpdate,
       getConversationId,
-      buildCompleteWorkflowInput,
       handleRunWorkflow,
       handleWorkflowResponse,
       focusInput,
     ]
   )
 
-  /**
-   * Handles Re-run button click - opens modal to collect new inputs
-   */
   const handleRerun = useCallback(() => {
     setIsInputModalOpen(true)
   }, [])
 
-  /**
-   * Handles keyboard input for chat
-   * Supports Enter to send, ArrowUp/Down to navigate prompt history
-   * @param e - Keyboard event from the input field
-   */
   const handleKeyPress = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -1176,11 +1231,6 @@ export function Chat() {
     [handleSendMessage, promptHistory, historyIndex, isStreaming, isExecuting]
   )
 
-  /**
-   * Handles output selection changes
-   * Deduplicates and stores selected workflow outputs for the current workflow
-   * @param values - Array of selected output IDs or labels
-   */
   const handleOutputSelection = useCallback(
     (values: string[]) => {
       if (!activeWorkflowId) return
@@ -1191,16 +1241,10 @@ export function Chat() {
     [activeWorkflowId, setSelectedWorkflowOutput]
   )
 
-  /**
-   * Closes the chat modal
-   */
   const handleClose = useCallback(() => {
     setIsChatOpen(false)
   }, [setIsChatOpen])
 
-  /**
-   * Adds any missing reserved inputs (input, conversationId, files) to the unified start block.
-   */
   const handleConfigureStartInputs = useCallback(() => {
     if (!activeWorkflowId || !startBlockId) {
       logger.warn('Cannot configure start inputs: missing active workflow ID or start block ID')
@@ -1276,7 +1320,6 @@ export function Chat() {
       onMouseLeave={handleResizeMouseLeave}
       onMouseDown={handleResizeMouseDown}
     >
-      {/* Header with drag handle */}
       <div
         className='flex h-[32px] flex-shrink-0 cursor-grab items-center justify-between gap-2.5 bg-[var(--surface-1)] p-0 active:cursor-grabbing'
         onMouseDown={handleMouseDown}
@@ -1285,7 +1328,6 @@ export function Chat() {
           Chat
         </span>
 
-        {/* Start inputs button and output selector - with max-width to prevent overflow */}
         <div
           className='ml-auto flex min-w-0 flex-shrink items-center gap-1.5'
           onMouseDown={(e) => e.stopPropagation()}
@@ -1335,7 +1377,6 @@ export function Chat() {
         </div>
 
         <div className='flex flex-shrink-0 items-center gap-2'>
-          {/* More menu with actions */}
           <Popover variant='default' size='sm' open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -1378,16 +1419,13 @@ export function Chat() {
             </PopoverContent>
           </Popover>
 
-          {/* Close button */}
           <Button variant='ghost' className='!p-1.5 -m-1.5' onClick={handleClose}>
             <X className='h-[16px] w-[16px]' />
           </Button>
         </div>
       </div>
 
-      {/* Chat content */}
       <div className='flex flex-1 flex-col overflow-hidden'>
-        {/* Messages */}
         <div className='flex-1 overflow-hidden'>
           {workflowMessages.length === 0 ? (
             <div className='flex h-full items-center justify-center text-[var(--text-placeholder)] text-small'>
@@ -1397,14 +1435,19 @@ export function Chat() {
             <div ref={scrollAreaRef} className='h-full overflow-y-auto overflow-x-hidden'>
               <div className='w-full max-w-full space-y-2 overflow-hidden py-2'>
                 {workflowMessages.map((message) => (
-                  <ChatMessage key={message.id} message={message} />
+                  <ChatMessage
+                    key={message.id}
+                    message={message}
+                    onToggleGeneratedImage={toggleGeneratedImageSelection}
+                    onToggleUserAttachmentImage={handleToggleUserAttachmentImageSelection}
+                    selectedGeneratedImageIds={selectedGeneratedImageIds}
+                  />
                 ))}
               </div>
             </div>
           )}
         </div>
 
-        {/* Input section */}
         <div
           className='flex-none'
           onDragEnter={!activeWorkflowId || isExecuting ? undefined : handleDragEnter}
@@ -1412,7 +1455,6 @@ export function Chat() {
           onDragLeave={!activeWorkflowId || isExecuting ? undefined : handleDragLeave}
           onDrop={!activeWorkflowId || isExecuting ? undefined : handleDrop}
         >
-          {/* Error messages */}
           {uploadErrors.length > 0 && (
             <div>
               <div className='rounded-lg border border-[var(--terminal-status-error-border)] bg-[var(--terminal-status-error-bg)]'>
@@ -1435,13 +1477,39 @@ export function Chat() {
             </div>
           )}
 
-          {/* Combined input container */}
           <div
             className={`rounded-sm border bg-[var(--surface-5)] py-0 pr-1.5 pl-1 transition-colors ${
               isDragOver ? 'border-[var(--brand-secondary)]' : 'border-[var(--border-1)]'
             }`}
           >
-            {/* File thumbnails */}
+            {effectiveGeneratedImages.length > 0 && (
+              <div className='mt-1 flex flex-wrap gap-1.5'>
+                {effectiveGeneratedImages.map((image) => (
+                  <div
+                    key={image.id}
+                    className='group relative h-[40px] w-[40px] flex-shrink-0 overflow-hidden rounded-md bg-[var(--surface-2)]'
+                    title={
+                      selectedGeneratedImages.length > 0
+                        ? `${image.name} (selected from chat)`
+                        : `${image.name} (latest image)`
+                    }
+                  >
+                    <img src={image.url} alt={image.name} className='h-full w-full object-cover' />
+                    <Button
+                      variant='ghost'
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        removeSelectedGeneratedImage(image.id)
+                      }}
+                      className='absolute top-0.5 right-0.5 h-4 w-4 p-0 opacity-0 transition-opacity group-hover:opacity-100'
+                    >
+                      <X className='h-2.5 w-2.5' />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {chatFiles.length > 0 && (
               <div className='mt-1 flex flex-wrap gap-1.5'>
                 {chatFiles.map((file) => {
@@ -1490,7 +1558,6 @@ export function Chat() {
               </div>
             )}
 
-            {/* Input field with inline buttons */}
             <div className='relative'>
               <Input
                 ref={inputRef}
@@ -1505,7 +1572,6 @@ export function Chat() {
                 disabled={!activeWorkflowId}
               />
 
-              {/* Buttons positioned absolutely on the right */}
               <div className='-translate-y-1/2 absolute top-1/2 right-[2px] flex items-center gap-2.5'>
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
@@ -1526,26 +1592,28 @@ export function Chat() {
                 {isStreaming ? (
                   <Button
                     onClick={handleStopStreaming}
-                    variant='ghost'
-                    className='h-[22px] w-[22px] rounded-full bg-[#383838] p-0 transition-colors hover-hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover-hover:bg-[#CFCFCF]'
+                    className='h-[22px] w-[22px] rounded-full border-0 bg-[var(--text-primary)] p-0 transition-colors hover-hover:bg-[var(--text-secondary)] dark:bg-[var(--border-1)] dark:hover-hover:bg-[var(--text-body)]'
                   >
                     <Square className='h-2.5 w-2.5 fill-white text-white dark:fill-black dark:text-black' />
                   </Button>
                 ) : (
                   <Button
                     onClick={handleSendMessage}
-                    variant='ghost'
                     disabled={
-                      (!chatMessage.trim() && chatFiles.length === 0) ||
+                      (!chatMessage.trim() &&
+                        chatFiles.length === 0 &&
+                        effectiveGeneratedImages.length === 0) ||
                       !activeWorkflowId ||
                       isExecuting ||
                       isStreaming
                     }
                     className={cn(
-                      'h-[22px] w-[22px] rounded-full p-0 transition-colors',
-                      chatMessage.trim() || chatFiles.length > 0
-                        ? 'bg-[#383838] hover-hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover-hover:bg-[#CFCFCF]'
-                        : 'bg-[#808080] dark:bg-[#808080]'
+                      'h-[22px] w-[22px] rounded-full border-0 p-0 transition-colors',
+                      chatMessage.trim() ||
+                        chatFiles.length > 0 ||
+                        effectiveGeneratedImages.length > 0
+                        ? 'bg-[var(--text-primary)] hover-hover:bg-[var(--text-secondary)] dark:bg-[var(--border-1)] dark:hover-hover:bg-[var(--text-body)]'
+                        : 'bg-[var(--text-subtle)] dark:bg-[var(--text-subtle)]'
                     )}
                   >
                     <ArrowUp
@@ -1557,7 +1625,6 @@ export function Chat() {
               </div>
             </div>
 
-            {/* Hidden file input */}
             <input
               id='floating-chat-file-input'
               type='file'
@@ -1571,7 +1638,6 @@ export function Chat() {
         </div>
       </div>
 
-      {/* Start Block Input Modal */}
       {customFields.length > 0 && (
         <StartBlockInputModal
           open={isInputModalOpen}

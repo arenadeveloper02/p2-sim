@@ -9,8 +9,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const result = await db.execute(sql`
       SELECT account_id, account_name 
-      FROM channel_accounts 
-      WHERE account_type = 'facebook' 
+      FROM facebook_accounts 
       ORDER BY account_name ASC
     `)
 

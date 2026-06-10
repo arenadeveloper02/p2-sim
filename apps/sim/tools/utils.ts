@@ -52,21 +52,29 @@ export function getLatestVersionTools(
 }
 
 /**
- * Resolves a tool name to its actual tool ID in the registry.
- * Handles both stripped names (e.g., 'notion_search') and versioned names (e.g., 'notion_search_v2').
- * @param toolName The tool name to resolve (may or may not have version suffix)
- * @returns The actual tool ID in the registry, or the original name if not found
+ * Resolves an agent integration tool name (Copilot, mothership chat, subagents) to the **canonical
+ * latest** registry id for its version family (same base after {@link stripVersionSuffix}). Agent
+ * integration schemas omit `_vN`; when legacy unversioned and `_vN` keys both exist
+ * (`google_sheets_write` vs `google_sheets_write_v2`), stripped names bind the latest toolkit.
+ *
+ * Workflow block execution must not call this — serialized block tool ids are already exact keys.
+ *
+ * @param toolName Stripped agent integration name or `_vN` suffix
+ * @returns Latest registry id when the base exists in versioning; unknown ids unchanged
  */
 export function resolveToolId(toolName: string): string {
-  if (tools[toolName]) {
-    return toolName
+  const baseId = stripVersionSuffix(toolName)
+  const latestTools = getLatestVersionTools(tools)
+
+  const latestMatch = Object.keys(latestTools).find(
+    (toolId) => stripVersionSuffix(toolId) === baseId
+  )
+  if (latestMatch) {
+    return latestMatch
   }
 
-  const latestTools = getLatestVersionTools(tools)
-  for (const toolId of Object.keys(latestTools)) {
-    if (stripVersionSuffix(toolId) === toolName) {
-      return toolId
-    }
+  if (tools[toolName]) {
+    return toolName
   }
 
   return toolName
@@ -263,10 +271,12 @@ export async function formatRequestParams(
   const hasBody = method !== 'GET' && method !== 'HEAD' && !!tool.request.body
   const bodyResult = tool.request.body ? await tool.request.body(params) : undefined
 
-  // Special handling for NDJSON content type or 'application/x-www-form-urlencoded'
+  // Special handling for content types whose body is not JSON (pre-formatted strings)
+  const contentType = headers['Content-Type'] ?? ''
   const isPreformattedContent =
-    headers['Content-Type'] === 'application/x-ndjson' ||
-    headers['Content-Type'] === 'application/x-www-form-urlencoded'
+    contentType === 'application/x-ndjson' ||
+    contentType === 'application/x-www-form-urlencoded' ||
+    contentType.startsWith('multipart/')
 
   let body: string | undefined
   if (hasBody) {
@@ -308,7 +318,7 @@ export async function formatRequestParams(
   }
 
   const MAX_TIMEOUT_MS = getMaxExecutionTimeout()
-  const rawTimeout = params.timeout
+  const rawTimeout = params.timeout ?? tool.request.timeout
   const timeout = rawTimeout != null ? Number(rawTimeout) : undefined
   const validTimeout =
     timeout != null && Number.isFinite(timeout) && timeout > 0

@@ -15,8 +15,10 @@ import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { isUserFile } from '@/lib/core/utils/user-file'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
+import { stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { resolveWorkspaceFileReference } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { generateNanoBananaImage } from '@/app/api/google/api-service'
 import { assertPermissionsAllowed } from '@/ee/access-control/utils/permission-check'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
@@ -34,6 +36,7 @@ import type {
 import {
   formatRequestParams,
   getTool,
+  resolveToolId,
   safeStringify,
   validateRequiredParametersAfterMerge,
 } from '@/tools/utils'
@@ -50,6 +53,24 @@ interface ToolExecutionScope {
   isDeployedContext?: boolean
   enforceCredentialAccess?: boolean
   copilotToolExecution?: boolean
+}
+
+async function executeNanoBananaDirect(params: Record<string, any>): Promise<ToolResponse> {
+  logger.info('Running Nano Banana generation in-process')
+  const inputImages = Array.isArray(params.inputImages) ? params.inputImages : undefined
+  const { toolResponse } = await generateNanoBananaImage({
+    model: params.model ?? '',
+    prompt: params.prompt ?? '',
+    aspectRatio: params.aspectRatio,
+    imageSize: params.imageSize,
+    inputImage: inputImages?.length
+      ? undefined
+      : stripInlinePayloadFromFileReference(params.inputImage),
+    inputImageMimeType: params.inputImageMimeType,
+    inputImages: inputImages?.map(stripInlinePayloadFromFileReference),
+    _context: params._context,
+  })
+  return toolResponse
 }
 
 function resolveToolScope(
@@ -649,16 +670,18 @@ function normalizeToolId(toolId: string): string {
 }
 
 /**
- * Maximum request body size in bytes before we warn/error about size limits.
- * Next.js 16 has a default middleware/proxy body limit of 10MB.
+ * Maximum request body sizes before we fail with a clear error.
+ * Internal Next.js routes can reject/truncate JSON bodies around 10MB, which otherwise
+ * surfaces as "Unterminated string in JSON" when large inline images are posted.
  */
-const MAX_REQUEST_BODY_SIZE_BYTES = 2000 * 1024 * 1024 // 10MB
+const INTERNAL_ROUTE_MAX_REQUEST_BODY_SIZE_BYTES = 9.5 * 1024 * 1024
+const MAX_REQUEST_BODY_SIZE_BYTES = 100 * 1024 * 1024
 
 /**
  * User-friendly error message for body size limit exceeded
  */
 const BODY_SIZE_LIMIT_ERROR_MESSAGE =
-  'Request body size limit exceeded (100MB). The workflow data is too large to process. Try reducing the size of variables, inputs, or data being passed between blocks.'
+  'Request body size limit exceeded. The workflow data is too large to process. Try reducing the size of variables, inputs, or data being passed between blocks. For image generation, upload reference images as files or use image URLs instead of inline base64 data.'
 
 /**
  * Validates request body size and throws a user-friendly error if exceeded
@@ -670,18 +693,19 @@ const BODY_SIZE_LIMIT_ERROR_MESSAGE =
 function validateRequestBodySize(
   body: string | undefined,
   requestId: string,
-  context: string
+  context: string,
+  maxSizeBytes = MAX_REQUEST_BODY_SIZE_BYTES
 ): void {
   if (!body) return
 
   const bodySize = Buffer.byteLength(body, 'utf8')
-  if (bodySize > MAX_REQUEST_BODY_SIZE_BYTES) {
+  if (bodySize > maxSizeBytes) {
     const bodySizeMB = (bodySize / (1024 * 1024)).toFixed(2)
-    const maxSizeMB = (MAX_REQUEST_BODY_SIZE_BYTES / (1024 * 1024)).toFixed(0)
+    const maxSizeMB = (maxSizeBytes / (1024 * 1024)).toFixed(1)
     logger.error(`[${requestId}] Request body size exceeds limit for ${context}:`, {
       bodySize,
       bodySizeMB: `${bodySizeMB}MB`,
-      maxSize: MAX_REQUEST_BODY_SIZE_BYTES,
+      maxSize: maxSizeBytes,
       maxSizeMB: `${maxSizeMB}MB`,
     })
     throw new Error(BODY_SIZE_LIMIT_ERROR_MESSAGE)
@@ -803,6 +827,11 @@ async function processFileOutputs(
   }
 }
 
+export interface ExecuteToolOptions {
+  /** Use the exact registry tool id instead of upgrading to the latest _vN variant. */
+  exactToolId?: boolean
+}
+
 /**
  * Execute a tool by making the appropriate HTTP request
  * All requests go directly - internal routes use regular fetch, external use SSRF-protected fetch
@@ -811,7 +840,8 @@ export async function executeTool(
   toolId: string,
   params: Record<string, any>,
   skipPostProcess = false,
-  executionContext?: ExecutionContext
+  executionContext?: ExecutionContext,
+  options?: ExecuteToolOptions
 ): Promise<ToolResponse> {
   // Capture start time for precise timing
   const startTime = new Date()
@@ -885,10 +915,15 @@ export async function executeTool(
         startTimeISO
       )
     } else {
-      // For built-in tools, use the synchronous version
-      tool = getTool(normalizedToolId)
+      // Copilot/mothership agent schemas omit `_vN`; canvas blocks serialize exact registry ids.
+      const registryToolId = scope.copilotToolExecution
+        ? resolveToolId(normalizedToolId)
+        : normalizedToolId
+      tool = getTool(registryToolId)
       if (!tool) {
-        logger.error(`[${requestId}] Built-in tool not found: ${normalizedToolId}`)
+        logger.error(
+          `[${requestId}] Built-in tool not found: ${normalizedToolId}${registryToolId !== normalizedToolId ? ` (resolved: ${registryToolId})` : ''}`
+        )
       }
     }
 
@@ -1060,9 +1095,11 @@ export async function executeTool(
     }
 
     // Check for direct execution (no HTTP request needed)
-    if (tool.directExecution) {
+    const directExecution =
+      normalizedToolId === 'google_nano_banana' ? executeNanoBananaDirect : tool.directExecution
+    if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
-      const result = await tool.directExecution(contextParams)
+      const result = await directExecution(contextParams)
 
       // Apply post-processing if available and not skipped
       let finalResult = result
@@ -1500,7 +1537,12 @@ async function executeToolRequest(
     }
 
     // Check request body size before sending to detect potential size limit issues
-    validateRequestBodySize(requestParams.body, requestId, toolId)
+    validateRequestBodySize(
+      requestParams.body,
+      requestId,
+      toolId,
+      isInternalRoute ? INTERNAL_ROUTE_MAX_REQUEST_BODY_SIZE_BYTES : MAX_REQUEST_BODY_SIZE_BYTES
+    )
 
     // Convert Headers to plain object for secureFetchWithPinnedIP
     const headersRecord: Record<string, string> = {}

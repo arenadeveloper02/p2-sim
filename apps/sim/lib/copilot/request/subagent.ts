@@ -237,5 +237,6 @@ async function buildExecutionContext(
     workspaceId,
     chatId,
     decryptedEnvVars,
+    copilotToolExecution: true,
   }
 }

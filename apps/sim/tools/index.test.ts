@@ -2574,4 +2574,133 @@ describe('Cost Field Handling', () => {
 
     Object.assign(tools, originalTools)
   })
+
+  it('uses exact registry tool id for workflow execution when legacy and v2 both exist', async () => {
+    const v1Tool = {
+      id: 'google_sheets_write',
+      name: 'Google Sheets Write V1',
+      description: 'Legacy write tool',
+      version: '1.0.0',
+      params: {},
+      request: {
+        url: '/api/tools/google/sheets/write-v1',
+        method: 'POST',
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({
+        success: true,
+        output: { version: 'v1' },
+      }),
+    }
+    const v2Tool = {
+      id: 'google_sheets_write_v2',
+      name: 'Google Sheets Write V2',
+      description: 'Latest write tool',
+      version: '2.0.0',
+      params: {},
+      request: {
+        url: '/api/tools/google/sheets/write-v2',
+        method: 'POST',
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({
+        success: true,
+        output: { version: 'v2' },
+      }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).google_sheets_write = v1Tool
+    ;(tools as any).google_sheets_write_v2 = v2Tool
+
+    global.fetch = Object.assign(
+      vi.fn().mockImplementation(async (url) => {
+        expect(url).toBe('http://localhost:3000/api/tools/google/sheets/write-v1')
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          headers: new Headers(),
+          json: () => Promise.resolve({ success: true }),
+          text: () => Promise.resolve('{}'),
+          clone: vi.fn().mockReturnThis(),
+        }
+      }),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool('google_sheets_write', {}, false)
+
+    expect(result.success).toBe(true)
+    expect(v1Tool.transformResponse).toHaveBeenCalled()
+    expect(v2Tool.transformResponse).not.toHaveBeenCalled()
+
+    Object.assign(tools, originalTools)
+  })
+
+  it('resolves stripped tool id to latest for copilot execution', async () => {
+    const v1Tool = {
+      id: 'google_sheets_write',
+      name: 'Google Sheets Write V1',
+      description: 'Legacy write tool',
+      version: '1.0.0',
+      params: {},
+      request: {
+        url: '/api/tools/google/sheets/write-v1',
+        method: 'POST',
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({
+        success: true,
+        output: { version: 'v1' },
+      }),
+    }
+    const v2Tool = {
+      id: 'google_sheets_write_v2',
+      name: 'Google Sheets Write V2',
+      description: 'Latest write tool',
+      version: '2.0.0',
+      params: {},
+      request: {
+        url: '/api/tools/google/sheets/write-v2',
+        method: 'POST',
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({
+        success: true,
+        output: { version: 'v2' },
+      }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).google_sheets_write = v1Tool
+    ;(tools as any).google_sheets_write_v2 = v2Tool
+
+    global.fetch = Object.assign(
+      vi.fn().mockImplementation(async (url) => {
+        expect(url).toBe('http://localhost:3000/api/tools/google/sheets/write-v2')
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          headers: new Headers(),
+          json: () => Promise.resolve({ success: true }),
+          text: () => Promise.resolve('{}'),
+          clone: vi.fn().mockReturnThis(),
+        }
+      }),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const context = createToolExecutionContext({
+      copilotToolExecution: true,
+    } as any)
+    const result = await executeTool('google_sheets_write', {}, false, context)
+
+    expect(result.success).toBe(true)
+    expect(v2Tool.transformResponse).toHaveBeenCalled()
+    expect(v1Tool.transformResponse).not.toHaveBeenCalled()
+
+    Object.assign(tools, originalTools)
+  })
 })

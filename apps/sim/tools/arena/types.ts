@@ -134,6 +134,7 @@ export type ArenaGetMeetingsParams = {
 export interface ArenaGetMeetingsResponse extends ToolResponse {}
 
 export type ArenaGetMyTasksParams = {
+  withinMinutes?: number
   _context: {
     workflowId: string
   }
@@ -148,6 +149,41 @@ export type ArenaGetMyOverdueTasksParams = {
 }
 
 export interface ArenaGetMyOverdueTasksResponse extends ToolResponse {}
+
+/** `arena_fetch_searched_tasks` — POST get-searched-tasks with free-text filters. */
+export type ArenaGetSearchedTasksParams = {
+  'fetch-searched-client-name'?: string
+  'fetch-searched-project-name'?: string
+  'fetch-searched-assignee-name'?: string
+  'fetch-searched-state'?: string
+  _context: {
+    workflowId: string
+  }
+}
+
+export interface ArenaSearchedTaskItem {
+  taskId: string
+  name: string
+  assigneeName: string | null
+  group: string | null
+  parentTaskId: string | null
+  parentTaskName: string | null
+  type: string
+  startDate: string | null
+  endDate: string | null
+  status: string | null
+  priority: string | null
+}
+
+export interface ArenaGetSearchedTasksApiResponse {
+  errors: string | null
+  errorMessage: string | null
+  message: string | null
+  tasks: ArenaSearchedTaskItem[]
+  tasksCount: number
+}
+
+export interface ArenaGetSearchedTasksResponse extends ToolResponse {}
 
 export type ArenaGetTokenParams = {
   _context?: {

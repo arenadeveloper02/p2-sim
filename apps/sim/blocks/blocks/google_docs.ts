@@ -11,7 +11,7 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
   description: 'Read, write, and create documents',
   authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Google Docs into the workflow. Can read, write, and create documents.',
+    'Integrate Google Docs into the workflow. Can read, write, and create documents. Create supports GitHub Flavored Markdown (GFM) — pass markdown in content to store or import formatted documents.',
   docsLink: 'https://docs.sim.ai/tools/google_docs',
   category: 'tools',
   integrationType: IntegrationType.Documents,
@@ -128,7 +128,7 @@ Return ONLY the document title - no explanations, no extra text.`,
       title: 'Content',
       type: 'long-input',
       placeholder: 'Enter document content',
-      condition: { field: 'operation', value: ['create', 'write'] },
+      condition: { field: 'operation', value: 'write' },
       required: true,
       wandConfig: {
         enabled: true,
@@ -137,6 +137,22 @@ The content should be well-structured and appropriate for a Google Doc.
 
 Return ONLY the document content - no explanations, no extra text.`,
         placeholder: 'Describe the document content you want to write...',
+      },
+    },
+    // Content Field for create operation
+    {
+      id: 'content',
+      title: 'Content',
+      type: 'long-input',
+      placeholder: 'Enter document content',
+      condition: { field: 'operation', value: 'create' },
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate initial document content based on the user's request.
+The content should be well-structured and appropriate for a new Google Doc.
+
+Return ONLY the document content - no explanations, no extra text.`,
+        placeholder: 'Describe the document content you want to create...',
       },
     },
   ],
@@ -176,7 +192,10 @@ Return ONLY the document content - no explanations, no extra text.`,
     documentId: { type: 'string', description: 'Document identifier (canonical param)' },
     title: { type: 'string', description: 'Document title' },
     folderId: { type: 'string', description: 'Parent folder identifier (canonical param)' },
-    content: { type: 'string', description: 'Document content' },
+    content: {
+      type: 'string',
+      description: 'Document content (GitHub Flavored Markdown supported on create)',
+    },
   },
   outputs: {
     content: { type: 'string', description: 'Document content' },

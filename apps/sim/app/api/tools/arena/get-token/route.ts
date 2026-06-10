@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
     const userId = resolved.userId
 
     const userRow = await db
-      .select({ email: user.email })
+      .select({ email: user.email, name: user.name })
       .from(user)
       .where(eq(user.id, userId))
       .limit(1)
@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
     }
 
     const email = userRow[0].email
+    const name = userRow[0].name
     if (!email || !isAllowedEmail(email)) {
       logger.warn(`Get token rejected: user email domain not allowed (userId: ${userId})`)
       return NextResponse.json(
@@ -101,7 +102,11 @@ export async function GET(req: NextRequest) {
     }
 
     const details = await db
-      .select({ arenaToken: userArenaDetails.arenaToken })
+      .select({
+        arenaToken: userArenaDetails.arenaToken,
+        timezone: userArenaDetails.timezone,
+        persona: userArenaDetails.persona,
+      })
       .from(userArenaDetails)
       .where(eq(userArenaDetails.userIdRef, userId))
       .limit(1)
@@ -116,8 +121,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       found: true,
       userId,
+      name,
       email,
       arenaToken: details[0].arenaToken,
+      timezone: details[0].timezone ?? null,
+      persona: details[0].persona ?? null,
     })
   } catch (err) {
     logger.error('Error fetching Arena token for user', err)

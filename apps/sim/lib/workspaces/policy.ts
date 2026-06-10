@@ -116,7 +116,8 @@ export function evaluateWorkspaceInvitePolicy(
     if (workspaceState.organizationId === null) {
       return {
         allowed: false,
-        reason: UPGRADE_TO_INVITE_REASON,
+        // reason: UPGRADE_TO_INVITE_REASON,
+        reason: null,
         requiresSeat: false,
         organizationId: null,
         upgradeRequired: true,
@@ -135,7 +136,8 @@ export function evaluateWorkspaceInvitePolicy(
   if (workspaceState.workspaceMode === WORKSPACE_MODE.GRANDFATHERED_SHARED) {
     return {
       allowed: context.billedUserHasTeamOrEnterprise,
-      reason: context.billedUserHasTeamOrEnterprise ? null : UPGRADE_TO_INVITE_REASON,
+      // reason: context.billedUserHasTeamOrEnterprise ? null : UPGRADE_TO_INVITE_REASON,
+      reason: null,
       requiresSeat: false,
       organizationId: null,
       upgradeRequired: !context.billedUserHasTeamOrEnterprise,
@@ -144,7 +146,8 @@ export function evaluateWorkspaceInvitePolicy(
 
   return {
     allowed: false,
-    reason: UPGRADE_TO_INVITE_REASON,
+    // reason: UPGRADE_TO_INVITE_REASON,
+    reason: null,
     requiresSeat: false,
     organizationId: null,
     upgradeRequired: true,
@@ -215,7 +218,7 @@ export async function getWorkspaceCreationPolicy({
 
     return {
       canCreate: true,
-      workspaceMode: WORKSPACE_MODE.PERSONAL,
+      workspaceMode: getNonOrgWorkspaceMode(currentWorkspaceCount),
       organizationId: null,
       billedAccountUserId: userId,
       maxWorkspaces: null,
@@ -281,7 +284,7 @@ export async function getWorkspaceCreationPolicy({
 
   return {
     canCreate: true,
-    workspaceMode: WORKSPACE_MODE.PERSONAL,
+    workspaceMode: getNonOrgWorkspaceMode(currentWorkspaceCount),
     organizationId: null,
     billedAccountUserId: userId,
     maxWorkspaces,
@@ -289,6 +292,15 @@ export async function getWorkspaceCreationPolicy({
     reason: null,
     status: 200,
   }
+}
+
+/**
+ * First workspace for a user is personal; additional non-org workspaces are shared.
+ */
+function getNonOrgWorkspaceMode(currentWorkspaceCount: number): WorkspaceMode {
+  return currentWorkspaceCount === 0
+    ? WORKSPACE_MODE.PERSONAL
+    : WORKSPACE_MODE.GRANDFATHERED_SHARED
 }
 
 export async function countNonOrganizationOwnedWorkspaces(userId: string): Promise<number> {

@@ -8,6 +8,7 @@ import { verifyCronAuth } from '@/lib/auth/internal'
 import { JOB_RETENTION_HOURS, JOB_STATUS } from '@/lib/core/async-jobs'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { extractScheduleId, unlockStaleSchedule } from '@/lib/execution/schedule-unlock'
 
 const logger = createLogger('CleanupStaleExecutions')
 
@@ -32,6 +33,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         executionId: workflowExecutionLogs.executionId,
         workflowId: workflowExecutionLogs.workflowId,
         startedAt: workflowExecutionLogs.startedAt,
+        trigger: workflowExecutionLogs.trigger,
+        executionData: workflowExecutionLogs.executionData,
       })
       .from(workflowExecutionLogs)
       .where(
@@ -46,6 +49,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     let cleaned = 0
     let failed = 0
+    let schedulesUnlocked = 0
 
     for (const execution of staleExecutions) {
       try {
@@ -73,6 +77,14 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         })
 
         cleaned++
+
+        if (execution.trigger === 'schedule') {
+          const scheduleId = extractScheduleId(execution.executionData)
+          if (scheduleId) {
+            const unlocked = await unlockStaleSchedule(scheduleId, execution.executionId)
+            if (unlocked) schedulesUnlocked++
+          }
+        }
       } catch (error) {
         logger.error(`Failed to clean up execution ${execution.executionId}:`, {
           error: toError(error).message,
@@ -81,7 +93,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       }
     }
 
-    logger.info(`Stale execution cleanup completed. Cleaned: ${cleaned}, Failed: ${failed}`)
+    logger.info(
+      `Stale execution cleanup completed. Cleaned: ${cleaned}, Failed: ${failed}, Schedules unlocked: ${schedulesUnlocked}`
+    )
 
     // Clean up stale async jobs (stuck in processing)
     let asyncJobsMarkedFailed = 0
@@ -170,6 +184,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         found: staleExecutions.length,
         cleaned,
         failed,
+        schedulesUnlocked,
         thresholdMinutes: STALE_THRESHOLD_MINUTES,
       },
       asyncJobs: {

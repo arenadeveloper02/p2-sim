@@ -1,36 +1,34 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import {
-  apiKey,
-  credential,
-  credentialMember,
-  permissions,
-  user,
-  workflow,
-  workspace,
-} from '@sim/db/schema'
+import { apiKey, permissions, user, workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { safeCompare } from '@sim/security/compare'
 import { toError } from '@sim/utils/errors'
 import { generateId, generateShortId } from '@sim/utils/id'
-import { and, asc, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { createApiKey } from '@/lib/api-key/auth'
 import { hashApiKey } from '@/lib/api-key/crypto'
-import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
-import { performFullDeploy } from '@/lib/workflows/orchestration'
 import {
-  loadWorkflowFromNormalizedTables,
-  saveWorkflowToNormalizedTables,
-} from '@/lib/workflows/persistence/utils'
-import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
-import { deduplicateWorkflowName } from '@/lib/workflows/utils'
+  type ChatOutputConfigInput,
+  DEFAULT_CHAT_AUTH_TYPE,
+  DEFAULT_CHAT_DEPARTMENT,
+  DEFAULT_CHAT_WELCOME_MESSAGE,
+  parseChatOutputConfigInputs,
+  resolveChatOutputConfigs,
+} from '@/lib/workflows/default-user-workflows/chat-deploy-import'
+import { parsePostgresConnectionFromBody } from '@/lib/workflows/default-user-workflows/postgres'
+import {
+  type DefaultWorkflowSourceInput,
+  getOldestActiveCredentialsByProvider,
+  provisionOrRefreshDefaultUserWorkflow,
+  recordDefaultUserWorkflowDeploy,
+} from '@/lib/workflows/default-user-workflows/service'
+import { performChatDeploy, performFullDeploy } from '@/lib/workflows/orchestration'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
+import { authenticateCronSecretRequest } from '@/app/api/v1/admin/cron-secret-auth'
 import {
   badRequestResponse,
-  errorResponse,
   internalErrorResponse,
   notFoundResponse,
   singleResponse,
@@ -39,42 +37,26 @@ import {
 const logger = createLogger('AdminImportDeployWorkflowsAPI')
 
 const DEFAULT_API_KEY_NAME = 'Personal API key'
-const DEFAULT_WORKFLOW_COLOR = '#3972F6'
-const PROVIDER_BY_TOOL_TYPE: Record<string, string> = {
-  gmail: 'google-email',
-  gmail_v2: 'google-email',
-  google_calendar: 'google-calendar',
-  google_drive: 'google-drive',
-  slack: 'slack',
-} as const
-
-const PROVIDER_BY_TOOL_ID_PREFIX: Array<{ prefix: string; providerId: string }> = [
-  { prefix: 'gmail_', providerId: 'google-email' },
-  { prefix: 'google_calendar_', providerId: 'google-calendar' },
-  { prefix: 'google_drive_', providerId: 'google-drive' },
-  { prefix: 'slack_', providerId: 'slack' },
-] as const
-
-interface SourceWorkflowInput {
-  sourceWorkflowId: string
-  nameOverride?: string
-}
 
 interface ImportedWorkflowResult {
   workflowId: string
   name: string
+  created: boolean
+  refreshed: boolean
   imported: boolean
   deployed: boolean
-  credentialPopulation?: CredentialPopulationSummary
+  chatDeployed?: boolean
+  chatId?: string
+  chatUrl?: string
+  credentialPopulation?: {
+    populatedProviders: string[]
+    missingProviders: string[]
+  }
+  postgresBlocksPopulated?: number
   version?: number
   deployedAt?: string
   warnings?: string[]
   error?: string
-}
-
-interface CredentialPopulationSummary {
-  populatedProviders: string[]
-  missingProviders: string[]
 }
 
 interface ImportDeployResponse {
@@ -99,7 +81,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getSourceWorkflowInputs(body: Record<string, unknown>): {
-  inputs?: SourceWorkflowInput[]
+  inputs?: DefaultWorkflowSourceInput[]
   error?: string
 } {
   const rawWorkflows = Array.isArray(body.sourceWorkflowIds)
@@ -114,7 +96,7 @@ function getSourceWorkflowInputs(body: Record<string, unknown>): {
     return { error: 'Provide sourceWorkflowId or sourceWorkflowIds in the request body.' }
   }
 
-  const inputs: SourceWorkflowInput[] = []
+  const inputs: DefaultWorkflowSourceInput[] = []
 
   for (const [index, rawWorkflow] of rawWorkflows.entries()) {
     const normalized = normalizeSourceWorkflowInput(rawWorkflow, index)
@@ -130,11 +112,28 @@ function getSourceWorkflowInputs(body: Record<string, unknown>): {
 function normalizeSourceWorkflowInput(
   rawWorkflow: unknown,
   index: number
-): SourceWorkflowInput | { error: string } {
+): DefaultWorkflowSourceInput | { error: string } {
   const nameOverride =
     isRecord(rawWorkflow) && typeof rawWorkflow.name === 'string' && rawWorkflow.name.trim()
       ? rawWorkflow.name.trim()
       : undefined
+
+  const deployAsChat = !(isRecord(rawWorkflow) && rawWorkflow.deployAsChat === false)
+
+  if (isRecord(rawWorkflow) && rawWorkflow.chat !== undefined && !deployAsChat) {
+    return {
+      error: `Source workflow at index ${index}: chat must not be provided when deployAsChat is false.`,
+    }
+  }
+
+  let chatOutputConfigs: ChatOutputConfigInput[] | undefined
+  if (deployAsChat) {
+    const parsedChatOutputs = parseChatOutputConfigInputs(rawWorkflow)
+    if (parsedChatOutputs && 'error' in parsedChatOutputs) {
+      return { error: parsedChatOutputs.error }
+    }
+    chatOutputConfigs = parsedChatOutputs
+  }
 
   const sourceWorkflowId =
     isRecord(rawWorkflow) && typeof rawWorkflow.sourceWorkflowId === 'string'
@@ -147,150 +146,12 @@ function normalizeSourceWorkflowInput(
     return { error: `Source workflow at index ${index} must be a workflow ID string.` }
   }
 
-  return { sourceWorkflowId, nameOverride }
-}
-
-function resolveProviderIdForTool(tool: Record<string, unknown>): string | null {
-  const toolType = typeof tool.type === 'string' ? tool.type : ''
-  const toolId = typeof tool.toolId === 'string' ? tool.toolId : ''
-
-  if (toolType && PROVIDER_BY_TOOL_TYPE[toolType]) {
-    return PROVIDER_BY_TOOL_TYPE[toolType]
-  }
-
-  return (
-    PROVIDER_BY_TOOL_ID_PREFIX.find(({ prefix }) => toolId.startsWith(prefix))?.providerId ?? null
-  )
-}
-
-async function getOldestActiveCredentialsByProvider(params: {
-  workspaceId: string
-  userId: string
-}): Promise<Map<string, string>> {
-  const rows = await db
-    .select({
-      id: credential.id,
-      providerId: credential.providerId,
-    })
-    .from(credential)
-    .innerJoin(
-      credentialMember,
-      and(
-        eq(credentialMember.credentialId, credential.id),
-        eq(credentialMember.userId, params.userId),
-        eq(credentialMember.status, 'active')
-      )
-    )
-    .where(and(eq(credential.workspaceId, params.workspaceId), eq(credential.type, 'oauth')))
-    .orderBy(asc(credential.createdAt))
-
-  const oldestByProvider = new Map<string, string>()
-
-  for (const row of rows) {
-    if (!row.providerId || oldestByProvider.has(row.providerId)) {
-      continue
-    }
-    oldestByProvider.set(row.providerId, row.id)
-  }
-
-  return oldestByProvider
-}
-
-function populateWorkflowCredentials(
-  workflowData: { blocks: Record<string, unknown> },
-  credentialsByProvider: Map<string, string>
-): CredentialPopulationSummary {
-  const populatedProviders = new Set<string>()
-  const missingProviders = new Set<string>()
-
-  for (const block of Object.values(workflowData.blocks)) {
-    if (!isRecord(block)) {
-      continue
-    }
-
-    const blockProviderId =
-      typeof block.type === 'string' ? PROVIDER_BY_TOOL_TYPE[block.type] : null
-    if (blockProviderId && isRecord(block.subBlocks)) {
-      const credentialId = credentialsByProvider.get(blockProviderId)
-      if (credentialId) {
-        populateCredentialSubBlocks(block.subBlocks, credentialId)
-        populatedProviders.add(blockProviderId)
-        missingProviders.delete(blockProviderId)
-      } else {
-        missingProviders.add(blockProviderId)
-      }
-    }
-
-    if (!isRecord(block.subBlocks)) {
-      continue
-    }
-
-    for (const subBlock of Object.values(block.subBlocks)) {
-      if (!isRecord(subBlock) || !Array.isArray(subBlock.value)) {
-        continue
-      }
-
-      for (const tool of subBlock.value) {
-        if (!isRecord(tool)) {
-          continue
-        }
-
-        const providerId = resolveProviderIdForTool(tool)
-        if (!providerId) {
-          continue
-        }
-
-        const credentialId = credentialsByProvider.get(providerId)
-        if (!credentialId) {
-          missingProviders.add(providerId)
-          continue
-        }
-
-        const toolParams = isRecord(tool.params) ? tool.params : {}
-        tool.params = toolParams
-
-        toolParams.credentialId = credentialId
-        toolParams.oauthCredential = credentialId
-        populatedProviders.add(providerId)
-        missingProviders.delete(providerId)
-      }
-    }
-  }
-
   return {
-    populatedProviders: Array.from(populatedProviders).sort(),
-    missingProviders: Array.from(missingProviders).sort(),
+    sourceWorkflowId,
+    nameOverride,
+    deployAsChat,
+    ...(deployAsChat && chatOutputConfigs !== undefined && { chatOutputConfigs }),
   }
-}
-
-function populateCredentialSubBlocks(subBlocks: Record<string, unknown>, credentialId: string) {
-  for (const key of ['credential', 'manualCredential', 'triggerCredentials']) {
-    const subBlock = subBlocks[key]
-    if (isRecord(subBlock)) {
-      subBlock.value = credentialId
-    }
-  }
-}
-
-function authenticateCronSecretRequest(request: Request) {
-  if (!env.CRON_SECRET) {
-    logger.warn('CRON_SECRET environment variable is not set for import-deploy-workflows endpoint')
-    return errorResponse('NOT_CONFIGURED', 'Import deploy workflow API is not configured.', 503)
-  }
-
-  const providedKey = request.headers.get('x-admin-key')
-  if (!providedKey) {
-    return errorResponse('UNAUTHORIZED', 'API key required. Provide x-admin-key header.', 401)
-  }
-
-  if (!safeCompare(providedKey, env.CRON_SECRET)) {
-    logger.warn('Invalid import-deploy-workflows API key attempted', {
-      keyPrefix: providedKey.slice(0, 8),
-    })
-    return errorResponse('UNAUTHORIZED', 'Invalid API key', 401)
-  }
-
-  return null
 }
 
 async function getOrCreatePersonalWorkspace(params: {
@@ -418,88 +279,6 @@ async function ensurePersonalApiKey(params: {
   return { exists: true, created: true }
 }
 
-async function importWorkflow(params: {
-  input: SourceWorkflowInput
-  workspaceId: string
-  userId: string
-  credentialsByProvider: Map<string, string>
-}): Promise<{
-  workflowId: string
-  name: string
-  credentialPopulation: CredentialPopulationSummary
-}> {
-  const [sourceWorkflow] = await db
-    .select()
-    .from(workflow)
-    .where(and(eq(workflow.id, params.input.sourceWorkflowId), isNull(workflow.archivedAt)))
-    .limit(1)
-
-  if (!sourceWorkflow) {
-    throw new Error(`Source workflow not found: ${params.input.sourceWorkflowId}`)
-  }
-
-  const normalizedData = await loadWorkflowFromNormalizedTables(params.input.sourceWorkflowId)
-  if (!normalizedData) {
-    throw new Error(`Source workflow has no normalized data: ${params.input.sourceWorkflowId}`)
-  }
-
-  const sourceState = {
-    blocks: normalizedData.blocks,
-    edges: normalizedData.edges,
-    loops: normalizedData.loops,
-    parallels: normalizedData.parallels,
-    metadata: {
-      name: params.input.nameOverride || sourceWorkflow.name,
-      description: sourceWorkflow.description ?? undefined,
-      color: sourceWorkflow.color,
-    },
-    variables:
-      sourceWorkflow.variables && isRecord(sourceWorkflow.variables)
-        ? sourceWorkflow.variables
-        : undefined,
-  }
-
-  const exportData = sanitizeForExport(sourceState)
-  const { data: workflowData, errors } = parseWorkflowJson(JSON.stringify(exportData))
-
-  if (!workflowData || errors.length > 0) {
-    throw new Error(`Failed to parse source workflow: ${errors.join(', ')}`)
-  }
-
-  const workflowName = params.input.nameOverride || sourceWorkflow.name
-  const workflowId = generateId()
-  const now = new Date()
-  const dedupedName = await deduplicateWorkflowName(workflowName, params.workspaceId, null)
-  const credentialPopulation = populateWorkflowCredentials(
-    workflowData,
-    params.credentialsByProvider
-  )
-
-  await db.insert(workflow).values({
-    id: workflowId,
-    userId: params.userId,
-    workspaceId: params.workspaceId,
-    folderId: null,
-    name: dedupedName,
-    description: sourceWorkflow.description || 'Imported via Admin API',
-    color: sourceWorkflow.color || DEFAULT_WORKFLOW_COLOR,
-    lastSynced: now,
-    createdAt: now,
-    updatedAt: now,
-    isDeployed: false,
-    runCount: 0,
-    variables: workflowData.variables ?? sourceWorkflow.variables ?? {},
-  })
-
-  const saveResult = await saveWorkflowToNormalizedTables(workflowId, workflowData)
-  if (!saveResult.success) {
-    await db.delete(workflow).where(eq(workflow.id, workflowId))
-    throw new Error(`Failed to save workflow state: ${saveResult.error}`)
-  }
-
-  return { workflowId, name: dedupedName, credentialPopulation }
-}
-
 export const POST = withRouteHandler(async (request) => {
   const requestId = generateRequestId()
 
@@ -523,6 +302,12 @@ export const POST = withRouteHandler(async (request) => {
     if (error || !inputs) {
       return badRequestResponse(error || 'Invalid workflow input.')
     }
+
+    const postgresParsed = parsePostgresConnectionFromBody(body)
+    if (postgresParsed && 'error' in postgresParsed) {
+      return badRequestResponse(postgresParsed.error)
+    }
+    const postgresConnection = postgresParsed
 
     const apiKeyName =
       typeof body.apiKeyName === 'string' && body.apiKeyName.trim()
@@ -561,48 +346,137 @@ export const POST = withRouteHandler(async (request) => {
 
     for (const input of inputs) {
       try {
-        const importedWorkflow = await importWorkflow({
+        const provisioned = await provisionOrRefreshDefaultUserWorkflow({
           input,
           workspaceId: personalWorkspace.workspaceId,
           userId: targetUser.id,
           credentialsByProvider,
+          postgresConnection,
         })
 
-        const deployResult = await performFullDeploy({
-          workflowId: importedWorkflow.workflowId,
-          userId: targetUser.id,
-          workflowName: importedWorkflow.name,
+        const deployOptions = {
+          workflowName: provisioned.name,
           requestId,
           request,
-          actorId: 'admin-api',
-        })
+          actorId: 'admin-api' as const,
+        }
 
-        if (!deployResult.success) {
+        if (!input.deployAsChat) {
+          const deployResult = await performFullDeploy({
+            workflowId: provisioned.workflowId,
+            userId: targetUser.id,
+            ...deployOptions,
+          })
+
+          if (!deployResult.success) {
+            results.push({
+              workflowId: provisioned.workflowId,
+              name: provisioned.name,
+              created: provisioned.created,
+              refreshed: provisioned.refreshed,
+              imported: true,
+              deployed: false,
+              chatDeployed: false,
+              credentialPopulation: provisioned.credentialPopulation,
+              postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
+              error: deployResult.error || 'Failed to deploy workflow',
+              warnings: deployResult.warnings,
+            })
+            continue
+          }
+
+          await recordDefaultUserWorkflowDeploy({
+            userId: targetUser.id,
+            sourceWorkflowId: input.sourceWorkflowId,
+            version: deployResult.version,
+          })
+
           results.push({
-            workflowId: importedWorkflow.workflowId,
-            name: importedWorkflow.name,
+            workflowId: provisioned.workflowId,
+            name: provisioned.name,
+            created: provisioned.created,
+            refreshed: provisioned.refreshed,
             imported: true,
-            deployed: false,
-            credentialPopulation: importedWorkflow.credentialPopulation,
-            error: deployResult.error || 'Failed to deploy workflow',
+            deployed: true,
+            chatDeployed: false,
+            credentialPopulation: provisioned.credentialPopulation,
+            postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
+            version: deployResult.version,
+            deployedAt: deployResult.deployedAt?.toISOString(),
+            warnings: deployResult.warnings,
           })
           continue
         }
 
+        const [workflowRecord] = await db
+          .select({ description: workflow.description })
+          .from(workflow)
+          .where(eq(workflow.id, provisioned.workflowId))
+          .limit(1)
+
+        const outputConfigs = await resolveChatOutputConfigs(
+          provisioned.workflowId,
+          input.chatOutputConfigs ?? []
+        )
+
+        const chatDeployResult = await performChatDeploy({
+          workflowId: provisioned.workflowId,
+          userId: targetUser.id,
+          identifier: provisioned.workflowId,
+          title: provisioned.name,
+          description: workflowRecord?.description ?? '',
+          department: DEFAULT_CHAT_DEPARTMENT,
+          customizations: { welcomeMessage: DEFAULT_CHAT_WELCOME_MESSAGE },
+          authType: DEFAULT_CHAT_AUTH_TYPE,
+          allowedEmails: [targetUser.email],
+          outputConfigs,
+          workspaceId: personalWorkspace.workspaceId,
+          deployOptions,
+        })
+
+        if (!chatDeployResult.success) {
+          results.push({
+            workflowId: provisioned.workflowId,
+            name: provisioned.name,
+            created: provisioned.created,
+            refreshed: provisioned.refreshed,
+            imported: true,
+            deployed: false,
+            chatDeployed: false,
+            credentialPopulation: provisioned.credentialPopulation,
+            postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
+            error: chatDeployResult.error || 'Failed to deploy chat',
+          })
+          continue
+        }
+
+        await recordDefaultUserWorkflowDeploy({
+          userId: targetUser.id,
+          sourceWorkflowId: input.sourceWorkflowId,
+          version: chatDeployResult.version,
+        })
+
         results.push({
-          workflowId: importedWorkflow.workflowId,
-          name: importedWorkflow.name,
+          workflowId: provisioned.workflowId,
+          name: provisioned.name,
+          created: provisioned.created,
+          refreshed: provisioned.refreshed,
           imported: true,
           deployed: true,
-          credentialPopulation: importedWorkflow.credentialPopulation,
-          version: deployResult.version,
-          deployedAt: deployResult.deployedAt?.toISOString(),
-          warnings: deployResult.warnings,
+          chatDeployed: true,
+          chatId: chatDeployResult.chatId,
+          chatUrl: chatDeployResult.chatUrl,
+          credentialPopulation: provisioned.credentialPopulation,
+          postgresBlocksPopulated: provisioned.postgresBlocksPopulated,
+          version: chatDeployResult.version,
+          deployedAt: chatDeployResult.deployedAt?.toISOString(),
         })
       } catch (error) {
         results.push({
           workflowId: '',
           name: input.nameOverride || input.sourceWorkflowId,
+          created: false,
+          refreshed: false,
           imported: false,
           deployed: false,
           error: toError(error).message,
