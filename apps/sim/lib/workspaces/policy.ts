@@ -218,7 +218,7 @@ export async function getWorkspaceCreationPolicy({
 
     return {
       canCreate: true,
-      workspaceMode: WORKSPACE_MODE.PERSONAL,
+      workspaceMode: getNonOrgWorkspaceMode(currentWorkspaceCount),
       organizationId: null,
       billedAccountUserId: userId,
       maxWorkspaces: null,
@@ -284,7 +284,7 @@ export async function getWorkspaceCreationPolicy({
 
   return {
     canCreate: true,
-    workspaceMode: WORKSPACE_MODE.PERSONAL,
+    workspaceMode: getNonOrgWorkspaceMode(currentWorkspaceCount),
     organizationId: null,
     billedAccountUserId: userId,
     maxWorkspaces,
@@ -292,6 +292,15 @@ export async function getWorkspaceCreationPolicy({
     reason: null,
     status: 200,
   }
+}
+
+/**
+ * First workspace for a user is personal; additional non-org workspaces are shared.
+ */
+function getNonOrgWorkspaceMode(currentWorkspaceCount: number): WorkspaceMode {
+  return currentWorkspaceCount === 0
+    ? WORKSPACE_MODE.PERSONAL
+    : WORKSPACE_MODE.GRANDFATHERED_SHARED
 }
 
 export async function countNonOrganizationOwnedWorkspaces(userId: string): Promise<number> {
