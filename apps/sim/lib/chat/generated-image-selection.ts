@@ -192,7 +192,9 @@ export async function materializeSelectedGeneratedImage(
   }
 
   const blob = await response.blob()
-  const type = isConcreteImageMimeType(blob.type) ? blob.type : resolveImageMimeType(image, sourceUrl)
+  const type = isConcreteImageMimeType(blob.type)
+    ? blob.type
+    : resolveImageMimeType(image, sourceUrl)
   const extension = type.split('/')[1] || 'png'
   const name = image.name?.trim() || `generated-image.${extension}`
   const file = new File([blob], name, { type })

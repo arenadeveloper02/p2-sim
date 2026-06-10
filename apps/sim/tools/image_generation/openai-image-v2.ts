@@ -1,5 +1,5 @@
-import { openAIImageTool } from '@/tools/openai'
 import { createImageGenerationWrapperTool } from '@/tools/image_generation/utils'
+import { openAIImageTool } from '@/tools/openai'
 
 export const openAIImageV2Tool = createImageGenerationWrapperTool({
   baseTool: openAIImageTool,

@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -291,6 +292,7 @@
                 <ul class="sidebar-nav">
                     <li><a href="#introduction" class="active">Introduction</a></li>
                     <li><a href="#workspace-concepts">Workspace Concepts</a></li>
+                    <li><a href="#first-15">Your First 15 Minutes</a></li>
                 </ul>
             </div>
             <div class="sidebar-section">
@@ -310,6 +312,7 @@
                     <li><a href="#naming">Naming</a></li>
                     <li><a href="#access">Access Control</a></li>
                     <li><a href="#logging">Logging</a></li>
+                    <li><a href="#token-spend">Controlling Spend</a></li>
                 </ul>
             </div>
             <div class="sidebar-section">
@@ -327,6 +330,8 @@
                     <li><a href="#blocks">Blocks</a></li>
                     <li><a href="#integrations">Integrations</a></li>
                     <li><a href="#skills">Skills</a></li>
+                    <li><a href="#reference-model">KB vs Skills vs Workflows</a></li>
+                    <li><a href="#model-choice">Choosing a Model</a></li>
                     <li><a href="#copilot">Copilot</a></li>
                 </ul>
             </div>
@@ -347,6 +352,10 @@
                 <div class="hero-badge">✦ Onboarding Guide</div>
                 <h1>Welcome to Arena AI</h1>
                 <p>Arena AI is the AI workflow platform where teams build, deploy, and automate with AI agents. This guide walks you through every core concept — from the building blocks of your workspace to running, testing, deploying, and extending your workflows.</p>
+                <div class="callout">
+                    <div class="callout-title">What is Mothership?</div>
+                    <p>Mothership is the AI assistant in your main chat window — your always-on operator for the whole workspace. You talk to it in plain language and it builds workflows, manages tables and knowledge bases, runs research, schedules jobs, and takes actions across your connected integrations. Most of what you'll do in Arena AI starts as a conversation with Mothership. (Copilot, covered later, is the narrower assistant scoped to a single workflow you're editing.)</p>
+                </div>
             </section>
 
             <!-- Workspace Concepts Overview -->
@@ -380,6 +389,46 @@
                         <h4>Workflows</h4>
                         <p>Visual automation flows built from connected blocks. The core unit of automation in Arena AI.</p>
                     </div>
+                </div>
+            </section>
+
+            <!-- FIRST 15 MINUTES -->
+            <section class="doc-section" id="first-15">
+                <h2>Your First 15 Minutes</h2>
+                <p>The hardest part of any new tool is the first session. You don't need to learn the canvas, blocks, or deployment to get value on day one — you just need to talk to Mothership about your own work. Here are four concrete things to type into the chat window in your own workspace.</p>
+                <div class="steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h4>Ask Mothership something</h4>
+                            <p>Open the chat window and type: "What can you help me with in this workspace?" Mothership knows your whole workspace and will orient you.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h4>Create a knowledge base from your own docs</h4>
+                            <p>Type: "Create a knowledge base called My Docs and add the files I just uploaded." Attach 1–2 real documents. Now Mothership can answer questions from them.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h4>Ask a question against it</h4>
+                            <p>Type: "Using My Docs, summarize our refund policy" (or any question your docs cover). This is retrieval working automatically — no setup.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h4>Build and deploy one simple workflow</h4>
+                            <p>Type: "Build a simple workflow that takes a question and answers it using My Docs, then deploy it as a chat link I can share." You now have a shareable assistant.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="callout green">
+                    <div class="callout-title">The point</div>
+                    <p>You never had to leave the chat window or learn the canvas. Start by talking to Mothership about your own work — the structure comes later, only when you need it.</p>
                 </div>
             </section>
 
@@ -672,6 +721,26 @@
                 </div>
             </section>
 
+            <!-- TOKEN SPEND -->
+            <section class="doc-section" id="token-spend">
+                <h2>Controlling Token Spend</h2>
+                <p>Every workflow run records a full cost breakdown — token counts and model cost per block — in its logs. That visibility is the foundation for keeping spend predictable.</p>
+                <h3>Ways to Keep Costs Down</h3>
+                <table class="doc-table">
+                    <thead><tr><th>Lever</th><th>How it helps</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Per-run cost logs</strong></td><td>Open any run's log to see exactly which block and model drove the cost. Optimize the expensive steps first.</td></tr>
+                        <tr><td><strong>Right-size the model</strong></td><td>Use a smaller/cheaper model for simple steps (classification, routing) and reserve premium models for the steps that truly need them.</td></tr>
+                        <tr><td><strong>Knowledge bases over giant prompts</strong></td><td>Retrieve only the relevant content at runtime instead of stuffing everything into the prompt — fewer tokens per call.</td></tr>
+                        <tr><td><strong>Cache and reuse</strong></td><td>Use sub-workflows and tables to avoid recomputing the same result repeatedly.</td></tr>
+                    </tbody>
+                </table>
+                <div class="callout orange">
+                    <div class="callout-title">Note for the team</div>
+                    <p>Usage tiers, spend caps, and billing thresholds are set at the account level — see your account settings or your Arena contact to configure limits.</p>
+                </div>
+            </section>
+
             <hr class="section-divider">
 
 
@@ -870,6 +939,35 @@
                     <li><strong>Data Analyst</strong> — code execution and leads table access, returns structured JSON</li>
                     <li><strong>Outbound Writer</strong> — persuasive B2B copywriter persona with access to competitor battle cards</li>
                 </ul>
+            </section>
+
+            <!-- REFERENCE MODEL -->
+            <section class="doc-section" id="reference-model">
+                <h2>Knowledge Base vs. Skills vs. Workflows — Do I Reference Them?</h2>
+                <p>A common question: when you're in the Mothership chat, do you have to name your knowledge bases, skills, and workflows in your prompt, or does Arena AI use them automatically? Short answer: it's automatic. You can be explicit to disambiguate, but you rarely need to.</p>
+                <table class="doc-table">
+                    <thead><tr><th>Resource</th><th>How it's used</th><th>Do you reference it?</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Knowledge Bases</strong></td><td>Agents search them automatically at runtime using semantic search.</td><td>No — retrieval happens on its own. Naming one (e.g. "using Product Docs") only helps disambiguate when several could apply.</td></tr>
+                        <tr><td><strong>Skills</strong></td><td>Attached to an Agent block, a skill is always active for that block. In Mothership chat, relevant skills are selected automatically based on your request.</td><td>No — never invoke a skill by name. It's on when attached, or auto-selected in chat.</td></tr>
+                        <tr><td><strong>Workflows</strong></td><td>Mothership matches workflows by name when you ask it to run or deploy one.</td><td>Yes, loosely — say "run the lead scorer" and it matches by name. This is exactly why clear, unique names matter.</td></tr>
+                    </tbody>
+                </table>
+                <div class="callout green">
+                    <div class="callout-title">Rule of thumb</div>
+                    <p>Knowledge and skills are pulled in for you automatically. Workflows are the one thing you reference by name — so name them well. When in doubt, just describe what you want; being explicit is optional, not required.</p>
+                </div>
+            </section>
+
+            <!-- MODEL CHOICE -->
+            <section class="doc-section" id="model-choice">
+                <h2>Choosing a Model (You Usually Don't Have To)</h2>
+                <p>Arena AI supports many LLMs — OpenAI, Anthropic, Google, Groq, and more. Power users like fine-grained control, but most users never need to pick a model.</p>
+                <p>Every Agent block and skill ships with a sensible default model, so you can build, run, and deploy without ever choosing one. The model selector is there when you want it — to optimize cost, speed, or quality for a specific task — but it's an option, not a requirement. If you're not sure, leave the default.</p>
+                <div class="callout">
+                    <div class="callout-title">For the average user</div>
+                    <p>Ignore the model dropdown. The defaults are chosen to work well out of the box. Only revisit it if you have a specific reason — a task that needs the strongest reasoning, or one where speed and cost matter more than polish.</p>
+                </div>
             </section>
 
             <!-- COPILOT -->

@@ -1,5 +1,9 @@
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
-import { extractStorageKey, inferContextFromKey, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
+import {
+  extractStorageKey,
+  inferContextFromKey,
+  isInternalFileUrl,
+} from '@/lib/uploads/utils/file-utils'
 
 export interface AssistantChatFile {
   id: string
@@ -124,7 +128,9 @@ export function resolveSelectableGeneratedImage(
     id: getGeneratedImageId(normalizeImageUrlForCompare(trimmed)),
     name: 'Generated image',
     url: trimmed,
-    type: isDataImageUrl(trimmed) ? getDataImageMimeType(trimmed) : inferImageMimeTypeFromUrl(trimmed),
+    type: isDataImageUrl(trimmed)
+      ? getDataImageMimeType(trimmed)
+      : inferImageMimeTypeFromUrl(trimmed),
     ...(key ? { key, context: inferContextFromKey(key) } : {}),
   }
 }
@@ -148,7 +154,9 @@ function addGeneratedImageUrl(
   }
 
   seenUrls.add(value)
-  const type = isDataImageUrl(value) ? getDataImageMimeType(value) : inferImageMimeTypeFromUrl(value)
+  const type = isDataImageUrl(value)
+    ? getDataImageMimeType(value)
+    : inferImageMimeTypeFromUrl(value)
   const key = isInternalFileUrl(value) ? extractStorageKey(value) : undefined
   images.push({
     id: getGeneratedImageId(normalizeImageUrlForCompare(value)),
