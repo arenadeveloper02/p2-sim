@@ -78,14 +78,14 @@ export function sanitizeImageGenerationWrapperParams(
     sanitized.inputImage !== ''
 
   if (hasInputImages || hasInputImage) {
-    delete sanitized.inputImageUrl
-    delete sanitized.inputImageUrls
+    sanitized.inputImageUrl = undefined
+    sanitized.inputImageUrls = undefined
   }
 
   if (hasInputImages) {
-    delete sanitized.inputImage
+    sanitized.inputImage = undefined
   } else if (hasInputImage) {
-    delete sanitized.inputImages
+    sanitized.inputImages = undefined
   }
 
   return sanitized
@@ -101,7 +101,10 @@ export function resolveNanoBananaReferences({
   inputImages?: unknown[]
   inputImageWarning?: string
 } {
-  const urls = mergeUrlsAndDeduplicate(parseImageUrls(inputImageUrl), parseImageUrls(inputImageUrls))
+  const urls = mergeUrlsAndDeduplicate(
+    parseImageUrls(inputImageUrl),
+    parseImageUrls(inputImageUrls)
+  )
   const httpUrls = urls.filter((url) => !isS3Uri(url))
   const s3Refs = urls.filter(isS3Uri).map(s3UriToPathObject)
   const references = [
@@ -149,6 +152,6 @@ export function applyNanoBananaPromptImageParams({
   }
 
   const nextParams: Record<string, unknown> = { ...baseParams, inputImage: resolvedInputImage }
-  delete nextParams.inputImageMimeType
+  nextParams.inputImageMimeType = undefined
   return nextParams
 }

@@ -8,7 +8,6 @@ import { getUserOrganization } from '@/lib/billing/organizations/membership'
 import { isEnterprise, isMax, isPro, isTeam } from '@/lib/billing/plan-helpers'
 import { hasUsableSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
-import { UPGRADE_TO_INVITE_REASON } from '@/lib/workspaces/policy-constants'
 
 const logger = createLogger('WorkspacePolicy')
 
@@ -298,9 +297,7 @@ export async function getWorkspaceCreationPolicy({
  * First workspace for a user is personal; additional non-org workspaces are shared.
  */
 function getNonOrgWorkspaceMode(currentWorkspaceCount: number): WorkspaceMode {
-  return currentWorkspaceCount === 0
-    ? WORKSPACE_MODE.PERSONAL
-    : WORKSPACE_MODE.GRANDFATHERED_SHARED
+  return currentWorkspaceCount === 0 ? WORKSPACE_MODE.PERSONAL : WORKSPACE_MODE.GRANDFATHERED_SHARED
 }
 
 export async function countNonOrganizationOwnedWorkspaces(userId: string): Promise<number> {

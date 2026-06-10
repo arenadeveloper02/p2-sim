@@ -94,7 +94,9 @@ function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
     return []
   }
 
-  return warnings.filter((warning): warning is string => typeof warning === 'string' && warning.length > 0)
+  return warnings.filter(
+    (warning): warning is string => typeof warning === 'string' && warning.length > 0
+  )
 }
 
 function isLikelyTruncatedJsonPayload(error: unknown): boolean {
@@ -109,9 +111,7 @@ function isLikelyTruncatedJsonPayload(error: unknown): boolean {
   )
 }
 
-async function resolveRequestedImageCount(
-  params: Record<string, unknown>
-): Promise<{
+async function resolveRequestedImageCount(params: Record<string, unknown>): Promise<{
   imageCount: number
   promptImageUrl?: string
   singleImagePrompt?: string
@@ -172,7 +172,8 @@ export async function POST(request: NextRequest) {
       await resolveRequestedImageCount(validated.params)
     const { imageCount: _imageCount, inputImageUrl, ...baseParams } = validated.params
     const inputImageWarning = normalizeOptionalString(validated.params.inputImageWarning)
-    const promptToExecute = normalizeOptionalString(singleImagePrompt) ?? String(baseParams.prompt ?? '')
+    const promptToExecute =
+      normalizeOptionalString(singleImagePrompt) ?? String(baseParams.prompt ?? '')
     const resolvedBaseParams = applyNanoBananaPromptImageParams({
       baseToolId: validated.baseToolId,
       baseParams: {
@@ -211,7 +212,8 @@ export async function POST(request: NextRequest) {
       MAX_CONCURRENT_GENERATIONS,
       async (index) => {
         try {
-          const promptForImage = normalizeOptionalString(singleImagePrompts?.[index]) ?? promptToExecute
+          const promptForImage =
+            normalizeOptionalString(singleImagePrompts?.[index]) ?? promptToExecute
           const result = await executeTool(
             validated.baseToolId,
             {

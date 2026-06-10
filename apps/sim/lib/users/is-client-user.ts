@@ -33,10 +33,7 @@ function normalizeDomain(domain: string): string {
 function getInternalUserDomains(): string[] {
   const raw = env.INTERNAL_USER_DOMAINS
   if (!raw) return []
-  return raw
-    .split(',')
-    .map(normalizeDomain)
-    .filter(Boolean)
+  return raw.split(',').map(normalizeDomain).filter(Boolean)
 }
 
 /**
