@@ -4,10 +4,12 @@
  */
 
 import { db } from '@sim/db'
+import { workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { getSession } from '@/lib/auth'
 import { env } from '@/lib/core/config/env'
+import { WORKSPACE_MODE } from '@/lib/workspaces/policy'
 
 const logger = createLogger('ChannelAccounts')
 
@@ -119,31 +121,45 @@ export async function getChannelAccounts(
       return {}
     }
 
-    const mappedResult = await db.execute(sql`
-      SELECT ca.account_id as account_id, ca.account_name as account_name
-      FROM channel_accounts ca
-      WHERE ca.account_type = ${type}
-        AND (
-          ca.account_id IN (
-            SELECT cam.sub_account_id
-            FROM client_analytics_account_mapping cam
-            WHERE cam.workspace_id_ref = ${workspaceId} and cam.sub_account_type = ${type}
-          )
-          OR ca.account_id IN (
-            SELECT DISTINCT sub_account_id
-            FROM client_analytics_account_mapping
-            WHERE workspace_id_ref IN (
-              SELECT w.id
-              FROM permissions p
-              INNER JOIN workspace w ON p.entity_id = w.id
-              WHERE p.user_id = ${resolvedUserId}
-                AND p.entity_type = 'workspace'
-                AND w.archived_at IS NULL
+    const [currentWorkspace] = await db
+      .select({ workspaceMode: workspace.workspaceMode })
+      .from(workspace)
+      .where(eq(workspace.id, workspaceId))
+      .limit(1)
+
+    const isPersonalWorkspace = currentWorkspace?.workspaceMode === WORKSPACE_MODE.PERSONAL
+
+    const mappedResult = isPersonalWorkspace
+      ? await db.execute(sql`
+          SELECT ca.account_id as account_id, ca.account_name as account_name
+          FROM channel_accounts ca
+          WHERE ca.account_type = ${type}
+            AND ca.account_id IN (
+              SELECT DISTINCT sub_account_id
+              FROM client_analytics_account_mapping
+              WHERE workspace_id_ref IN (
+                SELECT w.id
+                FROM permissions p
+                INNER JOIN workspace w ON p.entity_id = w.id
+                WHERE p.user_id = ${resolvedUserId}
+                  AND p.entity_type = 'workspace'
+                  AND w.archived_at IS NULL
+              )
             )
-          )
-        )
-      ORDER BY ca.account_name
-    `)
+          ORDER BY ca.account_name
+        `)
+      : await db.execute(sql`
+          SELECT ca.account_id as account_id, ca.account_name as account_name
+          FROM channel_accounts ca
+          WHERE ca.account_type = ${type}
+            AND ca.account_id IN (
+              SELECT cam.sub_account_id
+              FROM client_analytics_account_mapping cam
+              WHERE cam.workspace_id_ref = ${workspaceId}
+                AND cam.sub_account_type = ${type}
+            )
+          ORDER BY ca.account_name
+        `)
 
     return mapRowsToAccounts(mappedResult as unknown as ChannelAccountRow[])
   } catch (error) {
