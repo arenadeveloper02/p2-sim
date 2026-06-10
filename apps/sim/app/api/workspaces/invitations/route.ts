@@ -113,15 +113,15 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
 
     const invitePolicy = await getWorkspaceInvitePolicy(workspaceDetails)
-    if (!invitePolicy.allowed) {
-      return NextResponse.json(
-        {
-          error: invitePolicy.reason ?? 'Invites are disabled for this workspace.',
-          upgradeRequired: invitePolicy.upgradeRequired,
-        },
-        { status: 403 }
-      )
-    }
+    // if (!invitePolicy.allowed) {
+    //   return NextResponse.json(
+    //     {
+    //       error: invitePolicy.reason ?? 'Invites are disabled for this workspace.',
+    //       upgradeRequired: invitePolicy.upgradeRequired,
+    //     },
+    //     { status: 403 }
+    //   )
+    // }
 
     const existingUser = await db
       .select()
