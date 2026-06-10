@@ -24,7 +24,7 @@ const ROLE_OPTIONS = [
   { value: 'admin', label: 'Admin' },
   { value: 'write', label: 'Write' },
   { value: 'read', label: 'Read' },
-]
+] as const
 
 interface InviteModalProps {
   open: boolean

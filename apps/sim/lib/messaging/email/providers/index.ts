@@ -1,5 +1,4 @@
 import { createLogger } from '@sim/logger'
-import { createAwsSesDirectProvider } from '@/lib/messaging/email/providers/aws-ses-direct'
 import { createAzureProvider } from '@/lib/messaging/email/providers/azure'
 import { createResendProvider } from '@/lib/messaging/email/providers/resend'
 import { createSesProvider } from '@/lib/messaging/email/providers/ses'
@@ -10,7 +9,6 @@ const logger = createLogger('MailProviders')
 
 const factories = [
   createResendProvider,
-  createAwsSesDirectProvider,
   createSesProvider,
   createSmtpProvider,
   createAzureProvider,
