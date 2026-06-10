@@ -170,7 +170,8 @@ export const ChatInput: React.FC<{
 
   const handleSubmit = useCallback(() => {
     if (isStreaming) return
-    if (!inputValue.trim() && attachedFiles.length === 0 && selectedGeneratedImages.length === 0) return
+    if (!inputValue.trim() && attachedFiles.length === 0 && selectedGeneratedImages.length === 0)
+      return
     onSubmit?.(inputValue.trim(), false, attachedFiles)
     setInputValue('')
     setAttachedFiles([])
@@ -193,7 +194,9 @@ export const ChatInput: React.FC<{
   }, [])
 
   const canSubmit =
-    (inputValue.trim().length > 0 || attachedFiles.length > 0 || selectedGeneratedImages.length > 0) &&
+    (inputValue.trim().length > 0 ||
+      attachedFiles.length > 0 ||
+      selectedGeneratedImages.length > 0) &&
     !isStreaming
 
   if (voiceOnly) {

@@ -15,10 +15,6 @@ interface TaskEmbedPageProps {
 export default async function TaskEmbedPage({ params }: TaskEmbedPageProps) {
   const { workspaceId, taskId } = await params
   return (
-    <HomeEmbed
-      key={taskId}
-      chatId={taskId}
-      embedBackHref={`/workspace/${workspaceId}/embed`}
-    />
+    <HomeEmbed key={taskId} chatId={taskId} embedBackHref={`/workspace/${workspaceId}/embed`} />
   )
 }

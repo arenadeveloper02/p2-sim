@@ -71,9 +71,7 @@ describe('resolveImageGenerationCount', () => {
     expect(body.contents[0]?.parts[0]?.text).toBe(
       'Prompt:\nGive 4 different variations with different jerseys, teams and fans wearing different players tshirts.'
     )
-    expect(body.systemInstruction.parts[0]?.text).toContain(
-      'imageCount must be that exact number'
-    )
+    expect(body.systemInstruction.parts[0]?.text).toContain('imageCount must be that exact number')
     expect(body.systemInstruction.parts[0]?.text).toContain(
       'make every singleImagePrompts entry meaningfully different'
     )

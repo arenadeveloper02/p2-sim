@@ -4,8 +4,8 @@ import { memo, useState } from 'react'
 import { Check, Copy, File as FileIcon, FileText, Image as ImageIcon } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import type {
-  AssistantChatFile as ChatFile,
   AssistantGeneratedImage,
+  AssistantChatFile as ChatFile,
 } from '@/lib/chat/assistant-assets'
 import {
   ChatFileDownload,

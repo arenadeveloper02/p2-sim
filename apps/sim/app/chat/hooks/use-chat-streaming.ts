@@ -455,7 +455,9 @@ export function useChatStreaming() {
                           liked: null,
                           files: extractedFiles.length > 0 ? extractedFiles : undefined,
                           generatedImages:
-                            resolvedGeneratedImages.length > 0 ? resolvedGeneratedImages : undefined,
+                            resolvedGeneratedImages.length > 0
+                              ? resolvedGeneratedImages
+                              : undefined,
                           knowledgeResults: pendingKnowledgeResults,
                         }
                       : msg
