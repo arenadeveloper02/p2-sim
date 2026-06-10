@@ -11,10 +11,10 @@ import type { MailProvider } from '@/lib/messaging/email/types'
  * shared config, ECS/EKS task role, EC2 instance profile, SSO).
  */
 export function createSesProvider(): MailProvider | null {
-  const region = env.AWS_SES_REGION
-  if (!region) return null
+  const region = env.AWS_SES_REGION ?? env.AWS_REGION
+  if (!region?.trim()) return null
 
-  const sesClient = new SESv2Client({ region })
+  const sesClient = new SESv2Client({ region: region.trim() })
   const sesOptions: SESTransport.Options = {
     // double-cast-allowed: @types/nodemailer bundles a nested @aws-sdk/client-sesv2 whose nominal class types do not unify with the top-level install
     SES: { sesClient, SendEmailCommand } as unknown as SESTransport.Options['SES'],

@@ -35,7 +35,7 @@ import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import type { ChatContext } from '@/stores/panel'
 import {
-  CreditsChip,
+  // CreditsChip,
   MothershipChat,
   MothershipView,
   SuggestedActions,
@@ -370,9 +370,9 @@ export function Home({ chatId, userName, userId, initialResourceId = null }: Hom
   if (!hasMessages && !showChatSkeleton) {
     return (
       <div className='relative h-full overflow-y-auto bg-[var(--bg)] [scrollbar-gutter:stable_both-edges]'>
-        <div className='absolute top-[8.5px] right-[16px] z-10'>
+        {/* <div className='absolute top-[8.5px] right-[16px] z-10'>
           <CreditsChip />
-        </div>
+        </div> */}
         {/* Asymmetric padding biases the group up so the full cluster (heading + input + suggestions) sits at the optical center */}
         <div className='flex min-h-full flex-col items-center justify-center px-6 pt-[2vh] pb-[22vh]'>
           <h1 className='mb-7 max-w-[48rem] text-balance font-season text-[30px] text-[var(--text-primary)]'>
