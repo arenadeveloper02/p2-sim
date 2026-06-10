@@ -28,7 +28,8 @@ import {
   type SQL,
   sql,
 } from 'drizzle-orm'
-import { recordUsage } from '@/lib/billing/core/record-usage-wrapper'
+import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import { recordUsage } from '@/lib/billing/core/usage-log'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
 import { env, envNumber } from '@/lib/core/config/env'
@@ -97,7 +98,7 @@ async function assertKnowledgeBaseFileUrlsOwnership(
     ...new Set(
       fileUrls
         .map((url) => getKnowledgeBaseStorageKey(url))
-        .filter((key): key is string => key?.startsWith('kb/'))
+        .filter((key): key is string => typeof key === 'string' && key.startsWith('kb/'))
     ),
   ]
   if (keys.length === 0) {
@@ -519,6 +520,7 @@ export async function processDocumentAsync(
         chunkingConfig: knowledgeBase.chunkingConfig,
         embeddingModel: knowledgeBase.embeddingModel,
         billedAccountUserId: workspaceTable.billedAccountUserId,
+        uploadedBy: document.uploadedBy,
         tag1: document.tag1,
         tag2: document.tag2,
         tag3: document.tag3,
@@ -602,9 +604,31 @@ export async function processDocumentAsync(
     if (!ctx.workspaceId) {
       throw new Error(`Knowledge base ${knowledgeBaseId} is missing workspace billing context`)
     }
-    const billingUserId = ctx.billedAccountUserId
+    // Bill the uploader when known; connector/cron-synced docs (and pre-migration
+    // rows) have no uploader and fall back to the workspace billed account.
+    const billingUserId = ctx.uploadedBy ?? ctx.billedAccountUserId
     if (!billingUserId) {
-      throw new Error(`Workspace ${ctx.workspaceId} is missing billed account`)
+      throw new Error(
+        `Workspace ${ctx.workspaceId} is missing billed account and document has no uploader`
+      )
+    }
+
+    // Authoritative usage gate covering every indexing path (connector/cron/
+    // retry/copilot plus the HTTP routes). Mark the document failed with the limit
+    // message — surfaced in the KB UI — rather than incurring embedding cost.
+    const usageGate = await checkActorUsageLimits(billingUserId, ctx.workspaceId)
+    if (usageGate.isExceeded) {
+      logger.warn(`[${documentId}] Usage limit reached — skipping document indexing`)
+      await db
+        .update(document)
+        .set({
+          processingStatus: 'failed',
+          processingError:
+            usageGate.message ?? 'Usage limit exceeded. Please upgrade your plan to continue.',
+          processingCompletedAt: new Date(),
+        })
+        .where(eq(document.id, documentId))
+      return
     }
     let totalEmbeddingTokens = 0
     let embeddingIsBYOK = false
@@ -840,7 +864,8 @@ export async function createDocumentRecords(
     tag7?: string
   }>,
   knowledgeBaseId: string,
-  requestId: string
+  requestId: string,
+  uploadedBy: string | null = null
 ): Promise<DocumentData[]> {
   return await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT 1 FROM knowledge_base WHERE id = ${knowledgeBaseId} FOR UPDATE`)
@@ -912,6 +937,7 @@ export async function createDocumentRecords(
         processingStatus: 'pending' as const,
         enabled: true,
         uploadedAt: now,
+        uploadedBy,
         tag1: processedTags.tag1 ?? docData.tag1 ?? null,
         tag2: processedTags.tag2 ?? docData.tag2 ?? null,
         tag3: processedTags.tag3 ?? docData.tag3 ?? null,
@@ -1334,7 +1360,8 @@ export async function createSingleDocument(
     tag7?: string
   },
   knowledgeBaseId: string,
-  requestId: string
+  requestId: string,
+  uploadedBy: string | null = null
 ): Promise<{
   id: string
   knowledgeBaseId: string
@@ -1407,6 +1434,7 @@ export async function createSingleDocument(
     characterCount: 0,
     enabled: true,
     uploadedAt: now,
+    uploadedBy,
     ...processedTags,
   }
 
@@ -1967,7 +1995,7 @@ export async function deleteDocumentStorageFiles(
     ...new Set(
       entries
         .map((entry) => entry.storageKey)
-        .filter((key): key is string => key?.startsWith('kb/'))
+        .filter((key): key is string => typeof key === 'string' && key.startsWith('kb/'))
     ),
   ]
   const ownerByKey = new Map<string, string | null>()

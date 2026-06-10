@@ -15,7 +15,6 @@ import {
   handleUnipileHostedRedirect,
   readAndClearUnipileHostedRedirectParams,
 } from '@/lib/unipile/hosted-return-client'
-import { useNotificationStore } from '@/stores/notifications/store'
 
 const OAUTH_CREDENTIAL_UPDATED_EVENT = 'oauth-credentials-updated'
 const SETTINGS_RETURN_URL_KEY = 'settings-return-url'
@@ -113,7 +112,7 @@ export function useOAuthReturnRouter() {
       consumeOAuthReturnContext()
       void (async () => {
         const message = await resolveOAuthMessage(ctx)
-        toast.success(message, { duration: 5000 })
+        toast.success(message)
         dispatchCredentialUpdate(ctx)
       })()
       return
@@ -146,7 +145,6 @@ export function useOAuthReturnRouter() {
  * Consumes the return context and shows a workflow-scoped notification.
  */
 export function useOAuthReturnForWorkflow(workflowId: string) {
-  const addNotification = useNotificationStore((state) => state.addNotification)
   const handledRef = useRef(false)
 
   useEffect(() => {
@@ -156,11 +154,7 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
 
     if (redirectParams.hosted === 'failure') {
       handledRef.current = true
-      addNotification({
-        level: 'error',
-        message: 'LinkedIn connection was not completed.',
-        workflowId,
-      })
+      toast.error('LinkedIn connection was not completed.', { duration: 5000 })
       consumeOAuthReturnContext()
       return
     }
@@ -171,15 +165,11 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
         const { ctx } = await handleUnipileHostedRedirect(redirectParams)
         if (ctx && ctx.origin === 'workflow' && ctx.workflowId === workflowId) {
           const message = await resolveOAuthMessage(ctx)
-          addNotification({ level: 'info', message, workflowId })
+          toast.success(message, { duration: 5000 })
           dispatchCredentialUpdate(ctx)
           consumeOAuthReturnContext()
         } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
-          addNotification({
-            level: 'info',
-            message: 'LinkedIn account linked. Select it in the block credential picker.',
-            workflowId,
-          })
+          toast.success('LinkedIn account linked. Select it in the block credential picker.', { duration: 5000 })
           consumeOAuthReturnContext()
         }
       })()
@@ -196,10 +186,10 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
 
     void (async () => {
       const message = await resolveOAuthMessage(ctx)
-      addNotification({ level: 'info', message, workflowId })
+      toast.success(message)
       dispatchCredentialUpdate(ctx)
     })()
-  }, [workflowId, addNotification])
+  }, [workflowId])
 }
 
 /**
@@ -248,7 +238,7 @@ export function useOAuthReturnForKBConnectors(knowledgeBaseId: string) {
 
     void (async () => {
       const message = await resolveOAuthMessage(ctx)
-      toast.success(message, { duration: 5000 })
+      toast.success(message)
       dispatchCredentialUpdate(ctx)
     })()
   }, [knowledgeBaseId])

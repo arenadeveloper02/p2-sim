@@ -111,7 +111,7 @@ async function generateOAuthLink(
     workflowId && workspaceId
       ? `${baseUrl}/workspace/${workspaceId}/w/${workflowId}`
       : chatId && workspaceId
-        ? `${baseUrl}/workspace/${workspaceId}/task/${chatId}`
+        ? `${baseUrl}/workspace/${workspaceId}/chat/${chatId}`
         : `${baseUrl}/workspace/${workspaceId}`
 
   if (providerId === 'trello') {

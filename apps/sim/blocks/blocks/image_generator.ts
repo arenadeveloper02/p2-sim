@@ -79,9 +79,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
   longDescription:
     'Integrate Image Generator into the workflow. Generate new images, edit a single reference image, or fuse multiple images in one Nano Banana Pro request. The block can return up to five images per run based on the finalized prompt.',
   docsLink: 'https://docs.sim.ai/tools/image_generator',
-  category: 'tools',
+  category: 'blocks',
   integrationType: IntegrationType.AI,
-  tags: ['image-generation', 'llm'],
   bgColor: '#4D5FFF',
   icon: ImageIcon,
   subBlocks: [
@@ -539,9 +538,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   longDescription:
     'Generate images using OpenAI GPT Image, Google Nano Banana, or Fal.ai image models.',
   docsLink: 'https://docs.sim.ai/tools/image_generator',
-  category: 'tools',
+  category: 'blocks',
   integrationType: IntegrationType.AI,
-  tags: ['image-generation', 'llm'],
   bgColor: '#4D5FFF',
   icon: ImageIcon,
   subBlocks: [

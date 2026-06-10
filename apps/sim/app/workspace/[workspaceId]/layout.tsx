@@ -4,7 +4,6 @@ import { ToastProvider } from '@/components/emcn'
 import { getSession } from '@/lib/auth'
 import { AppBanner } from '@/app/workspace/[workspaceId]/app-banner'
 import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/components/impersonation-banner'
-import { NavTour } from '@/app/workspace/[workspaceId]/components/product-tour'
 import { WorkspaceChrome } from '@/app/workspace/[workspaceId]/components/workspace-chrome'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { ProviderModelsLoader } from '@/app/workspace/[workspaceId]/providers/provider-models-loader'
@@ -44,7 +43,6 @@ async function WorkspaceLayoutInner({ children }: { children: React.ReactNode })
             <WorkspacePermissionsProvider>
               <WorkspaceScopeSync />
               <WorkspaceChrome>{children}</WorkspaceChrome>
-              <NavTour />
             </WorkspacePermissionsProvider>
           </div>
         </GlobalCommandsProvider>

@@ -70,7 +70,7 @@ export interface CSPDirectives {
 const STATIC_SCRIPT_SRC = [
   "'self'",
   "'unsafe-inline'",
-  "'unsafe-eval'",
+  ...(isDev ? ["'unsafe-eval'"] : []),
   'https://*.google.com',
   'https://apis.google.com',
   'https://assets.onedollarstats.com',
@@ -301,13 +301,6 @@ export function getChatEmbedCSPPolicy(): string {
     ],
     'frame-ancestors': ['*'],
   })
-}
-
-/**
- * CSP for embeddable form pages
- */
-export function getFormEmbedCSPPolicy(): string {
-  return getEmbedCSPPolicy()
 }
 
 /**

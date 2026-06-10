@@ -56,11 +56,10 @@ export function useImportWorkflow({ workspaceId }: UseImportWorkflowProps) {
         workspaceId,
         folderId,
         sortOrder,
-        createWorkflow: async ({ name, description, color, workspaceId, folderId, sortOrder }) =>
+        createWorkflow: async ({ name, description, workspaceId, folderId, sortOrder }) =>
           createWorkflowMutation.mutateAsync({
             name,
             description,
-            color,
             workspaceId,
             folderId,
             sortOrder,

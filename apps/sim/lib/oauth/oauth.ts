@@ -707,6 +707,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'mpim:write',
           'chat:write',
           'chat:write.public',
+          'assistant:write',
           'im:write',
           'im:read',
           'users:read',

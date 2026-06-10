@@ -16,14 +16,14 @@ import { useShallow } from 'zustand/react/shallow'
 import {
   Bell,
   Button,
-  Combobox,
+  ChipCombobox,
   type ComboboxOption,
   DatePicker,
-  Download,
   Library,
   RefreshCw,
   toast,
 } from '@/components/emcn'
+import { Download, Workflow } from '@/components/emcn/icons'
 import type {
   WorkflowLogDetail,
   WorkflowLogRow,
@@ -44,21 +44,16 @@ import {
   type TriggerData,
   type WorkflowData,
 } from '@/lib/logs/search-suggestions'
-import { workflowBorderColor } from '@/lib/workspaces/colors'
 import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import type {
   FilterTag,
-  HeaderAction,
+  ResourceAction,
   ResourceColumn,
   ResourceRow,
   SearchConfig,
   SortConfig,
 } from '@/app/workspace/[workspaceId]/components'
-import {
-  ResourceHeader,
-  ResourceOptionsBar,
-  ResourceTable,
-} from '@/app/workspace/[workspaceId]/components'
+import { Resource } from '@/app/workspace/[workspaceId]/components'
 import { useSearchState } from '@/app/workspace/[workspaceId]/logs/hooks/use-search-state'
 import type { Suggestion } from '@/app/workspace/[workspaceId]/logs/types'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -89,7 +84,6 @@ import {
   NotificationSettings,
 } from './components'
 import {
-  DELETED_WORKFLOW_COLOR,
   DELETED_WORKFLOW_LABEL,
   extractRetryInput,
   formatDate,
@@ -165,31 +159,27 @@ const TIME_RANGE_OPTIONS: ComboboxOption[] = [
 
 const colorIconCache = new Map<string, React.ComponentType<{ className?: string }>>()
 
-function getColorIcon(
-  color: string,
-  withRing = false
-): React.ComponentType<{ className?: string }> {
-  const cacheKey = withRing ? `${color}-ring` : color
-  const cached = colorIconCache.get(cacheKey)
+function getColorIcon(color: string): React.ComponentType<{ className?: string }> {
+  const cached = colorIconCache.get(color)
   if (cached) return cached
 
   const ColorIcon = ({ className }: { className?: string }) => (
     <div
-      className={cn(className, 'flex-shrink-0 rounded-[3px]', withRing && 'border-[1.5px]')}
+      className={cn(className, 'flex-shrink-0 rounded-[3px]')}
       style={{
         backgroundColor: color,
         width: 10,
         height: 10,
-        ...(withRing && {
-          borderColor: workflowBorderColor(color),
-          backgroundClip: 'padding-box' as const,
-        }),
       }}
     />
   )
-  ColorIcon.displayName = `ColorIcon(${color}${withRing ? '-ring' : ''})`
-  colorIconCache.set(cacheKey, ColorIcon)
+  ColorIcon.displayName = `ColorIcon(${color})`
+  colorIconCache.set(color, ColorIcon)
   return ColorIcon
+}
+
+function WorkflowOptionIcon({ className }: { className?: string }) {
+  return <Workflow className={cn(className, 'flex-shrink-0 text-[var(--text-icon)]')} />
 }
 
 function getTriggerIcon(
@@ -800,11 +790,6 @@ export default function Logs() {
           : isDeletedWorkflow
             ? DELETED_WORKFLOW_LABEL
             : log.workflow?.name || 'Unknown'
-        const workflowColor = isMothershipJob
-          ? '#ec4899'
-          : isDeletedWorkflow
-            ? DELETED_WORKFLOW_COLOR
-            : log.workflow?.color
 
         const durationMs = parseDuration({ duration: log.duration ?? undefined })
         const durationText =
@@ -821,16 +806,6 @@ export default function Logs() {
           id: log.id,
           cells: {
             workflow: {
-              icon: workflowColor ? (
-                <div
-                  className='size-[10px] rounded-[3px] border-[1.5px]'
-                  style={{
-                    backgroundColor: workflowColor,
-                    borderColor: workflowBorderColor(workflowColor),
-                    backgroundClip: 'padding-box',
-                  }}
-                />
-              ) : undefined,
               label: workflowName,
             },
             date: { label: `${formattedDate.compactDate} ${formattedDate.compactTime}` },
@@ -1147,33 +1122,33 @@ export default function Logs() {
 
   const refreshIcon = isVisuallyRefreshing ? SpinningRefreshCw : RefreshCw
 
-  const headerActions = useMemo<HeaderAction[]>(
+  const headerActions = useMemo<ResourceAction[]>(
     () => [
       {
-        label: 'Export',
+        text: 'Export',
         icon: Download,
-        onClick: handleExport,
+        onSelect: handleExport,
         disabled: !userPermissions.canEdit || isExporting || logs.length === 0,
       },
       {
-        label: 'Notifications',
+        text: 'Notifications',
         icon: Bell,
-        onClick: handleOpenNotificationSettings,
+        onSelect: handleOpenNotificationSettings,
       },
       {
-        label: 'Refresh',
+        text: 'Refresh',
         icon: refreshIcon,
-        onClick: handleRefresh,
+        onSelect: handleRefresh,
         disabled: isVisuallyRefreshing,
       },
       {
-        label: 'Logs',
-        onClick: () => setViewMode('logs'),
+        text: 'Logs',
+        onSelect: () => setViewMode('logs'),
         active: !isDashboardView,
       },
       {
-        label: 'Dashboard',
-        onClick: () => setViewMode('dashboard'),
+        text: 'Dashboard',
+        onSelect: () => setViewMode('dashboard'),
         active: isDashboardView,
       },
     ],
@@ -1193,14 +1168,16 @@ export default function Logs() {
 
   return (
     <>
-      <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
-        <ResourceHeader icon={Library} title='Logs' actions={headerActions} />
-        <ResourceOptionsBar
+      <Resource>
+        <Resource.Header icon={Library} title='Logs' actions={headerActions} />
+        <Resource.Options
           search={searchConfig}
           sort={sortConfig}
-          filter={
-            <LogsFilterPanel searchQuery={searchQuery} onSearchQueryChange={setSearchQuery} />
-          }
+          filter={{
+            content: (
+              <LogsFilterPanel searchQuery={searchQuery} onSearchQueryChange={setSearchQuery} />
+            ),
+          }}
           filterTags={filterTags}
         />
         {isDashboardView ? (
@@ -1215,7 +1192,7 @@ export default function Logs() {
             {sidebarOverlay}
           </div>
         ) : (
-          <ResourceTable
+          <Resource.Table
             columns={LOG_COLUMNS}
             rows={rows}
             selectedRowId={selectedLogId}
@@ -1230,7 +1207,7 @@ export default function Logs() {
             overlay={sidebarOverlay}
           />
         )}
-      </div>
+      </Resource>
 
       <NotificationSettings
         workspaceId={workspaceId}
@@ -1320,7 +1297,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
   const { data: folders = {} } = useFolderMap(workspaceId)
   const { data: allWorkflowList = [] } = useWorkflows(workspaceId)
 
-  const workflows = allWorkflowList.map((w) => ({ id: w.id, name: w.name, color: w.color }))
+  const workflows = allWorkflowList.map((w) => ({ id: w.id, name: w.name }))
   const folderList = Object.values(folders).filter((f) => f.workspaceId === workspaceId)
 
   const selectedStatuses = level === 'all' || !level ? [] : level.split(',').filter(Boolean)
@@ -1356,7 +1333,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
   const workflowOptions: ComboboxOption[] = workflows.map((w) => ({
     value: w.id,
     label: w.name,
-    icon: getColorIcon(w.color, true),
+    icon: WorkflowOptionIcon,
   }))
 
   const workflowDisplayLabel =
@@ -1442,10 +1419,10 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
   }
 
   return (
-    <div className='flex w-[240px] flex-col gap-3 p-3'>
-      <div className='flex flex-col gap-1.5'>
-        <span className='font-medium text-[var(--text-secondary)] text-caption'>Status</span>
-        <Combobox
+    <div className='flex w-[240px] flex-col gap-4 p-3'>
+      <div className='flex flex-col gap-[9px]'>
+        <span className='text-[var(--text-muted)] text-small'>Status</span>
+        <ChipCombobox
           options={statusOptions}
           multiSelect
           multiSelectValues={selectedStatuses}
@@ -1464,14 +1441,13 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
           }
           showAllOption
           allOptionLabel='All statuses'
-          size='sm'
-          className='h-[32px] w-full rounded-md'
+          className='w-full'
         />
       </div>
 
-      <div className='flex flex-col gap-1.5'>
-        <span className='font-medium text-[var(--text-secondary)] text-caption'>Workflow</span>
-        <Combobox
+      <div className='flex flex-col gap-[9px]'>
+        <span className='text-[var(--text-muted)] text-small'>Workflow</span>
+        <ChipCombobox
           options={workflowOptions}
           multiSelect
           multiSelectValues={workflowIds}
@@ -1480,14 +1456,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
           overlayContent={
             <span className='flex items-center gap-1.5 truncate text-[var(--text-primary)]'>
               {selectedWorkflow && (
-                <div
-                  className='size-[8px] flex-shrink-0 rounded-xs border-[1.5px]'
-                  style={{
-                    backgroundColor: selectedWorkflow.color,
-                    borderColor: workflowBorderColor(selectedWorkflow.color),
-                    backgroundClip: 'padding-box',
-                  }}
-                />
+                <Workflow className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
               )}
               <span className='truncate'>{workflowDisplayLabel}</span>
             </span>
@@ -1496,14 +1465,13 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
           searchPlaceholder='Search workflows...'
           showAllOption
           allOptionLabel='All workflows'
-          size='sm'
-          className='h-[32px] w-full rounded-md'
+          className='w-full'
         />
       </div>
 
-      <div className='flex flex-col gap-1.5'>
-        <span className='font-medium text-[var(--text-secondary)] text-caption'>Folder</span>
-        <Combobox
+      <div className='flex flex-col gap-[9px]'>
+        <span className='text-[var(--text-muted)] text-small'>Folder</span>
+        <ChipCombobox
           options={folderOptions}
           multiSelect
           multiSelectValues={folderIds}
@@ -1516,14 +1484,13 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
           searchPlaceholder='Search folders...'
           showAllOption
           allOptionLabel='All folders'
-          size='sm'
-          className='h-[32px] w-full rounded-md'
+          className='w-full'
         />
       </div>
 
-      <div className='flex flex-col gap-1.5'>
-        <span className='font-medium text-[var(--text-secondary)] text-caption'>Trigger</span>
-        <Combobox
+      <div className='flex flex-col gap-[9px]'>
+        <span className='text-[var(--text-muted)] text-small'>Trigger</span>
+        <ChipCombobox
           options={triggerOptions}
           multiSelect
           multiSelectValues={triggers}
@@ -1536,15 +1503,14 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
           searchPlaceholder='Search triggers...'
           showAllOption
           allOptionLabel='All triggers'
-          size='sm'
-          className='h-[32px] w-full rounded-md'
+          className='w-full'
         />
       </div>
 
-      <div className='flex flex-col gap-1.5'>
-        <span className='font-medium text-[var(--text-secondary)] text-caption'>Time Range</span>
+      <div className='flex flex-col gap-[9px]'>
+        <span className='text-[var(--text-muted)] text-small'>Time Range</span>
         <div className='relative'>
-          <Combobox
+          <ChipCombobox
             options={TIME_RANGE_OPTIONS}
             value={timeRange}
             onChange={handleTimeRangeChange}
@@ -1552,8 +1518,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
             overlayContent={
               <span className='truncate text-[var(--text-primary)]'>{timeDisplayLabel}</span>
             }
-            size='sm'
-            className='h-[32px] w-full rounded-md'
+            className='w-full'
             maxHeight={320}
           />
           <DatePicker

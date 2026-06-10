@@ -42,20 +42,44 @@ export function inferProviderIdsFromEnvCredentialKeys(envKeys: string[]): string
   return [...out]
 }
 
+export interface OAuthIntegrationPresence {
+  id: string
+  providerId: string
+  displayName?: string | null
+  role?: string | null
+}
+
 /**
- * Merges OAuth/service-account connected providers with providers inferred from env credentials.
+ * Merges OAuth/service-account connected credentials with providers inferred from env credentials.
+ * Env-only providers get a synthetic row so WORKSPACE.md still lists them as available.
  */
 export function mergeOAuthIntegrationPresence(
-  fromOAuthRows: Array<{ providerId: string }>,
+  fromOAuthRows: OAuthIntegrationPresence[],
   envCredentialKeys: string[],
   hubspotSharedAccountIds?: string[]
-): Array<{ providerId: string }> {
-  const ids = new Set(fromOAuthRows.map((r) => r.providerId))
-  for (const p of inferProviderIdsFromEnvCredentialKeys(envCredentialKeys)) {
-    ids.add(p)
+): OAuthIntegrationPresence[] {
+  const result: OAuthIntegrationPresence[] = [...fromOAuthRows]
+  const presentProviders = new Set(fromOAuthRows.map((r) => r.providerId))
+
+  for (const providerId of inferProviderIdsFromEnvCredentialKeys(envCredentialKeys)) {
+    if (presentProviders.has(providerId)) continue
+    presentProviders.add(providerId)
+    result.push({
+      id: `__env__:${providerId}`,
+      providerId,
+      displayName: 'via environment credential',
+    })
   }
-  if (hubspotSharedAccountIds && hubspotSharedAccountIds.length > 0) {
-    ids.add('hubspot')
+
+  if (hubspotSharedAccountIds && hubspotSharedAccountIds.length > 0 && !presentProviders.has('hubspot')) {
+    result.push({
+      id: '__hubspot_accounts__',
+      providerId: 'hubspot',
+      displayName: 'via shared accounts subblock',
+    })
   }
-  return [...ids].sort().map((providerId) => ({ providerId }))
+
+  return result.sort(
+    (a, b) => a.providerId.localeCompare(b.providerId) || a.id.localeCompare(b.id)
+  )
 }

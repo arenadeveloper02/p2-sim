@@ -1,11 +1,10 @@
 'use client'
 
-import { createElement, useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { ExternalLink, KeyRound, Users } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { Button, Combobox } from '@/components/emcn/components'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
-import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { getPollingProviderFromOAuth } from '@/lib/credential-sets/providers'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import {
@@ -18,11 +17,13 @@ import {
 } from '@/lib/oauth'
 import { getMissingRequiredScopes, getRequiredScopesForCredential } from '@/lib/oauth/utils'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
-import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
+import { ConnectOAuthModal } from '@/app/workspace/[workspaceId]/components/connect-oauth-modal'
+import { isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { getBareIconStyle, type StyleableIcon } from '@/blocks/icon-color'
 import type { SubBlockConfig } from '@/blocks/types'
 import { CREDENTIAL_SET } from '@/executor/constants'
 import { useCredentialSets } from '@/hooks/queries/credential-sets'
@@ -33,8 +34,6 @@ import { useSubscriptionData } from '@/hooks/queries/subscription'
 import { useCredentialRefreshTriggers } from '@/hooks/use-credential-refresh-triggers'
 import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-
-const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
 
 interface CredentialSelectorProps {
   blockId: string
@@ -249,7 +248,8 @@ export function CredentialSelector({
     if (!baseProviderConfig) {
       return <ExternalLink className='size-3' />
     }
-    return createElement(baseProviderConfig.icon, { className: 'h-3 w-3' })
+    const Icon: StyleableIcon = baseProviderConfig.icon
+    return <Icon className='size-3' style={getBareIconStyle(Icon)} />
   }, [])
 
   const getProviderName = useCallback((providerName: OAuthProvider) => {
@@ -547,28 +547,32 @@ export function CredentialSelector({
       )}
 
       {showConnectModal && (
-        <OAuthModal
+        <ConnectOAuthModal
           mode='connect'
-          isOpen={showConnectModal}
-          onClose={() => {
+          origin='workflow'
+          open={showConnectModal}
+          onOpenChange={(open) => {if (!open) {
             setShowConnectModal(false)
             setConnectModalConfig(null)
-          }}
+          }}}
           provider={connectModalConfig?.provider ?? provider}
           serviceId={connectModalConfig?.serviceId ?? serviceId}
+          providerId={effectiveProviderId}
+          requiredScopes={getCanonicalScopesForProvider(effectiveProviderId)}
           workspaceId={workspaceId}
           workflowId={activeWorkflowId || ''}
-          credentialCount={connectModalConfig?.credentialCount ?? credentials.length}
         />
       )}
 
       {showOAuthModal && (
-        <OAuthModal
+        <ConnectOAuthModal
           mode='reauthorize'
-          isOpen={showOAuthModal}
-          onClose={() => {
-            consumeOAuthReturnContext()
-            setShowOAuthModal(false)
+          open={showOAuthModal}
+          onOpenChange={(open) => {
+            if (!open) {
+              consumeOAuthReturnContext()
+              setShowOAuthModal(false)
+            }
           }}
           provider={reauthorizeProvider}
           toolName={getProviderName(reauthorizeProvider)}

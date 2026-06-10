@@ -5,10 +5,11 @@ import clsx from 'clsx'
 import { MoreHorizontal } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { chipVariants } from '@/components/emcn'
 import { Lock } from '@/components/emcn/icons'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { workflowBorderColor } from '@/lib/workspaces/colors'
 import { selectWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { cn } from '@/lib/core/utils/cn'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
@@ -46,7 +47,6 @@ import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
 interface WorkflowItemProps {
   workflow: WorkflowMetadata
   active: boolean
-  level: number
   dragDisabled?: boolean
   onWorkflowClick: (workflowId: string, shiftKey: boolean) => void
   onDragStart?: () => void
@@ -63,7 +63,6 @@ interface WorkflowItemProps {
 export function WorkflowItem({
   workflow,
   active,
-  level,
   dragDisabled = false,
   onWorkflowClick,
   onDragStart: onDragStartProp,
@@ -180,14 +179,6 @@ export function WorkflowItem({
   const handleOpenInNewTab = useCallback(() => {
     window.open(`/workspace/${workspaceId}/w/${workflow.id}`, '_blank')
   }, [workspaceId, workflow.id])
-
-  const handleColorChange = useCallback(
-    (color: string) => {
-      if (effectiveLocked) return
-      updateWorkflowMutation.mutate({ workspaceId, workflowId: workflow.id, metadata: { color } })
-    },
-    [updateWorkflowMutation, workflow.id, effectiveLocked, workspaceId]
-  )
 
   const handleToggleLock = useCallback(() => {
     if (inheritedFolderLocked) return
@@ -348,7 +339,7 @@ export function WorkflowItem({
 
       const total = selection.workflowIds.length + selection.folderIds.length
       const ghostLabel = total > 1 ? `${workflow.name} +${total - 1} more` : workflow.name
-      const icon = total === 1 ? { kind: 'workflow' as const, color: workflow.color } : undefined
+      const icon = total === 1 ? { kind: 'workflow' as const } : undefined
       const ghost = createSidebarDragGhost(ghostLabel, icon)
       // Force reflow so the browser can capture the rendered element
       void ghost.offsetHeight
@@ -357,7 +348,7 @@ export function WorkflowItem({
 
       onDragStartProp?.()
     },
-    [workflow.id, workflow.name, workflow.color, workspaceId, onDragStartProp]
+    [workflow.id, workflow.name, workspaceId, onDragStartProp]
   )
 
   const {
@@ -421,15 +412,11 @@ export function WorkflowItem({
       <Link
         href={`/workspace/${workspaceId}/w/${workflow.id}`}
         data-item-id={workflow.id}
-        className={clsx(
-          'group mx-0.5 flex h-[30px] items-center gap-2 rounded-lg px-2 text-sm',
-          (active || isContextMenuOpen || (isSelected && selectedWorkflows.size > 1)) &&
-            'bg-[var(--surface-active)]',
-          !active &&
-            !isContextMenuOpen &&
-            !(isSelected && selectedWorkflows.size > 1) &&
-            !isAnyDragActive &&
-            'hover-hover:bg-[var(--surface-hover)]',
+        className={cn(
+          chipVariants({
+            active: active || isContextMenuOpen || (isSelected && selectedWorkflows.size > 1),
+            fullWidth: true,
+          }),
           (isDragging || (isAnyDragActive && isSelected)) && 'opacity-50'
         )}
         draggable={!isEditing && !dragDisabled && !effectiveLocked}
@@ -438,14 +425,6 @@ export function WorkflowItem({
         onClick={handleWorkflowSelect}
         onContextMenu={handleContextMenu}
       >
-        <div
-          className='size-[16px] flex-shrink-0 rounded-sm border-[2.5px]'
-          style={{
-            backgroundColor: workflow.color,
-            borderColor: workflowBorderColor(workflow.color),
-            backgroundClip: 'padding-box',
-          }}
-        />
         <div className='min-w-0 flex-1'>
           <div className='flex min-w-0 items-center gap-2'>
             {isEditing ? (
@@ -455,7 +434,7 @@ export function WorkflowItem({
                 onChange={(e) => setEditValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onBlur={handleInputBlur}
-                className='w-full min-w-0 border-0 bg-transparent p-0 font-base text-[var(--text-body)] text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+                className='w-full min-w-0 border-0 bg-transparent p-0 text-[var(--text-body)] text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
                 maxLength={100}
                 disabled={isRenaming}
                 onClick={(e) => {
@@ -469,7 +448,7 @@ export function WorkflowItem({
               />
             ) : (
               <div
-                className='min-w-0 truncate font-base text-[var(--text-body)]'
+                className='min-w-0 truncate text-[var(--text-body)]'
                 onDoubleClick={handleDoubleClick}
               >
                 {workflow.name}
@@ -520,17 +499,13 @@ export function WorkflowItem({
         onDuplicate={handleDuplicate}
         onExport={handleExport}
         onDelete={handleOpenDeleteModal}
-        onColorChange={handleColorChange}
-        currentColor={workflow.color}
         showOpenInNewTab={!isMixedSelection && selectedWorkflows.size <= 1}
         showRename={!isMixedSelection && selectedWorkflows.size <= 1}
         showDuplicate={true}
         showExport={true}
-        showColorChange={!isMixedSelection && selectedWorkflows.size <= 1}
         disableRename={!userPermissions.canEdit || effectiveLocked}
         disableDuplicate={!userPermissions.canEdit || isDuplicatingSelection}
         disableExport={!userPermissions.canEdit}
-        disableColorChange={!userPermissions.canEdit || effectiveLocked}
         showDelete={userPermissions.canEdit}
         disableDelete={!canDeleteSelection || effectiveLocked}
         onToggleLock={handleToggleLock}

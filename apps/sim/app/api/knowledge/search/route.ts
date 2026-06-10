@@ -5,7 +5,10 @@ import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { knowledgeSearchBodySchema } from '@/lib/api/contracts/knowledge'
+import { parseJsonBody, validationErrorResponse } from '@/lib/api/server'
+import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -114,8 +117,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
   try {
-    const body = await request.json()
-    const { workflowId, ...searchParams } = body
+    const parsedBody = await parseJsonBody(request)
+    if (!parsedBody.success) return parsedBody.response
+    const body = parsedBody.data as Record<string, unknown>
+    const { workflowId, skipUsageBilling, ...searchParams } = body
 
     const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
@@ -123,9 +128,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
     const userId = auth.userId
 
+    // Only the internal workflow tool may suppress route metering (it rolls the
+    // cost into the executor's usage instead). Session/API-key callers cannot set
+    // skipUsageBilling to dodge their own embedding/reranker charge.
+    const shouldMeter = !(skipUsageBilling === true && auth.authType === AuthType.INTERNAL_JWT)
+
     if (workflowId) {
       const authorization = await authorizeWorkflowByWorkspacePermission({
-        workflowId,
+        workflowId: workflowId as string,
         userId,
         action: 'read',
       })
@@ -312,12 +322,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
-      if (workflowId) {
-        const authorization = await authorizeWorkflowByWorkspacePermission({
-          workflowId,
-          userId,
-          action: 'read',
-        })
+      // if (workflowId) {
+        // const authorization = await authorizeWorkflowByWorkspacePermission({
+        //   workflowId,
+        //   userId,
+        //   action: 'read',
+        // })
         // const workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
         // if (
         //   workflowWorkspaceId &&
@@ -332,7 +342,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         //     { status: 400 }
         //   )
         // }
-      }
+      // }
 
       let results: SearchResult[]
 

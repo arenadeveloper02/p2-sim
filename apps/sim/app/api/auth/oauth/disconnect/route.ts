@@ -15,6 +15,7 @@ import {
   listAccountsToDisconnect,
   unlinkUnipileAccountsFromProvider,
 } from '@/lib/unipile/disconnect-accounts'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 
 export const dynamic = 'force-dynamic'
@@ -86,7 +87,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     if (targetAccountIds.length > 0) {
       const credentialsToDelete = await db
-        .select({ id: credential.id })
+        .select({
+          id: credential.id,
+          workspaceId: credential.workspaceId,
+          providerId: credential.providerId,
+        })
         .from(credential)
         .where(inArray(credential.accountId, targetAccountIds))
 
@@ -99,6 +104,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           reason: 'oauth_disconnect',
           request,
         })
+
+        captureServerEvent(
+          session.user.id,
+          'credential_deleted',
+          {
+            credential_type: 'oauth',
+            provider_id: cred.providerId ?? providerId ?? provider,
+            workspace_id: cred.workspaceId,
+          },
+          { groups: { workspace: cred.workspaceId } }
+        )
       }
 
       await db.delete(account).where(inArray(account.id, targetAccountIds))
