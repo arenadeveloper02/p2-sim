@@ -74,13 +74,7 @@ export function getS3ClientForRegion(region: string): S3Client {
   if (client) return client
   client = new S3Client({
     region,
-    credentials:
-      env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
-        ? {
-            accessKeyId: env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-          }
-        : undefined,
+    credentials: getAwsCredentialsFromEnv(),
   })
   _s3ClientsByRegion.set(region, client)
   return client
