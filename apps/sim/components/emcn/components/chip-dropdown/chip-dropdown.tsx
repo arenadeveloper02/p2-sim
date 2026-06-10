@@ -43,6 +43,8 @@ interface ChipDropdownBaseProps extends VariantProps<typeof chipVariants> {
   placeholder?: string
   /** Aligns the dropdown popover relative to the trigger. */
   align?: 'start' | 'center' | 'end'
+  /** Preferred side of the trigger to render against. */
+  side?: 'top' | 'right' | 'bottom' | 'left'
   /**
    * Whether the menu width should match the trigger's. When `true` (default),
    * the menu pins to `--radix-dropdown-menu-trigger-width`. Set `false` to let
@@ -151,6 +153,7 @@ const ChipDropdown = forwardRef<HTMLButtonElement, ChipDropdownProps>(
       options,
       placeholder,
       align = 'end',
+      side,
       matchTriggerWidth = true,
       contentClassName,
       disabled,
@@ -254,7 +257,7 @@ const ChipDropdown = forwardRef<HTMLButtonElement, ChipDropdownProps>(
 
     return (
       <DropdownMenu
-        modal={false}
+        modal={isMultiple ? false : true}
         {...(isMultiple
           ? {
               open,
@@ -289,6 +292,7 @@ const ChipDropdown = forwardRef<HTMLButtonElement, ChipDropdownProps>(
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align={align}
+          side={side}
           onOpenAutoFocus={searchable ? (event) => event.preventDefault() : undefined}
           className={cn(
             'z-[var(--z-popover)]',

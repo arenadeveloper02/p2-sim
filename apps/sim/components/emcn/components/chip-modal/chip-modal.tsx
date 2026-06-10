@@ -356,6 +356,7 @@ interface ChipModalDropdownFieldProps extends ChipModalFieldBaseProps {
   options: ReadonlyArray<ChipModalDropdownOption>
   placeholder?: string
   align?: 'start' | 'center' | 'end'
+  side?: 'top' | 'right' | 'bottom' | 'left'
 }
 
 interface ChipModalFileFieldProps extends ChipModalFieldBaseProps {
@@ -531,9 +532,10 @@ function renderChipModalControl(
         <ChipDropdown
           value={props.value}
           onChange={props.onChange}
-          options={props.options}
+          options={[...props.options]}
           placeholder={props.placeholder}
           align={props.align}
+          side={props.side ?? 'top'}
           disabled={props.disabled}
           fullWidth
           {...aria}
