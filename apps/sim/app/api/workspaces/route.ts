@@ -22,7 +22,6 @@ import {
   getInvitePlanCategoryForUser,
   getWorkspaceCreationPolicy,
   getWorkspaceInvitePolicy,
-  UPGRADE_TO_INVITE_REASON,
   WORKSPACE_MODE,
 } from '@/lib/workspaces/policy'
 

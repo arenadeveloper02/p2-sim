@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useState } from 'react'
-import { Check, Copy, File as FileIcon, FileText, Image as ImageIcon } from 'lucide-react'
+import { Check, File as FileIcon, FileText, Image as ImageIcon } from 'lucide-react'
 import { Duplicate, Tooltip } from '@/components/emcn'
 import type {
   AssistantGeneratedImage,

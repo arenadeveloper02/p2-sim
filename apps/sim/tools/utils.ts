@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
-import * as Papa from 'papaparse'
 import { stripVersionSuffix } from '@sim/utils/string'
+import * as Papa from 'papaparse'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
   normalizeRecord,

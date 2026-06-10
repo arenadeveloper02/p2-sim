@@ -1267,13 +1267,16 @@ export const Sidebar = memo(function Sidebar() {
       />
       <div className='relative h-full'>
         <aside
-          className={cn('sidebar-container relative h-full overflow-hidden bg-[var(--surface-1)]', hideSidebarForArenaV3 && 'hidden')}
+          className={cn(
+            'sidebar-container relative h-full overflow-hidden bg-[var(--surface-1)]',
+            hideSidebarForArenaV3 && 'hidden'
+          )}
           data-collapsed={isCollapsed || undefined}
           aria-label='Workspace sidebar'
           onClick={handleSidebarClick}
         >
           <div className='flex h-full flex-col'>
-          {arenaHubAgentsUrl ? (
+            {arenaHubAgentsUrl ? (
               <div
                 className={cn(
                   'flex flex-shrink-0 items-center px-2.5 pb-1.5',

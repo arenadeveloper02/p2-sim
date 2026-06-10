@@ -10,12 +10,12 @@ import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { deleteCredential } from '@/lib/credentials/deletion'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { UnipileDeleteAccountError } from '@/lib/unipile/delete-account'
 import {
   listAccountsToDisconnect,
   unlinkUnipileAccountsFromProvider,
 } from '@/lib/unipile/disconnect-accounts'
-import { captureServerEvent } from '@/lib/posthog/server'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 
 export const dynamic = 'force-dynamic'

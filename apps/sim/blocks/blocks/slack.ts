@@ -2183,12 +2183,12 @@ Do not include any explanations, markdown formatting, or other text outside the 
             break
           }
           case 'list_channels':
-            case 'get_user_channels': {
-              // includePublic is only exposed in the UI for get_user_channels;
-              // list_channels always includes public channels (there is no
-              // dropdown for it there, so includePublic is undefined and the
-              // tool falls back to its default "include").
-              baseParams.includePublic = includePublic !== 'false'
+          case 'get_user_channels': {
+            // includePublic is only exposed in the UI for get_user_channels;
+            // list_channels always includes public channels (there is no
+            // dropdown for it there, so includePublic is undefined and the
+            // tool falls back to its default "include").
+            baseParams.includePublic = includePublic !== 'false'
 
             baseParams.includePrivate = includePrivate !== 'false'
             if (includeDMs === 'true' || includeDMs === 'false') {

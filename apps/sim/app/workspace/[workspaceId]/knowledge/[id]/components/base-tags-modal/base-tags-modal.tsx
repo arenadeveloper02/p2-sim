@@ -200,7 +200,6 @@ export function BaseTagsModal({
         fieldType: createTagForm.fieldType,
       })
 
-
       addTagsforKBEvent({
         'Knowledge Base Name': knowledgeBaseName || '',
         'Knowledge Base ID': knowledgeBaseId,

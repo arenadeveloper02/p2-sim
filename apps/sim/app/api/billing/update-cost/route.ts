@@ -4,8 +4,8 @@ import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { billingUpdateCostContract } from '@/lib/api/contracts/subscription'
 import { parseRequest } from '@/lib/api/server'
-import { getUsageLogCostMultiplier } from '@/lib/billing/core/usage-log-cost-multiplier'
 import { recordCumulativeUsage, recordUsage, scaleUsageLogCost } from '@/lib/billing/core/usage-log'
+import { getUsageLogCostMultiplier } from '@/lib/billing/core/usage-log-cost-multiplier'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { BillingRouteOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
@@ -141,7 +141,7 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
     let billed = true
     const multiplier = getUsageLogCostMultiplier()
     const billedCost = scaleUsageLogCost(cost)
-    
+
     if (idempotencyKey) {
       const result = await recordCumulativeUsage({
         userId,
@@ -161,7 +161,7 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
         newTotal: result.total,
         billed: result.billed,
         addedCost: billedCost,
-        multiplier
+        multiplier,
       })
     } else {
       await recordUsage({

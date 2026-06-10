@@ -18,7 +18,11 @@ import {
 import { Badge, Button, Checkbox, ChipConfirmModal, Loader, Tooltip } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
-import { getCanonicalScopesForProvider, getProviderIdFromServiceId, OAuthProvider } from '@/lib/oauth'
+import {
+  getCanonicalScopesForProvider,
+  getProviderIdFromServiceId,
+  type OAuthProvider,
+} from '@/lib/oauth'
 import { getMissingRequiredScopes } from '@/lib/oauth/utils'
 import { ConnectOAuthModal } from '@/app/workspace/[workspaceId]/components/connect-oauth-modal'
 import { EditConnectorModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components/edit-connector-modal/edit-connector-modal'

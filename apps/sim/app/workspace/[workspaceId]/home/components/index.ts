@@ -1,7 +1,7 @@
 export { ChatMessageAttachments } from './chat-message-attachments'
-export { EmbedHtmlContent } from './embed-html-content'
 export { ContextMentionIcon } from './context-mention-icon'
 export { CreditsChip } from './credits-chip'
+export { EmbedHtmlContent } from './embed-html-content'
 export {
   assistantMessageHasRenderableContent,
   MessageContent,

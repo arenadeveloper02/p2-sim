@@ -11,7 +11,6 @@ import {
   ChipModalHeader,
 } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
-import { inviteWorkspaceEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { isEnterprise } from '@/lib/billing/plan-helpers'
 import type { PermissionType } from '@/lib/workspaces/permissions/utils'
 import { useWorkspacePermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'

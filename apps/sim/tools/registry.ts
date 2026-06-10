@@ -156,25 +156,6 @@ import {
   apolloTaskSearchTool,
 } from '@/tools/apollo'
 import {
-  arenaAddComment,
-  arenaAddCommentTaskNumber,
-  arenaClientUpdatedTasks,
-  arenaConversationSummary,
-  arenaCreateSubTask,
-  arenaCreateSubTaskFields,
-  arenaCreateTask,
-  arenaCreateTaskFields,
-  arenaFetchSearchedTasks,
-  arenaGetMeetings,
-  arenaGetMyOverdueTasks,
-  arenaGetMyTasks,
-  arenaGetToken,
-  arenaProjectSummary,
-  arenaSaveSummary,
-  arenaSearchTask,
-  arenaSearchTaskSimple,
-} from '@/tools/arena'
-import {
   appConfigCreateApplicationTool,
   appConfigCreateConfigurationProfileTool,
   appConfigCreateEnvironmentTool,
@@ -201,6 +182,25 @@ import {
   appConfigUpdateConfigurationProfileTool,
   appConfigUpdateEnvironmentTool,
 } from '@/tools/appconfig'
+import {
+  arenaAddComment,
+  arenaAddCommentTaskNumber,
+  arenaClientUpdatedTasks,
+  arenaConversationSummary,
+  arenaCreateSubTask,
+  arenaCreateSubTaskFields,
+  arenaCreateTask,
+  arenaCreateTaskFields,
+  arenaFetchSearchedTasks,
+  arenaGetMeetings,
+  arenaGetMyOverdueTasks,
+  arenaGetMyTasks,
+  arenaGetToken,
+  arenaProjectSummary,
+  arenaSaveSummary,
+  arenaSearchTask,
+  arenaSearchTaskSimple,
+} from '@/tools/arena'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
   asanaAddCommentTool,

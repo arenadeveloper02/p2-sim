@@ -551,10 +551,12 @@ export function CredentialSelector({
           mode='connect'
           origin='workflow'
           open={showConnectModal}
-          onOpenChange={(open) => {if (!open) {
-            setShowConnectModal(false)
-            setConnectModalConfig(null)
-          }}}
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowConnectModal(false)
+              setConnectModalConfig(null)
+            }
+          }}
           provider={connectModalConfig?.provider ?? provider}
           serviceId={connectModalConfig?.serviceId ?? serviceId}
           providerId={effectiveProviderId}

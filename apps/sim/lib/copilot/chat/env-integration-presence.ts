@@ -71,7 +71,11 @@ export function mergeOAuthIntegrationPresence(
     })
   }
 
-  if (hubspotSharedAccountIds && hubspotSharedAccountIds.length > 0 && !presentProviders.has('hubspot')) {
+  if (
+    hubspotSharedAccountIds &&
+    hubspotSharedAccountIds.length > 0 &&
+    !presentProviders.has('hubspot')
+  ) {
     result.push({
       id: '__hubspot_accounts__',
       providerId: 'hubspot',
@@ -79,7 +83,5 @@ export function mergeOAuthIntegrationPresence(
     })
   }
 
-  return result.sort(
-    (a, b) => a.providerId.localeCompare(b.providerId) || a.id.localeCompare(b.id)
-  )
+  return result.sort((a, b) => a.providerId.localeCompare(b.providerId) || a.id.localeCompare(b.id))
 }

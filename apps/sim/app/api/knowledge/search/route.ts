@@ -5,10 +5,8 @@ import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { knowledgeSearchBodySchema } from '@/lib/api/contracts/knowledge'
-import { parseJsonBody, validationErrorResponse } from '@/lib/api/server'
+import { parseJsonBody } from '@/lib/api/server'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -323,25 +321,25 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       }
 
       // if (workflowId) {
-        // const authorization = await authorizeWorkflowByWorkspacePermission({
-        //   workflowId,
-        //   userId,
-        //   action: 'read',
-        // })
-        // const workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
-        // if (
-        //   workflowWorkspaceId &&
-        //   accessChecks.some(
-        //     (accessCheck) =>
-        //       accessCheck?.hasAccess &&
-        //       accessCheck.knowledgeBase?.workspaceId !== workflowWorkspaceId
-        //   )
-        // ) {
-        //   return NextResponse.json(
-        //     { error: 'Knowledge base does not belong to the workflow workspace' },
-        //     { status: 400 }
-        //   )
-        // }
+      // const authorization = await authorizeWorkflowByWorkspacePermission({
+      //   workflowId,
+      //   userId,
+      //   action: 'read',
+      // })
+      // const workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
+      // if (
+      //   workflowWorkspaceId &&
+      //   accessChecks.some(
+      //     (accessCheck) =>
+      //       accessCheck?.hasAccess &&
+      //       accessCheck.knowledgeBase?.workspaceId !== workflowWorkspaceId
+      //   )
+      // ) {
+      //   return NextResponse.json(
+      //     { error: 'Knowledge base does not belong to the workflow workspace' },
+      //     { status: 400 }
+      //   )
+      // }
       // }
 
       let results: SearchResult[]

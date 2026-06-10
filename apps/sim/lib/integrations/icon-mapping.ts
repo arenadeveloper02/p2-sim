@@ -14,8 +14,8 @@ import {
   AmplitudeIcon,
   ApifyIcon,
   ApolloIcon,
-  ArenaIcon,
   AppConfigIcon,
+  ArenaIcon,
   ArxivIcon,
   AsanaIcon,
   AshbyIcon,
@@ -98,6 +98,7 @@ import {
   HunterIOIcon,
   IAMIcon,
   IdentityCenterIcon,
+  ImageIcon,
   IncidentioIcon,
   InfisicalIcon,
   InstantlyIcon,
@@ -214,7 +215,6 @@ import {
   ZeroBounceIcon,
   ZoomIcon,
   ZoomInfoIcon,
-  ImageIcon
 } from '@/components/icons'
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>

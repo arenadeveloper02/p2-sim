@@ -169,7 +169,9 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
           dispatchCredentialUpdate(ctx)
           consumeOAuthReturnContext()
         } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
-          toast.success('LinkedIn account linked. Select it in the block credential picker.', { duration: 5000 })
+          toast.success('LinkedIn account linked. Select it in the block credential picker.', {
+            duration: 5000,
+          })
           consumeOAuthReturnContext()
         }
       })()

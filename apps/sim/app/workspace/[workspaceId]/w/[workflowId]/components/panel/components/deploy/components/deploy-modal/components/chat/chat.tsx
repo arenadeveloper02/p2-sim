@@ -6,8 +6,6 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { AlertTriangle, Check, Clipboard, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import {
   Button,
-  ButtonGroup,
-  ButtonGroupItem,
   ChipConfirmModal,
   ChipInput,
   Input,
@@ -478,13 +476,13 @@ export function ChatDeploy({
             Title
           </Label>
           <ChipInput
-              id='title'
-              placeholder='Customer Support Assistant'
-              value={formData.title}
-              onChange={(e) => updateField('title', e.target.value)}
-              required
-              disabled={chatSubmitting}
-            />
+            id='title'
+            placeholder='Customer Support Assistant'
+            value={formData.title}
+            onChange={(e) => updateField('title', e.target.value)}
+            required
+            disabled={chatSubmitting}
+          />
           {errors.title && <p className='mt-1 text-destructive text-sm'>{errors.title}</p>}
         </div>
 

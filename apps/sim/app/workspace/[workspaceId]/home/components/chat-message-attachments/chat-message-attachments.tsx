@@ -1,10 +1,10 @@
 import { getDocumentIcon } from '@/components/icons/document-icons'
 import { cn } from '@/lib/core/utils/cn'
+import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import {
   downloadImage,
   ImageWithViewFullOverlay,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
-import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 
 function FileAttachmentPill(props: { mediaType: string; filename: string }) {
   const Icon = getDocumentIcon(props.mediaType, props.filename)

@@ -294,7 +294,13 @@ export const GET = withRouteHandler(
             authType: authResult.authType ?? 'hybrid',
           })
           if (isUsingCloudStorage()) {
-            return await handleCloudProxy(cloudKey, authResult.userId, raw, versioned, request.signal)
+            return await handleCloudProxy(
+              cloudKey,
+              authResult.userId,
+              raw,
+              versioned,
+              request.signal
+            )
           }
           return await handleLocalFile(cloudKey, authResult.userId, raw, versioned, request.signal)
         }

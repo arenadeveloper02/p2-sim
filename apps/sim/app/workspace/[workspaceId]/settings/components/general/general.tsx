@@ -505,8 +505,8 @@ export function General() {
                 />
               </div>
               <p className='text-[var(--text-muted)] text-small'>
-                We use OpenTelemetry to collect anonymous usage data to improve Arena. You can opt-out
-                at any time.
+                We use OpenTelemetry to collect anonymous usage data to improve Arena. You can
+                opt-out at any time.
               </p>
             </div>
           </SettingsSection>
@@ -514,36 +514,38 @@ export function General() {
       </div>
 
       {/* Password Reset Confirmation Modal */}
-      {false &&<ChipModal
-        open={showResetPasswordModal}
-        onOpenChange={setShowResetPasswordModal}
-        srTitle='Reset Password'
-      >
-        <ChipModalHeader onClose={() => setShowResetPasswordModal(false)}>
-          Reset Password
-        </ChipModalHeader>
-        <ChipModalBody>
-          <p className='px-2 text-[var(--text-secondary)] text-sm'>
-            A password reset link will be sent to{' '}
-            <span className='font-medium text-[var(--text-primary)]'>{profile?.email}</span>. Click
-            the link in the email to create a new password.
-          </p>
-          <ChipModalError>{resetPassword.error?.message}</ChipModalError>
-        </ChipModalBody>
-        <ChipModalFooter
-          onCancel={() => setShowResetPasswordModal(false)}
-          cancelDisabled={resetPassword.isPending || resetPassword.isSuccess}
-          primaryAction={{
-            label: resetPassword.isPending
-              ? 'Sending...'
-              : resetPassword.isSuccess
-                ? 'Sent'
-                : 'Send Reset Email',
-            onClick: handleResetPasswordConfirm,
-            disabled: resetPassword.isPending || resetPassword.isSuccess,
-          }}
-        />
-      </ChipModal>}
+      {false && (
+        <ChipModal
+          open={showResetPasswordModal}
+          onOpenChange={setShowResetPasswordModal}
+          srTitle='Reset Password'
+        >
+          <ChipModalHeader onClose={() => setShowResetPasswordModal(false)}>
+            Reset Password
+          </ChipModalHeader>
+          <ChipModalBody>
+            <p className='px-2 text-[var(--text-secondary)] text-sm'>
+              A password reset link will be sent to{' '}
+              <span className='font-medium text-[var(--text-primary)]'>{profile?.email}</span>.
+              Click the link in the email to create a new password.
+            </p>
+            <ChipModalError>{resetPassword.error?.message}</ChipModalError>
+          </ChipModalBody>
+          <ChipModalFooter
+            onCancel={() => setShowResetPasswordModal(false)}
+            cancelDisabled={resetPassword.isPending || resetPassword.isSuccess}
+            primaryAction={{
+              label: resetPassword.isPending
+                ? 'Sending...'
+                : resetPassword.isSuccess
+                  ? 'Sent'
+                  : 'Send Reset Email',
+              onClick: handleResetPasswordConfirm,
+              disabled: resetPassword.isPending || resetPassword.isSuccess,
+            }}
+          />
+        </ChipModal>
+      )}
     </div>
   )
 }

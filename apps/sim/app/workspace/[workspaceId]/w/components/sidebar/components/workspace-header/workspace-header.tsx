@@ -16,9 +16,9 @@ import {
   Send,
   Skeleton,
 } from '@/components/emcn'
+import { ManageWorkspace, PanelLeft } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import { env } from '@/lib/core/config/env'
-import { ManageWorkspace, PanelLeft } from '@/components/emcn/icons'
 import { cn } from '@/lib/core/utils/cn'
 import { isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
@@ -115,6 +115,7 @@ function WorkspaceHeaderImpl({
   const isContextMenuOpeningRef = useRef(false)
   const contextMenuClosedRef = useRef(true)
   const hasInputFocusedRef = useRef(false)
+  const { data: session } = useSession()
 
   /**
    * Check if current user is a platform admin
@@ -563,27 +564,29 @@ function WorkspaceHeaderImpl({
 
                 <DropdownMenuSeparator className='mx-0' />
 
-                { isPlatformAdmin && <div className='flex flex-col gap-0.5'>
-                  <Chip
-                    leftIcon={Plus}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setIsWorkspaceMenuOpen(false)
-                      if (!canCreateWorkspace) {
-                        if (isBillingEnabled) navigateToSettings({ section: 'billing' })
-                        return
-                      }
-                      setIsCreateModalOpen(true)
-                    }}
-                    disabled={isCreatingWorkspace}
-                    title={createWorkspaceDisabledReason ?? undefined}
-                    fullWidth
-                    flush
-                    className='w-full select-none disabled:pointer-events-none disabled:opacity-50'
-                  >
-                    New workspace
-                  </Chip>
-                </div>}
+                {isPlatformAdmin && (
+                  <div className='flex flex-col gap-0.5'>
+                    <Chip
+                      leftIcon={Plus}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setIsWorkspaceMenuOpen(false)
+                        if (!canCreateWorkspace) {
+                          if (isBillingEnabled) navigateToSettings({ section: 'billing' })
+                          return
+                        }
+                        setIsCreateModalOpen(true)
+                      }}
+                      disabled={isCreatingWorkspace}
+                      title={createWorkspaceDisabledReason ?? undefined}
+                      fullWidth
+                      flush
+                      className='w-full select-none disabled:pointer-events-none disabled:opacity-50'
+                    >
+                      New workspace
+                    </Chip>
+                  </div>
+                )}
 
                 <DropdownMenuSeparator className='mx-0' />
                 <Chip

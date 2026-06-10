@@ -18,7 +18,10 @@ import {
 } from '@/lib/copilot/chat/env-integration-presence'
 import { normalizeVfsSegment } from '@/lib/copilot/vfs/normalize-segment'
 import { canonicalWorkflowVfsDir, canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
-import { getAccessibleEnvCredentials, getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
+import {
+  getAccessibleEnvCredentials,
+  getAccessibleOAuthCredentials,
+} from '@/lib/credentials/environment'
 import { listWorkspaceFiles } from '@/lib/uploads/contexts/workspace'
 import { listCustomTools } from '@/lib/workflows/custom-tools/operations'
 import { listSkills } from '@/lib/workflows/skills/operations'

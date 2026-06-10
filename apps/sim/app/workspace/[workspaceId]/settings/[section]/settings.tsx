@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
+import { cn } from '@/lib/core/utils/cn'
 import { captureEvent } from '@/lib/posthog/client'
 import { General } from '@/app/workspace/[workspaceId]/settings/components/general/general'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
@@ -12,7 +13,6 @@ import {
   isBillingEnabled,
   isCredentialSetsEnabled,
 } from '@/app/workspace/[workspaceId]/settings/navigation'
-import { cn } from '@/lib/core/utils/cn'
 
 const Admin = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/admin/admin').then((m) => m.Admin)

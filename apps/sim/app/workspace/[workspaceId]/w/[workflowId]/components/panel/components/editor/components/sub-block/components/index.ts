@@ -3,6 +3,7 @@ export { Code } from './code'
 export { ComboBox } from './combobox'
 export { ConditionInput } from './condition-input'
 export { CredentialSelector } from './credential-selector'
+export { DateInput } from './date-input/date-input'
 export { DocumentTagEntry } from './document-tag-entry'
 export { Dropdown } from './dropdown'
 export { checkEnvVarTrigger, EnvVarDropdown } from './env-var-dropdown'
@@ -23,6 +24,10 @@ export { ScheduleInfo } from './schedule-info'
 export { SelectorInput, type SelectorOverrides } from './selector-input'
 export { ShortInput } from './short-input'
 export { SkillInput } from './skill-input'
+export {
+  SlackDateInput,
+  SlackDateRangeSelector,
+} from './slack-date-range-selector/slack-date-range-selector'
 export { SliderInput } from './slider-input'
 export { SortBuilder } from './sort-builder'
 export { InputFormat } from './starter'
@@ -38,8 +43,3 @@ export { TimeInput } from './time-input'
 export { ToolInput } from './tool-input'
 export { VariablesInput } from './variables-input'
 export { WorkflowSelectorInput } from './workflow-selector'
-export { DateInput } from './date-input/date-input'
-export {
-  SlackDateInput,
-  SlackDateRangeSelector,
-} from './slack-date-range-selector/slack-date-range-selector'
