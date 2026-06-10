@@ -1200,6 +1200,12 @@ export const Sidebar = memo(function Sidebar() {
 
   const handleTaskRenameBlur = () => void taskFlyoutRename.saveRename()
 
+  const handleOpenArenaDocs = useCallback(() => {
+    window.open('/arena-ai-docs', '_blank', 'noopener,noreferrer')
+    captureEvent(posthog, 'arena_docs_opened', { source: 'help_menu' })
+  }, [posthog])
+
+
   const handleWorkflowRenameBlur = () => void workflowFlyoutRename.saveRename()
 
   const resolveWorkspaceIdFromPath = (): string | undefined => {
@@ -1779,7 +1785,7 @@ export const Sidebar = memo(function Sidebar() {
                   )}
                 >
                   <DropdownMenu>
-                    {/* <SidebarTooltip label='Help' enabled={showCollapsedTooltips}>
+                    <SidebarTooltip label='Help' enabled={showCollapsedTooltips}>
                       <DropdownMenuTrigger asChild>
                         <button
                           type='button'
@@ -1792,16 +1798,20 @@ export const Sidebar = memo(function Sidebar() {
                           </span>
                         </button>
                       </DropdownMenuTrigger>
-                    </SidebarTooltip> */}
+                    </SidebarTooltip>
                     <DropdownMenuContent align='start' side='top' sideOffset={4}>
-                      <DropdownMenuItem onSelect={handleOpenDocs}>
-                        <BookOpen className='size-[14px]' />
+                      {/* <DropdownMenuItem onSelect={handleOpenDocs}>
+                        <BookOpen className='h-[14px] w-[14px]' />
+                        Docs
+                      </DropdownMenuItem> */}
+                      <DropdownMenuItem onSelect={handleOpenArenaDocs}>
+                        <BookOpen className='h-[14px] w-[14px]' />
                         Docs
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
-                        <HelpCircle className='size-[14px]' />
+                      {/* <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
+                        <HelpCircle className='h-[14px] w-[14px]' />
                         Report an issue
-                      </DropdownMenuItem>
+                      </DropdownMenuItem> */}
                       <DropdownMenuItem onSelect={handleStartTour}>
                         <Compass className='size-[14px]' />
                         Take a tour

@@ -81,13 +81,23 @@ describe('getWorkspaceCreationPolicy', () => {
     mockGetHighestPrioritySubscription.mockResolvedValue(null)
   })
 
+  it('creates a personal workspace for new users with no existing workspaces', async () => {
+    mockDbResults.value = [[{ value: 0 }]]
+
+    const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
+
+    expect(result.canCreate).toBe(true)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.PERSONAL)
+    expect(result.currentWorkspaceCount).toBe(0)
+  })
+
   it('blocks free users once they already own one non-organization workspace', async () => {
     mockDbResults.value = [[{ value: 1 }]]
 
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
 
     expect(result.canCreate).toBe(false)
-    expect(result.workspaceMode).toBe(WORKSPACE_MODE.PERSONAL)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.GRANDFATHERED_SHARED)
     expect(result.maxWorkspaces).toBe(1)
     expect(result.currentWorkspaceCount).toBe(1)
   })
@@ -103,7 +113,7 @@ describe('getWorkspaceCreationPolicy', () => {
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
 
     expect(result.canCreate).toBe(true)
-    expect(result.workspaceMode).toBe(WORKSPACE_MODE.PERSONAL)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.GRANDFATHERED_SHARED)
     expect(result.maxWorkspaces).toBe(3)
     expect(result.currentWorkspaceCount).toBe(2)
   })
@@ -119,7 +129,7 @@ describe('getWorkspaceCreationPolicy', () => {
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
 
     expect(result.canCreate).toBe(true)
-    expect(result.workspaceMode).toBe(WORKSPACE_MODE.PERSONAL)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.GRANDFATHERED_SHARED)
     expect(result.maxWorkspaces).toBe(10)
     expect(result.currentWorkspaceCount).toBe(5)
   })
@@ -139,6 +149,17 @@ describe('getWorkspaceCreationPolicy', () => {
     expect(result.currentWorkspaceCount).toBe(10)
   })
 
+  it('creates a personal workspace when billing is disabled and the user has none', async () => {
+    mockFeatureFlags.isBillingEnabled = false
+    mockDbResults.value = [[{ value: 0 }]]
+
+    const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
+
+    expect(result.canCreate).toBe(true)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.PERSONAL)
+    expect(result.currentWorkspaceCount).toBe(0)
+  })
+
   it('allows unlimited personal workspaces when billing is disabled', async () => {
     mockFeatureFlags.isBillingEnabled = false
     mockDbResults.value = [[{ value: 9 }]]
@@ -146,7 +167,7 @@ describe('getWorkspaceCreationPolicy', () => {
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
 
     expect(result.canCreate).toBe(true)
-    expect(result.workspaceMode).toBe(WORKSPACE_MODE.PERSONAL)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.GRANDFATHERED_SHARED)
     expect(result.maxWorkspaces).toBeNull()
     expect(result.currentWorkspaceCount).toBe(9)
     expect(mockGetHighestPrioritySubscription).not.toHaveBeenCalled()

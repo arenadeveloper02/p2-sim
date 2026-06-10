@@ -506,6 +506,10 @@ export interface PostHogEventMap {
     block_type?: string
   }
 
+  arena_docs_opened: {
+    source: 'help_menu'
+  }
+
   search_result_selected: {
     result_type:
       | 'block'
