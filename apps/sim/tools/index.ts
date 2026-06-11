@@ -1803,10 +1803,6 @@ async function executeToolRequest(
       headersRecord[key] = value
     })
 
-    const contentType = ''
-    const hasTransformResponse = false
-    const prefersTextTransform = false
-
     const retryConfig = getRetryConfig(tool.request.retry, params, requestParams.method)
     const maxAttempts = retryConfig ? 1 + retryConfig.maxRetries : 1
 
@@ -1992,6 +1988,12 @@ async function executeToolRequest(
     if (!response) {
       throw lastError ?? new Error(`Request failed for ${toolId}`)
     }
+
+    const contentType = response.headers.get('content-type') || ''
+    const hasTransformResponse = Boolean(tool?.transformResponse)
+    const prefersTextTransform =
+      hasTransformResponse &&
+      (toolId === 'semrush_query' || !contentType.toLowerCase().includes('application/json'))
 
     if (!response.ok) {
       let errorData: any

@@ -11,8 +11,8 @@ export const GoogleDocsBlock: BlockConfig<GoogleDocsResponse> = {
   description: 'Read, write, and create documents',
   authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate Google Docs into the workflow. Can read, write, and create documents. Create supports GitHub Flavored Markdown (GFM) — pass markdown in content to store or import formatted documents.',
-  docsLink: 'https://docs.sim.ai/tools/google_docs',
+    'Integrate Google Docs into the workflow. Can read, write, and create documents.',
+  docsLink: 'https://docs.sim.ai/integrations/google_docs',
   category: 'tools',
   integrationType: IntegrationType.Documents,
   bgColor: '#FFFFFF',

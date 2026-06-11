@@ -35,8 +35,10 @@ import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import type { ChatContext } from '@/stores/panel'
 import {
+  ChatSurfaceProvider,
   CreditsChip,
   MothershipChat,
+  MothershipResourcesProvider,
   MothershipView,
   SuggestedActions,
   UserInput,
@@ -370,26 +372,31 @@ export function Home({ chatId, userName, userId, initialResourceId = null }: Hom
   if (!hasMessages && !showChatSkeleton) {
     return (
       <div className='relative h-full overflow-y-auto bg-[var(--bg)] [scrollbar-gutter:stable_both-edges]'>
-        <div className='absolute top-[8.5px] right-[16px] z-10'>
-          <CreditsChip />
-        </div>
+        {false && (
+          <div className='absolute top-[8.5px] right-[16px] z-10'>
+            <CreditsChip />
+          </div>
+        )}
         {/* Asymmetric padding biases the group up so the full cluster (heading + input + suggestions) sits at the optical center */}
         <div className='flex min-h-full flex-col items-center justify-center px-6 pt-[2vh] pb-[22vh]'>
           <h1 className='mb-7 max-w-[48rem] text-balance font-season text-[30px] text-[var(--text-primary)]'>
             What should we get done{firstName ? `, ${firstName}` : ''}?
           </h1>
           <div ref={initialViewInputRef} className='relative w-full max-w-[48rem]'>
-            <UserInput
-              ref={initialViewUserInputRef}
-              defaultValue={initialPrompt}
-              draftScopeKey={draftScopeKey}
-              onSubmit={handleSubmit}
-              isSending={isSending}
-              onStopGeneration={handleStopGeneration}
+            <ChatSurfaceProvider
               userId={userId}
               onContextAdd={handleContextAdd}
               onContextRemove={handleInitialContextRemove}
-            />
+            >
+              <UserInput
+                ref={initialViewUserInputRef}
+                defaultValue={initialPrompt}
+                draftScopeKey={draftScopeKey}
+                onSubmit={handleSubmit}
+                isSending={isSending}
+                onStopGeneration={handleStopGeneration}
+              />
+            </ChatSurfaceProvider>
             {/* Anchored out of flow so expanding/collapsing never shifts the centered input */}
             <div className='absolute inset-x-0 top-full'>
               <SuggestedActions
@@ -443,22 +450,25 @@ export function Home({ chatId, userName, userId, initialResourceId = null }: Hom
         </div>
       )}
 
-      <MothershipView
-        ref={mothershipRef}
-        workspaceId={workspaceId}
-        chatId={resolvedChatId}
-        resources={resources}
-        activeResourceId={activeResourceId}
-        onSelectResource={setActiveResourceId}
-        onAddResource={addResource}
-        onRemoveResource={removeResource}
-        onReorderResources={reorderResources}
-        onCollapse={collapseResource}
-        isCollapsed={isResourceCollapsed}
-        previewSession={previewSession}
-        genericResourceData={genericResourceData ?? undefined}
-        className={skipResourceTransition ? '!transition-none' : undefined}
-      />
+      <MothershipResourcesProvider
+        selectResource={setActiveResourceId}
+        addResource={addResource}
+        removeResource={removeResource}
+        reorderResources={reorderResources}
+        collapseResource={collapseResource}
+      >
+        <MothershipView
+          ref={mothershipRef}
+          workspaceId={workspaceId}
+          chatId={resolvedChatId}
+          resources={resources}
+          activeResourceId={activeResourceId}
+          isCollapsed={isResourceCollapsed}
+          previewSession={previewSession}
+          genericResourceData={genericResourceData ?? undefined}
+          className={skipResourceTransition ? '!transition-none' : undefined}
+        />
+      </MothershipResourcesProvider>
 
       {isResourceCollapsed && (
         <div className='absolute top-[8.5px] right-[16px]'>
