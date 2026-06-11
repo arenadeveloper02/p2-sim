@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { defineI18nUI } from 'fumadocs-ui/i18n'
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
 import { RootProvider } from 'fumadocs-ui/provider/next'
+import { Geist_Mono, Inter } from 'next/font/google'
 import {
   SidebarFolder,
   SidebarItem,
@@ -13,7 +14,20 @@ import { i18n } from '@/lib/i18n'
 import { serializeJsonLd } from '@/lib/json-ld'
 import { source } from '@/lib/source'
 import { DOCS_BASE_URL } from '@/lib/urls'
+import { season } from '@/app/fonts/season'
 import '../global.css'
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-geist-sans',
+  display: 'swap',
+})
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+  display: 'swap',
+})
 
 /** Fonts loaded via link in head to avoid next/font Turbopack resolution during build. */
 const FONT_LINKS = (
@@ -81,7 +95,11 @@ export default async function Layout({ children, params }: LayoutProps) {
   }
 
   return (
-    <html lang={lang} suppressHydrationWarning>
+    <html
+      lang={lang}
+      className={`${inter.variable} ${geistMono.variable} ${season.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         {FONT_LINKS}
         <script

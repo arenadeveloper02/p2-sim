@@ -237,7 +237,7 @@ export function ChatDeploy({
     }
 
     if (!formData.department?.trim()) {
-      newErrors.general = 'Department is required'
+      newErrors.general = 'Category is required'
     }
 
     setErrors(newErrors)
@@ -489,13 +489,13 @@ export function ChatDeploy({
         <div className='space-y-[12px]'>
           <div>
             <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
-              Department
+              Category
             </Label>
             <CustomSelect
               value={formData.department || ''}
               onChange={(value) => updateField('department', value)}
               disabled={chatSubmitting}
-              placeholder='Select department'
+              placeholder='Select category'
               options={CATEGORIES.map((cat) => ({ value: cat.value, label: cat.label }))}
             />
           </div>
