@@ -309,7 +309,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       const embeddingModels = Array.from(
         new Set(
           accessChecks
-            .filter((ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true)
+            .filter(
+              (ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true
+            )
             .map((ac) => ac.knowledgeBase.embeddingModel)
         )
       )
