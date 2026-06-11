@@ -30,7 +30,7 @@ interface ResolvedContext {
 }
 
 const ImageGenerationWrapperSchema = z.object({
-  baseToolId: z.enum(['openai_image', 'google_imagen', 'google_nano_banana']),
+  baseToolId: z.enum(['openai_image', 'google_imagen', 'google_nano_banana', 'image_generate']),
   params: z.record(z.string(), z.unknown()),
 })
 
@@ -86,6 +86,51 @@ function extractImagesFromOutput(output: Record<string, unknown>): string[] {
 
 function getOutputMetadata(output: Record<string, unknown>): Record<string, unknown> {
   return isRecord(output.metadata) ? output.metadata : {}
+}
+
+function getStringParam(params: Record<string, unknown>, key: string): string | undefined {
+  const value = params[key]
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined
+}
+
+function resolveExecutionToolId(
+  baseToolId: z.infer<typeof ImageGenerationWrapperSchema>['baseToolId'],
+  params: Record<string, unknown>
+): 'openai_image' | 'google_imagen' | 'google_nano_banana' | 'image_generate' {
+  if (baseToolId !== 'image_generate') {
+    return baseToolId
+  }
+
+  const provider = getStringParam(params, 'provider') ?? 'openai'
+  if (provider === 'openai') {
+    return 'openai_image'
+  }
+  if (provider === 'gemini') {
+    return 'google_nano_banana'
+  }
+  return 'image_generate'
+}
+
+function buildExecutionParams(
+  toolId: ReturnType<typeof resolveExecutionToolId>,
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  if (toolId === 'google_nano_banana') {
+    return {
+      ...params,
+      imageSize: params.imageSize ?? params.resolution,
+    }
+  }
+
+  if (toolId === 'image_generate') {
+    return {
+      ...params,
+      __skipSmartWrapper: true,
+      __skipHostedKeyHandling: true,
+    }
+  }
+
+  return params
 }
 
 function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
@@ -174,8 +219,9 @@ export async function POST(request: NextRequest) {
     const inputImageWarning = normalizeOptionalString(validated.params.inputImageWarning)
     const promptToExecute =
       normalizeOptionalString(singleImagePrompt) ?? String(baseParams.prompt ?? '')
+    const executionToolId = resolveExecutionToolId(validated.baseToolId, validated.params)
     const resolvedBaseParams = applyNanoBananaPromptImageParams({
-      baseToolId: validated.baseToolId,
+      baseToolId: executionToolId,
       baseParams: {
         ...baseParams,
         ...(promptToExecute ? { prompt: promptToExecute } : {}),
@@ -187,7 +233,7 @@ export async function POST(request: NextRequest) {
 
     if (inputImageWarning) {
       logger.warn('Image generation input warning', {
-        baseToolId: validated.baseToolId,
+        baseToolId: executionToolId,
         warning: inputImageWarning,
       })
     }
@@ -195,7 +241,8 @@ export async function POST(request: NextRequest) {
     const resolvedContext = resolvedBaseParams._context as ResolvedContext | undefined
 
     logger.info('Executing image generation wrapper', {
-      baseToolId: validated.baseToolId,
+      baseToolId: executionToolId,
+      requestedBaseToolId: validated.baseToolId,
       imageCount,
       hasPromptImageUrl: Boolean(promptImageUrl),
       singleImagePromptsCount: singleImagePrompts?.length ?? 0,
@@ -215,14 +262,11 @@ export async function POST(request: NextRequest) {
           const promptForImage =
             normalizeOptionalString(singleImagePrompts?.[index]) ?? promptToExecute
           const result = await executeTool(
-            validated.baseToolId,
-            {
+            executionToolId,
+            buildExecutionParams(executionToolId, {
               ...resolvedBaseParams,
               ...(promptForImage ? { prompt: promptForImage } : {}),
-            },
-            false,
-            undefined,
-            { exactToolId: true }
+            })
           )
           return { status: 'fulfilled' as const, value: result }
         } catch (err) {
@@ -249,7 +293,7 @@ export async function POST(request: NextRequest) {
 
     if (successfulResults.length === 0) {
       logger.error('All image generation attempts failed', {
-        baseToolId: validated.baseToolId,
+        baseToolId: executionToolId,
         imageCount,
         failures: failureMessages,
       })
@@ -265,7 +309,7 @@ export async function POST(request: NextRequest) {
 
     if (failureMessages.length > 0) {
       logger.warn('Partial image generation failure', {
-        baseToolId: validated.baseToolId,
+        baseToolId: executionToolId,
         requested: imageCount,
         succeeded: successfulResults.length,
         failed: failureMessages.length,
@@ -293,6 +337,18 @@ export async function POST(request: NextRequest) {
         ? firstOutput.content
         : '')
     const outputMetadata = getOutputMetadata(firstOutput)
+    const provider =
+      getStringParam(firstOutput, 'provider') || getStringParam(outputMetadata, 'provider') || ''
+    const model =
+      getStringParam(firstOutput, 'model') || getStringParam(outputMetadata, 'model') || ''
+    const falaiCostDollars = successfulResults.reduce((total, result) => {
+      if (!isRecord(result.output)) return total
+      const cost = result.output.__falaiCostDollars
+      return typeof cost === 'number' && Number.isFinite(cost) ? total + cost : total
+    }, 0)
+    const falaiBilling = successfulResults
+      .map((result) => (isRecord(result.output) ? result.output.__falaiBilling : undefined))
+      .filter((billing) => billing !== undefined)
     const warnings = [
       ...getMetadataWarnings(outputMetadata),
       ...(inputImageWarning ? [inputImageWarning] : []),
@@ -308,15 +364,22 @@ export async function POST(request: NextRequest) {
       output: {
         content: primaryContent,
         image: primaryImage,
+        imageUrl: primaryImage,
         images,
+        provider,
+        model,
         metadata: {
           ...outputMetadata,
+          provider,
+          model,
           count: images.length,
           requested: imageCount,
           failed: failureMessages.length,
           ...(warnings.length > 0 ? { warnings } : {}),
           ...(s3UploadFailed ? { s3UploadFailed } : {}),
         },
+        ...(falaiCostDollars > 0 ? { __falaiCostDollars: falaiCostDollars } : {}),
+        ...(falaiBilling.length > 0 ? { __falaiBilling: { requests: falaiBilling } } : {}),
         ...(s3UploadFailed ? { s3UploadFailed } : {}),
       },
     })

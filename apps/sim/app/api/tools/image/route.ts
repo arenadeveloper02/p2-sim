@@ -15,6 +15,7 @@ import {
   validationErrorResponse,
 } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
   secureFetchWithPinnedIP,
@@ -83,6 +84,23 @@ interface StoredImageResponse {
   __falaiBilling?: FalAICostMetadata
 }
 
+function resolveImageProviderApiKey(provider: ImageProvider, apiKey: string | undefined): string {
+  const trimmedKey = apiKey?.trim()
+  if (trimmedKey) {
+    return trimmedKey
+  }
+
+  if (provider === 'openai') {
+    return getRotatingApiKey('openai')
+  }
+
+  if (provider === 'gemini') {
+    return getRotatingApiKey('google')
+  }
+
+  throw new Error('API key is required')
+}
+
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
   logger.info(`[${requestId}] Image generation request started`)
@@ -111,7 +129,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const body = parsed.data.body
     const provider = body.provider as ImageProvider
-    const { apiKey, model, prompt } = body
+    const { model, prompt } = body
 
     if (prompt.length < 3 || prompt.length > 4000) {
       return NextResponse.json(
@@ -124,6 +142,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     let imageResult: GeneratedImageResult
     try {
+      const apiKey = resolveImageProviderApiKey(provider, body.apiKey)
       if (provider === 'openai') {
         imageResult = await generateWithOpenAI(apiKey, body, requestId, logger)
       } else if (provider === 'gemini') {

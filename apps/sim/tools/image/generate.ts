@@ -2,6 +2,16 @@ import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 import type { ImageGenerationParams, ImageGenerationResponse } from '@/tools/image/types'
 import type { ToolConfig } from '@/tools/types'
 
+interface ImageGenerationRuntimeParams extends ImageGenerationParams {
+  _context?: { workspaceId?: string; workflowId?: string; executionId?: string }
+  __usingHostedKey?: boolean
+  __skipHostedKeyHandling?: boolean
+  __skipSmartWrapper?: boolean
+  workspaceId?: string
+  workflowId?: string
+  executionId?: string
+}
+
 export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGenerationResponse> = {
   id: 'image_generate',
   name: 'Image Generator',
@@ -17,9 +27,10 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     },
     apiKey: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'Provider API key',
+      description:
+        'Provider API key. Only required for Fal.ai BYOK; OpenAI and Gemini use hosted keys.',
     },
     model: {
       type: 'string',
@@ -115,7 +126,9 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
   },
 
   hosting: {
-    enabled: (params) => params.provider === 'falai',
+    enabled: (params) =>
+      params.provider === 'falai' &&
+      (params as ImageGenerationRuntimeParams).__skipHostedKeyHandling !== true,
     envKeyPrefix: 'FALAI_API_KEY',
     apiKeyParam: 'apiKey',
     byokProviderId: 'falai',
@@ -147,44 +160,70 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
   },
 
   request: {
-    url: '/api/tools/image',
+    url: (params) =>
+      (params as ImageGenerationRuntimeParams).__skipSmartWrapper
+        ? '/api/tools/image'
+        : '/api/tools/image-generation',
     method: 'POST',
+    timeout: 300000,
     headers: () => ({
       'Content-Type': 'application/json',
     }),
-    body: (
-      params: ImageGenerationParams & {
-        _context?: { workspaceId?: string; workflowId?: string; executionId?: string }
-        __usingHostedKey?: boolean
+    body: (params: ImageGenerationRuntimeParams) => {
+      const requestParams = {
+        provider: params.provider,
+        apiKey: params.apiKey,
+        model: params.model,
+        prompt: params.prompt,
+        size: params.size,
+        aspectRatio: params.aspectRatio,
+        resolution: params.resolution,
+        quality: params.quality,
+        background: params.background,
+        outputFormat: params.outputFormat,
+        moderation: params.moderation,
+        safetyTolerance: params.safetyTolerance,
+        numImages: params.numImages,
+        seed: params.seed,
+        enableSafetyChecker: params.enableSafetyChecker,
+        enableWebSearch: params.enableWebSearch,
+        thinkingLevel: params.thinkingLevel,
+        inputImage: params.inputImage,
+        inputImages: params.inputImages,
+        inputImageUrl: params.inputImageUrl,
+        inputImageUrls: params.inputImageUrls,
+        inputImageMimeType: params.inputImageMimeType,
+        inputImageWarning: params.inputImageWarning,
+        workspaceId: params._context?.workspaceId ?? params.workspaceId,
+        workflowId: params._context?.workflowId ?? params.workflowId,
+        executionId: params._context?.executionId ?? params.executionId,
+        _context: params._context,
+        __usingHostedKey: params.__usingHostedKey,
       }
-    ) => ({
-      provider: params.provider,
-      apiKey: params.apiKey,
-      model: params.model,
-      prompt: params.prompt,
-      size: params.size,
-      aspectRatio: params.aspectRatio,
-      resolution: params.resolution,
-      quality: params.quality,
-      background: params.background,
-      outputFormat: params.outputFormat,
-      moderation: params.moderation,
-      safetyTolerance: params.safetyTolerance,
-      numImages: params.numImages,
-      seed: params.seed,
-      enableSafetyChecker: params.enableSafetyChecker,
-      enableWebSearch: params.enableWebSearch,
-      thinkingLevel: params.thinkingLevel,
-      workspaceId: params._context?.workspaceId,
-      workflowId: params._context?.workflowId,
-      executionId: params._context?.executionId,
-      useHostedCostTracking: params.__usingHostedKey === true,
-    }),
+
+      if (!params.__skipSmartWrapper) {
+        return {
+          baseToolId: 'image_generate',
+          params: requestParams,
+        }
+      }
+
+      return {
+        ...requestParams,
+        useHostedCostTracking: params.__usingHostedKey === true,
+      }
+    },
   },
 
   transformResponse: async (response: Response) => {
     const data = (await response.json()) as {
+      success?: boolean
       error?: string
+      output?: Partial<ImageGenerationResponse['output']> & {
+        image?: unknown
+        images?: unknown[]
+        s3UploadFailed?: boolean
+      }
       content?: string
       image?: string
       imageUrl?: string
@@ -198,7 +237,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       __falaiBilling?: ImageGenerationResponse['output']['__falaiBilling']
     }
 
-    if (!response.ok || data.error) {
+    if (!response.ok || data.error || data.success === false) {
       return {
         success: false,
         error: data.error || 'Image generation failed',
@@ -212,6 +251,44 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
             provider: data.provider || '',
             model: data.model || '',
           },
+        },
+      }
+    }
+
+    if (data.success === true && data.output) {
+      const output = data.output
+      const image =
+        output.image ||
+        (typeof output.imageUrl === 'string' && output.imageUrl.length > 0
+          ? {
+              name: 'generated-image.png',
+              url: output.imageUrl,
+              mimeType: output.metadata?.contentType || 'image/png',
+            }
+          : '')
+      const imageUrl =
+        typeof output.imageUrl === 'string'
+          ? output.imageUrl
+          : typeof output.image === 'string'
+            ? output.image
+            : ''
+      const metadata = output.metadata ?? { provider: '', model: '' }
+
+      return {
+        success: true,
+        output: {
+          content: output.content || imageUrl || 'direct-image',
+          image,
+          imageUrl,
+          provider: output.provider || metadata.provider || '',
+          model: output.model || metadata.model || '',
+          metadata: {
+            ...metadata,
+            provider: output.provider || metadata.provider || '',
+            model: output.model || metadata.model || '',
+          },
+          __falaiCostDollars: output.__falaiCostDollars,
+          __falaiBilling: output.__falaiBilling,
         },
       }
     }
@@ -236,9 +313,9 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         provider: data.provider || data.metadata?.provider || '',
         model: data.model || data.metadata?.model || '',
         metadata: {
+          ...data.metadata,
           provider: data.provider || data.metadata?.provider || '',
           model: data.model || data.metadata?.model || '',
-          ...data.metadata,
         },
         __falaiCostDollars: data.__falaiCostDollars,
         __falaiBilling: data.__falaiBilling,

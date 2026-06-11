@@ -76,10 +76,7 @@ describe('Image Generation Wrapper API Route', () => {
         model: 'gemini-3-pro-image-preview',
         prompt: 'Fuse these images together',
         inputImages,
-      }),
-      false,
-      undefined,
-      { exactToolId: true }
+      })
     )
     expect(mockExecuteTool.mock.calls[0]?.[1]).not.toHaveProperty('inputImage')
     expect(data).toMatchObject({
@@ -111,10 +108,7 @@ describe('Image Generation Wrapper API Route', () => {
         model: 'gemini-3-pro-image-preview',
         prompt: 'Edit this image',
         inputImage: 'https://example.com/single-image.png',
-      }),
-      false,
-      undefined,
-      { exactToolId: true }
+      })
     )
   })
 
@@ -150,10 +144,7 @@ describe('Image Generation Wrapper API Route', () => {
       expect.objectContaining({
         prompt: 'Give me variation 1 with a blue jersey',
         inputImage: 'https://example.com/source.png',
-      }),
-      false,
-      undefined,
-      { exactToolId: true }
+      })
     )
     expect(mockExecuteTool).toHaveBeenNthCalledWith(
       2,
@@ -161,10 +152,7 @@ describe('Image Generation Wrapper API Route', () => {
       expect.objectContaining({
         prompt: 'Give me variation 2 with a red jersey',
         inputImage: 'https://example.com/source.png',
-      }),
-      false,
-      undefined,
-      { exactToolId: true }
+      })
     )
     expect(mockExecuteTool).toHaveBeenNthCalledWith(
       3,
@@ -172,11 +160,114 @@ describe('Image Generation Wrapper API Route', () => {
       expect.objectContaining({
         prompt: 'Give me variation 3 with a green jersey',
         inputImage: 'https://example.com/source.png',
-      }),
-      false,
-      undefined,
-      { exactToolId: true }
+      })
     )
+  })
+
+  it('should route unified OpenAI requests through the server-key OpenAI image tool', async () => {
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'openai',
+        model: 'gpt-image-2',
+        prompt: 'Generate one product hero image',
+        size: '1024x1024',
+        quality: 'low',
+      },
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'openai_image',
+      expect.objectContaining({
+        provider: 'openai',
+        model: 'gpt-image-2',
+        prompt: 'Generate one product hero image',
+        size: '1024x1024',
+        quality: 'low',
+      })
+    )
+  })
+
+  it('should route unified Gemini requests through Nano Banana with prompt image refs', async () => {
+    mockResolveImageGenerationCount.mockResolvedValue({
+      imageCount: 1,
+      promptImageUrl: 'https://example.com/source.png',
+      singleImagePrompt: 'Edit this product image',
+      singleImagePrompts: ['Edit this product image'],
+    })
+
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'gemini',
+        model: 'gemini-3-pro-image-preview',
+        prompt: 'Edit https://example.com/source.png into a studio shot',
+        resolution: '2K',
+      },
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'google_nano_banana',
+      expect.objectContaining({
+        provider: 'gemini',
+        model: 'gemini-3-pro-image-preview',
+        prompt: 'Edit this product image',
+        inputImage: 'https://example.com/source.png',
+        imageSize: '2K',
+      })
+    )
+  })
+
+  it('should route unified Fal.ai requests through direct image_generate execution', async () => {
+    mockExecuteTool.mockResolvedValue({
+      success: true,
+      output: {
+        image: 'https://example.com/falai.png',
+        provider: 'falai',
+        model: 'nano-banana-2',
+        metadata: { provider: 'falai', model: 'nano-banana-2' },
+        __falaiCostDollars: 0.1,
+        __falaiBilling: { endpointId: 'fal-ai/nano-banana-2', requestId: 'fal-123' },
+      },
+    })
+
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'falai',
+        apiKey: 'fal-key',
+        model: 'nano-banana-2',
+        prompt: 'Generate one image',
+      },
+    })
+
+    const response = await POST(request)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'image_generate',
+      expect.objectContaining({
+        provider: 'falai',
+        apiKey: 'fal-key',
+        model: 'nano-banana-2',
+        __skipSmartWrapper: true,
+        __skipHostedKeyHandling: true,
+      })
+    )
+    expect(data.output).toMatchObject({
+      image: 'https://example.com/falai.png',
+      imageUrl: 'https://example.com/falai.png',
+      provider: 'falai',
+      model: 'nano-banana-2',
+      __falaiCostDollars: 0.1,
+    })
   })
 
   it('should return a helpful error for truncated inline image JSON payloads', async () => {

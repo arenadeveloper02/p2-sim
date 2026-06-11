@@ -827,6 +827,25 @@ describe.concurrent('Blocks Module', () => {
       expect(getBlock('video_generator_v2')?.hideFromToolbar).toBe(true)
     })
 
+    it('should expose GPT Image 2 and hosted OpenAI/Gemini inputs on image generator v2', () => {
+      const imageGeneratorBlock = getBlock('image_generator_v2')
+      const openAIModelSubBlock = imageGeneratorBlock?.subBlocks.find(
+        (sb) =>
+          sb.id === 'model' && sb.condition?.field === 'provider' && sb.condition.value === 'openai'
+      )
+      const nonFalApiKeySubBlock = imageGeneratorBlock?.subBlocks.find(
+        (sb) =>
+          sb.id === 'apiKey' && sb.condition?.field === 'provider' && sb.condition.not === true
+      )
+      const geminiReferenceSubBlock = imageGeneratorBlock?.subBlocks.find(
+        (sb) => sb.id === 'inputImage' && sb.condition?.field === 'provider'
+      )
+
+      expect(openAIModelSubBlock?.options?.map((option) => option.id)).toContain('gpt-image-2')
+      expect(nonFalApiKeySubBlock).toBeUndefined()
+      expect(geminiReferenceSubBlock?.condition?.value).toBe('gemini')
+    })
+
     it('should mark the agent model combobox as command-searchable', () => {
       const agentBlock = getBlock('agent')
       const modelSubBlock = agentBlock?.subBlocks.find((sb) => sb.id === 'model')
@@ -837,7 +856,7 @@ describe.concurrent('Blocks Module', () => {
     })
 
     it('should hide generator API keys on hosted only for Fal.ai providers', () => {
-      for (const blockType of ['image_generator_v2', 'video_generator_v3']) {
+      for (const blockType of ['video_generator_v3']) {
         const block = getBlock(blockType)
         const apiKeySubBlocks = block?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
 
@@ -855,6 +874,21 @@ describe.concurrent('Blocks Module', () => {
         expect(nonFalApiKeySubBlock).toBeDefined()
         expect(nonFalApiKeySubBlock?.hideWhenHosted).not.toBe(true)
       }
+
+      const imageBlock = getBlock('image_generator_v2')
+      const imageApiKeySubBlocks = imageBlock?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
+      const imageFalApiKeySubBlock = imageApiKeySubBlocks.find(
+        (sb) => sb.condition?.field === 'provider' && sb.condition.value === 'falai'
+      )
+      const imageNonFalApiKeySubBlock = imageApiKeySubBlocks.find(
+        (sb) =>
+          sb.condition?.field === 'provider' &&
+          sb.condition.value === 'falai' &&
+          sb.condition.not === true
+      )
+
+      expect(imageFalApiKeySubBlock?.hideWhenHosted).toBe(true)
+      expect(imageNonFalApiKeySubBlock).toBeUndefined()
     })
   })
 
