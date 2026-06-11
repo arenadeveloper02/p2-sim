@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { MoreHorizontal, Pin } from 'lucide-react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
@@ -1242,20 +1243,55 @@ export const Sidebar = memo(function Sidebar() {
     ])
   )
 
-  function getRedirectUrl(hostname: string) {
-    let redirectUrl = ''
-    if (hostname === 'dev-agent.thearena.ai') {
-      redirectUrl = 'https://dev.thearena.ai/hub/agents'
-    } else if (hostname === 'test-agent.thearena.ai') {
-      redirectUrl = 'https://test.thearena.ai/hub/agents'
-    } else if (hostname === 'sandbox-agent.thearena.ai') {
-      redirectUrl = 'https://sandbox.thearena.ai/hub/agents'
-    } else if (hostname === 'agent.thearena.ai') {
-      redirectUrl = 'https://app.thearena.ai/hub/agents'
-    } else {
-      redirectUrl = 'https://app.thearena.ai/hub/agents'
-    }
-    return redirectUrl
+  const renderArenaLogo = () => {
+    return (
+      <>
+        {arenaHubAgentsUrl ? (
+          <div
+            className={cn(
+              'flex flex-shrink-0 items-center px-2.5 pb-1.5',
+              isCollapsed && 'justify-center'
+            )}
+          >
+            <SidebarTooltip label='Back to Arena agents' enabled={isCollapsed} side='right'>
+              <Link
+                href={arenaHubAgentsUrl}
+                className={cn(
+                  'group flex h-[30px] min-w-0 items-center gap-2 rounded-lg px-1 text-[var(--text-body)] text-sm hover-hover:bg-[var(--surface-hover)]',
+                  isCollapsed ? 'w-[30px] flex-shrink-0 justify-center' : 'flex-1'
+                )}
+                aria-label='Back to Arena agents'
+              >
+                <ArrowLeft className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+                <span className='sidebar-collapse-hide truncate font-base'>Back</span>
+              </Link>
+            </SidebarTooltip>
+          </div>
+        ) : null}
+        {brand?.logoUrlBlacktext && (
+          <div className='flex h-[40px] flex-shrink-0 items-center pl-2'>
+            <Link
+              href={`/workspace/${workspaceId}/home`}
+              className={cn(
+                'sidebar-collapse-hide !transition-none group items-center rounded-[8px] hover-hover:bg-[var(--surface-hover)]',
+                isCollapsed ? 'contents' : 'flex'
+              )}
+              tabIndex={isCollapsed ? -1 : undefined}
+              aria-label={brand.name}
+            >
+              <Image
+                src={brand?.logoUrlBlacktext || ''}
+                alt={brand?.name || ''}
+                width={34}
+                height={28}
+                className=' flex-shrink-0 object-contain'
+                unoptimized
+              />
+            </Link>
+          </div>
+        )}
+      </>
+    )
   }
 
   return (
@@ -1286,28 +1322,7 @@ export const Sidebar = memo(function Sidebar() {
           onClick={handleSidebarClick}
         >
           <div className='flex h-full flex-col'>
-            {arenaHubAgentsUrl ? (
-              <div
-                className={cn(
-                  'flex flex-shrink-0 items-center px-2.5 pb-1.5',
-                  isCollapsed && 'justify-center'
-                )}
-              >
-                <SidebarTooltip label='Back to Arena agents' enabled={isCollapsed} side='right'>
-                  <Link
-                    href={arenaHubAgentsUrl}
-                    className={cn(
-                      'group flex h-[30px] min-w-0 items-center gap-2 rounded-lg px-1 text-[var(--text-body)] text-sm hover-hover:bg-[var(--surface-hover)]',
-                      isCollapsed ? 'w-[30px] flex-shrink-0 justify-center' : 'flex-1'
-                    )}
-                    aria-label='Back to Arena agents'
-                  >
-                    <ArrowLeft className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
-                    <span className='sidebar-collapse-hide truncate font-base'>Back</span>
-                  </Link>
-                </SidebarTooltip>
-              </div>
-            ) : null}
+            {renderArenaLogo()}
             <div className='flex flex-shrink-0 items-center px-2 pt-3'>
               <WorkspaceHeader
                 activeWorkspace={activeWorkspace}
