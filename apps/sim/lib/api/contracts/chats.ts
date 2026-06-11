@@ -126,7 +126,7 @@ export const deployedChatConfigSchema = z.object({
 export type DeployedChatConfig = z.output<typeof deployedChatConfigSchema>
 
 export const deployedChatAuthBodySchema = z.object({
-  password: z.string().optional(),
+  password: z.string().max(1024, 'Password is too long').optional(),
   email: z.string().email('Invalid email format').optional().or(z.literal('')),
 })
 export type DeployedChatAuthBody = z.input<typeof deployedChatAuthBodySchema>
@@ -141,26 +141,33 @@ export const goldenQueriesSchema = z.object({
   deleteMode: z.enum(['hard', 'soft']).optional(),
 })
 
-export const deployedChatFileSchema = z
-  .object({
-    name: z.string().min(1, 'File name is required'),
-    type: z.string().min(1, 'File type is required'),
-    size: z.number().positive('File size must be positive'),
-    data: z.string().min(1, 'File data is required'),
-    url: z.string().optional(),
-    lastModified: z.number().optional(),
-  })
-  .refine((file) => Boolean(file.data?.trim() || file.url?.trim()), {
-    message: 'File data or url is required',
-  })
+const MAX_CHAT_INPUT_CHARS = 1_000_000
+const MAX_CHAT_FILE_DATA_CHARS = 14 * 1024 * 1024
+const MAX_CHAT_FILES = 15
+
+export const deployedChatFileSchema = z.object({
+  name: z.string().min(1, 'File name is required').max(255, 'File name is too long'),
+  type: z.string().min(1, 'File type is required').max(255, 'File type is too long'),
+  size: z.number().positive('File size must be positive'),
+  data: z
+    .string()
+    .min(1, 'File data is required')
+    .max(MAX_CHAT_FILE_DATA_CHARS, 'File data exceeds the maximum allowed size'),
+  url: z.string().optional(),
+  lastModified: z.number().optional(),
+})
 
 export const deployedChatPostBodySchema = z.object({
-  input: z.string().optional(),
-  password: z.string().optional(),
+  input: z.string().max(MAX_CHAT_INPUT_CHARS, 'Input is too long').optional(),
+  password: z.string().max(1024, 'Password is too long').optional(),
   email: z.string().email('Invalid email format').optional().or(z.literal('')),
-  conversationId: z.string().optional(),
+  conversationId: z.string().max(256, 'Conversation ID is too long').optional(),
   chatId: z.string().optional(), // chatId for tracking conversation context
-  files: z.array(deployedChatFileSchema).optional().default([]),
+  files: z
+    .array(deployedChatFileSchema)
+    .max(MAX_CHAT_FILES, `A maximum of ${MAX_CHAT_FILES} files is allowed`)
+    .optional()
+    .default([]),
   startBlockInputs: z.record(z.string(), z.unknown()).optional(),
 })
 export type DeployedChatPostBody = z.input<typeof deployedChatPostBodySchema>

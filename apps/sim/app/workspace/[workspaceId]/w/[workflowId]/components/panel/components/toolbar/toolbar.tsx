@@ -765,7 +765,7 @@ export const Toolbar = memo(
             onContextMenu={handleItemContextMenu}
           />
           <ToolbarSection
-            label='Blocks'
+            label='Core Blocks'
             tooltip='Core building blocks for agent logic'
             sectionKey='blocks'
             items={filteredBlocks}
@@ -780,7 +780,7 @@ export const Toolbar = memo(
             onContextMenu={handleItemContextMenu}
           />
           <ToolbarSection
-            label='Tools'
+            label='Integrations'
             tooltip='Connect agents to external services'
             sectionKey='tools'
             items={filteredTools}

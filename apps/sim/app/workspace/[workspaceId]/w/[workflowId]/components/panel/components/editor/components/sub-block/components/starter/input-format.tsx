@@ -26,8 +26,8 @@ import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/compon
 import { getActiveWorkflowSearchHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
-import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 import {
   getLinkedinProfileSectionComboboxOptions,
   getLinkedinProfileSectionLabel,
@@ -67,21 +67,7 @@ interface FieldFormatProps {
   showDescription?: boolean
   valuePlaceholder?: string
   descriptionPlaceholder?: string
-  config?: {
-    inputFormatConfig?: {
-      title?: string
-      fieldNameLabel?: string
-      fieldNamePlaceholder?: string
-      fieldValueLabel?: string
-      fieldValuePlaceholder?: string
-      mentionTargetLabel?: string
-      mentionTargetPlaceholder?: string
-      mentionTargetOptions?: ComboboxOption[]
-      profileSectionPlaceholder?: string
-      searchFilterPlaceholder?: string
-    }
-  }
-  activeSearchTarget?: ActiveSearchTarget | null
+  config?: any
 }
 
 /**
@@ -144,7 +130,6 @@ export function FieldFormat({
   valuePlaceholder = 'Enter default value',
   descriptionPlaceholder = 'Describe this field',
   config,
-  activeSearchTarget,
 }: FieldFormatProps) {
   const isLinkedinMentions = variant === 'linkedin_comment_mentions'
   const isLinkedinProfileSections = variant === 'linkedin_profile_sections'
@@ -165,6 +150,8 @@ export function FieldFormat({
   const linkedinSearchFilterOptions = useMemo(() => getLinkedinSearchFilterComboboxOptions(), [])
   const mentionTargetOptions =
     inputFormatConfig?.mentionTargetOptions ?? DEFAULT_MENTION_TARGET_OPTIONS
+
+  const activeSearchTarget = useActiveSearchTarget()
   const [storeValue, setStoreValue] = useSubBlockValue<Field[]>(blockId, subBlockId)
 
   /**

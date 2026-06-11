@@ -18,13 +18,13 @@ import { getExtensionFromMimeType } from '@/lib/uploads/utils/file-utils'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { START_FILES_REF } from '@/executor/constants'
 import {
   useUploadWorkspaceFile,
   useWorkspaceFiles,
   workspaceFilesKeys,
 } from '@/hooks/queries/workspace-files'
-import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -43,7 +43,6 @@ interface FileUploadProps {
   isPreview?: boolean
   previewValue?: any | null
   disabled?: boolean
-  activeSearchTarget?: ActiveSearchTarget | null
 }
 
 interface UploadedFile {
@@ -172,8 +171,8 @@ export function FileUpload({
   isPreview = false,
   previewValue,
   disabled = false,
-  activeSearchTarget,
 }: FileUploadProps) {
+  const activeSearchTarget = useActiveSearchTarget()
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId)
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
   const [uploadProgress, setUploadProgress] = useState(0)
