@@ -7,8 +7,7 @@ FROM oven/bun:1.3.13-slim AS base
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv python3-dev build-essential \
-    curl ca-certificates bash ffmpeg \
+    python3 python3-pip python3-venv make g++ curl ca-certificates bash ffmpeg \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs
 
@@ -98,7 +97,7 @@ ENV NODE_ENV=production
 # Install Python + Chrome + Chromedriver
 # ========================================
 RUN apt-get update && apt-get install -y \
-      python3 python3-pip python3-venv python3-dev build-essential bash ffmpeg \
+      python3 python3-pip python3-venv bash ffmpeg \
       wget gnupg ca-certificates \
       xvfb \
       libnss3 \
@@ -175,8 +174,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/guardrails/validate_
 # Install Python dependencies with pip cache mount for faster rebuilds
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m venv ./apps/sim/lib/guardrails/venv && \
-    ./apps/sim/lib/guardrails/venv/bin/pip install --upgrade pip setuptools wheel && \
-    ./apps/sim/lib/guardrails/venv/bin/pip install --prefer-binary -r ./apps/sim/lib/guardrails/requirements.txt && \
+    ./apps/sim/lib/guardrails/venv/bin/pip install --upgrade pip && \
+    ./apps/sim/lib/guardrails/venv/bin/pip install -r ./apps/sim/lib/guardrails/requirements.txt && \
     chown -R nextjs:nodejs /app/apps/sim/lib/guardrails
 
 # Create .next/cache directory with correct ownership
