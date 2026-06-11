@@ -88,6 +88,7 @@ import {
   groupWorkflowsByFolder,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/utils'
 import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
+import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
@@ -605,6 +606,7 @@ export const Sidebar = memo(function Sidebar() {
   const setChatPinnedMutation = useSetMothershipChatPinned(workspaceId)
   const chatsHover = useHoverMenu()
   const workflowsHover = useHoverMenu()
+  const brand = useOrgBrandConfig()
 
   const {
     isOpen: isChatContextMenuOpen,
@@ -1705,10 +1707,12 @@ export const Sidebar = memo(function Sidebar() {
                         <BookOpen className='h-[14px] w-[14px]' />
                         Docs
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
-                        <HelpCircle className='h-[14px] w-[14px]' />
-                        Report an issue
-                      </DropdownMenuItem>
+                      {false && (
+                        <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
+                          <HelpCircle className='h-[14px] w-[14px]' />
+                          Report an issue
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
 
